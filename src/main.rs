@@ -203,10 +203,12 @@ fn main() {
 ///   rooted at its parent dir so sublayers resolve.
 /// Open the prim-tree panel on startup so the viewer has something
 /// populated to show — same default as the old `LeftTab::Tree`.
+/// Opens the prim tree on startup to give the viewer an immediate focal panel.
 fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
     ribbon.toggle(RIBBON_LEFT, RIB_TREE);
 }
 
+/// Resolves the CLI stage argument into an AssetServer-relative name and root.
 fn resolve_requested_asset() -> (String, PathBuf) {
     let arg = std::env::args().nth(1);
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -241,6 +243,7 @@ pub struct RequestedAsset {
     pub root: PathBuf,
 }
 
+/// Starts loading the requested USD stage using the current loader tuning.
 fn load_stage(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -288,6 +291,7 @@ fn load_stage(
 /// authored with their reference frame at the chassis centre spawn
 /// with wheels deep inside the ground; the contact solver then
 /// launches the chassis on tick 0.
+/// Raises spawned scene roots when needed to rest their bounds on the physics ground.
 fn lift_scene_off_ground(
     extent: Res<crate::overlays::SceneExtent>,
     physics_active: Res<usd_bevy::physics::PhysicsActive>,
@@ -331,6 +335,7 @@ fn lift_scene_off_ground(
 /// idle simulations.
 /// Mirror `ArcballCamera` → `ChaseCamera` each frame so
 /// bevy_glacial's `GroundGridPlugin` LOD math sees our actual viewport.
+/// Mirrors the arcball focus and distance into the ground grid's chase camera.
 fn sync_chase_camera(mut q: Query<(&ArcballCamera, &mut ChaseCamera)>) {
     for (arc, mut chase) in q.iter_mut() {
         chase.focus = arc.focus;
@@ -341,6 +346,7 @@ fn sync_chase_camera(mut q: Query<(&ArcballCamera, &mut ChaseCamera)>) {
 }
 
 /// Drive bevy_glacial's `GroundGrid.visible` from our overlay toggle.
+/// Keeps the glacial ground-grid visibility synchronized with overlay state.
 fn sync_ground_grid_visibility(
     toggles: Res<crate::overlays::DisplayToggles>,
     mut grid: ResMut<GroundGrid>,
@@ -352,6 +358,7 @@ fn sync_ground_grid_visibility(
 
 /// Wire `DisplayToggles.show_colliders` to the adapter's gizmo
 /// renderer (`ColliderDebugEnabled` resource).
+/// Enables Rapier collider debug rendering only when the user requests it.
 fn sync_collider_debug_visibility(
     toggles: Res<crate::overlays::DisplayToggles>,
     mut enabled: ResMut<usd_bevy::physics::ColliderDebugEnabled>,
@@ -365,6 +372,7 @@ fn sync_collider_debug_visibility(
 /// PhysicsWorld. Built directly into Rapier (not as a Bevy entity)
 /// since it needs no Transform writeback. The visual floor comes
 /// from glacial's `GroundGridPlugin` rendering an infinite-fade grid.
+/// Adds the viewer's static floor collider to the USD physics world.
 fn spawn_physics_ground(mut world: ResMut<usd_bevy::physics::PhysicsWorld>) {
     use bevy::math::DVec3;
     use rapier3d_f64::prelude::*;
@@ -375,6 +383,7 @@ fn spawn_physics_ground(mut world: ResMut<usd_bevy::physics::PhysicsWorld>) {
     world.colliders.insert(ground);
 }
 
+/// Spawns the default arcball camera, fallback light, and ground-support entities.
 fn spawn_camera_and_ground(mut commands: Commands) {
     use bevy::camera::{PerspectiveProjection, Projection};
     use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -469,6 +478,7 @@ fn spawn_camera_and_ground(mut commands: Commands) {
 /// scattered geometry — clustering by parent path quickly shows
 /// whether transforms are off, payloads failed, or a specific prop
 /// landed at the wrong scale.
+/// Emits a one-time diagnostic dump of spawned transforms and hierarchy.
 fn debug_dump_layout_once(
     prims: Query<(
         &UsdPrimRef,
@@ -534,6 +544,7 @@ fn debug_dump_layout_once(
 /// the Bevy hierarchy — that's what lets Rapier's body movement
 /// drag the mesh along after a step. Set
 /// `BEVY_OPENUSD_DEBUG_PHYSICS=1` to enable.
+/// Emits a one-time diagnostic summary of imported USD physics components.
 fn debug_dump_physics_once(
     bodies: Query<(&UsdPrimRef, &GlobalTransform), With<usd_bevy::UsdRigidBody>>,
     joints: Query<(&UsdPrimRef, &usd_bevy::UsdPhysicsJoint)>,
@@ -689,6 +700,7 @@ fn debug_dump_physics_once(
 /// their body ancestor over time. Set
 /// `BEVY_OPENUSD_DEBUG_PHYSICS_TICK=1` to enable; emits every ~120
 /// frames.
+/// Periodically logs physics state while the optional runtime diagnostic is enabled.
 fn debug_dump_physics_tick(
     bodies: Query<(&UsdPrimRef, &Transform, &GlobalTransform), With<usd_bevy::UsdRigidBody>>,
     meshes: Query<(Entity, &UsdPrimRef, &Transform, &GlobalTransform), With<bevy::mesh::Mesh3d>>,
@@ -742,6 +754,7 @@ fn debug_dump_physics_tick(
     info!("==== END TICK SAMPLE ====");
 }
 
+/// Logs prims near the origin once to aid scene-placement debugging.
 fn debug_origin_prims_once(
     prims: Query<(&UsdPrimRef, &GlobalTransform), With<bevy::mesh::Mesh3d>>,
     extent: Res<SceneExtent>,
@@ -789,6 +802,7 @@ fn debug_origin_prims_once(
 /// Recenter the arcball on whatever the USD projection spawned the moment
 /// enough prims show up to have a valid bounding box. Runs exactly once so
 /// the user can still orbit / pan afterwards.
+/// Frames the arcball camera around the scene after its first materialization.
 fn fit_camera_once(
     extent: Res<SceneExtent>,
     mut cameras: Query<&mut ArcballCamera>,
@@ -846,6 +860,7 @@ fn fit_camera_once(
 /// watcher when the source USD changes on disk). Despawn the existing
 /// SceneRoot(s) and rerun the spawn path — the new scene handle inside
 /// UsdAsset will differ, so `Spawned` gets reset.
+/// Reloads the active USD stage after a file event or explicit reload request.
 fn handle_usd_hot_reload(
     mut events: MessageReader<AssetEvent<UsdAsset>>,
     mut commands: Commands,
@@ -936,6 +951,7 @@ fn handle_usd_hot_reload(
     }
 }
 
+/// Spawns the loaded USD scene and retires the fallback sun when appropriate.
 fn spawn_when_ready(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -1022,6 +1038,7 @@ fn spawn_when_ready(
 /// `argv[1]` in `resolve_requested_asset`, sets the AssetPlugin's
 /// `file_path` to the picked file's parent before the App is built,
 /// and loads cleanly.
+/// Applies a file-picker request by replacing the requested asset and restarting load.
 fn apply_load_request(mut req: ResMut<LoadRequest>) {
     let Some(new_path) = req.path.take() else {
         return;
@@ -1054,6 +1071,7 @@ fn apply_load_request(mut req: ResMut<LoadRequest>) {
 
 /// Lerp the arcball's focus + distance toward the last-requested
 /// target. Zero `remaining` is the sentinel "no tween in flight".
+/// Advances the active focus-and-distance tween used by tree navigation.
 fn apply_fly_to(time: Res<Time>, mut fly: ResMut<FlyTo>, mut cameras: Query<&mut ArcballCamera>) {
     if fly.remaining <= 0.0 {
         return;
@@ -1088,6 +1106,7 @@ fn apply_fly_to(time: Res<Time>, mut fly: ResMut<FlyTo>, mut cameras: Query<&mut
     }
 }
 
+/// Interpolates angles along the shortest wrapped path.
 fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
     let two_pi = core::f32::consts::TAU;
     let mut delta = (b - a) % two_pi;
@@ -1103,6 +1122,7 @@ fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
 /// prim's `GlobalTransform` + projection onto the live `Camera3d` every
 /// frame. Goes quiet in `CameraMount::Arcball` mode so the arcball runs
 /// unopposed.
+/// Copies transform and projection from the selected authored USD camera.
 fn follow_mounted_camera(
     mount: Res<CameraMount>,
     usd_assets: Res<Assets<UsdAsset>>,
@@ -1177,6 +1197,7 @@ fn follow_mounted_camera(
 /// prim's raw data on the loaded `UsdAsset`, and rebuild the mesh's
 /// vertex buffers in place via `Assets<Mesh>::get_mut`. No asset
 /// reload, no AssetServer-cache fight.
+/// Rebuilds curve and point meshes when live loader tuning changes.
 fn rebuild_tuned_meshes(
     tuning: Res<LoaderTuning>,
     stage: Option<Res<StageHandle>>,
@@ -1225,6 +1246,7 @@ fn rebuild_tuned_meshes(
 
 /// Draw a bright yellow AABB around the currently selected prim so the
 /// user can visually locate the entity they clicked in the tree panel.
+/// Draws a gizmo outline around the currently selected prim's bounds.
 fn draw_selected_prim_highlight(
     selected: Res<SelectedPrim>,
     xforms: Query<&GlobalTransform>,
@@ -1292,10 +1314,12 @@ fn draw_selected_prim_highlight(
 /// asset root by prior viewer runs. Fires once at startup before
 /// `load_stage` queues the initial load, so the subsequent fresh
 /// copies are the only ones on disk.
+/// Removes stale temporary variant copies before stage loading begins.
 fn sweep_variant_tempfiles(requested: Res<RequestedAsset>) {
     sweep_variant_tempfiles_in_root(&requested.root);
 }
 
+/// Deletes this viewer's prefixed temporary USD variant files in one directory.
 fn sweep_variant_tempfiles_in_root(root: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
@@ -1315,6 +1339,7 @@ fn sweep_variant_tempfiles_in_root(root: &std::path::Path) {
 /// caches by asset path alone, so each distinct selection set needs a
 /// distinct path to force a fresh loader run. The basename sits
 /// alongside the real asset file so Bevy's asset-root gate accepts it.
+/// Produces a collision-resistant basename for a temporary variant copy.
 fn unique_variant_basename(
     source: &std::path::Path,
     selections: &[usd_bevy::VariantSelection],
@@ -1339,6 +1364,7 @@ fn unique_variant_basename(
 /// Ensure `dest` exists and mirrors `source`'s bytes. We re-copy only
 /// when the destination is missing or stale compared to the source's
 /// modification time.
+/// Creates or refreshes a temporary copy only when its source has changed.
 fn ensure_variant_copy(source: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
     let needs_copy = match (source.metadata(), dest.metadata()) {
         (Ok(s), Ok(d)) => match (s.modified().ok(), d.modified().ok()) {
@@ -1360,6 +1386,7 @@ fn ensure_variant_copy(source: &std::path::Path, dest: &std::path::Path) -> std:
 ///
 /// Also syncs `start`/`end`/`fps` from the loaded UsdAsset on first
 /// sight so a fresh stage populates the clock's bounds.
+/// Advances looping USD animation time while playback is active.
 fn tick_stage_time(
     time: Res<Time>,
     mut clock: ResMut<UsdStageTime>,
@@ -1409,6 +1436,7 @@ fn tick_stage_time(
 /// `UsdAsset::animated_prims` and write the resulting `Transform`. Runs
 /// every frame — cheap because only prims with authored timeSamples
 /// are touched (the rest stay static at their load-time Transform).
+/// Evaluates transform time samples at the current stage time code.
 fn evaluate_animated_prims(
     clock: Res<UsdStageTime>,
     stage: Option<Res<StageHandle>>,
@@ -1464,6 +1492,7 @@ fn evaluate_animated_prims(
 ///
 /// Skips the eval when no driver is present (no animation loaded), so
 /// the cost on non-animated scenes is one `Query::iter()` per frame.
+/// Switches the active skeletal clip without reloading the USD stage.
 fn apply_live_animation_clip(
     mut pending: ResMut<PendingAnimationClip>,
     stage: Option<Res<StageHandle>>,
@@ -1551,6 +1580,7 @@ fn apply_live_animation_clip(
     }
 }
 
+/// Detects whether a parsed skeletal animation stores quaternions in XYZW order.
 fn detect_quat_xyzw_order(anim: &usd_schema::skel_anim_text::ReadSkelAnimText) -> bool {
     let mut sum_abs_first = 0.0f32;
     let mut sum_abs_last = 0.0f32;
@@ -1565,6 +1595,7 @@ fn detect_quat_xyzw_order(anim: &usd_schema::skel_anim_text::ReadSkelAnimText) -
     samples > 0 && sum_abs_last > sum_abs_first
 }
 
+/// Extracts the inclusive authored time-code range from a skeletal clip.
 fn skel_anim_time_range(anim: &usd_schema::skel_anim_text::ReadSkelAnimText) -> Option<(f64, f64)> {
     let mut start = f64::INFINITY;
     let mut end = f64::NEG_INFINITY;
@@ -1582,6 +1613,7 @@ fn skel_anim_time_range(anim: &usd_schema::skel_anim_text::ReadSkelAnimText) -> 
     start.is_finite().then_some((start, end))
 }
 
+/// Samples authored skeletal animation and updates the live joint poses.
 fn drive_skel_animations(
     clock: Res<UsdStageTime>,
     drivers: Query<&usd_bevy::prim_ref::UsdSkelAnimDriver>,
@@ -1633,6 +1665,7 @@ fn drive_skel_animations(
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct SkeletonGizmos;
 
+/// Configures skeleton gizmos to render on top of skinned geometry.
 fn setup_skeleton_gizmos_on_top(mut store: ResMut<GizmoConfigStore>) {
     let (cfg, _) = store.config_mut::<SkeletonGizmos>();
     cfg.depth_bias = -1.0;
@@ -1645,6 +1678,7 @@ fn setup_skeleton_gizmos_on_top(mut store: ResMut<GizmoConfigStore>) {
 /// env var is set, in which case we additionally drop a green
 /// sphere at every joint origin (the env-var path is the engine
 /// debug view; the toggle path is what users actually want).
+/// Draws the skeleton hierarchy when the skeleton overlay is enabled.
 fn draw_joint_gizmos(
     mut gizmos: Gizmos<SkeletonGizmos>,
     joints: Query<(&GlobalTransform, Option<&Children>), With<usd_bevy::prim_ref::UsdJoint>>,
@@ -1681,6 +1715,7 @@ fn draw_joint_gizmos(
 /// mesh entity so the user only sees the skeleton via the gizmos
 /// system. Lets us answer "is the rig animating?" without the
 /// visual noise of broken skinning.
+/// Hides meshes once when the environment-based inspection mode is enabled.
 fn hide_meshes_on_startup(
     flag: Res<HideMeshesFlag>,
     mut q: Query<&mut Visibility, With<bevy::mesh::Mesh3d>>,
@@ -1714,6 +1749,7 @@ struct ShowJointGizmosFlag(bool);
 ///
 /// For multi-skel scenes this picks the first driver — single-rig
 /// is the common case (HumanFemale, etc.).
+/// Evaluates blend-shape animation samples and writes current mesh weights.
 fn drive_blend_shape_weights(
     clock: Res<UsdStageTime>,
     drivers: Query<&usd_bevy::prim_ref::UsdSkelAnimDriver>,

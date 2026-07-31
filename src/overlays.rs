@@ -54,6 +54,7 @@ pub struct OriginalIlluminance(pub f32);
 #[derive(Component, Debug, Copy, Clone)]
 pub struct OriginalLightIntensity(pub f32);
 
+/// Records authored light strengths once, preserving a stable scaling baseline.
 fn capture_original_light_levels(
     mut cmds: Commands,
     dir: Query<
@@ -74,6 +75,7 @@ fn capture_original_light_levels(
     }
 }
 
+/// Multiplies each light's captured authored strength by the UI scale.
 fn apply_light_intensity_scale(
     toggles: Res<DisplayToggles>,
     mut dir: Query<(&mut DirectionalLight, &OriginalIlluminance)>,
@@ -92,6 +94,7 @@ fn apply_light_intensity_scale(
     }
 }
 
+/// Synchronizes the global Bevy wireframe setting with the overlay toggle.
 fn apply_wireframe_toggle(
     toggles: Res<DisplayToggles>,
     mut cfg: ResMut<bevy::pbr::wireframe::WireframeConfig>,
@@ -187,6 +190,7 @@ impl SceneExtent {
         }
     }
 
+    /// Returns the centre of the accumulated bounds, or the origin when empty.
     pub fn centre(&self) -> Vec3 {
         if self.count == 0 {
             Vec3::ZERO
@@ -196,6 +200,7 @@ impl SceneExtent {
     }
 }
 
+/// Recomputes world-space scene bounds from authored extents or mesh AABBs.
 fn compute_extent(
     prims: Query<
         (

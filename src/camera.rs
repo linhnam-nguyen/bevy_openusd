@@ -32,6 +32,7 @@ impl Plugin for ArcballCameraPlugin {
     }
 }
 
+/// Enables free-camera input only while no authored USD camera is mounted.
 fn arcball_is_active(mount: Res<CameraMount>) -> bool {
     matches!(*mount, CameraMount::Arcball)
 }
@@ -67,6 +68,7 @@ impl Default for ArcballCamera {
     }
 }
 
+/// Converts active mouse drags into screen-space panning and orbit updates.
 fn drive_arcball(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -136,6 +138,7 @@ fn drive_arcball(
     }
 }
 
+/// Converts a cursor delta to world space at the camera's current depth.
 fn screen_space_pan_delta(
     tr: &Transform,
     cam: &ArcballCamera,
@@ -154,6 +157,7 @@ fn screen_space_pan_delta(
     (-right * pan_delta.x + up * pan_delta.y) * world_units_per_pixel * cam.pan_sensitivity
 }
 
+/// Applies logarithmic, smoothed scroll-wheel zoom within configured bounds.
 fn drive_arcball_zoom(
     time: Res<Time>,
     scroll: Res<AccumulatedMouseScroll>,
@@ -193,6 +197,7 @@ fn drive_arcball_zoom(
     }
 }
 
+/// Rebuilds the camera transform from its focus, yaw, elevation, and distance.
 fn apply_rig(cam: &ArcballCamera, tr: &mut Transform) {
     let horizontal = cam.distance * cam.elevation.cos();
     let vertical = cam.distance * cam.elevation.sin();

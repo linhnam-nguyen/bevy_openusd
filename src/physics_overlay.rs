@@ -138,6 +138,7 @@ fn draw_joints(
     }
 }
 
+/// Draws limit envelopes and drive targets appropriate to one joint kind.
 fn draw_kind_limits(
     gizmos: &mut Gizmos<PhysicsGizmos>,
     joint: &UsdPhysicsJoint,
@@ -275,6 +276,7 @@ fn draw_kind_limits(
 
 // ── Articulation chains ────────────────────────────────────────────────
 
+/// Highlights every joint connection belonging to each articulation root.
 fn draw_articulation_chains(
     mut gizmos: Gizmos<PhysicsGizmos>,
     toggles: Res<DisplayToggles>,
@@ -310,6 +312,7 @@ fn draw_articulation_chains(
     }
 }
 
+/// Marks articulation-root transforms with stable palette colours.
 fn draw_articulation_root_markers(
     mut gizmos: Gizmos<PhysicsGizmos>,
     toggles: Res<DisplayToggles>,
@@ -329,6 +332,7 @@ fn draw_articulation_root_markers(
 
 // ── Mass ────────────────────────────────────────────────────────────────
 
+/// Draws each body's centre of mass, colouring explicit mass and density differently.
 fn draw_mass_markers(
     mut gizmos: Gizmos<PhysicsGizmos>,
     toggles: Res<DisplayToggles>,
@@ -356,6 +360,7 @@ fn draw_mass_markers(
 
 // ── Scene gravity ──────────────────────────────────────────────────────
 
+/// Draws each authored physics scene's gravity direction and magnitude cue.
 fn draw_scene_gravity(
     mut gizmos: Gizmos<PhysicsGizmos>,
     toggles: Res<DisplayToggles>,
@@ -378,6 +383,7 @@ fn draw_scene_gravity(
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
+/// Resolves a joint anchor's local pose into world-space position and rotation.
 fn anchor_world(body_gt: &GlobalTransform, local_pos: Vec3, local_rot: Quat) -> (Vec3, Quat) {
     let body = body_gt.compute_transform();
     let pos = body.transform_point(local_pos);
@@ -397,10 +403,12 @@ fn draw_triad(gizmos: &mut Gizmos<PhysicsGizmos>, origin: Vec3, rotation: Quat, 
     gizmos.arrow(origin, tip_z, FRAME_COLORS[2]);
 }
 
+/// Chooses a legible, scene-relative scale for physics gizmos.
 fn triad_size(extent: &SceneExtent) -> f32 {
     (extent.diag() * 0.012).clamp(0.01, 0.12)
 }
 
+/// Returns the stable overlay colour assigned to a USD joint kind.
 fn joint_kind_color(kind: UsdJointKind) -> Color {
     match kind {
         UsdJointKind::Fixed => Color::from(tailwind::SLATE_400),
@@ -412,6 +420,7 @@ fn joint_kind_color(kind: UsdJointKind) -> Color {
     }
 }
 
+/// Supplies the repeating palette used to distinguish articulation chains.
 fn articulation_palette() -> [Color; 4] {
     [
         Color::from(tailwind::EMERALD_400),

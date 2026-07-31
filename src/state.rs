@@ -132,6 +132,7 @@ pub struct LoaderTuning {
 }
 
 impl LoaderTuning {
+    /// Converts the UI's map-based overrides into loader-facing selections.
     pub fn to_variant_selections(&self) -> Vec<usd_bevy::VariantSelection> {
         self.variants
             .iter()
@@ -205,9 +206,11 @@ impl Default for UsdStageTime {
 }
 
 impl UsdStageTime {
+    /// Returns the current playback position in USD time-code units.
     pub fn current_time_code(&self) -> f64 {
         self.start_time_code + self.seconds * self.time_codes_per_second
     }
+    /// Returns the authored playback range expressed in seconds.
     pub fn duration_seconds(&self) -> f64 {
         (self.end_time_code - self.start_time_code).max(0.0) / self.time_codes_per_second
     }

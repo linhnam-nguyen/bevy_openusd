@@ -304,6 +304,7 @@ const PANEL_H: f32 = 560.0;
 
 // ─── Ribbon rail ────────────────────────────────────────────────────
 
+/// Draws the activity ribbon and handles its play/pause action.
 fn draw_ribbons(
     mut contexts: EguiContexts,
     accent: Res<AccentColor>,
@@ -333,6 +334,7 @@ fn draw_ribbons(
     }
 }
 
+/// Tests whether an item in the viewer's left ribbon currently owns a panel.
 fn is_panel_open(open: &RibbonOpen, item: &'static str) -> bool {
     open.is_open(RIBBON_LEFT, item)
 }
@@ -340,6 +342,7 @@ fn is_panel_open(open: &RibbonOpen, item: &'static str) -> bool {
 // ─── Selection panel ────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Draws the stage picker and details for the currently selected prim.
 fn draw_selection_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -440,6 +443,7 @@ fn draw_selection_panel(
 // ─── Prim-tree panel ────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Draws the searchable USD prim hierarchy and applies row interactions.
 fn draw_tree_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -701,6 +705,7 @@ enum CtxAction {
 }
 
 impl RowOutcome {
+    /// Folds a child row's latest interaction into this subtree result.
     fn merge(&mut self, other: RowOutcome) {
         if other.double_clicked.is_some() {
             self.double_clicked = other.double_clicked;
@@ -766,6 +771,7 @@ fn swatch_color_for(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Recursively renders one prim row and returns its latest user interaction.
 fn draw_tree_row(
     ui: &mut egui::Ui,
     entity: Entity,
@@ -938,6 +944,7 @@ fn draw_tree_row(
 /// authored local extent into world space, and fold into one AABB.
 /// Returns `(focus, distance)` sized for arcball framing. When no
 /// descendant carries `UsdLocalExtent`, falls back to a heuristic.
+/// Computes a focus point and camera distance that frame an entity's subtree.
 fn fit_params_for_entity(
     root: Entity,
     gt_q: &Query<&GlobalTransform>,
@@ -992,6 +999,7 @@ fn fit_params_for_entity(
 // ─── Stage-info panel ───────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Draws the loaded-stage metadata and projection summary panel.
 fn draw_info_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1133,6 +1141,7 @@ fn draw_info_panel(
 
 // ─── Variants panel ─────────────────────────────────────────────────
 
+/// Draws variant-set controls and records pending reload selections.
 fn draw_variants_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1341,6 +1350,7 @@ fn draw_variants_panel(
 /// dropdown paints every option directly in the popup, so the cow's many
 /// `anim` clips can run off-screen. egui's ComboBox has a built-in scroll
 /// area via `.height(...)`, while still returning a normal changed Response.
+/// Renders a scrollable option control while preserving the selected value.
 fn scroll_dropdown_control(
     ui: &mut egui::Ui,
     id_salt: impl Hash,
@@ -1407,6 +1417,7 @@ fn scroll_dropdown_control(
 // ─── Cameras panel ──────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Lists authored cameras and manages mounting, bookmarks, and camera navigation.
 fn draw_cameras_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1564,6 +1575,7 @@ fn draw_cameras_panel(
 // propagates the new colour to every mesh that bound this material,
 // no per-mesh override needed.
 
+/// Shows material bindings and material properties for the current stage.
 fn draw_materials_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1682,6 +1694,7 @@ fn draw_materials_panel(
 
 // ─── Overlays panel ─────────────────────────────────────────────────
 
+/// Exposes debug-overlay, wireframe, lighting, and collider visibility controls.
 fn draw_overlays_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1799,6 +1812,7 @@ fn draw_overlays_panel(
 
 // ─── Timeline panel ─────────────────────────────────────────────────
 
+/// Draws playback, scrub, and animation-clip controls for USD time samples.
 fn draw_timeline_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1877,6 +1891,7 @@ fn draw_timeline_panel(
 
 // ─── Keys panel ─────────────────────────────────────────────────────
 
+/// Displays the viewer's keyboard and mouse interaction reference.
 fn draw_keys_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -1930,6 +1945,7 @@ fn draw_keys_panel(
 
 // ─── Log panel ──────────────────────────────────────────────────────
 
+/// Displays the in-app log buffer with level filtering and target shortening.
 fn draw_log_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
@@ -2012,6 +2028,7 @@ fn draw_log_panel(
     );
 }
 
+/// Maps a Bevy log severity to the panel's readable foreground colour.
 fn level_to_color(level: bevy::log::Level) -> egui::Color32 {
     match level {
         bevy::log::Level::ERROR => style::DANGER,
@@ -2021,6 +2038,7 @@ fn level_to_color(level: bevy::log::Level) -> egui::Color32 {
     }
 }
 
+/// Condenses a Rust module path for narrow log-panel rows.
 fn short_target(target: &str) -> String {
     // `usd_bevy::asset` → `asset`. Drops the crate prefix so the
     // log row stays readable at panel width.
@@ -2030,6 +2048,7 @@ fn short_target(target: &str) -> String {
 // ─── Command palette (Ctrl+K) ───────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
+/// Draws the command palette and dispatches the selected action.
 fn draw_palette_panel(
     mut contexts: EguiContexts,
     accent: Res<AccentColor>,

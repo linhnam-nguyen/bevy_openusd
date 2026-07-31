@@ -45,6 +45,7 @@ fn handle_palette_shortcut(
     }
 }
 
+/// Maps viewer hotkeys to ribbon panels, overlay flags, and reload requests.
 fn handle_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut ribbon: ResMut<RibbonOpen>,

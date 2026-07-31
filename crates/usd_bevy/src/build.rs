@@ -1533,7 +1533,7 @@ fn blend_shapes_from_ghost_twin(
     // under the ghost twin. e.g.
     // `/Skel/Geometry/HumanFemale/Geom/.../Body_sbdv`
     // → tail starts at `/HumanFemale/Geom/.../Body_sbdv`.
-    let mut parts: Vec<&str> = composed_str.split('/').filter(|s| !s.is_empty()).collect();
+    let parts: Vec<&str> = composed_str.split('/').filter(|s| !s.is_empty()).collect();
     if parts.len() < 3 {
         return None;
     }
