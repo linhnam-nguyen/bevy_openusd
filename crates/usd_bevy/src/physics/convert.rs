@@ -2,7 +2,8 @@
 //! f64 glam types. `rapier3d-f64` exposes its math as `glam::DVec3` /
 //! `glam::DQuat`, so this is just an f32 ↔ f64 cast.
 
-use bevy::math::{DQuat, DVec3, Quat, Vec3};
+use bevy::math::{Quat, Vec3};
+use rapier3d_f64::glamx::{DQuat, DVec3};
 
 #[inline]
 pub fn vec3_to_d(v: Vec3) -> DVec3 {

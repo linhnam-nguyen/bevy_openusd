@@ -38,17 +38,18 @@ pub use prim_ref::{
 
 use bevy::app::{App, Plugin};
 use bevy::asset::AssetApp;
-use bevy::scene::Scene;
+use bevy::scene::ScenePatch;
 
 /// Registers the [`UsdAsset`] type, the [`UsdLoader`], the
 /// `UsdPrimRef` reflect registration, and every marker component
-/// from [`markers`] so projected scenes clone through `SceneRoot`.
+/// from [`markers`] so projected scenes clone through `ScenePatchInstance`.
 #[derive(Default)]
 pub struct UsdPlugin;
 
 impl Plugin for UsdPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<Scene>()
+        app.init_asset::<ScenePatch>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
             .init_asset::<UsdAsset>()
             .init_asset_loader::<UsdLoader>()
             .register_type::<UsdPrimRef>()

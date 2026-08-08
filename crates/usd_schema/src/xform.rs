@@ -2,10 +2,12 @@
 //!
 //! Reader half: read `xformOp:translate / orient / scale` and the
 //! `rotateXYZ` Euler ops + matrix `xformOp:transform` from a composed
-//! [`openusd::Stage`], compose them per `xformOpOrder`, return TRS.
+//! [`openusd::usd::Stage`], compose them per `xformOpOrder`, return TRS.
 //!
 //! Writer half: emit those ops onto a `Stage` prim spec — used by
 //! the URDF→USD authoring path.
+
+use crate::StageReadExt;
 
 use anyhow::Result;
 use openusd::sdf::{Path, Value};
@@ -57,7 +59,7 @@ pub fn set_trs(
             prim,
             "xformOp:translate",
             "double3",
-            Value::Vec3d(pose.xyz),
+            Value::Vec3d(pose.xyz.into()),
             false,
         )?;
         order.push("xformOp:translate".into());
@@ -66,13 +68,25 @@ pub fn set_trs(
     if !rotate_identity {
         let q = rpy_to_quat(pose.rpy[0], pose.rpy[1], pose.rpy[2]);
         let q_f: [f32; 4] = [q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32];
-        stage.define_attribute(prim, "xformOp:orient", "quatf", Value::Quatf(q_f), false)?;
+        stage.define_attribute(
+            prim,
+            "xformOp:orient",
+            "quatf",
+            Value::Quatf(q_f.into()),
+            false,
+        )?;
         order.push("xformOp:orient".into());
     }
 
     if !scale_identity {
         let s = scale.unwrap();
-        stage.define_attribute(prim, "xformOp:scale", "double3", Value::Vec3d(s), false)?;
+        stage.define_attribute(
+            prim,
+            "xformOp:scale",
+            "double3",
+            Value::Vec3d(s.into()),
+            false,
+        )?;
         order.push("xformOp:scale".into());
     }
 
@@ -81,7 +95,7 @@ pub fn set_trs(
             prim,
             "xformOpOrder",
             "token[]",
-            Value::TokenVec(order),
+            Value::TokenVec(order.into_iter().map(Into::into).collect()),
             true,
         )?;
     }
@@ -126,23 +140,28 @@ impl Default for Transform3 {
 /// Read `xformOpOrder` and compose every listed op into a single 4×4,
 /// then decompose to TRS. Returns `None` when no `xformOpOrder` is
 /// authored on the prim.
-pub fn read_transform(stage: &openusd::Stage, prim: &Path) -> Result<Option<Transform3>> {
+pub fn read_transform(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<Transform3>> {
     use glam::Mat4;
 
     let order_attr = prim
         .append_property("xformOpOrder")
         .map_err(anyhow::Error::from)?;
     let Some(raw) = stage
-        .field::<Value>(order_attr, "default")
+        .composed_field::<Value>(order_attr, "default")
         .map_err(anyhow::Error::from)?
     else {
         return Ok(None);
     };
     let order: Vec<String> = match raw {
-        Value::TokenVec(v) | Value::StringVec(v) => v,
+        Value::TokenVec(v) => v.into_iter().map(|token| token.to_string()).collect(),
+        Value::StringVec(v) => v,
         // URDF→USD exports (Agilex Scout V2, Isaac Sim assets) author
         // `xformOpOrder` as a list-op rather than a plain vec.
-        Value::TokenListOp(op) => op.flatten(),
+        Value::TokenListOp(op) => op
+            .flatten()
+            .into_iter()
+            .map(|token| token.to_string())
+            .collect(),
         _ => return Ok(None),
     };
 
@@ -164,7 +183,7 @@ pub fn read_transform(stage: &openusd::Stage, prim: &Path) -> Result<Option<Tran
 /// Handles `!invert!` prefix, namespaced suffixes, and per-kind
 /// value parsing (translate / scale / orient / rotateAXIS / rotateEULER /
 /// transform).
-fn build_op_matrix(stage: &openusd::Stage, prim: &Path, op_token: &str) -> Result<glam::Mat4> {
+fn build_op_matrix(stage: &openusd::usd::Stage, prim: &Path, op_token: &str) -> Result<glam::Mat4> {
     use glam::{Mat4, Quat, Vec3};
 
     const INVERT: &str = "!invert!";
@@ -176,7 +195,7 @@ fn build_op_matrix(stage: &openusd::Stage, prim: &Path, op_token: &str) -> Resul
 
     let attr_path = prim.append_property(base).map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(attr_path, "default")
+        .composed_field::<Value>(attr_path, "default")
         .map_err(anyhow::Error::from)?;
     let Some(raw) = raw else {
         return Ok(Mat4::IDENTITY);
@@ -248,7 +267,7 @@ fn value_to_mat4_glam(v: &Value) -> Option<glam::Mat4> {
 
 fn value_to_vec3f(v: &Value) -> Option<[f32; 3]> {
     match v {
-        Value::Vec3f(a) => Some(*a),
+        Value::Vec3f(a) => Some((*a).into()),
         Value::Vec3d(a) => Some([a[0] as f32, a[1] as f32, a[2] as f32]),
         _ => None,
     }
@@ -266,8 +285,11 @@ fn value_to_scalar_f32(v: &Value) -> Option<f32> {
 
 fn value_to_quat_wxyz(v: &Value) -> Option<[f32; 4]> {
     match v {
-        Value::Quatf(q) => Some(*q),
-        Value::Quatd(q) => Some([q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32]),
+        Value::Quatf(q) => Some((*q).into()),
+        Value::Quatd(q) => {
+            let q: [f64; 4] = (*q).into();
+            Some([q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32])
+        }
         _ => None,
     }
 }

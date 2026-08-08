@@ -147,7 +147,7 @@ fn sync_bodies_to_transforms_on_resume(
         rb.set_position(pose, true);
         // Linear & angular velocities reset so the body doesn't
         // inherit whatever it had before the user paused.
-        rb.set_linvel(glam::DVec3::ZERO, true);
-        rb.set_angvel(glam::DVec3::ZERO, true);
+        rb.set_linvel(rapier3d_f64::glamx::DVec3::ZERO, true);
+        rb.set_angvel(rapier3d_f64::glamx::DVec3::ZERO, true);
     }
 }

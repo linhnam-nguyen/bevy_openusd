@@ -1,5 +1,5 @@
 //! Walk every `.usd*` file under a directory tree, open each as a
-//! standalone `openusd::Stage`, and tally what's authored. Goal:
+//! standalone `openusd::usd::Stage`, and tally what's authored. Goal:
 //! find every prim type, every property name, every shader id, and
 //! every relationship name that the bevy_openusd loader silently
 //! drops. That tells us where the Kitchen_set "still grey" surface
@@ -10,6 +10,7 @@
 
 use openusd::sdf::{Path as SdfPath, Value};
 use std::collections::BTreeMap;
+use usd_schema::StageReadExt;
 
 #[derive(Default)]
 struct Tally {
@@ -38,15 +39,18 @@ fn value_signature(v: &Value) -> String {
         Value::Double(x) => format!("d={x}"),
         Value::FloatVec(v) => format!("float[{}]", v.len()),
         Value::IntVec(v) => format!("int[{}]", v.len()),
-        Value::String(s) | Value::Token(s) | Value::AssetPath(s) => format!("\"{s}\""),
-        Value::TokenVec(v) | Value::StringVec(v) => format!("strs[{}]", v.len()),
+        Value::String(s) => format!("\"{s}\""),
+        Value::Token(s) => format!("\"{s}\""),
+        Value::AssetPath(s) => format!("\"{s}\""),
+        Value::TokenVec(v) => format!("tokens[{}]", v.len()),
+        Value::StringVec(v) => format!("strings[{}]", v.len()),
         other => format!("{other:?}"),
     }
 }
 
-fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
+fn walk_prim(stage: &openusd::usd::Stage, prim: &SdfPath, t: &mut Tally) {
     let type_name: Option<String> = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .ok()
         .flatten();
     if let Some(tn) = &type_name {
@@ -54,7 +58,7 @@ fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
     }
 
     // apiSchemas list-op
-    if let Ok(Some(v)) = stage.field::<Value>(prim.clone(), "apiSchemas") {
+    if let Ok(Some(v)) = stage.composed_field::<Value>(prim.clone(), "apiSchemas") {
         if let Value::TokenListOp(op) = v {
             for s in op
                 .prepended_items
@@ -62,7 +66,7 @@ fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
                 .chain(op.appended_items.iter())
                 .chain(op.explicit_items.iter())
             {
-                *t.api_schemas.entry(s.clone()).or_insert(0) += 1;
+                *t.api_schemas.entry(s.to_string()).or_insert(0) += 1;
             }
         }
     }
@@ -99,7 +103,7 @@ fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
         "faceVertexIndices",
     ] {
         if let Ok(ap) = prim.append_property(probe) {
-            if let Ok(Some(v)) = stage.field::<Value>(ap, "default") {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(ap, "default") {
                 let key = format!("(probe) {probe}: {}", value_signature(&v));
                 *t.property_names.entry(key).or_insert(0) += 1;
 
@@ -138,8 +142,12 @@ fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
     // Shader info:id
     if type_name.as_deref() == Some("Shader") {
         if let Ok(attr) = prim.append_property("info:id") {
-            if let Ok(Some(v)) = stage.field::<Value>(attr, "default") {
-                if let Value::Token(s) | Value::String(s) = v {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(attr, "default") {
+                if let Some(s) = match v {
+                    Value::Token(s) => Some(s.to_string()),
+                    Value::String(s) => Some(s),
+                    _ => None,
+                } {
                     *t.shader_ids.entry(s).or_insert(0) += 1;
                 }
             }
@@ -153,15 +161,19 @@ fn walk_prim(stage: &openusd::Stage, prim: &SdfPath, t: &mut Tally) {
         for out in ["outputs:surface", "outputs:mtlx:surface"] {
             if let Ok(attr) = prim.append_property(out) {
                 if let Ok(Some(Value::PathListOp(op))) =
-                    stage.field::<Value>(attr, "connectionPaths")
+                    stage.composed_field::<Value>(attr, "connectionPaths")
                 {
                     if let Some(target) = op.flatten().into_iter().next() {
                         // target is a property path; chase to its prim
                         // and grab info:id.
                         let shader_prim = target.prim_path();
                         if let Ok(id_attr) = shader_prim.append_property("info:id") {
-                            if let Ok(Some(v)) = stage.field::<Value>(id_attr, "default") {
-                                if let Value::Token(s) | Value::String(s) = v {
+                            if let Ok(Some(v)) = stage.composed_field::<Value>(id_attr, "default") {
+                                if let Some(s) = match v {
+                                    Value::Token(s) => Some(s.to_string()),
+                                    Value::String(s) => Some(s),
+                                    _ => None,
+                                } {
                                     found = s;
                                     break;
                                 }
@@ -201,7 +213,7 @@ fn walk_dir(dir: &std::path::Path, t: &mut Tally) {
             if matches!(ext.as_str(), "usd" | "usda" | "usdc" | "usdz") {
                 t.files_walked += 1;
                 if let Some(p_str) = p.to_str()
-                    && let Ok(stage) = openusd::Stage::open(p_str)
+                    && let Ok(stage) = openusd::usd::Stage::open(p_str)
                 {
                     walk_prim(&stage, &SdfPath::abs_root(), t);
                 }
@@ -251,7 +263,7 @@ fn main() {
     println!("\n=== Composed-stage probe ===");
     let composed = std::path::Path::new(&root).join("Kitchen_set.usd");
     if let Some(s) = composed.to_str() {
-        if let Ok(stage) = openusd::Stage::open(s) {
+        if let Ok(stage) = openusd::usd::Stage::open(s) {
             let probes = [
                 "/Kitchen_set/Arch_grp/Kitchen_1/Geom/Cabinets/Body/pCube251",
                 "/Kitchen_set/Props_grp/West_grp/WestWall_grp/FramePictureD_1/Geom/FramePicture",
@@ -264,8 +276,10 @@ fn main() {
                     println!("  {path_str}: invalid path");
                     continue;
                 };
-                let type_name: Option<String> =
-                    stage.field::<String>(p.clone(), "typeName").ok().flatten();
+                let type_name: Option<String> = stage
+                    .composed_field::<String>(p.clone(), "typeName")
+                    .ok()
+                    .flatten();
                 println!("  {path_str}: typeName={:?}", type_name);
                 if let Ok(children) = stage.prim_children(p.clone()) {
                     println!(
@@ -282,7 +296,7 @@ fn main() {
                     "faceVertexCounts",
                 ] {
                     if let Ok(ap) = p.append_property(attr) {
-                        if let Ok(Some(v)) = stage.field::<Value>(ap, "default") {
+                        if let Ok(Some(v)) = stage.composed_field::<Value>(ap, "default") {
                             println!("    .{attr}: {:?}", v);
                         }
                     }

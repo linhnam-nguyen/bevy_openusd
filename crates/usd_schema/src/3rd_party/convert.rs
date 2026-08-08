@@ -26,6 +26,8 @@
 //! ).unwrap();
 //! ```
 
+use crate::StageReadExt;
+
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -102,16 +104,15 @@ pub fn mdl_to_preview(input: &Path, output: &Path) -> Result<ConversionReport> {
     let tmp_str = tmp
         .to_str()
         .context("mdl_to_preview: non-UTF-8 tempfile path")?;
-    let stage = openusd::Stage::builder()
+    let stage = openusd::usd::Stage::builder()
         .resolver(StripMetadataResolver::with_search_paths(vec![
             source_dir.clone(),
         ]))
-        .on_error(|err| {
-            eprintln!("usd_convert: composition error: {err}");
-            Ok(())
-        })
         .open(tmp_str)
         .map_err(|e| anyhow::anyhow!("mdl_to_preview: open input failed: {e}"))?;
+    for error in stage.composition_errors() {
+        eprintln!("usd_convert: composition error: {error}");
+    }
     let _ = std::fs::remove_file(&tmp);
 
     let materials = collect_materials(&stage);
@@ -225,37 +226,27 @@ struct MaterialEntry {
 /// text-scrape fallback — works on USDC layers too. One disk read
 /// per layer, paid once during conversion.
 fn scan_binding_targets_across_layers(
-    _stage: &openusd::Stage,
-    anchor_dir: &std::path::Path,
-    root_path: &std::path::Path,
+    stage: &openusd::usd::Stage,
+    _anchor_dir: &std::path::Path,
+    _root_path: &std::path::Path,
 ) -> Vec<String> {
     use openusd::sdf::{Path as SdfP, SpecType, Value};
     use std::collections::HashSet;
 
-    let resolver = StripMetadataResolver::with_search_paths(vec![anchor_dir.to_path_buf()]);
-    let Some(root_str) = root_path.to_str() else {
-        return Vec::new();
-    };
-    // `collect_layers` walks **every** layer reachable from the root
-    // via sublayers, references, and payloads — this is the piece
-    // `stage.layer_identifiers()` omits. Unresolved deps are swallowed
-    // so conversion still produces output on partially-missing scenes.
-    let layers = match openusd::layer::collect_layers_with_handler(&resolver, root_str, |_e| Ok(()))
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("usd_convert: collect_layers failed: {e}");
-            return Vec::new();
-        }
-    };
+    // Stage traversal has already populated references and payloads. OpenUSD
+    // 0.5 exposes the resulting registry through these public layer handles.
+    let layers = stage.layer_identifiers();
     eprintln!(
         "usd_convert: scanning {} layer(s) for material:binding",
         layers.len()
     );
     let mut out: HashSet<String> = HashSet::new();
-    for layer in &layers {
-        let data = &layer.data;
-        let prim_paths = collect_prim_paths_abstract(&**data);
+    for identifier in &layers {
+        let Some(layer) = stage.layer(identifier) else {
+            continue;
+        };
+        let data = layer.data();
+        let prim_paths = collect_prim_paths_abstract(data);
         let mut hits = 0usize;
         for prim_path in &prim_paths {
             // `<prim>.material:binding` is a Relationship spec path.
@@ -268,9 +259,10 @@ fn scan_binding_targets_across_layers(
             // Read `targetPaths`; fall back to `targetChildren` if the
             // layer encoded targets via the children-list field.
             let raw = data
-                .get(&rel_path, "targetPaths")
+                .try_field(&rel_path, "targetPaths")
                 .ok()
-                .or_else(|| data.get(&rel_path, "targetChildren").ok());
+                .flatten()
+                .or_else(|| data.try_field(&rel_path, "targetChildren").ok().flatten());
             let Some(raw) = raw else { continue };
             let paths: Vec<SdfP> = match raw.into_owned() {
                 Value::PathListOp(op) => op.flatten(),
@@ -284,7 +276,7 @@ fn scan_binding_targets_across_layers(
         }
         eprintln!(
             "  {} → {} prim spec(s), {hits} material:binding hit(s)",
-            layer.identifier,
+            identifier,
             prim_paths.len()
         );
     }
@@ -307,7 +299,7 @@ fn collect_prim_paths_abstract(data: &dyn openusd::sdf::AbstractData) -> Vec<ope
         if path != SdfP::abs_root() {
             result.push(path.clone());
         }
-        if let Ok(value) = data.get(&path, ChildrenKey::PrimChildren.as_str())
+        if let Ok(Some(value)) = data.try_field(&path, ChildrenKey::PrimChildren.as_str())
             && let Value::TokenVec(children) = value.into_owned()
         {
             for name in children.iter().rev() {
@@ -316,12 +308,13 @@ fn collect_prim_paths_abstract(data: &dyn openusd::sdf::AbstractData) -> Vec<ope
                 }
             }
         }
-        if let Ok(value) = data.get(&path, ChildrenKey::VariantSetChildren.as_str())
+        if let Ok(Some(value)) = data.try_field(&path, ChildrenKey::VariantSetChildren.as_str())
             && let Value::TokenVec(set_names) = value.into_owned()
         {
             for set_name in &set_names {
                 let set_path = path.append_variant_selection(set_name, "");
-                if let Ok(value) = data.get(&set_path, ChildrenKey::VariantChildren.as_str())
+                if let Ok(Some(value)) =
+                    data.try_field(&set_path, ChildrenKey::VariantChildren.as_str())
                     && let Value::TokenVec(variant_names) = value.into_owned()
                 {
                     for variant_name in &variant_names {
@@ -371,21 +364,21 @@ fn scrape_binding_targets_from_text(bytes: &[u8]) -> Vec<String> {
 /// Walk every prim on the stage and collect the set of paths that
 /// something else binds to via `material:binding`. Dedup on the way
 /// so the caller doesn't author the same override N times.
-fn collect_binding_targets(stage: &openusd::Stage) -> Vec<String> {
+fn collect_binding_targets(stage: &openusd::usd::Stage) -> Vec<String> {
     use openusd::sdf::Path;
     use std::collections::HashSet;
     let mut out = HashSet::new();
-    let _ = stage.traverse(|path: &Path| {
+    let _ = stage.traverse(openusd::usd::PrimPredicate::DEFAULT, |path: &Path| {
         let Ok(rel_path) = path.append_property("material:binding") else {
             return;
         };
         let raw = stage
-            .field::<Value>(rel_path.clone(), "targetPaths")
+            .composed_field::<Value>(rel_path.clone(), "targetPaths")
             .ok()
             .flatten()
             .or_else(|| {
                 stage
-                    .field::<Value>(rel_path, "targetChildren")
+                    .composed_field::<Value>(rel_path, "targetChildren")
                     .ok()
                     .flatten()
             });
@@ -401,12 +394,12 @@ fn collect_binding_targets(stage: &openusd::Stage) -> Vec<String> {
     out.into_iter().collect()
 }
 
-fn collect_materials(stage: &openusd::Stage) -> Vec<MaterialEntry> {
+fn collect_materials(stage: &openusd::usd::Stage) -> Vec<MaterialEntry> {
     use openusd::sdf::Path;
     let mut out = Vec::new();
-    let _ = stage.traverse(|path: &Path| {
+    let _ = stage.traverse(openusd::usd::PrimPredicate::DEFAULT, |path: &Path| {
         let type_name = stage
-            .field::<String>(path.clone(), "typeName")
+            .composed_field::<String>(path.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -424,12 +417,12 @@ fn collect_materials(stage: &openusd::Stage) -> Vec<MaterialEntry> {
 /// `true` when the Material's `outputs:surface.connect` targets a Shader
 /// whose `info:id` is `UsdPreviewSurface` (not MDL, not
 /// OmniPBR-via-MaterialX).
-fn material_has_preview_surface(stage: &openusd::Stage, material: &SdfPath) -> bool {
+fn material_has_preview_surface(stage: &openusd::usd::Stage, material: &SdfPath) -> bool {
     let Ok(attr_path) = material.append_property("outputs:surface") else {
         return false;
     };
     let connections: Vec<SdfPath> = match stage
-        .field::<Value>(attr_path, "connectionPaths")
+        .composed_field::<Value>(attr_path, "connectionPaths")
         .ok()
         .flatten()
     {
@@ -440,7 +433,7 @@ fn material_has_preview_surface(stage: &openusd::Stage, material: &SdfPath) -> b
     for conn in connections {
         let shader = conn.prim_path();
         let info_id = stage
-            .field::<String>(
+            .composed_field::<String>(
                 shader.append_property("info:id").ok().unwrap_or(shader),
                 "default",
             )
@@ -482,7 +475,7 @@ fn author_preview_override(
         &shader_path,
         "inputs:diffuseColor",
         "color3f",
-        Value::Vec3f(rgb),
+        Value::Vec3f(rgb.into()),
         false,
     )?;
     out.define_attribute(
@@ -523,7 +516,7 @@ fn author_preview_override(
         &shader_path,
         "outputs:surface",
         "token",
-        Value::Token(String::new()),
+        Value::Token(String::new().into()),
         false,
     )?;
 

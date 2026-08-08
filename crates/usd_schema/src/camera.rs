@@ -13,6 +13,8 @@
 //!
 //! Reference: <https://openusd.org/release/api/class_usd_geom_camera.html>.
 
+use crate::StageReadExt;
+
 use anyhow::Result;
 use openusd::sdf::{Path, Value};
 
@@ -72,10 +74,10 @@ impl ReadCamera {
     }
 }
 
-pub fn read_camera(stage: &openusd::Stage, prim: &Path) -> Result<Option<ReadCamera>> {
+pub fn read_camera(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<ReadCamera>> {
     // Guard: only read prims whose typeName is "Camera".
     let type_name: Option<String> = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?;
     if type_name.as_deref() != Some("Camera") {
         return Ok(None);
@@ -100,14 +102,14 @@ pub fn is_camera_type(type_name: &str) -> bool {
 
 // ── Attribute helpers ────────────────────────────────────────────────────
 
-fn attr_default(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<Value>> {
+fn attr_default(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<Value>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     stage
-        .field::<Value>(attr, "default")
+        .composed_field::<Value>(attr, "default")
         .map_err(anyhow::Error::from)
 }
 
-fn read_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<f32>> {
+fn read_f32(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<f32>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Float(v)) => Some(v),
         Some(Value::Double(v)) => Some(v as f32),
@@ -116,18 +118,21 @@ fn read_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<f3
     })
 }
 
-fn read_projection(stage: &openusd::Stage, prim: &Path) -> Result<Option<Projection>> {
+fn read_projection(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<Projection>> {
     Ok(match attr_default(stage, prim, "projection")? {
-        Some(Value::Token(t)) | Some(Value::String(t)) => match t.as_str() {
-            "perspective" => Some(Projection::Perspective),
-            "orthographic" => Some(Projection::Orthographic),
+        Some(value) => match crate::value_into_string(value).as_deref() {
+            Some("perspective") => Some(Projection::Perspective),
+            Some("orthographic") => Some(Projection::Orthographic),
             _ => None,
         },
         _ => None,
     })
 }
 
-fn read_clipping_range(stage: &openusd::Stage, prim: &Path) -> Result<(Option<f32>, Option<f32>)> {
+fn read_clipping_range(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> Result<(Option<f32>, Option<f32>)> {
     Ok(match attr_default(stage, prim, "clippingRange")? {
         Some(Value::Vec2f(v)) => (Some(v[0]), Some(v[1])),
         Some(Value::Vec2d(v)) => (Some(v[0] as f32), Some(v[1] as f32)),

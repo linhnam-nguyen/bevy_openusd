@@ -1,7 +1,7 @@
 //! UsdLux readers.
 //!
 //! Symmetric to the authoring helpers elsewhere in this crate: given a
-//! composed `openusd::Stage` and a prim `Path`, return typed Rust
+//! composed `openusd::usd::Stage` and a prim `Path`, return typed Rust
 //! descriptions of the authored light. No Bevy dependency — the consumer
 //! (`bevy_openusd::light`) handles the Bevy-side mapping.
 //!
@@ -11,6 +11,8 @@
 //! top (`radius`, `width`, `height`, `length`, `angle`, `texture:file`).
 //!
 //! Reference: <https://openusd.org/release/api/usd_lux_page_front.html>.
+
+use crate::StageReadExt;
 
 use anyhow::Result;
 use openusd::sdf::{Path, Value};
@@ -122,9 +124,9 @@ pub enum ReadLight {
     Dome(ReadDomeLight),
 }
 
-pub fn read_light(stage: &openusd::Stage, prim: &Path) -> Result<Option<ReadLight>> {
+pub fn read_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<ReadLight>> {
     let type_name: Option<String> = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?;
     let Some(type_name) = type_name else {
         return Ok(None);
@@ -156,14 +158,14 @@ pub fn is_light_type(type_name: &str) -> bool {
 
 // ── Per-type readers ─────────────────────────────────────────────────────
 
-pub fn read_distant_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadDistantLight> {
+pub fn read_distant_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadDistantLight> {
     Ok(ReadDistantLight {
         common: read_common(stage, prim)?,
         angle_deg: read_f32(stage, prim, "inputs:angle")?,
     })
 }
 
-pub fn read_sphere_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadSphereLight> {
+pub fn read_sphere_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadSphereLight> {
     Ok(ReadSphereLight {
         common: read_common(stage, prim)?,
         radius: read_f32(stage, prim, "inputs:radius")?,
@@ -172,7 +174,7 @@ pub fn read_sphere_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadSphe
     })
 }
 
-pub fn read_rect_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadRectLight> {
+pub fn read_rect_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadRectLight> {
     Ok(ReadRectLight {
         common: read_common(stage, prim)?,
         width: read_f32(stage, prim, "inputs:width")?,
@@ -180,14 +182,14 @@ pub fn read_rect_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadRectLi
     })
 }
 
-pub fn read_disk_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadDiskLight> {
+pub fn read_disk_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadDiskLight> {
     Ok(ReadDiskLight {
         common: read_common(stage, prim)?,
         radius: read_f32(stage, prim, "inputs:radius")?,
     })
 }
 
-pub fn read_cylinder_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadCylinderLight> {
+pub fn read_cylinder_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadCylinderLight> {
     Ok(ReadCylinderLight {
         common: read_common(stage, prim)?,
         length: read_f32(stage, prim, "inputs:length")?,
@@ -195,7 +197,7 @@ pub fn read_cylinder_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadCy
     })
 }
 
-pub fn read_dome_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadDomeLight> {
+pub fn read_dome_light(stage: &openusd::usd::Stage, prim: &Path) -> Result<ReadDomeLight> {
     Ok(ReadDomeLight {
         common: read_common(stage, prim)?,
         texture_file: read_asset_path(stage, prim, "inputs:texture:file")?,
@@ -205,7 +207,7 @@ pub fn read_dome_light(stage: &openusd::Stage, prim: &Path) -> Result<ReadDomeLi
 
 // ── Attribute plumbing ───────────────────────────────────────────────────
 
-fn read_common(stage: &openusd::Stage, prim: &Path) -> Result<LightCommon> {
+fn read_common(stage: &openusd::usd::Stage, prim: &Path) -> Result<LightCommon> {
     Ok(LightCommon {
         intensity: read_f32(stage, prim, "inputs:intensity")?,
         exposure: read_f32(stage, prim, "inputs:exposure")?,
@@ -221,12 +223,16 @@ fn read_common(stage: &openusd::Stage, prim: &Path) -> Result<LightCommon> {
     })
 }
 
-fn read_rel_targets(stage: &openusd::Stage, prim: &Path, rel_name: &str) -> Result<Vec<String>> {
+fn read_rel_targets(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    rel_name: &str,
+) -> Result<Vec<String>> {
     let rel_path = prim
         .append_property(rel_name)
         .map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(rel_path, "targetPaths")
+        .composed_field::<Value>(rel_path, "targetPaths")
         .map_err(anyhow::Error::from)?;
     let paths = match raw {
         Some(Value::PathListOp(op)) => op.flatten(),
@@ -236,14 +242,14 @@ fn read_rel_targets(stage: &openusd::Stage, prim: &Path, rel_name: &str) -> Resu
     Ok(paths.into_iter().map(|p| p.as_str().to_string()).collect())
 }
 
-fn attr_default(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<Value>> {
+fn attr_default(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<Value>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     stage
-        .field::<Value>(attr, "default")
+        .composed_field::<Value>(attr, "default")
         .map_err(anyhow::Error::from)
 }
 
-fn read_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<f32>> {
+fn read_f32(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<f32>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Float(v)) => Some(v),
         Some(Value::Double(v)) => Some(v as f32),
@@ -252,31 +258,35 @@ fn read_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<f3
     })
 }
 
-fn read_bool(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<bool>> {
+fn read_bool(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<bool>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Bool(v)) => Some(v),
         _ => None,
     })
 }
 
-fn read_vec3f(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<[f32; 3]>> {
+fn read_vec3f(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<[f32; 3]>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Vec3f(v)) => Some(v),
+        Some(Value::Vec3f(v)) => Some(v.into()),
         Some(Value::Vec3d(v)) => Some([v[0] as f32, v[1] as f32, v[2] as f32]),
         _ => None,
     })
 }
 
-fn read_token_or_string(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
+fn read_token_or_string(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> Result<Option<String>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_asset_path(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
+fn read_asset_path(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::AssetPath(s)) | Some(Value::String(s)) | Some(Value::Token(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }

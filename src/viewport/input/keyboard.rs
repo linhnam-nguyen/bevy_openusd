@@ -7,9 +7,11 @@ use bevy::prelude::*;
 use bevy_egui::input::egui_wants_any_keyboard_input;
 use bevy_frost::RibbonOpen;
 
-use crate::overlays::DisplayToggles;
-use crate::state::ReloadRequest;
-use crate::ui::{RIB_INFO, RIB_KEYS, RIB_OVERLAYS, RIB_TREE, RIBBON_LEFT, ViewerCommandPalette};
+use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::session::ReloadRequest;
+use crate::viewport::ui_frost::{
+    RIB_INFO, RIB_KEYS, RIB_OVERLAYS, RIB_TREE, RIBBON_LEFT, ViewerCommandPalette,
+};
 
 pub struct ViewerKeyboardPlugin;
 

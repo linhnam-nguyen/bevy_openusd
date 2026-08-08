@@ -12,6 +12,8 @@
 //! wait until openusd's USDA parser can round-trip tuple-valued
 //! timeSamples (same blocker as vec3 xformOp animation).
 
+use crate::StageReadExt;
+
 use openusd::sdf::{Path, Value};
 
 /// A decoded `Skeleton` prim. Joints are authored as tokens naming
@@ -130,9 +132,12 @@ impl ReadSkeleton {
 
 /// Read a `Skeleton` prim. Returns `None` when the prim isn't typed
 /// `Skeleton` or has no joints authored.
-pub fn read_skeleton(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadSkeleton>> {
+pub fn read_skeleton(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<ReadSkeleton>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "Skeleton" {
@@ -154,9 +159,12 @@ pub fn read_skeleton(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Opti
 
 /// Read a `SkelRoot` prim. Returns `None` when the prim isn't typed
 /// `SkelRoot`.
-pub fn read_skel_root(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadSkelRoot>> {
+pub fn read_skel_root(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<ReadSkelRoot>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "SkelRoot" {
@@ -176,7 +184,7 @@ pub fn read_skel_root(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Opt
 /// skinned". When it DOES author indices, weights must also be present
 /// or we return `None` (the binding is malformed).
 pub fn read_skel_binding(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadSkelBinding>> {
     let Some(joint_indices) = read_int_vec(stage, prim, "primvars:skel:jointIndices")? else {
@@ -194,7 +202,7 @@ pub fn read_skel_binding(
             .append_property("primvars:skel:jointIndices")
             .map_err(anyhow::Error::from)?;
         match stage
-            .field::<Value>(attr_path, "elementSize")
+            .composed_field::<Value>(attr_path, "elementSize")
             .map_err(anyhow::Error::from)?
         {
             Some(Value::Int(n)) => n,
@@ -224,11 +232,11 @@ pub fn read_skel_binding(
 /// openusd-rs CAN parse it via the standard time-samples path,
 /// instead of needing the .usda sidecar workaround.
 pub fn read_skel_animation_stage(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<crate::skel_anim_text::ReadSkelAnimText>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "SkelAnimation" {
@@ -256,7 +264,8 @@ pub fn read_skel_animation_stage(
     // translations: float3[] timeSamples — USD Value::Vec3fVec.
     for (t, val) in read_time_samples(stage, prim, "translations")? {
         if let Value::Vec3fVec(v) = val {
-            anim.translations.insert(OrdF64(t), v);
+            anim.translations
+                .insert(OrdF64(t), v.into_iter().map(Into::into).collect());
         } else if let Value::Vec3dVec(v) = val {
             let cast: Vec<[f32; 3]> = v
                 .into_iter()
@@ -268,15 +277,21 @@ pub fn read_skel_animation_stage(
     // rotations: quatf[] / quath[] / quatd[] timeSamples.
     for (t, val) in read_time_samples(stage, prim, "rotations")? {
         let v: Option<Vec<[f32; 4]>> = match val {
-            Value::QuatfVec(v) => Some(v),
+            Value::QuatfVec(v) => Some(v.into_iter().map(Into::into).collect()),
             Value::QuatdVec(v) => Some(
                 v.into_iter()
-                    .map(|q| [q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32])
+                    .map(|q| {
+                        let q: [f64; 4] = q.into();
+                        [q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32]
+                    })
                     .collect(),
             ),
             Value::QuathVec(v) => Some(
                 v.into_iter()
-                    .map(|q| [q[0].to_f32(), q[1].to_f32(), q[2].to_f32(), q[3].to_f32()])
+                    .map(|q| {
+                        let q: [openusd::gf::f16; 4] = q.into();
+                        [q[0].to_f32(), q[1].to_f32(), q[2].to_f32(), q[3].to_f32()]
+                    })
                     .collect(),
             ),
             _ => None,
@@ -288,7 +303,7 @@ pub fn read_skel_animation_stage(
     // scales: float3[] / half3[] timeSamples.
     for (t, val) in read_time_samples(stage, prim, "scales")? {
         let v: Option<Vec<[f32; 3]>> = match val {
-            Value::Vec3fVec(v) => Some(v),
+            Value::Vec3fVec(v) => Some(v.into_iter().map(Into::into).collect()),
             Value::Vec3dVec(v) => Some(
                 v.into_iter()
                     .map(|a| [a[0] as f32, a[1] as f32, a[2] as f32])
@@ -315,13 +330,13 @@ pub fn read_skel_animation_stage(
 }
 
 fn read_time_samples(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Vec<(f64, Value)>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(attr_path, "timeSamples")
+        .composed_field::<Value>(attr_path, "timeSamples")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::TimeSamples(v)) => v,
@@ -332,11 +347,11 @@ fn read_time_samples(
 /// Read a `BlendShape` prim. Returns `None` when the prim isn't
 /// typed `BlendShape` or has no `offsets` authored.
 pub fn read_blend_shape(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadBlendShape>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "BlendShape" {
@@ -357,17 +372,17 @@ pub fn read_blend_shape(
 }
 
 fn read_vec3f_vec(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Vec<[f32; 3]>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(
         match stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         {
-            Some(Value::Vec3fVec(v)) => v,
+            Some(Value::Vec3fVec(v)) => v.into_iter().map(Into::into).collect(),
             Some(Value::Vec3dVec(v)) => v
                 .into_iter()
                 .map(|a| [a[0] as f32, a[1] as f32, a[2] as f32])
@@ -378,7 +393,7 @@ fn read_vec3f_vec(
 }
 
 fn read_rel_targets(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     rel_name: &str,
 ) -> anyhow::Result<Vec<String>> {
@@ -386,7 +401,7 @@ fn read_rel_targets(
         .append_property(rel_name)
         .map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(rel_path, "targetPaths")
+        .composed_field::<Value>(rel_path, "targetPaths")
         .map_err(anyhow::Error::from)?;
     let paths = match raw {
         Some(Value::PathListOp(op)) => op.flatten(),
@@ -398,28 +413,32 @@ fn read_rel_targets(
 
 // ── attribute helpers ────────────────────────────────────────────────
 
-fn read_token_vec(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Vec<String>> {
+fn read_token_vec(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Vec<String>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(
         match stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         {
-            Some(Value::TokenVec(v)) | Some(Value::StringVec(v)) => v,
+            Some(value) => crate::value_into_string_vec(value).unwrap_or_default(),
             _ => Vec::new(),
         },
     )
 }
 
 fn read_int_vec(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<i32>>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(
         match stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         {
             Some(Value::IntVec(v)) => Some(v),
@@ -429,14 +448,14 @@ fn read_int_vec(
 }
 
 fn read_float_vec(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<f32>>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(
         match stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         {
             Some(Value::FloatVec(v)) => Some(v),
@@ -447,7 +466,7 @@ fn read_float_vec(
 }
 
 fn read_rel_first_target(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     rel_name: &str,
 ) -> anyhow::Result<Option<String>> {
@@ -455,7 +474,7 @@ fn read_rel_first_target(
         .append_property(rel_name)
         .map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(rel_path, "targetPaths")
+        .composed_field::<Value>(rel_path, "targetPaths")
         .map_err(anyhow::Error::from)?;
     let paths = match raw {
         Some(Value::PathListOp(op)) => op.flatten(),
@@ -466,14 +485,14 @@ fn read_rel_first_target(
 }
 
 fn read_mat4f_vec(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Vec<[f32; 16]>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(
         match stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         {
             Some(Value::Matrix4dVec(v)) => v

@@ -7,6 +7,24 @@ members = [
 ]
 exclude = ["xtra"]
 
+[workspace.dependencies]
+# Keep every USD layer on one exact upstream revision. Updating this single
+# entry updates usd_schema, usd_rapier, and usd_bevy together.
+openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa" }
+usd_schema = { path = "crates/usd_schema" }
+usd_rapier = { path = "crates/usd_rapier" }
+usd_bevy = { path = "crates/usd_bevy" }
+
+bevy = { version = "0.19", default-features = false }
+rapier3d-f64 = "0.34"
+glam = "0.32"
+anyhow = "1"
+thiserror = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+zip = { version = "8.6", default-features = false }
+image = { version = "0.25", default-features = false }
+
 [package]
 name = "usdview"
 version = "0.0.1"
@@ -24,16 +42,16 @@ path = "src/main.rs"
 # The Bevy USD plugin: asset loader, scene projection, marker
 # components, Rapier physics adapter. Single dep brings in everything
 # needed to load a USD into a Bevy app.
-usd_bevy = { path = "crates/usd_bevy" }
+usd_bevy = { workspace = true }
 # Pure-Rust USD readers/writers — the viewer reads camera projection
 # and anim track data directly off the loaded `Stage` without going
 # through Bevy components.
-usd_schema = { path = "crates/usd_schema" }
+usd_schema = { workspace = true }
 # Direct Rapier dep for the viewer's static-ground collider authoring;
 # `usd_bevy::physics::PhysicsWorld` exposes the Rapier sets we mutate.
-rapier3d-f64 = "0.32"
+rapier3d-f64 = { workspace = true }
 
-bevy = { version = "0.18", default-features = false, features = [
+bevy = { workspace = true, features = [
     "std",
     "async_executor",
     "multi_threaded",
@@ -71,22 +89,27 @@ bevy = { version = "0.18", default-features = false, features = [
     "reflect_auto_register",
 ] }
 
-anyhow = "1"
+anyhow = { workspace = true }
 # Native file-picker dialog for the "Browse USD…" button.
-rfd = "0.15"
+rfd = "0.17.2"
 # VS-Code-style egui chrome.
-bevy_egui = { version = "0.39", default-features = false, features = [
+bevy_egui = { version = "0.41", default-features = false, features = [
     "default_fonts",
     "render",
 ] }
 # Glass-themed editor UI kit (ribbons, floating panels, widgets, tokens).
-bevy_frost = { git = "https://github.com/bresilla/bevy_frost", branch = "develop", package = "bevy_frost" }
+bevy_frost = { path = "../bevy_frost/crates/bevy_frost" }
 # Reusable 3D-scene gizmos (axis triads + joint primitives).
-bevy_glacial = { git = "https://github.com/bresilla/bevy_glacial", branch = "main" }
+bevy_glacial = { path = "../bevy_glacial" }
 
 # `build.rs` bakes a sample USDZ (USDA + procedural PNG) into
 # `assets/external/` so `cargo run -- usdz_sample.usdz` always has
 # something real to show.
 [build-dependencies]
-zip = { version = "8", default-features = false, features = ["deflate"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
+zip = { workspace = true, features = ["deflate"] }
+image = { workspace = true, features = ["png"] }
+
+[dev-dependencies]
+openusd = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
+image = { workspace = true, features = ["png"] }

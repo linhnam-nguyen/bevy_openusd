@@ -8,6 +8,8 @@
 //! All conversions to SI happen here. The schema reader returns scene
 //! units; the marker components ship metres / kilograms / radians.
 
+use usd_schema::StageReadExt;
+
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
@@ -15,11 +17,11 @@ use bevy::ecs::entity::Entity;
 use bevy::ecs::hierarchy::Children;
 use bevy::ecs::world::World;
 use bevy::math::{Quat, Vec3};
-use openusd::Stage;
 use openusd::sdf::{Path, Value};
+use openusd::usd::Stage;
 
 use crate::markers::*;
-use openusd::physics as ph;
+use usd_schema::physics as ph;
 
 /// Stage-level conversion factors. Read once at the start of
 /// `stage_to_scene` and threaded through every per-prim attachment.
@@ -47,13 +49,13 @@ impl Default for StageMeta {
 /// Collected from the pseudo-root before the main walk.
 pub fn read_stage_meta(stage: &Stage) -> StageMeta {
     let up_axis = stage
-        .field::<String>(Path::abs_root(), "upAxis")
+        .composed_field::<String>(Path::abs_root(), "upAxis")
         .ok()
         .flatten();
     // Match `root_basis_transform`'s default-fallback chain so unit
     // conversion stays consistent with the scene-root scale.
     let authored_mpu = stage
-        .field::<Value>(Path::abs_root(), "metersPerUnit")
+        .composed_field::<Value>(Path::abs_root(), "metersPerUnit")
         .ok()
         .flatten()
         .and_then(|v| match v {
@@ -69,7 +71,7 @@ pub fn read_stage_meta(stage: &Stage) -> StageMeta {
         .or(authored_mpu)
         .unwrap_or(0.01);
     let kilograms_per_unit = stage
-        .field::<Value>(Path::abs_root(), "kilogramsPerUnit")
+        .composed_field::<Value>(Path::abs_root(), "kilogramsPerUnit")
         .ok()
         .flatten()
         .and_then(|v| match v {
@@ -129,14 +131,14 @@ pub fn attach_physics_to_prim(
             .gravity_direction
             .map(|d| meta.basis_rotation * Vec3::from_array(d))
             .unwrap_or(Vec3::NEG_Y);
-        // Per UsdPhysicsScene spec, `physics:gravityMagnitude` is in
-        // scene units / s². But virtually every authored scene writes
-        // `9.81` meaning Earth gravity in m/s² regardless of
-        // `metersPerUnit`. Multiplying by metersPerUnit on a
-        // `metersPerUnit=0.01` scene (Scout V2, Isaac Sim assets)
-        // turns 9.81 into 0.0981 m/s² and the whole sim falls in
-        // slow-motion. Treat the authored value as already in m/s².
-        let mag = scene.gravity_magnitude.unwrap_or(9.81);
+        // `physics:gravityMagnitude` is authored in stage units / s².
+        // Marker components are SI, so convert through metersPerUnit.
+        // The fallback is already expressed in m/s² and therefore must
+        // not be scaled when the attribute is absent.
+        let mag = scene
+            .gravity_magnitude
+            .map(|value| value * meta.meters_per_unit)
+            .unwrap_or(9.81);
         world.entity_mut(entity).insert(UsdPhysicsScene {
             gravity_direction: dir.normalize_or_zero(),
             gravity_magnitude: mag,
@@ -512,7 +514,7 @@ fn collider_shape_from_prim(stage: &Stage, path: &Path, _meta: &StageMeta) -> Us
     // `metersPerUnit=0.01` × scene-root scale `0.01` × shape `0.01`
     // collapsed every collider to millimetre size).
     let type_name = stage
-        .field::<String>(path.clone(), "typeName")
+        .composed_field::<String>(path.clone(), "typeName")
         .ok()
         .flatten()
         .unwrap_or_default();
@@ -575,7 +577,7 @@ fn has_mesh_descendant(stage: &Stage, root: &Path) -> bool {
             continue;
         };
         let type_name = stage
-            .field::<String>(child_path.clone(), "typeName")
+            .composed_field::<String>(child_path.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -601,7 +603,10 @@ fn capsule_axis(stage: &Stage, path: &Path) -> Vec3 {
 
 fn read_attr(stage: &Stage, prim: &Path, name: &str) -> Option<Value> {
     let attr = prim.append_property(name).ok()?;
-    stage.field::<Value>(attr, "default").ok().flatten()
+    stage
+        .composed_field::<Value>(attr, "default")
+        .ok()
+        .flatten()
 }
 
 fn read_bool(stage: &Stage, prim: &Path, name: &str) -> Option<bool> {
@@ -621,7 +626,7 @@ fn read_double(stage: &Stage, prim: &Path, name: &str) -> Option<f64> {
 
 fn read_vec3f(stage: &Stage, prim: &Path, name: &str) -> Option<[f32; 3]> {
     match read_attr(stage, prim, name)? {
-        Value::Vec3f(v) => Some(v),
+        Value::Vec3f(v) => Some([v[0], v[1], v[2]]),
         Value::Vec3d(v) => Some([v[0] as f32, v[1] as f32, v[2] as f32]),
         _ => None,
     }
@@ -629,14 +634,18 @@ fn read_vec3f(stage: &Stage, prim: &Path, name: &str) -> Option<[f32; 3]> {
 
 fn read_token_attr(stage: &Stage, prim: &Path, name: &str) -> Option<String> {
     match read_attr(stage, prim, name)? {
-        Value::Token(s) | Value::String(s) => Some(s),
+        Value::Token(s) => Some(s.to_string()),
+        Value::String(s) => Some(s),
         _ => None,
     }
 }
 
 fn read_rel_first(stage: &Stage, prim: &Path, rel_name: &str) -> Option<String> {
     let rel = prim.append_property(rel_name).ok()?;
-    let raw = stage.field::<Value>(rel, "targetPaths").ok().flatten()?;
+    let raw = stage
+        .composed_field::<Value>(rel, "targetPaths")
+        .ok()
+        .flatten()?;
     let paths = match raw {
         Value::PathListOp(op) => op.flatten(),
         Value::PathVec(v) => v,

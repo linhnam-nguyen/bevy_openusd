@@ -8,8 +8,8 @@ use bevy::asset::{AssetServer, Assets, LoadState};
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{
     UsdAsset, UsdCollider, UsdJointKind, UsdMass, UsdPhysicsJoint, UsdPhysicsScene, UsdPlugin,
     UsdPrimRef, UsdRigidBody,
 };
@@ -21,7 +21,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -52,7 +52,7 @@ fn load_and_spawn(app: &mut App, asset_name: &str) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(&handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     for _ in 0..10 {
         app.update();
     }

@@ -6,6 +6,8 @@
 //! just surfaces them so the viewer can display what was authored and
 //! downstream tools (offline renderers) can pick them up.
 
+use crate::StageReadExt;
+
 use openusd::sdf::{Path, Value};
 
 /// A `UsdRender.RenderSettings` prim.
@@ -53,18 +55,18 @@ pub struct ReadRenderVar {
 }
 
 pub fn read_render_settings(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadRenderSettings>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "RenderSettings" {
         return Ok(None);
     }
     let resolution = read_attr_value(stage, prim, "resolution")?.and_then(|v| match v {
-        Value::Vec2i(a) => Some(a),
+        Value::Vec2i(a) => Some(a.into()),
         _ => None,
     });
     let pixel_aspect_ratio = read_scalar_f32(stage, prim, "pixelAspectRatio")?;
@@ -84,11 +86,11 @@ pub fn read_render_settings(
 }
 
 pub fn read_render_product(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadRenderProduct>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "RenderProduct" {
@@ -108,11 +110,11 @@ pub fn read_render_product(
 }
 
 pub fn read_render_var(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadRenderVar>> {
     let type_name = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .map_err(anyhow::Error::from)?
         .unwrap_or_default();
     if type_name != "RenderVar" {
@@ -132,17 +134,21 @@ pub fn read_render_var(
 // ── helpers ─────────────────────────────────────────────────────────
 
 fn read_attr_value(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Value>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     stage
-        .field::<Value>(attr_path, "default")
+        .composed_field::<Value>(attr_path, "default")
         .map_err(anyhow::Error::from)
 }
 
-fn read_scalar_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<f32>> {
+fn read_scalar_f32(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<f32>> {
     Ok(match read_attr_value(stage, prim, name)? {
         Some(Value::Float(f)) => Some(f),
         Some(Value::Double(d)) => Some(d as f32),
@@ -151,32 +157,40 @@ fn read_scalar_f32(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::R
 }
 
 fn read_scalar_string(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<String>> {
     Ok(match read_attr_value(stage, prim, name)? {
-        Some(Value::String(s)) | Some(Value::Token(s)) | Some(Value::AssetPath(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_token(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<String>> {
+fn read_token(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
     Ok(match read_attr_value(stage, prim, name)? {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_token_vec(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Vec<String>> {
+fn read_token_vec(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Vec<String>> {
     Ok(match read_attr_value(stage, prim, name)? {
-        Some(Value::TokenVec(v)) | Some(Value::StringVec(v)) => v,
+        Some(value) => crate::value_into_string_vec(value).unwrap_or_default(),
         _ => Vec::new(),
     })
 }
 
 fn read_rel_targets(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     rel_name: &str,
 ) -> anyhow::Result<Vec<String>> {
@@ -184,7 +198,7 @@ fn read_rel_targets(
         .append_property(rel_name)
         .map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(rel_path, "targetPaths")
+        .composed_field::<Value>(rel_path, "targetPaths")
         .map_err(anyhow::Error::from)?;
     let paths = match raw {
         Some(Value::PathListOp(op)) => op.flatten(),

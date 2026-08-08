@@ -11,6 +11,8 @@
 //! (orient). The `vec3` path accepts `Value::Vec3f`/`Vec3d`/`Float3` and
 //! returns `[f32; 3]`.
 
+use crate::StageReadExt;
+
 use openusd::sdf::{Path, Value};
 
 /// Sample list as authored: ordered `(timeCode, value)` pairs. Always
@@ -42,16 +44,16 @@ impl InterpMode {
 /// Read the `interpolation` metadata authored on a time-sampled
 /// attribute. Defaults to `Linear` when unauthored.
 pub fn read_interp_mode(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     prop: &str,
 ) -> anyhow::Result<InterpMode> {
     let attr_path = prim.append_property(prop).map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(attr_path, "interpolation")
+        .composed_field::<Value>(attr_path, "interpolation")
         .map_err(anyhow::Error::from)?;
     if let Some(v) = raw {
-        if let Value::Token(s) | Value::String(s) = v
+        if let Some(s) = crate::value_into_string(v)
             && let Some(m) = InterpMode::parse(&s)
         {
             return Ok(m);
@@ -120,11 +122,11 @@ impl AnimatedPrim {
 /// including the authored `interpolation` metadata. Returns `None`
 /// when no op authors timeSamples.
 pub fn read_animated_prim(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<AnimatedPrim>> {
     fn vec3_track(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         prop: &str,
     ) -> anyhow::Result<Option<Vec3Track>> {
@@ -137,7 +139,7 @@ pub fn read_animated_prim(
         }))
     }
     fn scalar_track(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         prop: &str,
     ) -> anyhow::Result<Option<ScalarTrack>> {
@@ -312,13 +314,13 @@ pub fn sample_vec3_concrete(samples: &[(f64, [f32; 3])], t: f64) -> Option<[f32;
 /// attribute doesn't author timeSamples (either because it's a plain
 /// default-only attribute or because it doesn't exist).
 pub fn read_samples(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     prop: &str,
 ) -> anyhow::Result<Option<Samples>> {
     let attr_path = prim.append_property(prop).map_err(anyhow::Error::from)?;
     let raw = stage
-        .field::<Value>(attr_path, "timeSamples")
+        .composed_field::<Value>(attr_path, "timeSamples")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::TimeSamples(v)) => Some(v),
@@ -394,7 +396,7 @@ pub fn sample_double_at(samples: &[(f64, Value)], t: f64) -> Option<f64> {
 
 fn value_to_vec3f(v: &Value) -> Option<[f32; 3]> {
     match v {
-        Value::Vec3f(a) => Some(*a),
+        Value::Vec3f(a) => Some((*a).into()),
         Value::Vec3d(a) => Some([a[0] as f32, a[1] as f32, a[2] as f32]),
         _ => None,
     }
@@ -413,7 +415,7 @@ mod tests {
     use super::*;
 
     fn v3d(x: f64, y: f64, z: f64) -> Value {
-        Value::Vec3d([x, y, z])
+        Value::Vec3d([x, y, z].into())
     }
 
     #[test]

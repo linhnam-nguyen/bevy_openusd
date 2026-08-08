@@ -15,7 +15,7 @@
 //! per-host map (entity ↔ handle) externally.
 
 use anyhow::Result;
-use glam::{DQuat, DVec3};
+use rapier3d_f64::glamx::{DQuat, DVec3};
 use rapier3d_f64::prelude::*;
 
 /// Authored rigid-body opinion ready for Rapier insertion. A subset

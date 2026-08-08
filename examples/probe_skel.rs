@@ -4,16 +4,17 @@
 
 use bevy::math::Mat4;
 use openusd::sdf::Path;
+use usd_schema::StageReadExt;
 
 fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "assets/skel_human.usda".to_string());
-    let stage = openusd::Stage::open(&path).unwrap();
+    let stage = openusd::usd::Stage::open(&path).unwrap();
 
-    fn walk(stage: &openusd::Stage, prim: &Path) {
+    fn walk(stage: &openusd::usd::Stage, prim: &Path) {
         let tn: String = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -153,13 +154,13 @@ fn main() {
     let mut count_skinned = 0;
     let mut count_with_subsets = 0;
     fn walk_skin(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         count_skinned: &mut usize,
         count_with_subsets: &mut usize,
     ) {
         let tn: String = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -232,11 +233,11 @@ fn main() {
             // The Skeleton scan above already printed joints; re-walk to get rest.
             let mut skel_hips_rest = None;
             fn find_skel(
-                stage: &openusd::Stage,
+                stage: &openusd::usd::Stage,
                 p: &openusd::sdf::Path,
             ) -> Option<usd_schema::skel::ReadSkeleton> {
                 let tn = stage
-                    .field::<String>(p.clone(), "typeName")
+                    .composed_field::<String>(p.clone(), "typeName")
                     .ok()
                     .flatten()
                     .unwrap_or_default();
@@ -400,7 +401,7 @@ fn main() {
     loop {
         let attr = cur.append_property("primvars:skel:jointIndices").unwrap();
         let v = stage
-            .field::<openusd::sdf::Value>(attr, "default")
+            .composed_field::<openusd::sdf::Value>(attr, "default")
             .ok()
             .flatten();
         let count = match v {
@@ -409,7 +410,7 @@ fn main() {
         };
         let attr2 = cur.append_property("xformOp:transform").unwrap();
         let xf = stage
-            .field::<openusd::sdf::Value>(attr2, "default")
+            .composed_field::<openusd::sdf::Value>(attr2, "default")
             .ok()
             .flatten();
         println!(
@@ -433,17 +434,17 @@ fn main() {
     loop {
         let order_attr = cur.append_property("xformOpOrder").unwrap();
         let order = stage
-            .field::<openusd::sdf::Value>(order_attr, "default")
+            .composed_field::<openusd::sdf::Value>(order_attr, "default")
             .ok()
             .flatten();
         let scale_attr = cur.append_property("xformOp:scale").unwrap();
         let scale = stage
-            .field::<openusd::sdf::Value>(scale_attr, "default")
+            .composed_field::<openusd::sdf::Value>(scale_attr, "default")
             .ok()
             .flatten();
         let xform_attr = cur.append_property("xformOp:transform").unwrap();
         let xform = stage
-            .field::<openusd::sdf::Value>(xform_attr, "default")
+            .composed_field::<openusd::sdf::Value>(xform_attr, "default")
             .ok()
             .flatten();
         println!(
@@ -475,11 +476,11 @@ fn main() {
     println!();
     println!("== bound joint world bind translations ==");
     fn find_first_skel(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         p: &openusd::sdf::Path,
     ) -> Option<usd_schema::skel::ReadSkeleton> {
         let tn = stage
-            .field::<String>(p.clone(), "typeName")
+            .composed_field::<String>(p.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -550,7 +551,7 @@ fn main() {
     let mut bs_max_offsets = 0usize;
     let mut printed_examples = 0;
     fn probe_bs(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         bs_meshes: &mut usize,
         bs_total: &mut usize,
@@ -561,7 +562,7 @@ fn main() {
         printed_examples: &mut usize,
     ) {
         let tn = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -674,12 +675,12 @@ fn main() {
     println!();
     println!("== full skinned-mesh census ==");
     fn census(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         out: &mut Vec<(Path, Option<usd_schema::skel::ReadSkelBinding>, usize)>,
     ) {
         let tn = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -759,9 +760,10 @@ fn main() {
     let mut cur = Path::new("/Skel/Geometry/HumanFemale/Geom/Body/Body_sbdv").unwrap();
     loop {
         let attr = cur.append_property("skel:joints").unwrap();
-        let v = stage.field::<V>(attr, "default").ok().flatten();
+        let v = stage.composed_field::<V>(attr, "default").ok().flatten();
         let count = match v {
-            Some(V::TokenVec(ref t)) | Some(V::StringVec(ref t)) => Some(t.len()),
+            Some(V::TokenVec(ref t)) => Some(t.len()),
+            Some(V::StringVec(ref t)) => Some(t.len()),
             _ => None,
         };
         println!("  {} → skel:joints {:?}", cur.as_str(), count);
@@ -781,7 +783,10 @@ fn main() {
         let attr = prim
             .append_property("primvars:skel:geomBindTransform")
             .unwrap();
-        let v = stage.field::<Value>(attr, "default").ok().flatten();
+        let v = stage
+            .composed_field::<Value>(attr, "default")
+            .ok()
+            .flatten();
         println!(
             "  {mp} → primvars:skel:geomBindTransform = {:?}",
             v.is_some()
@@ -789,10 +794,10 @@ fn main() {
         if let Some(val) = v {
             match val {
                 Value::Matrix4d(m) => {
-                    println!("    Matrix4d row0: {:?}", &m[0..4]);
-                    println!("    Matrix4d row1: {:?}", &m[4..8]);
-                    println!("    Matrix4d row2: {:?}", &m[8..12]);
-                    println!("    Matrix4d row3: {:?}", &m[12..16]);
+                    println!("    Matrix4d row0: {:?}", &m.0[0..4]);
+                    println!("    Matrix4d row1: {:?}", &m.0[4..8]);
+                    println!("    Matrix4d row2: {:?}", &m.0[8..12]);
+                    println!("    Matrix4d row3: {:?}", &m.0[12..16]);
                 }
                 other => println!("    other variant: {other:?}"),
             }

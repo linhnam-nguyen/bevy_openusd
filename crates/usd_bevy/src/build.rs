@@ -1,6 +1,6 @@
 //! Stage → Scene projection.
 //!
-//! Walks a composed [`openusd::Stage`] depth-first and builds a Bevy
+//! Walks a composed [`openusd::usd::Stage`] depth-first and builds a Bevy
 //! [`Scene`] — one entity per `SpecType::Prim`, linked via `ChildOf`. Geom
 //! prims (`Mesh` / `Cube` / `Sphere` / `Cylinder` / `Capsule`) get a
 //! `Mesh3d` + `MeshMaterial3d` with a default flat-gray `StandardMaterial`.
@@ -13,21 +13,25 @@
 //! `metersPerUnit ≠ 1.0`, the scene root carries a single `Transform` that
 //! baselines Bevy's Y-up / metre conventions.
 
+use usd_schema::StageReadExt;
+
 use std::collections::HashMap;
 
 use bevy::asset::LoadContext;
+use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
-use bevy::ecs::hierarchy::ChildOf;
+use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::ecs::name::Name;
+use bevy::ecs::template::{FnTemplate, SceneEntityReference, TemplateContext};
 use bevy::ecs::world::World;
 use bevy::math::{Quat, Vec3};
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::Visibility;
-use bevy::scene::Scene;
+use bevy::scene::{ResolveContext, ResolveSceneError, ResolvedScene, Scene};
 use bevy::transform::components::Transform;
-use openusd::Stage;
-use openusd::sdf::{Path, SpecType};
+use openusd::sdf::Path;
+use openusd::usd::Stage;
 use usd_schema::geom as ugeom;
 use usd_schema::xform as uxf;
 
@@ -76,7 +80,7 @@ pub struct InstanceStats {
     pub prototype_reuses: usize,
 }
 
-pub fn stage_to_scene(
+pub(crate) fn stage_to_scene(
     stage: &Stage,
     lc: &mut LoadContext<'_>,
     embedded: &HashMap<String, Vec<u8>>,
@@ -87,7 +91,7 @@ pub fn stage_to_scene(
     curve_ring_segments: u32,
     point_scale: f32,
     skel_animations: &HashMap<String, usd_schema::skel_anim_text::ReadSkelAnimText>,
-) -> (Scene, LightTally, InstanceStats) {
+) -> (ProjectedScene, LightTally, InstanceStats) {
     let mut world = World::new();
     let mut ctx = BuildCtx::new(
         lc,
@@ -105,6 +109,7 @@ pub fn stage_to_scene(
     let root_transform = root_basis_transform(stage);
     let root_name = stage
         .default_prim()
+        .map(|name| name.to_string())
         .unwrap_or_else(|| "UsdRoot".to_string());
 
     let scene_root = world
@@ -123,7 +128,7 @@ pub fn stage_to_scene(
     // loses ~17 ghost subtrees at origin this way.
     let mut roots_to_walk: Vec<Path> = if let Some(default) = stage.default_prim() {
         match Path::abs_root().append_path(default.as_str()) {
-            Ok(p) if matches!(stage.spec_type(p.clone()), Ok(Some(SpecType::Prim))) => vec![p],
+            Ok(p) if stage.prim_exists(p.clone()).unwrap_or(false) => vec![p],
             _ => stage
                 .root_prims()
                 .unwrap_or_default()
@@ -195,7 +200,328 @@ pub fn stage_to_scene(
             ctx.blendshape_attached,
         );
     }
-    (Scene::new(world), tally, instance_stats)
+    (
+        ProjectedScene::from_world(&world, scene_root),
+        tally,
+        instance_stats,
+    )
+}
+
+/// A Bevy 0.19 scene assembled from the projection world's component data.
+///
+/// Bevy 0.19 replaced the old world-backed `Scene` asset with composable
+/// scene templates. The USD importer still benefits from a temporary `World`
+/// while resolving physics and skeleton entity references, so this snapshots
+/// that world into a template tree after all projection post-passes finish.
+pub(crate) struct ProjectedScene {
+    root: ProjectedNode,
+}
+
+impl ProjectedScene {
+    fn from_world(world: &World, root: Entity) -> Self {
+        let references: std::sync::Arc<HashMap<Entity, SceneEntityReference>> = std::sync::Arc::new(
+            world
+                .iter_entities()
+                .enumerate()
+                .map(|(index, entity)| {
+                    (
+                        entity.id(),
+                        SceneEntityReference::new(("usd_bevy::ProjectedScene", 0, 0), index, 0),
+                    )
+                })
+                .collect(),
+        );
+        Self {
+            root: ProjectedNode::from_world(world, root, references),
+        }
+    }
+}
+
+impl Scene for ProjectedScene {
+    fn resolve(
+        self,
+        context: &mut ResolveContext,
+        scene: &mut ResolvedScene,
+    ) -> std::result::Result<(), ResolveSceneError> {
+        self.root.resolve(context, scene);
+        Ok(())
+    }
+}
+
+struct ProjectedNode {
+    reference: SceneEntityReference,
+    references: std::sync::Arc<HashMap<Entity, SceneEntityReference>>,
+    name: Option<Name>,
+    transform: Option<Transform>,
+    visibility: Option<Visibility>,
+    prim_ref: Option<UsdPrimRef>,
+    joint: Option<UsdJoint>,
+    blend_shape_binding: Option<UsdBlendShapeBinding>,
+    skel_anim_driver: Option<UsdSkelAnimDriver>,
+    skel_root: Option<UsdSkelRoot>,
+    local_extent: Option<UsdLocalExtent>,
+    kind: Option<UsdKind>,
+    display_name: Option<UsdDisplayName>,
+    purpose: Option<UsdPurpose>,
+    spatial_audio: Option<UsdSpatialAudio>,
+    procedural: Option<UsdProcedural>,
+    mesh: Option<Mesh3d>,
+    material: Option<MeshMaterial3d<StandardMaterial>>,
+    directional_light: Option<bevy::light::DirectionalLight>,
+    point_light: Option<bevy::light::PointLight>,
+    spot_light: Option<bevy::light::SpotLight>,
+    skinned_mesh: Option<bevy::mesh::skinning::SkinnedMesh>,
+    morph_weights: Option<bevy::mesh::morph::MeshMorphWeights>,
+    physics_scene: Option<crate::markers::UsdPhysicsScene>,
+    rigid_body: Option<crate::markers::UsdRigidBody>,
+    mass: Option<crate::markers::UsdMass>,
+    collider: Option<crate::markers::UsdCollider>,
+    physics_material: Option<crate::markers::UsdPhysicsMaterial>,
+    articulation_root: Option<crate::markers::UsdArticulationRoot>,
+    physics_joint: Option<crate::markers::UsdPhysicsJoint>,
+    collision_group: Option<crate::markers::UsdCollisionGroup>,
+    collision_filter: Option<crate::markers::UsdCollisionFilter>,
+    children: Vec<ProjectedNode>,
+}
+
+impl ProjectedNode {
+    fn from_world(
+        world: &World,
+        entity: Entity,
+        references: std::sync::Arc<HashMap<Entity, SceneEntityReference>>,
+    ) -> Self {
+        macro_rules! component {
+            ($ty:ty) => {
+                world.get::<$ty>(entity).cloned()
+            };
+        }
+        let children = world
+            .get::<Children>(entity)
+            .map(|children| {
+                children
+                    .iter()
+                    .map(|child| Self::from_world(world, *child, references.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            reference: references[&entity],
+            references,
+            name: component!(Name),
+            transform: component!(Transform),
+            visibility: component!(Visibility),
+            prim_ref: component!(UsdPrimRef),
+            joint: component!(UsdJoint),
+            blend_shape_binding: component!(UsdBlendShapeBinding),
+            skel_anim_driver: component!(UsdSkelAnimDriver),
+            skel_root: component!(UsdSkelRoot),
+            local_extent: component!(UsdLocalExtent),
+            kind: component!(UsdKind),
+            display_name: component!(UsdDisplayName),
+            purpose: component!(UsdPurpose),
+            spatial_audio: component!(UsdSpatialAudio),
+            procedural: component!(UsdProcedural),
+            mesh: component!(Mesh3d),
+            material: component!(MeshMaterial3d<StandardMaterial>),
+            directional_light: component!(bevy::light::DirectionalLight),
+            point_light: component!(bevy::light::PointLight),
+            spot_light: component!(bevy::light::SpotLight),
+            skinned_mesh: component!(bevy::mesh::skinning::SkinnedMesh),
+            morph_weights: component!(bevy::mesh::morph::MeshMorphWeights),
+            physics_scene: component!(crate::markers::UsdPhysicsScene),
+            rigid_body: component!(crate::markers::UsdRigidBody),
+            mass: component!(crate::markers::UsdMass),
+            collider: component!(crate::markers::UsdCollider),
+            physics_material: component!(crate::markers::UsdPhysicsMaterial),
+            articulation_root: component!(crate::markers::UsdArticulationRoot),
+            physics_joint: component!(crate::markers::UsdPhysicsJoint),
+            collision_group: component!(crate::markers::UsdCollisionGroup),
+            collision_filter: component!(crate::markers::UsdCollisionFilter),
+            children,
+        }
+    }
+
+    fn resolve(self, context: &mut ResolveContext, scene: &mut ResolvedScene) {
+        scene.entity_references.push(self.reference);
+        push_component(scene, self.name);
+        push_component(scene, self.transform);
+        push_component(scene, self.visibility);
+        push_component(scene, self.prim_ref);
+        push_component(scene, self.joint);
+        push_component(scene, self.blend_shape_binding);
+        push_component(scene, self.skel_root);
+        push_component(scene, self.local_extent);
+        push_component(scene, self.kind);
+        push_component(scene, self.display_name);
+        push_component(scene, self.purpose);
+        push_component(scene, self.spatial_audio);
+        push_component(scene, self.procedural);
+        push_component(scene, self.mesh);
+        push_component(scene, self.material);
+        push_component(scene, self.directional_light);
+        push_component(scene, self.point_light);
+        push_component(scene, self.spot_light);
+        push_component(scene, self.physics_scene);
+        push_component(scene, self.rigid_body);
+        push_component(scene, self.mass);
+        push_component(scene, self.physics_material);
+
+        let references = self.references;
+        if let Some(skinned_mesh) = self.skinned_mesh {
+            let inverse_bindposes = skinned_mesh.inverse_bindposes;
+            let joints = entity_references(&references, skinned_mesh.joints);
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                Ok(bevy::mesh::skinning::SkinnedMesh {
+                    inverse_bindposes: inverse_bindposes.clone(),
+                    joints: resolve_entities(context, &joints),
+                })
+            }));
+        }
+        if let Some(weights) = self.morph_weights {
+            match weights {
+                bevy::mesh::morph::MeshMorphWeights::Value { weights } => {
+                    push_component(
+                        scene,
+                        Some(bevy::mesh::morph::MeshMorphWeights::Value { weights }),
+                    );
+                }
+                bevy::mesh::morph::MeshMorphWeights::Reference(entity) => {
+                    let reference = references.get(&entity).copied();
+                    scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                        Ok(bevy::mesh::morph::MeshMorphWeights::Reference(
+                            reference.map_or(entity, |reference| context.get_entity(reference)),
+                        ))
+                    }));
+                }
+            }
+        }
+        if let Some(driver) = self.skel_anim_driver {
+            let skeleton_refs =
+                optional_entity_references(&references, driver.skeleton_joint_entities.clone());
+            let joint_refs = optional_entity_references(&references, driver.joint_entities.clone());
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                let mut driver = driver.clone();
+                driver.skeleton_joint_entities = resolve_optional_entities(context, &skeleton_refs);
+                driver.joint_entities = resolve_optional_entities(context, &joint_refs);
+                Ok(driver)
+            }));
+        }
+        if let Some(collider) = self.collider {
+            let material_ref = collider
+                .physics_material
+                .and_then(|entity| references.get(&entity).copied());
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                let mut collider = collider.clone();
+                collider.physics_material =
+                    material_ref.map(|reference| context.get_entity(reference));
+                Ok(collider)
+            }));
+        }
+        if let Some(root) = self.articulation_root {
+            let joints = entity_references(&references, root.joints);
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                Ok(crate::markers::UsdArticulationRoot {
+                    joints: resolve_entities(context, &joints),
+                })
+            }));
+        }
+        if let Some(joint) = self.physics_joint {
+            let body0 = joint
+                .body0
+                .and_then(|entity| references.get(&entity).copied());
+            let body1 = joint
+                .body1
+                .and_then(|entity| references.get(&entity).copied());
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                let mut joint = joint.clone();
+                joint.body0 = body0.map(|reference| context.get_entity(reference));
+                joint.body1 = body1.map(|reference| context.get_entity(reference));
+                Ok(joint)
+            }));
+        }
+        if let Some(group) = self.collision_group {
+            let members = entity_references(&references, group.members.clone());
+            let filtered = entity_references(&references, group.filtered.clone());
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                let mut group = group.clone();
+                group.members = resolve_entities(context, &members);
+                group.filtered = resolve_entities(context, &filtered);
+                Ok(group)
+            }));
+        }
+        if let Some(filter) = self.collision_filter {
+            let filtered = entity_references(&references, filter.filtered.clone());
+            scene.push_template(FnTemplate(move |context: &mut TemplateContext| {
+                let mut filter = filter.clone();
+                filter.filtered = resolve_entities(context, &filtered);
+                Ok(filter)
+            }));
+        }
+
+        let related = scene.get_or_insert_related_resolved_scenes::<ChildOf>();
+        for child in self.children {
+            let mut child_scene = ResolvedScene::default();
+            child.resolve(context, &mut child_scene);
+            related.scenes.push(child_scene);
+        }
+    }
+}
+
+fn push_component<T>(scene: &mut ResolvedScene, component: Option<T>)
+where
+    T: Component + Clone + Send + Sync + 'static,
+{
+    if let Some(component) = component {
+        scene.push_template(FnTemplate(move |_context: &mut TemplateContext| {
+            Ok(component.clone())
+        }));
+    }
+}
+
+fn entity_references(
+    references: &HashMap<Entity, SceneEntityReference>,
+    entities: Vec<Entity>,
+) -> Vec<(Entity, Option<SceneEntityReference>)> {
+    entities
+        .into_iter()
+        .map(|entity| (entity, references.get(&entity).copied()))
+        .collect()
+}
+
+fn optional_entity_references(
+    references: &HashMap<Entity, SceneEntityReference>,
+    entities: Vec<Option<Entity>>,
+) -> Vec<Option<(Entity, Option<SceneEntityReference>)>> {
+    entities
+        .into_iter()
+        .map(|entity| entity.map(|entity| (entity, references.get(&entity).copied())))
+        .collect()
+}
+
+fn resolve_entities(
+    context: &mut TemplateContext,
+    entities: &[(Entity, Option<SceneEntityReference>)],
+) -> Vec<Entity> {
+    entities
+        .iter()
+        .map(|(entity, reference)| {
+            reference.map_or(*entity, |reference| context.get_entity(reference))
+        })
+        .collect()
+}
+
+fn resolve_optional_entities(
+    context: &mut TemplateContext,
+    entities: &[Option<(Entity, Option<SceneEntityReference>)>],
+) -> Vec<Option<Entity>> {
+    entities
+        .iter()
+        .map(|entity| {
+            entity.map(|(entity, reference)| {
+                reference.map_or(entity, |reference| context.get_entity(reference))
+            })
+        })
+        .collect()
 }
 
 /// Mutable-state bag threaded through the walker. Owns the `LoadContext` so
@@ -413,7 +739,7 @@ impl<'lc, 'a> BuildCtx<'lc, 'a> {
         }
         let h = self
             .lc
-            .add_labeled_asset("Material:Default".into(), default_material());
+            .add_labeled_asset("Material:Default", default_material());
         self.default_material = Some(h.clone());
         h
     }
@@ -433,7 +759,7 @@ impl<'lc, 'a> BuildCtx<'lc, 'a> {
         let mut mat = default_material();
         mat.double_sided = true;
         mat.cull_mode = None;
-        let h = self.lc.add_labeled_asset(LABEL.into(), mat);
+        let h = self.lc.add_labeled_asset(LABEL, mat);
         self.material_cache.insert(LABEL.to_string(), h.clone());
         h
     }
@@ -506,7 +832,7 @@ impl<'lc, 'a> BuildCtx<'lc, 'a> {
             },
             ..Default::default()
         };
-        let h = self.lc.add_labeled_asset(label.into(), mat);
+        let h = self.lc.add_labeled_asset(label, mat);
         self.material_cache.insert(label.to_string(), h.clone());
         h
     }
@@ -531,7 +857,7 @@ impl<'lc, 'a> BuildCtx<'lc, 'a> {
             double_sided: true,
             ..Default::default()
         };
-        let h = self.lc.add_labeled_asset(LABEL.into(), mat);
+        let h = self.lc.add_labeled_asset(LABEL, mat);
         self.material_cache.insert(LABEL.to_string(), h.clone());
         h
     }
@@ -592,7 +918,7 @@ impl<'lc, 'a> BuildCtx<'lc, 'a> {
                     || lower.contains("acrylic")
                     || lower.contains("transparent");
                 if looks_like_glass {
-                    use bevy::render::alpha::AlphaMode;
+                    use bevy::prelude::AlphaMode;
                     mat.base_color = bevy::color::Color::srgba(0.85, 0.92, 0.95, 0.18);
                     mat.alpha_mode = AlphaMode::Blend;
                     mat.metallic = 0.0;
@@ -640,7 +966,7 @@ fn mdl_emission_explicitly_disabled(stage: &Stage, material_prim: &Path) -> bool
             continue;
         };
         let is_shader = stage
-            .field::<String>(shader.clone(), "typeName")
+            .composed_field::<String>(shader.clone(), "typeName")
             .ok()
             .flatten()
             .as_deref()
@@ -659,7 +985,11 @@ fn read_bool_input(stage: &Stage, prim: &Path, attr_name: &str) -> Option<bool> 
     use openusd::sdf::Value;
 
     let attr = prim.append_property(attr_name).ok()?;
-    match stage.field::<Value>(attr, "default").ok().flatten()? {
+    match stage
+        .composed_field::<Value>(attr, "default")
+        .ok()
+        .flatten()?
+    {
         Value::Bool(v) => Some(v),
         _ => None,
     }
@@ -743,7 +1073,7 @@ fn spawn_prim_subtree(
     world: &mut World,
     ctx: &mut BuildCtx<'_, '_>,
 ) {
-    if !matches!(stage.spec_type(path.clone()), Ok(Some(SpecType::Prim))) {
+    if !stage.prim_exists(path.clone()).unwrap_or(false) {
         return;
     }
     // Read purpose up front; we no longer SKIP proxy/guide prims (the
@@ -779,7 +1109,7 @@ fn spawn_prim_subtree(
     let mut replay_ctx: Option<ReplayCtx> = None;
     let is_instanceable = matches!(
         stage
-            .field::<bool>(path.clone(), "instanceable")
+            .composed_field::<bool>(path.clone(), "instanceable")
             .ok()
             .flatten(),
         Some(true)
@@ -1026,7 +1356,7 @@ fn spawn_prim_subtree(
 /// boundaries typically land.
 fn kind_is_collapsible(stage: &Stage, path: &Path) -> bool {
     stage
-        .field::<String>(path.clone(), "kind")
+        .composed_field::<String>(path.clone(), "kind")
         .ok()
         .flatten()
         .map(|k| matches!(k.as_str(), "component" | "subcomponent"))
@@ -1044,7 +1374,7 @@ fn collect_geoms_for_collapse(
     depth: u32,
     out: &mut Vec<(Path, Transform)>,
 ) {
-    if !matches!(stage.spec_type(path.clone()), Ok(Some(SpecType::Prim))) {
+    if !stage.prim_exists(path.clone()).unwrap_or(false) {
         return;
     }
     if !passes_purpose_filter(stage, path) {
@@ -1076,7 +1406,7 @@ fn collect_geoms_for_collapse(
 fn prim_has_geometry(stage: &Stage, path: &Path) -> bool {
     matches!(
         stage
-            .field::<String>(path.clone(), "typeName")
+            .composed_field::<String>(path.clone(), "typeName")
             .ok()
             .flatten()
             .as_deref(),
@@ -1566,7 +1896,7 @@ fn blend_shapes_from_ghost_twin(
                 Err(_) => continue,
             };
             // Only proceed if this prim actually exists.
-            if !matches!(stage.spec_type(candidate.clone()), Ok(Some(SpecType::Prim))) {
+            if !stage.prim_exists(candidate.clone()).unwrap_or(false) {
                 continue;
             }
             if let Ok(Some(b)) = uskel::read_skel_binding(stage, &candidate) {
@@ -1600,7 +1930,7 @@ fn bake_blend_shapes_into_mesh(
     binding: &uskel::ReadSkelBinding,
     read: &ugeom::ReadMesh,
     mesh: &mut Mesh,
-    ctx: &mut BuildCtx<'_, '_>,
+    _ctx: &mut BuildCtx<'_, '_>,
 ) -> Option<usize> {
     let max_targets = bevy::mesh::morph::MAX_MORPH_WEIGHTS;
     let take = binding.blend_shape_targets.len().min(max_targets);
@@ -1672,11 +2002,12 @@ fn bake_blend_shapes_into_mesh(
         let attrs: Vec<bevy::mesh::morph::MorphAttributes> = (0..bevy_vert_count)
             .map(|bi| {
                 let pi = bevy_to_usd_point[bi];
-                bevy::mesh::morph::MorphAttributes {
-                    position: bevy::math::Vec3::from(per_point_pos[pi]),
-                    normal: bevy::math::Vec3::from(per_point_nrm[pi]),
-                    tangent: bevy::math::Vec3::ZERO,
-                }
+                [
+                    bevy::math::Vec3::from(per_point_pos[pi]),
+                    bevy::math::Vec3::from(per_point_nrm[pi]),
+                    bevy::math::Vec3::ZERO,
+                ]
+                .into()
             })
             .collect();
         targets.push(attrs);
@@ -1686,34 +2017,14 @@ fn bake_blend_shapes_into_mesh(
         return None;
     }
     let target_count = targets.len();
-    // Build morph image. Falls back gracefully on Bevy's per-target
-    // and per-vertex-component limits.
-    let image_result = bevy::mesh::morph::MorphTargetImage::new(
-        targets.into_iter().map(|t| t.into_iter()),
-        vertex_count,
-        bevy::asset::RenderAssetUsages::default(),
-    );
-    let image = match image_result {
-        Ok(i) => i,
-        Err(e) => {
-            bevy::log::warn!(
-                "blendshape: failed to build morph image for {} ({e:?})",
-                binding.prim_path
-            );
-            return None;
-        }
-    };
-    let label = format!(
-        "Morph:{}:{}targets",
-        binding.prim_path.replace('/', "_"),
-        target_count
-    );
+    // Bevy 0.19 stores morph attributes directly on the mesh rather than
+    // packing them into a separate image asset.
+    let morph_targets = targets.into_iter().flatten().collect();
     bevy::log::info!(
-        "blendshape: built morph image for {} → {target_count} targets, {vertex_count} verts",
+        "blendshape: built morph targets for {} → {target_count} targets, {vertex_count} verts",
         binding.prim_path
     );
-    let image_handle = ctx.lc.add_labeled_asset(label, image.0);
-    mesh.set_morph_targets(image_handle);
+    mesh.set_morph_targets(morph_targets);
     // Also stash the target names so morph debug tools can find them.
     let names: Vec<String> = binding
         .blend_shapes
@@ -1782,7 +2093,10 @@ fn read_geom_bind_transform(stage: &Stage, prim: &Path) -> Option<bevy::math::Ma
     let attr = prim
         .append_property("primvars:skel:geomBindTransform")
         .ok()?;
-    let v = stage.field::<Value>(attr, "default").ok().flatten()?;
+    let v = stage
+        .composed_field::<Value>(attr, "default")
+        .ok()
+        .flatten()?;
     match v {
         Value::Matrix4d(m) => {
             let arr: [f32; 16] = std::array::from_fn(|i| m[i] as f32);
@@ -1895,7 +2209,10 @@ fn direct_skel_rel(stage: &Stage, prim: &Path) -> Option<String> {
 fn direct_rel_first_target(stage: &Stage, prim: &Path, rel_name: &str) -> Option<String> {
     use openusd::sdf::Value;
     let rel = prim.append_property(rel_name).ok()?;
-    let raw = stage.field::<Value>(rel, "targetPaths").ok().flatten()?;
+    let raw = stage
+        .composed_field::<Value>(rel, "targetPaths")
+        .ok()
+        .flatten()?;
     let paths = match raw {
         Value::PathListOp(op) => op.flatten(),
         Value::PathVec(v) => v,
@@ -2113,7 +2430,7 @@ fn find_first_typed_descendant(stage: &Stage, root: &Path, target_type: &str) ->
 /// fall through and aren't double-walked.
 fn is_root_physics_prim(stage: &Stage, prim: &Path) -> bool {
     let type_name: String = stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .ok()
         .flatten()
         .unwrap_or_default();
@@ -2147,7 +2464,7 @@ fn attach_geometry(
     ctx: &mut BuildCtx<'_, '_>,
 ) {
     let type_name: Option<String> = stage
-        .field::<String>(path.clone(), "typeName")
+        .composed_field::<String>(path.clone(), "typeName")
         .ok()
         .flatten();
     let Some(type_name) = type_name else {
@@ -2343,13 +2660,14 @@ fn attach_geometry(
                     while names.len() < take {
                         names.push(String::new());
                     }
-                    if let Ok(mw) = bevy::mesh::morph::MeshMorphWeights::new(vec![0.0_f32; take]) {
-                        world
-                            .entity_mut(entity)
-                            .insert(mw)
-                            .insert(UsdBlendShapeBinding { names });
-                        ctx.blendshape_attached += 1;
-                    }
+                    let mw = bevy::mesh::morph::MeshMorphWeights::Value {
+                        weights: vec![0.0_f32; take],
+                    };
+                    world
+                        .entity_mut(entity)
+                        .insert(mw)
+                        .insert(UsdBlendShapeBinding { names });
+                    ctx.blendshape_attached += 1;
                 }
             }
             mesh_handle
@@ -2775,7 +3093,7 @@ fn prototype_fingerprint(stage: &Stage, path: &Path) -> String {
     let mut h = DefaultHasher::new();
     // Root's typeName only (skip leaf name — that's site-specific).
     let root_type = stage
-        .field::<String>(path.clone(), "typeName")
+        .composed_field::<String>(path.clone(), "typeName")
         .ok()
         .flatten()
         .unwrap_or_default();
@@ -2795,7 +3113,7 @@ fn prototype_fingerprint(stage: &Stage, path: &Path) -> String {
             };
             name.hash(h);
             let type_name = stage
-                .field::<String>(child.clone(), "typeName")
+                .composed_field::<String>(child.clone(), "typeName")
                 .ok()
                 .flatten()
                 .unwrap_or_default();
@@ -2902,7 +3220,7 @@ fn is_replayable_type(type_name: Option<&str>) -> bool {
 
 fn type_name_of(stage: &Stage, prim: &Path) -> Option<String> {
     stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .ok()
         .flatten()
 }
@@ -3049,7 +3367,7 @@ fn resolve_mesh_and_material(
     bevy::asset::Handle<StandardMaterial>,
 )> {
     let type_name: String = stage
-        .field::<String>(proto_path.clone(), "typeName")
+        .composed_field::<String>(proto_path.clone(), "typeName")
         .ok()
         .flatten()
         .unwrap_or_default();
@@ -3164,7 +3482,7 @@ fn resolve_mesh_and_material(
 fn stage_is_z_up(stage: &Stage) -> bool {
     matches!(
         stage
-            .field::<String>(Path::abs_root(), "upAxis")
+            .composed_field::<String>(Path::abs_root(), "upAxis")
             .ok()
             .flatten()
             .as_deref(),
@@ -3211,7 +3529,7 @@ fn first_renderable_descendant(stage: &Stage, root: &Path) -> Option<Path> {
             continue;
         };
         let tn: String = stage
-            .field::<String>(child_path.clone(), "typeName")
+            .composed_field::<String>(child_path.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -3313,7 +3631,7 @@ fn resolve_material_prim(stage: &Stage, bound_prim: &Path, material_prim: &Path)
     };
     let mut found: Option<Path> = None;
     let mut ambiguous = false;
-    let _ = stage.traverse(|path: &Path| {
+    let _ = stage.traverse(openusd::usd::PrimPredicate::DEFAULT, |path: &Path| {
         if !ambiguous && path.as_str().ends_with(&tail) && prim_type_is(stage, path, "Material") {
             if found.is_some() {
                 ambiguous = true;
@@ -3331,7 +3649,7 @@ fn resolve_material_prim(stage: &Stage, bound_prim: &Path, material_prim: &Path)
 
 fn prim_type_is(stage: &Stage, prim: &Path, expected: &str) -> bool {
     stage
-        .field::<String>(prim.clone(), "typeName")
+        .composed_field::<String>(prim.clone(), "typeName")
         .ok()
         .flatten()
         .as_deref()
@@ -3427,7 +3745,7 @@ fn read_prim_transform(stage: &Stage, path: &Path) -> Transform {
 /// transform that takes USD-native coordinates into Bevy (Y-up, metres).
 fn root_basis_transform(stage: &Stage) -> Transform {
     let up_axis = stage
-        .field::<String>(Path::abs_root(), "upAxis")
+        .composed_field::<String>(Path::abs_root(), "upAxis")
         .ok()
         .flatten();
 
@@ -3441,7 +3759,7 @@ fn root_basis_transform(stage: &Stage) -> Transform {
     // reading it as 1.0 makes a 5 m kitchen render as 500 m and the
     // camera frames a "scattered" wasteland of distant props.
     let authored_mpu = stage
-        .field::<openusd::sdf::Value>(Path::abs_root(), "metersPerUnit")
+        .composed_field::<openusd::sdf::Value>(Path::abs_root(), "metersPerUnit")
         .ok()
         .flatten()
         .and_then(|v| match v {

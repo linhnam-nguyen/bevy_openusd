@@ -7,18 +7,17 @@ description = "Bevy plugin: USD asset loader, scene projection, and Rapier physi
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
-openusd = { git = "https://github.com/mxpv/openusd", rev = "fe92b73224c611831be244afac9cf7654b5ef51e", features = ["physics"] }
-usd_schema = { path = "../usd_schema" }
-usd_rapier = { path = "../usd_rapier" }
-rapier3d-f64 = "0.32"
-glam = "0.30"
-anyhow = "1"
-thiserror = "2"
-log = "0.4"
-serde = { version = "1", features = ["derive"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-bevy = { version = "0.18", default-features = false, features = [
+openusd = { workspace = true, features = ["physics"] }
+usd_schema = { workspace = true }
+usd_rapier = { workspace = true }
+rapier3d-f64 = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
+image = { workspace = true, features = ["png", "jpeg"] }
+bevy = { workspace = true, features = [
     "std",
     "async_executor",
     "multi_threaded",
@@ -50,4 +49,4 @@ bevy = { version = "0.18", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { workspace = true, features = ["png"] }

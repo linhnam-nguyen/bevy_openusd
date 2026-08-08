@@ -1,32 +1,36 @@
 //! One-shot diagnostic: open a Pixar Kitchen_set binary geom file
-//! directly via `openusd::Stage` and dump every prim's authored
+//! directly via `openusd::usd::Stage` and dump every prim's authored
 //! `xformOpOrder` + the raw value of each op. Helps determine
 //! whether composition issues are due to mixed-op orderings or
 //! `xformOp:transform` matrices that decompose surprisingly.
 
 use openusd::sdf::{Path, Value};
+use usd_schema::StageReadExt;
 
 fn main() {
     let path = std::env::args().nth(1).unwrap_or_else(|| {
         "assets/Kitchen_set/assets/FramePicture/FramePicture.geom.usd".to_string()
     });
-    let stage = openusd::Stage::open(&path).unwrap();
+    let stage = openusd::usd::Stage::open(&path).unwrap();
 
-    fn walk(stage: &openusd::Stage, prim: &Path, depth: usize) {
+    fn walk(stage: &openusd::usd::Stage, prim: &Path, depth: usize) {
         let indent = "  ".repeat(depth);
         let type_name: Option<String> = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten();
         // xformOpOrder
         let order_attr = prim.append_property("xformOpOrder").ok();
         let order: Option<Vec<String>> = order_attr.and_then(|a| {
             stage
-                .field::<Value>(a, "default")
+                .composed_field::<Value>(a, "default")
                 .ok()
                 .flatten()
                 .and_then(|v| match v {
-                    Value::TokenVec(t) | Value::StringVec(t) => Some(t),
+                    Value::TokenVec(t) => {
+                        Some(t.into_iter().map(|token| token.to_string()).collect())
+                    }
+                    Value::StringVec(t) => Some(t),
                     _ => None,
                 })
         });
@@ -51,13 +55,13 @@ fn main() {
             "material:binding",
         ] {
             if let Ok(ap) = prim.append_property(probe) {
-                if let Ok(Some(v)) = stage.field::<Value>(ap.clone(), "default") {
+                if let Ok(Some(v)) = stage.composed_field::<Value>(ap.clone(), "default") {
                     println!("{}    PROBE .{}: {:?}", indent, probe, v);
                 }
-                if let Ok(Some(v)) = stage.field::<Value>(ap.clone(), "connectionPaths") {
+                if let Ok(Some(v)) = stage.composed_field::<Value>(ap.clone(), "connectionPaths") {
                     println!("{}    PROBE .{}.conn: {:?}", indent, probe, v);
                 }
-                if let Ok(Some(v)) = stage.field::<Value>(ap, "targetPaths") {
+                if let Ok(Some(v)) = stage.composed_field::<Value>(ap, "targetPaths") {
                     println!("{}    PROBE .{}.targets: {:?}", indent, probe, v);
                 }
             }
@@ -72,17 +76,18 @@ fn main() {
                     let Ok(attr) = prim.append_property(prop_str) else {
                         continue;
                     };
-                    if let Ok(Some(v)) = stage.field::<Value>(attr, "default") {
+                    if let Ok(Some(v)) = stage.composed_field::<Value>(attr, "default") {
                         let sig = match v {
                             Value::Vec3f(_) | Value::Vec3d(_) => "vec3".to_string(),
                             Value::Float(x) => format!("f={x}"),
                             Value::Double(x) => format!("d={x}"),
-                            Value::String(s) | Value::Token(s) | Value::AssetPath(s) => {
-                                format!("str/asset=\"{s}\"")
-                            }
+                            Value::String(s) => format!("str=\"{s}\""),
+                            Value::Token(s) => format!("token=\"{s}\""),
+                            Value::AssetPath(s) => format!("asset=\"{s}\""),
                             Value::Vec3fVec(v) => format!("Vec3f[{}]", v.len()),
                             Value::Vec3dVec(v) => format!("Vec3d[{}]", v.len()),
-                            Value::TokenVec(v) | Value::StringVec(v) => format!("strs={:?}", v),
+                            Value::TokenVec(v) => format!("tokens={v:?}"),
+                            Value::StringVec(v) => format!("strings={v:?}"),
                             Value::IntVec(v) => format!("int[{}]", v.len()),
                             Value::FloatVec(v) => format!("f[{}]", v.len()),
                             other => format!("{other:?}"),
@@ -107,9 +112,9 @@ fn main() {
     walk(&stage, &Path::abs_root(), 0);
 
     // Try `read_preview_material` on every Material we find.
-    fn walk_mats(stage: &openusd::Stage, prim: &Path) {
+    fn walk_mats(stage: &openusd::usd::Stage, prim: &Path) {
         if stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .as_deref()

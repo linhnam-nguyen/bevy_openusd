@@ -3,10 +3,14 @@
 //!
 //! - Scroll            → zoom (logarithmic, smoothed, close-inspection friendly)
 //! - Middle/Shift drag → pan (screen-space, not ground-plane locked)
-//! - Left + Right drag → orbit (yaw + elevation, clamped 5°–89°)
+//! - Left + Right drag → orbit (yaw + elevation, clamped -89°–89°)
 //!
 //! Run conditions yield to egui when a panel wants the pointer, so orbiting
 //! doesn't fight with panel scroll / sliders.
+
+mod glacial;
+mod navigation;
+mod state;
 
 use bevy::camera::Projection;
 use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
@@ -14,7 +18,9 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::egui_wants_any_pointer_input;
 
-use crate::state::CameraMount;
+pub(crate) use glacial::sync_chase_camera;
+pub(crate) use navigation::{apply_fly_to, fit_camera_once, follow_mounted_camera};
+pub(crate) use state::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
 
 pub struct ArcballCameraPlugin;
 
@@ -43,6 +49,7 @@ pub struct ArcballCamera {
     pub yaw: f32,
     pub elevation: f32,
     pub distance: f32,
+    pub zoom_target: f64,
     pub min_distance: f32,
     pub max_distance: f32,
     pub pan_sensitivity: f32,
@@ -58,6 +65,7 @@ impl Default for ArcballCamera {
             yaw: 0.0,
             elevation: 25f32.to_radians(),
             distance: 4.0,
+            zoom_target: 4.0,
             min_distance: 0.001,
             max_distance: 60.0,
             pan_sensitivity: 1.15,
@@ -132,7 +140,9 @@ fn drive_arcball(
         if orbit_delta != Vec2::ZERO {
             cam.yaw -= orbit_delta.x * cam.orbit_speed;
             cam.elevation += orbit_delta.y * cam.orbit_speed;
-            cam.elevation = cam.elevation.clamp(5f32.to_radians(), 89f32.to_radians());
+            cam.elevation = cam
+                .elevation
+                .clamp((-89f32).to_radians(), 89f32.to_radians());
         }
         apply_rig(&cam, &mut tr);
     }
@@ -161,7 +171,6 @@ fn screen_space_pan_delta(
 fn drive_arcball_zoom(
     time: Res<Time>,
     scroll: Res<AccumulatedMouseScroll>,
-    mut zoom_target: Local<Option<f64>>,
     mut cameras: Query<(&mut Transform, &mut ArcballCamera)>,
 ) {
     let scroll_delta: f64 = match scroll.unit {
@@ -170,17 +179,19 @@ fn drive_arcball_zoom(
     };
 
     for (mut tr, mut cam) in cameras.iter_mut() {
-        let target = zoom_target.get_or_insert(cam.distance as f64);
         let min = cam.min_distance as f64;
         let max = cam.max_distance as f64;
+        let mut target = cam.zoom_target;
 
         if scroll_delta != 0.0 {
             let log_target = target.max(0.01).log10();
             let new_log = log_target - scroll_delta * cam.zoom_step;
-            *target = 10f64.powf(new_log).clamp(min, max);
-        } else if *target < min || *target > max {
-            *target = target.clamp(min, max);
+            target = 10f64.powf(new_log).clamp(min, max);
+        } else if target < min || target > max {
+            target = target.clamp(min, max);
         }
+
+        cam.zoom_target = target;
 
         let dt = time.delta_secs_f64();
         let log_current = (cam.distance as f64).max(0.01).ln();
@@ -191,14 +202,14 @@ fn drive_arcball_zoom(
             cam.distance = new_log.exp() as f32;
             apply_rig(&cam, &mut tr);
         } else if log_diff.abs() > 1e-5 {
-            cam.distance = *target as f32;
+            cam.distance = target as f32;
             apply_rig(&cam, &mut tr);
         }
     }
 }
 
 /// Rebuilds the camera transform from its focus, yaw, elevation, and distance.
-fn apply_rig(cam: &ArcballCamera, tr: &mut Transform) {
+pub(crate) fn apply_rig(cam: &ArcballCamera, tr: &mut Transform) {
     let horizontal = cam.distance * cam.elevation.cos();
     let vertical = cam.distance * cam.elevation.sin();
     let offset = Vec3::new(

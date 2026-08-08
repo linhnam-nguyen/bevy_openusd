@@ -5,13 +5,13 @@ use crate::markers::{
     UsdArticulationRoot, UsdCollider, UsdColliderShape, UsdCollisionApprox, UsdPhysicsMaterial,
     UsdRigidBody,
 };
-use bevy::math::DVec3;
 use bevy::mesh::Mesh3d;
 use bevy::prelude::*;
-use openusd::physics::CollisionApprox;
 use rapier3d_f64::geometry::{Group, InteractionGroups, InteractionTestMode};
+use rapier3d_f64::glamx::{DQuat, DVec3};
 use rapier3d_f64::math::Pose;
 use usd_rapier::colliders::{ColliderOpinion, ShapeInput, build_collider};
+use usd_schema::physics::CollisionApprox;
 
 use super::bodies::BodyAttached;
 use super::convert::{quat_to_d, vec3_to_d};
@@ -209,13 +209,13 @@ fn compute_local_pose(
     let (Some(parent_e), Some(mesh_gt)) = (parent_entity, gt) else {
         return Pose {
             translation: DVec3::ZERO,
-            rotation: glam::DQuat::IDENTITY,
+            rotation: DQuat::IDENTITY,
         };
     };
     let Ok(body_gt) = body_globals.get(parent_e) else {
         return Pose {
             translation: DVec3::ZERO,
-            rotation: glam::DQuat::IDENTITY,
+            rotation: DQuat::IDENTITY,
         };
     };
     let body_t = body_gt.compute_transform();

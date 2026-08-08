@@ -25,12 +25,13 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use usd_bevy::{UsdAsset, UsdDisplayName, UsdKind, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
 
-use crate::camera::ArcballCamera;
-use crate::overlays::DisplayToggles;
-use crate::state::{
-    CameraBookmark, CameraBookmarks, CameraMount, FlyTo, LoadRequest, LoaderTuning,
-    PendingAnimationClip, ReloadRequest, SelectedPrim, StageInfo, UsdStageTime,
-};
+use crate::viewport::animation::{PendingAnimationClip, UsdStageTime};
+use crate::viewport::camera::ArcballCamera;
+use crate::viewport::camera::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
+use crate::viewport::diagnostics::log_capture::{LoaderLog, LogLine};
+use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::session::{LoadRequest, LoaderTuning, ReloadRequest, StageInfo};
 
 // ─── Ribbon declaration ─────────────────────────────────────────────
 
@@ -66,7 +67,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("F"),
         tooltip: "File / selection",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_TREE,
@@ -76,7 +76,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("T"),
         tooltip: "Prim tree (T)",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_INFO,
@@ -86,7 +85,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("i"),
         tooltip: "Stage info (I)",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_VARIANTS,
@@ -96,7 +94,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("V"),
         tooltip: "Variants",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_CAMERAS,
@@ -106,7 +103,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("C"),
         tooltip: "Cameras",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_MATERIALS,
@@ -116,7 +112,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("M"),
         tooltip: "Materials",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_PLAY,
@@ -126,7 +121,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("▶"),
         tooltip: "Play / pause physics",
         child_ribbon: None,
-        role: Some(bevy_frost::RibbonRole::Icon),
     },
     RibbonItem {
         id: RIB_OVERLAYS,
@@ -136,7 +130,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("O"),
         tooltip: "Overlays (O)",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_TIMELINE,
@@ -146,7 +139,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("⏱"),
         tooltip: "Timeline",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_KEYS,
@@ -156,7 +148,6 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("?"),
         tooltip: "Controls (?)",
         child_ribbon: None,
-        role: None,
     },
     RibbonItem {
         id: RIB_LOG,
@@ -166,14 +157,20 @@ const RIBBON_ITEMS: &[RibbonItem] = &[
         glyph: bevy_frost::RibbonGlyph::Text("📜"),
         tooltip: "Log",
         child_ribbon: None,
-        role: None,
     },
 ];
 
-/// Prim-tree expansion state, keyed by `UsdPrimRef.path`. Entries
-/// default to expanded the first time a row is rendered.
+/// Prim-tree expansion state, keyed by `UsdPrimRef.path`.
+/// New entries use `TREE_DEFAULT_OPEN_DEPTH`; explicit user choices
+/// remain stored for the rest of the session.
 #[derive(Resource, Default)]
 pub struct TreeExpanded(pub HashMap<String, bool>);
+
+/// Branches above this depth start expanded.
+///
+/// With roots at depth 0, a value of 2 displays roots, their direct
+/// children, and second-level descendants without opening level 2.
+const TREE_DEFAULT_OPEN_DEPTH: u32 = 2;
 
 /// Free-text filter for the prim-tree panel. When non-empty, the
 /// panel switches to a flat-list mode showing every prim whose path
@@ -349,7 +346,7 @@ fn draw_selection_panel(
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
     info: Res<StageInfo>,
-    requested: Res<crate::RequestedAsset>,
+    requested: Res<crate::viewport::session::RequestedAsset>,
     mut load_req: ResMut<LoadRequest>,
     mut selected: ResMut<SelectedPrim>,
     prims: Query<(Entity, &Name, &UsdPrimRef)>,
@@ -488,7 +485,28 @@ fn draw_tree_panel(
             pane.section("tree_hierarchy", "Hierarchy", true, |ui| {
                 sub_caption(ui, &format!("{} prims", prims.iter().count()));
                 ui.add_space(style::space::TIGHT);
-                search_field(ui, &mut filter.0, "Search prims…", accent_col);
+                let (_, restore_selected_row) =
+                    search_field_with_clear(ui, &mut filter.0, "Search prims…", accent_col);
+                if restore_selected_row {
+                    if let Some(selected_entity) = selected.0 {
+                        if let Ok((_, _, selected_ref, _)) = prims.get(selected_entity) {
+                            let segments: Vec<&str> = selected_ref
+                                .path
+                                .split('/')
+                                .filter(|segment| !segment.is_empty())
+                                .collect();
+
+                            let mut ancestor_path = String::new();
+
+                            for segment in segments.iter().take(segments.len().saturating_sub(1)) {
+                                ancestor_path.push('/');
+                                ancestor_path.push_str(segment);
+                                expanded.0.insert(ancestor_path.clone(), true);
+                            }
+                        }
+                    }
+                }
+
                 ui.add_space(style::space::BLOCK);
 
                 // Snapshot the current Visibility state so the tree
@@ -527,8 +545,12 @@ fn draw_tree_panel(
                                 Option<&UsdDisplayName>,
                             )> = prims
                                 .iter()
-                                .filter(|(_, _, pref, _)| {
-                                    pref.path.to_lowercase().contains(&filter_lc)
+                                .filter(|(_, name, _, display_name)| {
+                                    let label = display_name
+                                        .map(|display_name| display_name.0.as_str())
+                                        .unwrap_or_else(|| name.as_str());
+
+                                    label.to_lowercase().contains(&filter_lc)
                                 })
                                 .collect();
                             matches.sort_by(|a, b| a.2.path.cmp(&b.2.path));
@@ -552,6 +574,7 @@ fn draw_tree_panel(
                                     accent_col,
                                     0,
                                     true,
+                                    false,
                                 );
                                 outcome.merge(sub);
                             }
@@ -590,6 +613,7 @@ fn draw_tree_panel(
                                         accent_col,
                                         0,
                                         false,
+                                        restore_selected_row,
                                     );
                                     outcome.merge(sub);
                                 }
@@ -602,7 +626,7 @@ fn draw_tree_panel(
                     if vis_before.get(entity) != Some(visible) {
                         if let Ok((_, mut v)) = visibility_q.get_mut(*entity) {
                             *v = if *visible {
-                                Visibility::Inherited
+                                Visibility::Visible
                             } else {
                                 Visibility::Hidden
                             };
@@ -623,6 +647,10 @@ fn draw_tree_panel(
                                 fly.start_distance = cam.distance;
                                 fly.target_focus = target;
                                 fly.target_distance = target_dist;
+                                fly.start_yaw = None;
+                                fly.target_yaw = None;
+                                fly.start_elevation = None;
+                                fly.target_elevation = None;
                                 fly.duration = 0.4;
                                 fly.remaining = 0.4;
                             }
@@ -638,6 +666,10 @@ fn draw_tree_panel(
                                     cam.distance,
                                 );
                                 fly.start_focus = cam.focus;
+                                fly.start_yaw = None;
+                                fly.target_yaw = None;
+                                fly.start_elevation = None;
+                                fly.target_elevation = None;
                                 fly.start_distance = cam.distance;
                                 fly.target_focus = target;
                                 fly.target_distance = target_dist;
@@ -668,18 +700,31 @@ fn draw_tree_panel(
                         fly.start_distance = cam.distance;
                         fly.target_focus = target;
                         fly.target_distance = target_dist;
+                        fly.start_yaw = None;
+                        fly.target_yaw = None;
+                        fly.start_elevation = None;
+                        fly.target_elevation = None;
                         fly.duration = 0.4;
                         fly.remaining = 0.4;
                     }
                 } else if let Some(entity) = outcome.clicked {
                     selected.0 = Some(entity);
-                    if let (Ok(target_gt), Ok(cam)) = (gt_query.get(entity), cameras.single()) {
-                        let target = target_gt.translation();
-                        let target_dist = (cam.distance * 0.25).clamp(0.2, 40.0);
+                    if let Ok(cam) = cameras.single() {
+                        let (target, target_dist) = fit_params_for_entity(
+                            entity,
+                            &gt_query,
+                            &extent_q,
+                            &children,
+                            cam.distance,
+                        );
                         fly.start_focus = cam.focus;
                         fly.start_distance = cam.distance;
                         fly.target_focus = target;
                         fly.target_distance = target_dist;
+                        fly.start_yaw = None;
+                        fly.target_yaw = None;
+                        fly.start_elevation = None;
+                        fly.target_elevation = None;
                         fly.duration = 0.4;
                         fly.remaining = 0.4;
                     }
@@ -742,6 +787,26 @@ fn set_subtree_expanded(
     }
 }
 
+/// Sets the cached visibility state for `root` and all its descendants.
+fn set_subtree_visible(
+    root: Entity,
+    children: &Query<&Children>,
+    vis_cache: &mut HashMap<Entity, bool>,
+    visible: bool,
+) {
+    let mut stack = vec![root];
+
+    while let Some(entity) = stack.pop() {
+        vis_cache.insert(entity, visible);
+
+        if let Ok(entity_children) = children.get(entity) {
+            for child in entity_children.iter() {
+                stack.push(child);
+            }
+        }
+    }
+}
+
 /// Lookup the first-bound material's `base_color` for `entity` (or
 /// one of its direct mesh-carrying children) and convert linear sRGB
 /// into an egui colour suitable for a tree-row swatch.
@@ -790,6 +855,7 @@ fn draw_tree_row(
     // Force a leaf-style row (no chevron, no descendants). Used by
     // the flat filter mode where we render ancestorless hits.
     leaf_override: bool,
+    scroll_selected_to_top: bool,
 ) -> RowOutcome {
     let child_ids: Vec<Entity> = children
         .get(entity)
@@ -800,7 +866,8 @@ fn draw_tree_row(
         .filter_map(|c| prims.get(*c).ok())
         .collect();
     prim_children.sort_by(|a, b| a.2.path.cmp(&b.2.path));
-    let has_children = !leaf_override && !prim_children.is_empty();
+    let has_prim_children = !prim_children.is_empty();
+    let has_children = !leaf_override && has_prim_children;
 
     let is_selected = selected.0 == Some(entity);
     let path_key = prim_ref.path.clone();
@@ -816,6 +883,7 @@ fn draw_tree_row(
 
     // Eye + swatch slots.
     let mut visible_flag = *vis_cache.get(&entity).unwrap_or(&true);
+    let visible_before = visible_flag;
     let swatch = swatch_color_for(entity, mat_q, children, materials);
     let mut color_sentinel = false;
 
@@ -840,7 +908,10 @@ fn draw_tree_row(
         }
 
         if has_children {
-            let is_open = *expanded.0.entry(path_key.clone()).or_insert(true);
+            let is_open = *expanded
+                .0
+                .entry(path_key.clone())
+                .or_insert(depth < TREE_DEFAULT_OPEN_DEPTH);
             let mut open_ref = is_open;
             let r = tree_row(
                 ui,
@@ -874,8 +945,13 @@ fn draw_tree_row(
 
     // Write the eye state back to the cache; the panel commits it
     // to the ECS after all rows have rendered.
+    if scroll_selected_to_top && is_selected {
+        resp.body.scroll_to_me(Some(egui::Align::TOP));
+    }
     vis_cache.insert(entity, visible_flag);
-
+    if has_prim_children && visible_flag != visible_before {
+        set_subtree_visible(entity, children, vis_cache, visible_flag);
+    }
     if resp.body.hovered() {
         resp.body.clone().on_hover_text(&prim_ref.path);
     }
@@ -910,7 +986,10 @@ fn draw_tree_row(
     });
 
     let show_children = if has_children {
-        *expanded.0.get(&path_key).unwrap_or(&true)
+        *expanded
+            .0
+            .get(&path_key)
+            .unwrap_or(&(depth < TREE_DEFAULT_OPEN_DEPTH))
     } else {
         false
     };
@@ -932,6 +1011,7 @@ fn draw_tree_row(
                 accent,
                 depth + 1,
                 false,
+                scroll_selected_to_top,
             );
             outcome.merge(sub);
         }
@@ -1353,7 +1433,7 @@ fn draw_variants_panel(
 /// Renders a scrollable option control while preserving the selected value.
 fn scroll_dropdown_control(
     ui: &mut egui::Ui,
-    id_salt: impl Hash,
+    id_salt: impl Hash + std::fmt::Debug,
     selected: &mut usize,
     options: &[&str],
     _accent: egui::Color32,
@@ -1651,7 +1731,7 @@ fn draw_materials_panel(
                     Box::leak(short.into_boxed_str()),
                     false,
                     |ui| {
-                        let Some(mat) = materials.get_mut(*id) else {
+                        let Some(mut mat) = materials.get_mut(*id) else {
                             return;
                         };
                         ui.label(egui::RichText::new(label).small().monospace());
@@ -1951,7 +2031,7 @@ fn draw_log_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    log: Res<crate::log_panel::LoaderLog>,
+    log: Res<LoaderLog>,
 ) {
     if !is_panel_open(&open, RIB_LOG) {
         return;
@@ -1987,7 +2067,7 @@ fn draw_log_panel(
                 egui::ScrollArea::vertical()
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
-                        let snapshot: Vec<crate::log_panel::LogLine> = log
+                        let snapshot: Vec<LogLine> = log
                             .buffer
                             .lock()
                             .map(|b| b.iter().cloned().collect())

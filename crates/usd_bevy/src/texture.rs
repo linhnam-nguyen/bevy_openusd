@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bevy::asset::{Handle, RenderAssetUsages};
-use bevy::image::{Image, ImageLoaderSettings, ImageSampler, ImageType};
+use bevy::image::{Image, ImageSampler, ImageType};
 
 use crate::build::BuildCtx;
 

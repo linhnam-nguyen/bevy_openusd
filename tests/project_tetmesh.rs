@@ -1,6 +1,6 @@
 //! TetMesh integration test: assert that
 //! `usd_schema::geom::read_tetmesh` decodes a fixture, that the
-//! boundary extractor in `bevy_openusd::tetmesh::tetmesh_to_bevy_mesh`
+//! boundary extractor in `usd_bevy::tetmesh::tetmesh_to_bevy_mesh`
 //! produces the right number of triangles for a known topology,
 //! and that the loader spawns a mesh-carrying entity per TetMesh prim.
 
@@ -8,8 +8,8 @@ use bevy::asset::{AssetServer, Assets, LoadState};
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdPlugin, UsdPrimRef};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{UsdAsset, UsdPlugin, UsdPrimRef};
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -18,7 +18,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -53,7 +53,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     for _ in 0..10 {
         app.update();
     }
@@ -71,7 +71,7 @@ fn triangle_count(mesh: &Mesh) -> usize {
 #[test]
 fn boundary_face_count_matches_topology() {
     use usd_schema::geom::read_tetmesh;
-    let stage = openusd::Stage::open("tests/stages/tetmesh.usda").expect("stage should open");
+    let stage = openusd::usd::Stage::open("tests/stages/tetmesh.usda").expect("stage should open");
 
     // A single tet has exactly 4 boundary faces.
     let single = read_tetmesh(
@@ -80,7 +80,7 @@ fn boundary_face_count_matches_topology() {
     )
     .expect("read ok")
     .expect("single tet should decode");
-    let single_mesh = bevy_openusd::tetmesh::tetmesh_to_bevy_mesh(&single);
+    let single_mesh = usd_bevy::tetmesh::tetmesh_to_bevy_mesh(&single);
     println!(
         "\n---- TetMesh Single ----\n  points={} tets={} boundary tris={}",
         single.points.len(),
@@ -97,7 +97,7 @@ fn boundary_face_count_matches_topology() {
     )
     .expect("read ok")
     .expect("octa should decode");
-    let octa_mesh = bevy_openusd::tetmesh::tetmesh_to_bevy_mesh(&octa);
+    let octa_mesh = usd_bevy::tetmesh::tetmesh_to_bevy_mesh(&octa);
     println!(
         "---- TetMesh Octa ----\n  points={} tets={} boundary tris={}",
         octa.points.len(),

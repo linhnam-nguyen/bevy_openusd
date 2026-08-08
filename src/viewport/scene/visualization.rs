@@ -21,6 +21,16 @@ use usd_bevy::UsdPrimRef;
 
 pub struct OverlaysPlugin;
 
+/// Keeps Glacial's ground-grid visibility aligned with the viewer toggle.
+pub(crate) fn sync_ground_grid_visibility(
+    toggles: Res<DisplayToggles>,
+    mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
+) {
+    if grid.visible != toggles.show_world_grid {
+        grid.visible = toggles.show_world_grid;
+    }
+}
+
 impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
         // World grid + axis triad + per-prim markers used to live in

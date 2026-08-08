@@ -34,7 +34,7 @@ use usd_bevy::{
     UsdRigidBody,
 };
 
-use crate::overlays::{DisplayToggles, SceneExtent};
+use crate::viewport::scene::visualization::{DisplayToggles, SceneExtent};
 
 // Tighter axis-triad palette for joint frames — cool R/G/B that
 // reads against typical scene colours without dominating.

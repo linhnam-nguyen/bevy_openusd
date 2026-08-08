@@ -3,8 +3,9 @@
 //! authors physics opinions, and any unresolved references that
 //! would cause "scattered" rendering.
 
-use openusd::Stage;
-use openusd::sdf::{Path, SpecType, Value};
+use openusd::sdf::{Path, Value};
+use openusd::usd::Stage;
+use usd_schema::StageReadExt;
 use usd_schema::physics as ph;
 
 fn main() {
@@ -12,25 +13,19 @@ fn main() {
         "/home/bresilla/data/code/other/OUSD/bevy_openusd/assets/external/agilebot/gbt-c5a/gbt-c5a.usd".into()
     });
     println!("# Loading: {path}");
-    let stage = Stage::builder()
-        .on_error(|e| {
-            eprintln!("(soft error) {e}");
-            Ok(())
-        })
-        .open(&path)
-        .expect("open stage");
+    let stage = Stage::builder().open(&path).expect("open stage");
 
     // Stage metadata
     let up_axis = stage
-        .field::<String>(Path::abs_root(), "upAxis")
+        .composed_field::<String>(Path::abs_root(), "upAxis")
         .ok()
         .flatten();
     let mpu = stage
-        .field::<Value>(Path::abs_root(), "metersPerUnit")
+        .composed_field::<Value>(Path::abs_root(), "metersPerUnit")
         .ok()
         .flatten();
     let kpu = stage
-        .field::<Value>(Path::abs_root(), "kilogramsPerUnit")
+        .composed_field::<Value>(Path::abs_root(), "kilogramsPerUnit")
         .ok()
         .flatten();
     let default_prim = stage.default_prim();
@@ -48,24 +43,24 @@ fn main() {
     let mut with_orient = 0usize;
     let mut at_origin = 0usize;
     stage
-        .traverse(|p: &Path| {
-            if matches!(stage.spec_type(p.clone()), Ok(Some(SpecType::Prim))) {
+        .traverse(openusd::usd::PrimPredicate::DEFAULT, |p: &Path| {
+            if stage.prim_exists(p.clone()).unwrap_or(false) {
                 total += 1;
                 let tn: String = stage
-                    .field::<String>(p.clone(), "typeName")
+                    .composed_field::<String>(p.clone(), "typeName")
                     .ok()
                     .flatten()
                     .unwrap_or_else(|| "(no typeName)".into());
                 *by_type.entry(tn.clone()).or_insert(0) += 1;
-                if let Ok(Some(_)) = stage.field::<Value>(p.clone(), "xformOpOrder") {
+                if let Ok(Some(_)) = stage.composed_field::<Value>(p.clone(), "xformOpOrder") {
                     with_xform_ops += 1;
                 }
                 if let Ok(attr_p) = p.append_property("xformOp:translate") {
-                    if let Ok(Some(v)) = stage.field::<Value>(attr_p, "default") {
+                    if let Ok(Some(v)) = stage.composed_field::<Value>(attr_p, "default") {
                         with_translate += 1;
                         let zeroish = match v {
-                            Value::Vec3d(a) => a.iter().all(|x| x.abs() < 1e-9),
-                            Value::Vec3f(a) => a.iter().all(|x| x.abs() < 1e-9),
+                            Value::Vec3d(a) => [a.x, a.y, a.z].into_iter().all(|x| x.abs() < 1e-9),
+                            Value::Vec3f(a) => [a.x, a.y, a.z].into_iter().all(|x| x.abs() < 1e-9),
                             _ => false,
                         };
                         if zeroish {
@@ -74,7 +69,7 @@ fn main() {
                     }
                 }
                 if let Ok(attr_p) = p.append_property("xformOp:orient") {
-                    if let Ok(Some(_)) = stage.field::<Value>(attr_p, "default") {
+                    if let Ok(Some(_)) = stage.composed_field::<Value>(attr_p, "default") {
                         with_orient += 1;
                     }
                 }
@@ -93,8 +88,8 @@ fn main() {
     println!("\n# Mesh prims (path · authored xformOpOrder · authored translate):");
     let mut mesh_paths = Vec::new();
     stage
-        .traverse(|p: &Path| {
-            if let Ok(Some(t)) = stage.field::<String>(p.clone(), "typeName")
+        .traverse(openusd::usd::PrimPredicate::DEFAULT, |p: &Path| {
+            if let Ok(Some(t)) = stage.composed_field::<String>(p.clone(), "typeName")
                 && t == "Mesh"
             {
                 mesh_paths.push(p.as_str().to_string());
@@ -106,11 +101,11 @@ fn main() {
         let order = p
             .append_property("xformOpOrder")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let tr = p
             .append_property("xformOp:translate")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         // Try our actual reader
         let computed = usd_schema::xform::read_transform(&stage, &p).ok().flatten();
         println!(
@@ -140,15 +135,15 @@ fn main() {
         let order = p
             .append_property("xformOpOrder")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let tr = p
             .append_property("xformOp:translate")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let or = p
             .append_property("xformOp:orient")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let computed = usd_schema::xform::read_transform(&stage, &p).ok().flatten();
         println!("  {link}");
         println!("    order={order:?}");
@@ -179,7 +174,7 @@ fn main() {
         let purpose = p
             .append_property("purpose")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         println!("  {path_str:<55} purpose = {purpose:?}");
     }
 
@@ -194,7 +189,7 @@ fn main() {
         let pts = p
             .append_property("points")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let count = match &pts {
             Some(Value::Vec3fVec(v)) => v.len(),
             Some(Value::Vec3dVec(v)) => v.len(),
@@ -216,12 +211,18 @@ fn main() {
         "propertyChildren",
         "apiSchemas",
     ] {
-        let raw = stage.field::<Value>(link1.clone(), field).ok().flatten();
+        let raw = stage
+            .composed_field::<Value>(link1.clone(), field)
+            .ok()
+            .flatten();
         println!("  field {field:<20} = {raw:?}");
     }
     // Also try reading xformOpOrder as a PROPERTY (with its own default value).
     if let Ok(prop) = link1.append_property("xformOpOrder") {
-        let raw = stage.field::<Value>(prop, "default").ok().flatten();
+        let raw = stage
+            .composed_field::<Value>(prop, "default")
+            .ok()
+            .flatten();
         println!("  prop  xformOpOrder.default = {raw:?}");
     }
 

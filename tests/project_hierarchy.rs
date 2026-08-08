@@ -4,9 +4,9 @@
 use bevy::asset::{AssetServer, Assets, LoadState};
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdPlugin, UsdPrimRef};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
 use std::collections::HashMap;
+use usd_bevy::{UsdAsset, UsdPlugin, UsdPrimRef};
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -15,7 +15,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -47,7 +47,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     // Give the scene spawner a few ticks to instantiate entities.
     for _ in 0..10 {
         app.update();

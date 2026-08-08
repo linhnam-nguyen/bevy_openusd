@@ -3,6 +3,7 @@
 
 use openusd::sdf::{Path, Value};
 use std::collections::BTreeMap;
+use usd_schema::StageReadExt;
 
 fn brief(v: &Value) -> String {
     match v {
@@ -10,7 +11,9 @@ fn brief(v: &Value) -> String {
         Value::Vec3d(x) => format!("vec3d = {:?}", x),
         Value::Float(x) => format!("f={x}"),
         Value::Double(x) => format!("d={x}"),
-        Value::String(s) | Value::Token(s) | Value::AssetPath(s) => format!("str=\"{}\"", s),
+        Value::String(s) => format!("str=\"{s}\""),
+        Value::Token(s) => format!("token=\"{s}\""),
+        Value::AssetPath(s) => format!("asset=\"{s}\""),
         Value::Vec3fVec(x) => {
             if x.len() <= 4 {
                 format!("Vec3f[{}] = {:?}", x.len(), x)
@@ -35,7 +38,8 @@ fn brief(v: &Value) -> String {
                 )
             }
         }
-        Value::TokenVec(x) | Value::StringVec(x) => format!("strs={:?}", x),
+        Value::TokenVec(x) => format!("tokens={x:?}"),
+        Value::StringVec(x) => format!("strings={x:?}"),
         Value::IntVec(x) => format!("int[{}]", x.len()),
         Value::FloatVec(x) => format!("f[{}]", x.len()),
         Value::Bool(b) => format!("b={b}"),
@@ -47,10 +51,7 @@ fn main() {
     let path = std::env::args().nth(1).unwrap_or_else(|| {
         "/home/bresilla/data/code/other/isaacsim-greenhouse/blender/Exports/export.usdc".into()
     });
-    let stage = openusd::Stage::builder()
-        .on_error(|_| Ok(()))
-        .open(&path)
-        .unwrap();
+    let stage = openusd::usd::Stage::builder().open(&path).unwrap();
 
     let probes = [
         "points",
@@ -78,7 +79,7 @@ fn main() {
     {
         let root = Path::abs_root();
         for k in ["upAxis", "metersPerUnit", "defaultPrim"] {
-            if let Ok(Some(v)) = stage.field::<Value>(root.clone(), k) {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(root.clone(), k) {
                 println!("  {} = {}", k, brief(&v));
             }
         }
@@ -87,11 +88,14 @@ fn main() {
 
     let mut groups: BTreeMap<String, (usize, [f32; 3], [f32; 3])> = BTreeMap::new();
     fn walk_groups(
-        stage: &openusd::Stage,
+        stage: &openusd::usd::Stage,
         prim: &Path,
         groups: &mut BTreeMap<String, (usize, [f32; 3], [f32; 3])>,
     ) {
-        let type_name: Option<String> = stage.field(prim.clone(), "typeName").ok().flatten();
+        let type_name: Option<String> = stage
+            .composed_field(prim.clone(), "typeName")
+            .ok()
+            .flatten();
         if type_name.as_deref() == Some("Mesh") {
             let name_str = prim.name().unwrap_or("").to_string();
             let prefix: String = name_str
@@ -107,10 +111,11 @@ fn main() {
             let mut mn = [f32::INFINITY; 3];
             let mut mx = [f32::NEG_INFINITY; 3];
             if let Ok(ap) = prim.append_property("extent") {
-                if let Ok(Some(Value::Vec3fVec(ext))) = stage.field::<Value>(ap, "default") {
+                if let Ok(Some(Value::Vec3fVec(ext))) = stage.composed_field::<Value>(ap, "default")
+                {
                     if ext.len() == 2 {
-                        mn = ext[0];
-                        mx = ext[1];
+                        mn = ext[0].into();
+                        mx = ext[1].into();
                     }
                 }
             }
@@ -150,9 +155,12 @@ fn main() {
 
     // Walk the GreenMaterial subtree to see how the green leaves are bound.
     println!("\n== GreenMaterial subtree ==");
-    fn dump_subtree(stage: &openusd::Stage, prim: &Path, depth: usize) {
+    fn dump_subtree(stage: &openusd::usd::Stage, prim: &Path, depth: usize) {
         let indent = "  ".repeat(depth);
-        let type_name: Option<String> = stage.field(prim.clone(), "typeName").ok().flatten();
+        let type_name: Option<String> = stage
+            .composed_field(prim.clone(), "typeName")
+            .ok()
+            .flatten();
         println!(
             "{}{} ({})",
             indent,
@@ -165,11 +173,15 @@ fn main() {
                 let Ok(attr) = prim.append_property(prop_str) else {
                     continue;
                 };
-                if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "default") {
+                if let Ok(Some(v)) = stage.composed_field::<Value>(attr.clone(), "default") {
                     println!("{}  .{}: {}", indent, prop_str, brief(&v));
-                } else if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "connectionPaths") {
+                } else if let Ok(Some(v)) =
+                    stage.composed_field::<Value>(attr.clone(), "connectionPaths")
+                {
                     println!("{}  .{} <- {:?}", indent, prop_str, v);
-                } else if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "targetPaths") {
+                } else if let Ok(Some(v)) =
+                    stage.composed_field::<Value>(attr.clone(), "targetPaths")
+                {
                     println!("{}  .{} -> {:?}", indent, prop_str, v);
                 }
             }
@@ -275,11 +287,11 @@ fn main() {
                 continue;
             };
             let mut shown = false;
-            if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "default") {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(attr.clone(), "default") {
                 println!("  .{}: {}", p, brief(&v));
                 shown = true;
             }
-            if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "connectionPaths") {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(attr.clone(), "connectionPaths") {
                 println!("  .{} <- {:?}", p, v);
                 shown = true;
             }
@@ -290,22 +302,25 @@ fn main() {
     }
 
     println!("\n== Walk /root visibility/purpose ==");
-    fn walk_vis(stage: &openusd::Stage, prim: &Path, depth: usize) {
+    fn walk_vis(stage: &openusd::usd::Stage, prim: &Path, depth: usize) {
         if depth > 2 {
             return;
         }
         let indent = "  ".repeat(depth);
-        let type_name: Option<String> = stage.field(prim.clone(), "typeName").ok().flatten();
+        let type_name: Option<String> = stage
+            .composed_field(prim.clone(), "typeName")
+            .ok()
+            .flatten();
         let vis = prim
             .append_property("visibility")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let pur = prim
             .append_property("purpose")
             .ok()
-            .and_then(|a| stage.field::<Value>(a, "default").ok().flatten());
+            .and_then(|a| stage.composed_field::<Value>(a, "default").ok().flatten());
         let inst = stage
-            .field::<bool>(prim.clone(), "instanceable")
+            .composed_field::<bool>(prim.clone(), "instanceable")
             .ok()
             .flatten();
         if vis.is_some() || pur.is_some() || inst.is_some() {
@@ -338,15 +353,18 @@ fn main() {
     ] {
         println!("=== {} ===", sample);
         let prim = Path::new(sample).unwrap();
-        let type_name: Option<String> = stage.field(prim.clone(), "typeName").ok().flatten();
+        let type_name: Option<String> = stage
+            .composed_field(prim.clone(), "typeName")
+            .ok()
+            .flatten();
         println!("typeName: {:?}", type_name);
         for p in probes {
             let Ok(attr) = prim.append_property(p) else {
                 continue;
             };
-            if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "default") {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(attr.clone(), "default") {
                 println!("  .{}: {}", p, brief(&v));
-            } else if let Ok(Some(v)) = stage.field::<Value>(attr.clone(), "targetPaths") {
+            } else if let Ok(Some(v)) = stage.composed_field::<Value>(attr.clone(), "targetPaths") {
                 println!("  .{} -> {:?}", p, v);
             }
         }

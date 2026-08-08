@@ -1,8 +1,27 @@
-//! Shared viewer state: which panel is open, stage metadata snapshot,
-//! viewer-level UX requests (reload / fly-to / swap-asset).
+//! Session-owned resources for the currently opened USD source.
 
-use bevy::prelude::{Entity, Resource, Vec3};
+use bevy::asset::Handle;
+use bevy::prelude::Resource;
 use std::path::PathBuf;
+use usd_bevy::UsdAsset;
+
+/// Handle of the Bevy asset backing the active USD session.
+#[derive(Resource)]
+pub(crate) struct StageHandle(pub(crate) Handle<UsdAsset>);
+
+/// Whether the current stage asset has been projected into the Bevy world.
+#[derive(Resource, Default)]
+pub(crate) struct Spawned(pub(crate) bool);
+
+/// Local filesystem source requested for the current viewport session.
+///
+/// This remains viewport-local: a future host will resolve a revision or
+/// cache reference into the same source abstraction.
+#[derive(Resource)]
+pub(crate) struct RequestedAsset {
+    pub(crate) name: String,
+    pub(crate) root: PathBuf,
+}
 
 #[derive(Resource, Default, Debug, Clone)]
 pub struct StageInfo {
@@ -55,67 +74,11 @@ pub struct ReloadRequest {
 }
 
 /// Swap the loaded asset at runtime. Set by the Browse-USD file picker.
-/// On the next frame, the viewer despawns current SceneRoots + updates
+/// On the next frame, the viewer despawns current ScenePatchInstances + updates
 /// the RequestedAsset + re-registers the AssetPlugin search roots.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct LoadRequest {
     pub path: Option<PathBuf>,
-}
-
-/// Currently-selected prim (clicked in the Tree panel). The highlight
-/// system reads this; the fly-to system watches for changes.
-#[derive(Resource, Default, Debug, Clone, Copy)]
-pub struct SelectedPrim(pub Option<Entity>);
-
-/// An in-flight camera tween. `remaining` counts down by `delta_time`
-/// every frame until zero, at which point the camera settles at
-/// `target_focus` / `target_distance`. The yaw / elevation pairs are
-/// optional — set them only when restoring a bookmark; tree-click
-/// fly-tos leave them unset so the user's current orbit is preserved.
-#[derive(Resource, Default, Debug, Clone, Copy)]
-pub struct FlyTo {
-    pub target_focus: Vec3,
-    pub target_distance: f32,
-    pub remaining: f32,
-    pub duration: f32,
-    pub start_focus: Vec3,
-    pub start_distance: f32,
-    pub start_yaw: Option<f32>,
-    pub target_yaw: Option<f32>,
-    pub start_elevation: Option<f32>,
-    pub target_elevation: Option<f32>,
-}
-
-/// Saved camera viewpoints — `Cameras` panel wires "Save current view"
-/// + a list of named bookmarks. Session-only for now; persistence is
-/// a future concern.
-#[derive(Resource, Default, Debug, Clone)]
-pub struct CameraBookmarks {
-    pub items: Vec<CameraBookmark>,
-    pub next_seq: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct CameraBookmark {
-    pub name: String,
-    pub focus: Vec3,
-    pub distance: f32,
-    pub yaw: f32,
-    pub elevation: f32,
-}
-
-/// Which camera the viewer is looking through. `Arcball` means our own
-/// free camera drives the view; `Mounted` means we've clamped the
-/// Camera3d to the transform + projection of a USD `Camera` prim.
-#[derive(Resource, Debug, Clone, Default)]
-pub enum CameraMount {
-    #[default]
-    Arcball,
-    Mounted {
-        /// `UsdPrimRef.path` of the authored camera — identifies the
-        /// entity we copy Transform + projection from each frame.
-        prim_path: String,
-    },
 }
 
 /// Live knobs the viewer passes to `UsdLoaderSettings` on every load
@@ -147,15 +110,6 @@ impl LoaderTuning {
     }
 }
 
-/// One-frame request to switch the active `UsdSkelAnimation` clip without
-/// rebuilding the USD stage. The heavy variant reload path is still used for
-/// real geometry/material variants; animation clips only swap data inside the
-/// live `UsdSkelAnimDriver` components.
-#[derive(Resource, Default, Debug, Clone)]
-pub struct PendingAnimationClip {
-    pub name: Option<String>,
-}
-
 /// Curve / point rendering defaults. Not a Resource on its own — lives
 /// inside [`LoaderTuning`]. Split so the rebuild-tuned-meshes system
 /// can diff a lightweight `Copy` key without cloning the variant map.
@@ -173,45 +127,5 @@ impl Default for CurveTuning {
             ring_segments: 6,
             point_scale: 1.0,
         }
-    }
-}
-
-/// Animation playback clock. Ticks up by `delta_time` every frame when
-/// `playing`, wraps back to `start` on reaching `end`. Held values are
-/// in SECONDS; the per-frame evaluator converts to timeCodes using the
-/// stage's authored `timeCodesPerSecond`.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct UsdStageTime {
-    pub seconds: f64,
-    pub playing: bool,
-    pub start_time_code: f64,
-    pub end_time_code: f64,
-    pub time_codes_per_second: f64,
-    /// Latched true on the frame we first sync from `UsdAsset`; avoids
-    /// clobbering user scrubs on every reload.
-    pub initialized: bool,
-}
-
-impl Default for UsdStageTime {
-    fn default() -> Self {
-        Self {
-            seconds: 0.0,
-            playing: false,
-            start_time_code: 0.0,
-            end_time_code: 1.0,
-            time_codes_per_second: 24.0,
-            initialized: false,
-        }
-    }
-}
-
-impl UsdStageTime {
-    /// Returns the current playback position in USD time-code units.
-    pub fn current_time_code(&self) -> f64 {
-        self.start_time_code + self.seconds * self.time_codes_per_second
-    }
-    /// Returns the authored playback range expressed in seconds.
-    pub fn duration_seconds(&self) -> f64 {
-        (self.end_time_code - self.start_time_code).max(0.0) / self.time_codes_per_second
     }
 }

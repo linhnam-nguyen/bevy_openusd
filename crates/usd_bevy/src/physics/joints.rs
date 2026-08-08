@@ -3,9 +3,9 @@
 
 use crate::markers::{UsdArticulationRoot, UsdDof, UsdDriveType, UsdJointKind, UsdPhysicsJoint};
 use bevy::prelude::*;
-use openusd::physics::{Dof, JointKind, ReadDrive, ReadJoint, ReadLimit};
 use rapier3d_f64::prelude::*;
 use usd_rapier::joints::build_and_insert_joint;
+use usd_schema::physics::{Dof, JointKind, ReadDrive, ReadJoint, ReadLimit};
 
 use super::world::PhysicsWorld;
 
@@ -66,7 +66,7 @@ pub fn convert_joints(
 }
 
 /// Bridge a Bevy-component `UsdPhysicsJoint` (Vec3/Quat fields) to
-/// the upstream `openusd::physics::ReadJoint` ([f32; 3] / [f32; 4]
+/// the upstream `usd_schema::physics::ReadJoint` ([f32; 3] / [f32; 4]
 /// fields) the `usd_rapier` builder expects.
 fn bridge_to_read_joint(j: &UsdPhysicsJoint) -> ReadJoint {
     let (lower, upper) = match j.built_in_limit {
@@ -164,9 +164,9 @@ fn dof_to_openusd(d: UsdDof) -> Dof {
     }
 }
 
-fn drive_type_to_openusd(t: UsdDriveType) -> openusd::physics::DriveType {
+fn drive_type_to_openusd(t: UsdDriveType) -> usd_schema::physics::DriveType {
     match t {
-        UsdDriveType::Acceleration => openusd::physics::DriveType::Acceleration,
-        UsdDriveType::Force => openusd::physics::DriveType::Force,
+        UsdDriveType::Acceleration => usd_schema::physics::DriveType::Acceleration,
+        UsdDriveType::Force => usd_schema::physics::DriveType::Force,
     }
 }

@@ -1,5 +1,7 @@
 //! UsdGeom authoring: Cube, Sphere, Cylinder, Capsule, Mesh.
 
+use crate::StageReadExt;
+
 use openusd::sdf::{Path, Value};
 
 use anyhow::Result;
@@ -67,7 +69,7 @@ pub fn define_mesh(stage: &mut Stage, parent: &Path, name: &str, mesh: &MeshData
         &p,
         "points",
         "point3f[]",
-        Value::Vec3fVec(mesh.points.clone()),
+        Value::Vec3fVec(mesh.points.iter().copied().map(Into::into).collect()),
         false,
     )?;
     stage.define_attribute(
@@ -89,7 +91,7 @@ pub fn define_mesh(stage: &mut Stage, parent: &Path, name: &str, mesh: &MeshData
             &p,
             "normals",
             "normal3f[]",
-            Value::Vec3fVec(normals.clone()),
+            Value::Vec3fVec(normals.iter().copied().map(Into::into).collect()),
             false,
         )?;
     }
@@ -98,7 +100,7 @@ pub fn define_mesh(stage: &mut Stage, parent: &Path, name: &str, mesh: &MeshData
             &p,
             "primvars:st",
             "texCoord2f[]",
-            Value::Vec2fVec(uvs.clone()),
+            Value::Vec2fVec(uvs.iter().copied().map(Into::into).collect()),
             false,
         )?;
     }
@@ -245,7 +247,7 @@ pub struct ReadSubset {
 
 /// Read a `UsdGeom.Mesh` prim. Returns `None` if the required attributes
 /// (`points`, `faceVertexCounts`, `faceVertexIndices`) aren't authored.
-pub fn read_mesh(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadMesh>> {
+pub fn read_mesh(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<ReadMesh>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
         return Ok(None);
     };
@@ -299,19 +301,20 @@ pub fn read_mesh(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<R
 /// (collision, visibility, custom) surface as empty for now — wiring them
 /// up is future work.
 fn read_material_subsets(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     mesh_prim: &Path,
 ) -> anyhow::Result<Vec<ReadSubset>> {
     let mut out = Vec::new();
     let children = stage
-        .prim_children(mesh_prim.clone())
+        .prim(mesh_prim.clone())
+        .child_names()
         .map_err(anyhow::Error::from)?;
     for child_name in children {
         let Ok(child_path) = mesh_prim.append_path(child_name.as_str()) else {
             continue;
         };
         let type_name: Option<String> = stage
-            .field::<String>(child_path.clone(), "typeName")
+            .composed_field::<String>(child_path.clone(), "typeName")
             .ok()
             .flatten();
         if type_name.as_deref() != Some("GeomSubset") {
@@ -337,12 +340,12 @@ fn read_material_subsets(
 }
 
 /// UsdGeom.Cube `size` attribute (a single scalar — the cube is `size × size × size`).
-pub fn read_cube_size(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<f64>> {
+pub fn read_cube_size(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<f64>> {
     read_double(stage, prim, "size")
 }
 
 /// UsdGeom.Sphere `radius`.
-pub fn read_sphere_radius(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<f64>> {
+pub fn read_sphere_radius(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<f64>> {
     read_double(stage, prim, "radius")
 }
 
@@ -373,7 +376,10 @@ impl Axis {
     }
 }
 
-pub fn read_cylinder(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadCylinder>> {
+pub fn read_cylinder(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<ReadCylinder>> {
     let Some(radius) = read_double(stage, prim, "radius")? else {
         return Ok(None);
     };
@@ -391,14 +397,17 @@ pub fn read_cylinder(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Opti
     }))
 }
 
-pub fn read_capsule(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadCylinder>> {
+pub fn read_capsule(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<ReadCylinder>> {
     read_cylinder(stage, prim)
 }
 
 /// Convenience wrapper over `attr_default` that coerces a scalar double /
 /// float to f64. Used by shape readers for attributes like
 /// `UsdGeom.Plane.width`.
-pub fn read_double_attr(stage: &openusd::Stage, prim: &Path, name: &str) -> Option<f64> {
+pub fn read_double_attr(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Option<f64> {
     read_double(stage, prim, name).ok().flatten()
 }
 
@@ -415,7 +424,7 @@ pub struct ReadPointInstancer {
 }
 
 pub fn read_point_instancer(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadPointInstancer>> {
     let Some(positions) = read_vec3f_array(stage, prim, "positions")? else {
@@ -436,7 +445,7 @@ pub fn read_point_instancer(
         _ => {
             // Standard path: `targetPaths` field on the relationship spec.
             match stage
-                .field::<Value>(proto_rel, "targetPaths")
+                .composed_field::<Value>(proto_rel, "targetPaths")
                 .map_err(anyhow::Error::from)?
             {
                 Some(Value::PathListOp(op)) => op.flatten(),
@@ -459,15 +468,18 @@ pub fn read_point_instancer(
 }
 
 fn read_quat_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<[f32; 4]>>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::QuatfVec(v)) => Some(v),
+        Some(Value::QuatfVec(v)) => Some(v.into_iter().map(Into::into).collect()),
         Some(Value::QuatdVec(v)) => Some(
             v.into_iter()
-                .map(|q| [q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32])
+                .map(|q| {
+                    let q: [f64; 4] = q.into();
+                    [q[0] as f32, q[1] as f32, q[2] as f32, q[3] as f32]
+                })
                 .collect(),
         ),
         // QuathVec disabled until we sort out the storage convention —
@@ -555,7 +567,7 @@ pub struct ReadCurves {
     pub display_color: Option<Vec<[f32; 3]>>,
 }
 
-pub fn read_curves(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadCurves>> {
+pub fn read_curves(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<ReadCurves>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
         return Ok(None);
     };
@@ -612,7 +624,7 @@ pub struct ReadNurbsCurves {
 }
 
 pub fn read_nurbs_curves(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadNurbsCurves>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
@@ -685,7 +697,7 @@ pub struct ReadNurbsPatch {
 }
 
 pub fn read_nurbs_patch(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadNurbsPatch>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
@@ -748,7 +760,10 @@ pub struct ReadTetMesh {
     pub display_color: Option<Vec<[f32; 3]>>,
 }
 
-pub fn read_tetmesh(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadTetMesh>> {
+pub fn read_tetmesh(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<ReadTetMesh>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
         return Ok(None);
     };
@@ -781,7 +796,7 @@ pub struct ReadHermiteCurves {
 }
 
 pub fn read_hermite_curves(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadHermiteCurves>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
@@ -831,7 +846,7 @@ pub struct ReadPoints {
     pub ids: Vec<i64>,
 }
 
-pub fn read_points(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<ReadPoints>> {
+pub fn read_points(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<ReadPoints>> {
     let Some(points) = read_vec3f_array(stage, prim, "points")? else {
         return Ok(None);
     };
@@ -847,7 +862,7 @@ pub fn read_points(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option
 }
 
 fn read_float_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<f32>>> {
@@ -860,7 +875,7 @@ fn read_float_array(
 }
 
 fn read_int64_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<i64>>> {
@@ -872,7 +887,7 @@ fn read_int64_array(
 }
 
 /// `purpose` token on any Imageable prim. USD default (unauthored) = `"default"`.
-pub fn read_purpose(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<String> {
+pub fn read_purpose(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<String> {
     Ok(read_token(stage, prim, "purpose")?.unwrap_or_else(|| "default".to_string()))
 }
 
@@ -889,7 +904,10 @@ pub enum VisibilityState {
 /// the attribute is unauthored (USD default). Does **not** yet read
 /// `timeSamples` — static only for now; animated visibility is a
 /// future M22.x.
-pub fn read_visibility(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<VisibilityState> {
+pub fn read_visibility(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<VisibilityState> {
     Ok(match read_token(stage, prim, "visibility")?.as_deref() {
         Some("invisible") => VisibilityState::Invisible,
         _ => VisibilityState::Inherited,
@@ -900,9 +918,9 @@ pub fn read_visibility(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Vi
 /// `"model" | "group" | "assembly" | "component" | "subcomponent"` (or
 /// a custom token). Returns `None` when unauthored — only "model"
 /// prims and their ancestors conventionally carry it.
-pub fn read_kind(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<String>> {
+pub fn read_kind(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<String>> {
     stage
-        .field::<String>(prim.clone(), "kind")
+        .composed_field::<String>(prim.clone(), "kind")
         .map_err(anyhow::Error::from)
 }
 
@@ -1146,11 +1164,12 @@ impl CustomDict {
 /// namespaced ones like `userProperties:*`). Schema-defined attributes
 /// are skipped — this is strictly for user-authored pass-through.
 pub fn read_custom_attrs(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
 ) -> anyhow::Result<Vec<(String, CustomAttrValue)>> {
     let prop_names = stage
-        .prim_properties(prim.clone())
+        .prim(prim.clone())
+        .property_names()
         .map_err(anyhow::Error::from)?;
     let mut out = Vec::new();
     for name in prop_names {
@@ -1161,7 +1180,7 @@ pub fn read_custom_attrs(
         // attributes from schema-defined ones.
         let is_custom = matches!(
             stage
-                .field::<bool>(attr_path.clone(), "custom")
+                .composed_field::<bool>(attr_path.clone(), "custom")
                 .ok()
                 .flatten(),
             Some(true)
@@ -1170,7 +1189,7 @@ pub fn read_custom_attrs(
             continue;
         }
         let Some(raw) = stage
-            .field::<Value>(attr_path, "default")
+            .composed_field::<Value>(attr_path, "default")
             .map_err(anyhow::Error::from)?
         else {
             continue;
@@ -1196,49 +1215,52 @@ fn value_to_custom(v: Value) -> CustomAttrValue {
         Value::Half(h) => CustomAttrValue::Float(f32::from(h)),
         Value::Float(f) => CustomAttrValue::Float(f),
         Value::Double(d) => CustomAttrValue::Double(d),
-        Value::TimeCode(t) => CustomAttrValue::TimeCode(t),
+        Value::TimeCode(t) => CustomAttrValue::TimeCode(t.0),
 
         // ── String-like ────────────────────────────────────────────
         Value::String(s) => CustomAttrValue::String(s),
-        Value::Token(s) => CustomAttrValue::Token(s),
-        Value::AssetPath(s) => CustomAttrValue::AssetPath(s),
+        Value::Token(s) => CustomAttrValue::Token(s.to_string()),
+        Value::AssetPath(s) => CustomAttrValue::AssetPath(s.into_string()),
         Value::PathExpression(s) => CustomAttrValue::PathExpression(s),
 
         // ── Vec2/3/4 ───────────────────────────────────────────────
         Value::Vec2h(a) => CustomAttrValue::Vec2f([f32::from(a[0]), f32::from(a[1])]),
-        Value::Vec2f(a) => CustomAttrValue::Vec2f(a),
-        Value::Vec2d(a) => CustomAttrValue::Vec2d(a),
-        Value::Vec2i(a) => CustomAttrValue::Vec2i(a),
+        Value::Vec2f(a) => CustomAttrValue::Vec2f(a.into()),
+        Value::Vec2d(a) => CustomAttrValue::Vec2d(a.into()),
+        Value::Vec2i(a) => CustomAttrValue::Vec2i(a.into()),
         Value::Vec3h(a) => {
             CustomAttrValue::Vec3f([f32::from(a[0]), f32::from(a[1]), f32::from(a[2])])
         }
-        Value::Vec3f(a) => CustomAttrValue::Vec3f(a),
-        Value::Vec3d(a) => CustomAttrValue::Vec3d(a),
-        Value::Vec3i(a) => CustomAttrValue::Vec3i(a),
+        Value::Vec3f(a) => CustomAttrValue::Vec3f(a.into()),
+        Value::Vec3d(a) => CustomAttrValue::Vec3d(a.into()),
+        Value::Vec3i(a) => CustomAttrValue::Vec3i(a.into()),
         Value::Vec4h(a) => CustomAttrValue::Vec4f([
             f32::from(a[0]),
             f32::from(a[1]),
             f32::from(a[2]),
             f32::from(a[3]),
         ]),
-        Value::Vec4f(a) => CustomAttrValue::Vec4f(a),
-        Value::Vec4d(a) => CustomAttrValue::Vec4d(a),
-        Value::Vec4i(a) => CustomAttrValue::Vec4i(a),
+        Value::Vec4f(a) => CustomAttrValue::Vec4f(a.into()),
+        Value::Vec4d(a) => CustomAttrValue::Vec4d(a.into()),
+        Value::Vec4i(a) => CustomAttrValue::Vec4i(a.into()),
 
         // ── Quaternions ────────────────────────────────────────────
-        Value::Quath(q) => CustomAttrValue::Quatf([
-            f32::from(q[0]),
-            f32::from(q[1]),
-            f32::from(q[2]),
-            f32::from(q[3]),
-        ]),
-        Value::Quatf(q) => CustomAttrValue::Quatf(q),
-        Value::Quatd(q) => CustomAttrValue::Quatd(q),
+        Value::Quath(q) => {
+            let q: [openusd::gf::f16; 4] = q.into();
+            CustomAttrValue::Quatf([
+                f32::from(q[0]),
+                f32::from(q[1]),
+                f32::from(q[2]),
+                f32::from(q[3]),
+            ])
+        }
+        Value::Quatf(q) => CustomAttrValue::Quatf(q.into()),
+        Value::Quatd(q) => CustomAttrValue::Quatd(q.into()),
 
         // ── Matrices ───────────────────────────────────────────────
-        Value::Matrix2d(m) => CustomAttrValue::Matrix2d(m),
-        Value::Matrix3d(m) => CustomAttrValue::Matrix3d(m),
-        Value::Matrix4d(m) => CustomAttrValue::Matrix4d(m),
+        Value::Matrix2d(m) => CustomAttrValue::Matrix2d(m.into()),
+        Value::Matrix3d(m) => CustomAttrValue::Matrix3d(m.into()),
+        Value::Matrix4d(m) => CustomAttrValue::Matrix4d(m.into()),
 
         // ── Arrays ─────────────────────────────────────────────────
         Value::BoolVec(v) => CustomAttrValue::BoolArray(v),
@@ -1251,7 +1273,9 @@ fn value_to_custom(v: Value) -> CustomAttrValue {
         Value::FloatVec(v) => CustomAttrValue::FloatArray(v),
         Value::DoubleVec(v) => CustomAttrValue::DoubleArray(v),
         Value::StringVec(v) => CustomAttrValue::StringArray(v),
-        Value::TokenVec(v) => CustomAttrValue::TokenArray(v),
+        Value::TokenVec(v) => {
+            CustomAttrValue::TokenArray(v.into_iter().map(|token| token.to_string()).collect())
+        }
         Value::PathVec(v) => {
             CustomAttrValue::PathArray(v.into_iter().map(|p| p.as_str().to_string()).collect())
         }
@@ -1260,15 +1284,15 @@ fn value_to_custom(v: Value) -> CustomAttrValue {
                 .map(|a| [f32::from(a[0]), f32::from(a[1])])
                 .collect(),
         ),
-        Value::Vec2fVec(v) => CustomAttrValue::Vec2fArray(v),
-        Value::Vec2dVec(v) => CustomAttrValue::Vec2dArray(v),
+        Value::Vec2fVec(v) => CustomAttrValue::Vec2fArray(v.into_iter().map(Into::into).collect()),
+        Value::Vec2dVec(v) => CustomAttrValue::Vec2dArray(v.into_iter().map(Into::into).collect()),
         Value::Vec3hVec(v) => CustomAttrValue::Vec3fArray(
             v.into_iter()
                 .map(|a| [f32::from(a[0]), f32::from(a[1]), f32::from(a[2])])
                 .collect(),
         ),
-        Value::Vec3fVec(v) => CustomAttrValue::Vec3fArray(v),
-        Value::Vec3dVec(v) => CustomAttrValue::Vec3dArray(v),
+        Value::Vec3fVec(v) => CustomAttrValue::Vec3fArray(v.into_iter().map(Into::into).collect()),
+        Value::Vec3dVec(v) => CustomAttrValue::Vec3dArray(v.into_iter().map(Into::into).collect()),
         Value::Vec4hVec(v) => CustomAttrValue::Vec4fArray(
             v.into_iter()
                 .map(|a| {
@@ -1281,10 +1305,12 @@ fn value_to_custom(v: Value) -> CustomAttrValue {
                 })
                 .collect(),
         ),
-        Value::Vec4fVec(v) => CustomAttrValue::Vec4fArray(v),
-        Value::Vec4dVec(v) => CustomAttrValue::Vec4dArray(v),
-        Value::QuatfVec(v) => CustomAttrValue::QuatfArray(v),
-        Value::Matrix4dVec(v) => CustomAttrValue::Matrix4dArray(v),
+        Value::Vec4fVec(v) => CustomAttrValue::Vec4fArray(v.into_iter().map(Into::into).collect()),
+        Value::Vec4dVec(v) => CustomAttrValue::Vec4dArray(v.into_iter().map(Into::into).collect()),
+        Value::QuatfVec(v) => CustomAttrValue::QuatfArray(v.into_iter().map(Into::into).collect()),
+        Value::Matrix4dVec(v) => {
+            CustomAttrValue::Matrix4dArray(v.into_iter().map(Into::into).collect())
+        }
 
         // ── Compound ───────────────────────────────────────────────
         Value::Dictionary(dict) => CustomAttrValue::Dict(dict_from_value_map(dict)),
@@ -1314,9 +1340,12 @@ fn dict_from_value_map(map: std::collections::HashMap<String, Value>) -> CustomD
 
 /// Read the `customData` dictionary authored on a prim. Returns
 /// `None` when unauthored (most prims don't carry one).
-pub fn read_custom_data(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<CustomDict>> {
+pub fn read_custom_data(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<CustomDict>> {
     let raw = stage
-        .field::<Value>(prim.clone(), "customData")
+        .composed_field::<Value>(prim.clone(), "customData")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::Dictionary(d)) => {
@@ -1330,9 +1359,12 @@ pub fn read_custom_data(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<O
 /// Read the `assetInfo` dictionary authored on a prim. Package
 /// management tools (Omniverse, Houdini, Maya) stash identifier /
 /// version metadata here.
-pub fn read_asset_info(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<CustomDict>> {
+pub fn read_asset_info(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<CustomDict>> {
     let raw = stage
-        .field::<Value>(prim.clone(), "assetInfo")
+        .composed_field::<Value>(prim.clone(), "assetInfo")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::Dictionary(d)) => {
@@ -1346,9 +1378,9 @@ pub fn read_asset_info(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Op
 /// Read the pseudo-root `customLayerData` dictionary — layer-level
 /// freeform metadata. Omniverse authors camera bookmarks, layer
 /// authoring state, render settings defaults, etc. here.
-pub fn read_custom_layer_data(stage: &openusd::Stage) -> anyhow::Result<Option<CustomDict>> {
+pub fn read_custom_layer_data(stage: &openusd::usd::Stage) -> anyhow::Result<Option<CustomDict>> {
     let raw = stage
-        .field::<Value>(Path::abs_root(), "customLayerData")
+        .composed_field::<Value>(Path::abs_root(), "customLayerData")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::Dictionary(d)) => {
@@ -1361,10 +1393,14 @@ pub fn read_custom_layer_data(stage: &openusd::Stage) -> anyhow::Result<Option<C
 
 // ── Low-level attribute helpers ──────────────────────────────────────────
 
-fn attr_default(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<Value>> {
+fn attr_default(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<Value>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     let default = stage
-        .field::<Value>(attr_path.clone(), "default")
+        .composed_field::<Value>(attr_path.clone(), "default")
         .map_err(anyhow::Error::from)?;
     // If `default` carries real data, use it. Production assets
     // (Pixar PointInstancedMedCity, FX caches, etc.) routinely author
@@ -1381,7 +1417,7 @@ fn attr_default(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Resu
         }
     }
     let raw = stage
-        .field::<Value>(attr_path, "timeSamples")
+        .composed_field::<Value>(attr_path, "timeSamples")
         .map_err(anyhow::Error::from)?;
     Ok(match raw {
         Some(Value::TimeSamples(samples)) => samples.into_iter().next().map(|(_, v)| v),
@@ -1394,7 +1430,8 @@ fn is_empty_array_value(v: &Value) -> bool {
         Value::IntVec(a) => a.is_empty(),
         Value::FloatVec(a) => a.is_empty(),
         Value::DoubleVec(a) => a.is_empty(),
-        Value::TokenVec(a) | Value::StringVec(a) => a.is_empty(),
+        Value::TokenVec(a) => a.is_empty(),
+        Value::StringVec(a) => a.is_empty(),
         Value::Vec2fVec(a) => a.is_empty(),
         Value::Vec2dVec(a) => a.is_empty(),
         Value::Vec3fVec(a) => a.is_empty(),
@@ -1404,14 +1441,22 @@ fn is_empty_array_value(v: &Value) -> bool {
     }
 }
 
-fn read_token(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<String>> {
+fn read_token(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_double(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<f64>> {
+fn read_double(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<f64>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Double(v)) => Some(v),
         Some(Value::Float(v)) => Some(v as f64),
@@ -1419,7 +1464,7 @@ fn read_double(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Resul
     })
 }
 
-fn read_bool(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<bool>> {
+fn read_bool(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<bool>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Bool(b)) => Some(b),
         _ => None,
@@ -1429,7 +1474,7 @@ fn read_bool(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<
 /// Read `UsdGeomBoundable.extent` — authored as `float3[2]` (min / max
 /// in prim-local space). Returns `None` when unauthored; consumer is
 /// expected to compute from vertex data in that case.
-fn read_extent(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<[[f32; 3]; 2]>> {
+fn read_extent(stage: &openusd::usd::Stage, prim: &Path) -> anyhow::Result<Option<[[f32; 3]; 2]>> {
     let arr = read_vec3f_array(stage, prim, "extent")?;
     Ok(match arr {
         Some(v) if v.len() >= 2 => Some([v[0], v[1]]),
@@ -1438,7 +1483,7 @@ fn read_extent(stage: &openusd::Stage, prim: &Path) -> anyhow::Result<Option<[[f
 }
 
 fn read_int_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<i32>>> {
@@ -1449,7 +1494,7 @@ fn read_int_array(
 }
 
 fn read_double_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<f64>>> {
@@ -1460,7 +1505,11 @@ fn read_double_array(
     })
 }
 
-fn read_int_scalar(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::Result<Option<i32>> {
+fn read_int_scalar(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<i32>> {
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Int(v)) => Some(v),
         _ => None,
@@ -1468,24 +1517,24 @@ fn read_int_scalar(stage: &openusd::Stage, prim: &Path, name: &str) -> anyhow::R
 }
 
 fn read_vec2d_scalar(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<[f64; 2]>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Vec2d(v)) => Some(v),
+        Some(Value::Vec2d(v)) => Some(v.into()),
         Some(Value::Vec2f(v)) => Some([v[0] as f64, v[1] as f64]),
         _ => None,
     })
 }
 
 fn read_vec2d_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<[f64; 2]>>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Vec2dVec(v)) => Some(v),
+        Some(Value::Vec2dVec(v)) => Some(v.into_iter().map(Into::into).collect()),
         Some(Value::Vec2fVec(v)) => {
             Some(v.into_iter().map(|a| [a[0] as f64, a[1] as f64]).collect())
         }
@@ -1494,12 +1543,12 @@ fn read_vec2d_array(
 }
 
 fn read_vec3f_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<[f32; 3]>>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Vec3fVec(v)) => Some(v),
+        Some(Value::Vec3fVec(v)) => Some(v.into_iter().map(Into::into).collect()),
         Some(Value::Vec3dVec(v)) => Some(
             v.into_iter()
                 .map(|a| [a[0] as f32, a[1] as f32, a[2] as f32])
@@ -1510,12 +1559,12 @@ fn read_vec3f_array(
 }
 
 fn read_vec2f_array(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Vec<[f32; 2]>>> {
     Ok(match attr_default(stage, prim, name)? {
-        Some(Value::Vec2fVec(v)) => Some(v),
+        Some(Value::Vec2fVec(v)) => Some(v.into_iter().map(Into::into).collect()),
         Some(Value::Vec2dVec(v)) => {
             Some(v.into_iter().map(|a| [a[0] as f32, a[1] as f32]).collect())
         }
@@ -1529,16 +1578,16 @@ fn read_vec2f_array(
 /// Tries attribute metadata first; falls back to the legacy sibling
 /// `{name}:interpolation` attribute some older authoring tools emit.
 fn read_primvar_interpolation(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Interpolation>> {
     let attr_path = prim.append_property(name).map_err(anyhow::Error::from)?;
     if let Some(v) = stage
-        .field::<Value>(attr_path, "interpolation")
+        .composed_field::<Value>(attr_path, "interpolation")
         .map_err(anyhow::Error::from)?
     {
-        if let Value::Token(s) | Value::String(s) = v
+        if let Some(s) = crate::value_into_string(v)
             && let Some(i) = Interpolation::parse(&s)
         {
             return Ok(Some(i));
@@ -1553,7 +1602,7 @@ fn read_primvar_interpolation(
 }
 
 fn read_primvar_vec3f(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<[f32; 3]>>> {
@@ -1571,7 +1620,7 @@ fn read_primvar_vec3f(
 }
 
 fn read_primvar_float(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<f32>>> {
@@ -1589,7 +1638,7 @@ fn read_primvar_float(
 }
 
 fn read_primvar_vec2f(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<[f32; 2]>>> {

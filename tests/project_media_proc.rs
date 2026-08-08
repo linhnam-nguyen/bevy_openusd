@@ -8,8 +8,8 @@ use bevy::asset::{AssetServer, Assets, LoadState};
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdPlugin, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{UsdAsset, UsdPlugin, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -18,7 +18,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -53,7 +53,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     for _ in 0..10 {
         app.update();
     }
@@ -61,7 +61,8 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
 
 #[test]
 fn schema_readers_decode_authored_attrs() {
-    let stage = openusd::Stage::open("tests/stages/media_proc.usda").expect("stage should open");
+    let stage =
+        openusd::usd::Stage::open("tests/stages/media_proc.usda").expect("stage should open");
 
     let bell = usd_schema::media::read_spatial_audio(
         &stage,

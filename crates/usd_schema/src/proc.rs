@@ -14,6 +14,8 @@
 //! - `proceduralSystem` (token, optional) — system identifier that
 //!   selects which procedural-evaluation backend handles this prim.
 
+use crate::StageReadExt;
+
 use anyhow::Result;
 use openusd::sdf::{Path, Value};
 
@@ -26,7 +28,7 @@ pub struct ReadProcedural {
     pub procedural_system: Option<String>,
 }
 
-pub fn read_procedural(stage: &openusd::Stage, prim: &Path) -> Result<Option<ReadProcedural>> {
+pub fn read_procedural(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<ReadProcedural>> {
     let procedural_type = read_token(stage, prim, "info:procedural:type")?;
     let procedural_system = read_token(stage, prim, "proceduralSystem")?;
     if procedural_type.is_none() && procedural_system.is_none() {
@@ -38,13 +40,13 @@ pub fn read_procedural(stage: &openusd::Stage, prim: &Path) -> Result<Option<Rea
     }))
 }
 
-fn read_token(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
+fn read_token(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     let v = stage
-        .field::<Value>(attr, "default")
+        .composed_field::<Value>(attr, "default")
         .map_err(anyhow::Error::from)?;
     Ok(match v {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }

@@ -10,7 +10,7 @@ use usd_schema::shade::read_preview_material;
 #[test]
 fn rich_network_resolves_textures_and_constants() {
     let stage =
-        openusd::Stage::open("tests/stages/materialx_rich.usda").expect("stage should open");
+        openusd::usd::Stage::open("tests/stages/materialx_rich.usda").expect("stage should open");
 
     let m = read_preview_material(
         &stage,

@@ -5,6 +5,8 @@
 //! [`ReadSpatialAudio`]; downstream consumers either ignore it (read
 //! side only) or wire a real audio backend (bevy_audio etc.) on top.
 
+use crate::StageReadExt;
+
 use anyhow::Result;
 use openusd::sdf::{Path, Value};
 
@@ -29,7 +31,10 @@ pub struct ReadSpatialAudio {
     pub gain: Option<f64>,
 }
 
-pub fn read_spatial_audio(stage: &openusd::Stage, prim: &Path) -> Result<Option<ReadSpatialAudio>> {
+pub fn read_spatial_audio(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+) -> Result<Option<ReadSpatialAudio>> {
     let file_path = read_asset_or_string(stage, prim, "filePath")?;
     let aural_mode = read_token(stage, prim, "auralMode")?;
     let playback_mode = read_token(stage, prim, "playbackMode")?;
@@ -61,34 +66,42 @@ pub fn read_spatial_audio(stage: &openusd::Stage, prim: &Path) -> Result<Option<
     }))
 }
 
-fn attr_default_value(stage: &openusd::Stage, attr: &Path) -> Result<Option<Value>> {
+fn attr_default_value(stage: &openusd::usd::Stage, attr: &Path) -> Result<Option<Value>> {
     stage
-        .field::<Value>(attr.clone(), "default")
+        .composed_field::<Value>(attr.clone(), "default")
         .map_err(anyhow::Error::from)
 }
 
-fn read_asset_or_string(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
+fn read_asset_or_string(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> Result<Option<String>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(match attr_default_value(stage, &attr)? {
-        Some(Value::AssetPath(s)) | Some(Value::String(s)) | Some(Value::Token(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_token(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
+fn read_token(stage: &openusd::usd::Stage, prim: &Path, name: &str) -> Result<Option<String>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(match attr_default_value(stage, &attr)? {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_double_or_timecode(stage: &openusd::Stage, prim: &Path, name: &str) -> Result<Option<f64>> {
+fn read_double_or_timecode(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    name: &str,
+) -> Result<Option<f64>> {
     let attr = prim.append_property(name).map_err(anyhow::Error::from)?;
     Ok(match attr_default_value(stage, &attr)? {
         Some(Value::Double(v)) => Some(v),
         Some(Value::Float(v)) => Some(v as f64),
-        Some(Value::TimeCode(v)) => Some(v),
+        Some(Value::TimeCode(v)) => Some(v.0),
         _ => None,
     })
 }

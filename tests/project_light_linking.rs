@@ -17,7 +17,8 @@ fn common_of(l: &ReadLight) -> &usd_schema::lux::LightCommon {
 
 #[test]
 fn reads_light_linking_rels() {
-    let stage = openusd::Stage::open("tests/stages/light_linking.usda").expect("fixture parses");
+    let stage =
+        openusd::usd::Stage::open("tests/stages/light_linking.usda").expect("fixture parses");
 
     let key = read_light(&stage, &Path::new("/World/KeyLight").unwrap())
         .unwrap()

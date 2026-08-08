@@ -16,6 +16,8 @@
 //!   output flows through the Material's interface so overriding the
 //!   Material input also cuts the texture off cleanly.
 
+use crate::StageReadExt;
+
 use openusd::sdf::{Path, Value};
 
 use anyhow::Result;
@@ -121,14 +123,14 @@ pub fn define_preview_material(
             &t,
             "inputs:scale",
             "float4",
-            Value::Vec4f([2.0, 2.0, 2.0, 1.0]),
+            Value::Vec4f([2.0, 2.0, 2.0, 1.0].into()),
             false,
         )?;
         stage.define_attribute(
             &t,
             "inputs:bias",
             "float4",
-            Value::Vec4f([-1.0, -1.0, -1.0, 0.0]),
+            Value::Vec4f([-1.0, -1.0, -1.0, 0.0].into()),
             false,
         )?;
         Some(stage.attribute_path(&t, "outputs:rgb")?)
@@ -202,7 +204,7 @@ pub fn define_preview_material(
         &shader,
         "diffuseColor",
         "color3f",
-        Value::Vec3f(diffuse_linear),
+        Value::Vec3f(diffuse_linear.into()),
         diffuse_tex_out,
     )?;
     promote_scalar(
@@ -239,7 +241,7 @@ pub fn define_preview_material(
             &shader,
             "emissiveColor",
             "color3f",
-            Value::Vec3f(emissive_linear),
+            Value::Vec3f(emissive_linear.into()),
             emissive_tex_out,
         )?;
     }
@@ -268,7 +270,7 @@ pub fn define_preview_material(
         &shader,
         "outputs:surface",
         "token",
-        Value::Token(String::new()),
+        Value::Token(String::new().into()),
         false,
     )?;
     let shader_surface = stage.attribute_path(&shader, "outputs:surface")?;
@@ -325,7 +327,7 @@ fn define_st_reader(stage: &mut Stage, mat: &Path) -> Result<Path> {
         &st_reader,
         "outputs:result",
         "float2",
-        Value::Vec2f([0.0, 0.0]),
+        Value::Vec2f([0.0, 0.0].into()),
         false,
     )?;
     stage.attribute_path(&st_reader, "outputs:result")
@@ -352,7 +354,7 @@ fn author_uv_texture(
         &tex,
         "inputs:file",
         "asset",
-        Value::AssetPath(asset_path.to_string()),
+        Value::AssetPath(asset_path.to_string().into()),
         false,
     )?;
     stage.define_attribute(
@@ -380,14 +382,14 @@ fn author_uv_texture(
         &tex,
         "inputs:fallback",
         "float4",
-        Value::Vec4f(fallback),
+        Value::Vec4f(fallback.into()),
         false,
     )?;
     stage.define_attribute(
         &tex,
         "outputs:rgb",
         "float3",
-        Value::Vec3f([0.0, 0.0, 0.0]),
+        Value::Vec3f([0.0, 0.0, 0.0].into()),
         false,
     )?;
     stage.define_attribute(&tex, "outputs:r", "float", Value::Float(0.0), false)?;
@@ -436,7 +438,7 @@ pub struct ReadPreviewMaterial {
 
 /// Read `material:binding` on a geom prim and return the bound Material prim
 /// path. `None` if no binding is authored.
-pub fn read_material_binding(stage: &openusd::Stage, prim: &Path) -> Result<Option<Path>> {
+pub fn read_material_binding(stage: &openusd::usd::Stage, prim: &Path) -> Result<Option<Path>> {
     let rel_path = prim
         .append_property("material:binding")
         .map_err(anyhow::Error::from)?;
@@ -465,7 +467,7 @@ pub fn read_material_binding(stage: &openusd::Stage, prim: &Path) -> Result<Opti
 /// Returns `None` when no surface shader is connected or the shader's
 /// dialect is unrecognised.
 pub fn read_preview_material(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     material: &Path,
 ) -> Result<Option<ReadPreviewMaterial>> {
     let Some((shader, dialect)) = resolve_surface_shader(stage, material)? else {
@@ -568,7 +570,7 @@ enum SurfaceDialect {
 }
 
 fn resolve_surface_shader(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     material: &Path,
 ) -> Result<Option<(Path, SurfaceDialect)>> {
     let outputs = [
@@ -589,12 +591,16 @@ fn resolve_surface_shader(
     // but not the `outputs:mdl:surface.connect` relationship through
     // the lightweight field reader. Fall back to scanning direct child
     // shaders and infer the dialect from their authored identifiers.
-    for child in stage.prim_children(material.clone()).unwrap_or_default() {
+    for child in stage
+        .prim(material.clone())
+        .child_names()
+        .unwrap_or_default()
+    {
         let shader = material
             .append_path(child.as_str())
             .map_err(anyhow::Error::from)?;
         let type_name = stage
-            .field::<String>(shader.clone(), "typeName")
+            .composed_field::<String>(shader.clone(), "typeName")
             .map_err(anyhow::Error::from)?
             .unwrap_or_default();
         if type_name != "Shader" {
@@ -911,7 +917,7 @@ enum ResolvedValue {
 /// 2. `<shader>.inputs:<channel>` — older pattern with inputs authored on the
 ///    shader directly. Same scalar/texture discrimination.
 fn resolve_channel(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     material: &Path,
     shader: &Path,
     channel: &str,
@@ -948,7 +954,7 @@ fn resolve_channel(
 ///   to model the operation — we just chase the texture.
 /// - **Anything else** — keep walking the connection.
 fn resolve_attr_chain(
-    stage: &openusd::Stage,
+    stage: &openusd::usd::Stage,
     attr_path: &Path,
 ) -> Result<(Option<ResolvedValue>, Option<String>)> {
     // Follow connections up to 16 hops to handle deeper MaterialX
@@ -1002,8 +1008,8 @@ fn resolve_attr_chain(
         // where the texture is bound DIRECTLY on the input rather
         // than through a `UsdUVTexture` intermediate. Surface those
         // as textures so the material reader picks them up.
-        if let Some(Value::AssetPath(s) | Value::String(s)) = default.clone() {
-            return Ok((None, Some(s)));
+        if let Some(path) = default.clone().and_then(crate::value_into_string) {
+            return Ok((None, Some(path)));
         }
         let resolved = default.and_then(value_to_preview);
         return Ok((resolved, None));
@@ -1032,7 +1038,7 @@ enum ShaderKind {
     Unknown,
 }
 
-fn shader_kind(stage: &openusd::Stage, prim: &Path) -> Result<ShaderKind> {
+fn shader_kind(stage: &openusd::usd::Stage, prim: &Path) -> Result<ShaderKind> {
     let id = read_scalar_token(stage, prim, "info:id")?;
     Ok(match id.as_deref() {
         Some("UsdUVTexture") => ShaderKind::Texture,
@@ -1050,12 +1056,12 @@ fn shader_kind(stage: &openusd::Stage, prim: &Path) -> Result<ShaderKind> {
     })
 }
 
-fn read_texture_file(stage: &openusd::Stage, tex_prim: &Path) -> Result<Option<String>> {
+fn read_texture_file(stage: &openusd::usd::Stage, tex_prim: &Path) -> Result<Option<String>> {
     let path = tex_prim
         .append_property("inputs:file")
         .map_err(anyhow::Error::from)?;
     match attr_default_value(stage, &path)? {
-        Some(Value::AssetPath(s)) | Some(Value::String(s)) | Some(Value::Token(s)) => Ok(Some(s)),
+        Some(value) => Ok(crate::value_into_string(value)),
         _ => Ok(None),
     }
 }
@@ -1064,7 +1070,7 @@ fn value_to_preview(v: Value) -> Option<ResolvedValue> {
     match v {
         Value::Float(f) => Some(ResolvedValue::Scalar(f)),
         Value::Double(d) => Some(ResolvedValue::Scalar(d as f32)),
-        Value::Vec3f(c) => Some(ResolvedValue::Color3(c)),
+        Value::Vec3f(c) => Some(ResolvedValue::Color3(c.into())),
         Value::Vec3d(c) => Some(ResolvedValue::Color3([
             c[0] as f32,
             c[1] as f32,
@@ -1074,15 +1080,15 @@ fn value_to_preview(v: Value) -> Option<ResolvedValue> {
     }
 }
 
-fn attr_default_value(stage: &openusd::Stage, attr: &Path) -> Result<Option<Value>> {
+fn attr_default_value(stage: &openusd::usd::Stage, attr: &Path) -> Result<Option<Value>> {
     stage
-        .field::<Value>(attr.clone(), "default")
+        .composed_field::<Value>(attr.clone(), "default")
         .map_err(anyhow::Error::from)
 }
 
-fn read_path_list(stage: &openusd::Stage, attr: &Path, field: &str) -> Result<Vec<Path>> {
+fn read_path_list(stage: &openusd::usd::Stage, attr: &Path, field: &str) -> Result<Vec<Path>> {
     match stage
-        .field::<Value>(attr.clone(), field)
+        .composed_field::<Value>(attr.clone(), field)
         .map_err(anyhow::Error::from)?
     {
         Some(Value::PathListOp(op)) => Ok(op.flatten()),
@@ -1091,19 +1097,26 @@ fn read_path_list(stage: &openusd::Stage, attr: &Path, field: &str) -> Result<Ve
     }
 }
 
-fn read_scalar_token(stage: &openusd::Stage, prim: &Path, attr: &str) -> Result<Option<String>> {
+fn read_scalar_token(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    attr: &str,
+) -> Result<Option<String>> {
     let attr_path = prim.append_property(attr).map_err(anyhow::Error::from)?;
     Ok(match attr_default_value(stage, &attr_path)? {
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }
 
-fn read_scalar_asset(stage: &openusd::Stage, prim: &Path, attr: &str) -> Result<Option<String>> {
+fn read_scalar_asset(
+    stage: &openusd::usd::Stage,
+    prim: &Path,
+    attr: &str,
+) -> Result<Option<String>> {
     let attr_path = prim.append_property(attr).map_err(anyhow::Error::from)?;
     Ok(match attr_default_value(stage, &attr_path)? {
-        Some(Value::AssetPath(p)) => Some(p),
-        Some(Value::Token(s)) | Some(Value::String(s)) => Some(s),
+        Some(value) => crate::value_into_string(value),
         _ => None,
     })
 }

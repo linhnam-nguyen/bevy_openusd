@@ -3,18 +3,19 @@
 //! with "no readable geometry".
 
 use openusd::sdf::{Path, Value};
+use usd_schema::StageReadExt;
 
 fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "assets/PointInstancedMedCity/PointInstancedMedCity.usd".to_string());
-    let stage = openusd::Stage::open(&path).unwrap();
+    let stage = openusd::usd::Stage::open(&path).unwrap();
     let up = stage
-        .field::<String>(Path::abs_root(), "upAxis")
+        .composed_field::<String>(Path::abs_root(), "upAxis")
         .ok()
         .flatten();
     let mpu = stage
-        .field::<Value>(Path::abs_root(), "metersPerUnit")
+        .composed_field::<Value>(Path::abs_root(), "metersPerUnit")
         .ok()
         .flatten();
     println!("ROOT upAxis={up:?} metersPerUnit={mpu:?}");
@@ -52,7 +53,7 @@ fn main() {
                     );
                 } else {
                     let tn: String = stage
-                        .field::<String>(child_path.clone(), "typeName")
+                        .composed_field::<String>(child_path.clone(), "typeName")
                         .ok()
                         .flatten()
                         .unwrap_or_default();
@@ -104,7 +105,7 @@ fn main() {
     // Dump raw type variants of the timeSampled attrs.
     for attr in ["positions", "orientations", "scales"] {
         let ap = inst_path.append_property(attr).unwrap();
-        if let Ok(Some(Value::TimeSamples(ts))) = stage.field::<Value>(ap, "timeSamples") {
+        if let Ok(Some(Value::TimeSamples(ts))) = stage.composed_field::<Value>(ap, "timeSamples") {
             if let Some((_, v)) = ts.first() {
                 let kind = match v {
                     Value::Vec3fVec(a) => format!("Vec3fVec(n={})", a.len()),
@@ -116,7 +117,7 @@ fn main() {
                         a.len(),
                         a.iter()
                             .take(3)
-                            .map(|q| [q[0].to_f32(), q[1].to_f32(), q[2].to_f32(), q[3].to_f32()])
+                            .map(|q| [q.w.to_f32(), q.x.to_f32(), q.y.to_f32(), q.z.to_f32()])
                             .collect::<Vec<_>>()
                     ),
                     Value::QuatdVec(a) => format!("QuatdVec(n={})", a.len()),
@@ -147,7 +148,7 @@ fn main() {
         );
     }
     let mp = mesh_path.append_property("normals").unwrap();
-    if let Ok(Some(Value::TimeSamples(ts))) = stage.field::<Value>(mp, "timeSamples") {
+    if let Ok(Some(Value::TimeSamples(ts))) = stage.composed_field::<Value>(mp, "timeSamples") {
         if let Some((_, v)) = ts.first() {
             let kind = match v {
                 Value::Vec3fVec(a) => format!("Vec3fVec(n={})", a.len()),
@@ -186,7 +187,7 @@ fn main() {
             "xformOpOrder",
         ] {
             let ap = prim.append_property(attr).unwrap();
-            match stage.field::<Value>(ap.clone(), "default") {
+            match stage.composed_field::<Value>(ap.clone(), "default") {
                 Ok(Some(v)) => {
                     let preview = match &v {
                         Value::FloatVec(a) => format!("FloatVec(len={})", a.len()),
@@ -205,7 +206,7 @@ fn main() {
                 Err(e) => println!("  {attr} ERROR: {e}"),
             }
             // Also try timeSamples for animated attrs.
-            match stage.field::<Value>(ap.clone(), "timeSamples") {
+            match stage.composed_field::<Value>(ap.clone(), "timeSamples") {
                 Ok(Some(_)) => println!("  {attr} has timeSamples"),
                 _ => {}
             }

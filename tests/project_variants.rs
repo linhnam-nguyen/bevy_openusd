@@ -8,8 +8,8 @@ use bevy::color::LinearRgba;
 use bevy::mesh::Mesh;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdLoaderSettings, UsdPlugin, UsdPrimRef, VariantSelection};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{UsdAsset, UsdLoaderSettings, UsdPlugin, UsdPrimRef, VariantSelection};
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -18,7 +18,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -36,12 +36,11 @@ fn load_with(
     let handle: Handle<UsdAsset> = app
         .world()
         .resource::<AssetServer>()
-        .load_with_settings::<UsdAsset, _>(
-            asset_name.to_string(),
-            move |s: &mut UsdLoaderSettings| {
-                s.variant_selections = selections.clone();
-            },
-        );
+        .load_builder()
+        .with_settings(move |s: &mut UsdLoaderSettings| {
+            s.variant_selections = selections.clone();
+        })
+        .load(asset_name.to_string());
     for _ in 0..200 {
         app.update();
         match app
@@ -62,7 +61,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     for _ in 0..10 {
         app.update();
     }
@@ -150,7 +149,7 @@ fn override_selection_binds_blue() {
         "\nsession layer USDA the loader generates:\n\
          ────────────────────────────────────────\n\
          {}────────────────────────────────────────",
-        bevy_openusd::author_variant_session_layer(&selections)
+        usd_bevy::author_variant_session_layer(&selections)
     );
     let handle = load_with(&mut app, "variants.usda", selections);
     spawn_scene_root(&mut app, &handle);

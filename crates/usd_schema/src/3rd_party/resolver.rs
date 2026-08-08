@@ -18,7 +18,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use openusd::ar::{Asset, AssetInfo, DefaultResolver, ResolvedPath, Resolver, ResolverContext};
+use openusd::ar::{Asset, AssetInfo, DefaultResolver, ResolvedPath, Resolver};
 
 use super::strip_metadata::strip_unsupported_prim_metadata;
 
@@ -144,15 +144,7 @@ impl Resolver for StripMetadataResolver {
             .get_modification_timestamp(asset_path, resolved_path)
     }
 
-    fn is_context_dependent_path(&self, asset_path: &str) -> bool {
-        self.inner.is_context_dependent_path(asset_path)
-    }
-
-    fn create_default_context(&self) -> ResolverContext {
-        self.inner.create_default_context()
-    }
-
-    fn create_default_context_for_asset(&self, asset_path: &str) -> ResolverContext {
-        self.inner.create_default_context_for_asset(asset_path)
+    fn identity(&self) -> String {
+        format!("strip-metadata:{}", self.inner.identity())
     }
 }

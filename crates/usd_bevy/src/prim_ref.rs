@@ -51,7 +51,7 @@ pub struct UsdJoint {
 #[reflect(Component, Default)]
 pub struct UsdBlendShapeBinding {
     /// One entry per morph target on the mesh, in the same order
-    /// the mesh's `MorphTargetImage` was built. The string is the
+    /// the mesh's morph-target buffer was built. The string is the
     /// blend-shape name; matched against the SkelAnimation's
     /// `blendShapes` to fetch the per-frame weight.
     pub names: Vec<String>,
@@ -205,7 +205,7 @@ impl UsdPurpose {
     /// as `purpose=render`; hiding that bucket would render them
     /// invisible.
     pub fn hidden_by_default(self) -> bool {
-        matches!(self, UsdPurpose::Guide)
+        matches!(self, UsdPurpose::Proxy | UsdPurpose::Guide)
     }
 }
 

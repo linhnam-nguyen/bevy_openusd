@@ -6,8 +6,8 @@ use bevy::asset::{AssetServer, Assets, LoadState};
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdPlugin};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{UsdAsset, UsdPlugin};
 use usd_schema::geom::SubdivScheme;
 
 fn build_test_app() -> App {
@@ -17,7 +17,7 @@ fn build_test_app() -> App {
             file_path: "tests/stages".into(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .add_plugins(bevy::scene::ScenePlugin)
@@ -52,7 +52,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     for _ in 0..10 {
         app.update();
     }
@@ -101,7 +101,7 @@ fn reads_subdivision_scheme_and_tallies_subsurface_prims() {
     }
 
     // Direct reader check.
-    let stage = openusd::Stage::open("tests/stages/subdivision.usda").unwrap();
+    let stage = openusd::usd::Stage::open("tests/stages/subdivision.usda").unwrap();
     use openusd::sdf::Path;
     let flat = usd_schema::geom::read_mesh(&stage, &Path::new("/World/Flat").unwrap())
         .unwrap()

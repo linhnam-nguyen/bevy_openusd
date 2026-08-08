@@ -31,6 +31,7 @@ pub mod geom;
 pub mod lux;
 pub mod math;
 pub mod media;
+pub mod physics;
 pub mod proc;
 pub mod render;
 pub mod shade;
@@ -66,6 +67,194 @@ use openusd::sdf::{
     self, AbstractData, ChildrenKey, FieldKey, ListOp, Path, SpecType, Specifier, Value,
 };
 
+/// Compatibility shim for schema readers while using OpenUSD 0.5's public,
+/// typed composed-scene handles. This keeps all legacy field routing in one
+/// place instead of reaching into the now-private `usd::Stage::field` API.
+pub trait StageReadExt {
+    fn composed_field<T: FromComposedValue>(
+        &self,
+        path: impl Into<Path>,
+        field: impl AsRef<str>,
+    ) -> Result<Option<T>>;
+
+    /// Composed child prim names for `path`.
+    fn prim_children(&self, path: impl Into<Path>) -> Result<Vec<String>>;
+
+    /// Composed property names for `path`.
+    fn prim_properties(&self, path: impl Into<Path>) -> Result<Vec<String>>;
+
+    /// Composed applied API schema names for `path`.
+    fn api_schemas(&self, path: impl Into<Path>) -> Result<Vec<String>>;
+
+    /// Whether a composed prim exists at `path`.
+    fn prim_exists(&self, path: impl Into<Path>) -> Result<bool>;
+}
+
+pub trait FromComposedValue: Sized {
+    fn from_composed_value(value: Value) -> Result<Self>;
+}
+
+impl FromComposedValue for Value {
+    fn from_composed_value(value: Value) -> Result<Self> {
+        Ok(value)
+    }
+}
+
+impl FromComposedValue for String {
+    fn from_composed_value(value: Value) -> Result<Self> {
+        match value {
+            Value::String(value) => Ok(value),
+            Value::Token(value) => Ok(value.to_string()),
+            Value::AssetPath(value) => Ok(value.into_string()),
+            other => Err(anyhow!("expected string-like USD value, got {other:?}")),
+        }
+    }
+}
+
+impl FromComposedValue for bool {
+    fn from_composed_value(value: Value) -> Result<Self> {
+        match value {
+            Value::Bool(value) => Ok(value),
+            other => Err(anyhow!("expected bool USD value, got {other:?}")),
+        }
+    }
+}
+
+pub(crate) fn value_into_string(value: Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value),
+        Value::Token(value) => Some(value.to_string()),
+        Value::AssetPath(value) => Some(value.into_string()),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Token(value) => Some(value.to_string()),
+        Value::AssetPath(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_into_string_vec(value: Value) -> Option<Vec<String>> {
+    match value {
+        Value::StringVec(value) => Some(value),
+        Value::TokenVec(value) => Some(value.into_iter().map(|token| token.to_string()).collect()),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_to_string_vec(value: &Value) -> Option<Vec<String>> {
+    match value {
+        Value::StringVec(value) => Some(value.clone()),
+        Value::TokenVec(value) => Some(value.iter().map(|token| token.to_string()).collect()),
+        _ => None,
+    }
+}
+
+impl StageReadExt for openusd::usd::Stage {
+    fn composed_field<T: FromComposedValue>(
+        &self,
+        path: impl Into<Path>,
+        field: impl AsRef<str>,
+    ) -> Result<Option<T>> {
+        let path = path.into();
+        let field = field.as_ref();
+        let value = if path.is_property_path() {
+            let attribute = self.attribute(path.clone());
+            match field {
+                "default" => attribute.get::<Value>()?,
+                "timeSamples" => attribute.time_samples()?.map(Value::TimeSamples),
+                "connectionPaths" => Some(Value::PathListOp(sdf::PathListOp::explicit(
+                    attribute.connections()?,
+                ))),
+                "targetPaths" => Some(Value::PathListOp(sdf::PathListOp::explicit(
+                    self.relationship(path.clone()).targets()?,
+                ))),
+                "custom" => Some(Value::Bool(attribute.is_custom()?)),
+                "typeName" => attribute.type_name()?.map(Value::Token),
+                _ => attribute.get_metadata::<Value>(field)?,
+            }
+        } else {
+            let prim = self.prim(path.clone());
+            match field {
+                "typeName" => prim.type_name()?.map(Value::Token),
+                "kind" => prim.kind()?.map(Value::Token),
+                "customData" => prim.custom_data()?,
+                _ => {
+                    let mut found = None;
+                    if path == Path::abs_root() {
+                        found = self
+                            .root_layer()
+                            .data()
+                            .try_field(&path, field)?
+                            .map(|value| value.into_owned());
+                    } else if path.is_prim_variant_selection_path() {
+                        // A `Prim` handle normalizes to the prim path and
+                        // therefore cannot expose fields authored on the
+                        // variant-set container itself. Query the composed
+                        // layer stack at the exact variant-selection path.
+                        for layer_id in self.layer_identifiers() {
+                            let Some(layer) = self.layer(&layer_id) else {
+                                continue;
+                            };
+                            if let Some(value) = layer.data().try_field(&path, field)? {
+                                found = Some(value.into_owned());
+                                break;
+                            }
+                        }
+                    } else {
+                        for (layer_id, spec_path) in prim.prim_stack()? {
+                            let Some(layer) = self.layer(&layer_id) else {
+                                continue;
+                            };
+                            if let Some(value) = layer.data().try_field(&spec_path, field)? {
+                                found = Some(value.into_owned());
+                                break;
+                            }
+                        }
+                    }
+                    found
+                }
+            }
+        };
+        value.map(T::from_composed_value).transpose()
+    }
+
+    fn prim_children(&self, path: impl Into<Path>) -> Result<Vec<String>> {
+        Ok(self
+            .prim(path)
+            .child_names()?
+            .into_iter()
+            .map(|name| name.to_string())
+            .collect())
+    }
+
+    fn prim_properties(&self, path: impl Into<Path>) -> Result<Vec<String>> {
+        Ok(self
+            .prim(path)
+            .property_names()?
+            .into_iter()
+            .map(|name| name.to_string())
+            .collect())
+    }
+
+    fn api_schemas(&self, path: impl Into<Path>) -> Result<Vec<String>> {
+        Ok(self
+            .prim(path)
+            .api_schemas()?
+            .into_iter()
+            .map(|name| name.to_string())
+            .collect())
+    }
+
+    fn prim_exists(&self, path: impl Into<Path>) -> Result<bool> {
+        self.prim(path).is_valid()
+    }
+}
+
 /// In-memory USD stage being authored.
 pub struct Stage {
     data: sdf::Data,
@@ -83,10 +272,7 @@ impl Stage {
         let mut s = Self::new_sublayer();
         let root = Path::abs_root();
         let root_spec = s.data.spec_mut(&root).expect("pseudo-root exists");
-        root_spec.add(
-            FieldKey::DefaultPrim,
-            Value::Token(default_prim.to_string()),
-        );
+        root_spec.add(FieldKey::DefaultPrim, Value::Token(default_prim.into()));
         root_spec.add("upAxis", Value::Token("Z".into()));
         root_spec.add("metersPerUnit", Value::Double(1.0));
         root_spec.add("kilogramsPerUnit", Value::Double(1.0));
@@ -324,13 +510,13 @@ impl Stage {
         };
 
         let existing = spec.get("apiSchemas").cloned();
-        let mut list_op: ListOp<String> = match existing {
+        let mut list_op: ListOp<openusd::tf::Token> = match existing {
             Some(Value::TokenListOp(l)) => l,
             _ => ListOp::default(),
         };
         for api in apis {
-            if !list_op.prepended_items.iter().any(|s| s == *api) {
-                list_op.prepended_items.push((*api).to_string());
+            if !list_op.prepended_items.iter().any(|s| s.as_str() == *api) {
+                list_op.prepended_items.push((*api).into());
             }
         }
         spec.add("apiSchemas", Value::TokenListOp(list_op));
@@ -340,7 +526,7 @@ impl Stage {
     /// Write the stage to disk as `.usda`.
     pub fn write_usda(mut self, path: impl AsRef<StdPath>) -> Result<()> {
         self.flush_children();
-        self.data.write_usda(path).map_err(anyhow::Error::from)
+        openusd::usda::TextWriter::write_to_file(&self.data, path).map_err(anyhow::Error::from)
     }
 
     /// Merge every spec + bookkeeping entry from `other` into `self`.
@@ -359,7 +545,7 @@ impl Stage {
         } = other;
 
         // Merge specs.
-        let all_paths: Vec<Path> = <sdf::Data as sdf::AbstractData>::paths(&other_data);
+        let all_paths: Vec<Path> = <sdf::Data as sdf::AbstractData>::spec_paths(&other_data);
         for path in all_paths {
             let Some(src_spec) = other_data.spec(&path).cloned() else {
                 continue;
@@ -447,13 +633,19 @@ impl Stage {
         let prim_children = std::mem::take(&mut self.prim_children);
         for (parent, names) in prim_children {
             if let Some(spec) = self.data.spec_mut(&parent) {
-                spec.add(ChildrenKey::PrimChildren, Value::TokenVec(names));
+                spec.add(
+                    ChildrenKey::PrimChildren,
+                    Value::TokenVec(names.into_iter().map(Into::into).collect()),
+                );
             }
         }
         let prop_children = std::mem::take(&mut self.prop_children);
         for (prim, names) in prop_children {
             if let Some(spec) = self.data.spec_mut(&prim) {
-                spec.add(ChildrenKey::PropertyChildren, Value::TokenVec(names));
+                spec.add(
+                    ChildrenKey::PropertyChildren,
+                    Value::TokenVec(names.into_iter().map(Into::into).collect()),
+                );
             }
         }
     }

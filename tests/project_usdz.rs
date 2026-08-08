@@ -14,8 +14,8 @@ use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy::scene::{Scene, SceneRoot};
-use bevy_openusd::{UsdAsset, UsdPlugin};
+use bevy::scene::{ScenePatch, ScenePatchInstance};
+use usd_bevy::{UsdAsset, UsdPlugin};
 use zip::write::SimpleFileOptions;
 
 /// A 1×1 red PNG encoded on the fly via the `image` crate. Keeping this
@@ -96,7 +96,7 @@ fn build_usdz(dest: &std::path::Path) {
 fn fixture_dir() -> PathBuf {
     // Target dir survives across `cargo test` runs — no repo pollution.
     let mut p = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
-    p.push("bevy_openusd_usdz_fixture");
+    p.push("usd_bevy_usdz_fixture");
     std::fs::create_dir_all(&p).unwrap();
     p
 }
@@ -108,7 +108,7 @@ fn build_test_app(asset_root: PathBuf) -> App {
             file_path: asset_root.to_string_lossy().into_owned(),
             ..Default::default()
         })
-        .init_asset::<Scene>()
+        .init_asset::<ScenePatch>()
         .init_asset::<Mesh>()
         .init_asset::<Image>()
         .init_asset::<StandardMaterial>()
@@ -141,7 +141,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
         let assets = app.world().resource::<Assets<UsdAsset>>();
         assets.get(handle).expect("asset missing").scene.clone()
     };
-    app.world_mut().spawn(SceneRoot(scene_handle));
+    app.world_mut().spawn(ScenePatchInstance(scene_handle));
     // Enough ticks for SceneSpawner to instantiate + sub-assets to settle.
     for _ in 0..30 {
         app.update();
@@ -161,7 +161,7 @@ fn loads_usdz_with_embedded_texture() {
 
     // There should be exactly one geom prim (the Cube), and its
     // StandardMaterial should carry a base_color_texture.
-    use bevy_openusd::UsdPrimRef;
+    use usd_bevy::UsdPrimRef;
     let world = app.world_mut();
     let mut mat_for_prim = std::collections::HashMap::new();
     for (prim, mat) in world

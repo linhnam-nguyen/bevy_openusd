@@ -2,8 +2,8 @@
 //! subsequent ones warn (Rapier currently runs one world).
 
 use crate::markers::UsdPhysicsScene;
-use bevy::math::DVec3;
 use bevy::prelude::*;
+use rapier3d_f64::glamx::DVec3;
 
 use super::world::PhysicsWorld;
 

@@ -17,9 +17,9 @@
 //!   full per-body bases (Isaac Sim's 90°-rotated chains).
 
 use anyhow::Result;
-use glam::{DQuat, DVec3};
-use openusd::physics::{Dof, JointKind, ReadDrive, ReadJoint};
+use rapier3d_f64::glamx::{DQuat, DVec3};
 use rapier3d_f64::prelude::*;
+use usd_schema::physics::{Dof, JointKind, ReadDrive, ReadJoint};
 
 /// Insert the joint into the appropriate Rapier set. `body0`/`body1`
 /// are already-resolved Rapier handles; the caller has converted

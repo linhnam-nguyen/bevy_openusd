@@ -15,9 +15,9 @@
 //! this module just hands the dims to Rapier.
 
 use anyhow::Result;
-use glam::DVec3;
-use openusd::physics::CollisionApprox;
+use rapier3d_f64::glamx::DVec3;
 use rapier3d_f64::prelude::*;
+use usd_schema::physics::CollisionApprox;
 
 /// Authored shape inputs. The mesh case carries vertices + optional
 /// indices in the *body-local* frame (caller has already baked any

@@ -3,12 +3,13 @@
 
 use bevy::math::Mat4;
 use openusd::sdf::{Path, Value};
+use usd_schema::StageReadExt;
 
 fn main() {
     let path = std::env::args().nth(1).unwrap_or_else(|| {
         "/home/bresilla/data/code/other/bevy_openusd/assets/external/hummingbird.usdz".to_string()
     });
-    let stage = openusd::Stage::open(&path).unwrap();
+    let stage = openusd::usd::Stage::open(&path).unwrap();
 
     println!("=== SKELETON STRUCTURE ===");
     let skel_path = Path::new("/hummingbird_anim_hover_idle_long/hummingbird_rig/hummingbird_skinned_mesh/hummingbird_bind/root_1").unwrap();
@@ -35,9 +36,9 @@ fn main() {
     println!("\n=== MESH BINDINGS ===");
 
     // List all meshes and their skel bindings
-    fn walk_meshes(stage: &openusd::Stage, prim: &Path) {
+    fn walk_meshes(stage: &openusd::usd::Stage, prim: &Path) {
         let tn: String = stage
-            .field::<String>(prim.clone(), "typeName")
+            .composed_field::<String>(prim.clone(), "typeName")
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -79,16 +80,14 @@ fn main() {
                     let gbind_attr = prim
                         .append_property("primvars:skel:geomBindTransform")
                         .unwrap();
-                    let gbind_val = stage.field::<Value>(gbind_attr, "default").ok().flatten();
+                    let gbind_val = stage
+                        .composed_field::<Value>(gbind_attr, "default")
+                        .ok()
+                        .flatten();
                     if let Some(val) = gbind_val {
                         match val {
                             Value::Matrix4d(m) => {
-                                let m_f32: [f32; 16] = m
-                                    .iter()
-                                    .map(|&x| x as f32)
-                                    .collect::<Vec<_>>()
-                                    .try_into()
-                                    .unwrap();
+                                let m_f32 = m.0.map(|x| x as f32);
                                 let mat = Mat4::from_cols_array(&m_f32);
                                 let (s, _, t) = mat.to_scale_rotation_translation();
                                 let is_identity =
@@ -128,9 +127,13 @@ fn main() {
 
     // Probe joints attribute
     if let Ok(jattr) = anim_path.append_property("joints") {
-        if let Ok(Some(v)) = stage.field::<Value>(jattr, "default") {
+        if let Ok(Some(v)) = stage.composed_field::<Value>(jattr, "default") {
             match v {
-                Value::TokenVec(tokens) | Value::StringVec(tokens) => {
+                Value::TokenVec(tokens) => {
+                    println!("  joints.default: {} entries", tokens.len());
+                    println!("    First 5: {:?}", &tokens[..5.min(tokens.len())]);
+                }
+                Value::StringVec(tokens) => {
                     println!("  joints.default: {} entries", tokens.len());
                     println!("    First 5: {:?}", &tokens[..5.min(tokens.len())]);
                 }
@@ -141,7 +144,7 @@ fn main() {
 
     // Check translations timeSamples
     if let Ok(tattr) = anim_path.append_property("translations") {
-        match stage.field::<Value>(tattr.clone(), "timeSamples") {
+        match stage.composed_field::<Value>(tattr.clone(), "timeSamples") {
             Ok(Some(Value::Vec3fVec(vals))) => {
                 println!(
                     "  translations.timeSamples: {} vector3f values (1 keyframe = {} vals / joint_count)",
@@ -151,7 +154,8 @@ fn main() {
             }
             _ => {
                 // Try timeSampleIndices
-                if let Ok(Some(indices)) = stage.field::<Value>(tattr, "timeSampleIndices") {
+                if let Ok(Some(indices)) = stage.composed_field::<Value>(tattr, "timeSampleIndices")
+                {
                     println!("  translations: has timeSampleIndices {:?}", indices);
                 } else {
                     println!("  translations: no timeSamples found");
@@ -162,7 +166,7 @@ fn main() {
 
     // Check rotations timeSamples
     if let Ok(rattr) = anim_path.append_property("rotations") {
-        match stage.field::<Value>(rattr.clone(), "timeSamples") {
+        match stage.composed_field::<Value>(rattr.clone(), "timeSamples") {
             Ok(Some(Value::QuatfVec(vals))) => {
                 println!("  rotations.timeSamples: {} quatf values", vals.len());
             }
@@ -186,9 +190,17 @@ fn main() {
     let mut cur = body_path.clone();
     loop {
         if let Ok(jattr) = cur.append_property("skel:joints") {
-            if let Ok(Some(v)) = stage.field::<Value>(jattr, "default") {
+            if let Ok(Some(v)) = stage.composed_field::<Value>(jattr, "default") {
                 match v {
-                    Value::TokenVec(tokens) | Value::StringVec(tokens) => {
+                    Value::TokenVec(tokens) => {
+                        println!("  {} → skel:joints: {} entries", cur.as_str(), tokens.len());
+                        if tokens.len() <= 20 {
+                            for (i, t) in tokens.iter().enumerate() {
+                                println!("    [{}] {}", i, t);
+                            }
+                        }
+                    }
+                    Value::StringVec(tokens) => {
                         println!("  {} → skel:joints: {} entries", cur.as_str(), tokens.len());
                         if tokens.len() <= 20 {
                             for (i, t) in tokens.iter().enumerate() {
