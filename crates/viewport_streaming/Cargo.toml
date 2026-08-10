@@ -1,0 +1,37 @@
+[package]
+name = "viewport_streaming"
+version = "0.0.1"
+edition = "2024"
+
+# ── Native System Prerequisites ──────────────────────────────────────────────
+#
+# Native GStreamer C libraries and `pkg-config` are required at build time.
+# Documentation: https://docs.rs/gstreamer/latest/gstreamer/#installation
+#
+# macOS (Homebrew):
+#   brew install pkg-config gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav
+#
+# Ubuntu / Debian (apt):
+#   sudo apt-get install -y pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+#     libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+#     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-nice
+#
+# Windows:
+#   Install GStreamer MSVC 64-bit runtime & development installers:
+#   https://gstreamer.freedesktop.org/data/pkg/windows/
+# ─────────────────────────────────────────────────────────────────────────────
+
+[dependencies]
+viewport_protocol = { path = "../viewport_protocol" }
+gstreamer = "0.25.3"
+gstreamer-app = "0.25.2"
+gstreamer-video = "0.25.3"
+gstreamer-webrtc = "0.25.2"
+gstreamer-sdp = "0.25.3"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net"] }
+tokio-tungstenite = "0.30.0"
+log = "0.4"
+anyhow = "1"

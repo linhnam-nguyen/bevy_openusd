@@ -4,8 +4,10 @@
 //! `--stdio` or `--transport stdio` additionally exposes the UI-neutral
 //! `viewport_protocol` contract over JSON Lines on standard input/output.
 
+pub(crate) mod frame_capture;
 mod stdio;
 
+pub(crate) use frame_capture::{FrameCapturePlugin, FrameCaptureSink, FrameData};
 pub(crate) use stdio::StdioTransportPlugin;
 
 /// A process boundary enabled for this viewport launch.
@@ -13,13 +15,32 @@ pub(crate) use stdio::StdioTransportPlugin;
 pub(crate) enum ViewportTransport {
     /// JSON Lines commands on stdin and events on stdout.
     Stdio,
+    /// Headless WebRTC streaming server
+    WebRtc,
 }
 
 /// Command-line configuration that is independent of Bevy startup.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct LaunchOptions {
     pub(crate) asset_argument: Option<String>,
     pub(crate) transport: Option<ViewportTransport>,
+    pub(crate) headless: bool,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) fps: u32,
+}
+
+impl Default for LaunchOptions {
+    fn default() -> Self {
+        Self {
+            asset_argument: None,
+            transport: None,
+            headless: false,
+            width: 1920,
+            height: 1080,
+            fps: 60,
+        }
+    }
 }
 
 /// Parses `usdview` arguments without treating a transport flag as a USD path.
@@ -32,7 +53,12 @@ pub(crate) fn parse_launch_options<I>(arguments: I) -> Result<LaunchOptions, Str
 where
     I: IntoIterator<Item = String>,
 {
-    let mut options = LaunchOptions::default();
+    let mut options = LaunchOptions {
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        ..Default::default()
+    };
     let mut arguments = arguments.into_iter();
     let mut parse_options = true;
 
@@ -42,15 +68,49 @@ where
             continue;
         }
 
-        if parse_options && argument == "--stdio" {
-            options.transport = Some(ViewportTransport::Stdio);
+        if parse_options && argument == "--headless" {
+            options.headless = true;
+            continue;
+        }
+
+        if parse_options && (argument == "--webrtc" || argument == "--stdio") {
+            options.transport = Some(if argument == "--webrtc" {
+                ViewportTransport::WebRtc
+            } else {
+                ViewportTransport::Stdio
+            });
+            continue;
+        }
+
+        if parse_options && argument == "--preset" {
+            let preset = arguments
+                .next()
+                .ok_or_else(|| "--preset requires performance|quality|adaptive".to_owned())?;
+            match preset.as_str() {
+                "performance" => {
+                    options.width = 1920;
+                    options.height = 1080;
+                    options.fps = 120;
+                }
+                "quality" => {
+                    options.width = 2560;
+                    options.height = 1440;
+                    options.fps = 60;
+                }
+                "adaptive" => {
+                    options.width = 1280;
+                    options.height = 720;
+                    options.fps = 60;
+                }
+                other => return Err(format!("unknown preset `{other}`")),
+            }
             continue;
         }
 
         if parse_options && argument == "--transport" {
-            let transport = arguments
-                .next()
-                .ok_or_else(|| "--transport requires a value such as `stdio`".to_owned())?;
+            let transport = arguments.next().ok_or_else(|| {
+                "--transport requires a value such as `stdio` or `webrtc`".to_owned()
+            })?;
             options.transport = Some(parse_transport(&transport)?);
             continue;
         }
@@ -76,8 +136,9 @@ where
 fn parse_transport(value: &str) -> Result<ViewportTransport, String> {
     match value {
         "stdio" => Ok(ViewportTransport::Stdio),
+        "webrtc" => Ok(ViewportTransport::WebRtc),
         unsupported => Err(format!(
-            "unsupported transport `{unsupported}`; only `stdio` is available in this build"
+            "unsupported transport `{unsupported}`; available transports: `stdio`, `webrtc`"
         )),
     }
 }
@@ -97,6 +158,7 @@ mod tests {
             LaunchOptions {
                 asset_argument: Some("fixtures/robot.usda".to_owned()),
                 transport: None,
+                ..Default::default()
             }
         );
     }
@@ -113,6 +175,7 @@ mod tests {
                 LaunchOptions {
                     asset_argument: None,
                     transport: Some(ViewportTransport::Stdio),
+                    ..Default::default()
                 }
             );
         }
@@ -133,6 +196,7 @@ mod tests {
                 LaunchOptions {
                     asset_argument: Some("fixtures/robot.usda".to_owned()),
                     transport: Some(ViewportTransport::Stdio),
+                    ..Default::default()
                 }
             );
         }

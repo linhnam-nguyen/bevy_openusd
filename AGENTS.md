@@ -14,3 +14,7 @@ Instruct ONLY ONE single next step for the user to follow and wait for their ret
 # Styling Guidelines
 
 Prefer inline `style="..."` attribute to define precise positioning and styling rules.
+
+# Documentation & Crate Guidelines
+
+Always consult the official GStreamer Rust documentation at https://docs.rs/gstreamer/latest/gstreamer/ before implementing any WebRTC or video encoding logic to ensure latest API compliance.

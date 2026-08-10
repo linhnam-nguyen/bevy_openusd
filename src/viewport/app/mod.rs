@@ -12,11 +12,14 @@
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
+pub(crate) mod headless;
+
 use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use usd_bevy::UsdPlugin;
+use headless::HeadlessRenderPlugin;
 
 use crate::viewport::animation::{
     PendingAnimationClip, UsdStageTime, apply_live_animation_clip, drive_blend_shape_weights,
@@ -115,12 +118,24 @@ pub(crate) fn run() {
     // separators / hover states pop against the world.
     .insert_resource(bevy_frost::prelude::AccentColor(
         bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
-    ))
-    .add_plugins(ViewportBridgePlugin)
-    .add_plugins(ViewerUiPlugin)
-    .add_plugins(ViewerKeyboardPlugin)
-    .add_plugins(OverlaysPlugin)
-    .add_plugins(crate::viewport::physics::gizmos::PhysicsOverlayPlugin);
+    ));
+
+    if launch_options.headless {
+        app.add_plugins(HeadlessRenderPlugin {
+            width: launch_options.width,
+            height: launch_options.height,
+            fps: launch_options.fps,
+        });
+    }
+
+    app.add_plugins(ViewportBridgePlugin)
+        .add_plugins(ViewerKeyboardPlugin)
+        .add_plugins(OverlaysPlugin)
+        .add_plugins(crate::viewport::physics::gizmos::PhysicsOverlayPlugin);
+
+    if !launch_options.headless {
+        app.add_plugins(ViewerUiPlugin);
+    }
 
     if launch_options.transport == Some(ViewportTransport::Stdio) {
         // Add this after the bridge plugin so its explicit system ordering can

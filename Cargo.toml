@@ -5,6 +5,7 @@ members = [
     "crates/usd_rapier",
     "crates/usd_bevy",
     "crates/viewport_protocol",
+    "crates/viewport_streaming",
 ]
 exclude = ["xtra"]
 
