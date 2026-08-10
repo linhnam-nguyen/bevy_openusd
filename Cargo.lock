@@ -5796,9 +5796,11 @@ dependencies = [
  "rapier3d-f64",
  "rfd",
  "serde_json",
+ "tokio",
  "usd_bevy",
  "usd_schema",
  "viewport_protocol",
+ "viewport_streaming",
  "zip",
 ]
 

@@ -18,8 +18,8 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use usd_bevy::UsdPlugin;
 use headless::HeadlessRenderPlugin;
+use usd_bevy::UsdPlugin;
 
 use crate::viewport::animation::{
     PendingAnimationClip, UsdStageTime, apply_live_animation_clip, drive_blend_shape_weights,
@@ -72,53 +72,67 @@ pub(crate) fn run() {
     let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument);
 
     let mut app = App::new();
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: format!("usdview — {asset_path}"),
-                    resolution: (1400u32, 900u32).into(),
+
+    if launch_options.headless {
+        app.add_plugins(
+            DefaultPlugins
+                .build()
+                .disable::<bevy::winit::WinitPlugin>()
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: bevy::window::ExitCondition::DontExit,
                     ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: asset_root.to_string_lossy().into_owned(),
+                    ..Default::default()
+                })
+                .set(bevy::log::LogPlugin {
+                    custom_layer:
+                        crate::viewport::diagnostics::log_capture::loader_log_custom_layer,
+                    ..Default::default()
+                })
+                .add(bevy::app::ScheduleRunnerPlugin::run_loop(
+                    std::time::Duration::from_secs_f64(1.0 / launch_options.fps as f64),
+                )),
+        );
+    } else {
+        app.add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: format!("usdview — {asset_path}"),
+                        resolution: (1400u32, 900u32).into(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::asset::AssetPlugin {
+                    file_path: asset_root.to_string_lossy().into_owned(),
+                    ..Default::default()
+                })
+                .set(bevy::log::LogPlugin {
+                    custom_layer:
+                        crate::viewport::diagnostics::log_capture::loader_log_custom_layer,
+                    ..Default::default()
                 }),
-                ..default()
-            })
-            .set(bevy::asset::AssetPlugin {
-                file_path: asset_root.to_string_lossy().into_owned(),
-                ..Default::default()
-            })
-            .set(bevy::log::LogPlugin {
-                custom_layer: crate::viewport::diagnostics::log_capture::loader_log_custom_layer,
-                ..Default::default()
-            }),
-    )
-    .add_plugins(EguiPlugin::default())
-    .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
-    .add_plugins(UsdPlugin)
-    .add_plugins(ArcballCameraPlugin)
-    // bevy_glacial's LOD ground grid + R/G/B axis triad (replaces
-    // our hand-rolled grid + axes overlay code). Grid follows
-    // whichever entity carries `ChaseCamera` — we tag our
-    // arcball-camera entity with one and sync focus / distance
-    // every frame in `sync_chase_camera`.
-    .add_plugins(GroundGridPlugin)
-    .add_plugins(AxisGizmoPlugin)
-    // Match the bevy_frost demo's space-y look: dark navy background
-    // + cool-blue LOD grid that fades into the void. Without the
-    // solid ground floor and against this background, the LOD grid
-    // reads as the only world structure — appearing to extend to
-    // infinity instead of looking like a flat plane.
-    .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))
-    .insert_resource(GroundGrid {
-        visible: true,
-        color: Color::srgba(0.30, 0.38, 0.50, 0.42),
-    })
-    // Cool steel-blue UI accent matching the dark navy background.
-    // The frost demo defaults to neutral gray; we override with a
-    // saturated blue so highlighted ribbon icons / section
-    // separators / hover states pop against the world.
-    .insert_resource(bevy_frost::prelude::AccentColor(
-        bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
-    ));
+        );
+    }
+
+    app.add_plugins(EguiPlugin::default())
+        .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
+        .add_plugins(UsdPlugin)
+        .add_plugins(ArcballCameraPlugin)
+        .add_plugins(GroundGridPlugin)
+        .add_plugins(AxisGizmoPlugin)
+        .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))
+        .insert_resource(GroundGrid {
+            visible: true,
+            color: Color::srgba(0.30, 0.38, 0.50, 0.42),
+        })
+        .insert_resource(bevy_frost::prelude::AccentColor(
+            bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
+        ));
 
     if launch_options.headless {
         app.add_plugins(HeadlessRenderPlugin {
@@ -129,12 +143,13 @@ pub(crate) fn run() {
     }
 
     app.add_plugins(ViewportBridgePlugin)
-        .add_plugins(ViewerKeyboardPlugin)
         .add_plugins(OverlaysPlugin)
         .add_plugins(crate::viewport::physics::gizmos::PhysicsOverlayPlugin);
 
     if !launch_options.headless {
-        app.add_plugins(ViewerUiPlugin);
+        app.add_plugins(ViewerKeyboardPlugin)
+            .add_plugins(ViewerUiPlugin)
+            .add_systems(Startup, open_default_panel);
     }
 
     if launch_options.transport == Some(ViewportTransport::Stdio) {
@@ -142,6 +157,48 @@ pub(crate) fn run() {
         // enqueue stdin commands before bridge application and flush Ready /
         // command events after the bridge has emitted them.
         app.add_plugins(StdioTransportPlugin);
+    }
+
+    if launch_options.transport == Some(ViewportTransport::WebRtc) {
+        let (frame_tx, frame_rx) =
+            std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
+        if launch_options.headless {
+            app.add_plugins(crate::viewport::transport::FrameCapturePlugin { sender: frame_tx });
+        }
+        let config = viewport_streaming::StreamingConfig {
+            width: launch_options.width,
+            height: launch_options.height,
+            fps: launch_options.fps,
+            ..Default::default()
+        };
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let (session_tx, session_rx) = tokio::sync::mpsc::channel(32);
+                let session = viewport_streaming::WebRtcSessionManager::new(config.clone());
+                tokio::spawn(async move {
+                    let _ = session.run(session_rx).await;
+                });
+                let enc_config = config.clone();
+                tokio::task::spawn_blocking(move || {
+                    let mut encoder: Option<viewport_streaming::EncodePipeline> = None;
+                    while let Ok(frame) = frame_rx.recv() {
+                        if encoder.is_none() {
+                            if let Ok(pipeline) = viewport_streaming::EncodePipeline::new(
+                                &enc_config,
+                                viewport_streaming::VideoCodec::H265,
+                            ) {
+                                encoder = Some(pipeline);
+                            }
+                        }
+                        if let Some(ref enc) = encoder {
+                            let _ = enc.push_rgba_frame(&frame.rgba);
+                        }
+                    }
+                });
+                let _ = viewport_streaming::run_signaling_server(config, session_tx).await;
+            });
+        });
     }
 
     // The USD physics adapter owns its own Rapier f64 world via
@@ -168,7 +225,6 @@ pub(crate) fn run() {
         .init_resource::<PendingAnimationClip>()
         .init_resource::<UsdStageTime>()
         .init_resource::<CameraBookmarks>()
-        .add_systems(Startup, open_default_panel)
         .insert_resource(StageInfo {
             path: asset_path.clone(),
             ..default()
