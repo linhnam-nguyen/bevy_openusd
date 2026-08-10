@@ -12,6 +12,8 @@ pub mod curves;
 mod light;
 pub mod markers;
 mod material;
+#[cfg(any(target_arch = "wasm32", test))]
+mod memory_resolver;
 pub mod mesh;
 pub mod nurbs_patch;
 pub mod physics;

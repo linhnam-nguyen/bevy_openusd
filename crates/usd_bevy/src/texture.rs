@@ -76,7 +76,10 @@ pub fn load_texture(
         bevy::log::warn!("texture: usdz-embedded {clean:?} found but decode failed");
     }
 
-    // 2. Filesystem search via configured roots.
+    // 2. Filesystem search via configured roots.  The WebAssembly loader only
+    // accepts self-contained USDZ packages, so falling through to a path probe
+    // would be both misleading and an accidental browser filesystem dependency.
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(path) = locate_on_filesystem(ctx, &clean) {
         bevy::log::info!("texture: fs hit for {clean:?} → {path:?}");
         match std::fs::read(&path) {
@@ -108,7 +111,15 @@ pub fn load_texture(
 /// should not look like broken authored materials in the log.
 pub fn can_resolve_texture(ctx: &mut BuildCtx<'_, '_>, raw_path: &str) -> bool {
     let clean = raw_path.strip_prefix("./").unwrap_or(raw_path).to_string();
-    lookup_embedded(ctx.embedded, &clean).is_some() || locate_on_filesystem(ctx, &clean).is_some()
+    if lookup_embedded(ctx.embedded, &clean).is_some() {
+        return true;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return locate_on_filesystem(ctx, &clean).is_some();
+    }
+    #[cfg(target_arch = "wasm32")]
+    false
 }
 
 /// Composite separately-authored roughness + metallic textures into
@@ -176,6 +187,7 @@ fn fetch_texture_bytes(ctx: &BuildCtx<'_, '_>, clean: &str) -> Option<Vec<u8>> {
     if let Some(b) = lookup_embedded(ctx.embedded, clean) {
         return Some(b.clone());
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(path) = locate_on_filesystem_const(ctx, clean) {
         if let Ok(b) = std::fs::read(&path) {
             return Some(b);

@@ -25,13 +25,15 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use usd_bevy::{UsdAsset, UsdDisplayName, UsdKind, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
 
-use crate::viewport::animation::{PendingAnimationClip, UsdStageTime};
+use crate::viewport::animation::UsdStageTime;
+use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox};
 use crate::viewport::camera::ArcballCamera;
 use crate::viewport::camera::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
 use crate::viewport::diagnostics::log_capture::{LoaderLog, LogLine};
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::{LoadRequest, LoaderTuning, ReloadRequest, StageInfo};
+use crate::viewport::session::{LoadRequest, LoaderTuning, StageInfo};
+use viewport_protocol::{FocusMode, ViewportCommand};
 
 // ─── Ribbon declaration ─────────────────────────────────────────────
 
@@ -308,7 +310,8 @@ fn draw_ribbons(
     mut open: ResMut<RibbonOpen>,
     mut placement: ResMut<RibbonPlacement>,
     mut drag: ResMut<RibbonDrag>,
-    mut physics: ResMut<usd_bevy::physics::PhysicsActive>,
+    physics: Res<usd_bevy::physics::PhysicsActive>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -326,7 +329,9 @@ fn draw_ribbons(
     );
     for click in clicks {
         if click.item == RIB_PLAY {
-            physics.0 = !physics.0;
+            viewport_commands.send(ViewportCommand::SetPhysicsRunning {
+                running: !physics.0,
+            });
         }
     }
 }
@@ -348,7 +353,8 @@ fn draw_selection_panel(
     info: Res<StageInfo>,
     requested: Res<crate::viewport::session::RequestedAsset>,
     mut load_req: ResMut<LoadRequest>,
-    mut selected: ResMut<SelectedPrim>,
+    selected: Res<SelectedPrim>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
     prims: Query<(Entity, &Name, &UsdPrimRef)>,
     mesh_q: Query<(), With<Mesh3d>>,
     kind_q: Query<&UsdKind>,
@@ -424,11 +430,11 @@ fn draw_selection_panel(
                         });
 
                         if wide_button(ui, "Clear selection", accent_col).clicked() {
-                            selected.0 = None;
+                            viewport_commands.send(ViewportCommand::SelectTarget { target: None });
                         }
                     } else {
                         sub_caption(ui, "(selection stale)");
-                        selected.0 = None;
+                        viewport_commands.send(ViewportCommand::SelectTarget { target: None });
                     }
                 }
                 None => sub_caption(ui, "Click a prim in the Tree panel"),
@@ -446,21 +452,19 @@ fn draw_tree_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    mut selected: ResMut<SelectedPrim>,
-    mut fly: ResMut<FlyTo>,
+    selected: Res<SelectedPrim>,
+    scene_index: Res<SceneAnchorIndex>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
     mut expanded: ResMut<TreeExpanded>,
     mut filter: ResMut<TreeFilter>,
     materials: Res<Assets<StandardMaterial>>,
-    cameras: Query<&ArcballCamera>,
-    gt_query: Query<&GlobalTransform>,
-    extent_q: Query<&usd_bevy::UsdLocalExtent>,
     // Combined with `Option<&UsdDisplayName>` so the system stays
     // under Bevy's 16-SystemParam limit. The recursive row helper
     // pulls the display name via `prims.get(entity)` instead of
     // a separate query.
     prims: Query<(Entity, &Name, &UsdPrimRef, Option<&UsdDisplayName>)>,
     mat_q: Query<&MeshMaterial3d<StandardMaterial>>,
-    mut visibility_q: Query<(Entity, &mut Visibility)>,
+    visibility_q: Query<(Entity, &Visibility)>,
     children: Query<&Children>,
 ) {
     if !is_panel_open(&open, RIB_TREE) {
@@ -509,18 +513,13 @@ fn draw_tree_panel(
 
                 ui.add_space(style::space::BLOCK);
 
-                // Snapshot the current Visibility state so the tree
-                // rows can drive eye-icon toggles via plain &mut bool
-                // — we commit changes back to the ECS once the row
-                // rendering is finished.
+                // Snapshot current visibility so rows can be rendered with
+                // local booleans. The final subtree action is sent through
+                // the viewport contract below, not written to ECS here.
                 let mut vis_cache: HashMap<Entity, bool> = HashMap::new();
                 for (e, v) in visibility_q.iter() {
                     vis_cache.insert(e, !matches!(*v, Visibility::Hidden));
                 }
-                // `visibility_q.get_mut(e)` below returns
-                // `Result<(Entity, Mut<Visibility>)>`; we only need
-                // the Mut half, hence the destructuring pattern.
-                let vis_before = vis_cache.clone();
 
                 let filter_lc = filter.0.to_lowercase();
                 let flat = !filter_lc.is_empty();
@@ -621,61 +620,30 @@ fn draw_tree_panel(
                         }
                     });
 
-                // Commit eye-icon toggles back to the ECS.
-                for (entity, visible) in &vis_cache {
-                    if vis_before.get(entity) != Some(visible) {
-                        if let Ok((_, mut v)) = visibility_q.get_mut(*entity) {
-                            *v = if *visible {
-                                Visibility::Visible
-                            } else {
-                                Visibility::Hidden
-                            };
-                        }
+                if let Some((entity, visible)) = outcome.visibility_change {
+                    if let Some(target) = scene_index.anchor_for(entity) {
+                        viewport_commands
+                            .send(ViewportCommand::SetSubtreeVisibility { target, visible });
                     }
                 }
 
                 if let Some(action) = outcome.ctx_action {
                     match action {
                         CtxAction::FlyTo(entity) => {
-                            selected.0 = Some(entity);
-                            if let (Ok(target_gt), Ok(cam)) =
-                                (gt_query.get(entity), cameras.single())
-                            {
-                                let target = target_gt.translation();
-                                let target_dist = (cam.distance * 0.25).clamp(0.2, 40.0);
-                                fly.start_focus = cam.focus;
-                                fly.start_distance = cam.distance;
-                                fly.target_focus = target;
-                                fly.target_distance = target_dist;
-                                fly.start_yaw = None;
-                                fly.target_yaw = None;
-                                fly.start_elevation = None;
-                                fly.target_elevation = None;
-                                fly.duration = 0.4;
-                                fly.remaining = 0.4;
-                            }
+                            queue_tree_focus(
+                                &mut viewport_commands,
+                                &scene_index,
+                                entity,
+                                FocusMode::FlyToTarget,
+                            );
                         }
                         CtxAction::Fit(entity) => {
-                            selected.0 = Some(entity);
-                            if let Ok(cam) = cameras.single() {
-                                let (target, target_dist) = fit_params_for_entity(
-                                    entity,
-                                    &gt_query,
-                                    &extent_q,
-                                    &children,
-                                    cam.distance,
-                                );
-                                fly.start_focus = cam.focus;
-                                fly.start_yaw = None;
-                                fly.target_yaw = None;
-                                fly.start_elevation = None;
-                                fly.target_elevation = None;
-                                fly.start_distance = cam.distance;
-                                fly.target_focus = target;
-                                fly.target_distance = target_dist;
-                                fly.duration = 0.4;
-                                fly.remaining = 0.4;
-                            }
+                            queue_tree_focus(
+                                &mut viewport_commands,
+                                &scene_index,
+                                entity,
+                                FocusMode::FrameTarget,
+                            );
                         }
                         CtxAction::ExpandDesc(entity) => {
                             set_subtree_expanded(entity, &prims, &children, &mut expanded, true);
@@ -687,58 +655,45 @@ fn draw_tree_panel(
                 }
 
                 if let Some(entity) = outcome.double_clicked {
-                    selected.0 = Some(entity);
-                    if let Ok(cam) = cameras.single() {
-                        let (target, target_dist) = fit_params_for_entity(
-                            entity,
-                            &gt_query,
-                            &extent_q,
-                            &children,
-                            cam.distance,
-                        );
-                        fly.start_focus = cam.focus;
-                        fly.start_distance = cam.distance;
-                        fly.target_focus = target;
-                        fly.target_distance = target_dist;
-                        fly.start_yaw = None;
-                        fly.target_yaw = None;
-                        fly.start_elevation = None;
-                        fly.target_elevation = None;
-                        fly.duration = 0.4;
-                        fly.remaining = 0.4;
-                    }
+                    queue_tree_focus(
+                        &mut viewport_commands,
+                        &scene_index,
+                        entity,
+                        FocusMode::FrameTarget,
+                    );
                 } else if let Some(entity) = outcome.clicked {
-                    selected.0 = Some(entity);
-                    if let Ok(cam) = cameras.single() {
-                        let (target, target_dist) = fit_params_for_entity(
-                            entity,
-                            &gt_query,
-                            &extent_q,
-                            &children,
-                            cam.distance,
-                        );
-                        fly.start_focus = cam.focus;
-                        fly.start_distance = cam.distance;
-                        fly.target_focus = target;
-                        fly.target_distance = target_dist;
-                        fly.start_yaw = None;
-                        fly.target_yaw = None;
-                        fly.start_elevation = None;
-                        fly.target_elevation = None;
-                        fly.duration = 0.4;
-                        fly.remaining = 0.4;
-                    }
+                    queue_tree_focus(
+                        &mut viewport_commands,
+                        &scene_index,
+                        entity,
+                        FocusMode::FrameTarget,
+                    );
                 }
             });
         },
     );
 }
 
-#[derive(Default, Clone, Copy)]
+/// Converts a Frost tree-row entity into the same logical command sent by a
+/// future product UI. The scene index owns the private entity mapping, so the
+/// command never exposes an ECS identifier.
+fn queue_tree_focus(
+    commands: &mut ViewportCommandInbox,
+    scene_index: &SceneAnchorIndex,
+    entity: Entity,
+    mode: FocusMode,
+) {
+    if let Some(target) = scene_index.anchor_for(entity) {
+        commands.send(ViewportCommand::FocusTarget { target, mode });
+    }
+}
+
+#[derive(Default, Clone)]
 struct RowOutcome {
     clicked: Option<Entity>,
     double_clicked: Option<Entity>,
     ctx_action: Option<CtxAction>,
+    visibility_change: Option<(Entity, bool)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -760,6 +715,9 @@ impl RowOutcome {
         }
         if other.ctx_action.is_some() {
             self.ctx_action = other.ctx_action;
+        }
+        if other.visibility_change.is_some() {
+            self.visibility_change = other.visibility_change;
         }
     }
 }
@@ -952,6 +910,9 @@ fn draw_tree_row(
     if has_prim_children && visible_flag != visible_before {
         set_subtree_visible(entity, children, vis_cache, visible_flag);
     }
+    if visible_flag != visible_before {
+        outcome.visibility_change = Some((entity, visible_flag));
+    }
     if resp.body.hovered() {
         resp.body.clone().on_hover_text(&prim_ref.path);
     }
@@ -1020,62 +981,6 @@ fn draw_tree_row(
     outcome
 }
 
-/// Walk the subtree rooted at `root`, transforming each descendant's
-/// authored local extent into world space, and fold into one AABB.
-/// Returns `(focus, distance)` sized for arcball framing. When no
-/// descendant carries `UsdLocalExtent`, falls back to a heuristic.
-/// Computes a focus point and camera distance that frame an entity's subtree.
-fn fit_params_for_entity(
-    root: Entity,
-    gt_q: &Query<&GlobalTransform>,
-    extent_q: &Query<&usd_bevy::UsdLocalExtent>,
-    children: &Query<&Children>,
-    current_cam_dist: f32,
-) -> (Vec3, f32) {
-    let mut min = Vec3::splat(f32::INFINITY);
-    let mut max = Vec3::splat(f32::NEG_INFINITY);
-    let mut found = false;
-
-    let mut stack: Vec<Entity> = vec![root];
-    while let Some(e) = stack.pop() {
-        if let (Ok(gt), Ok(le)) = (gt_q.get(e), extent_q.get(e)) {
-            let m = gt.to_matrix();
-            for i in 0..8 {
-                let c = Vec3::new(
-                    if i & 1 == 0 { le.min[0] } else { le.max[0] },
-                    if i & 2 == 0 { le.min[1] } else { le.max[1] },
-                    if i & 4 == 0 { le.min[2] } else { le.max[2] },
-                );
-                let w = m.transform_point3(c);
-                min = min.min(w);
-                max = max.max(w);
-            }
-            found = true;
-        }
-        if let Ok(cs) = children.get(e) {
-            for c in cs.iter() {
-                stack.push(c);
-            }
-        }
-    }
-
-    if found {
-        let center = (min + max) * 0.5;
-        let size = (max - min).abs();
-        let max_dim = size.x.max(size.y).max(size.z).max(0.05);
-        // 1.6× the biggest dimension: fits the subtree with a small
-        // margin, regardless of aspect ratio.
-        let dist = (max_dim * 1.6).clamp(0.2, 200.0);
-        (center, dist)
-    } else if let Ok(gt) = gt_q.get(root) {
-        // No local extent on anything in the subtree — fall back to
-        // the single-click heuristic.
-        (gt.translation(), (current_cam_dist * 0.25).clamp(0.2, 40.0))
-    } else {
-        (Vec3::ZERO, current_cam_dist)
-    }
-}
-
 // ─── Stage-info panel ───────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -1086,7 +991,7 @@ fn draw_info_panel(
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
     info: Res<StageInfo>,
-    mut reload: ResMut<ReloadRequest>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
     prims: Query<&UsdPrimRef>,
     meshes_q: Query<&Mesh3d, With<UsdPrimRef>>,
     spatial_audio_q: Query<&UsdSpatialAudio>,
@@ -1212,7 +1117,7 @@ fn draw_info_panel(
             });
             pane.section("info_actions", "Actions", true, |ui| {
                 if wide_button(ui, "⟳  Reload stage (R)", accent_col).clicked() {
-                    reload.requested = true;
+                    viewport_commands.send(ViewportCommand::ReloadSession);
                 }
             });
         },
@@ -1228,9 +1133,8 @@ fn draw_variants_panel(
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
     usd_assets: Res<Assets<UsdAsset>>,
-    mut loader_tuning: ResMut<LoaderTuning>,
-    mut pending_anim: ResMut<PendingAnimationClip>,
-    mut reload: ResMut<ReloadRequest>,
+    loader_tuning: Res<LoaderTuning>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     if !is_panel_open(&open, RIB_VARIANTS) {
         return;
@@ -1287,7 +1191,6 @@ fn draw_variants_panel(
                 sub_caption(ui, "Switches the live UsdSkel clip without reloading the stage.");
                 ui.add_space(style::space::BLOCK);
 
-                let mut changed = false;
                 for (prim_path, set) in anim_sets {
                     let key = (prim_path.clone(), set.name.clone());
                     let authored = set.selection.as_deref().unwrap_or("");
@@ -1311,14 +1214,15 @@ fn draw_variants_panel(
                         if r.changed() {
                             let picked = set.options[selected_idx].clone();
                             if picked != current {
-                                loader_tuning.variants.insert(key.clone(), picked);
-                                pending_anim.name = Some(set.options[selected_idx].clone());
-                                changed = true;
+                                viewport_commands.send(ViewportCommand::SetVariantSelection {
+                                    prim_path: key.0.clone(),
+                                    set_name: key.1.clone(),
+                                    option: picked,
+                                });
                             }
                         }
                     });
                 }
-                let _ = changed;
             });
             pane.section("variants_all", "Variant sets", true, |ui| {
                 let asset = usd_assets.iter().next().map(|(_, a)| a);
@@ -1330,7 +1234,6 @@ fn draw_variants_panel(
                         );
                         ui.add_space(style::space::BLOCK);
 
-                        let mut changed = false;
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             let mut entries: Vec<_> = asset.variants.iter().collect();
                             entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -1375,14 +1278,13 @@ fn draw_variants_panel(
                                                 if r.changed() {
                                                     let picked = set.options[selected_idx].clone();
                                                     if picked != current {
-                                                        loader_tuning
-                                                            .variants
-                                                            .insert(key.clone(), picked.clone());
-                                                        if set.name == "anim" {
-                                                            pending_anim.name = Some(picked);
-                                                        } else {
-                                                            changed = true;
-                                                        }
+                                                        viewport_commands.send(
+                                                            ViewportCommand::SetVariantSelection {
+                                                                prim_path: key.0.clone(),
+                                                                set_name: key.1.clone(),
+                                                                option: picked,
+                                                            },
+                                                        );
                                                     }
                                                 }
                                             });
@@ -1393,15 +1295,12 @@ fn draw_variants_panel(
                                                         .small_button("reset to authored")
                                                         .clicked()
                                                     {
-                                                        loader_tuning.variants.remove(&key);
-                                                        if set.name == "anim" {
-                                                            if !authored.is_empty() {
-                                                                pending_anim.name =
-                                                                    Some(authored.to_string());
-                                                            }
-                                                        } else {
-                                                            changed = true;
-                                                        }
+                                                        viewport_commands.send(
+                                                            ViewportCommand::ResetVariantSelection {
+                                                                prim_path: key.0.clone(),
+                                                                set_name: key.1.clone(),
+                                                            },
+                                                        );
                                                     }
                                                 });
                                             }
@@ -1410,9 +1309,6 @@ fn draw_variants_panel(
                                 );
                             }
                         });
-                        if changed {
-                            reload.requested = true;
-                        }
                     }
                     Some(_) => {
                         sub_caption(ui, "Stage authors no variant sets.");
@@ -1508,6 +1404,7 @@ fn draw_cameras_panel(
     mut bookmarks: ResMut<CameraBookmarks>,
     mut fly: ResMut<FlyTo>,
     cameras: Query<&ArcballCamera>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     if !is_panel_open(&open, RIB_CAMERAS) {
         return;
@@ -1606,7 +1503,9 @@ fn draw_cameras_panel(
                     accent_col,
                 );
                 if r.body.clicked() || r.radio.clicked() {
-                    *camera_mount = CameraMount::Arcball;
+                    viewport_commands.send(ViewportCommand::SetCameraSource {
+                        source: viewport_protocol::CameraSource::Arcball,
+                    });
                 }
 
                 row_separator(ui);
@@ -1635,9 +1534,11 @@ fn draw_cameras_panel(
                             accent_col,
                         );
                         if r.body.clicked() || r.radio.clicked() {
-                            *camera_mount = CameraMount::Mounted {
-                                prim_path: cam.path.clone(),
-                            };
+                            viewport_commands.send(ViewportCommand::SetCameraSource {
+                                source: viewport_protocol::CameraSource::Authored {
+                                    prim_path: cam.path.clone(),
+                                },
+                            });
                         }
                     }
                 });
@@ -1774,14 +1675,33 @@ fn draw_materials_panel(
 
 // ─── Overlays panel ─────────────────────────────────────────────────
 
+/// Sends a Frost toggle through the same presentation command used by a host UI.
+fn protocol_overlay_toggle(
+    ui: &mut egui::Ui,
+    label: &str,
+    current: bool,
+    overlay: viewport_protocol::OverlayKind,
+    accent: egui::Color32,
+    commands: &mut ViewportCommandInbox,
+) {
+    let mut value = current;
+    if toggle(ui, label, &mut value, accent).changed() {
+        commands.send(ViewportCommand::SetOverlay {
+            overlay,
+            enabled: value,
+        });
+    }
+}
+
 /// Exposes debug-overlay, wireframe, lighting, and collider visibility controls.
 fn draw_overlays_panel(
     mut contexts: EguiContexts,
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    mut toggles: ResMut<DisplayToggles>,
-    mut loader_tuning: ResMut<LoaderTuning>,
+    toggles: Res<DisplayToggles>,
+    loader_tuning: Res<LoaderTuning>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     if !is_panel_open(&open, RIB_OVERLAYS) {
         return;
@@ -1791,6 +1711,11 @@ fn draw_overlays_panel(
     };
     let accent_col = accent.0;
     let mut keep = true;
+    let mut curve_tuning = viewport_protocol::CurveTuning {
+        default_radius: loader_tuning.curves.default_radius,
+        ring_segments: loader_tuning.curves.ring_segments,
+        point_scale: loader_tuning.curves.point_scale,
+    };
     floating_window_for_item(
         ctx,
         RIBBONS,
@@ -1803,23 +1728,29 @@ fn draw_overlays_panel(
         accent_col,
         |pane| {
             pane.section("overlay_toggles", "World overlays", true, |ui| {
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "Ground grid (G)",
-                    &mut toggles.show_world_grid,
+                    toggles.show_world_grid,
+                    viewport_protocol::OverlayKind::GroundGrid,
                     accent_col,
+                    &mut viewport_commands,
                 );
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "World axes (X)",
-                    &mut toggles.show_world_axes,
+                    toggles.show_world_axes,
+                    viewport_protocol::OverlayKind::WorldAxes,
                     accent_col,
+                    &mut viewport_commands,
                 );
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "Prim markers (P)",
-                    &mut toggles.show_prim_markers,
+                    toggles.show_prim_markers,
+                    viewport_protocol::OverlayKind::PrimMarkers,
                     accent_col,
+                    &mut viewport_commands,
                 );
                 let mut v = toggles.prim_marker_bias as f64;
                 if pretty_slider(
@@ -1833,56 +1764,78 @@ fn draw_overlays_panel(
                 )
                 .changed()
                 {
-                    toggles.prim_marker_bias = v as f32;
+                    viewport_commands.send(ViewportCommand::SetPrimMarkerBias { bias: v as f32 });
                 }
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "Skeleton bones (B)",
-                    &mut toggles.show_skeleton,
+                    toggles.show_skeleton,
+                    viewport_protocol::OverlayKind::Skeleton,
                     accent_col,
+                    &mut viewport_commands,
                 );
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "Physics gizmos (Y)",
-                    &mut toggles.show_physics,
+                    toggles.show_physics,
+                    viewport_protocol::OverlayKind::Physics,
                     accent_col,
+                    &mut viewport_commands,
                 );
-                toggle(
+                protocol_overlay_toggle(
                     ui,
                     "Collider wireframes (C)",
-                    &mut toggles.show_colliders,
+                    toggles.show_colliders,
+                    viewport_protocol::OverlayKind::Colliders,
                     accent_col,
+                    &mut viewport_commands,
                 );
             });
 
             pane.section("overlay_render", "Render", true, |ui| {
-                toggle(ui, "Wireframe", &mut toggles.wireframe, accent_col);
+                protocol_overlay_toggle(
+                    ui,
+                    "Wireframe",
+                    toggles.wireframe,
+                    viewport_protocol::OverlayKind::Wireframe,
+                    accent_col,
+                    &mut viewport_commands,
+                );
                 let mut s = toggles.light_intensity_scale as f64;
                 if pretty_slider(ui, "Light intensity", &mut s, 0.0..=5.0, 2, "×", accent_col)
                     .changed()
                 {
-                    toggles.light_intensity_scale = s as f32;
+                    viewport_commands.send(ViewportCommand::SetLightIntensity { scale: s as f32 });
                 }
                 sub_caption(ui, "Scales every authored light from its original value.");
             });
 
             pane.section("overlay_curves", "Curves (tubes)", true, |ui| {
                 sub_caption(ui, "Default radius used when widths aren't authored");
-                let mut r = loader_tuning.curves.default_radius as f64;
+                let mut r = curve_tuning.default_radius as f64;
                 if pretty_slider(ui, "Radius", &mut r, 0.001..=0.2, 3, " m", accent_col).changed() {
-                    loader_tuning.curves.default_radius = r as f32;
+                    curve_tuning.default_radius = r as f32;
+                    viewport_commands.send(ViewportCommand::SetCurveTuning {
+                        tuning: curve_tuning,
+                    });
                 }
-                let mut seg = loader_tuning.curves.ring_segments as f64;
+                let mut seg = curve_tuning.ring_segments as f64;
                 if pretty_slider(ui, "Ring segments", &mut seg, 3.0..=24.0, 0, "", accent_col)
                     .changed()
                 {
-                    loader_tuning.curves.ring_segments = seg.round() as u32;
+                    curve_tuning.ring_segments = seg.round() as u32;
+                    viewport_commands.send(ViewportCommand::SetCurveTuning {
+                        tuning: curve_tuning,
+                    });
                 }
-                let mut ps = loader_tuning.curves.point_scale as f64;
+                let mut ps = curve_tuning.point_scale as f64;
                 if pretty_slider(ui, "Point scale", &mut ps, 0.05..=4.0, 2, "×", accent_col)
                     .changed()
                 {
-                    loader_tuning.curves.point_scale = ps as f32;
+                    curve_tuning.point_scale = ps as f32;
+                    viewport_commands.send(ViewportCommand::SetCurveTuning {
+                        tuning: curve_tuning,
+                    });
                 }
                 sub_caption(ui, "Sliders apply live — no reload needed.");
             });
@@ -1898,7 +1851,8 @@ fn draw_timeline_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    mut clock: ResMut<UsdStageTime>,
+    clock: Res<UsdStageTime>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
     usd_assets: Res<Assets<UsdAsset>>,
 ) {
     if !is_panel_open(&open, RIB_TIMELINE) {
@@ -1939,23 +1893,22 @@ fn draw_timeline_panel(
                     "▶  Play"
                 };
                 if wide_button(ui, play_label, accent_col).clicked() {
-                    clock.playing = !clock.playing;
+                    viewport_commands.send(ViewportCommand::SetPlayback {
+                        playing: !clock.playing,
+                    });
                 }
                 if wide_button(ui, "⏮  Rewind", accent_col).clicked() {
-                    clock.seconds = 0.0;
+                    viewport_commands.send(ViewportCommand::Seek { seconds: 0.0 });
                 }
 
                 ui.add_space(style::space::BLOCK);
                 let dur = clock.duration_seconds().max(1e-3);
-                let _ = pretty_slider(
-                    ui,
-                    "Seconds",
-                    &mut clock.seconds,
-                    0.0..=dur,
-                    3,
-                    " s",
-                    accent_col,
-                );
+                let mut seconds = clock.seconds;
+                if pretty_slider(ui, "Seconds", &mut seconds, 0.0..=dur, 3, " s", accent_col)
+                    .changed()
+                {
+                    viewport_commands.send(ViewportCommand::Seek { seconds });
+                }
 
                 readout_row(ui, "timeCode", &format!("{:.3}", clock.current_time_code()));
                 readout_row(
@@ -2134,8 +2087,8 @@ fn draw_palette_panel(
     accent: Res<AccentColor>,
     mut palette: ResMut<ViewerCommandPalette>,
     mut ribbon: ResMut<RibbonOpen>,
-    mut toggles: ResMut<DisplayToggles>,
-    mut reload: ResMut<ReloadRequest>,
+    toggles: Res<DisplayToggles>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
     mut load_req: ResMut<LoadRequest>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
@@ -2173,19 +2126,31 @@ fn draw_palette_panel(
             ribbon.per_ribbon.insert(RIBBON_LEFT, RIB_LOG);
         }
         "toggle_grid" => {
-            toggles.show_world_grid = !toggles.show_world_grid;
+            viewport_commands.send(ViewportCommand::SetOverlay {
+                overlay: viewport_protocol::OverlayKind::GroundGrid,
+                enabled: !toggles.show_world_grid,
+            });
         }
         "toggle_axes" => {
-            toggles.show_world_axes = !toggles.show_world_axes;
+            viewport_commands.send(ViewportCommand::SetOverlay {
+                overlay: viewport_protocol::OverlayKind::WorldAxes,
+                enabled: !toggles.show_world_axes,
+            });
         }
         "toggle_markers" => {
-            toggles.show_prim_markers = !toggles.show_prim_markers;
+            viewport_commands.send(ViewportCommand::SetOverlay {
+                overlay: viewport_protocol::OverlayKind::PrimMarkers,
+                enabled: !toggles.show_prim_markers,
+            });
         }
         "toggle_wireframe" => {
-            toggles.wireframe = !toggles.wireframe;
+            viewport_commands.send(ViewportCommand::SetOverlay {
+                overlay: viewport_protocol::OverlayKind::Wireframe,
+                enabled: !toggles.wireframe,
+            });
         }
         "reload_stage" => {
-            reload.requested = true;
+            viewport_commands.send(ViewportCommand::ReloadSession);
         }
         "browse_usd" => {
             if let Some(picked) = rfd::FileDialog::new()

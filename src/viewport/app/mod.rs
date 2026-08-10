@@ -5,8 +5,9 @@
 //! throughout plugin development: each milestone gets dropped into this
 //! viewer so we can eyeball the projection.
 //!
-//!   cargo run                      # loads assets/two_xforms.usda
+//!   cargo run                              # loads assets/animated_spinner.usda
 //!   cargo run -- path/to/robot.usda
+//!   cargo run -- --stdio path/to/robot.usda # native JSON Lines control
 //!
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
@@ -21,6 +22,7 @@ use crate::viewport::animation::{
     PendingAnimationClip, UsdStageTime, apply_live_animation_clip, drive_blend_shape_weights,
     drive_skel_animations, evaluate_animated_prims, tick_stage_time,
 };
+use crate::viewport::api::ViewportBridgePlugin;
 use crate::viewport::camera::{
     ArcballCamera, ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to,
     fit_camera_once, follow_mounted_camera, sync_chase_camera,
@@ -44,6 +46,7 @@ use crate::viewport::session::{
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
     sweep_variant_tempfiles,
 };
+use crate::viewport::transport::{StdioTransportPlugin, ViewportTransport, parse_launch_options};
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT, ViewerUiPlugin};
 use bevy_glacial::prelude::{
     AxisGizmo, AxisGizmoPlugin, ChaseCamera, GroundGrid, GroundGridPlugin,
@@ -54,7 +57,16 @@ use bevy_glacial::prelude::{
 struct DefaultSun;
 
 pub(crate) fn run() {
-    let (asset_path, asset_root) = resolve_requested_asset();
+    let launch_options = match parse_launch_options(std::env::args().skip(1)) {
+        Ok(options) => options,
+        Err(error) => {
+            // `stdout` is a JSON Lines protocol channel under `--stdio`; all
+            // diagnostics, including bad launch options, belong on stderr.
+            eprintln!("usdview: {error}");
+            std::process::exit(2);
+        }
+    };
+    let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument);
 
     let mut app = App::new();
     app.add_plugins(
@@ -104,10 +116,18 @@ pub(crate) fn run() {
     .insert_resource(bevy_frost::prelude::AccentColor(
         bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
     ))
+    .add_plugins(ViewportBridgePlugin)
     .add_plugins(ViewerUiPlugin)
     .add_plugins(ViewerKeyboardPlugin)
     .add_plugins(OverlaysPlugin)
     .add_plugins(crate::viewport::physics::gizmos::PhysicsOverlayPlugin);
+
+    if launch_options.transport == Some(ViewportTransport::Stdio) {
+        // Add this after the bridge plugin so its explicit system ordering can
+        // enqueue stdin commands before bridge application and flush Ready /
+        // command events after the bridge has emitted them.
+        app.add_plugins(StdioTransportPlugin);
+    }
 
     // The USD physics adapter owns its own Rapier f64 world via
     // `RapierAdapterPlugin`. The play button on the ribbon flips
@@ -200,15 +220,17 @@ fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
 
 /// Resolves the CLI stage argument into an AssetServer-relative name and root.
 ///
-/// - `cargo run` with no argument loads the default material sample.
+/// - `cargo run` with no argument loads the self-contained spinner sample.
 /// - `cargo run -- path/to/file.usda` roots the AssetServer at the file's
 ///   parent directory, preserving relative USD sublayer references.
-fn resolve_requested_asset() -> (String, PathBuf) {
-    let arg = std::env::args().nth(1);
+fn resolve_requested_asset(arg: Option<String>) -> (String, PathBuf) {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     match arg {
-        None => ("materials.usda".to_string(), workspace_root.join("assets")),
+        None => (
+            "animated_spinner.usda".to_string(),
+            workspace_root.join("assets"),
+        ),
         Some(raw) => {
             let path = PathBuf::from(&raw);
             let abs = if path.is_absolute() {

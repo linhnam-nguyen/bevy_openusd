@@ -7,11 +7,12 @@ use bevy::prelude::*;
 use bevy_egui::input::egui_wants_any_keyboard_input;
 use bevy_frost::RibbonOpen;
 
+use crate::viewport::api::ViewportCommandInbox;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::ReloadRequest;
 use crate::viewport::ui_frost::{
     RIB_INFO, RIB_KEYS, RIB_OVERLAYS, RIB_TREE, RIBBON_LEFT, ViewerCommandPalette,
 };
+use viewport_protocol::{OverlayKind, ViewportCommand};
 
 pub struct ViewerKeyboardPlugin;
 
@@ -51,8 +52,8 @@ fn handle_palette_shortcut(
 fn handle_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut ribbon: ResMut<RibbonOpen>,
-    mut toggles: ResMut<DisplayToggles>,
-    mut reload: ResMut<ReloadRequest>,
+    toggles: Res<DisplayToggles>,
+    mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     if keys.just_pressed(KeyCode::KeyT) {
         ribbon.toggle(RIBBON_LEFT, RIB_TREE);
@@ -69,24 +70,42 @@ fn handle_keys(
     }
 
     if keys.just_pressed(KeyCode::KeyG) {
-        toggles.show_world_grid = !toggles.show_world_grid;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::GroundGrid,
+            enabled: !toggles.show_world_grid,
+        });
     }
     if keys.just_pressed(KeyCode::KeyX) {
-        toggles.show_world_axes = !toggles.show_world_axes;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::WorldAxes,
+            enabled: !toggles.show_world_axes,
+        });
     }
     if keys.just_pressed(KeyCode::KeyP) {
-        toggles.show_prim_markers = !toggles.show_prim_markers;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::PrimMarkers,
+            enabled: !toggles.show_prim_markers,
+        });
     }
     if keys.just_pressed(KeyCode::KeyB) {
-        toggles.show_skeleton = !toggles.show_skeleton;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::Skeleton,
+            enabled: !toggles.show_skeleton,
+        });
     }
     if keys.just_pressed(KeyCode::KeyY) {
-        toggles.show_physics = !toggles.show_physics;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::Physics,
+            enabled: !toggles.show_physics,
+        });
     }
     if keys.just_pressed(KeyCode::KeyC) {
-        toggles.show_colliders = !toggles.show_colliders;
+        viewport_commands.send(ViewportCommand::SetOverlay {
+            overlay: OverlayKind::Colliders,
+            enabled: !toggles.show_colliders,
+        });
     }
     if keys.just_pressed(KeyCode::KeyR) {
-        reload.requested = true;
+        viewport_commands.send(ViewportCommand::ReloadSession);
     }
 }

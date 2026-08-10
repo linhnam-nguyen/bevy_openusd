@@ -7,12 +7,14 @@
 mod app;
 
 pub(crate) mod animation;
+pub(crate) mod api;
 pub(crate) mod camera;
 pub(crate) mod diagnostics;
 pub(crate) mod input;
 pub(crate) mod physics;
 pub(crate) mod scene;
 pub(crate) mod session;
+pub(crate) mod transport;
 pub(crate) mod ui_frost;
 
 pub(crate) use app::run;

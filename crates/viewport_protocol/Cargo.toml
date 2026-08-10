@@ -1,0 +1,10 @@
+[package]
+name = "viewport_protocol"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "UI-neutral command, event, and read-model contract for the USDHub viewport."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

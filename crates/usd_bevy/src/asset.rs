@@ -5,11 +5,11 @@
 //! `UsdAsset` holds a strong [`Handle<ScenePatch>`] that users spawn via
 //! `ScenePatchInstance(asset.scene.clone())`.
 //!
-//! openusd only accepts a filesystem path, so bytes from Bevy's `Reader` are
-//! spilled to a tempfile before opening. For `.usdz` the loader additionally
-//! cracks open the archive (it's a zero-compression ZIP) to surface every
-//! non-layer entry (textures, aux files) to the stage walker as an
-//! in-memory map keyed by its archive-relative path.
+//! Native builds spill bytes from Bevy's `Reader` to a tempfile before opening.
+//! On WebAssembly, a self-contained `.usdz` instead stays entirely in memory:
+//! a custom `openusd::ar::Resolver` exposes its layer entries to
+//! `StageBuilder`, while non-layer entries (textures, aux files) reach the
+//! stage walker through an archive-relative byte map.
 
 use usd_schema::StageReadExt;
 
@@ -326,342 +326,595 @@ impl AssetLoader for UsdLoader {
             .unwrap_or("usd");
 
         let is_usdz = bytes.starts_with(ZIP_MAGIC) || ext_hint.eq_ignore_ascii_case("usdz");
-        let is_usda = !is_usdz
-            && (ext_hint.eq_ignore_ascii_case("usda")
-                || (ext_hint.eq_ignore_ascii_case("usd") && is_text_usd(&bytes)));
-
-        // For non-USDZ inputs, write the tempfile INTO the first search
-        // path (the user's asset root) rather than `/tmp`. openusd's
-        // `DefaultResolver::create_identifier` anchors relative references
-        // against the parent layer's *directory*; if we land the root
-        // layer in `/tmp`, every `./foo.usdc` sibling reference resolves
-        // into `/tmp/foo.usdc` regardless of `search_paths`. Writing the
-        // tempfile into the actual source dir keeps sibling lookups sane.
-        let tmp_dir = if !is_usdz && let Some(first) = settings.search_paths.first() {
-            first.clone()
-        } else {
-            std::env::temp_dir()
-        };
-
-        let (tmp, embedded) = if is_usdz {
-            extract_usdz(&bytes, fs_path)?
-        } else {
-            let tmp = tempfile_in(&tmp_dir, fs_path, ext_hint);
-            let final_bytes = if is_usda {
-                usd_schema::third_party::strip_metadata::strip_unsupported_prim_metadata(&bytes)
+        // Browser builds have no safe tempfile / filesystem contract.  A bundled
+        // USDZ, or one self-contained USDA/USD/USDC root, is instead exposed to
+        // StageBuilder through an in-memory resolver.  Keep the native loader
+        // unchanged for loose USD files and external search roots.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let identity_hint = fs_path.to_string_lossy().into_owned();
+            let package = if is_usdz {
+                crate::memory_resolver::InMemoryUsdPackage::from_usdz(&bytes, &identity_hint)
             } else {
-                bytes.clone()
-            };
-            std::fs::write(&tmp, &final_bytes)?;
-            (tmp, HashMap::new())
-        };
-
-        let tmp_str = tmp
-            .to_str()
-            .ok_or_else(|| UsdLoaderError::Stage("non-UTF-8 tempfile path".into()))?;
-        // Build a resolver that searches the user-supplied dirs first, then
-        // the tempfile's parent (so intra-USDZ layers stay resolvable). The
-        // DefaultResolver also falls back to `std::env::current_dir()`, but
-        // relying on that would make loads CWD-sensitive and flaky.
-        let mut search: Vec<PathBuf> = settings.search_paths.clone();
-        if let Some(parent) = tmp.parent().map(|p| p.to_path_buf()) {
-            search.push(parent);
+                crate::memory_resolver::InMemoryUsdPackage::from_single_layer(
+                    &bytes,
+                    &identity_hint,
+                )
+            }
+            .map_err(|error| {
+                UsdLoaderError::Stage(format!(
+                    "WebAssembly USD input must be self-contained: {error}"
+                ))
+            })?;
+            return load_in_memory(package, settings, load_context);
         }
 
-        // The `settings.variant_selections` list drives composition.
-        // Bevy strips the label from `load_context.path()` before
-        // invoking the loader (the base path is what the loader
-        // sees), so we can't read the label here — but the consumer
-        // is expected to put the same selections into the path label
-        // *and* `settings.variant_selections` (see [`variant_label`]).
-        // The label only matters at the asset-cache layer (so two
-        // variant requests produce two distinct cached handles); the
-        // loader uses settings as the source of truth.
-        let effective_variants = settings.variant_selections.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let is_usda = !is_usdz
+                && (ext_hint.eq_ignore_ascii_case("usda")
+                    || (ext_hint.eq_ignore_ascii_case("usd") && is_text_usd(&bytes)));
 
-        // Session layer: if the caller authored variant overrides, write
-        // them out as a tiny USDA file with `over` specs carrying
-        // `variants = { ... }` metadata, then hand the path to the
-        // StageBuilder. Composition puts session opinions ahead of
-        // everything else, so the override wins over whatever the stage
-        // authored itself.
-        let session_layer_path = if !effective_variants.is_empty() {
-            let text = author_variant_session_layer(&effective_variants);
-            let session_tmp = tempfile_session(&tmp_dir, fs_path, &effective_variants, &text);
-            std::fs::write(&session_tmp, &text)?;
-            bevy::log::info!(
-                "usd: wrote {} variant selection(s) to session layer {}",
-                effective_variants.len(),
-                session_tmp.display(),
-            );
-            Some(session_tmp)
-        } else {
-            None
-        };
-
-        let mut builder = openusd::usd::Stage::builder()
-            .resolver(
-                usd_schema::third_party::resolver::StripMetadataResolver::with_search_paths(
-                    search.clone(),
-                ),
-            )
-            .load(if settings.load_payloads {
-                openusd::usd::InitialLoadSet::LoadAll
+            // For non-USDZ inputs, write the tempfile INTO the first search
+            // path (the user's asset root) rather than `/tmp`. openusd's
+            // `DefaultResolver::create_identifier` anchors relative references
+            // against the parent layer's *directory*; if we land the root
+            // layer in `/tmp`, every `./foo.usdc` sibling reference resolves
+            // into `/tmp/foo.usdc` regardless of `search_paths`. Writing the
+            // tempfile into the actual source dir keeps sibling lookups sane.
+            let tmp_dir = if !is_usdz && let Some(first) = settings.search_paths.first() {
+                first.clone()
             } else {
-                openusd::usd::InitialLoadSet::LoadNone
-            });
-        if let Some(ref p) = session_layer_path {
-            let s = p
+                std::env::temp_dir()
+            };
+
+            let (tmp, embedded) = if is_usdz {
+                extract_usdz(&bytes, fs_path)?
+            } else {
+                let tmp = tempfile_in(&tmp_dir, fs_path, ext_hint);
+                let final_bytes = if is_usda {
+                    usd_schema::third_party::strip_metadata::strip_unsupported_prim_metadata(&bytes)
+                } else {
+                    bytes.clone()
+                };
+                std::fs::write(&tmp, &final_bytes)?;
+                (tmp, HashMap::new())
+            };
+
+            let tmp_str = tmp
                 .to_str()
-                .ok_or_else(|| UsdLoaderError::Stage("non-UTF-8 session-layer path".into()))?;
-            builder = builder.session_layer(s.to_string());
-        }
-        let stage = builder.open(tmp_str).map_err(|e| {
-            // Walk the anyhow chain so the real parser error (which
-            // layer-open wraps twice) surfaces to the user.
-            let mut msg = e.to_string();
-            let mut src: Option<&dyn std::error::Error> = e.source();
-            while let Some(s) = src {
-                msg.push_str(&format!(" :: {s}"));
-                src = s.source();
+                .ok_or_else(|| UsdLoaderError::Stage("non-UTF-8 tempfile path".into()))?;
+            // Build a resolver that searches the user-supplied dirs first, then
+            // the tempfile's parent (so intra-USDZ layers stay resolvable). The
+            // DefaultResolver also falls back to `std::env::current_dir()`, but
+            // relying on that would make loads CWD-sensitive and flaky.
+            let mut search: Vec<PathBuf> = settings.search_paths.clone();
+            if let Some(parent) = tmp.parent().map(|p| p.to_path_buf()) {
+                search.push(parent);
             }
-            UsdLoaderError::Stage(msg)
-        })?;
-        for error in stage.composition_errors() {
-            bevy::log::warn!("usd composition: {error}");
-        }
 
-        let default_prim = stage.default_prim().map(|name| name.to_string());
-        let layer_count = stage.layer_count();
-        let mut variants = collect_variants(&stage);
-        let cameras = collect_cameras(&stage);
-        let (curves, points_clouds) = collect_curves_and_points(&stage);
-        let animated_prims = collect_animated_prims(&stage);
-        let (mut start_time_code, mut end_time_code, time_codes_per_second) =
-            read_stage_timeline(&stage);
-        let (skeletons, skel_roots, skel_bindings) = collect_skel(&stage);
-        let (render_settings, render_products, render_vars) = collect_render(&stage);
-        let physics_summary = collect_physics(&stage);
-        let custom_attrs = collect_custom_attrs(&stage);
-        let custom_layer_data = usd_schema::geom::read_custom_layer_data(&stage)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        let subdivision_prims = collect_subdivision_prims(&stage);
-        let light_linking_prims = collect_light_linking_prims(&stage);
-        let clip_sets = collect_clip_sets(&stage);
+            // The `settings.variant_selections` list drives composition.
+            // Bevy strips the label from `load_context.path()` before
+            // invoking the loader (the base path is what the loader
+            // sees), so we can't read the label here — but the consumer
+            // is expected to put the same selections into the path label
+            // *and* `settings.variant_selections` (see [`variant_label`]).
+            // The label only matters at the asset-cache layer (so two
+            // variant requests produce two distinct cached handles); the
+            // loader uses settings as the source of truth.
+            let effective_variants = settings.variant_selections.clone();
 
-        // Sidecar: scan extra .usda files for UsdSkelAnimation prims.
-        // Workaround for openusd-rs USDA parser failing on
-        // tuple-valued timeSamples (e.g. Pixar's HumanFemale.walk.usd).
-        // Files come from `UsdLoaderSettings::skel_animation_files`
-        // and the `BEVY_OPENUSD_SKEL_ANIM_FILE` env var (one path or
-        // colon-separated list).
-        let mut skel_animations: HashMap<String, usd_schema::skel_anim_text::ReadSkelAnimText> =
-            HashMap::new();
-        let mut anim_paths: Vec<PathBuf> = settings.skel_animation_files.clone();
-        if let Ok(envv) = std::env::var("BEVY_OPENUSD_SKEL_ANIM_FILE") {
-            for piece in envv.split(':') {
-                if !piece.is_empty() {
-                    anim_paths.push(PathBuf::from(piece));
-                }
-            }
-        }
-        // For USDZ stages, auto-scan every extracted USDA/USD layer
-        // for SkelAnimation prims. Pixar's HumanFemale.walk.usd is the
-        // canonical case: openusd-rs's parser rejects its tuple-valued
-        // timeSamples, so the file CAN'T contribute via the regular
-        // composition path — but our sidecar text scanner handles it
-        // fine. Without this, animation gets dropped silently when
-        // packing into a USDZ (the loose-file viewer relied on the
-        // user setting BEVY_OPENUSD_SKEL_ANIM_FILE manually).
-        if is_usdz {
-            if let Some(parent) = tmp.parent() {
-                collect_text_layers_recursive(parent, &mut anim_paths);
-            }
-        }
-        let stage_authored_timeline = has_authored_timeline(&stage);
-        let mut anim_min_time: Option<f64> = None;
-        let mut anim_max_time: Option<f64> = None;
-        let record_time = |t: f64, mn: &mut Option<f64>, mx: &mut Option<f64>| {
-            *mn = Some(mn.map(|m| m.min(t)).unwrap_or(t));
-            *mx = Some(mx.map(|m| m.max(t)).unwrap_or(t));
-        };
-        for p in anim_paths {
-            // Resolve relative paths against the search paths.
-            let candidates: Vec<PathBuf> = if p.is_absolute() {
-                vec![p.clone()]
+            // Session layer: if the caller authored variant overrides, write
+            // them out as a tiny USDA file with `over` specs carrying
+            // `variants = { ... }` metadata, then hand the path to the
+            // StageBuilder. Composition puts session opinions ahead of
+            // everything else, so the override wins over whatever the stage
+            // authored itself.
+            let session_layer_path = if !effective_variants.is_empty() {
+                let text = author_variant_session_layer(&effective_variants);
+                let session_tmp = tempfile_session(&tmp_dir, fs_path, &effective_variants, &text);
+                std::fs::write(&session_tmp, &text)?;
+                bevy::log::info!(
+                    "usd: wrote {} variant selection(s) to session layer {}",
+                    effective_variants.len(),
+                    session_tmp.display(),
+                );
+                Some(session_tmp)
             } else {
-                let mut v = vec![p.clone()];
-                for sp in &search {
-                    v.push(sp.join(&p));
+                None
+            };
+
+            let mut builder = openusd::usd::Stage::builder()
+                .resolver(
+                    usd_schema::third_party::resolver::StripMetadataResolver::with_search_paths(
+                        search.clone(),
+                    ),
+                )
+                .load(if settings.load_payloads {
+                    openusd::usd::InitialLoadSet::LoadAll
+                } else {
+                    openusd::usd::InitialLoadSet::LoadNone
+                });
+            if let Some(ref p) = session_layer_path {
+                let s = p
+                    .to_str()
+                    .ok_or_else(|| UsdLoaderError::Stage("non-UTF-8 session-layer path".into()))?;
+                builder = builder.session_layer(s.to_string());
+            }
+            let stage = builder.open(tmp_str).map_err(|e| {
+                // Walk the anyhow chain so the real parser error (which
+                // layer-open wraps twice) surfaces to the user.
+                let mut msg = e.to_string();
+                let mut src: Option<&dyn std::error::Error> = e.source();
+                while let Some(s) = src {
+                    msg.push_str(&format!(" :: {s}"));
+                    src = s.source();
                 }
-                v
-            };
-            let resolved = candidates.into_iter().find(|c| c.exists());
-            let Some(path) = resolved else {
-                bevy::log::warn!("skel anim sidecar: file not found: {}", p.display());
-                continue;
-            };
-            match std::fs::read_to_string(&path) {
-                Ok(text) => {
-                    let anims = usd_schema::skel_anim_text::scan_skel_animations(&text);
-                    bevy::log::info!(
-                        "skel anim sidecar: parsed {} animation(s) from {}",
-                        anims.len(),
-                        path.display()
-                    );
-                    for a in anims {
-                        for k in a.translations.keys() {
-                            record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-                        }
-                        for k in a.rotations.keys() {
-                            record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-                        }
-                        for k in a.scales.keys() {
-                            record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-                        }
-                        for k in a.blend_shape_weights.keys() {
-                            record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-                        }
-                        skel_animations.insert(a.prim_name.clone(), a);
+                UsdLoaderError::Stage(msg)
+            })?;
+            for error in stage.composition_errors() {
+                bevy::log::warn!("usd composition: {error}");
+            }
+
+            let default_prim = stage.default_prim().map(|name| name.to_string());
+            let layer_count = stage.layer_count();
+            let mut variants = collect_variants(&stage);
+            let cameras = collect_cameras(&stage);
+            let (curves, points_clouds) = collect_curves_and_points(&stage);
+            let animated_prims = collect_animated_prims(&stage);
+            let (mut start_time_code, mut end_time_code, time_codes_per_second) =
+                read_stage_timeline(&stage);
+            let (skeletons, skel_roots, skel_bindings) = collect_skel(&stage);
+            let (render_settings, render_products, render_vars) = collect_render(&stage);
+            let physics_summary = collect_physics(&stage);
+            let custom_attrs = collect_custom_attrs(&stage);
+            let custom_layer_data = usd_schema::geom::read_custom_layer_data(&stage)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let subdivision_prims = collect_subdivision_prims(&stage);
+            let light_linking_prims = collect_light_linking_prims(&stage);
+            let clip_sets = collect_clip_sets(&stage);
+
+            // Sidecar: scan extra .usda files for UsdSkelAnimation prims.
+            // Workaround for openusd-rs USDA parser failing on
+            // tuple-valued timeSamples (e.g. Pixar's HumanFemale.walk.usd).
+            // Files come from `UsdLoaderSettings::skel_animation_files`
+            // and the `BEVY_OPENUSD_SKEL_ANIM_FILE` env var (one path or
+            // colon-separated list).
+            let mut skel_animations: HashMap<String, usd_schema::skel_anim_text::ReadSkelAnimText> =
+                HashMap::new();
+            let mut anim_paths: Vec<PathBuf> = settings.skel_animation_files.clone();
+            if let Ok(envv) = std::env::var("BEVY_OPENUSD_SKEL_ANIM_FILE") {
+                for piece in envv.split(':') {
+                    if !piece.is_empty() {
+                        anim_paths.push(PathBuf::from(piece));
                     }
                 }
-                Err(e) => {
-                    bevy::log::warn!("skel anim sidecar: failed to read {}: {e}", path.display());
+            }
+            // For USDZ stages, auto-scan every extracted USDA/USD layer
+            // for SkelAnimation prims. Pixar's HumanFemale.walk.usd is the
+            // canonical case: openusd-rs's parser rejects its tuple-valued
+            // timeSamples, so the file CAN'T contribute via the regular
+            // composition path — but our sidecar text scanner handles it
+            // fine. Without this, animation gets dropped silently when
+            // packing into a USDZ (the loose-file viewer relied on the
+            // user setting BEVY_OPENUSD_SKEL_ANIM_FILE manually).
+            if is_usdz {
+                if let Some(parent) = tmp.parent() {
+                    collect_text_layers_recursive(parent, &mut anim_paths);
                 }
             }
+            let stage_authored_timeline = has_authored_timeline(&stage);
+            let mut anim_min_time: Option<f64> = None;
+            let mut anim_max_time: Option<f64> = None;
+            let record_time = |t: f64, mn: &mut Option<f64>, mx: &mut Option<f64>| {
+                *mn = Some(mn.map(|m| m.min(t)).unwrap_or(t));
+                *mx = Some(mx.map(|m| m.max(t)).unwrap_or(t));
+            };
+            for p in anim_paths {
+                // Resolve relative paths against the search paths.
+                let candidates: Vec<PathBuf> = if p.is_absolute() {
+                    vec![p.clone()]
+                } else {
+                    let mut v = vec![p.clone()];
+                    for sp in &search {
+                        v.push(sp.join(&p));
+                    }
+                    v
+                };
+                let resolved = candidates.into_iter().find(|c| c.exists());
+                let Some(path) = resolved else {
+                    bevy::log::warn!("skel anim sidecar: file not found: {}", p.display());
+                    continue;
+                };
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => {
+                        let anims = usd_schema::skel_anim_text::scan_skel_animations(&text);
+                        bevy::log::info!(
+                            "skel anim sidecar: parsed {} animation(s) from {}",
+                            anims.len(),
+                            path.display()
+                        );
+                        for a in anims {
+                            for k in a.translations.keys() {
+                                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                            }
+                            for k in a.rotations.keys() {
+                                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                            }
+                            for k in a.scales.keys() {
+                                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                            }
+                            for k in a.blend_shape_weights.keys() {
+                                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                            }
+                            skel_animations.insert(a.prim_name.clone(), a);
+                        }
+                    }
+                    Err(e) => {
+                        bevy::log::warn!(
+                            "skel anim sidecar: failed to read {}: {e}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            for a in collect_stage_skel_animations(&stage) {
+                for k in a.translations.keys() {
+                    record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                }
+                for k in a.rotations.keys() {
+                    record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                }
+                for k in a.scales.keys() {
+                    record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                }
+                for k in a.blend_shape_weights.keys() {
+                    record_time(k.0, &mut anim_min_time, &mut anim_max_time);
+                }
+                skel_animations.insert(a.prim_name.clone(), a);
+            }
+            synthesize_anim_variant_set(
+                &mut variants,
+                default_prim.as_deref(),
+                &skel_animations,
+                &effective_variants,
+            );
+            // When the stage authored no timeline, derive playback range
+            // from the authored keyframes. This covers both sidecar USDA
+            // animations and composed stage SkelAnimation prims referenced
+            // by wrapper assets such as Cow_F.usd, whose root layer authors
+            // an `anim` variant set but no start/end time codes.
+            if !stage_authored_timeline {
+                if let (Some(mn), Some(mx)) = (anim_min_time, anim_max_time) {
+                    start_time_code = mn;
+                    end_time_code = mx;
+                }
+            }
+
+            let (scene, light_tally, instance_stats) = build::stage_to_scene(
+                &stage,
+                load_context,
+                &embedded,
+                &search,
+                settings.kind_collapse,
+                settings.light_intensity_scale,
+                settings.curve_default_radius,
+                settings.curve_ring_segments,
+                settings.point_scale,
+                &skel_animations,
+            );
+            bevy::log::info!(
+                "usd: translated {} directional + {} point + {} spot lights (+ {} dome deferred)",
+                light_tally.directional,
+                light_tally.point,
+                light_tally.spot,
+                light_tally.dome,
+            );
+            // The Scene's labeled-asset key has to be unique per variant
+            // selection or different variant loads will clobber each
+            // other's scenes (Bevy stores labeled sub-assets at the same
+            // `path#label` AssetIndex, so two loads emitting `Scene` for
+            // the same path overwrite — every consumer holding a stale
+            // `Handle<ScenePatch>` then sees the latest variant's content).
+            // Default variant keeps the unsuffixed `"Scene"` for
+            // backwards compatibility with consumers that load
+            // `path.usda#Scene` directly.
+            let scene_label = if effective_variants.is_empty() {
+                "Scene".to_string()
+            } else {
+                format!("Scene:{}", variant_label(&effective_variants))
+            };
+            let scene_patch = ScenePatch::load_with(load_context, scene);
+            let scene_handle = load_context.add_labeled_asset(scene_label, scene_patch);
+
+            let _ = std::fs::remove_file(&tmp);
+
+            let usd_asset = UsdAsset {
+                scene: scene_handle,
+                default_prim,
+                layer_count,
+                variants,
+                light_tally: light_tally.into(),
+                cameras,
+                curves,
+                points_clouds,
+                instance_prim_count: instance_stats.instance_prim_count,
+                instance_prototype_reuses: instance_stats.prototype_reuses,
+                animated_prims,
+                start_time_code,
+                end_time_code,
+                time_codes_per_second,
+                skeletons,
+                skel_roots,
+                skel_bindings,
+                skel_animations,
+                render_settings,
+                render_products,
+                render_vars,
+                rigid_body_prims: physics_summary.rigid_body_prims,
+                physics_scene_prims: physics_summary.physics_scene_prims,
+                joints: physics_summary.joints,
+                articulation_root_prims: physics_summary.articulation_root_prims,
+                physics_material_prims: physics_summary.physics_material_prims,
+                collision_group_prims: physics_summary.collision_group_prims,
+                filtered_pairs_prims: physics_summary.filtered_pairs_prims,
+                collider_prims: physics_summary.collider_prims,
+                custom_attrs,
+                custom_layer_data,
+                subdivision_prims,
+                light_linking_prims,
+                clip_sets,
+            };
+
+            // If the caller supplied any `variant_selections`, Bevy's
+            // path-only handle cache would otherwise collapse multiple
+            // variant requests onto a single handle (the last load
+            // wins, every consumer flips to the new content). To dodge
+            // that, the consumer should call `load_with_settings` with
+            // an asset path whose *label* equals
+            // [`variant_label`]`(&settings.variant_selections)`. Bevy
+            // will then look up that exact label in our output below;
+            // emitting a labeled sub-asset under the same key gives
+            // each variant request its own cached `Handle<UsdAsset>`
+            // pointing at the right composed content.
+            if !effective_variants.is_empty() {
+                let label = variant_label(&effective_variants);
+                load_context.add_labeled_asset(label, usd_asset.clone());
+            }
+
+            Ok(usd_asset)
         }
-        for a in collect_stage_skel_animations(&stage) {
-            for k in a.translations.keys() {
-                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-            }
-            for k in a.rotations.keys() {
-                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-            }
-            for k in a.scales.keys() {
-                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-            }
-            for k in a.blend_shape_weights.keys() {
-                record_time(k.0, &mut anim_min_time, &mut anim_max_time);
-            }
-            skel_animations.insert(a.prim_name.clone(), a);
-        }
-        synthesize_anim_variant_set(
-            &mut variants,
-            default_prim.as_deref(),
-            &skel_animations,
-            &effective_variants,
-        );
-        // When the stage authored no timeline, derive playback range
-        // from the authored keyframes. This covers both sidecar USDA
-        // animations and composed stage SkelAnimation prims referenced
-        // by wrapper assets such as Cow_F.usd, whose root layer authors
-        // an `anim` variant set but no start/end time codes.
-        if !stage_authored_timeline {
-            if let (Some(mn), Some(mx)) = (anim_min_time, anim_max_time) {
-                start_time_code = mn;
-                end_time_code = mx;
-            }
-        }
-
-        let (scene, light_tally, instance_stats) = build::stage_to_scene(
-            &stage,
-            load_context,
-            &embedded,
-            &search,
-            settings.kind_collapse,
-            settings.light_intensity_scale,
-            settings.curve_default_radius,
-            settings.curve_ring_segments,
-            settings.point_scale,
-            &skel_animations,
-        );
-        bevy::log::info!(
-            "usd: translated {} directional + {} point + {} spot lights (+ {} dome deferred)",
-            light_tally.directional,
-            light_tally.point,
-            light_tally.spot,
-            light_tally.dome,
-        );
-        // The Scene's labeled-asset key has to be unique per variant
-        // selection or different variant loads will clobber each
-        // other's scenes (Bevy stores labeled sub-assets at the same
-        // `path#label` AssetIndex, so two loads emitting `Scene` for
-        // the same path overwrite — every consumer holding a stale
-        // `Handle<ScenePatch>` then sees the latest variant's content).
-        // Default variant keeps the unsuffixed `"Scene"` for
-        // backwards compatibility with consumers that load
-        // `path.usda#Scene` directly.
-        let scene_label = if effective_variants.is_empty() {
-            "Scene".to_string()
-        } else {
-            format!("Scene:{}", variant_label(&effective_variants))
-        };
-        let scene_patch = ScenePatch::load_with(load_context, scene);
-        let scene_handle = load_context.add_labeled_asset(scene_label, scene_patch);
-
-        let _ = std::fs::remove_file(&tmp);
-
-        let usd_asset = UsdAsset {
-            scene: scene_handle,
-            default_prim,
-            layer_count,
-            variants,
-            light_tally: light_tally.into(),
-            cameras,
-            curves,
-            points_clouds,
-            instance_prim_count: instance_stats.instance_prim_count,
-            instance_prototype_reuses: instance_stats.prototype_reuses,
-            animated_prims,
-            start_time_code,
-            end_time_code,
-            time_codes_per_second,
-            skeletons,
-            skel_roots,
-            skel_bindings,
-            skel_animations,
-            render_settings,
-            render_products,
-            render_vars,
-            rigid_body_prims: physics_summary.rigid_body_prims,
-            physics_scene_prims: physics_summary.physics_scene_prims,
-            joints: physics_summary.joints,
-            articulation_root_prims: physics_summary.articulation_root_prims,
-            physics_material_prims: physics_summary.physics_material_prims,
-            collision_group_prims: physics_summary.collision_group_prims,
-            filtered_pairs_prims: physics_summary.filtered_pairs_prims,
-            collider_prims: physics_summary.collider_prims,
-            custom_attrs,
-            custom_layer_data,
-            subdivision_prims,
-            light_linking_prims,
-            clip_sets,
-        };
-
-        // If the caller supplied any `variant_selections`, Bevy's
-        // path-only handle cache would otherwise collapse multiple
-        // variant requests onto a single handle (the last load
-        // wins, every consumer flips to the new content). To dodge
-        // that, the consumer should call `load_with_settings` with
-        // an asset path whose *label* equals
-        // [`variant_label`]`(&settings.variant_selections)`. Bevy
-        // will then look up that exact label in our output below;
-        // emitting a labeled sub-asset under the same key gives
-        // each variant request its own cached `Handle<UsdAsset>`
-        // pointing at the right composed content.
-        if !effective_variants.is_empty() {
-            let label = variant_label(&effective_variants);
-            load_context.add_labeled_asset(label, usd_asset.clone());
-        }
-
-        Ok(usd_asset)
     }
 
     fn extensions(&self) -> &[&str] {
         &["usda", "usdc", "usd", "usdz"]
     }
+}
+
+/// WebAssembly-only loader for self-contained USD inputs.  Every archive entry
+/// (or a single root layer) stays in a Rust-owned byte vector:
+/// `InMemoryResolver` feeds USD layers to `StageBuilder`, and `embedded` carries
+/// USDZ media bytes into `stage_to_scene` for synchronous texture decoding. No
+/// temporary path, current directory, or filesystem lookup is used on this
+/// route.
+#[cfg(target_arch = "wasm32")]
+fn load_in_memory(
+    package: crate::memory_resolver::InMemoryUsdPackage,
+    settings: &UsdLoaderSettings,
+    load_context: &mut LoadContext<'_>,
+) -> Result<UsdAsset, UsdLoaderError> {
+    let crate::memory_resolver::InMemoryUsdPackage {
+        root_identifier,
+        mut resolver,
+        embedded,
+        text_layers,
+    } = package;
+
+    // As on native, settings are the source of truth for composition.  The
+    // session opinion itself is another resolver entry rather than a temporary
+    // `.usda` file.
+    let effective_variants = settings.variant_selections.clone();
+    let session_layer = if effective_variants.is_empty() {
+        None
+    } else {
+        let text = author_variant_session_layer(&effective_variants);
+        let identifier = resolver.insert_session_layer(text);
+        bevy::log::info!(
+            "usd: applied {} variant selection(s) through in-memory session layer",
+            effective_variants.len(),
+        );
+        Some(identifier)
+    };
+
+    let mut builder =
+        openusd::usd::Stage::builder()
+            .resolver(resolver)
+            .load(if settings.load_payloads {
+                openusd::usd::InitialLoadSet::LoadAll
+            } else {
+                openusd::usd::InitialLoadSet::LoadNone
+            });
+    if let Some(session_layer) = session_layer {
+        builder = builder.session_layer(session_layer);
+    }
+    let stage = builder.open(&root_identifier).map_err(|error| {
+        // Match the native error path: a parser error is often nested beneath
+        // one or more composition contexts, so surface the complete chain.
+        let mut message = error.to_string();
+        let mut source: Option<&dyn std::error::Error> = error.source();
+        while let Some(error) = source {
+            message.push_str(&format!(" :: {error}"));
+            source = error.source();
+        }
+        UsdLoaderError::Stage(message)
+    })?;
+    for error in stage.composition_errors() {
+        bevy::log::warn!("usd composition: {error}");
+    }
+
+    let default_prim = stage.default_prim().map(|name| name.to_string());
+    let layer_count = stage.layer_count();
+    let mut variants = collect_variants(&stage);
+    let cameras = collect_cameras(&stage);
+    let (curves, points_clouds) = collect_curves_and_points(&stage);
+    let animated_prims = collect_animated_prims(&stage);
+    let (mut start_time_code, mut end_time_code, time_codes_per_second) =
+        read_stage_timeline(&stage);
+    let (skeletons, skel_roots, skel_bindings) = collect_skel(&stage);
+    let (render_settings, render_products, render_vars) = collect_render(&stage);
+    let physics_summary = collect_physics(&stage);
+    let custom_attrs = collect_custom_attrs(&stage);
+    let custom_layer_data = usd_schema::geom::read_custom_layer_data(&stage)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let subdivision_prims = collect_subdivision_prims(&stage);
+    let light_linking_prims = collect_light_linking_prims(&stage);
+    let clip_sets = collect_clip_sets(&stage);
+
+    // Native sidecar paths are intentionally not meaningful in a browser.  The
+    // self-contained package is scanned instead, which keeps bundled USDA
+    // SkelAnimation layers working without a `std::fs::read_to_string` escape.
+    if !settings.skel_animation_files.is_empty() {
+        bevy::log::warn!(
+            "skel anim sidecar paths are ignored on WebAssembly; include USDA animation layers in the USDZ package"
+        );
+    }
+    let stage_authored_timeline = has_authored_timeline(&stage);
+    let mut skel_animations: HashMap<String, usd_schema::skel_anim_text::ReadSkelAnimText> =
+        HashMap::new();
+    let mut anim_min_time: Option<f64> = None;
+    let mut anim_max_time: Option<f64> = None;
+    let record_time = |time: f64, min: &mut Option<f64>, max: &mut Option<f64>| {
+        *min = Some(min.map(|value| value.min(time)).unwrap_or(time));
+        *max = Some(max.map(|value| value.max(time)).unwrap_or(time));
+    };
+    for (name, text) in text_layers {
+        let animations = usd_schema::skel_anim_text::scan_skel_animations(&text);
+        if !animations.is_empty() {
+            bevy::log::info!(
+                "skel anim sidecar: parsed {} animation(s) from bundled {name}",
+                animations.len(),
+            );
+        }
+        for animation in animations {
+            for time in animation.translations.keys() {
+                record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+            }
+            for time in animation.rotations.keys() {
+                record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+            }
+            for time in animation.scales.keys() {
+                record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+            }
+            for time in animation.blend_shape_weights.keys() {
+                record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+            }
+            skel_animations.insert(animation.prim_name.clone(), animation);
+        }
+    }
+    for animation in collect_stage_skel_animations(&stage) {
+        for time in animation.translations.keys() {
+            record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+        }
+        for time in animation.rotations.keys() {
+            record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+        }
+        for time in animation.scales.keys() {
+            record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+        }
+        for time in animation.blend_shape_weights.keys() {
+            record_time(time.0, &mut anim_min_time, &mut anim_max_time);
+        }
+        skel_animations.insert(animation.prim_name.clone(), animation);
+    }
+    synthesize_anim_variant_set(
+        &mut variants,
+        default_prim.as_deref(),
+        &skel_animations,
+        &effective_variants,
+    );
+    if !stage_authored_timeline && let (Some(min), Some(max)) = (anim_min_time, anim_max_time) {
+        start_time_code = min;
+        end_time_code = max;
+    }
+
+    // An empty search list makes the texture module use only `embedded`; its
+    // WebAssembly branch never tries an authored texture path on the host.
+    let search: Vec<PathBuf> = Vec::new();
+    let (scene, light_tally, instance_stats) = build::stage_to_scene(
+        &stage,
+        load_context,
+        &embedded,
+        &search,
+        settings.kind_collapse,
+        settings.light_intensity_scale,
+        settings.curve_default_radius,
+        settings.curve_ring_segments,
+        settings.point_scale,
+        &skel_animations,
+    );
+    bevy::log::info!(
+        "usd: translated {} directional + {} point + {} spot lights (+ {} dome deferred)",
+        light_tally.directional,
+        light_tally.point,
+        light_tally.spot,
+        light_tally.dome,
+    );
+
+    let scene_label = if effective_variants.is_empty() {
+        "Scene".to_owned()
+    } else {
+        format!("Scene:{}", variant_label(&effective_variants))
+    };
+    let scene_patch = ScenePatch::load_with(load_context, scene);
+    let scene_handle = load_context.add_labeled_asset(scene_label, scene_patch);
+
+    let usd_asset = UsdAsset {
+        scene: scene_handle,
+        default_prim,
+        layer_count,
+        variants,
+        light_tally: light_tally.into(),
+        cameras,
+        curves,
+        points_clouds,
+        instance_prim_count: instance_stats.instance_prim_count,
+        instance_prototype_reuses: instance_stats.prototype_reuses,
+        animated_prims,
+        start_time_code,
+        end_time_code,
+        time_codes_per_second,
+        skeletons,
+        skel_roots,
+        skel_bindings,
+        skel_animations,
+        render_settings,
+        render_products,
+        render_vars,
+        rigid_body_prims: physics_summary.rigid_body_prims,
+        physics_scene_prims: physics_summary.physics_scene_prims,
+        joints: physics_summary.joints,
+        articulation_root_prims: physics_summary.articulation_root_prims,
+        physics_material_prims: physics_summary.physics_material_prims,
+        collision_group_prims: physics_summary.collision_group_prims,
+        filtered_pairs_prims: physics_summary.filtered_pairs_prims,
+        collider_prims: physics_summary.collider_prims,
+        custom_attrs,
+        custom_layer_data,
+        subdivision_prims,
+        light_linking_prims,
+        clip_sets,
+    };
+
+    if !effective_variants.is_empty() {
+        let label = variant_label(&effective_variants);
+        load_context.add_labeled_asset(label, usd_asset.clone());
+    }
+
+    Ok(usd_asset)
 }
 
 /// Decompose a USDZ archive. Writes the first USD layer to a tempfile (so
