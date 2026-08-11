@@ -1,0 +1,243 @@
+use viewport_protocol::{
+    ActiveStreamConfiguration, ButtonState, ClientCapabilities, ClientCommand,
+    ClientCommandEnvelope, ClientHello, CodecId, FocusState, HandshakeEvent, InputCommand,
+    InputModifiers, KeyboardInput, PointerButtons, PointerMotion, ProtocolValidationError,
+    ReleaseAllInput, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
+    SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
+    ViewportCommand, ViewportMetrics, ViewportReadModel, decode_client_json_line,
+    decode_server_json_line, encode_client_json_line, encode_server_json_line,
+};
+
+fn metrics() -> ViewportMetrics {
+    ViewportMetrics {
+        css_width: 1280,
+        css_height: 720,
+        device_pixel_ratio: 2.0,
+        requested_width: 2560,
+        requested_height: 1440,
+        preferred_fps: Some(60),
+        generation: 4,
+    }
+}
+
+#[test]
+fn handshake_and_capabilities_round_trip() {
+    let hello = ClientHello::new("desktop-1", ClientCapabilities::default());
+    hello.validate().unwrap();
+    let message = HandshakeEvent::ClientHello(hello.clone());
+
+    let json = serde_json::to_string(&message).unwrap();
+    let decoded: HandshakeEvent = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(decoded, message);
+    assert_eq!(hello.capabilities.codecs, vec![CodecId::H264]);
+
+    let server = ServerHello::new(
+        SessionId::new("session-1"),
+        SessionRole::Controller,
+        ServerCapabilities::default(),
+    );
+    server.validate().unwrap();
+    let server_json = serde_json::to_string(&server).unwrap();
+    assert_eq!(serde_json::from_str::<ServerHello>(&server_json).unwrap(), server);
+}
+
+#[test]
+fn every_client_command_family_round_trips_through_a_client_envelope() {
+    let commands = [
+        ClientCommand::Session(SessionCommand::Ping {
+            nonce: "ping-1".to_owned(),
+        }),
+        ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics: metrics() }),
+        ClientCommand::Input(InputCommand::PointerMotion(PointerMotion {
+            sequence: 7,
+            dx_css_pixels: 2.5,
+            dy_css_pixels: -1.0,
+            wheel_x: 0.0,
+            wheel_y: -3.0,
+            viewport_css_width: 1280.0,
+            viewport_css_height: 720.0,
+            stream_generation: 4,
+        })),
+        ClientCommand::Viewport(ViewportCommand::RequestSnapshot),
+    ];
+
+    for (sequence, command) in commands.into_iter().enumerate() {
+        let envelope = ClientCommandEnvelope::for_session(
+            format!("request-{sequence}"),
+            SessionId::new("session-1"),
+            sequence as u64 + 1,
+            command,
+        );
+        envelope.validate().unwrap();
+        let line = encode_client_json_line(&envelope).unwrap();
+        assert_eq!(decode_client_json_line(&line).unwrap(), envelope);
+    }
+}
+
+#[test]
+fn every_server_event_family_round_trips_through_a_server_envelope() {
+    let events = [
+        ServerEvent::Session(SessionEvent::Pong {
+            nonce: "ping-1".to_owned(),
+        }),
+        ServerEvent::Stream(StreamEvent::ConfigurationApplied {
+            configuration: ActiveStreamConfiguration {
+                width: 1280,
+                height: 720,
+                fps: 60,
+                codec: CodecId::H264,
+                generation: 4,
+            },
+        }),
+        ServerEvent::Viewport(ViewportProtocolViewportSnapshot::event()),
+    ];
+
+    for (sequence, event) in events.into_iter().enumerate() {
+        let envelope = ServerEventEnvelope::new(SessionId::new("session-1"), sequence as u64 + 1, event);
+        envelope.validate().unwrap();
+        let line = encode_server_json_line(&envelope).unwrap();
+        assert_eq!(decode_server_json_line(&line).unwrap(), envelope);
+    }
+}
+
+#[test]
+fn input_types_are_independently_serializable() {
+    let input = InputCommand::ButtonState(ButtonState {
+        sequence: 2,
+        buttons: PointerButtons {
+            primary: true,
+            secondary: false,
+            auxiliary: false,
+        },
+        modifiers: InputModifiers {
+            shift: true,
+            control: false,
+            alt: false,
+            meta: false,
+        },
+        stream_generation: 1,
+    });
+    let keyboard = InputCommand::Keyboard(KeyboardInput {
+        sequence: 3,
+        code: "KeyW".to_owned(),
+        key: Some("w".to_owned()),
+        pressed: true,
+        repeat: false,
+        modifiers: InputModifiers::default(),
+        stream_generation: 1,
+    });
+    let focus = InputCommand::FocusChanged(FocusState {
+        focused: false,
+        sequence: 4,
+    });
+    let release = InputCommand::ReleaseAll(ReleaseAllInput { sequence: 5 });
+
+    for value in [input, keyboard, focus, release] {
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!(serde_json::from_str::<InputCommand>(&json).unwrap(), value);
+    }
+}
+
+#[test]
+fn validation_rejects_versions_and_numeric_boundaries() {
+    let mut envelope = ClientCommandEnvelope::new(
+        "request-1",
+        1,
+        ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics: metrics() }),
+    );
+    envelope.protocol_version += 1;
+    assert!(matches!(
+        envelope.validate(),
+        Err(ProtocolValidationError::UnsupportedProtocolVersion { .. })
+    ));
+
+    let mut invalid = metrics();
+    invalid.requested_width = 1279;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ProtocolValidationError::OddEncodedDimension { .. })
+    ));
+
+    invalid = metrics();
+    invalid.device_pixel_ratio = f32::INFINITY;
+    assert!(matches!(
+        invalid.validate(),
+        Err(ProtocolValidationError::InvalidDevicePixelRatio { .. })
+    ));
+
+    invalid = metrics();
+    invalid.preferred_fps = Some(241);
+    assert!(matches!(
+        invalid.validate(),
+        Err(ProtocolValidationError::InvalidFrameRate { .. })
+    ));
+}
+
+#[test]
+fn constructors_reserve_deterministic_request_session_and_sequence_metadata() {
+    let command = ClientCommandEnvelope::for_session(
+        "request-9",
+        SessionId::new("session-2"),
+        9,
+        ClientCommand::Session(SessionCommand::RequestSnapshot),
+    );
+    assert_eq!(command.protocol_version, viewport_protocol::PROTOCOL_VERSION);
+    assert_eq!(command.request_id, "request-9");
+    assert_eq!(command.sequence, 9);
+    assert_eq!(command.session_id, Some(SessionId::new("session-2")));
+
+    let event = ServerEventEnvelope::for_request(
+        SessionId::new("session-2"),
+        10,
+        "request-9",
+        ServerEvent::Session(SessionEvent::Ready {
+            snapshot_required: true,
+        }),
+    );
+    assert_eq!(event.request_id.as_deref(), Some("request-9"));
+    assert_eq!(event.sequence, 10);
+}
+
+struct ViewportProtocolViewportSnapshot;
+
+impl ViewportProtocolViewportSnapshot {
+    fn event() -> viewport_protocol::ViewportEvent {
+        viewport_protocol::ViewportEvent::Snapshot {
+            state: ViewportReadModel {
+                protocol_version: viewport_protocol::PROTOCOL_VERSION,
+                stage: viewport_protocol::StageReadModel {
+                    display_name: "fixture".to_owned(),
+                    loaded: true,
+                },
+                scene: viewport_protocol::SceneReadModel::default(),
+                selection: viewport_protocol::SelectionReadModel { target: None },
+                camera_source: viewport_protocol::CameraSource::Arcball,
+                timeline: viewport_protocol::TimelineReadModel {
+                    seconds: 0.0,
+                    playing: false,
+                    start_time_code: 0.0,
+                    end_time_code: 1.0,
+                    time_codes_per_second: 24.0,
+                },
+                presentation: viewport_protocol::PresentationReadModel {
+                    ground_grid: true,
+                    world_axes: true,
+                    prim_markers: true,
+                    prim_marker_bias: 0.0,
+                    skeleton: true,
+                    physics: false,
+                    colliders: false,
+                    wireframe: false,
+                    light_intensity_scale: 1.0,
+                    curve_tuning: viewport_protocol::CurveTuning {
+                        default_radius: 0.01,
+                        ring_segments: 8,
+                        point_scale: 1.0,
+                    },
+                },
+                physics_running: false,
+            },
+        }
+    }
+}
