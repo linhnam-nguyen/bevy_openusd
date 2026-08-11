@@ -40,7 +40,7 @@ impl StreamingConfig {
     /// Creates a streaming configuration from a preset.
     pub fn from_preset(preset: StreamingPreset) -> Self {
         let signaling_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let stun_server = "stun:stun.l.google.com:19302".to_string();
+        let stun_server = String::new();
 
         match preset {
             StreamingPreset::Performance => Self {

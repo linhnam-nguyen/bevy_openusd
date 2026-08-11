@@ -27,9 +27,34 @@ pub struct CodecCapabilities {
     pub h264_encoder: Option<String>,
 }
 
+fn init_gstreamer_env() {
+    #[cfg(target_os = "macos")]
+    {
+        use std::env;
+        let mut paths = Vec::new();
+        if let Ok(existing) = env::var("GST_PLUGIN_PATH") {
+            paths.push(existing);
+        }
+        paths.push("/opt/homebrew/opt/libnice-gstreamer/libexec/gstreamer-1.0".to_string());
+        paths.push("/opt/homebrew/lib/gstreamer-1.0".to_string());
+        if let Ok(joined) = env::join_paths(paths.iter()) {
+            unsafe {
+                env::set_var("GST_PLUGIN_PATH", joined);
+            }
+        }
+
+        if env::var("DYLD_FALLBACK_LIBRARY_PATH").is_err() {
+            unsafe {
+                env::set_var("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib");
+            }
+        }
+    }
+}
+
 impl CodecCapabilities {
     /// Probes GStreamer registry for hardware (Vulkan Video, NVIDIA, AMD, Apple) and software encoders.
     pub fn probe() -> Self {
+        init_gstreamer_env();
         let _ = gstreamer::init();
 
         Self {
@@ -38,8 +63,9 @@ impl CodecCapabilities {
                 "nvh265enc",     // NVIDIA NVENC (Linux/Windows)
                 "amfh265enc",    // AMD AMF (Windows)
                 "vah265enc",     // AMD/Intel VAAPI (Linux)
-                "vtenc_h265",    // Apple VideoToolbox (macOS)
-                "x265enc",       // Software fallback
+                // "vtenc_h265", // Apple VideoToolbox (macOS)
+                "vtenc_h264", // Hardware H.264 fallback on macOS
+                "x265enc",    // Software fallback
             ]),
             av1_encoder: find_first_encoder(&[
                 "vulkanav1enc", // Vulkan Video AV1 Encode (Cross-vendor)
@@ -47,6 +73,7 @@ impl CodecCapabilities {
                 "amfav1enc",    // AMD RDNA 3 / RX 7000+ AMF (Windows)
                 "vaav1enc",     // AMD RDNA 3 / Intel Arc VAAPI (Linux)
                 "svtav1enc",    // Software fallback
+                "vtenc_h264",
             ]),
             h264_encoder: find_first_encoder(&[
                 "vulkanh264enc", // Vulkan Video H.264 Encode
@@ -86,10 +113,12 @@ impl EncodePipeline {
         let encoder_name = match codec {
             VideoCodec::H265 => caps
                 .h265_encoder
-                .context("No H.265 encoder available in GStreamer registry")?,
+                .or(caps.h264_encoder.clone())
+                .context("No H.265 / H.264 encoder available in GStreamer registry")?,
             VideoCodec::AV1 => caps
                 .av1_encoder
-                .context("No AV1 encoder available in GStreamer registry")?,
+                .or(caps.h264_encoder.clone())
+                .context("No AV1 / H.264 encoder available in GStreamer registry")?,
             VideoCodec::H264 => caps
                 .h264_encoder
                 .context("No H.264 encoder available in GStreamer registry")?,
@@ -118,18 +147,88 @@ impl EncodePipeline {
         ));
         appsrc.set_is_live(true);
 
+        let (parser_name, payloader_name) = if encoder_name.contains("264") {
+            ("h264parse", "rtph264pay")
+        } else if encoder_name.contains("av1") {
+            ("av1parse", "rtpav1pay")
+        } else {
+            ("h265parse", "rtph265pay")
+        };
+
         let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
         let encoder = gstreamer::ElementFactory::make(&encoder_name).build()?;
+        let parser = gstreamer::ElementFactory::make(parser_name).build()?;
+        let payloader = gstreamer::ElementFactory::make(payloader_name)
+            .property("config-interval", 1)
+            .build()?;
+        let mut webrtc_builder = gstreamer::ElementFactory::make("webrtcbin").name("webrtcbin");
+        if !config.stun_server.is_empty() {
+            webrtc_builder = webrtc_builder.property("stun-server", &config.stun_server);
+        }
+        let webrtc = webrtc_builder.build()?;
 
         // Configure low-latency properties depending on encoder type
         if encoder_name.contains("nv") || encoder_name.contains("amf") {
             let _ = encoder.set_property_from_str("preset", "low-latency-hq");
-        } else if encoder_name.contains("vt") {
-            let _ = encoder.set_property("realtime", true);
+        } else if encoder_name.contains("x264") {
+            let _ = encoder.set_property_from_str("tune", "zerolatency");
         }
 
-        pipeline.add_many(&[&appsrc.upcast_ref(), &videoconvert, &encoder])?;
-        gstreamer::Element::link_many(&[&appsrc.upcast_ref(), &videoconvert, &encoder])?;
+        pipeline.add_many(&[
+            appsrc.upcast_ref(),
+            &videoconvert,
+            &encoder,
+            &parser,
+            &payloader,
+            &webrtc,
+        ])?;
+
+        gstreamer::Element::link_many(&[
+            appsrc.upcast_ref(),
+            &videoconvert,
+            &encoder,
+            &parser,
+            &payloader,
+        ])?;
+
+        // Set pipeline state to Ready so webrtcbin initializes its pad templates
+        pipeline.set_state(gstreamer::State::Ready)?;
+
+        // Request sink_%u pad using webrtcbin's pad template
+        let pad_templ = webrtc
+            .pad_template("sink_%u")
+            .context("Failed to find sink_%u pad template on webrtcbin")?;
+        let sink_pad = webrtc
+            .request_pad(&pad_templ, None, None)
+            .context("Failed to request sink pad from webrtcbin")?;
+
+        let src_pad = payloader
+            .static_pad("src")
+            .context("Failed to get src pad from payloader")?;
+
+        src_pad
+            .link(&sink_pad)
+            .context("Failed to link payloader src pad to webrtcbin sink pad")?;
+
+        if let Err(err) = pipeline.set_state(gstreamer::State::Ready) {
+            let mut err_detail = String::new();
+            if let Some(bus) = pipeline.bus() {
+                if let Some(msg) = bus.timed_pop_filtered(
+                    gstreamer::ClockTime::from_mseconds(100),
+                    &[gstreamer::MessageType::Error],
+                ) {
+                    if let gstreamer::MessageView::Error(err_msg) = msg.view() {
+                        err_detail = format!(
+                            "{}: {} (debug: {:?})",
+                            err_msg.src().map(|s| s.path_string()).unwrap_or_default(),
+                            err_msg.error(),
+                            err_msg.debug()
+                        );
+                    }
+                }
+            }
+            anyhow::bail!("Failed to set GStreamer pipeline state to Ready: {err:?}. Detail: {err_detail}");
+        }
 
         Ok(Self {
             pipeline,
@@ -162,3 +261,16 @@ impl EncodePipeline {
         self.selected_codec
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pipeline_creation() {
+        let config = StreamingConfig::default();
+        let pipeline = EncodePipeline::new(&config, VideoCodec::H264);
+        assert!(pipeline.is_ok(), "Failed to create H.264 encode pipeline: {:?}", pipeline.err());
+    }
+}
+

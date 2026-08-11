@@ -182,13 +182,20 @@ pub(crate) fn run() {
                 let enc_config = config.clone();
                 tokio::task::spawn_blocking(move || {
                     let mut encoder: Option<viewport_streaming::EncodePipeline> = None;
+                    let mut attempted = false;
                     while let Ok(frame) = frame_rx.recv() {
-                        if encoder.is_none() {
-                            if let Ok(pipeline) = viewport_streaming::EncodePipeline::new(
+                        if encoder.is_none() && !attempted {
+                            attempted = true;
+                            match viewport_streaming::EncodePipeline::new(
                                 &enc_config,
-                                viewport_streaming::VideoCodec::H265,
+                                viewport_streaming::VideoCodec::H264,
                             ) {
-                                encoder = Some(pipeline);
+                                Ok(pipeline) => {
+                                    encoder = Some(pipeline);
+                                }
+                                Err(err) => {
+                                    bevy::log::error!("[viewport-encode] Encoder pipeline creation failed: {err:?}");
+                                }
                             }
                         }
                         if let Some(ref enc) = encoder {
