@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use gstreamer_app::AppSrc;
 use log::info;
+use std::time::{Duration, Instant};
 
 use crate::config::StreamingConfig;
 
@@ -101,6 +102,7 @@ fn find_first_encoder(candidates: &[&str]) -> Option<String> {
 pub struct EncodePipeline {
     _pipeline: gstreamer::Pipeline,
     webrtc: gstreamer::Element,
+    webrtc_sink_pad: gstreamer::Pad,
     appsrc: AppSrc,
     selected_codec: VideoCodec,
 }
@@ -176,6 +178,11 @@ impl EncodePipeline {
             .property("config-interval", 1)
             .build()?;
         let mut webrtc_builder = gstreamer::ElementFactory::make("webrtcbin").name("webrtcbin");
+        // Browsers answer with a single BUNDLE transport for the video and
+        // DataChannel m-lines. Keep webrtcbin on the same transport model so
+        // its remote-description fingerprint validation sees one consistent
+        // ICE/DTLS transport across both media sections.
+        webrtc_builder = webrtc_builder.property_from_str("bundle-policy", "max-bundle");
         if !config.stun_server.is_empty() {
             webrtc_builder = webrtc_builder.property("stun-server", &config.stun_server);
         }
@@ -251,6 +258,7 @@ impl EncodePipeline {
         Ok(Self {
             _pipeline: pipeline,
             webrtc,
+            webrtc_sink_pad: sink_pad,
             appsrc,
             selected_codec: codec,
         })
@@ -258,6 +266,44 @@ impl EncodePipeline {
 
     pub fn webrtc(&self) -> gstreamer::Element {
         self.webrtc.clone()
+    }
+
+    /// Negotiates the video branch before creating the first WebRTC offer.
+    ///
+    /// A newly-created per-client pipeline has no real Bevy frame yet. Until
+    /// one buffer reaches the payloader, webrtcbin has only created the
+    /// DataChannel m-line, so an offer made at that point cannot describe
+    /// video. A single black frame is enough to establish the RTP caps; the
+    /// normal frame router replaces it as soon as the next rendered frame
+    /// arrives.
+    pub fn prepare_video_offer(&self, width: u32, height: u32) -> Result<()> {
+        let pixel_count = (width as usize)
+            .checked_mul(height as usize)
+            .context("video dimensions overflow while preparing the WebRTC offer")?;
+        let byte_count = pixel_count
+            .checked_mul(4)
+            .context("RGBA frame size overflow while preparing the WebRTC offer")?;
+
+        self.push_rgba_frame(&vec![0; byte_count])?;
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(caps) = self.webrtc_sink_pad.current_caps()
+                && !caps.is_any()
+                && !caps.is_empty()
+            {
+                info!("[viewport-encode] video RTP caps negotiated before SDP offer: {caps:?}");
+                return Ok(());
+            }
+
+            if Instant::now() >= deadline {
+                anyhow::bail!(
+                    "timed out waiting for video RTP caps before creating the WebRTC offer"
+                );
+            }
+
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Pushes a raw RGBA frame from Bevy offscreen render target into the GStreamer pipeline.
@@ -283,6 +329,17 @@ impl EncodePipeline {
     pub fn selected_codec(&self) -> VideoCodec {
         self.selected_codec
     }
+
+    /// Stops the pipeline before its owning streaming session is dropped.
+    pub fn shutdown(&self) {
+        let _ = self._pipeline.set_state(gstreamer::State::Null);
+    }
+}
+
+impl Drop for EncodePipeline {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 #[cfg(test)]
@@ -293,10 +350,12 @@ mod tests {
     fn test_pipeline_creation() {
         let config = StreamingConfig::default();
         let pipeline = EncodePipeline::new(&config, VideoCodec::H264);
-        assert!(
-            pipeline.is_ok(),
-            "Failed to create H.264 encode pipeline: {:?}",
-            pipeline.err()
+        let pipeline = pipeline.expect("Failed to create H.264 encode pipeline");
+        assert_eq!(
+            pipeline
+                .webrtc()
+                .property::<gstreamer_webrtc::WebRTCBundlePolicy>("bundle-policy"),
+            gstreamer_webrtc::WebRTCBundlePolicy::MaxBundle
         );
     }
 }

@@ -1,153 +1,225 @@
-//! GStreamer WebRTC `webrtcbin` session manager.
+//! WebRTC signaling-to-streaming session coordination.
 //!
-//! Handles SDP offer generation (advertising multi-codec H.265 / AV1 / H.264),
-//! SDP answer parsing, ICE candidate exchange, and DataChannel protocol wiring.
+//! Signaling connections carry only SDP, ICE, and lifecycle messages. Once a
+//! connection is accepted, this manager creates one isolated StreamingSession
+//! and enforces the first implementation's one-controller policy.
 
-use crate::signaling::{SessionCommand, SignalingMessage};
-use anyhow::{Context, Result};
-use gstreamer::prelude::*;
-use log::{info, warn};
-use std::sync::{Arc, Mutex};
+use anyhow::Result;
+use log::{error, info, warn};
+use std::sync::mpsc::Receiver;
 use tokio::sync::mpsc;
 
-/// Active WebRTC session state.
+use crate::config::StreamingConfig;
+use crate::signaling::{SessionCommand, SignalingMessage};
+use crate::stream_session::{FramePump, StreamingSession};
+
+/// Coordinates signaling lifecycle with per-client GStreamer sessions.
 pub struct WebRtcSessionManager {
-    webrtc: gstreamer::Element,
+    config: StreamingConfig,
+    frame_pump: FramePump,
 }
 
 impl WebRtcSessionManager {
-    pub fn new(webrtc: gstreamer::Element) -> Self {
-        Self { webrtc }
+    pub fn new(config: StreamingConfig, frame_receiver: Receiver<Vec<u8>>) -> Self {
+        Self {
+            config,
+            frame_pump: FramePump::new(frame_receiver),
+        }
     }
 
-    /// Spawns the WebRTC session command handling loop.
-    pub async fn run(&self, mut session_rx: mpsc::Receiver<SessionCommand>) -> Result<()> {
-        let active_client_tx = Arc::new(Mutex::new(None::<mpsc::Sender<SignalingMessage>>));
-
-        let ice_client_tx = Arc::clone(&active_client_tx);
+    pub async fn run(self, mut session_rx: mpsc::Receiver<SessionCommand>) -> Result<()> {
         let runtime_handle = tokio::runtime::Handle::current();
+        let frame_router = self.frame_pump.router();
+        let mut gate = ConnectionGate::default();
+        let mut active: Option<StreamingSession> = None;
 
-        self.webrtc
-            .connect("on-ice-candidate", false, move |values| {
-                let Ok(mline_index) = values[1].get::<u32>() else {
-                    warn!("[viewport-session] Invalid local ICE m-line index");
-                    return None;
-                };
-
-                let Ok(candidate) = values[2].get::<String>() else {
-                    warn!("[viewport-session] Invalid local ICE candidate");
-                    return None;
-                };
-
-                let reply_tx = ice_client_tx.lock().ok().and_then(|active| active.clone());
-
-                if let Some(reply_tx) = reply_tx {
-                    let message = SignalingMessage::Ice {
-                        candidate,
-                        sdp_mid: None,
-                        sdp_mline_index: Some(mline_index),
-                    };
-
-                    std::mem::drop(runtime_handle.spawn(async move {
-                        if reply_tx.send(message).await.is_err() {
-                            warn!("[viewport-session] Failed to forward local ICE candidate");
-                        }
-                    }));
-                }
-
-                None
-            });
-        info!("[viewport-session] Session manager started");
+        info!("[viewport-session] session manager started");
 
         while let Some(command) = session_rx.recv().await {
             match command {
-                SessionCommand::ClientConnected { reply_tx } => {
-                    if let Ok(mut active) = active_client_tx.lock() {
-                        *active = Some(reply_tx.clone());
+                SessionCommand::ClientConnected {
+                    connection_id,
+                    reply_tx,
+                } => {
+                    if !gate.try_claim(connection_id) {
+                        send_error(
+                            &reply_tx,
+                            "resource_busy",
+                            "viewport already has an active controller",
+                        )
+                        .await;
+                        warn!(
+                            "[viewport-session] rejected second controller connection {}",
+                            connection_id
+                        );
+                        continue;
                     }
-                    let (promise, promise_future) = gstreamer::Promise::new_future();
 
-                    self.webrtc.emit_by_name::<()>(
-                        "create-offer",
-                        &[&None::<gstreamer::Structure>, &promise],
-                    );
+                    let session = match StreamingSession::new(
+                        &self.config,
+                        connection_id,
+                        reply_tx.clone(),
+                        frame_router.clone(),
+                        runtime_handle.clone(),
+                    ) {
+                        Ok(session) => session,
+                        Err(error) => {
+                            gate.release_if(connection_id);
+                            send_error(&reply_tx, "session_creation_failed", &error.to_string())
+                                .await;
+                            error!(
+                                "[viewport-session] failed to create connection {}: {error:?}",
+                                connection_id
+                            );
+                            continue;
+                        }
+                    };
 
-                    let reply = promise_future
+                    let offer = match session.create_offer().await {
+                        Ok(offer) => offer,
+                        Err(error) => {
+                            gate.release_if(connection_id);
+                            send_error(&reply_tx, "offer_creation_failed", &error.to_string())
+                                .await;
+                            error!(
+                                "[viewport-session] failed to create offer for connection {}: {error:?}",
+                                connection_id
+                            );
+                            continue;
+                        }
+                    };
+
+                    if reply_tx
+                        .send(SignalingMessage::Offer { sdp: offer })
                         .await
-                        .map_err(|err| anyhow::anyhow!("create-offer promise failed: {err:?}"))?
-                        .context("create-offer returned no reply")?;
+                        .is_err()
+                    {
+                        gate.release_if(connection_id);
+                        warn!(
+                            "[viewport-session] signaling peer closed before offer for connection {}",
+                            connection_id
+                        );
+                        continue;
+                    }
 
-                    let offer = reply
-                        .get::<gstreamer_webrtc::WebRTCSessionDescription>("offer")
-                        .context("create-offer reply contained no SDP offer")?;
-
-                    self.webrtc.emit_by_name::<()>(
-                        "set-local-description",
-                        &[&offer, &None::<gstreamer::Promise>],
-                    );
-
-                    let offer_sdp = offer
-                        .sdp()
-                        .as_text()
-                        .context("Failed to serialize generated SDP offer")?;
-
-                    reply_tx
-                        .send(SignalingMessage::Offer { sdp: offer_sdp })
-                        .await
-                        .context("Failed to send generated SDP offer")?;
+                    active = Some(session);
                 }
-                SessionCommand::ReceivedAnswer { sdp } => {
-                    info!("[viewport-session] Received SDP answer from client");
+                SessionCommand::ReceivedAnswer { connection_id, sdp } => {
+                    if !gate.is_active(connection_id) {
+                        warn!(
+                            "[viewport-session] ignored SDP answer from stale connection {}",
+                            connection_id
+                        );
+                        continue;
+                    }
 
-                    let sdp_message = gstreamer_sdp::SDPMessage::parse_buffer(sdp.as_bytes())
-                        .context("Failed to parse remote SDP answer")?;
-
-                    let answer = gstreamer_webrtc::WebRTCSessionDescription::new(
-                        gstreamer_webrtc::WebRTCSDPType::Answer,
-                        sdp_message,
-                    );
-
-                    let (promise, promise_future) = gstreamer::Promise::new_future();
-
-                    self.webrtc
-                        .emit_by_name::<()>("set-remote-description", &[&answer, &promise]);
-
-                    promise_future.await.map_err(|err| {
-                        anyhow::anyhow!("set-remote-description promise failed: {err:?}")
-                    })?;
-
-                    info!("[viewport-session] Remote SDP answer applied");
+                    if let Some(session) = active.as_ref()
+                        && let Err(error) = session.apply_answer(sdp).await
+                    {
+                        error!(
+                            "[viewport-session] failed to apply SDP answer for connection {}: {error:?}",
+                            connection_id
+                        );
+                    }
                 }
                 SessionCommand::ReceivedIceCandidate {
+                    connection_id,
                     candidate,
                     sdp_mid,
                     sdp_mline_index,
                 } => {
-                    let Some(mline_index) = sdp_mline_index else {
+                    if !gate.is_active(connection_id) {
                         warn!(
-                            "[viewport-session] Ignoring ICE candidate without m-line index \
-             (mid: {sdp_mid:?})"
+                            "[viewport-session] ignored ICE candidate from stale connection {}",
+                            connection_id
                         );
                         continue;
-                    };
+                    }
 
-                    self.webrtc
-                        .emit_by_name::<()>("add-ice-candidate", &[&mline_index, &candidate]);
-
-                    info!(
-                        "[viewport-session] Applied remote ICE candidate \
-         (mid: {sdp_mid:?}, index: {mline_index})"
-                    );
+                    if let Some(session) = active.as_ref() {
+                        session.apply_ice(candidate, sdp_mid, sdp_mline_index);
+                    }
                 }
-                SessionCommand::ClientDisconnected => {
-                    info!("[viewport-session] Client disconnected");
-                    if let Ok(mut active) = active_client_tx.lock() {
-                        *active = None;
+                SessionCommand::ClientDisconnected { connection_id } => {
+                    if gate.release_if(connection_id) {
+                        active.take();
+                        info!(
+                            "[viewport-session] disconnected active controller {}",
+                            connection_id
+                        );
+                    } else {
+                        warn!(
+                            "[viewport-session] ignored stale disconnect from connection {}",
+                            connection_id
+                        );
                     }
                 }
             }
         }
 
+        drop(active);
+        info!("[viewport-session] session manager stopped");
         Ok(())
+    }
+}
+
+async fn send_error(reply_tx: &mpsc::Sender<SignalingMessage>, code: &str, message: &str) {
+    let _ = reply_tx
+        .send(SignalingMessage::Error {
+            code: code.to_owned(),
+            message: message.to_owned(),
+        })
+        .await;
+}
+
+#[derive(Debug, Default)]
+struct ConnectionGate {
+    active: Option<u64>,
+}
+
+impl ConnectionGate {
+    fn try_claim(&mut self, connection_id: u64) -> bool {
+        if self.active.is_some() {
+            return false;
+        }
+        self.active = Some(connection_id);
+        true
+    }
+
+    fn is_active(&self, connection_id: u64) -> bool {
+        self.active == Some(connection_id)
+    }
+
+    fn release_if(&mut self, connection_id: u64) -> bool {
+        if self.is_active(connection_id) {
+            self.active = None;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn second_controller_is_rejected_without_replacing_the_first() {
+        let mut gate = ConnectionGate::default();
+        assert!(gate.try_claim(1));
+        assert!(!gate.try_claim(2));
+        assert!(gate.is_active(1));
+        assert!(!gate.is_active(2));
+    }
+
+    #[test]
+    fn stale_disconnect_cannot_clear_the_current_controller() {
+        let mut gate = ConnectionGate::default();
+        assert!(gate.try_claim(7));
+        assert!(!gate.release_if(8));
+        assert!(gate.is_active(7));
+        assert!(gate.release_if(7));
+        assert!(!gate.is_active(7));
     }
 }

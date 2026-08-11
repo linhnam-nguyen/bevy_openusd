@@ -6,6 +6,7 @@
 
 pub(crate) mod frame_capture;
 mod stdio;
+pub(crate) mod webrtc;
 
 pub(crate) use frame_capture::{FrameCapturePlugin, FrameData};
 pub(crate) use stdio::StdioTransportPlugin;

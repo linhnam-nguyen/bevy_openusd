@@ -159,8 +159,15 @@ pub(crate) fn run() {
     }
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
+        app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
         let (frame_tx, frame_rx) =
             std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
+        let (stream_frame_tx, stream_frame_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+        std::thread::spawn(move || {
+            while let Ok(frame) = frame_rx.recv() {
+                let _ = stream_frame_tx.try_send(frame.rgba);
+            }
+        });
         if launch_options.headless {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin { sender: frame_tx });
         }
@@ -174,32 +181,15 @@ pub(crate) fn run() {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
                 let (session_tx, session_rx) = tokio::sync::mpsc::channel(32);
-                let encoder = match viewport_streaming::EncodePipeline::new(
-                    &config,
-                    viewport_streaming::VideoCodec::H264,
-                ) {
-                    Ok(encoder) => encoder,
-                    Err(err) => {
-                        bevy::log::error!(
-                            "[viewport-encode] Encoder pipeline creation failed: {err:?}"
-                        );
-                        return;
-                    }
-                };
-                let webrtc = encoder.webrtc();
-                let session = viewport_streaming::WebRtcSessionManager::new(webrtc);
+                let session =
+                    viewport_streaming::WebRtcSessionManager::new(config.clone(), stream_frame_rx);
 
                 tokio::spawn(async move {
-                    let _ = session.run(session_rx).await;
-                });
-
-                tokio::task::spawn_blocking(move || {
-                    while let Ok(frame) = frame_rx.recv() {
-                        if let Err(err) = encoder.push_rgba_frame(&frame.rgba) {
-                            bevy::log::error!("[viewport-encode] Frame push failed: {err:?}");
-                        }
+                    if let Err(error) = session.run(session_rx).await {
+                        bevy::log::error!("[viewport-session] session manager failed: {error:?}");
                     }
                 });
+
                 let _ = viewport_streaming::run_signaling_server(config, session_tx).await;
             });
         });

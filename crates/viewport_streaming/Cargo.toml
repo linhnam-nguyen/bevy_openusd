@@ -26,7 +26,7 @@ viewport_protocol = { path = "../viewport_protocol" }
 gstreamer = "0.25.3"
 gstreamer-app = "0.25.2"
 gstreamer-video = "0.25.3"
-gstreamer-webrtc = "0.25.2"
+gstreamer-webrtc = { version = "0.25.2", features = ["v1_22"] }
 gstreamer-sdp = "0.25.3"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }

@@ -1,10 +1,15 @@
-//! WebSocket signaling server for WebRTC SDP offer/answer exchange and ICE candidate relay.
+//! WebSocket signaling for SDP/ICE bootstrap and connection lifecycle.
+//!
+//! Application commands do not travel through this socket. Once a connection
+//! receives its offer, the WebRTC DataChannels are the application transport.
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
@@ -30,25 +35,31 @@ pub enum SignalingMessage {
         sdp_mline_index: Option<u32>,
     },
     Error {
+        code: String,
         message: String,
     },
 }
 
-/// Commands passed between the signaling server task and the WebRTC session manager.
+/// Commands passed between a signaling task and the WebRTC session manager.
 #[derive(Debug)]
 pub enum SessionCommand {
     ClientConnected {
+        connection_id: u64,
         reply_tx: mpsc::Sender<SignalingMessage>,
     },
     ReceivedAnswer {
+        connection_id: u64,
         sdp: String,
     },
     ReceivedIceCandidate {
+        connection_id: u64,
         candidate: String,
         sdp_mid: Option<String>,
         sdp_mline_index: Option<u32>,
     },
-    ClientDisconnected,
+    ClientDisconnected {
+        connection_id: u64,
+    },
 }
 
 /// Launches the WebSocket signaling listener task.
@@ -64,100 +75,143 @@ pub async fn run_signaling_server(
                 config.signaling_addr
             )
         })?;
+    let next_connection_id = Arc::new(AtomicU64::new(1));
 
     info!(
         "[viewport-signaling] Listening on ws://{}",
         config.signaling_addr
     );
 
-    while let Ok((stream, peer_addr)) = listener.accept().await {
-        info!("[viewport-signaling] New connection from {peer_addr}");
+    loop {
+        let (stream, peer_addr) = listener.accept().await?;
+        let connection_id = next_connection_id.fetch_add(1, Ordering::Relaxed);
+        info!(
+            "[viewport-signaling] New connection {} from {}",
+            connection_id, peer_addr
+        );
+
         let session_tx = session_tx.clone();
         let auth_token = config.auth_token_secret.clone();
-
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, peer_addr, session_tx, auth_token).await {
-                error!("[viewport-signaling] Connection error for {peer_addr}: {e}");
+            if let Err(error) =
+                handle_connection(stream, peer_addr, connection_id, session_tx, auth_token).await
+            {
+                error!(
+                    "[viewport-signaling] connection {} failed: {error}",
+                    connection_id
+                );
             }
         });
     }
-
-    Ok(())
 }
 
 async fn handle_connection(
     stream: TcpStream,
     peer_addr: SocketAddr,
+    connection_id: u64,
     session_tx: mpsc::Sender<SessionCommand>,
     auth_token_secret: Option<String>,
 ) -> Result<()> {
     let ws_stream = tokio_tungstenite::accept_async(stream)
         .await
         .context("WebSocket handshake failed")?;
-
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
     let (reply_tx, mut reply_rx) = mpsc::channel::<SignalingMessage>(32);
+    let writer_connection_id = connection_id;
 
-    // Task forwarding outgoing signaling messages to the WebSocket client
     tokio::spawn(async move {
-        while let Some(msg) = reply_rx.recv().await {
-            if let Ok(json) = serde_json::to_string(&msg) {
-                if ws_tx.send(Message::Text(json.into())).await.is_err() {
-                    break;
-                }
+        while let Some(message) = reply_rx.recv().await {
+            if let Ok(json) = serde_json::to_string(&message)
+                && ws_tx.send(Message::Text(json.into())).await.is_err()
+            {
+                warn!(
+                    "[viewport-signaling] writer closed for connection {}",
+                    writer_connection_id
+                );
+                break;
             }
         }
     });
 
-    // Process incoming WebSocket messages
-    while let Some(msg_result) = ws_rx.next().await {
-        let msg = match msg_result {
+    let mut joined = false;
+    while let Some(message_result) = ws_rx.next().await {
+        let message = match message_result {
             Ok(Message::Text(text)) => text,
             Ok(Message::Close(_)) | Err(_) => break,
             _ => continue,
         };
 
-        let parsed: SignalingMessage = match serde_json::from_str(&msg) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!("[viewport-signaling] Invalid JSON message from {peer_addr}: {e}");
+        let parsed: SignalingMessage = match serde_json::from_str(&message) {
+            Ok(message) => message,
+            Err(error) => {
+                warn!(
+                    "[viewport-signaling] invalid JSON from connection {}: {}",
+                    connection_id, error
+                );
                 continue;
             }
         };
 
         match parsed {
             SignalingMessage::Join { token } => {
-                if let Some(expected) = &auth_token_secret {
-                    if token.as_ref() != Some(expected) {
-                        let _ = reply_tx
-                            .send(SignalingMessage::Error {
-                                message: "Unauthorized token".into(),
-                            })
-                            .await;
-                        break;
-                    }
+                if joined {
+                    let _ = reply_tx
+                        .send(SignalingMessage::Error {
+                            code: "already_joined".to_owned(),
+                            message: "signaling connection already joined".to_owned(),
+                        })
+                        .await;
+                    continue;
                 }
-                let _ = session_tx
+
+                if let Some(expected) = &auth_token_secret
+                    && token.as_ref() != Some(expected)
+                {
+                    let _ = reply_tx
+                        .send(SignalingMessage::Error {
+                            code: "unauthorized".to_owned(),
+                            message: "unauthorized token".to_owned(),
+                        })
+                        .await;
+                    break;
+                }
+
+                joined = true;
+                if session_tx
                     .send(SessionCommand::ClientConnected {
+                        connection_id,
                         reply_tx: reply_tx.clone(),
                     })
-                    .await;
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
             }
-            SignalingMessage::Answer { sdp } => {
+            SignalingMessage::Answer { sdp } if joined => {
                 let _ = session_tx
-                    .send(SessionCommand::ReceivedAnswer { sdp })
+                    .send(SessionCommand::ReceivedAnswer { connection_id, sdp })
                     .await;
             }
             SignalingMessage::Ice {
                 candidate,
                 sdp_mid,
                 sdp_mline_index,
-            } => {
+            } if joined => {
                 let _ = session_tx
                     .send(SessionCommand::ReceivedIceCandidate {
+                        connection_id,
                         candidate,
                         sdp_mid,
                         sdp_mline_index,
+                    })
+                    .await;
+            }
+            SignalingMessage::Answer { .. } | SignalingMessage::Ice { .. } => {
+                let _ = reply_tx
+                    .send(SignalingMessage::Error {
+                        code: "join_required".to_owned(),
+                        message: "send join before SDP or ICE messages".to_owned(),
                     })
                     .await;
             }
@@ -165,7 +219,14 @@ async fn handle_connection(
         }
     }
 
-    let _ = session_tx.send(SessionCommand::ClientDisconnected).await;
-    info!("[viewport-signaling] Connection closed for {peer_addr}");
+    if joined {
+        let _ = session_tx
+            .send(SessionCommand::ClientDisconnected { connection_id })
+            .await;
+    }
+    info!(
+        "[viewport-signaling] connection {} closed for {}",
+        connection_id, peer_addr
+    );
     Ok(())
 }

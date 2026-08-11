@@ -5,12 +5,19 @@
 //! DataChannel ↔ Bevy protocol message translation.
 
 pub mod bridge;
+pub mod channel_backpressure;
 pub mod config;
+pub mod data_channel;
 pub mod encode;
 pub mod session;
 pub mod signaling;
+pub mod stream_session;
 
 pub use config::{StreamingConfig, StreamingPreset};
+pub use data_channel::{
+    CONTROL_CHANNEL_LABEL, CONTROL_CHANNEL_PROTOCOL, INPUT_CHANNEL_LABEL, INPUT_CHANNEL_PROTOCOL,
+};
 pub use encode::{CodecCapabilities, EncodePipeline, VideoCodec};
 pub use session::WebRtcSessionManager;
 pub use signaling::{SignalingMessage, run_signaling_server};
+pub use stream_session::StreamingSession;
