@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use viewport_protocol::SessionId;
+use viewport_protocol::{SessionId, ViewportReadModel};
 
+use crate::RenderServerInterface;
 use crate::config::StreamingConfig;
 use crate::data_channel::DataChannelSet;
 use crate::encode::{EncodePipeline, VideoCodec};
@@ -126,6 +127,7 @@ pub struct StreamingSession {
     session_id: SessionId,
     encoder: Arc<EncodePipeline>,
     channels: DataChannelSet,
+    application: crate::data_channel::ApplicationSession,
     frame_router: FrameRouter,
 }
 
@@ -136,16 +138,23 @@ impl StreamingSession {
         reply_tx: mpsc::Sender<SignalingMessage>,
         frame_router: FrameRouter,
         runtime_handle: tokio::runtime::Handle,
+        interface: RenderServerInterface,
     ) -> Result<Self> {
         let encoder = Arc::new(EncodePipeline::new(config, VideoCodec::H264)?);
         encoder.prepare_video_offer(config.width, config.height)?;
         let webrtc = encoder.webrtc();
         install_ice_forwarding(&webrtc, reply_tx, runtime_handle);
 
+        let session_id = SessionId::new(format!("session-{connection_id}"));
+        let application = crate::data_channel::ApplicationSession::new(
+            session_id.clone(),
+            ViewportReadModel::unloaded(config.stage_display_name.clone()),
+            interface,
+        );
+
         // DataChannel callbacks are installed before both local channels are
         // created, and both channels therefore appear in the generated offer.
-        let channels = DataChannelSet::create(&webrtc)?;
-        let session_id = SessionId::new(format!("session-{connection_id}"));
+        let channels = DataChannelSet::create(&webrtc, application.clone())?;
         frame_router.activate(connection_id, Arc::clone(&encoder));
 
         info!(
@@ -158,8 +167,14 @@ impl StreamingSession {
             session_id,
             encoder,
             channels,
+            application,
             frame_router,
         })
+    }
+
+    pub(crate) fn flush_authoritative_events(&self) {
+        self.application
+            .flush_authoritative_events(self.channels.control());
     }
 
     pub(crate) async fn create_offer(&self) -> Result<String> {

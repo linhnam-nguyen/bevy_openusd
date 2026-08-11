@@ -18,6 +18,7 @@ pub enum StreamingPreset {
 #[derive(Debug, Clone)]
 pub struct StreamingConfig {
     pub preset: StreamingPreset,
+    pub stage_display_name: String,
     pub width: u32,
     pub height: u32,
     pub fps: u32,
@@ -45,6 +46,7 @@ impl StreamingConfig {
         match preset {
             StreamingPreset::Performance => Self {
                 preset,
+                stage_display_name: "remote-stage".to_owned(),
                 width: 1920,
                 height: 1080,
                 fps: 120,
@@ -58,6 +60,7 @@ impl StreamingConfig {
             },
             StreamingPreset::Quality => Self {
                 preset,
+                stage_display_name: "remote-stage".to_owned(),
                 width: 2560,
                 height: 1440,
                 fps: 60,
@@ -71,6 +74,7 @@ impl StreamingConfig {
             },
             StreamingPreset::Adaptive => Self {
                 preset,
+                stage_display_name: "remote-stage".to_owned(),
                 width: 1280,
                 height: 720,
                 fps: 60,

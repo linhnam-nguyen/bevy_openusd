@@ -25,7 +25,7 @@ use crate::viewport::animation::{
     PendingAnimationClip, UsdStageTime, apply_live_animation_clip, drive_blend_shape_weights,
     drive_skel_animations, evaluate_animated_prims, tick_stage_time,
 };
-use crate::viewport::api::ViewportBridgePlugin;
+use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin};
 use crate::viewport::camera::{
     ArcballCamera, ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to,
     fit_camera_once, follow_mounted_camera, sync_chase_camera,
@@ -160,6 +160,10 @@ pub(crate) fn run() {
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
         app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
+        let application_interface = app
+            .world()
+            .resource::<RenderServerInterface>()
+            .shared();
         let (frame_tx, frame_rx) =
             std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
         let (stream_frame_tx, stream_frame_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
@@ -171,7 +175,13 @@ pub(crate) fn run() {
         if launch_options.headless {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin { sender: frame_tx });
         }
+        let stage_display_name = std::path::Path::new(&asset_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("remote-stage")
+            .to_owned();
         let config = viewport_streaming::StreamingConfig {
+            stage_display_name,
             width: launch_options.width,
             height: launch_options.height,
             fps: launch_options.fps,
@@ -181,8 +191,11 @@ pub(crate) fn run() {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
                 let (session_tx, session_rx) = tokio::sync::mpsc::channel(32);
-                let session =
-                    viewport_streaming::WebRtcSessionManager::new(config.clone(), stream_frame_rx);
+                    let session = viewport_streaming::WebRtcSessionManager::new(
+                        config.clone(),
+                        stream_frame_rx,
+                        application_interface,
+                    );
 
                 tokio::spawn(async move {
                     if let Err(error) = session.run(session_rx).await {

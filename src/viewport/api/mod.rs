@@ -10,10 +10,7 @@ mod scene_index;
 mod session_registry;
 
 pub(crate) use bridge::{ViewportBridgePlugin, ViewportBridgeSet};
-#[allow(unused_imports)]
-pub(crate) use interface::{
-    RenderServerCommandPort, RenderServerEventPort, RenderServerInterface, RenderServerPortError,
-};
+pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };

@@ -1,22 +1,301 @@
 //! WebRTC DataChannel construction and lifecycle diagnostics.
 //!
 //! The server creates both application channels before generating its SDP
-//! offer. Product commands are intentionally not routed here yet; Phase 1
-//! only proves channel ownership, lifecycle callbacks, and a diagnostic
-//! ping/pong on the reliable control channel.
+//! offer. The reliable control channel also owns the application handshake;
+//! semantic viewport commands remain queued for the Phase 3 bridge.
 
 use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use gstreamer_webrtc::WebRTCDataChannel;
 use log::{debug, error, info, warn};
-use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+use viewport_protocol::{
+    ClientCommand, CommandFamily, HandshakeEvent, HandshakeRejectionReason, PROTOCOL_VERSION,
+    ProtocolValidationError, ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionEvent,
+    SessionCommand, SessionId, ViewportCommandEnvelope, ViewportReadModel,
+    decode_client_json_line, encode_server_json_line,
+};
 
 use crate::channel_backpressure::CONTROL_LOW_WATER_MARK;
+use crate::RenderServerInterface;
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
 pub const CONTROL_CHANNEL_PROTOCOL: &str = "usd-hub.viewport.v1";
 pub const INPUT_CHANNEL_PROTOCOL: &str = "usd-hub.viewport-input.v1";
+
+/// Application state shared by the two callbacks attached to one control
+/// DataChannel. It deliberately knows only the transport-neutral protocol.
+#[derive(Clone)]
+pub(crate) struct ApplicationSession {
+    state: Arc<Mutex<ApplicationSessionState>>,
+}
+
+struct ApplicationSessionState {
+    session_id: SessionId,
+    server_capabilities: ServerCapabilities,
+    initial_snapshot: ViewportReadModel,
+    interface: RenderServerInterface,
+    client_sequence: u64,
+    server_sequence: u64,
+    handshaken: bool,
+}
+
+impl ApplicationSession {
+    pub(crate) fn new(
+        session_id: SessionId,
+        initial_snapshot: ViewportReadModel,
+        interface: RenderServerInterface,
+    ) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(ApplicationSessionState {
+                session_id,
+                server_capabilities: ServerCapabilities::default(),
+                initial_snapshot,
+                interface,
+                client_sequence: 0,
+                server_sequence: 1,
+                handshaken: false,
+            })),
+        }
+    }
+
+    fn handle_control_message(&self, channel: &WebRTCDataChannel, text: &str) {
+        let envelope = match decode_client_json_line(text) {
+            Ok(envelope) => envelope,
+            Err(error) => {
+                debug!("[viewport-data-channel] ignoring non-application control payload: {error}");
+                return;
+            }
+        };
+
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+
+        if let Err(error) = envelope.validate() {
+            if !state.handshaken {
+                send_handshake_rejection(channel, &mut state, rejection_for(error));
+            } else {
+                warn!("[viewport-data-channel] rejected invalid command envelope: {error}");
+            }
+            return;
+        }
+
+        if envelope.sequence <= state.client_sequence {
+            warn!(
+                "[viewport-data-channel] ignoring stale client sequence {} (last {})",
+                envelope.sequence, state.client_sequence
+            );
+            return;
+        }
+
+        if !state.handshaken {
+            let ClientCommand::Handshake(hello) = envelope.command else {
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    HandshakeRejectionReason::InvalidClientIdentity,
+                );
+                return;
+            };
+
+            if envelope.session_id.is_some() {
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    HandshakeRejectionReason::InvalidClientIdentity,
+                );
+                return;
+            }
+
+            if let Err(error) = hello.validate() {
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    rejection_for(error),
+                );
+                return;
+            }
+            if !hello
+                .capabilities
+                .protocol_versions
+                .contains(&PROTOCOL_VERSION)
+            {
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    HandshakeRejectionReason::UnsupportedProtocolVersion,
+                );
+                return;
+            }
+            if !hello
+                .capabilities
+                .command_families
+                .contains(&CommandFamily::Session)
+            {
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    HandshakeRejectionReason::UnsupportedCapabilities,
+                );
+                return;
+            }
+
+            state.client_sequence = envelope.sequence;
+            state.handshaken = true;
+            let session_id = state.session_id.clone();
+            let capabilities = state.server_capabilities.clone();
+            let snapshot = state
+                .interface
+                .take_latest_snapshot(state.initial_snapshot.clone());
+            send_server_event(
+                channel,
+                &mut state,
+                ServerEvent::Handshake(HandshakeEvent::ServerHello(
+                    viewport_protocol::ServerHello::new(
+                        session_id.clone(),
+                        hello.requested_role,
+                        capabilities,
+                    ),
+                )),
+            );
+            send_server_event(
+                channel,
+                &mut state,
+                ServerEvent::Session(SessionEvent::Ready {
+                    snapshot_required: true,
+                }),
+            );
+            send_server_event(
+                channel,
+                &mut state,
+                ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+            );
+            return;
+        }
+
+        if envelope.session_id.as_ref() != Some(&state.session_id) {
+            warn!(
+                "[viewport-data-channel] rejected command for a different session: {:?}",
+                envelope.session_id
+            );
+            return;
+        }
+
+        state.client_sequence = envelope.sequence;
+        match envelope.command {
+            ClientCommand::Viewport(command) => {
+                let viewport_command = ViewportCommandEnvelope {
+                    protocol_version: envelope.protocol_version,
+                    request_id: envelope.request_id,
+                    command,
+                };
+                if let Err(error) = state.interface.submit_viewport_command(viewport_command) {
+                    warn!("[viewport-data-channel] rejected viewport command: {error:?}");
+                }
+            }
+            ClientCommand::Session(SessionCommand::RequestSnapshot) => {
+                let snapshot = state
+                    .interface
+                    .take_latest_snapshot(state.initial_snapshot.clone());
+                send_server_event(
+                    channel,
+                    &mut state,
+                    ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+                );
+            }
+            command => {
+                debug!(
+                    "[viewport-data-channel] accepted non-viewport command for a later phase: {command:?}"
+                );
+            }
+        }
+    }
+
+    pub(crate) fn flush_authoritative_events(&self, channel: &WebRTCDataChannel) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if !state.handshaken {
+            return;
+        }
+
+        let interface = state.interface.clone();
+        while let Some(event) = interface.pop_viewport_event() {
+            let server_event = ServerEvent::Viewport(event.event);
+            let envelope = match event.request_id {
+                Some(request_id) => ServerEventEnvelope::for_request(
+                    state.session_id.clone(),
+                    state.server_sequence,
+                    request_id,
+                    server_event,
+                ),
+                None => ServerEventEnvelope::new(
+                    state.session_id.clone(),
+                    state.server_sequence,
+                    server_event,
+                ),
+            };
+            state.server_sequence = state.server_sequence.saturating_add(1);
+            match encode_server_json_line(&envelope)
+                .map_err(|error| error.to_string())
+                .and_then(|json| {
+                    channel
+                        .send_string_full(Some(&json))
+                        .map_err(|error| error.to_string())
+                }) {
+                Ok(()) => {}
+                Err(error) => {
+                    warn!("[viewport-data-channel] authoritative event send failed: {error}");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn rejection_for(error: ProtocolValidationError) -> HandshakeRejectionReason {
+    match error {
+        ProtocolValidationError::UnsupportedProtocolVersion { .. } => {
+            HandshakeRejectionReason::UnsupportedProtocolVersion
+        }
+        ProtocolValidationError::EmptyField { .. } => {
+            HandshakeRejectionReason::InvalidClientIdentity
+        }
+        _ => HandshakeRejectionReason::UnsupportedCapabilities,
+    }
+}
+
+fn send_handshake_rejection(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    reason: HandshakeRejectionReason,
+) {
+    send_server_event(
+        channel,
+        state,
+        ServerEvent::Handshake(HandshakeEvent::Rejected { reason }),
+    );
+}
+
+fn send_server_event(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    event: ServerEvent,
+) {
+    let envelope = ServerEventEnvelope::new(state.session_id.clone(), state.server_sequence, event);
+    state.server_sequence = state.server_sequence.saturating_add(1);
+    match encode_server_json_line(&envelope)
+        .map_err(|error| error.to_string())
+        .and_then(|json| channel.send_string_full(Some(&json)).map_err(|error| error.to_string()))
+    {
+        Ok(()) => {}
+        Err(error) => warn!("[viewport-data-channel] application event send failed: {error}"),
+    }
+}
 
 /// The WebRTC channel configuration that is sent to webrtcbin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,8 +350,11 @@ impl DataChannelSet {
     ///
     /// GStreamer documents this callback as the point where consumers can
     /// attach handlers before channel state or data notifications are emitted.
-    pub fn create(webrtc: &gstreamer::Element) -> Result<Self> {
-        install_prepare_callback(webrtc);
+    pub(crate) fn create(
+        webrtc: &gstreamer::Element,
+        application: ApplicationSession,
+    ) -> Result<Self> {
+        install_prepare_callback(webrtc, application);
 
         let control = create_channel(webrtc, ChannelOptions::control())?;
         let input = create_channel(webrtc, ChannelOptions::input())?;
@@ -94,7 +376,7 @@ impl DataChannelSet {
     }
 }
 
-fn install_prepare_callback(webrtc: &gstreamer::Element) {
+fn install_prepare_callback(webrtc: &gstreamer::Element, application: ApplicationSession) {
     webrtc.connect("prepare-data-channel", false, move |values| {
         let Some(channel) = values
             .get(1)
@@ -108,7 +390,7 @@ fn install_prepare_callback(webrtc: &gstreamer::Element) {
             .get(2)
             .and_then(|value| value.get::<bool>().ok())
             .unwrap_or(false);
-        attach_channel_callbacks(&channel, is_local);
+        attach_channel_callbacks(&channel, is_local, application.clone());
         None
     });
 }
@@ -156,7 +438,11 @@ fn create_channel(
     Ok(channel)
 }
 
-fn attach_channel_callbacks(channel: &WebRTCDataChannel, is_local: bool) {
+fn attach_channel_callbacks(
+    channel: &WebRTCDataChannel,
+    is_local: bool,
+    application: ApplicationSession,
+) {
     let label = channel
         .label()
         .map(|value| value.to_string())
@@ -182,15 +468,9 @@ fn attach_channel_callbacks(channel: &WebRTCDataChannel, is_local: bool) {
             open_label,
             channel.id()
         );
-
-        if control {
-            let message = DiagnosticControlMessage::Ping {
-                nonce: format!("server-open-{}", channel.id()),
-            };
-            send_diagnostic(channel, &message);
-        }
     });
 
+    let application_for_message = application.clone();
     let message_label = label.clone();
     channel.connect_on_message_string(move |channel, message| {
         let Some(message) = message else {
@@ -208,20 +488,7 @@ fn attach_channel_callbacks(channel: &WebRTCDataChannel, is_local: bool) {
             );
             return;
         }
-
-        match serde_json::from_str::<DiagnosticControlMessage>(message) {
-            Ok(DiagnosticControlMessage::Ping { nonce }) => {
-                send_diagnostic(channel, &DiagnosticControlMessage::Pong { nonce });
-            }
-            Ok(DiagnosticControlMessage::Pong { nonce }) => {
-                info!("[viewport-data-channel] control diagnostic pong received: {nonce}");
-            }
-            Err(error) => {
-                debug!(
-                    "[viewport-data-channel] control payload is not a Phase 1 diagnostic: {error}"
-                );
-            }
-        }
+        application_for_message.handle_control_message(channel, message);
     });
 
     let close_label = label.clone();
@@ -233,27 +500,6 @@ fn attach_channel_callbacks(channel: &WebRTCDataChannel, is_local: bool) {
     channel.connect_on_error(move |_, error| {
         error!("[viewport-data-channel] {} error: {}", error_label, error);
     });
-}
-
-fn send_diagnostic(channel: &WebRTCDataChannel, message: &DiagnosticControlMessage) {
-    match serde_json::to_string(message)
-        .map_err(|error| error.to_string())
-        .and_then(|json| {
-            channel
-                .send_string_full(Some(&json))
-                .map_err(|error| error.to_string())
-        }) {
-        Ok(()) => {}
-        Err(error) => warn!("[viewport-data-channel] diagnostic send failed: {error}"),
-    }
-}
-
-/// The only application payload interpreted during Phase 1.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum DiagnosticControlMessage {
-    Ping { nonce: String },
-    Pong { nonce: String },
 }
 
 #[cfg(test)]
@@ -288,21 +534,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diagnostic_messages_round_trip() {
-        for message in [
-            DiagnosticControlMessage::Ping {
-                nonce: "client-1".to_owned(),
-            },
-            DiagnosticControlMessage::Pong {
-                nonce: "server-1".to_owned(),
-            },
-        ] {
-            let json = serde_json::to_string(&message).unwrap();
-            assert_eq!(
-                serde_json::from_str::<DiagnosticControlMessage>(&json).unwrap(),
-                message
-            );
-        }
-    }
 }

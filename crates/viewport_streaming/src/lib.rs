@@ -9,11 +9,13 @@ pub mod channel_backpressure;
 pub mod config;
 pub mod data_channel;
 pub mod encode;
+pub mod application;
 pub mod session;
 pub mod signaling;
 pub mod stream_session;
 
 pub use config::{StreamingConfig, StreamingPreset};
+pub use application::{RenderServerInterface, RenderServerPortError};
 pub use data_channel::{
     CONTROL_CHANNEL_LABEL, CONTROL_CHANNEL_PROTOCOL, INPUT_CHANNEL_LABEL, INPUT_CHANNEL_PROTOCOL,
 };

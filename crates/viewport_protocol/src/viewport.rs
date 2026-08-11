@@ -199,6 +199,47 @@ pub struct ViewportReadModel {
     pub physics_running: bool,
 }
 
+impl ViewportReadModel {
+    /// Creates the honest pre-stage snapshot used while the render server is
+    /// connected but the USD stage has not completed loading yet.
+    pub fn unloaded(display_name: impl Into<String>) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            stage: StageReadModel {
+                display_name: display_name.into(),
+                loaded: false,
+            },
+            scene: SceneReadModel::default(),
+            selection: SelectionReadModel { target: None },
+            camera_source: CameraSource::Arcball,
+            timeline: TimelineReadModel {
+                seconds: 0.0,
+                playing: false,
+                start_time_code: 0.0,
+                end_time_code: 0.0,
+                time_codes_per_second: 24.0,
+            },
+            presentation: PresentationReadModel {
+                ground_grid: false,
+                world_axes: false,
+                prim_markers: false,
+                prim_marker_bias: 1.0,
+                skeleton: false,
+                physics: false,
+                colliders: false,
+                wireframe: false,
+                light_intensity_scale: 1.0,
+                curve_tuning: CurveTuning {
+                    default_radius: 0.02,
+                    ring_segments: 6,
+                    point_scale: 1.0,
+                },
+            },
+            physics_running: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum ViewportEvent {
@@ -240,4 +281,3 @@ pub enum ViewportWireMessage {
     Command(ViewportCommandEnvelope),
     Event(ViewportEventEnvelope),
 }
-

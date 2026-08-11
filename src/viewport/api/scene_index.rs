@@ -17,6 +17,7 @@ pub(crate) struct SceneAnchorIndex {
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
     initialized: bool,
+    revision: u64,
 }
 
 impl SceneAnchorIndex {
@@ -32,6 +33,10 @@ impl SceneAnchorIndex {
         SceneReadModel {
             prims: self.nodes.clone(),
         }
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
     }
 
     fn rebuild(
@@ -148,6 +153,7 @@ impl SceneAnchorIndex {
         self.by_entity = by_entity;
         self.nodes = nodes;
         self.initialized = true;
+        self.revision = self.revision.saturating_add(1);
     }
 }
 

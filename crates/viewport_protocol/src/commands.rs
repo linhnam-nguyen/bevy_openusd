@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ButtonState, FocusState, InputModifiers, KeyboardInput, PointerMotion,
-    ProtocolValidationError, ReleaseAllInput, ViewportCommand, ViewportMetrics,
+    ClientHello, ProtocolValidationError, ReleaseAllInput, ViewportCommand, ViewportMetrics,
 };
 
 /// Commands accepted from a client. The semantic viewport commands remain in
@@ -12,6 +12,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "family", content = "payload", rename_all = "snake_case")]
 pub enum ClientCommand {
+    Handshake(ClientHello),
     Session(SessionCommand),
     Stream(StreamCommand),
     Input(InputCommand),
@@ -21,6 +22,7 @@ pub enum ClientCommand {
 impl ClientCommand {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
         match self {
+            Self::Handshake(hello) => hello.validate(),
             Self::Stream(StreamCommand::ConfigureViewport { metrics }) => metrics.validate(),
             Self::Session(_) | Self::Stream(_) | Self::Input(_) | Self::Viewport(_) => Ok(()),
         }

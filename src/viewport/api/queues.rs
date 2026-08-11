@@ -77,6 +77,10 @@ impl ViewportEventOutbox {
         self.pending.push_back(event);
     }
 
+    pub(crate) fn push_front(&mut self, event: ViewportEventEnvelope) {
+        self.pending.push_front(event);
+    }
+
     #[allow(dead_code)]
     pub(crate) fn pop(&mut self) -> Option<ViewportEventEnvelope> {
         self.pending.pop_front()

@@ -7,8 +7,10 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use std::sync::mpsc::Receiver;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
+use crate::RenderServerInterface;
 use crate::config::StreamingConfig;
 use crate::signaling::{SessionCommand, SignalingMessage};
 use crate::stream_session::{FramePump, StreamingSession};
@@ -17,13 +19,19 @@ use crate::stream_session::{FramePump, StreamingSession};
 pub struct WebRtcSessionManager {
     config: StreamingConfig,
     frame_pump: FramePump,
+    interface: RenderServerInterface,
 }
 
 impl WebRtcSessionManager {
-    pub fn new(config: StreamingConfig, frame_receiver: Receiver<Vec<u8>>) -> Self {
+    pub fn new(
+        config: StreamingConfig,
+        frame_receiver: Receiver<Vec<u8>>,
+        interface: RenderServerInterface,
+    ) -> Self {
         Self {
             config,
             frame_pump: FramePump::new(frame_receiver),
+            interface,
         }
     }
 
@@ -32,10 +40,23 @@ impl WebRtcSessionManager {
         let frame_router = self.frame_pump.router();
         let mut gate = ConnectionGate::default();
         let mut active: Option<StreamingSession> = None;
+        let mut event_tick = tokio::time::interval(Duration::from_millis(16));
 
         info!("[viewport-session] session manager started");
 
-        while let Some(command) = session_rx.recv().await {
+        loop {
+            let Some(command) = (tokio::select! {
+                command = session_rx.recv() => command,
+                _ = event_tick.tick() => {
+                    if let Some(session) = active.as_ref() {
+                        session.flush_authoritative_events();
+                    }
+                    continue;
+                }
+            }) else {
+                break;
+            };
+
             match command {
                 SessionCommand::ClientConnected {
                     connection_id,
@@ -61,6 +82,7 @@ impl WebRtcSessionManager {
                         reply_tx.clone(),
                         frame_router.clone(),
                         runtime_handle.clone(),
+                        self.interface.clone(),
                     ) {
                         Ok(session) => session,
                         Err(error) => {

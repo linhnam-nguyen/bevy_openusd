@@ -88,7 +88,15 @@ fn publish_stage_load_state(
     asset_server: Res<AssetServer>,
     stage: Option<Res<StageHandle>>,
     spawned: Res<Spawned>,
-    mut last: Local<Option<StageLoadState>>,
+    stage_info: Res<StageInfo>,
+    selected: Res<SelectedPrim>,
+    scene_index: Res<SceneAnchorIndex>,
+    camera_mount: Res<CameraMount>,
+    clock: Res<UsdStageTime>,
+    toggles: Res<DisplayToggles>,
+    tuning: Res<LoaderTuning>,
+    physics: Res<usd_bevy::physics::PhysicsActive>,
+    mut last: Local<Option<(StageLoadState, u64)>>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
     let state = match stage {
@@ -101,14 +109,38 @@ fn publish_stage_load_state(
             _ => StageLoadState::Loading,
         },
     };
-    if last.as_ref() != Some(&state) {
+    let state_changed = last
+        .as_ref()
+        .is_none_or(|(previous, _)| previous != &state);
+    let scene_changed = last
+        .as_ref()
+        .is_none_or(|(_, revision)| *revision != scene_index.revision());
+    if state_changed || (matches!(state, StageLoadState::Ready) && scene_changed) {
+        if state_changed {
+            outbox.push(ViewportEventEnvelope::new(
+                None,
+                ViewportEvent::StageLoadStateChanged {
+                    state: state.clone(),
+                },
+            ));
+        }
         outbox.push(ViewportEventEnvelope::new(
             None,
-            ViewportEvent::StageLoadStateChanged {
-                state: state.clone(),
+            ViewportEvent::Snapshot {
+                state: build_read_model(
+                    &stage_info,
+                    spawned.0 && matches!(state, StageLoadState::Ready),
+                    &selected,
+                    &scene_index,
+                    &camera_mount,
+                    &clock,
+                    &toggles,
+                    &tuning,
+                    physics.0,
+                ),
             },
         ));
-        *last = Some(state);
+        *last = Some((state, scene_index.revision()));
     }
 }
 
@@ -580,7 +612,7 @@ fn emit_snapshot(
         ViewportEvent::Snapshot {
             state: build_read_model(
                 stage_info,
-                spawned,
+                spawned.0,
                 selected,
                 scene_index,
                 camera_mount,
@@ -596,7 +628,7 @@ fn emit_snapshot(
 #[allow(clippy::too_many_arguments)]
 fn build_read_model(
     stage_info: &StageInfo,
-    spawned: &Spawned,
+    stage_loaded: bool,
     selected: &SelectedPrim,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
@@ -609,7 +641,7 @@ fn build_read_model(
         protocol_version: PROTOCOL_VERSION,
         stage: StageReadModel {
             display_name: stage_info.path.clone(),
-            loaded: spawned.0,
+            loaded: stage_loaded,
         },
         scene: scene_index.read_model(),
         selection: SelectionReadModel {

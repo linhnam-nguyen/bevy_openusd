@@ -43,6 +43,32 @@ fn handshake_and_capabilities_round_trip() {
 }
 
 #[test]
+fn application_handshake_uses_the_versioned_command_and_event_envelopes() {
+    let hello = ClientHello::new("browser-1", ClientCapabilities::default());
+    let command = ClientCommandEnvelope::new(
+        "handshake-1",
+        1,
+        ClientCommand::Handshake(hello),
+    );
+    assert!(command.session_id.is_none());
+    assert_eq!(
+        decode_client_json_line(&encode_client_json_line(&command).unwrap()).unwrap(),
+        command
+    );
+
+    let session_id = SessionId::new("session-1");
+    let event = ServerEventEnvelope::new(
+        session_id.clone(),
+        1,
+        ServerEvent::Handshake(HandshakeEvent::Ready { session_id }),
+    );
+    assert_eq!(
+        decode_server_json_line(&encode_server_json_line(&event).unwrap()).unwrap(),
+        event
+    );
+}
+
+#[test]
 fn every_client_command_family_round_trips_through_a_client_envelope() {
     let commands = [
         ClientCommand::Session(SessionCommand::Ping {
