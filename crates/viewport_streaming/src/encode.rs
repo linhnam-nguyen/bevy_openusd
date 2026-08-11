@@ -80,8 +80,8 @@ impl CodecCapabilities {
                 "nvh264enc",     // NVIDIA NVENC
                 "amfh264enc",    // AMD AMF
                 "vah264enc",     // AMD/Intel VAAPI
-                "vtenc_h264",    // Apple VideoToolbox
                 "x264enc",       // Software fallback
+                "vtenc_h264",    // Apple VideoToolbox
             ]),
         }
     }
@@ -99,7 +99,8 @@ fn find_first_encoder(candidates: &[&str]) -> Option<String> {
 
 /// Managed GStreamer encoding pipeline instance.
 pub struct EncodePipeline {
-    pipeline: gstreamer::Pipeline,
+    _pipeline: gstreamer::Pipeline,
+    webrtc: gstreamer::Element,
     appsrc: AppSrc,
     selected_codec: VideoCodec,
 }
@@ -146,6 +147,8 @@ impl EncodePipeline {
                 .build(),
         ));
         appsrc.set_is_live(true);
+        appsrc.set_format(gstreamer::Format::Time);
+        appsrc.set_do_timestamp(true);
 
         let (parser_name, payloader_name) = if encoder_name.contains("264") {
             ("h264parse", "rtph264pay")
@@ -158,6 +161,17 @@ impl EncodePipeline {
         let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
         let encoder = gstreamer::ElementFactory::make(&encoder_name).build()?;
         let parser = gstreamer::ElementFactory::make(parser_name).build()?;
+        let codec_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+
+        if encoder_name.contains("264") {
+            let h264_caps = gstreamer::Caps::builder("video/x-h264")
+                .field("profile", "constrained-baseline")
+                .field("stream-format", "avc")
+                .field("alignment", "au")
+                .build();
+
+            codec_filter.set_property("caps", &h264_caps);
+        }
         let payloader = gstreamer::ElementFactory::make(payloader_name)
             .property("config-interval", 1)
             .build()?;
@@ -179,6 +193,7 @@ impl EncodePipeline {
             &videoconvert,
             &encoder,
             &parser,
+            &codec_filter,
             &payloader,
             &webrtc,
         ])?;
@@ -188,6 +203,7 @@ impl EncodePipeline {
             &videoconvert,
             &encoder,
             &parser,
+            &codec_filter,
             &payloader,
         ])?;
 
@@ -210,7 +226,7 @@ impl EncodePipeline {
             .link(&sink_pad)
             .context("Failed to link payloader src pad to webrtcbin sink pad")?;
 
-        if let Err(err) = pipeline.set_state(gstreamer::State::Ready) {
+        if let Err(err) = pipeline.set_state(gstreamer::State::Playing) {
             let mut err_detail = String::new();
             if let Some(bus) = pipeline.bus() {
                 if let Some(msg) = bus.timed_pop_filtered(
@@ -227,14 +243,21 @@ impl EncodePipeline {
                     }
                 }
             }
-            anyhow::bail!("Failed to set GStreamer pipeline state to Ready: {err:?}. Detail: {err_detail}");
+            anyhow::bail!(
+                "Failed to set GStreamer pipeline state to Playing: {err:?}. Detail: {err_detail}"
+            );
         }
 
         Ok(Self {
-            pipeline,
+            _pipeline: pipeline,
+            webrtc,
             appsrc,
             selected_codec: codec,
         })
+    }
+
+    pub fn webrtc(&self) -> gstreamer::Element {
+        self.webrtc.clone()
     }
 
     /// Pushes a raw RGBA frame from Bevy offscreen render target into the GStreamer pipeline.
@@ -270,7 +293,10 @@ mod tests {
     fn test_pipeline_creation() {
         let config = StreamingConfig::default();
         let pipeline = EncodePipeline::new(&config, VideoCodec::H264);
-        assert!(pipeline.is_ok(), "Failed to create H.264 encode pipeline: {:?}", pipeline.err());
+        assert!(
+            pipeline.is_ok(),
+            "Failed to create H.264 encode pipeline: {:?}",
+            pipeline.err()
+        );
     }
 }
-

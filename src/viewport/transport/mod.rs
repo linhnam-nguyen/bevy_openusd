@@ -7,7 +7,7 @@
 pub(crate) mod frame_capture;
 mod stdio;
 
-pub(crate) use frame_capture::{FrameCapturePlugin, FrameCaptureSink, FrameData};
+pub(crate) use frame_capture::{FrameCapturePlugin, FrameData};
 pub(crate) use stdio::StdioTransportPlugin;
 
 /// A process boundary enabled for this viewport launch.

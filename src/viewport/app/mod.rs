@@ -138,7 +138,6 @@ pub(crate) fn run() {
         app.add_plugins(HeadlessRenderPlugin {
             width: launch_options.width,
             height: launch_options.height,
-            fps: launch_options.fps,
         });
     }
 
@@ -175,31 +174,29 @@ pub(crate) fn run() {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
                 let (session_tx, session_rx) = tokio::sync::mpsc::channel(32);
-                let session = viewport_streaming::WebRtcSessionManager::new(config.clone());
+                let encoder = match viewport_streaming::EncodePipeline::new(
+                    &config,
+                    viewport_streaming::VideoCodec::H264,
+                ) {
+                    Ok(encoder) => encoder,
+                    Err(err) => {
+                        bevy::log::error!(
+                            "[viewport-encode] Encoder pipeline creation failed: {err:?}"
+                        );
+                        return;
+                    }
+                };
+                let webrtc = encoder.webrtc();
+                let session = viewport_streaming::WebRtcSessionManager::new(webrtc);
+
                 tokio::spawn(async move {
                     let _ = session.run(session_rx).await;
                 });
-                let enc_config = config.clone();
+
                 tokio::task::spawn_blocking(move || {
-                    let mut encoder: Option<viewport_streaming::EncodePipeline> = None;
-                    let mut attempted = false;
                     while let Ok(frame) = frame_rx.recv() {
-                        if encoder.is_none() && !attempted {
-                            attempted = true;
-                            match viewport_streaming::EncodePipeline::new(
-                                &enc_config,
-                                viewport_streaming::VideoCodec::H264,
-                            ) {
-                                Ok(pipeline) => {
-                                    encoder = Some(pipeline);
-                                }
-                                Err(err) => {
-                                    bevy::log::error!("[viewport-encode] Encoder pipeline creation failed: {err:?}");
-                                }
-                            }
-                        }
-                        if let Some(ref enc) = encoder {
-                            let _ = enc.push_rgba_frame(&frame.rgba);
+                        if let Err(err) = encoder.push_rgba_frame(&frame.rgba) {
+                            bevy::log::error!("[viewport-encode] Frame push failed: {err:?}");
                         }
                     }
                 });

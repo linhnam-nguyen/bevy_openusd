@@ -10,20 +10,16 @@ use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
-/// Offscreen target resource holding the GPU image handle and rendering resolution.
+/// Offscreen target resource holding the GPU image handle.
 #[derive(Resource, Clone, Debug)]
 pub struct OffscreenTarget {
     pub image_handle: Handle<Image>,
-    pub width: u32,
-    pub height: u32,
-    pub fps: u32,
 }
 
 /// Headless rendering plugin for offscreen Bevy App setup.
 pub struct HeadlessRenderPlugin {
     pub width: u32,
     pub height: u32,
-    pub fps: u32,
 }
 
 impl Default for HeadlessRenderPlugin {
@@ -31,7 +27,6 @@ impl Default for HeadlessRenderPlugin {
         Self {
             width: 1920,
             height: 1080,
-            fps: 60,
         }
     }
 }
@@ -65,13 +60,8 @@ impl Plugin for HeadlessRenderPlugin {
         image.resize(size);
         let image_handle = images.add(image);
 
-        app.insert_resource(OffscreenTarget {
-            image_handle,
-            width: self.width,
-            height: self.height,
-            fps: self.fps,
-        })
-        .add_systems(Startup, setup_offscreen_camera_target);
+        app.insert_resource(OffscreenTarget { image_handle })
+        .add_systems(Update, setup_offscreen_camera_target);
     }
 }
 
@@ -79,7 +69,7 @@ impl Plugin for HeadlessRenderPlugin {
 fn setup_offscreen_camera_target(
     target: Res<OffscreenTarget>,
     mut commands: Commands,
-    cameras: Query<Entity, With<Camera3d>>,
+    cameras: Query<Entity, Added<Camera3d>>,
 ) {
     let render_target = RenderTarget::Image(target.image_handle.clone().into());
     for camera_entity in &cameras {
