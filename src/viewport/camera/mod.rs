@@ -13,10 +13,12 @@ mod navigation;
 mod state;
 
 use bevy::camera::Projection;
-use bevy::input::mouse::{AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 use bevy_egui::input::egui_wants_any_pointer_input;
+
+use crate::viewport::input::{
+    ViewportNavigationInput, apply_local_navigation_input, reset_navigation_frame,
+};
 
 pub(crate) use glacial::sync_chase_camera;
 pub(crate) use navigation::{apply_fly_to, fit_camera_once, follow_mounted_camera};
@@ -24,17 +26,35 @@ pub(crate) use state::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
 
 pub struct ArcballCameraPlugin;
 
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ArcballCameraSet {
+    PrepareInput,
+    ApplyInput,
+}
+
 impl Plugin for ArcballCameraPlugin {
     fn build(&self, app: &mut App) {
         // Arcball yields to egui (so scrolling a panel doesn't zoom) AND
         // to the Cameras tab (so a mounted USD camera isn't fought by
         // orbit/pan input). Tiny run-condition saves a lot of confusion.
-        app.add_systems(
-            Update,
-            (drive_arcball, drive_arcball_zoom)
-                .run_if(not(egui_wants_any_pointer_input))
-                .run_if(arcball_is_active),
-        );
+        app.init_resource::<ViewportNavigationInput>()
+            .configure_sets(
+                Update,
+                (ArcballCameraSet::PrepareInput, ArcballCameraSet::ApplyInput).chain(),
+            )
+            .add_systems(
+                Update,
+                (reset_navigation_frame, apply_local_navigation_input)
+                    .chain()
+                    .in_set(ArcballCameraSet::PrepareInput),
+            )
+            .add_systems(
+                Update,
+                (drive_arcball, drive_arcball_zoom)
+                    .run_if(not(egui_wants_any_pointer_input))
+                    .run_if(arcball_is_active)
+                    .in_set(ArcballCameraSet::ApplyInput),
+            );
     }
 }
 
@@ -78,59 +98,24 @@ impl Default for ArcballCamera {
 
 /// Converts active mouse drags into screen-space panning and orbit updates.
 fn drive_arcball(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    primary_window: Query<&Window, With<PrimaryWindow>>,
-    mut pan_anchor: Local<Option<Vec2>>,
-    mut orbit_anchor: Local<Option<Vec2>>,
+    input: Res<ViewportNavigationInput>,
     mut cameras: Query<(&mut Transform, &mut ArcballCamera, &Projection)>,
 ) {
-    let shift_held = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let control_held = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-
-    let middle = mouse_buttons.pressed(MouseButton::Middle);
-    let left = mouse_buttons.pressed(MouseButton::Left);
-    let right = mouse_buttons.pressed(MouseButton::Right);
-    let pan_drag = !control_held && (middle || (shift_held && (left || right)));
-    let both_lr = !shift_held && !control_held && left && right;
-
-    if !pan_drag {
-        *pan_anchor = None;
-    }
-    if !both_lr {
-        *orbit_anchor = None;
+    if !input.focused {
+        return;
     }
 
-    let cursor = primary_window
-        .single()
-        .ok()
-        .and_then(|w| w.cursor_position());
-
-    let mut pan_delta = Vec2::ZERO;
-    if pan_drag {
-        if let Some(pos) = cursor {
-            if let Some(anchor) = *pan_anchor {
-                pan_delta = pos - anchor;
-            }
-            *pan_anchor = Some(pos);
-        }
-    }
-
-    let mut orbit_delta = Vec2::ZERO;
-    if both_lr {
-        if let Some(pos) = cursor {
-            if let Some(anchor) = *orbit_anchor {
-                orbit_delta = pos - anchor;
-            }
-            *orbit_anchor = Some(pos);
-        }
-    }
-
-    let window_height = primary_window
-        .single()
-        .ok()
-        .map(|w| w.resolution.height().max(1.0))
-        .unwrap_or(1080.0);
+    let pan_drag = !input.modifiers.control
+        && (input.buttons.auxiliary
+            || (input.modifiers.shift
+                && (input.buttons.primary || input.buttons.secondary)));
+    let both_lr = !input.modifiers.shift
+        && !input.modifiers.control
+        && input.buttons.primary
+        && input.buttons.secondary;
+    let pan_delta = pan_drag.then_some(input.pointer_delta).unwrap_or(Vec2::ZERO);
+    let orbit_delta = both_lr.then_some(input.pointer_delta).unwrap_or(Vec2::ZERO);
+    let window_height = input.viewport_size.y.max(1.0);
 
     for (mut tr, mut cam, projection) in cameras.iter_mut() {
         if pan_delta != Vec2::ZERO {
@@ -170,13 +155,10 @@ fn screen_space_pan_delta(
 /// Applies logarithmic, smoothed scroll-wheel zoom within configured bounds.
 fn drive_arcball_zoom(
     time: Res<Time>,
-    scroll: Res<AccumulatedMouseScroll>,
+    input: Res<ViewportNavigationInput>,
     mut cameras: Query<(&mut Transform, &mut ArcballCamera)>,
 ) {
-    let scroll_delta: f64 = match scroll.unit {
-        MouseScrollUnit::Line => scroll.delta.y as f64,
-        MouseScrollUnit::Pixel => scroll.delta.y as f64 / 32.0,
-    };
+    let scroll_delta = input.wheel_delta.y as f64;
 
     for (mut tr, mut cam) in cameras.iter_mut() {
         let min = cam.min_distance as f64;

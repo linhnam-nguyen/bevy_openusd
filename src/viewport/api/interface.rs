@@ -21,6 +21,18 @@ impl RenderServerInterface {
         self.0.pop_viewport_command()
     }
 
+    pub(crate) fn pop_input(&self) -> Option<viewport_protocol::InputCommand> {
+        self.0.pop_input()
+    }
+
+    pub(crate) fn take_latest_pointer_motion(&self) -> Option<viewport_protocol::PointerMotion> {
+        self.0.take_latest_pointer_motion()
+    }
+
+    pub(crate) fn take_input_reset(&self) -> bool {
+        self.0.take_input_reset()
+    }
+
     pub(crate) fn publish_viewport_event(
         &self,
         event: viewport_protocol::ViewportEventEnvelope,

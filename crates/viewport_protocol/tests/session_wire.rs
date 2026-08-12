@@ -262,6 +262,31 @@ fn validation_rejects_versions_and_numeric_boundaries() {
 }
 
 #[test]
+fn validation_rejects_unbounded_input_motion() {
+    let envelope = ClientCommandEnvelope::new(
+        "input-1",
+        1,
+        ClientCommand::Input(InputCommand::PointerMotion(PointerMotion {
+            sequence: 1,
+            dx_css_pixels: 4097.0,
+            dy_css_pixels: 0.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 1280.0,
+            viewport_css_height: 720.0,
+            stream_generation: 0,
+        })),
+    );
+
+    assert!(matches!(
+        envelope.validate(),
+        Err(ProtocolValidationError::InvalidInput {
+            field: "pointer.dx_css_pixels"
+        })
+    ));
+}
+
+#[test]
 fn constructors_reserve_deterministic_request_session_and_sequence_metadata() {
     let command = ClientCommandEnvelope::for_session(
         "request-9",

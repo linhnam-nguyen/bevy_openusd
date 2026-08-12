@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use viewport_protocol::{
-    ClientCommandEnvelope, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
-    ViewportReadModel,
+    ClientCommandEnvelope, InputCommand, PointerMotion, ViewportCommandEnvelope, ViewportEvent,
+    ViewportEventEnvelope, ViewportReadModel,
 };
 
 const MAX_PENDING_MESSAGES: usize = 256;
@@ -15,6 +15,10 @@ const MAX_PENDING_MESSAGES: usize = 256;
 struct PendingMessages {
     commands: VecDeque<ClientCommandEnvelope>,
     viewport_commands: VecDeque<ViewportCommandEnvelope>,
+    input_commands: VecDeque<InputCommand>,
+    latest_pointer_motion: Option<PointerMotion>,
+    last_pointer_sequence: u64,
+    input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
     latest_snapshot: Option<ViewportReadModel>,
 }
@@ -47,6 +51,14 @@ impl RenderServerInterface {
             .lock()
             .expect("render-server interface queue is not poisoned")
             .viewport_events
+            .len()
+    }
+
+    pub fn pending_input_count(&self) -> usize {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .input_commands
             .len()
     }
 
@@ -98,6 +110,72 @@ impl RenderServerInterface {
             .expect("render-server interface queue is not poisoned")
             .viewport_commands
             .pop_front()
+    }
+
+    /// Queues reliable input state and keeps only the newest motion packet.
+    /// The latter is deliberately replaceable so pointer traffic cannot
+    /// block semantic commands or make the camera process stale deltas.
+    pub fn submit_input(&self, command: InputCommand) -> Result<(), RenderServerPortError> {
+        command
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if let InputCommand::PointerMotion(motion) = command {
+            if motion.sequence <= pending.last_pointer_sequence {
+                return Ok(());
+            }
+            pending.last_pointer_sequence = motion.sequence;
+            pending.latest_pointer_motion = Some(motion);
+            return Ok(());
+        }
+        if pending.input_commands.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.input_commands.push_back(command);
+        Ok(())
+    }
+
+    pub fn pop_input(&self) -> Option<InputCommand> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .input_commands
+            .pop_front()
+    }
+
+    pub fn take_latest_pointer_motion(&self) -> Option<PointerMotion> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .latest_pointer_motion
+            .take()
+    }
+
+    /// Clears all remote input when a peer/channel disappears. The Bevy
+    /// adapter observes the reset marker on its next update tick.
+    pub fn clear_remote_input(&self) {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("render-server interface queue is not poisoned");
+        pending.input_commands.clear();
+        pending.latest_pointer_motion = None;
+        pending.last_pointer_sequence = 0;
+        pending.input_reset = true;
+    }
+
+    pub fn take_input_reset(&self) -> bool {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("render-server interface queue is not poisoned");
+        let reset = pending.input_reset;
+        pending.input_reset = false;
+        reset
     }
 
     pub fn publish_viewport_event(
@@ -167,7 +245,7 @@ fn safe_display_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use viewport_protocol::ViewportCommand;
+    use viewport_protocol::{InputCommand, PointerMotion, ViewportCommand};
 
     #[test]
     fn snapshot_display_name_is_reduced_to_a_basename() {
@@ -238,5 +316,50 @@ mod tests {
             .expect("failed sends must be recoverable");
 
         assert_eq!(interface.pop_viewport_event(), Some(event));
+    }
+
+    #[test]
+    fn pointer_motion_keeps_only_the_newest_valid_packet() {
+        let interface = RenderServerInterface::default();
+        let motion = |sequence| PointerMotion {
+            sequence,
+            dx_css_pixels: sequence as f32,
+            dy_css_pixels: 0.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 800.0,
+            viewport_css_height: 600.0,
+            stream_generation: 0,
+        };
+
+        interface
+            .submit_input(InputCommand::PointerMotion(motion(1)))
+            .unwrap();
+        interface
+            .submit_input(InputCommand::PointerMotion(motion(2)))
+            .unwrap();
+        interface
+            .submit_input(InputCommand::PointerMotion(motion(1)))
+            .unwrap();
+
+        assert_eq!(
+            interface.take_latest_pointer_motion().unwrap().sequence,
+            2
+        );
+        assert!(interface.take_latest_pointer_motion().is_none());
+    }
+
+    #[test]
+    fn reliable_input_state_is_preserved_in_order() {
+        let interface = RenderServerInterface::default();
+        interface
+            .submit_input(InputCommand::ReleaseAll(
+                viewport_protocol::ReleaseAllInput { sequence: 1 },
+            ))
+            .unwrap();
+        assert!(matches!(
+            interface.pop_input(),
+            Some(InputCommand::ReleaseAll(_))
+        ));
     }
 }

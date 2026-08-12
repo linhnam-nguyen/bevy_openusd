@@ -11,6 +11,8 @@ use crate::viewport::api::{
     RenderServerInterface, SessionRegistry, ViewportBridgeSet, ViewportCommandInbox,
     ViewportEventOutbox,
 };
+use crate::viewport::camera::ArcballCameraSet;
+use crate::viewport::input::apply_remote_navigation_input;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -35,6 +37,12 @@ impl Plugin for WebRtcTransportPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WebRtcTransportState>()
             .init_resource::<RenderServerInterface>()
+            .add_systems(
+                Update,
+                apply_remote_navigation_input
+                    .after(ArcballCameraSet::PrepareInput)
+                    .before(ArcballCameraSet::ApplyInput),
+            )
             .add_systems(
                 Update,
                 drain_remote_commands.before(ViewportBridgeSet::ApplyCommands),

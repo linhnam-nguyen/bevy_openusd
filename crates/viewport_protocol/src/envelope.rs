@@ -42,6 +42,7 @@ pub enum ProtocolValidationError {
     InvalidDevicePixelRatio { value: f32 },
     InvalidFrameRate { value: u32 },
     OddEncodedDimension { field: &'static str, value: u32 },
+    InvalidInput { field: &'static str },
     InvalidSequence,
 }
 
@@ -78,6 +79,7 @@ impl fmt::Display for ProtocolValidationError {
             Self::OddEncodedDimension { field, value } => {
                 write!(formatter, "{field} must be even for the encoded stream; got {value}")
             }
+            Self::InvalidInput { field } => write!(formatter, "invalid viewport input: {field}"),
             Self::InvalidSequence => write!(formatter, "sequence must be greater than zero"),
         }
     }
@@ -201,4 +203,3 @@ impl ServerEventEnvelope {
         Ok(())
     }
 }
-

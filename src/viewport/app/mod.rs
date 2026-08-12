@@ -34,7 +34,7 @@ use crate::viewport::diagnostics::{
     debug_dump_layout_once, debug_dump_physics_once, debug_dump_physics_tick,
     debug_origin_prims_once,
 };
-use crate::viewport::input::keyboard::ViewerKeyboardPlugin;
+use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{
     lift_scene_off_ground, spawn_physics_ground, sync_collider_debug_visibility,
 };
@@ -138,7 +138,11 @@ pub(crate) fn run() {
         app.add_plugins(HeadlessRenderPlugin {
             width: launch_options.width,
             height: launch_options.height,
-        });
+        })
+        .insert_resource(ViewportNavigationInput::with_viewport_size(
+            launch_options.width,
+            launch_options.height,
+        ));
     }
 
     app.add_plugins(ViewportBridgePlugin)

@@ -24,7 +24,8 @@ impl ClientCommand {
         match self {
             Self::Handshake(hello) => hello.validate(),
             Self::Stream(StreamCommand::ConfigureViewport { metrics }) => metrics.validate(),
-            Self::Session(_) | Self::Stream(_) | Self::Input(_) | Self::Viewport(_) => Ok(()),
+            Self::Input(input) => input.validate(),
+            Self::Session(_) | Self::Stream(_) | Self::Viewport(_) => Ok(()),
         }
     }
 }
@@ -59,4 +60,95 @@ pub enum InputCommand {
     FocusChanged(FocusState),
     ReleaseAll(ReleaseAllInput),
     SetModifiers(InputModifiers),
+}
+
+const MAX_INPUT_DELTA_CSS_PIXELS: f32 = 4096.0;
+const MAX_INPUT_VIEWPORT_CSS_PIXELS: f32 = 100_000.0;
+
+impl InputCommand {
+    /// Validates browser/native input before it crosses into the renderer.
+    /// Motion is intentionally bounded to avoid a malformed packet creating
+    /// an unbounded camera jump or a NaN transform.
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        match self {
+            Self::PointerMotion(motion) => {
+                validate_sequence(motion.sequence)?;
+                validate_bounded_finite(
+                    "pointer.dx_css_pixels",
+                    motion.dx_css_pixels,
+                    MAX_INPUT_DELTA_CSS_PIXELS,
+                )?;
+                validate_bounded_finite(
+                    "pointer.dy_css_pixels",
+                    motion.dy_css_pixels,
+                    MAX_INPUT_DELTA_CSS_PIXELS,
+                )?;
+                validate_bounded_finite(
+                    "pointer.wheel_x",
+                    motion.wheel_x,
+                    MAX_INPUT_DELTA_CSS_PIXELS,
+                )?;
+                validate_bounded_finite(
+                    "pointer.wheel_y",
+                    motion.wheel_y,
+                    MAX_INPUT_DELTA_CSS_PIXELS,
+                )?;
+                if !motion.viewport_css_width.is_finite()
+                    || !motion.viewport_css_height.is_finite()
+                    || motion.viewport_css_width <= 0.0
+                    || motion.viewport_css_height <= 0.0
+                    || motion.viewport_css_width > MAX_INPUT_VIEWPORT_CSS_PIXELS
+                    || motion.viewport_css_height > MAX_INPUT_VIEWPORT_CSS_PIXELS
+                {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "pointer.viewport_css_size",
+                    });
+                }
+            }
+            Self::ButtonState(state) => validate_sequence(state.sequence)?,
+            Self::Keyboard(keyboard) => {
+                validate_sequence(keyboard.sequence)?;
+                if keyboard.code.trim().is_empty() {
+                    return Err(ProtocolValidationError::EmptyField { field: "keyboard.code" });
+                }
+                if keyboard.code.len() > 64 {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "keyboard.code.length",
+                    });
+                }
+            }
+            Self::FocusChanged(focus) => validate_sequence(focus.sequence)?,
+            Self::ReleaseAll(release) => validate_sequence(release.sequence)?,
+            Self::SetModifiers(_) => {}
+        }
+        Ok(())
+    }
+}
+
+fn validate_sequence(sequence: u64) -> Result<(), ProtocolValidationError> {
+    if sequence == 0 {
+        Err(ProtocolValidationError::InvalidSequence)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_finite(field: &'static str, value: f32) -> Result<(), ProtocolValidationError> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(ProtocolValidationError::InvalidInput { field })
+    }
+}
+
+fn validate_bounded_finite(
+    field: &'static str,
+    value: f32,
+    maximum_absolute_value: f32,
+) -> Result<(), ProtocolValidationError> {
+    validate_finite(field, value)?;
+    if value.abs() > maximum_absolute_value {
+        return Err(ProtocolValidationError::InvalidInput { field });
+    }
+    Ok(())
 }

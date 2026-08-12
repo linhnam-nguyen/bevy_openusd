@@ -13,9 +13,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 use viewport_protocol::{
-    ClientCommand, CommandFamily, HandshakeEvent, HandshakeRejectionReason, PROTOCOL_VERSION,
-    ProtocolValidationError, ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionEvent,
-    SessionCommand, SessionId, ViewportCommandEnvelope, ViewportEvent, ViewportReadModel,
+    ClientCommand, CommandFamily, HandshakeEvent, HandshakeRejectionReason, InputCommand,
+    PROTOCOL_VERSION, ProtocolValidationError, ServerCapabilities, ServerEvent,
+    ServerEventEnvelope, SessionEvent, SessionCommand, SessionId, ViewportCommandEnvelope,
+    ViewportEvent, ViewportReadModel,
     decode_client_json_line, encode_server_json_line,
 };
 
@@ -237,6 +238,16 @@ impl ApplicationSession {
                     );
                 }
             }
+            ClientCommand::Input(command) => {
+                if let Err(error) = state.interface.submit_input(command) {
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        format!("input command rejected: {error:?}"),
+                    );
+                }
+            }
             ClientCommand::Session(SessionCommand::RequestSnapshot) => {
                 let snapshot = state
                     .interface
@@ -264,6 +275,38 @@ impl ApplicationSession {
                     format!("command family is not available in this phase: {command:?}"),
                 );
             }
+        }
+    }
+
+    fn handle_input_message(&self, text: &str) {
+        let command = match serde_json::from_str::<InputCommand>(text) {
+            Ok(command) => command,
+            Err(error) => {
+                debug!("[viewport-data-channel] ignoring invalid motion payload: {error}");
+                return;
+            }
+        };
+
+        if !matches!(command, InputCommand::PointerMotion(_)) {
+            warn!("[viewport-data-channel] unordered input channel received non-motion input");
+            return;
+        }
+
+        let Ok(state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if !state.handshaken {
+            return;
+        }
+        if let Err(error) = state.interface.submit_input(command) {
+            debug!("[viewport-data-channel] dropped motion payload: {error:?}");
+        }
+    }
+
+    pub(crate) fn clear_remote_input(&self) {
+        if let Ok(state) = self.state.lock() {
+            state.interface.clear_remote_input();
         }
     }
 
@@ -396,6 +439,9 @@ fn queue_server_event_for_request(
                 state, request_id, query, offset, total, matches, has_more,
             );
         }
+        ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) => {
+            queue_scene_children_page(state, request_id, page);
+        }
         event => {
             if !queue_bounded_event(state, request_id.as_deref(), event) {
                 warn!(
@@ -473,6 +519,55 @@ fn queue_search_results(
 
     warn!(
         "[viewport-data-channel] dropping search result page because one result exceeds the application message limit"
+    );
+}
+
+fn queue_scene_children_page(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    page: viewport_protocol::SceneChildrenPage,
+) {
+    let event = ServerEvent::Viewport(ViewportEvent::SceneChildren { page: page.clone() });
+    if queue_bounded_event(state, request_id.as_deref(), event) {
+        return;
+    }
+
+    // Keep the logical parent/page identity unchanged while splitting only
+    // the transport payload. The frontend merges repeated responses for the
+    // same page, so callers do not need a new protocol field or a second
+    // request. This also keeps ordered DataChannel sequence numbers intact.
+    if page.nodes.len() > 1 {
+        let split = page.nodes.len() / 2;
+        let viewport_protocol::SceneChildrenPage {
+            parent,
+            page,
+            page_size,
+            total,
+            nodes,
+        } = page;
+        let mut tail = nodes;
+        let head = tail.split_off(split);
+        let first = viewport_protocol::SceneChildrenPage {
+            parent: parent.clone(),
+            page,
+            page_size,
+            total,
+            nodes: tail,
+        };
+        let second = viewport_protocol::SceneChildrenPage {
+            parent,
+            page,
+            page_size,
+            total,
+            nodes: head,
+        };
+        queue_scene_children_page(state, request_id.clone(), first);
+        queue_scene_children_page(state, request_id, second);
+        return;
+    }
+
+    warn!(
+        "[viewport-data-channel] dropping scene child node because it exceeds the application message limit"
     );
 }
 
@@ -835,18 +930,17 @@ fn attach_channel_callbacks(
             return;
         };
 
-        if !control {
-            debug!(
-                "[viewport-data-channel] ignoring provisional {} payload: {}",
-                message_label, message
-            );
-            return;
+        if control {
+            application_for_message.handle_control_message(channel, message);
+        } else {
+            application_for_message.handle_input_message(message);
         }
-        application_for_message.handle_control_message(channel, message);
     });
 
     let close_label = label.clone();
+    let application_for_close = application.clone();
     channel.connect_on_close(move |_| {
+        application_for_close.clear_remote_input();
         info!("[viewport-data-channel] {} closed", close_label);
     });
 
@@ -953,6 +1047,63 @@ mod tests {
             assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
         }
         assert_eq!(expected_count, Some(expected_index));
+    }
+
+    #[test]
+    fn oversized_scene_child_pages_are_split_without_changing_page_identity() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let parent = viewport_protocol::SceneAnchor::active_session(
+            "/World/Very/Deep/Animated/Geometry/geom",
+        );
+        let nodes = (0..128)
+            .map(|index| viewport_protocol::PrimNodeReadModel {
+                anchor: viewport_protocol::SceneAnchor::active_session(format!(
+                    "/World/Very/Deep/Animated/Geometry/geom/child-{index}-with-a-long-name"
+                )),
+                parent: Some(parent.clone()),
+                label: format!("child-{index}"),
+                visible: true,
+                has_children: false,
+            })
+            .collect();
+
+        queue_server_event_for_request(
+            &mut state,
+            Some("children-request".to_owned()),
+            ServerEvent::Viewport(ViewportEvent::SceneChildren {
+                page: viewport_protocol::SceneChildrenPage {
+                    parent: Some(parent.clone()),
+                    page: 0,
+                    page_size: viewport_protocol::DEFAULT_SCENE_PAGE_SIZE,
+                    total: 128,
+                    nodes,
+                },
+            }),
+        );
+
+        assert!(state.pending_server_events.len() > 1);
+        let mut expected_sequence = 1;
+        let mut received_nodes = 0;
+        for envelope in &state.pending_server_events {
+            assert_eq!(envelope.sequence, expected_sequence);
+            expected_sequence += 1;
+            assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+            let ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) = &envelope.event
+            else {
+                panic!("oversized child pages must remain child-page events");
+            };
+            assert_eq!(page.parent.as_ref(), Some(&parent));
+            assert_eq!(page.page, 0);
+            assert_eq!(page.page_size, viewport_protocol::DEFAULT_SCENE_PAGE_SIZE);
+            assert_eq!(page.total, 128);
+            received_nodes += page.nodes.len();
+        }
+        assert_eq!(received_nodes, 128);
     }
 
 }
