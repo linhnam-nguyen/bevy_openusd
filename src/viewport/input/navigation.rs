@@ -11,6 +11,7 @@ use viewport_protocol::{
 };
 
 const REMOTE_INPUT_TIMEOUT: Duration = Duration::from_millis(750);
+const REMOTE_PAN_MULTIPLIER: f32 = 2.0;
 
 /// Renderer-neutral input consumed by the arcball camera.
 #[derive(Resource, Debug)]
@@ -22,6 +23,10 @@ pub(crate) struct ViewportNavigationInput {
     pub(crate) viewport_size: Vec2,
     pub(crate) focused: bool,
     pub(crate) generation: u64,
+    /// Remote video surfaces use a larger pan response because CSS pixels
+    /// are not the same interaction scale as a native Bevy window. Native
+    /// input resets this to `1.0` and is therefore unchanged.
+    pub(crate) pan_multiplier: f32,
     last_input_sequence: u64,
     last_motion_sequence: u64,
     remote_last_activity: Option<Instant>,
@@ -37,6 +42,7 @@ impl Default for ViewportNavigationInput {
             viewport_size: Vec2::new(1400.0, 900.0),
             focused: true,
             generation: 0,
+            pan_multiplier: 1.0,
             last_input_sequence: 0,
             last_motion_sequence: 0,
             remote_last_activity: None,
@@ -72,6 +78,7 @@ impl ViewportNavigationInput {
                 self.buttons = buttons;
                 self.modifiers = modifiers;
                 self.focused = true;
+                self.pan_multiplier = REMOTE_PAN_MULTIPLIER;
                 self.note_remote_activity();
             }
             InputCommand::Keyboard(KeyboardInput {
@@ -120,6 +127,7 @@ impl ViewportNavigationInput {
         self.last_motion_sequence = motion.sequence;
         self.pointer_delta = Vec2::new(motion.dx_css_pixels, motion.dy_css_pixels);
         self.wheel_delta = Vec2::new(motion.wheel_x, motion.wheel_y);
+        self.pan_multiplier = REMOTE_PAN_MULTIPLIER;
         self.viewport_size = Vec2::new(
             motion.viewport_css_width.max(1.0),
             motion.viewport_css_height.max(1.0),
@@ -135,6 +143,7 @@ impl ViewportNavigationInput {
         self.modifiers = InputModifiers::default();
         self.focused = false;
         self.generation = 0;
+        self.pan_multiplier = 1.0;
         self.last_input_sequence = 0;
         self.last_motion_sequence = 0;
         self.remote_last_activity = None;
@@ -217,6 +226,7 @@ pub(crate) fn apply_local_navigation_input(
     };
 
     input.focused = window.focused;
+    input.pan_multiplier = 1.0;
     input.viewport_size = Vec2::new(
         window.resolution.width().max(1.0),
         window.resolution.height().max(1.0),
