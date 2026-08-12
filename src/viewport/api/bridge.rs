@@ -9,8 +9,8 @@ use viewport_protocol::{
 };
 
 use super::{
-    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand,
-    ViewportTreeCommandInbox,
+    SceneAnchorIndex, SceneQueryService, ViewportCommandInbox, ViewportEventOutbox,
+    ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::animation::{PendingAnimationClip, UsdStageTime};
 use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
@@ -41,6 +41,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportTreeCommandInbox>()
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<SceneQueryService>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
                 Update,
@@ -59,7 +60,13 @@ impl Plugin for ViewportBridgePlugin {
             )
             .add_systems(
                 Update,
-                apply_viewport_commands.in_set(ViewportBridgeSet::ApplyCommands),
+                (
+                    publish_scene_query_results,
+                    dispatch_scene_query_commands,
+                    apply_viewport_commands,
+                )
+                    .chain()
+                    .in_set(ViewportBridgeSet::ApplyCommands),
             )
             .add_systems(
                 Update,
@@ -72,6 +79,24 @@ impl Plugin for ViewportBridgePlugin {
     }
 }
 
+fn publish_scene_query_results(
+    query_service: Res<SceneQueryService>,
+    mut outbox: ResMut<ViewportEventOutbox>,
+) {
+    for result in query_service.drain_results() {
+        outbox.push(ViewportEventEnvelope::new(
+            Some(result.request_id),
+            ViewportEvent::SearchResults {
+                query: result.query,
+                offset: result.offset,
+                total: result.total,
+                matches: result.matches,
+                has_more: result.has_more,
+            },
+        ));
+    }
+}
+
 fn emit_viewport_ready(mut outbox: ResMut<ViewportEventOutbox>) {
     outbox.push(ViewportEventEnvelope::new(
         None,
@@ -79,6 +104,61 @@ fn emit_viewport_ready(mut outbox: ResMut<ViewportEventOutbox>) {
             protocol_version: PROTOCOL_VERSION,
         },
     ));
+}
+
+fn dispatch_scene_query_commands(
+    mut inbox: ResMut<ViewportCommandInbox>,
+    scene_index: Res<SceneAnchorIndex>,
+    query_service: Res<SceneQueryService>,
+    mut outbox: ResMut<ViewportEventOutbox>,
+) {
+    for envelope in inbox.take_scene_query_commands() {
+        let request_id = envelope.request_id;
+        if envelope.protocol_version != PROTOCOL_VERSION {
+            reject(
+                &mut outbox,
+                request_id,
+                format!(
+                    "unsupported protocol version {}; expected {}",
+                    envelope.protocol_version, PROTOCOL_VERSION
+                ),
+            );
+            continue;
+        }
+
+        match envelope.command {
+            ViewportCommand::RequestSceneChildren {
+                parent,
+                page,
+                page_size,
+            } => outbox.push(ViewportEventEnvelope::new(
+                Some(request_id),
+                ViewportEvent::SceneChildren {
+                    page: scene_index.children_page(parent.as_ref(), page, page_size),
+                },
+            )),
+            ViewportCommand::SearchScene {
+                query,
+                offset,
+                limit,
+            } => {
+                if !query_service.submit_search(
+                    request_id.clone(),
+                    query,
+                    offset,
+                    limit,
+                    scene_index.nodes_snapshot(),
+                ) {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "scene search worker is unavailable".to_owned(),
+                    );
+                }
+            }
+            _ => unreachable!("scene query inbox only contains query commands"),
+        }
+    }
 }
 
 /// Emits lifecycle changes independently of who initiated the load. That
@@ -193,6 +273,13 @@ fn apply_viewport_commands(
                 &tuning,
                 physics.0,
             ),
+            ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "scene query command was not dispatched".to_owned(),
+                );
+            }
             ViewportCommand::ReloadSession => {
                 reload.requested = true;
                 emit_snapshot(
@@ -643,7 +730,7 @@ fn build_read_model(
             display_name: stage_info.path.clone(),
             loaded: stage_loaded,
         },
-        scene: scene_index.read_model(),
+        scene: scene_index.roots_read_model(),
         selection: SelectionReadModel {
             target: selected.0.and_then(|entity| scene_index.anchor_for(entity)),
         },
@@ -722,6 +809,7 @@ mod tests {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportTreeCommandInbox>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<SceneQueryService>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<CameraMount>()

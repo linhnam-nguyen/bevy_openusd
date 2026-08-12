@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId, SessionId};
 
+pub const DEFAULT_SCENE_PAGE_SIZE: u32 = 64;
+pub const MAX_SCENE_PAGE_SIZE: u32 = 256;
+pub const DEFAULT_SCENE_SEARCH_PAGE_SIZE: u32 = 30;
+pub const MAX_SCENE_SEARCH_RESULTS: u32 = 256;
+
 /// Stable, renderer-neutral identity for a logical USD target.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SceneAnchor {
@@ -65,6 +70,42 @@ pub struct PrimNodeReadModel {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneReadModel {
     pub prims: Vec<PrimNodeReadModel>,
+    #[serde(default)]
+    pub total_prims: u32,
+    #[serde(default)]
+    pub total_roots: u32,
+    #[serde(default)]
+    pub root_page_size: u32,
+}
+
+/// A bounded page of direct children for one scene-tree parent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneChildrenPage {
+    pub parent: Option<SceneAnchor>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u32,
+    pub nodes: Vec<PrimNodeReadModel>,
+}
+
+/// One page that the frontend must load to reveal a search match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScenePageReference {
+    pub parent: Option<SceneAnchor>,
+    pub page: u32,
+}
+
+/// A compact server-side search match with enough information to reveal it in
+/// a partially-loaded tree. The stable anchor is never reconstructed from the
+/// display label, which may be truncated by the frontend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneSearchMatch {
+    pub anchor: SceneAnchor,
+    pub parent: Option<SceneAnchor>,
+    pub label: String,
+    pub visible: bool,
+    pub has_children: bool,
+    pub reveal_pages: Vec<ScenePageReference>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -78,6 +119,16 @@ pub struct CurveTuning {
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum ViewportCommand {
     RequestSnapshot,
+    RequestSceneChildren {
+        parent: Option<SceneAnchor>,
+        page: u32,
+        page_size: u32,
+    },
+    SearchScene {
+        query: String,
+        offset: u32,
+        limit: u32,
+    },
     ReloadSession,
     SelectTarget {
         target: Option<SceneAnchor>,
@@ -253,6 +304,14 @@ impl ViewportReadModel {
 pub enum ViewportEvent {
     Ready { protocol_version: u16 },
     Snapshot { state: ViewportReadModel },
+    SceneChildren { page: SceneChildrenPage },
+    SearchResults {
+        query: String,
+        offset: u32,
+        total: u32,
+        matches: Vec<SceneSearchMatch>,
+        has_more: bool,
+    },
     StageLoadStateChanged { state: StageLoadState },
     SelectionChanged { selection: SelectionReadModel },
     CameraTransitionStarted { target: SceneAnchor, mode: FocusMode },

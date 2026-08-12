@@ -3,9 +3,10 @@ use viewport_protocol::{
     ClientCommandEnvelope, ClientHello, CodecId, FocusState, HandshakeEvent, InputCommand,
     InputModifiers, KeyboardInput, PointerButtons, PointerMotion, ProtocolValidationError,
     ReleaseAllInput, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
-    SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
-    ViewportCommand, ViewportMetrics, ViewportReadModel, decode_client_json_line,
-    decode_server_json_line, encode_client_json_line, encode_server_json_line,
+    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch, SessionCommand,
+    SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommand,
+    ViewportMetrics, ViewportReadModel, decode_client_json_line, decode_server_json_line,
+    encode_client_json_line, encode_server_json_line,
 };
 
 fn metrics() -> ViewportMetrics {
@@ -125,6 +126,66 @@ fn every_server_event_family_round_trips_through_a_server_envelope() {
         let line = encode_server_json_line(&envelope).unwrap();
         assert_eq!(decode_server_json_line(&line).unwrap(), envelope);
     }
+}
+
+#[test]
+fn lazy_scene_queries_round_trip_with_request_correlation() {
+    let world = SceneAnchor::active_session("/World");
+    let command = ClientCommandEnvelope::for_session(
+        "expand-1",
+        SessionId::new("session-1"),
+        9,
+        ClientCommand::Viewport(ViewportCommand::RequestSceneChildren {
+            parent: Some(world.clone()),
+            page: 2,
+            page_size: 64,
+        }),
+    );
+    assert_eq!(
+        decode_client_json_line(&encode_client_json_line(&command).unwrap()).unwrap(),
+        command
+    );
+
+    let node = viewport_protocol::PrimNodeReadModel {
+        anchor: SceneAnchor::active_session("/World/Door"),
+        parent: Some(world.clone()),
+        label: "Door".to_owned(),
+        visible: true,
+        has_children: false,
+    };
+    let event = ServerEventEnvelope::for_request(
+        SessionId::new("session-1"),
+        12,
+        "search-1",
+        ServerEvent::Viewport(viewport_protocol::ViewportEvent::SearchResults {
+            query: "door".to_owned(),
+            offset: 0,
+            total: 1,
+            matches: vec![SceneSearchMatch {
+                anchor: node.anchor.clone(),
+                parent: node.parent.clone(),
+                label: node.label.clone(),
+                visible: node.visible,
+                has_children: node.has_children,
+                reveal_pages: vec![ScenePageReference {
+                    parent: Some(world.clone()),
+                    page: 0,
+                }],
+            }],
+            has_more: false,
+        }),
+    );
+    let decoded = decode_server_json_line(&encode_server_json_line(&event).unwrap()).unwrap();
+    assert_eq!(decoded, event);
+
+    let page = SceneChildrenPage {
+        parent: Some(world),
+        page: 0,
+        page_size: 64,
+        total: 1,
+        nodes: vec![node],
+    };
+    assert_eq!(page.nodes.len(), 1);
 }
 
 #[test]

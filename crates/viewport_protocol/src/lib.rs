@@ -45,8 +45,10 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    CameraSource, CurveTuning, FocusMode, OverlayKind, PrimNodeReadModel, PresentationReadModel,
-    SceneAnchor, SceneReadModel, SelectionReadModel, StageLoadState, StageReadModel,
-    TimelineReadModel, ViewportCommand, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
-    ViewportWireMessage, ViewportCommandEnvelope,
+    CameraSource, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, FocusMode,
+    MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind, PresentationReadModel,
+    PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel,
+    SceneSearchMatch, SelectionReadModel, StageLoadState, StageReadModel, TimelineReadModel,
+    ViewportCommand, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel, ViewportWireMessage,
 };

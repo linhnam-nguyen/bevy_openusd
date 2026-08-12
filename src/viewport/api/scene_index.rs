@@ -8,7 +8,10 @@ use std::collections::{HashMap, HashSet};
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
-use viewport_protocol::{PrimNodeReadModel, SceneAnchor, SceneReadModel};
+use viewport_protocol::{
+    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
+    SceneChildrenPage, SceneReadModel,
+};
 
 use crate::viewport::session::Spawned;
 
@@ -31,10 +34,55 @@ impl SceneAnchorIndex {
         self.by_entity.get(&entity).cloned()
     }
 
-    pub(crate) fn read_model(&self) -> SceneReadModel {
+    /// Returns the bounded initial tree payload. Descendants stay in the
+    /// authoritative server index and are requested by the client when a
+    /// parent is expanded.
+    pub(crate) fn roots_read_model(&self) -> SceneReadModel {
+        let page = self.children_page(None, 0, DEFAULT_SCENE_PAGE_SIZE);
         SceneReadModel {
-            prims: self.nodes.clone(),
+            prims: page.nodes,
+            total_prims: self.nodes.len() as u32,
+            total_roots: page.total,
+            root_page_size: page.page_size,
         }
+    }
+
+    pub(crate) fn children_page(
+        &self,
+        parent: Option<&SceneAnchor>,
+        page: u32,
+        page_size: u32,
+    ) -> SceneChildrenPage {
+        let page_size = if page_size == 0 {
+            DEFAULT_SCENE_PAGE_SIZE
+        } else {
+            page_size.min(MAX_SCENE_PAGE_SIZE)
+        };
+        let nodes: Vec<PrimNodeReadModel> = self
+            .nodes
+            .iter()
+            .filter(|node| node.parent.as_ref() == parent)
+            .cloned()
+            .collect();
+        let total = nodes.len() as u32;
+        let start = (page as usize).saturating_mul(page_size as usize);
+        let page_nodes = nodes
+            .into_iter()
+            .skip(start)
+            .take(page_size as usize)
+            .collect();
+
+        SceneChildrenPage {
+            parent: parent.cloned(),
+            page,
+            page_size,
+            total,
+            nodes: page_nodes,
+        }
+    }
+
+    pub(crate) fn nodes_snapshot(&self) -> Vec<PrimNodeReadModel> {
+        self.nodes.clone()
     }
 
     pub(crate) fn revision(&self) -> u64 {

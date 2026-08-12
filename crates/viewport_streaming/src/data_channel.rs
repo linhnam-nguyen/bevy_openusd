@@ -385,10 +385,110 @@ fn queue_server_event_for_request(
         ServerEvent::Viewport(ViewportEvent::Snapshot { state: snapshot }) => {
             queue_snapshot(state, request_id, snapshot, false);
         }
-        event => {
-            let envelope = next_server_envelope(state, request_id.as_deref(), event);
-            state.pending_server_events.push_back(envelope);
+        ServerEvent::Viewport(ViewportEvent::SearchResults {
+            query,
+            offset,
+            total,
+            matches,
+            has_more,
+        }) => {
+            queue_search_results(
+                state, request_id, query, offset, total, matches, has_more,
+            );
         }
+        event => {
+            if !queue_bounded_event(state, request_id.as_deref(), event) {
+                warn!(
+                    "[viewport-data-channel] dropping oversized application event instead of blocking the queue"
+                );
+            }
+        }
+    }
+}
+
+fn queue_search_results(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    query: String,
+    offset: u32,
+    total: u32,
+    matches: Vec<viewport_protocol::SceneSearchMatch>,
+    has_more: bool,
+) {
+    let event = ServerEvent::Viewport(ViewportEvent::SearchResults {
+        query: query.clone(),
+        offset,
+        total,
+        matches: matches.clone(),
+        has_more,
+    });
+    if queue_bounded_event(state, request_id.as_deref(), event) {
+        return;
+    }
+
+    // A deep path can make one page larger than the browser's DataChannel
+    // limit. Split the page while retaining the same request ID and absolute
+    // offsets so the frontend can append it deterministically.
+    if matches.len() > 1 {
+        let split = matches.len() / 2;
+        let mut tail = matches;
+        let head = tail.split_off(split);
+        queue_search_results(
+            state,
+            request_id.clone(),
+            query.clone(),
+            offset,
+            total,
+            tail,
+            true,
+        );
+        queue_search_results(
+            state,
+            request_id,
+            query,
+            offset.saturating_add(split as u32),
+            total,
+            head,
+            has_more,
+        );
+        return;
+    }
+
+    // Keep a single result selectable even if its ancestor-page metadata is
+    // unusually large. The frontend can still select the stable anchor and
+    // request its hierarchy page on demand.
+    if let Some(mut result) = matches.into_iter().next() {
+        result.reveal_pages.clear();
+        let fallback = ServerEvent::Viewport(ViewportEvent::SearchResults {
+            query,
+            offset,
+            total,
+            matches: vec![result],
+            has_more,
+        });
+        if queue_bounded_event(state, request_id.as_deref(), fallback) {
+            return;
+        }
+    }
+
+    warn!(
+        "[viewport-data-channel] dropping search result page because one result exceeds the application message limit"
+    );
+}
+
+fn queue_bounded_event(
+    state: &mut ApplicationSessionState,
+    request_id: Option<&str>,
+    event: ServerEvent,
+) -> bool {
+    let envelope = next_server_envelope(state, request_id, event);
+    if encoded_size(&envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
+        state.pending_server_events.push_back(envelope);
+        true
+    } else {
+        // The envelope was only provisional; do not create a sequence gap.
+        state.server_sequence = state.server_sequence.saturating_sub(1);
+        false
     }
 }
 
@@ -523,6 +623,28 @@ fn flush_pending_server_events(
             }
             Err(error) => {
                 warn!("[viewport-data-channel] application event send failed: {error}");
+                if error.to_ascii_lowercase().contains("too large") {
+                    // Browser/GStreamer limits can be stricter than the local
+                    // JSON size guard. Replace the rejected head with a
+                    // same-sequence compact rejection so ordered consumers do
+                    // not observe a sequence gap and block forever.
+                    if let Some(oversized) = state.pending_server_events.pop_front() {
+                        let rejection_id = oversized
+                            .request_id
+                            .clone()
+                            .unwrap_or_else(|| format!("server-sequence-{}", oversized.sequence));
+                        let mut replacement = oversized;
+                        replacement.event = ServerEvent::Viewport(
+                            ViewportEvent::CommandRejected {
+                                request_id: rejection_id,
+                                reason: "application event exceeded the DataChannel message limit"
+                                    .to_owned(),
+                            },
+                        );
+                        state.pending_server_events.push_front(replacement);
+                    }
+                    continue;
+                }
                 break;
             }
         }

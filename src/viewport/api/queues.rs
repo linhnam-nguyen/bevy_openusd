@@ -49,6 +49,25 @@ impl ViewportCommandInbox {
     pub(crate) fn pop(&mut self) -> Option<ViewportCommandEnvelope> {
         self.pending.pop_front()
     }
+
+    /// Removes lazy scene-query commands while preserving the order of all
+    /// other viewport commands for the main command system.
+    pub(crate) fn take_scene_query_commands(&mut self) -> Vec<ViewportCommandEnvelope> {
+        let mut queries = Vec::new();
+        let mut remaining = VecDeque::with_capacity(self.pending.len());
+        while let Some(envelope) = self.pending.pop_front() {
+            if matches!(
+                envelope.command,
+                ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. }
+            ) {
+                queries.push(envelope);
+            } else {
+                remaining.push_back(envelope);
+            }
+        }
+        self.pending = remaining;
+        queries
+    }
 }
 
 #[derive(Resource, Default)]
