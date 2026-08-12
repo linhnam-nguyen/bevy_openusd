@@ -21,6 +21,12 @@ pub enum ServerEvent {
 pub enum SessionEvent {
     Ready { snapshot_required: bool },
     Snapshot { state: ViewportReadModel },
+    SnapshotChunk {
+        snapshot_id: String,
+        chunk_index: u32,
+        chunk_count: u32,
+        state: ViewportReadModel,
+    },
     Resumed { result: crate::ResumeResult },
     Pong { nonce: String },
     Closed { reason: Option<String> },

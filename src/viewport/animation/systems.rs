@@ -33,13 +33,16 @@ pub(crate) fn tick_stage_time(
         clock.end_time_code = asset.end_time_code;
         clock.time_codes_per_second = asset.time_codes_per_second;
         clock.seconds = 0.0;
-        // Anything that animates over time → start with the clock
-        // playing. Stage-resident SkelAnimations don't go through the
-        // sidecar (USDC USDZs author them inline), so also key off
-        // the authored stage timeline being non-trivial.
-        clock.playing = asset.animated_prims.iter().next().is_some()
-            || !asset.skel_animations.is_empty()
-            || asset.end_time_code > asset.start_time_code;
+        // Only actual animation data makes playback meaningful. A static
+        // stage may still author a non-trivial global timeline range, but
+        // exposing that range as Play/Pause would repeatedly evaluate the
+        // same pose and mislead the remote UI.
+        let has_animation =
+            asset.animated_prims.iter().next().is_some() || !asset.skel_animations.is_empty();
+        if !has_animation {
+            clock.end_time_code = clock.start_time_code;
+        }
+        clock.playing = has_animation;
         clock.initialized = true;
         info!(
             "stage time clock: start={:.2} end={:.2} fps={:.2} (duration {:.2}s) — {} animated prim(s), {} skel anim(s)",
@@ -74,6 +77,12 @@ pub(crate) fn evaluate_animated_prims(
     usd_assets: Res<Assets<UsdAsset>>,
     mut prims: Query<(&UsdPrimRef, &mut Transform)>,
 ) {
+    // A paused clock keeps the current pose. Re-evaluate once on the frame
+    // where the clock changes (including the SetPlayback command), but do not
+    // resample the same USD time code every render frame afterwards.
+    if !clock.is_changed() {
+        return;
+    }
     let Some(stage) = stage else { return };
     let Some(asset) = usd_assets.get(&stage.0) else {
         return;
@@ -252,6 +261,9 @@ pub(crate) fn drive_skel_animations(
     mut diag_emitted: Local<bool>,
     mut tick: Local<u32>,
 ) {
+    if !clock.is_changed() {
+        return;
+    }
     let tc = clock.current_time_code();
     *tick += 1;
     for driver in drivers.iter() {
@@ -305,14 +317,18 @@ pub(crate) fn drive_blend_shape_weights(
         &usd_bevy::prim_ref::UsdBlendShapeBinding,
         &mut bevy::mesh::morph::MeshMorphWeights,
     )>,
-    mut diag_emitted: Local<bool>,
+    mut eval_diag_emitted: Local<bool>,
+    mut mapping_diag_emitted: Local<bool>,
 ) {
+    if !clock.is_changed() {
+        return;
+    }
     let Some(driver) = drivers.iter().next() else {
         return;
     };
     let tc = clock.current_time_code();
     let evaluated = usd_bevy::skel_anim::evaluate_blend_shapes(driver, tc);
-    if !*diag_emitted {
+    if !*eval_diag_emitted {
         let nz: usize = evaluated.iter().filter(|w| w.abs() > 1e-4).count();
         let mx: f32 = evaluated.iter().map(|w| w.abs()).fold(0.0_f32, f32::max);
         info!(
@@ -320,6 +336,7 @@ pub(crate) fn drive_blend_shape_weights(
             evaluated.len(),
             tc
         );
+        *eval_diag_emitted = true;
     }
     if evaluated.is_empty() {
         return;
@@ -366,7 +383,7 @@ pub(crate) fn drive_blend_shape_weights(
             total_targets += 1;
         }
     }
-    if !*diag_emitted && total_meshes > 0 {
+    if !*mapping_diag_emitted && total_meshes > 0 {
         // Sample first weight buffer to confirm we're writing
         // non-zero values + the underlying mesh asset has morph
         // targets attached.
@@ -389,6 +406,6 @@ pub(crate) fn drive_blend_shape_weights(
             "blend anim: drove {total_meshes} meshes, {total_targets} targets across {} anim channels; sample buf len={sample_buf_len} nonzero={sample_nonzero} max={sample_max:.3}",
             evaluated.len()
         );
-        *diag_emitted = true;
+        *mapping_diag_emitted = true;
     }
 }

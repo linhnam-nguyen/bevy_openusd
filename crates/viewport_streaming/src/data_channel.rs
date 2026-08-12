@@ -8,11 +8,14 @@ use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use gstreamer_webrtc::WebRTCDataChannel;
 use log::{debug, error, info, warn};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 use viewport_protocol::{
     ClientCommand, CommandFamily, HandshakeEvent, HandshakeRejectionReason, PROTOCOL_VERSION,
     ProtocolValidationError, ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionEvent,
-    SessionCommand, SessionId, ViewportCommandEnvelope, ViewportReadModel,
+    SessionCommand, SessionId, ViewportCommandEnvelope, ViewportEvent, ViewportReadModel,
     decode_client_json_line, encode_server_json_line,
 };
 
@@ -23,6 +26,11 @@ pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
 pub const CONTROL_CHANNEL_PROTOCOL: &str = "usd-hub.viewport.v1";
 pub const INPUT_CHANNEL_PROTOCOL: &str = "usd-hub.viewport-input.v1";
+
+// Browser DataChannels commonly reject application messages around 16 KiB.
+// Keep a safety margin for the JSON envelope and browser/runtime variation.
+const MAX_APPLICATION_MESSAGE_BYTES: usize = 12 * 1024;
+const INITIAL_SNAPSHOT_CHUNK_PRIMS: usize = 128;
 
 /// Application state shared by the two callbacks attached to one control
 /// DataChannel. It deliberately knows only the transport-neutral protocol.
@@ -39,6 +47,8 @@ struct ApplicationSessionState {
     client_sequence: u64,
     server_sequence: u64,
     handshaken: bool,
+    recent_request_ids: VecDeque<String>,
+    pending_server_events: VecDeque<ServerEventEnvelope>,
 }
 
 impl ApplicationSession {
@@ -56,6 +66,8 @@ impl ApplicationSession {
                 client_sequence: 0,
                 server_sequence: 1,
                 handshaken: false,
+                recent_request_ids: VecDeque::new(),
+                pending_server_events: VecDeque::new(),
             })),
         }
     }
@@ -90,6 +102,8 @@ impl ApplicationSession {
             );
             return;
         }
+
+        let request_id = envelope.request_id.clone();
 
         if !state.handshaken {
             let ClientCommand::Handshake(hello) = envelope.command else {
@@ -144,6 +158,7 @@ impl ApplicationSession {
             }
 
             state.client_sequence = envelope.sequence;
+            remember_request_id(&mut state, request_id);
             state.handshaken = true;
             let session_id = state.session_id.clone();
             let capabilities = state.server_capabilities.clone();
@@ -184,31 +199,69 @@ impl ApplicationSession {
             return;
         }
 
+        if envelope.sequence != state.client_sequence.saturating_add(1) {
+            state.client_sequence = envelope.sequence;
+            send_command_rejection(
+                channel,
+                &mut state,
+                request_id,
+                "client command sequence was not contiguous".to_owned(),
+            );
+            return;
+        }
+
         state.client_sequence = envelope.sequence;
+        if !remember_request_id(&mut state, request_id.clone()) {
+            send_command_rejection(
+                channel,
+                &mut state,
+                request_id,
+                "duplicate request ID".to_owned(),
+            );
+            return;
+        }
+
         match envelope.command {
             ClientCommand::Viewport(command) => {
                 let viewport_command = ViewportCommandEnvelope {
                     protocol_version: envelope.protocol_version,
-                    request_id: envelope.request_id,
+                    request_id: request_id.clone(),
                     command,
                 };
                 if let Err(error) = state.interface.submit_viewport_command(viewport_command) {
-                    warn!("[viewport-data-channel] rejected viewport command: {error:?}");
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        format!("viewport command rejected: {error:?}"),
+                    );
                 }
             }
             ClientCommand::Session(SessionCommand::RequestSnapshot) => {
                 let snapshot = state
                     .interface
                     .take_latest_snapshot(state.initial_snapshot.clone());
-                send_server_event(
+                send_server_event_for_request(
                     channel,
                     &mut state,
+                    request_id,
                     ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
                 );
             }
+            ClientCommand::Session(SessionCommand::Ping { nonce }) => {
+                send_server_event_for_request(
+                    channel,
+                    &mut state,
+                    request_id,
+                    ServerEvent::Session(SessionEvent::Pong { nonce }),
+                );
+            }
             command => {
-                debug!(
-                    "[viewport-data-channel] accepted non-viewport command for a later phase: {command:?}"
+                send_command_rejection(
+                    channel,
+                    &mut state,
+                    request_id,
+                    format!("command family is not available in this phase: {command:?}"),
                 );
             }
         }
@@ -224,37 +277,35 @@ impl ApplicationSession {
         }
 
         let interface = state.interface.clone();
-        while let Some(event) = interface.pop_viewport_event() {
-            let server_event = ServerEvent::Viewport(event.event);
-            let envelope = match event.request_id {
-                Some(request_id) => ServerEventEnvelope::for_request(
-                    state.session_id.clone(),
-                    state.server_sequence,
-                    request_id,
-                    server_event,
-                ),
-                None => ServerEventEnvelope::new(
-                    state.session_id.clone(),
-                    state.server_sequence,
-                    server_event,
-                ),
+        flush_pending_server_events(channel, &mut state);
+        while state.pending_server_events.is_empty() {
+            let Some(event) = interface.pop_viewport_event() else {
+                break;
             };
-            state.server_sequence = state.server_sequence.saturating_add(1);
-            match encode_server_json_line(&envelope)
-                .map_err(|error| error.to_string())
-                .and_then(|json| {
-                    channel
-                        .send_string_full(Some(&json))
-                        .map_err(|error| error.to_string())
-                }) {
-                Ok(()) => {}
-                Err(error) => {
-                    warn!("[viewport-data-channel] authoritative event send failed: {error}");
-                    break;
-                }
+            queue_server_event_for_request(
+                &mut state,
+                event.request_id,
+                ServerEvent::Viewport(event.event),
+            );
+            flush_pending_server_events(channel, &mut state);
+            if !state.pending_server_events.is_empty() {
+                break;
             }
         }
     }
+}
+
+const MAX_RECENT_REQUEST_IDS: usize = 256;
+
+fn remember_request_id(state: &mut ApplicationSessionState, request_id: String) -> bool {
+    if state.recent_request_ids.iter().any(|seen| seen == &request_id) {
+        return false;
+    }
+    if state.recent_request_ids.len() >= MAX_RECENT_REQUEST_IDS {
+        state.recent_request_ids.pop_front();
+    }
+    state.recent_request_ids.push_back(request_id);
+    true
 }
 
 fn rejection_for(error: ProtocolValidationError) -> HandshakeRejectionReason {
@@ -286,14 +337,195 @@ fn send_server_event(
     state: &mut ApplicationSessionState,
     event: ServerEvent,
 ) {
-    let envelope = ServerEventEnvelope::new(state.session_id.clone(), state.server_sequence, event);
+    send_server_event_with_request(channel, state, None, event);
+}
+
+fn send_server_event_for_request(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    request_id: String,
+    event: ServerEvent,
+) {
+    send_server_event_with_request(channel, state, Some(request_id), event);
+}
+
+fn send_command_rejection(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    request_id: String,
+    reason: String,
+) {
+    send_server_event_for_request(
+        channel,
+        state,
+        request_id.clone(),
+        ServerEvent::Viewport(ViewportEvent::CommandRejected { request_id, reason }),
+    );
+}
+
+fn send_server_event_with_request(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    event: ServerEvent,
+) {
+    queue_server_event_for_request(state, request_id, event);
+    flush_pending_server_events(channel, state);
+}
+
+fn queue_server_event_for_request(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    event: ServerEvent,
+) {
+    match event {
+        ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }) => {
+            queue_snapshot(state, request_id, snapshot, true);
+        }
+        ServerEvent::Viewport(ViewportEvent::Snapshot { state: snapshot }) => {
+            queue_snapshot(state, request_id, snapshot, false);
+        }
+        event => {
+            let envelope = next_server_envelope(state, request_id.as_deref(), event);
+            state.pending_server_events.push_back(envelope);
+        }
+    }
+}
+
+fn queue_snapshot(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    snapshot: ViewportReadModel,
+    session_snapshot: bool,
+) {
+    let event = if session_snapshot {
+        ServerEvent::Session(SessionEvent::Snapshot {
+            state: snapshot.clone(),
+        })
+    } else {
+        ServerEvent::Viewport(ViewportEvent::Snapshot {
+            state: snapshot.clone(),
+        })
+    };
+    let envelope = next_server_envelope(state, request_id.as_deref(), event);
+    if encoded_size(&envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
+        state.pending_server_events.push_back(envelope);
+        return;
+    }
+
+    // The provisional envelope consumed a sequence number. Reuse it as the
+    // base for the chunked form so the ordered stream has no sequence gap.
+    state.server_sequence = state.server_sequence.saturating_sub(1);
+    let snapshot_id = request_id
+        .clone()
+        .unwrap_or_else(|| format!("snapshot-{}", state.server_sequence));
+    let mut chunk_size = INITIAL_SNAPSHOT_CHUNK_PRIMS.max(1);
+
+    loop {
+        let chunks: Vec<ServerEventEnvelope> = snapshot
+            .scene
+            .prims
+            .chunks(chunk_size)
+            .enumerate()
+            .map(|(chunk_index, prims)| {
+                let mut chunk_state = snapshot.clone();
+                chunk_state.scene.prims = prims.to_vec();
+                let chunk_count = snapshot.scene.prims.len().div_ceil(chunk_size);
+                next_server_envelope(
+                    state,
+                    request_id.as_deref(),
+                    ServerEvent::Session(SessionEvent::SnapshotChunk {
+                        snapshot_id: snapshot_id.clone(),
+                        chunk_index: chunk_index as u32,
+                        chunk_count: chunk_count as u32,
+                        state: chunk_state,
+                    }),
+                )
+            })
+            .collect();
+
+        if chunks
+            .iter()
+            .all(|envelope| encoded_size(envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES))
+        {
+            info!(
+                "[viewport-data-channel] queued snapshot {} in {} chunks ({} prims)",
+                snapshot_id,
+                chunks.len(),
+                snapshot.scene.prims.len()
+            );
+            state.pending_server_events.extend(chunks);
+            return;
+        }
+
+        // Roll back the provisional chunk sequence range before retrying with
+        // smaller chunks. One prim per message is the final practical bound.
+        state.server_sequence = state
+            .server_sequence
+            .saturating_sub(chunks.len() as u64);
+        if chunk_size == 1 {
+            error!(
+                "[viewport-data-channel] one prim still exceeds the application message limit"
+            );
+            let envelope = next_server_envelope(
+                state,
+                request_id.as_deref(),
+                ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+            );
+            state.pending_server_events.push_back(envelope);
+            return;
+        }
+        chunk_size = (chunk_size / 2).max(1);
+    }
+}
+
+fn next_server_envelope(
+    state: &mut ApplicationSessionState,
+    request_id: Option<&str>,
+    event: ServerEvent,
+) -> ServerEventEnvelope {
+    let sequence = state.server_sequence;
     state.server_sequence = state.server_sequence.saturating_add(1);
-    match encode_server_json_line(&envelope)
-        .map_err(|error| error.to_string())
-        .and_then(|json| channel.send_string_full(Some(&json)).map_err(|error| error.to_string()))
-    {
-        Ok(()) => {}
-        Err(error) => warn!("[viewport-data-channel] application event send failed: {error}"),
+    match request_id {
+        Some(request_id) => {
+            let mut envelope = ServerEventEnvelope::for_request(
+                state.session_id.clone(),
+                sequence,
+                request_id,
+                event,
+            );
+            envelope.causation_id = Some(request_id.to_owned());
+            envelope
+        }
+        None => ServerEventEnvelope::new(state.session_id.clone(), sequence, event),
+    }
+}
+
+fn encoded_size(envelope: &ServerEventEnvelope) -> Option<usize> {
+    encode_server_json_line(envelope).ok().map(|json| json.len())
+}
+
+fn flush_pending_server_events(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+) {
+    while let Some(envelope) = state.pending_server_events.front().cloned() {
+        let result = encode_server_json_line(&envelope)
+            .map_err(|error| error.to_string())
+            .and_then(|json| {
+                channel
+                    .send_string_full(Some(&json))
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(()) => {
+                state.pending_server_events.pop_front();
+            }
+            Err(error) => {
+                warn!("[viewport-data-channel] application event send failed: {error}");
+                break;
+            }
+        }
     }
 }
 
@@ -532,6 +764,73 @@ mod tests {
             structure.get::<String>("protocol").unwrap(),
             INPUT_CHANNEL_PROTOCOL
         );
+    }
+
+    #[test]
+    fn recent_request_ids_are_deduplicated() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+
+        assert!(remember_request_id(&mut state, "request-1".to_owned()));
+        assert!(!remember_request_id(&mut state, "request-1".to_owned()));
+    }
+
+    #[test]
+    fn large_snapshots_are_chunked_into_bounded_ordered_events() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let mut snapshot = ViewportReadModel::unloaded("stage.usda");
+        snapshot.stage.loaded = true;
+        snapshot.scene.prims = (0..2_745)
+            .map(|index| viewport_protocol::PrimNodeReadModel {
+                anchor: viewport_protocol::SceneAnchor::active_session(format!(
+                    "/World/Prim{index}"
+                )),
+                parent: None,
+                label: format!("Prim {index}"),
+                visible: true,
+                has_children: false,
+            })
+            .collect();
+
+        queue_server_event_for_request(
+            &mut state,
+            Some("snapshot-request".to_owned()),
+            ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+        );
+
+        assert!(state.pending_server_events.len() > 1);
+        let mut expected_sequence = 1;
+        let mut expected_index = 0;
+        let mut expected_count = None;
+        for envelope in &state.pending_server_events {
+            assert_eq!(envelope.sequence, expected_sequence);
+            expected_sequence += 1;
+            let ServerEvent::Session(SessionEvent::SnapshotChunk {
+                snapshot_id,
+                chunk_index,
+                chunk_count,
+                ..
+            }) = &envelope.event
+            else {
+                panic!("large snapshots must be sent as snapshot chunks");
+            };
+            assert_eq!(snapshot_id, "snapshot-request");
+            assert_eq!(*chunk_index, expected_index);
+            expected_index += 1;
+            expected_count.get_or_insert(*chunk_count);
+            assert_eq!(expected_count, Some(*chunk_count));
+            assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+        }
+        assert_eq!(expected_count, Some(expected_index));
     }
 
 }

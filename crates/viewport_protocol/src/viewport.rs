@@ -142,6 +142,14 @@ impl ViewportCommandEnvelope {
             command,
         }
     }
+
+    pub fn validate(&self) -> Result<(), crate::ProtocolValidationError> {
+        crate::envelope::validate_protocol_version(self.protocol_version)?;
+        if self.request_id.trim().is_empty() {
+            return Err(crate::ProtocolValidationError::EmptyField { field: "request_id" });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

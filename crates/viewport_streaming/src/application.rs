@@ -78,6 +78,9 @@ impl RenderServerInterface {
         &self,
         command: ViewportCommandEnvelope,
     ) -> Result<(), RenderServerPortError> {
+        command
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
         let mut pending = self
             .pending
             .lock()
@@ -125,6 +128,21 @@ impl RenderServerInterface {
             .pop_front()
     }
 
+    pub fn requeue_viewport_event_front(
+        &self,
+        event: ViewportEventEnvelope,
+    ) -> Result<(), RenderServerPortError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.viewport_events.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.viewport_events.push_front(event);
+        Ok(())
+    }
+
     /// Returns the newest state and discards historical events. A newly
     /// connected session receives the current snapshot first; replaying
     /// pre-handshake lifecycle events could regress it to an older state.
@@ -149,6 +167,7 @@ fn safe_display_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use viewport_protocol::ViewportCommand;
 
     #[test]
     fn snapshot_display_name_is_reduced_to_a_basename() {
@@ -187,5 +206,37 @@ mod tests {
         assert_eq!(interface.pending_event_count(), 1);
         assert_eq!(interface.take_latest_snapshot(snapshot.clone()), snapshot);
         assert_eq!(interface.pending_event_count(), 0);
+    }
+
+    #[test]
+    fn viewport_command_queue_rejects_invalid_correlation_metadata() {
+        let interface = RenderServerInterface::default();
+        let command = ViewportCommandEnvelope::new("", ViewportCommand::RequestSnapshot);
+
+        assert_eq!(
+            interface.submit_viewport_command(command),
+            Err(RenderServerPortError::InvalidPayload)
+        );
+        assert_eq!(interface.pending_command_count(), 0);
+    }
+
+    #[test]
+    fn an_event_can_be_put_back_after_a_failed_transport_send() {
+        let interface = RenderServerInterface::default();
+        let event = ViewportEventEnvelope::new(
+            Some("request-1".to_owned()),
+            ViewportEvent::PhysicsChanged { running: true },
+        );
+        interface
+            .publish_viewport_event(event.clone())
+            .expect("event should enter the bounded queue");
+        let removed = interface
+            .pop_viewport_event()
+            .expect("event should be available for transport");
+        interface
+            .requeue_viewport_event_front(removed)
+            .expect("failed sends must be recoverable");
+
+        assert_eq!(interface.pop_viewport_event(), Some(event));
     }
 }

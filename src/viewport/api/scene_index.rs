@@ -10,6 +10,8 @@ use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor, SceneReadModel};
 
+use crate::viewport::session::Spawned;
+
 /// Logical tree and private entity mapping for the active stage.
 #[derive(Resource, Default)]
 pub(crate) struct SceneAnchorIndex {
@@ -160,6 +162,7 @@ impl SceneAnchorIndex {
 /// Rebuilds only after stage entities or tree-visible data changes. This keeps
 /// the protocol boundary from traversing a large scene every frame.
 pub(crate) fn refresh_scene_anchor_index(
+    spawned: Res<Spawned>,
     changed_prims: Query<
         Entity,
         (
@@ -185,7 +188,12 @@ pub(crate) fn refresh_scene_anchor_index(
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
-    let changed = !changed_prims.is_empty() || removed_prims.read().next().is_some();
+    // ScenePatch materialization can happen across a frame boundary after
+    // Spawned flips to true. Treat that lifecycle transition as a rebuild
+    // trigger as well; otherwise a static stage can publish an empty tree
+    // before its projected prim entities are visible to this query.
+    let changed =
+        spawned.is_changed() || !changed_prims.is_empty() || removed_prims.read().next().is_some();
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
         return;

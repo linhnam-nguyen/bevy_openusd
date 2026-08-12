@@ -45,7 +45,7 @@ impl WebRtcSessionManager {
         info!("[viewport-session] session manager started");
 
         loop {
-            let Some(command) = (tokio::select! {
+            let next_command = tokio::select! {
                 command = session_rx.recv() => command,
                 _ = event_tick.tick() => {
                     if let Some(session) = active.as_ref() {
@@ -53,7 +53,9 @@ impl WebRtcSessionManager {
                     }
                     continue;
                 }
-            }) else {
+            };
+
+            let Some(command) = next_command else {
                 break;
             };
 
