@@ -13,10 +13,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 use viewport_protocol::{
-    ClientCommand, CommandFamily, HandshakeEvent, HandshakeRejectionReason, InputCommand,
-    PROTOCOL_VERSION, ProtocolValidationError, ServerCapabilities, ServerEvent,
-    ServerEventEnvelope, SessionEvent, SessionCommand, SessionId, ViewportCommandEnvelope,
-    ViewportEvent, ViewportReadModel,
+    ActiveStreamConfiguration, ClientCommand, CommandFamily, HandshakeEvent,
+    HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION, ProtocolValidationError,
+    ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent,
+    SessionId, StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent,
+    ViewportReadModel,
     decode_client_json_line, encode_server_json_line,
 };
 
@@ -45,6 +46,7 @@ struct ApplicationSessionState {
     server_capabilities: ServerCapabilities,
     initial_snapshot: ViewportReadModel,
     interface: RenderServerInterface,
+    initial_configuration_tx: std::sync::mpsc::SyncSender<viewport_protocol::ViewportMetrics>,
     client_sequence: u64,
     server_sequence: u64,
     handshaken: bool,
@@ -53,17 +55,37 @@ struct ApplicationSessionState {
 }
 
 impl ApplicationSession {
+    #[cfg(test)]
     pub(crate) fn new(
         session_id: SessionId,
         initial_snapshot: ViewportReadModel,
         interface: RenderServerInterface,
     ) -> Self {
+        let (initial_configuration_tx, _initial_configuration_rx) =
+            std::sync::mpsc::sync_channel(1);
+        Self::new_with_configuration_sender(
+            session_id,
+            initial_snapshot,
+            interface,
+            initial_configuration_tx,
+            ServerCapabilities::default(),
+        )
+    }
+
+    pub(crate) fn new_with_configuration_sender(
+        session_id: SessionId,
+        initial_snapshot: ViewportReadModel,
+        interface: RenderServerInterface,
+        initial_configuration_tx: std::sync::mpsc::SyncSender<viewport_protocol::ViewportMetrics>,
+        server_capabilities: ServerCapabilities,
+    ) -> Self {
         Self {
             state: Arc::new(Mutex::new(ApplicationSessionState {
                 session_id,
-                server_capabilities: ServerCapabilities::default(),
+                server_capabilities,
                 initial_snapshot,
                 interface,
+                initial_configuration_tx,
                 client_sequence: 0,
                 server_sequence: 1,
                 handshaken: false,
@@ -158,6 +180,24 @@ impl ApplicationSession {
                 return;
             }
 
+            let initial_metrics = state
+                .server_capabilities
+                .stream_limits
+                .normalize(&hello.initial_viewport);
+            if let Err(error) = state
+                .interface
+                .submit_stream_configuration(initial_metrics.clone())
+            {
+                warn!("[viewport-data-channel] initial stream configuration rejected: {error:?}");
+                send_handshake_rejection(
+                    channel,
+                    &mut state,
+                    HandshakeRejectionReason::UnsupportedCapabilities,
+                );
+                return;
+            }
+            let _ = state.initial_configuration_tx.try_send(initial_metrics.clone());
+
             state.client_sequence = envelope.sequence;
             remember_request_id(&mut state, request_id);
             state.handshaken = true;
@@ -176,6 +216,13 @@ impl ApplicationSession {
                         capabilities,
                     ),
                 )),
+            );
+            send_server_event(
+                channel,
+                &mut state,
+                ServerEvent::Stream(StreamEvent::ConfigurationAccepted {
+                    metrics: initial_metrics,
+                }),
             );
             send_server_event(
                 channel,
@@ -267,6 +314,33 @@ impl ApplicationSession {
                     ServerEvent::Session(SessionEvent::Pong { nonce }),
                 );
             }
+            ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics }) => {
+                let metrics = state.server_capabilities.stream_limits.normalize(&metrics);
+                if state.initial_configuration_tx.try_send(metrics.clone()).is_err() {
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "stream configuration queue is full".to_owned(),
+                    );
+                    return;
+                }
+                if let Err(error) = state.interface.submit_stream_configuration(metrics.clone()) {
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        format!("stream configuration rejected: {error:?}"),
+                    );
+                    return;
+                }
+                send_server_event_for_request(
+                    channel,
+                    &mut state,
+                    request_id,
+                    ServerEvent::Stream(StreamEvent::ConfigurationAccepted { metrics }),
+                );
+            }
             command => {
                 send_command_rejection(
                     channel,
@@ -307,6 +381,20 @@ impl ApplicationSession {
     pub(crate) fn clear_remote_input(&self) {
         if let Ok(state) = self.state.lock() {
             state.interface.clear_remote_input();
+        }
+    }
+
+    pub(crate) fn queue_configuration_applied(&self, configuration: ActiveStreamConfiguration) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if state.handshaken {
+            queue_server_event_for_request(
+                &mut state,
+                None,
+                ServerEvent::Stream(StreamEvent::ConfigurationApplied { configuration }),
+            );
         }
     }
 

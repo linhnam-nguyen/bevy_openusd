@@ -2,6 +2,8 @@
 
 use std::net::SocketAddr;
 
+use viewport_protocol::CodecId;
+
 /// Preset profiles for streaming quality and frame rate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StreamingPreset {
@@ -18,6 +20,7 @@ pub enum StreamingPreset {
 #[derive(Debug, Clone)]
 pub struct StreamingConfig {
     pub preset: StreamingPreset,
+    pub codec: CodecId,
     pub stage_display_name: String,
     pub width: u32,
     pub height: u32,
@@ -46,6 +49,7 @@ impl StreamingConfig {
         match preset {
             StreamingPreset::Performance => Self {
                 preset,
+                codec: CodecId::H264,
                 stage_display_name: "remote-stage".to_owned(),
                 width: 1920,
                 height: 1080,
@@ -60,6 +64,7 @@ impl StreamingConfig {
             },
             StreamingPreset::Quality => Self {
                 preset,
+                codec: CodecId::H264,
                 stage_display_name: "remote-stage".to_owned(),
                 width: 2560,
                 height: 1440,
@@ -74,6 +79,7 @@ impl StreamingConfig {
             },
             StreamingPreset::Adaptive => Self {
                 preset,
+                codec: CodecId::H264,
                 stage_display_name: "remote-stage".to_owned(),
                 width: 1280,
                 height: 720,

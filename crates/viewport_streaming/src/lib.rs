@@ -23,3 +23,13 @@ pub use encode::{CodecCapabilities, EncodePipeline, VideoCodec};
 pub use session::WebRtcSessionManager;
 pub use signaling::{SignalingMessage, run_signaling_server};
 pub use stream_session::StreamingSession;
+
+/// Raw RGBA frame plus the Bevy target metadata required to gate the initial
+/// stream configuration.
+#[derive(Clone, Debug)]
+pub struct VideoFrame {
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub generation: u64,
+}

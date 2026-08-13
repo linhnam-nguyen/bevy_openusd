@@ -4,6 +4,8 @@
 //! `--stdio` or `--transport stdio` additionally exposes the UI-neutral
 //! `viewport_protocol` contract over JSON Lines on standard input/output.
 
+use viewport_protocol::CodecId;
+
 pub(crate) mod frame_capture;
 mod stdio;
 pub(crate) mod webrtc;
@@ -29,6 +31,7 @@ pub(crate) struct LaunchOptions {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) fps: u32,
+    pub(crate) codec: CodecId,
 }
 
 impl Default for LaunchOptions {
@@ -40,6 +43,7 @@ impl Default for LaunchOptions {
             width: 1920,
             height: 1080,
             fps: 60,
+            codec: CodecId::H264,
         }
     }
 }
@@ -108,6 +112,14 @@ where
             continue;
         }
 
+        if parse_options && argument == "--codec" {
+            let codec = arguments
+                .next()
+                .ok_or_else(|| "--codec requires h264|h265|av1".to_owned())?;
+            options.codec = parse_codec(&codec)?;
+            continue;
+        }
+
         if parse_options && argument == "--transport" {
             let transport = arguments.next().ok_or_else(|| {
                 "--transport requires a value such as `stdio` or `webrtc`".to_owned()
@@ -119,6 +131,10 @@ where
         if parse_options {
             if let Some(transport) = argument.strip_prefix("--transport=") {
                 options.transport = Some(parse_transport(transport)?);
+                continue;
+            }
+            if let Some(codec) = argument.strip_prefix("--codec=") {
+                options.codec = parse_codec(codec)?;
                 continue;
             }
             if argument.starts_with('-') {
@@ -140,6 +156,17 @@ fn parse_transport(value: &str) -> Result<ViewportTransport, String> {
         "webrtc" => Ok(ViewportTransport::WebRtc),
         unsupported => Err(format!(
             "unsupported transport `{unsupported}`; available transports: `stdio`, `webrtc`"
+        )),
+    }
+}
+
+fn parse_codec(value: &str) -> Result<CodecId, String> {
+    match value {
+        "h264" => Ok(CodecId::H264),
+        "h265" => Ok(CodecId::H265),
+        "av1" => Ok(CodecId::Av1),
+        unsupported => Err(format!(
+            "unsupported codec `{unsupported}`; available codecs: `h264`, `h265`, `av1`"
         )),
     }
 }
@@ -201,5 +228,21 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn codec_selection_is_parsed_without_becoming_an_asset_path() {
+        assert_eq!(
+            parse_launch_options(vec!["--codec".to_owned(), "av1".to_owned()])
+                .unwrap()
+                .codec,
+            CodecId::Av1
+        );
+        assert_eq!(
+            parse_launch_options(vec!["--codec=h265".to_owned()])
+                .unwrap()
+                .codec,
+            CodecId::H265
+        );
     }
 }

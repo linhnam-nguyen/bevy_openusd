@@ -33,6 +33,10 @@ impl RenderServerInterface {
         self.0.take_input_reset()
     }
 
+    pub(crate) fn take_stream_configuration(&self) -> Option<viewport_protocol::ViewportMetrics> {
+        self.0.take_stream_configuration()
+    }
+
     pub(crate) fn publish_viewport_event(
         &self,
         event: viewport_protocol::ViewportEventEnvelope,

@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClientCapabilities, ProtocolValidationError, ServerCapabilities, SessionId, PROTOCOL_VERSION};
+use crate::{
+    ClientCapabilities, ProtocolValidationError, ServerCapabilities, SessionId, ViewportMetrics,
+    PROTOCOL_VERSION,
+};
 
 /// Role negotiated for a connected viewport client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,17 +23,27 @@ pub struct ClientHello {
     pub requested_session_id: Option<SessionId>,
     pub requested_role: SessionRole,
     pub capabilities: ClientCapabilities,
+    pub initial_viewport: ViewportMetrics,
     pub resume: Option<ResumeRequest>,
 }
 
 impl ClientHello {
     pub fn new(client_id: impl Into<String>, capabilities: ClientCapabilities) -> Self {
+        Self::with_viewport(client_id, capabilities, ViewportMetrics::default())
+    }
+
+    pub fn with_viewport(
+        client_id: impl Into<String>,
+        capabilities: ClientCapabilities,
+        initial_viewport: ViewportMetrics,
+    ) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
             client_id: client_id.into(),
             requested_session_id: None,
             requested_role: SessionRole::Controller,
             capabilities,
+            initial_viewport,
             resume: None,
         }
     }
@@ -43,6 +56,7 @@ impl ClientHello {
         if let Some(session_id) = &self.requested_session_id {
             session_id.validate()?;
         }
+        self.initial_viewport.validate()?;
         Ok(())
     }
 }
@@ -114,4 +128,3 @@ pub enum HandshakeRejectionReason {
     ControllerAlreadyAssigned,
     ResumeUnavailable,
 }
-

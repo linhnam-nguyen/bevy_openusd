@@ -14,6 +14,9 @@ use bevy::render::render_resource::{
 #[derive(Resource, Clone, Debug)]
 pub struct OffscreenTarget {
     pub image_handle: Handle<Image>,
+    pub width: u32,
+    pub height: u32,
+    pub generation: u64,
 }
 
 /// Headless rendering plugin for offscreen Bevy App setup.
@@ -31,48 +34,60 @@ impl Default for HeadlessRenderPlugin {
     }
 }
 
+pub(crate) fn new_offscreen_image(width: u32, height: u32) -> Image {
+    let size = Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+
+    let mut image = Image {
+        texture_descriptor: TextureDescriptor {
+            label: Some("offscreen_bevy_target"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        },
+        ..default()
+    };
+    image.resize(size);
+    image
+}
+
 impl Plugin for HeadlessRenderPlugin {
     fn build(&self, app: &mut App) {
         let mut images = app.world_mut().resource_mut::<Assets<Image>>();
+        let image_handle = images.add(new_offscreen_image(self.width, self.height));
 
-        let size = Extent3d {
+        app.insert_resource(OffscreenTarget {
+            image_handle,
             width: self.width,
             height: self.height,
-            depth_or_array_layers: 1,
-        };
-
-        let mut image = Image {
-            texture_descriptor: TextureDescriptor {
-                label: Some("offscreen_bevy_target"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: TextureFormat::Rgba8UnormSrgb,
-                usage: TextureUsages::RENDER_ATTACHMENT
-                    | TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::COPY_SRC,
-                view_formats: &[],
-            },
-            ..default()
-        };
-
-        image.resize(size);
-        let image_handle = images.add(image);
-
-        app.insert_resource(OffscreenTarget { image_handle })
+            generation: 0,
+        })
         .add_systems(Update, setup_offscreen_camera_target);
     }
 }
 
-/// Redirects spawned 3D cameras to render into the offscreen GPU image target.
+/// Keeps every headless 3D camera bound to the current offscreen image target.
+///
+/// The Phase 4 implementation used `Added<Camera3d>` plus deferred commands,
+/// which was sufficient while the target never changed. Phase 5 can replace
+/// the image after the camera is spawned, so the binding must be synchronized
+/// directly whenever this system runs.
 fn setup_offscreen_camera_target(
     target: Res<OffscreenTarget>,
-    mut commands: Commands,
-    cameras: Query<Entity, Added<Camera3d>>,
+    mut render_targets: Query<&mut RenderTarget, With<Camera3d>>,
 ) {
-    let render_target = RenderTarget::Image(target.image_handle.clone().into());
-    for camera_entity in &cameras {
-        commands.entity(camera_entity).insert(render_target.clone());
+    for mut render_target in &mut render_targets {
+        if render_target.as_image() != Some(&target.image_handle) {
+            *render_target = RenderTarget::Image(target.image_handle.clone().into());
+        }
     }
 }

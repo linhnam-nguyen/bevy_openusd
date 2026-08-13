@@ -14,9 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use viewport_protocol::{SessionId, ViewportReadModel};
+use viewport_protocol::{
+    ActiveStreamConfiguration, CodecId, SessionId, ViewportMetrics, ViewportReadModel,
+};
 
 use crate::RenderServerInterface;
+use crate::VideoFrame;
 use crate::config::StreamingConfig;
 use crate::data_channel::DataChannelSet;
 use crate::encode::{EncodePipeline, VideoCodec};
@@ -34,14 +37,30 @@ pub(crate) struct FrameRouter {
 struct ActiveFrameTarget {
     connection_id: u64,
     encoder: Arc<EncodePipeline>,
+    codec: CodecId,
+    expected: Option<ExpectedInitialFrame>,
+    current: Option<ActiveStreamConfiguration>,
+    applied: Option<ActiveStreamConfiguration>,
+    pushed_frames: u64,
+}
+
+#[derive(Clone)]
+struct ExpectedInitialFrame {
+    metrics: ViewportMetrics,
+    caps_applied: bool,
 }
 
 impl FrameRouter {
-    fn activate(&self, connection_id: u64, encoder: Arc<EncodePipeline>) {
+    fn activate(&self, connection_id: u64, encoder: Arc<EncodePipeline>, codec: CodecId) {
         if let Ok(mut target) = self.target.lock() {
             *target = Some(ActiveFrameTarget {
                 connection_id,
                 encoder,
+                codec,
+                expected: None,
+                current: None,
+                applied: None,
+                pushed_frames: 0,
             });
         }
     }
@@ -57,17 +76,132 @@ impl FrameRouter {
         }
     }
 
-    fn push(&self, rgba: &[u8]) {
-        let encoder = self
-            .target
-            .lock()
-            .ok()
-            .and_then(|target| target.as_ref().map(|active| Arc::clone(&active.encoder)));
-
-        if let Some(encoder) = encoder
-            && let Err(error) = encoder.push_rgba_frame(rgba)
+    fn configure(&self, connection_id: u64, metrics: ViewportMetrics) {
+        if let Ok(mut target) = self.target.lock()
+            && let Some(active) = target.as_mut()
+            && active.connection_id == connection_id
         {
+            active.expected = Some(ExpectedInitialFrame {
+                metrics,
+                caps_applied: false,
+            });
+            active.current = None;
+            active.applied = None;
+        }
+    }
+
+    fn take_applied(&self, connection_id: u64) -> Option<ActiveStreamConfiguration> {
+        let mut target = self.target.lock().ok()?;
+        let active = target.as_mut()?;
+        if active.connection_id != connection_id {
+            return None;
+        }
+        active.applied.take()
+    }
+
+    fn push(&self, frame: &VideoFrame) {
+        let Some((connection_id, encoder, codec, expected, current)) =
+            self.target.lock().ok().and_then(|target| {
+                target.as_ref().map(|active| {
+                    (
+                        active.connection_id,
+                        Arc::clone(&active.encoder),
+                        active.codec,
+                        active.expected.clone(),
+                        active.current.clone(),
+                    )
+                })
+            })
+        else {
+            return;
+        };
+
+        if let Some(expected) = expected {
+            if frame.width != expected.metrics.requested_width
+                || frame.height != expected.metrics.requested_height
+                || frame.generation != expected.metrics.generation
+            {
+                return;
+            }
+
+            let fps = expected.metrics.preferred_fps.unwrap_or(60);
+            if !expected.caps_applied {
+                if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
+                    debug!("[viewport-frame-pump] initial caps update failed: {error:?}");
+                    return;
+                }
+            }
+
+            if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
+                debug!("[viewport-frame-pump] frame push failed: {error:?}");
+                return;
+            }
+
+            let pushed_index = if let Ok(mut target) = self.target.lock()
+                && let Some(active) = target.as_mut()
+                && active.connection_id == connection_id
+            {
+                active.pushed_frames += 1;
+                active.pushed_frames
+            } else {
+                0
+            };
+            if pushed_index > 0 && pushed_index <= 3 {
+                info!(
+                    "[viewport-frame-pump] accepted frame #{} for {:?} {}x{} generation {}",
+                    pushed_index, codec, frame.width, frame.height, frame.generation
+                );
+            }
+
+            let configuration = ActiveStreamConfiguration {
+                width: frame.width,
+                height: frame.height,
+                fps,
+                codec,
+                generation: frame.generation,
+            };
+            if let Ok(mut target) = self.target.lock()
+                && let Some(active) = target.as_mut()
+                && active
+                    .expected
+                    .as_ref()
+                    .is_some_and(|current| current.metrics == expected.metrics)
+            {
+                active.expected = None;
+                active.current = Some(configuration.clone());
+                active.applied = Some(configuration);
+            }
+            return;
+        }
+
+        let Some(current) = current else {
+            return;
+        };
+        if frame.width != current.width
+            || frame.height != current.height
+            || frame.generation != current.generation
+        {
+            return;
+        }
+        if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
             debug!("[viewport-frame-pump] frame push failed: {error:?}");
+            return;
+        }
+
+        let pushed_index = if let Ok(mut target) = self.target.lock()
+            && let Some(active) = target.as_mut()
+            && active.connection_id == connection_id
+        {
+            active.pushed_frames += 1;
+            active.pushed_frames
+        } else {
+            0
+        };
+        if pushed_index > 0 && pushed_index <= 3 {
+            info!(
+                "[viewport-frame-pump] accepted frame #{} for {:?} {}x{} generation {}",
+                pushed_index, codec, frame.width, frame.height, frame.generation
+            );
         }
     }
 }
@@ -81,7 +215,7 @@ pub(crate) struct FramePump {
 }
 
 impl FramePump {
-    pub(crate) fn new(receiver: Receiver<Vec<u8>>) -> Self {
+    pub(crate) fn new(receiver: Receiver<VideoFrame>) -> Self {
         let router = FrameRouter::default();
         let worker_router = router.clone();
         let stop = Arc::new(AtomicBool::new(false));
@@ -92,7 +226,7 @@ impl FramePump {
             .spawn(move || {
                 while !worker_stop.load(Ordering::Acquire) {
                     match receiver.recv_timeout(Duration::from_millis(100)) {
-                        Ok(rgba) => worker_router.push(&rgba),
+                        Ok(frame) => worker_router.push(&frame),
                         Err(RecvTimeoutError::Timeout) => {}
                         Err(RecvTimeoutError::Disconnected) => break,
                     }
@@ -129,6 +263,7 @@ pub struct StreamingSession {
     channels: DataChannelSet,
     application: crate::data_channel::ApplicationSession,
     frame_router: FrameRouter,
+    initial_configuration_rx: Arc<Mutex<Receiver<ViewportMetrics>>>,
 }
 
 impl StreamingSession {
@@ -139,23 +274,43 @@ impl StreamingSession {
         frame_router: FrameRouter,
         runtime_handle: tokio::runtime::Handle,
         interface: RenderServerInterface,
+        initial_viewport: Option<ViewportMetrics>,
     ) -> Result<Self> {
-        let encoder = Arc::new(EncodePipeline::new(config, VideoCodec::H264)?);
-        encoder.prepare_video_offer(config.width, config.height)?;
+        let mut session_config = config.clone();
+        if let Some(initial_viewport) = initial_viewport {
+            let normalized = viewport_protocol::ServerCapabilities::for_codec(config.codec)
+                .stream_limits
+                .normalize(&initial_viewport);
+            session_config.width = normalized.requested_width;
+            session_config.height = normalized.requested_height;
+            session_config.fps = normalized.preferred_fps.unwrap_or(config.fps);
+            info!(
+                "[viewport-session] using initial Join viewport {}x{} @ {} fps",
+                session_config.width, session_config.height, session_config.fps
+            );
+        }
+
+        let codec = VideoCodec::try_from(session_config.codec)?;
+        let encoder = Arc::new(EncodePipeline::new(&session_config, codec)?);
+        encoder.prepare_video_offer(session_config.width, session_config.height)?;
         let webrtc = encoder.webrtc();
         install_ice_forwarding(&webrtc, reply_tx, runtime_handle);
 
         let session_id = SessionId::new(format!("session-{connection_id}"));
-        let application = crate::data_channel::ApplicationSession::new(
+        let (initial_configuration_tx, initial_configuration_rx) =
+            std::sync::mpsc::sync_channel(4);
+        let application = crate::data_channel::ApplicationSession::new_with_configuration_sender(
             session_id.clone(),
-            ViewportReadModel::unloaded(config.stage_display_name.clone()),
-            interface,
+            ViewportReadModel::unloaded(session_config.stage_display_name.clone()),
+            interface.clone(),
+            initial_configuration_tx,
+            viewport_protocol::ServerCapabilities::for_codec(session_config.codec),
         );
 
         // DataChannel callbacks are installed before both local channels are
         // created, and both channels therefore appear in the generated offer.
         let channels = DataChannelSet::create(&webrtc, application.clone())?;
-        frame_router.activate(connection_id, Arc::clone(&encoder));
+        frame_router.activate(connection_id, Arc::clone(&encoder), session_config.codec);
 
         info!(
             "[viewport-session] created session {} for signaling connection {}",
@@ -169,10 +324,19 @@ impl StreamingSession {
             channels,
             application,
             frame_router,
+            initial_configuration_rx: Arc::new(Mutex::new(initial_configuration_rx)),
         })
     }
 
     pub(crate) fn flush_authoritative_events(&self) {
+        if let Ok(receiver) = self.initial_configuration_rx.lock() {
+            while let Ok(metrics) = receiver.try_recv() {
+                self.frame_router.configure(self.connection_id, metrics);
+            }
+        }
+        if let Some(configuration) = self.frame_router.take_applied(self.connection_id) {
+            self.application.queue_configuration_applied(configuration);
+        }
         self.application
             .flush_authoritative_events(self.channels.control());
     }
@@ -208,6 +372,19 @@ impl StreamingSession {
             offer.sdp().medias_len(),
             media_kinds
         );
+        for index in 0..offer.sdp().medias_len() {
+            let Some(media) = offer.sdp().media(index) else {
+                continue;
+            };
+            if media.media() == Some("video") {
+                let rtpmap = media.attribute_val("rtpmap").unwrap_or("<missing>");
+                let fmtp = media.attribute_val("fmtp").unwrap_or("<missing>");
+                info!(
+                    "[viewport-session] video SDP payloads={:?}, rtpmap={rtpmap}, fmtp={fmtp}",
+                    media.formats().collect::<Vec<_>>()
+                );
+            }
+        }
 
         Ok(offer_sdp)
     }

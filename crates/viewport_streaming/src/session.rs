@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::RenderServerInterface;
+use crate::VideoFrame;
 use crate::config::StreamingConfig;
 use crate::signaling::{SessionCommand, SignalingMessage};
 use crate::stream_session::{FramePump, StreamingSession};
@@ -25,7 +26,7 @@ pub struct WebRtcSessionManager {
 impl WebRtcSessionManager {
     pub fn new(
         config: StreamingConfig,
-        frame_receiver: Receiver<Vec<u8>>,
+        frame_receiver: Receiver<VideoFrame>,
         interface: RenderServerInterface,
     ) -> Self {
         Self {
@@ -63,6 +64,7 @@ impl WebRtcSessionManager {
                 SessionCommand::ClientConnected {
                     connection_id,
                     reply_tx,
+                    initial_viewport,
                 } => {
                     if !gate.try_claim(connection_id) {
                         send_error(
@@ -85,6 +87,7 @@ impl WebRtcSessionManager {
                         frame_router.clone(),
                         runtime_handle.clone(),
                         self.interface.clone(),
+                        initial_viewport,
                     ) {
                         Ok(session) => session,
                         Err(error) => {

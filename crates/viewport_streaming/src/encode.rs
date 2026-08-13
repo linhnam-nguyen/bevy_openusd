@@ -8,7 +8,12 @@ use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use gstreamer_app::AppSrc;
 use log::info;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, Instant};
+use viewport_protocol::CodecId;
 
 use crate::config::StreamingConfig;
 
@@ -18,6 +23,31 @@ pub enum VideoCodec {
     H265,
     AV1,
     H264,
+}
+
+impl TryFrom<CodecId> for VideoCodec {
+    type Error = anyhow::Error;
+
+    fn try_from(codec: CodecId) -> Result<Self> {
+        match codec {
+            CodecId::H264 => Ok(Self::H264),
+            CodecId::H265 => Ok(Self::H265),
+            CodecId::Av1 => Ok(Self::AV1),
+            CodecId::Vp8 | CodecId::Vp9 => {
+                anyhow::bail!("viewport streaming does not provide a {:?} encoder", codec)
+            }
+        }
+    }
+}
+
+impl From<VideoCodec> for CodecId {
+    fn from(codec: VideoCodec) -> Self {
+        match codec {
+            VideoCodec::H264 => Self::H264,
+            VideoCodec::H265 => Self::H265,
+            VideoCodec::AV1 => Self::Av1,
+        }
+    }
 }
 
 /// Discovers available GStreamer encoder elements on the host OS / GPU.
@@ -64,9 +94,8 @@ impl CodecCapabilities {
                 "nvh265enc",     // NVIDIA NVENC (Linux/Windows)
                 "amfh265enc",    // AMD AMF (Windows)
                 "vah265enc",     // AMD/Intel VAAPI (Linux)
-                // "vtenc_h265", // Apple VideoToolbox (macOS)
-                "vtenc_h264", // Hardware H.264 fallback on macOS
-                "x265enc",    // Software fallback
+                "vtenc_h265",    // Apple VideoToolbox (macOS)
+                "x265enc",       // Software fallback
             ]),
             av1_encoder: find_first_encoder(&[
                 "vulkanav1enc", // Vulkan Video AV1 Encode (Cross-vendor)
@@ -74,7 +103,6 @@ impl CodecCapabilities {
                 "amfav1enc",    // AMD RDNA 3 / RX 7000+ AMF (Windows)
                 "vaav1enc",     // AMD RDNA 3 / Intel Arc VAAPI (Linux)
                 "svtav1enc",    // Software fallback
-                "vtenc_h264",
             ]),
             h264_encoder: find_first_encoder(&[
                 "vulkanh264enc", // Vulkan Video H.264 Encode
@@ -103,8 +131,10 @@ pub struct EncodePipeline {
     _pipeline: gstreamer::Pipeline,
     webrtc: gstreamer::Element,
     webrtc_sink_pad: gstreamer::Pad,
+    rtp_src_pad: gstreamer::Pad,
     appsrc: AppSrc,
     selected_codec: VideoCodec,
+    active_caps: Mutex<(u32, u32, u32)>,
 }
 
 impl EncodePipeline {
@@ -116,12 +146,10 @@ impl EncodePipeline {
         let encoder_name = match codec {
             VideoCodec::H265 => caps
                 .h265_encoder
-                .or(caps.h264_encoder.clone())
-                .context("No H.265 / H.264 encoder available in GStreamer registry")?,
+                .context("No H.265 encoder available in GStreamer registry")?,
             VideoCodec::AV1 => caps
                 .av1_encoder
-                .or(caps.h264_encoder.clone())
-                .context("No AV1 / H.264 encoder available in GStreamer registry")?,
+                .context("No AV1 encoder available in GStreamer registry")?,
             VideoCodec::H264 => caps
                 .h264_encoder
                 .context("No H.264 encoder available in GStreamer registry")?,
@@ -140,24 +168,16 @@ impl EncodePipeline {
             .downcast::<AppSrc>()
             .map_err(|_| anyhow::anyhow!("Failed to downcast appsrc"))?;
 
-        appsrc.set_caps(Some(
-            &gstreamer_video::VideoCapsBuilder::new()
-                .format(gstreamer_video::VideoFormat::Rgba)
-                .width(config.width as i32)
-                .height(config.height as i32)
-                .framerate(gstreamer::Fraction::new(config.fps as i32, 1))
-                .build(),
-        ));
+        let initial_caps = raw_video_caps(config.width, config.height, config.fps)?;
+        appsrc.set_caps(Some(&initial_caps));
         appsrc.set_is_live(true);
         appsrc.set_format(gstreamer::Format::Time);
         appsrc.set_do_timestamp(true);
 
-        let (parser_name, payloader_name) = if encoder_name.contains("264") {
-            ("h264parse", "rtph264pay")
-        } else if encoder_name.contains("av1") {
-            ("av1parse", "rtpav1pay")
-        } else {
-            ("h265parse", "rtph265pay")
+        let (parser_name, payloader_name) = match codec {
+            VideoCodec::H264 => ("h264parse", "rtph264pay"),
+            VideoCodec::H265 => ("h265parse", "rtph265pay"),
+            VideoCodec::AV1 => ("av1parse", "rtpav1pay"),
         };
 
         let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
@@ -165,7 +185,7 @@ impl EncodePipeline {
         let parser = gstreamer::ElementFactory::make(parser_name).build()?;
         let codec_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
 
-        if encoder_name.contains("264") {
+        if codec == VideoCodec::H264 {
             let h264_caps = gstreamer::Caps::builder("video/x-h264")
                 .field("profile", "constrained-baseline")
                 .field("stream-format", "avc")
@@ -173,10 +193,40 @@ impl EncodePipeline {
                 .build();
 
             codec_filter.set_property("caps", &h264_caps);
+        } else if codec == VideoCodec::AV1 {
+            // rtpav1pay only accepts parsed low-overhead AV1 OBUs. Keep the
+            // parser/payloader boundary deterministic instead of relying on
+            // downstream caps negotiation to choose an alignment that the
+            // browser's WebRTC AV1 receiver may not accept.
+            let av1_caps = gstreamer::Caps::builder("video/x-av1")
+                .field("parsed", true)
+                .field("stream-format", "obu-stream")
+                .field("alignment", "tu")
+                .build();
+
+            codec_filter.set_property("caps", &av1_caps);
         }
-        let payloader = gstreamer::ElementFactory::make(payloader_name)
-            .property("config-interval", 1)
+        let payloader = gstreamer::ElementFactory::make(payloader_name).build()?;
+        if matches!(codec, VideoCodec::H264 | VideoCodec::H265) {
+            // H.264/H.265 payloaders periodically repeat codec configuration
+            // NAL units. rtpav1pay has no config-interval property.
+            payloader.set_property("config-interval", 1i32);
+        }
+        // A warm-up buffer is pushed before the WebRTC offer exists. Without
+        // an asynchronous boundary here, webrtcbin can backpressure the
+        // payloader while it is still waiting for SDP/ICE, which also blocks
+        // appsrc from delivering every subsequent raw frame. Keep a bounded
+        // RTP queue so encoder progress is independent of negotiation.
+        let rtp_queue = gstreamer::ElementFactory::make("queue")
+            .property("max-size-buffers", 512u32)
+            .property("max-size-bytes", 16u32 * 1024 * 1024)
+            .property("max-size-time", 1_000_000_000u64)
             .build()?;
+        // Put the fixed RTP caps immediately before webrtcbin. This lets the
+        // WebRTC sink advertise its video m-line during offer creation while
+        // the queue still decouples the encoder from pre-ICE backpressure.
+        let rtp_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+        rtp_caps_filter.set_property("caps", &rtp_video_caps(codec));
         let mut webrtc_builder = gstreamer::ElementFactory::make("webrtcbin").name("webrtcbin");
         // Browsers answer with a single BUNDLE transport for the video and
         // DataChannel m-lines. Keep webrtcbin on the same transport model so
@@ -193,6 +243,23 @@ impl EncodePipeline {
             let _ = encoder.set_property_from_str("preset", "low-latency-hq");
         } else if encoder_name.contains("x264") {
             let _ = encoder.set_property_from_str("tune", "zerolatency");
+            // The default x264 speed preset is optimized for compression
+            // efficiency rather than interactive throughput. The viewport
+            // favors a fresh frame over compression density, so use the
+            // fastest low-latency preset for the software fallback.
+            let _ = encoder.set_property_from_str("speed-preset", "ultrafast");
+        } else if encoder_name == "svtav1enc" {
+            // The installed GStreamer/SVT-AV1 combination can initialize the
+            // low-delay `pred-struct=1` mode but does not drain normal encoded
+            // frames from it; only the initial sequence unit reaches the RTP
+            // payloader. Keep the stable random-access structure for now and
+            // use the plugin's supported target-bitrate property. Preset 13 is
+            // SVT-AV1's fastest mode, which is the AV1 equivalent of the
+            // software H.264 `ultrafast` choice for this interactive viewport.
+            let _ = encoder.set_property_from_str("preset", "13");
+            let keyint = config.fps.saturating_mul(2).max(1);
+            let _ = encoder.set_property("intra-period-length", keyint as i32);
+            let _ = encoder.set_property("target-bitrate", config.av1_bitrate_kbps);
         }
 
         pipeline.add_many(&[
@@ -202,6 +269,8 @@ impl EncodePipeline {
             &parser,
             &codec_filter,
             &payloader,
+            &rtp_queue,
+            &rtp_caps_filter,
             &webrtc,
         ])?;
 
@@ -212,8 +281,43 @@ impl EncodePipeline {
             &parser,
             &codec_filter,
             &payloader,
+            &rtp_queue,
+            &rtp_caps_filter,
         ])?;
 
+        // Keep the first three buffers visible at every media boundary. The
+        // AV1 RTP probe alone cannot distinguish an encoder stall from a
+        // parser/payloader stall after the raw frame has been accepted.
+        log_first_buffers(
+            &appsrc
+                .static_pad("src")
+                .context("Failed to get appsrc src pad")?,
+            "appsrc-src",
+        );
+        log_first_buffers(
+            &encoder
+                .static_pad("src")
+                .context("Failed to get encoder src pad")?,
+            "encoder-src",
+        );
+        log_first_buffers(
+            &parser
+                .static_pad("src")
+                .context("Failed to get parser src pad")?,
+            "parser-src",
+        );
+        log_first_buffers(
+            &codec_filter
+                .static_pad("src")
+                .context("Failed to get codec-filter src pad")?,
+            "codec-filter-src",
+        );
+        log_first_buffers(
+            &payloader
+                .static_pad("sink")
+                .context("Failed to get payloader sink pad")?,
+            "payloader-sink",
+        );
         // Set pipeline state to Ready so webrtcbin initializes its pad templates
         pipeline.set_state(gstreamer::State::Ready)?;
 
@@ -225,13 +329,31 @@ impl EncodePipeline {
             .request_pad(&pad_templ, None, None)
             .context("Failed to request sink pad from webrtcbin")?;
 
-        let src_pad = payloader
+        let rtp_src_pad = rtp_caps_filter
             .static_pad("src")
-            .context("Failed to get src pad from payloader")?;
+            .context("Failed to get src pad from RTP caps filter")?;
 
-        src_pad
+        rtp_src_pad
             .link(&sink_pad)
-            .context("Failed to link payloader src pad to webrtcbin sink pad")?;
+            .context("Failed to link RTP caps filter src pad to webrtcbin sink pad")?;
+
+        let rtp_buffer_count = Arc::new(AtomicU64::new(0));
+        let rtp_buffer_count_for_probe = Arc::clone(&rtp_buffer_count);
+        rtp_src_pad.add_probe(gstreamer::PadProbeType::BUFFER, move |_pad, probe_info| {
+            if let Some(gstreamer::PadProbeData::Buffer(buffer)) = &probe_info.data {
+                let index = rtp_buffer_count_for_probe.fetch_add(1, Ordering::Relaxed);
+                if index < 3 {
+                    info!(
+                        "[viewport-encode] {:?} RTP buffer #{}: {} bytes, pts={:?}",
+                        codec,
+                        index + 1,
+                        buffer.size(),
+                        buffer.pts()
+                    );
+                }
+            }
+            gstreamer::PadProbeReturn::Ok
+        });
 
         if let Err(err) = pipeline.set_state(gstreamer::State::Playing) {
             let mut err_detail = String::new();
@@ -255,12 +377,26 @@ impl EncodePipeline {
             );
         }
 
+        // The capsfilter declares the format, but an offer can be requested
+        // before the first queued buffer has propagated its sticky CAPS event.
+        // Push that event across the already-linked media pad once the pad is
+        // active so webrtcbin can create the video m-line without relying on
+        // a query result that has not become negotiated caps yet.
+        if !rtp_src_pad.push_event(gstreamer::event::StreamStart::new("usd-hub-viewport")) {
+            anyhow::bail!("Failed to push RTP stream-start event to webrtcbin");
+        }
+        if !rtp_src_pad.push_event(gstreamer::event::Caps::new(&rtp_video_caps(codec))) {
+            anyhow::bail!("Failed to push RTP caps event to webrtcbin");
+        }
+
         Ok(Self {
             _pipeline: pipeline,
             webrtc,
             webrtc_sink_pad: sink_pad,
+            rtp_src_pad,
             appsrc,
             selected_codec: codec,
+            active_caps: Mutex::new((config.width, config.height, config.fps)),
         })
     }
 
@@ -284,9 +420,24 @@ impl EncodePipeline {
             .checked_mul(4)
             .context("RGBA frame size overflow while preparing the WebRTC offer")?;
 
-        self.push_rgba_frame(&vec![0; byte_count])?;
+        let warmup_frame = vec![0; byte_count];
+        // SVT-AV1 random-access mode buffers a mini-GOP before its first
+        // displayable frame. Prime one GOP of black frames so the WebRTC
+        // receiver gets a complete keyframe/configuration sequence while the
+        // real Bevy frames are entering the same live pipeline.
+        let warmup_frames = match self.selected_codec {
+            VideoCodec::AV1 => 16,
+            VideoCodec::H264 | VideoCodec::H265 => 1,
+        };
+        for _ in 0..warmup_frames {
+            self.push_rgba_frame(&warmup_frame)?;
+        }
 
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now()
+            + match self.selected_codec {
+                VideoCodec::AV1 => Duration::from_secs(5),
+                VideoCodec::H264 | VideoCodec::H265 => Duration::from_secs(2),
+            };
         loop {
             if let Some(caps) = self.webrtc_sink_pad.current_caps()
                 && !caps.is_any()
@@ -295,7 +446,15 @@ impl EncodePipeline {
                 info!("[viewport-encode] video RTP caps negotiated before SDP offer: {caps:?}");
                 return Ok(());
             }
-
+            if let Some(caps) = self.rtp_src_pad.current_caps()
+                && !caps.is_any()
+                && !caps.is_empty()
+            {
+                info!(
+                    "[viewport-encode] video RTP caps available from RTP caps filter before SDP offer: {caps:?}"
+                );
+                return Ok(());
+            }
             if Instant::now() >= deadline {
                 anyhow::bail!(
                     "timed out waiting for video RTP caps before creating the WebRTC offer"
@@ -313,16 +472,51 @@ impl EncodePipeline {
 
         {
             let buffer_ref = buffer.get_mut().unwrap();
-            let mut map = buffer_ref
-                .map_writable()
-                .context("Failed to map buffer writable")?;
-            map.copy_from_slice(rgba_data);
+            {
+                let mut map = buffer_ref
+                    .map_writable()
+                    .context("Failed to map buffer writable")?;
+                map.copy_from_slice(rgba_data);
+            }
+
+            // appsrc's do-timestamp supplies the running PTS, but raw buffers
+            // otherwise have no duration. Supplying the frame period lets
+            // GstVideoEncoder and downstream RTP timing advance continuously
+            // for this live source.
+            let fps = self
+                .active_caps
+                .lock()
+                .map_err(|_| anyhow::anyhow!("video caps state lock poisoned"))?
+                .2;
+            if fps > 0 {
+                buffer_ref.set_duration(gstreamer::ClockTime::from_nseconds(
+                    1_000_000_000u64 / fps as u64,
+                ));
+            }
         }
 
         self.appsrc
             .push_buffer(buffer)
             .map_err(|_| anyhow::anyhow!("Failed to push buffer to appsrc"))?;
 
+        Ok(())
+    }
+
+    /// Updates the raw RGBA caps before the first active frame for a session.
+    /// `appsrc` exposes this as a caps event on the live source, so the first
+    /// matching buffer is encoded with the same dimensions as the Bevy target.
+    pub fn set_video_caps(&self, width: u32, height: u32, fps: u32) -> Result<()> {
+        let mut active_caps = self
+            .active_caps
+            .lock()
+            .map_err(|_| anyhow::anyhow!("video caps state lock poisoned"))?;
+        if *active_caps == (width, height, fps) {
+            return Ok(());
+        }
+
+        let caps = raw_video_caps(width, height, fps)?;
+        self.appsrc.set_caps(Some(&caps));
+        *active_caps = (width, height, fps);
         Ok(())
     }
 
@@ -334,6 +528,53 @@ impl EncodePipeline {
     pub fn shutdown(&self) {
         let _ = self._pipeline.set_state(gstreamer::State::Null);
     }
+}
+
+fn raw_video_caps(width: u32, height: u32, fps: u32) -> Result<gstreamer::Caps> {
+    if width < 2 || height < 2 || width % 2 != 0 || height % 2 != 0 || fps == 0 {
+        anyhow::bail!("invalid raw video caps {width}x{height}@{fps}");
+    }
+    Ok(gstreamer_video::VideoCapsBuilder::new()
+        .format(gstreamer_video::VideoFormat::Rgba)
+        .width(width as i32)
+        .height(height as i32)
+        .framerate(gstreamer::Fraction::new(fps as i32, 1))
+        .build())
+}
+
+fn rtp_video_caps(codec: VideoCodec) -> gstreamer::Caps {
+    let encoding_name = match codec {
+        VideoCodec::H264 => "H264",
+        VideoCodec::H265 => "H265",
+        VideoCodec::AV1 => "AV1",
+    };
+
+    gstreamer::Caps::builder("application/x-rtp")
+        .field("media", "video")
+        .field("clock-rate", 90_000i32)
+        .field("encoding-name", encoding_name)
+        .field("payload", 96i32)
+        .build()
+}
+
+fn log_first_buffers(pad: &gstreamer::Pad, label: &'static str) {
+    let buffer_count = Arc::new(AtomicU64::new(0));
+    let buffer_count_for_probe = Arc::clone(&buffer_count);
+    pad.add_probe(gstreamer::PadProbeType::BUFFER, move |_pad, probe_info| {
+        if let Some(gstreamer::PadProbeData::Buffer(buffer)) = &probe_info.data {
+            let index = buffer_count_for_probe.fetch_add(1, Ordering::Relaxed);
+            if index < 3 {
+                info!(
+                    "[viewport-encode] {label} buffer #{}: {} bytes, pts={:?}, duration={:?}",
+                    index + 1,
+                    buffer.size(),
+                    buffer.pts(),
+                    buffer.duration()
+                );
+            }
+        }
+        gstreamer::PadProbeReturn::Ok
+    });
 }
 
 impl Drop for EncodePipeline {
@@ -357,5 +598,31 @@ mod tests {
                 .property::<gstreamer_webrtc::WebRTCBundlePolicy>("bundle-policy"),
             gstreamer_webrtc::WebRTCBundlePolicy::MaxBundle
         );
+    }
+
+    #[test]
+    fn av1_pipeline_creation_skips_h26x_config_interval() {
+        let config = StreamingConfig::default();
+        if CodecCapabilities::probe().av1_encoder.is_none() {
+            return;
+        }
+
+        let pipeline = EncodePipeline::new(&config, VideoCodec::AV1)
+            .expect("AV1 encoder is present but the AV1 pipeline could not be created");
+        assert_eq!(pipeline.selected_codec(), VideoCodec::AV1);
+    }
+
+    #[test]
+    fn av1_pipeline_can_negotiate_rtp_caps() {
+        let config = StreamingConfig::from_preset(crate::config::StreamingPreset::Adaptive);
+        if CodecCapabilities::probe().av1_encoder.is_none() {
+            return;
+        }
+
+        let pipeline = EncodePipeline::new(&config, VideoCodec::AV1)
+            .expect("AV1 encoder is present but the AV1 pipeline could not be created");
+        pipeline
+            .prepare_video_offer(config.width, config.height)
+            .expect("AV1 pipeline did not negotiate RTP caps");
     }
 }

@@ -90,3 +90,12 @@ impl Default for ServerCapabilities {
     }
 }
 
+impl ServerCapabilities {
+    /// Returns the server capabilities for the codec selected at launch.
+    pub fn for_codec(codec: CodecId) -> Self {
+        Self {
+            codecs: vec![codec],
+            ..Self::default()
+        }
+    }
+}

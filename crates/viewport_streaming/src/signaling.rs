@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
+use viewport_protocol::ViewportMetrics;
 
 use crate::config::StreamingConfig;
 
@@ -22,6 +23,8 @@ use crate::config::StreamingConfig;
 pub enum SignalingMessage {
     Join {
         token: Option<String>,
+        #[serde(default)]
+        viewport: Option<ViewportMetrics>,
     },
     Offer {
         sdp: String,
@@ -46,6 +49,7 @@ pub enum SessionCommand {
     ClientConnected {
         connection_id: u64,
         reply_tx: mpsc::Sender<SignalingMessage>,
+        initial_viewport: Option<ViewportMetrics>,
     },
     ReceivedAnswer {
         connection_id: u64,
@@ -153,7 +157,7 @@ async fn handle_connection(
         };
 
         match parsed {
-            SignalingMessage::Join { token } => {
+            SignalingMessage::Join { token, viewport } => {
                 if joined {
                     let _ = reply_tx
                         .send(SignalingMessage::Error {
@@ -181,6 +185,7 @@ async fn handle_connection(
                     .send(SessionCommand::ClientConnected {
                         connection_id,
                         reply_tx: reply_tx.clone(),
+                        initial_viewport: viewport,
                     })
                     .await
                     .is_err()

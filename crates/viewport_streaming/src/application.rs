@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use viewport_protocol::{
     ClientCommandEnvelope, InputCommand, PointerMotion, ViewportCommandEnvelope, ViewportEvent,
-    ViewportEventEnvelope, ViewportReadModel,
+    ViewportEventEnvelope, ViewportMetrics, ViewportReadModel,
 };
 
 const MAX_PENDING_MESSAGES: usize = 256;
@@ -21,6 +21,7 @@ struct PendingMessages {
     input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
     latest_snapshot: Option<ViewportReadModel>,
+    pending_stream_configuration: Option<ViewportMetrics>,
 }
 
 /// Transport-neutral application boundary shared across the ECS and WebRTC
@@ -145,6 +146,37 @@ impl RenderServerInterface {
             .expect("render-server interface queue is not poisoned")
             .input_commands
             .pop_front()
+    }
+
+    /// Queues the newest validated initial viewport request for the Bevy main
+    /// thread. The transport callback never mutates `Assets<Image>` directly.
+    pub fn submit_stream_configuration(
+        &self,
+        metrics: ViewportMetrics,
+    ) -> Result<(), RenderServerPortError> {
+        metrics
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        let replace = pending
+            .pending_stream_configuration
+            .as_ref()
+            .is_none_or(|current| metrics.generation >= current.generation);
+        if replace {
+            pending.pending_stream_configuration = Some(metrics);
+        }
+        Ok(())
+    }
+
+    pub fn take_stream_configuration(&self) -> Option<ViewportMetrics> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .pending_stream_configuration
+            .take()
     }
 
     pub fn take_latest_pointer_motion(&self) -> Option<PointerMotion> {

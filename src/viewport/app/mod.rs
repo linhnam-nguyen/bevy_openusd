@@ -13,6 +13,7 @@
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
 pub(crate) mod headless;
+mod offscreen_resize;
 
 use std::path::PathBuf;
 
@@ -139,6 +140,7 @@ pub(crate) fn run() {
             width: launch_options.width,
             height: launch_options.height,
         })
+        .add_systems(Update, offscreen_resize::apply_initial_stream_configuration)
         .insert_resource(ViewportNavigationInput::with_viewport_size(
             launch_options.width,
             launch_options.height,
@@ -170,10 +172,16 @@ pub(crate) fn run() {
             .shared();
         let (frame_tx, frame_rx) =
             std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
-        let (stream_frame_tx, stream_frame_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+        let (stream_frame_tx, stream_frame_rx) =
+            std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
         std::thread::spawn(move || {
             while let Ok(frame) = frame_rx.recv() {
-                let _ = stream_frame_tx.try_send(frame.rgba);
+                let _ = stream_frame_tx.try_send(viewport_streaming::VideoFrame {
+                    rgba: frame.rgba,
+                    width: frame.width,
+                    height: frame.height,
+                    generation: frame.generation,
+                });
             }
         });
         if launch_options.headless {
@@ -189,6 +197,7 @@ pub(crate) fn run() {
             width: launch_options.width,
             height: launch_options.height,
             fps: launch_options.fps,
+            codec: launch_options.codec,
             ..Default::default()
         };
         std::thread::spawn(move || {
