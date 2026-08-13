@@ -145,8 +145,10 @@ impl FrameRouter {
                     warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
                     return;
                 }
-                if let Err(error) = encoder.request_keyframe_with_configuration() {
-                    warn!("[viewport-frame-pump] keyframe/configuration refresh failed: {error:?}");
+                if let Err(error) = encoder.request_sync_frame_after_caps_change() {
+                    warn!(
+                        "[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}"
+                    );
                     return;
                 }
             }

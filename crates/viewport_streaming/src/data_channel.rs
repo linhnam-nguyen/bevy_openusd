@@ -176,22 +176,27 @@ impl ApplicationSession {
                 return;
             }
 
-            let initial_metrics = state
+            let requested_metrics = state
                 .server_capabilities
                 .stream_limits
                 .normalize(&hello.initial_viewport);
-            if let Err(error) = state
+            let initial_metrics = match state
                 .interface
-                .submit_stream_configuration(initial_metrics.clone())
+                .submit_stream_configuration(requested_metrics)
             {
-                warn!("[viewport-data-channel] initial stream configuration rejected: {error:?}");
-                send_handshake_rejection(
-                    channel,
-                    &mut state,
-                    HandshakeRejectionReason::UnsupportedCapabilities,
-                );
-                return;
-            }
+                Ok(metrics) => metrics,
+                Err(error) => {
+                    warn!(
+                        "[viewport-data-channel] initial stream configuration rejected: {error:?}"
+                    );
+                    send_handshake_rejection(
+                        channel,
+                        &mut state,
+                        HandshakeRejectionReason::UnsupportedCapabilities,
+                    );
+                    return;
+                }
+            };
             state.pending_stream_configuration = Some(initial_metrics.clone());
             state.latest_stream_generation = initial_metrics.generation;
 
@@ -312,8 +317,8 @@ impl ApplicationSession {
                 );
             }
             ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics }) => {
-                let metrics = state.server_capabilities.stream_limits.normalize(&metrics);
-                if metrics.generation <= state.latest_stream_generation {
+                let requested_metrics = state.server_capabilities.stream_limits.normalize(&metrics);
+                if requested_metrics.generation <= state.latest_stream_generation {
                     let latest_generation = state.latest_stream_generation;
                     send_stream_configuration_rejection(
                         channel,
@@ -321,20 +326,26 @@ impl ApplicationSession {
                         request_id,
                         format!(
                             "stream generation {} is not newer than active generation {}",
-                            metrics.generation, latest_generation
+                            requested_metrics.generation, latest_generation
                         ),
                     );
                     return;
                 }
-                if let Err(error) = state.interface.submit_stream_configuration(metrics.clone()) {
-                    send_stream_configuration_rejection(
-                        channel,
-                        &mut state,
-                        request_id,
-                        format!("stream configuration rejected: {error:?}"),
-                    );
-                    return;
-                }
+                let metrics = match state
+                    .interface
+                    .submit_stream_configuration(requested_metrics)
+                {
+                    Ok(metrics) => metrics,
+                    Err(error) => {
+                        send_stream_configuration_rejection(
+                            channel,
+                            &mut state,
+                            request_id,
+                            format!("stream configuration rejected: {error:?}"),
+                        );
+                        return;
+                    }
+                };
                 state.pending_stream_configuration = Some(metrics.clone());
                 state.latest_stream_generation = metrics.generation;
                 send_server_event_for_request(

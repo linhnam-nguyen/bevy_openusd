@@ -550,20 +550,21 @@ impl EncodePipeline {
         Ok(())
     }
 
-    /// Requests a new H.264 IDR frame together with codec parameter sets
-    /// after a live raw-caps change. The event is sent upstream from the
-    /// source pad immediately before `webrtcbin`, which is the direction
-    /// required for an encoder to consume an upstream force-key-unit request.
-    pub fn request_keyframe_with_configuration(&self) -> Result<()> {
-        if self.selected_codec != VideoCodec::H264 {
-            return Ok(());
-        }
-
-        let event = gstreamer_video::UpstreamForceKeyUnitEvent::builder()
-            .all_headers(true)
-            .build();
+    /// Requests a new independently decodable frame after a live raw-caps
+    /// change. The event is sent upstream from the source pad immediately
+    /// before `webrtcbin`, which is the direction required for an encoder to
+    /// consume an upstream force-key-unit request.
+    ///
+    /// `UpstreamForceKeyUnitEvent` is codec-neutral: it asks the active
+    /// encoder to make the next raw input a key unit, while `all_headers`
+    /// asks each codec branch to include the configuration it supports. This
+    /// keeps caps-transition recovery independent of H.264, H.265, AV1, or a
+    /// future supported codec; individual encoder/payloader elements remain
+    /// responsible for their own header representation.
+    pub fn request_sync_frame_after_caps_change(&self) -> Result<()> {
+        let event = sync_frame_event();
         if !self.rtp_src_pad.send_event(event) {
-            anyhow::bail!("GStreamer rejected the upstream H.264 keyframe request");
+            anyhow::bail!("GStreamer rejected the upstream sync-frame request");
         }
         Ok(())
     }
@@ -609,6 +610,12 @@ fn rtp_video_caps(codec: VideoCodec) -> gstreamer::Caps {
         .field("clock-rate", 90_000i32)
         .field("encoding-name", encoding_name)
         .field("payload", 96i32)
+        .build()
+}
+
+fn sync_frame_event() -> gstreamer::Event {
+    gstreamer_video::UpstreamForceKeyUnitEvent::builder()
+        .all_headers(true)
         .build()
 }
 
@@ -685,5 +692,15 @@ mod tests {
     fn rgba_byte_count_matches_active_caps_shape() {
         assert_eq!(rgba_byte_count(1280, 720).unwrap(), 3_686_400);
         assert!(rgba_byte_count(u32::MAX, u32::MAX).is_err());
+    }
+
+    #[test]
+    fn sync_frame_request_is_codec_neutral_and_includes_supported_headers() {
+        gstreamer::init().expect("GStreamer initializes for video-event construction");
+        let event = sync_frame_event();
+        let request = gstreamer_video::UpstreamForceKeyUnitEvent::parse(event.as_ref())
+            .expect("the resize request is an upstream force-key-unit event");
+
+        assert!(request.all_headers);
     }
 }

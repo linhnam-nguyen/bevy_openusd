@@ -22,6 +22,11 @@ struct PendingMessages {
     viewport_events: VecDeque<ViewportEventEnvelope>,
     latest_snapshot: Option<ViewportReadModel>,
     pending_stream_configuration: Option<ViewportMetrics>,
+    // A stream configuration can originate from a newly connected WebView,
+    // whose local generation counter starts over at one. Keep this sequence
+    // with the long-lived server interface rather than in a WebRTC session so
+    // a reconnect cannot make the Bevy target and frame router disagree.
+    latest_stream_generation: u64,
 }
 
 /// Transport-neutral application boundary shared across the ECS and WebRTC
@@ -152,12 +157,17 @@ impl RenderServerInterface {
             .pop_front()
     }
 
-    /// Queues the newest validated initial viewport request for the Bevy main
-    /// thread. The transport callback never mutates `Assets<Image>` directly.
+    /// Assigns a server-monotonic generation and queues the newest validated
+    /// viewport request for the Bevy main thread. The transport callback never
+    /// mutates `Assets<Image>` directly.
+    ///
+    /// Browser/WebView sessions are allowed to restart their local counter.
+    /// The returned metrics must therefore be echoed to both the encoder frame
+    /// router and the client, while Bevy receives the identical request here.
     pub fn submit_stream_configuration(
         &self,
-        metrics: ViewportMetrics,
-    ) -> Result<(), RenderServerPortError> {
+        mut metrics: ViewportMetrics,
+    ) -> Result<ViewportMetrics, RenderServerPortError> {
         metrics
             .validate()
             .map_err(|_| RenderServerPortError::InvalidPayload)?;
@@ -165,14 +175,11 @@ impl RenderServerInterface {
             .pending
             .lock()
             .map_err(|_| RenderServerPortError::QueueClosed)?;
-        let replace = pending
-            .pending_stream_configuration
-            .as_ref()
-            .is_none_or(|current| metrics.generation >= current.generation);
-        if replace {
-            pending.pending_stream_configuration = Some(metrics);
-        }
-        Ok(())
+        let next_generation = pending.latest_stream_generation.saturating_add(1);
+        metrics.generation = metrics.generation.max(next_generation);
+        pending.latest_stream_generation = metrics.generation;
+        pending.pending_stream_configuration = Some(metrics.clone());
+        Ok(metrics)
     }
 
     pub fn take_stream_configuration(&self) -> Option<ViewportMetrics> {
@@ -284,6 +291,34 @@ mod tests {
     use viewport_protocol::{InputCommand, PointerMotion, ViewportCommand};
 
     #[test]
+    fn stream_generation_remains_monotonic_across_webview_reconnects() {
+        let interface = RenderServerInterface::default();
+
+        let first = interface
+            .submit_stream_configuration(ViewportMetrics::default())
+            .expect("initial configuration should be valid");
+        assert_eq!(first.generation, 1);
+        assert_eq!(interface.take_stream_configuration(), Some(first));
+
+        let resized = interface
+            .submit_stream_configuration(ViewportMetrics {
+                generation: 2,
+                ..ViewportMetrics::default()
+            })
+            .expect("resized configuration should be valid");
+        assert_eq!(resized.generation, 2);
+        assert_eq!(interface.take_stream_configuration(), Some(resized));
+
+        // A Tauri WebView refresh starts its local counter at one again. The
+        // server must advance from the prior resize instead of reusing one.
+        let refreshed = interface
+            .submit_stream_configuration(ViewportMetrics::default())
+            .expect("reconnected configuration should be valid");
+        assert_eq!(refreshed.generation, 3);
+        assert_eq!(interface.take_stream_configuration(), Some(refreshed));
+    }
+
+    #[test]
     fn snapshot_display_name_is_reduced_to_a_basename() {
         let interface = RenderServerInterface::default();
         interface
@@ -378,10 +413,7 @@ mod tests {
             .submit_input(InputCommand::PointerMotion(motion(1)))
             .unwrap();
 
-        assert_eq!(
-            interface.take_latest_pointer_motion().unwrap().sequence,
-            2
-        );
+        assert_eq!(interface.take_latest_pointer_motion().unwrap().sequence, 2);
         assert!(interface.take_latest_pointer_motion().is_none());
     }
 
