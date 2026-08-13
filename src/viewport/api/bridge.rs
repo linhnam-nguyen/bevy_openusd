@@ -10,7 +10,7 @@ use viewport_protocol::{
 
 use super::{
     SceneAnchorIndex, SceneQueryService, ViewportCommandInbox, ViewportEventOutbox,
-    ViewportTreeCommand, ViewportTreeCommandInbox,
+    ViewportReadModelState, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::animation::{PendingAnimationClip, UsdStageTime};
 use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
@@ -33,6 +33,7 @@ pub(crate) enum ViewportBridgeSet {
     ApplyCommands,
     ApplyTreeCommands,
     PublishStageLoadState,
+    ReduceEvents,
 }
 
 impl Plugin for ViewportBridgePlugin {
@@ -40,6 +41,7 @@ impl Plugin for ViewportBridgePlugin {
         app.init_resource::<ViewportCommandInbox>()
             .init_resource::<ViewportTreeCommandInbox>()
             .init_resource::<ViewportEventOutbox>()
+            .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SceneQueryService>()
             .add_systems(Startup, emit_viewport_ready)
@@ -50,6 +52,7 @@ impl Plugin for ViewportBridgePlugin {
                     ViewportBridgeSet::ApplyCommands,
                     ViewportBridgeSet::ApplyTreeCommands,
                     ViewportBridgeSet::PublishStageLoadState,
+                    ViewportBridgeSet::ReduceEvents,
                 )
                     .chain(),
             )
@@ -75,7 +78,22 @@ impl Plugin for ViewportBridgePlugin {
             .add_systems(
                 Update,
                 publish_stage_load_state.in_set(ViewportBridgeSet::PublishStageLoadState),
+            )
+            .add_systems(
+                Update,
+                reduce_authoritative_events.in_set(ViewportBridgeSet::ReduceEvents),
             );
+    }
+}
+
+/// Reduces each newly emitted authoritative event for the local Frost
+/// reference adapter. The transport-delivery queue remains untouched.
+fn reduce_authoritative_events(
+    mut outbox: ResMut<ViewportEventOutbox>,
+    mut read_model: ResMut<ViewportReadModelState>,
+) {
+    for event in outbox.take_published() {
+        read_model.apply(&event);
     }
 }
 

@@ -49,7 +49,7 @@ impl Plugin for WebRtcTransportPlugin {
             )
             .add_systems(
                 Update,
-                publish_authoritative_events.after(ViewportBridgeSet::PublishStageLoadState),
+                publish_authoritative_events.after(ViewportBridgeSet::ReduceEvents),
             );
     }
 }

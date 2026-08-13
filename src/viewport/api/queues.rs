@@ -20,7 +20,7 @@ pub(crate) enum ViewportTreeCommand {
     },
 }
 
-/// Commands accepted from Frost now and from a future serialized transport.
+/// Commands accepted from in-process adapters and serialized transports.
 #[derive(Resource, Default)]
 pub(crate) struct ViewportCommandInbox {
     next_request_id: u64,
@@ -31,7 +31,7 @@ impl ViewportCommandInbox {
     /// Queues a command with a monotonically increasing in-process request ID.
     pub(crate) fn send(&mut self, command: ViewportCommand) -> RequestId {
         self.next_request_id = self.next_request_id.saturating_add(1);
-        let request_id = format!("frost-{}", self.next_request_id);
+        let request_id = format!("local-{}", self.next_request_id);
         self.pending
             .push_back(ViewportCommandEnvelope::new(request_id.clone(), command));
         request_id
@@ -40,7 +40,7 @@ impl ViewportCommandInbox {
     /// Queues a command that already has a caller-assigned request ID.
     ///
     /// Serialized transports must preserve their host-side correlation IDs;
-    /// only in-process callers should use [`Self::send`] to mint `frost-*`
+    /// only in-process callers should use [`Self::send`] to mint `local-*`
     /// IDs.
     pub(crate) fn push(&mut self, envelope: ViewportCommandEnvelope) {
         self.pending.push_back(envelope);
@@ -89,10 +89,12 @@ impl ViewportTreeCommandInbox {
 #[derive(Resource, Default)]
 pub(crate) struct ViewportEventOutbox {
     pending: VecDeque<ViewportEventEnvelope>,
+    published: VecDeque<ViewportEventEnvelope>,
 }
 
 impl ViewportEventOutbox {
     pub(crate) fn push(&mut self, event: ViewportEventEnvelope) {
+        self.published.push_back(event.clone());
         self.pending.push_back(event);
     }
 
@@ -104,6 +106,11 @@ impl ViewportEventOutbox {
     pub(crate) fn pop(&mut self) -> Option<ViewportEventEnvelope> {
         self.pending.pop_front()
     }
+
+    /// Drains newly emitted events without consuming the transport queue.
+    pub(crate) fn take_published(&mut self) -> Vec<ViewportEventEnvelope> {
+        self.published.drain(..).collect()
+    }
 }
 
 #[cfg(test)]
@@ -114,10 +121,10 @@ mod tests {
     fn local_requests_are_ordered_and_identifiable() {
         let mut inbox = ViewportCommandInbox::default();
 
-        assert_eq!(inbox.send(ViewportCommand::ReloadSession), "frost-1");
-        assert_eq!(inbox.send(ViewportCommand::RequestSnapshot), "frost-2");
-        assert_eq!(inbox.pop().unwrap().request_id, "frost-1");
-        assert_eq!(inbox.pop().unwrap().request_id, "frost-2");
+        assert_eq!(inbox.send(ViewportCommand::ReloadSession), "local-1");
+        assert_eq!(inbox.send(ViewportCommand::RequestSnapshot), "local-2");
+        assert_eq!(inbox.pop().unwrap().request_id, "local-1");
+        assert_eq!(inbox.pop().unwrap().request_id, "local-2");
     }
 
     #[test]
@@ -129,5 +136,21 @@ mod tests {
         ));
 
         assert_eq!(inbox.pop().unwrap().request_id, "desktop-3");
+    }
+
+    #[test]
+    fn published_events_are_available_to_the_local_reducer_and_transport() {
+        let mut outbox = ViewportEventOutbox::default();
+        let event = ViewportEventEnvelope::new(
+            Some("local-1".into()),
+            viewport_protocol::ViewportEvent::Ready {
+                protocol_version: viewport_protocol::PROTOCOL_VERSION,
+            },
+        );
+
+        outbox.push(event.clone());
+
+        assert_eq!(outbox.take_published(), vec![event.clone()]);
+        assert_eq!(outbox.pop(), Some(event));
     }
 }

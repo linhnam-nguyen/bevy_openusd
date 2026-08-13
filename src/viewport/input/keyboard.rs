@@ -7,8 +7,7 @@ use bevy::prelude::*;
 use bevy_egui::input::egui_wants_any_keyboard_input;
 use bevy_frost::RibbonOpen;
 
-use crate::viewport::api::ViewportCommandInbox;
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
 use crate::viewport::ui_frost::{
     RIB_INFO, RIB_KEYS, RIB_OVERLAYS, RIB_TREE, RIBBON_LEFT, ViewerCommandPalette,
 };
@@ -52,7 +51,7 @@ fn handle_palette_shortcut(
 fn handle_keys(
     keys: Res<ButtonInput<KeyCode>>,
     mut ribbon: ResMut<RibbonOpen>,
-    toggles: Res<DisplayToggles>,
+    read_model: Res<ViewportReadModelState>,
     mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
     if keys.just_pressed(KeyCode::KeyT) {
@@ -69,40 +68,45 @@ fn handle_keys(
         ribbon.toggle(RIBBON_LEFT, RIB_KEYS);
     }
 
+    let Some(snapshot) = read_model.snapshot() else {
+        return;
+    };
+    let presentation = &snapshot.presentation;
+
     if keys.just_pressed(KeyCode::KeyG) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::GroundGrid,
-            enabled: !toggles.show_world_grid,
+            enabled: !presentation.ground_grid,
         });
     }
     if keys.just_pressed(KeyCode::KeyX) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::WorldAxes,
-            enabled: !toggles.show_world_axes,
+            enabled: !presentation.world_axes,
         });
     }
     if keys.just_pressed(KeyCode::KeyP) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::PrimMarkers,
-            enabled: !toggles.show_prim_markers,
+            enabled: !presentation.prim_markers,
         });
     }
     if keys.just_pressed(KeyCode::KeyB) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::Skeleton,
-            enabled: !toggles.show_skeleton,
+            enabled: !presentation.skeleton,
         });
     }
     if keys.just_pressed(KeyCode::KeyY) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::Physics,
-            enabled: !toggles.show_physics,
+            enabled: !presentation.physics,
         });
     }
     if keys.just_pressed(KeyCode::KeyC) {
         viewport_commands.send(ViewportCommand::SetOverlay {
             overlay: OverlayKind::Colliders,
-            enabled: !toggles.show_colliders,
+            enabled: !presentation.colliders,
         });
     }
     if keys.just_pressed(KeyCode::KeyR) {
