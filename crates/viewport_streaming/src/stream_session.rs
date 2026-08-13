@@ -81,6 +81,21 @@ impl FrameRouter {
             && let Some(active) = target.as_mut()
             && active.connection_id == connection_id
         {
+            let newest_generation = active
+                .expected
+                .as_ref()
+                .map(|expected| expected.metrics.generation)
+                .into_iter()
+                .chain(active.current.as_ref().map(|current| current.generation))
+                .max()
+                .unwrap_or(0);
+            if metrics.generation <= newest_generation {
+                warn!(
+                    "[viewport-frame-pump] ignored stale stream configuration generation {} (newest {})",
+                    metrics.generation, newest_generation
+                );
+                return;
+            }
             active.expected = Some(ExpectedInitialFrame {
                 metrics,
                 caps_applied: false,
@@ -127,7 +142,11 @@ impl FrameRouter {
             let fps = expected.metrics.preferred_fps.unwrap_or(60);
             if !expected.caps_applied {
                 if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
-                    debug!("[viewport-frame-pump] initial caps update failed: {error:?}");
+                    warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
+                    return;
+                }
+                if let Err(error) = encoder.request_keyframe_with_configuration() {
+                    warn!("[viewport-frame-pump] keyframe/configuration refresh failed: {error:?}");
                     return;
                 }
             }
@@ -273,7 +292,6 @@ pub struct StreamingSession {
     channels: DataChannelSet,
     application: crate::data_channel::ApplicationSession,
     frame_router: FrameRouter,
-    initial_configuration_rx: Arc<Mutex<Receiver<ViewportMetrics>>>,
 }
 
 impl StreamingSession {
@@ -307,13 +325,10 @@ impl StreamingSession {
         install_ice_forwarding(&webrtc, reply_tx, runtime_handle);
 
         let session_id = SessionId::new(format!("session-{connection_id}"));
-        let (initial_configuration_tx, initial_configuration_rx) =
-            std::sync::mpsc::sync_channel(4);
-        let application = crate::data_channel::ApplicationSession::new_with_configuration_sender(
+        let application = crate::data_channel::ApplicationSession::new_with_capabilities(
             session_id.clone(),
             ViewportReadModel::unloaded(session_config.stage_display_name.clone()),
             interface.clone(),
-            initial_configuration_tx,
             viewport_protocol::ServerCapabilities::for_codec(session_config.codec),
         );
 
@@ -334,15 +349,12 @@ impl StreamingSession {
             channels,
             application,
             frame_router,
-            initial_configuration_rx: Arc::new(Mutex::new(initial_configuration_rx)),
         })
     }
 
     pub(crate) fn flush_authoritative_events(&self) {
-        if let Ok(receiver) = self.initial_configuration_rx.lock() {
-            while let Ok(metrics) = receiver.try_recv() {
-                self.frame_router.configure(self.connection_id, metrics);
-            }
+        if let Some(metrics) = self.application.take_stream_configuration() {
+            self.frame_router.configure(self.connection_id, metrics);
         }
         if let Some(configuration) = self.frame_router.take_applied(self.connection_id) {
             self.application.queue_configuration_applied(configuration);

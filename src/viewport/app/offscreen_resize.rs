@@ -1,4 +1,4 @@
-//! Bevy-main-thread application of the initial browser viewport size.
+//! Bevy-main-thread application of authoritative browser stream sizes.
 
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
@@ -8,7 +8,7 @@ use super::headless::{OffscreenTarget, new_offscreen_image};
 use crate::viewport::api::RenderServerInterface;
 use crate::viewport::input::ViewportNavigationInput;
 
-pub(crate) fn apply_initial_stream_configuration(
+pub(crate) fn apply_stream_configuration(
     interface: Res<RenderServerInterface>,
     mut target: ResMut<OffscreenTarget>,
     mut images: ResMut<Assets<Image>>,
@@ -20,7 +20,7 @@ pub(crate) fn apply_initial_stream_configuration(
         return;
     };
 
-    if metrics.generation < target.generation {
+    if metrics.generation <= target.generation {
         return;
     }
 
@@ -43,9 +43,10 @@ pub(crate) fn apply_initial_stream_configuration(
     target.generation = metrics.generation;
     if let Some(navigation) = navigation.as_deref_mut() {
         navigation.viewport_size = Vec2::new(width as f32, height as f32);
+        navigation.begin_stream_generation(metrics.generation);
     }
     bevy::log::info!(
-        "[viewport-resize] applied initial stream configuration {}x{} generation {}",
+        "[viewport-resize] applied stream configuration {}x{} generation {}",
         width,
         height,
         metrics.generation

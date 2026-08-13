@@ -15,14 +15,13 @@ use std::{
 use viewport_protocol::{
     ActiveStreamConfiguration, ClientCommand, CommandFamily, HandshakeEvent,
     HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION, ProtocolValidationError,
-    ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent,
-    SessionId, StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent,
-    ViewportReadModel,
+    ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent, SessionId,
+    StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportReadModel,
     decode_client_json_line, encode_server_json_line,
 };
 
-use crate::channel_backpressure::CONTROL_LOW_WATER_MARK;
 use crate::RenderServerInterface;
+use crate::channel_backpressure::CONTROL_LOW_WATER_MARK;
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
@@ -46,7 +45,11 @@ struct ApplicationSessionState {
     server_capabilities: ServerCapabilities,
     initial_snapshot: ViewportReadModel,
     interface: RenderServerInterface,
-    initial_configuration_tx: std::sync::mpsc::SyncSender<viewport_protocol::ViewportMetrics>,
+    /// The session manager polls this replaceable slot at its regular event
+    /// cadence. Keeping only the newest accepted request prevents a layout
+    /// drag from queuing obsolete encoder transactions behind the current one.
+    pending_stream_configuration: Option<viewport_protocol::ViewportMetrics>,
+    latest_stream_generation: u64,
     client_sequence: u64,
     server_sequence: u64,
     handshaken: bool,
@@ -61,22 +64,18 @@ impl ApplicationSession {
         initial_snapshot: ViewportReadModel,
         interface: RenderServerInterface,
     ) -> Self {
-        let (initial_configuration_tx, _initial_configuration_rx) =
-            std::sync::mpsc::sync_channel(1);
-        Self::new_with_configuration_sender(
+        Self::new_with_capabilities(
             session_id,
             initial_snapshot,
             interface,
-            initial_configuration_tx,
             ServerCapabilities::default(),
         )
     }
 
-    pub(crate) fn new_with_configuration_sender(
+    pub(crate) fn new_with_capabilities(
         session_id: SessionId,
         initial_snapshot: ViewportReadModel,
         interface: RenderServerInterface,
-        initial_configuration_tx: std::sync::mpsc::SyncSender<viewport_protocol::ViewportMetrics>,
         server_capabilities: ServerCapabilities,
     ) -> Self {
         Self {
@@ -85,7 +84,8 @@ impl ApplicationSession {
                 server_capabilities,
                 initial_snapshot,
                 interface,
-                initial_configuration_tx,
+                pending_stream_configuration: None,
+                latest_stream_generation: 0,
                 client_sequence: 0,
                 server_sequence: 1,
                 handshaken: false,
@@ -148,11 +148,7 @@ impl ApplicationSession {
             }
 
             if let Err(error) = hello.validate() {
-                send_handshake_rejection(
-                    channel,
-                    &mut state,
-                    rejection_for(error),
-                );
+                send_handshake_rejection(channel, &mut state, rejection_for(error));
                 return;
             }
             if !hello
@@ -196,7 +192,8 @@ impl ApplicationSession {
                 );
                 return;
             }
-            let _ = state.initial_configuration_tx.try_send(initial_metrics.clone());
+            state.pending_stream_configuration = Some(initial_metrics.clone());
+            state.latest_stream_generation = initial_metrics.generation;
 
             state.client_sequence = envelope.sequence;
             remember_request_id(&mut state, request_id);
@@ -316,17 +313,21 @@ impl ApplicationSession {
             }
             ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics }) => {
                 let metrics = state.server_capabilities.stream_limits.normalize(&metrics);
-                if state.initial_configuration_tx.try_send(metrics.clone()).is_err() {
-                    send_command_rejection(
+                if metrics.generation <= state.latest_stream_generation {
+                    let latest_generation = state.latest_stream_generation;
+                    send_stream_configuration_rejection(
                         channel,
                         &mut state,
                         request_id,
-                        "stream configuration queue is full".to_owned(),
+                        format!(
+                            "stream generation {} is not newer than active generation {}",
+                            metrics.generation, latest_generation
+                        ),
                     );
                     return;
                 }
                 if let Err(error) = state.interface.submit_stream_configuration(metrics.clone()) {
-                    send_command_rejection(
+                    send_stream_configuration_rejection(
                         channel,
                         &mut state,
                         request_id,
@@ -334,6 +335,8 @@ impl ApplicationSession {
                     );
                     return;
                 }
+                state.pending_stream_configuration = Some(metrics.clone());
+                state.latest_stream_generation = metrics.generation;
                 send_server_event_for_request(
                     channel,
                     &mut state,
@@ -384,6 +387,13 @@ impl ApplicationSession {
         }
     }
 
+    /// Returns the newest accepted resize for the encoder coordinator. This
+    /// has no side effects on the Bevy-side resize inbox, which is owned by
+    /// `RenderServerInterface` and applied on the ECS main thread.
+    pub(crate) fn take_stream_configuration(&self) -> Option<viewport_protocol::ViewportMetrics> {
+        self.state.lock().ok()?.pending_stream_configuration.take()
+    }
+
     pub(crate) fn queue_configuration_applied(&self, configuration: ActiveStreamConfiguration) {
         let Ok(mut state) = self.state.lock() else {
             error!("[viewport-data-channel] application session state is poisoned");
@@ -429,7 +439,11 @@ impl ApplicationSession {
 const MAX_RECENT_REQUEST_IDS: usize = 256;
 
 fn remember_request_id(state: &mut ApplicationSessionState, request_id: String) -> bool {
-    if state.recent_request_ids.iter().any(|seen| seen == &request_id) {
+    if state
+        .recent_request_ids
+        .iter()
+        .any(|seen| seen == &request_id)
+    {
         return false;
     }
     if state.recent_request_ids.len() >= MAX_RECENT_REQUEST_IDS {
@@ -494,6 +508,20 @@ fn send_command_rejection(
     );
 }
 
+fn send_stream_configuration_rejection(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    request_id: String,
+    reason: String,
+) {
+    send_server_event_for_request(
+        channel,
+        state,
+        request_id,
+        ServerEvent::Stream(StreamEvent::ConfigurationRejected { reason }),
+    );
+}
+
 fn send_server_event_with_request(
     channel: &WebRTCDataChannel,
     state: &mut ApplicationSessionState,
@@ -523,9 +551,7 @@ fn queue_server_event_for_request(
             matches,
             has_more,
         }) => {
-            queue_search_results(
-                state, request_id, query, offset, total, matches, has_more,
-            );
+            queue_search_results(state, request_id, query, offset, total, matches, has_more);
         }
         ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) => {
             queue_scene_children_page(state, request_id, page);
@@ -727,10 +753,9 @@ fn queue_snapshot(
             })
             .collect();
 
-        if chunks
-            .iter()
-            .all(|envelope| encoded_size(envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES))
-        {
+        if chunks.iter().all(|envelope| {
+            encoded_size(envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES)
+        }) {
             info!(
                 "[viewport-data-channel] queued snapshot {} in {} chunks ({} prims)",
                 snapshot_id,
@@ -743,13 +768,9 @@ fn queue_snapshot(
 
         // Roll back the provisional chunk sequence range before retrying with
         // smaller chunks. One prim per message is the final practical bound.
-        state.server_sequence = state
-            .server_sequence
-            .saturating_sub(chunks.len() as u64);
+        state.server_sequence = state.server_sequence.saturating_sub(chunks.len() as u64);
         if chunk_size == 1 {
-            error!(
-                "[viewport-data-channel] one prim still exceeds the application message limit"
-            );
+            error!("[viewport-data-channel] one prim still exceeds the application message limit");
             let envelope = next_server_envelope(
                 state,
                 request_id.as_deref(),
@@ -785,13 +806,12 @@ fn next_server_envelope(
 }
 
 fn encoded_size(envelope: &ServerEventEnvelope) -> Option<usize> {
-    encode_server_json_line(envelope).ok().map(|json| json.len())
+    encode_server_json_line(envelope)
+        .ok()
+        .map(|json| json.len())
 }
 
-fn flush_pending_server_events(
-    channel: &WebRTCDataChannel,
-    state: &mut ApplicationSessionState,
-) {
+fn flush_pending_server_events(channel: &WebRTCDataChannel, state: &mut ApplicationSessionState) {
     while let Some(envelope) = state.pending_server_events.front().cloned() {
         let result = encode_server_json_line(&envelope)
             .map_err(|error| error.to_string())
@@ -817,13 +837,11 @@ fn flush_pending_server_events(
                             .clone()
                             .unwrap_or_else(|| format!("server-sequence-{}", oversized.sequence));
                         let mut replacement = oversized;
-                        replacement.event = ServerEvent::Viewport(
-                            ViewportEvent::CommandRejected {
-                                request_id: rejection_id,
-                                reason: "application event exceeded the DataChannel message limit"
-                                    .to_owned(),
-                            },
-                        );
+                        replacement.event = ServerEvent::Viewport(ViewportEvent::CommandRejected {
+                            request_id: rejection_id,
+                            reason: "application event exceeded the DataChannel message limit"
+                                .to_owned(),
+                        });
                         state.pending_server_events.push_front(replacement);
                     }
                     continue;
@@ -1193,5 +1211,4 @@ mod tests {
         }
         assert_eq!(received_nodes, 128);
     }
-
 }

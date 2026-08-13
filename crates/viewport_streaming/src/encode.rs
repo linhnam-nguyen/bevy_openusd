@@ -483,6 +483,20 @@ impl EncodePipeline {
 
     /// Pushes a raw RGBA frame from Bevy offscreen render target into the GStreamer pipeline.
     pub fn push_rgba_frame(&self, rgba_data: &[u8]) -> Result<()> {
+        let (width, height, _) = *self
+            .active_caps
+            .lock()
+            .map_err(|_| anyhow::anyhow!("video caps state lock poisoned"))?;
+        let expected_bytes = rgba_byte_count(width, height)?;
+        if rgba_data.len() != expected_bytes {
+            anyhow::bail!(
+                "refusing {}-byte RGBA frame under active {}x{} caps; expected {} bytes",
+                rgba_data.len(),
+                width,
+                height,
+                expected_bytes
+            );
+        }
         let mut buffer = gstreamer::Buffer::with_size(rgba_data.len())
             .context("Failed to allocate GStreamer buffer")?;
 
@@ -536,6 +550,24 @@ impl EncodePipeline {
         Ok(())
     }
 
+    /// Requests a new H.264 IDR frame together with codec parameter sets
+    /// after a live raw-caps change. The event is sent upstream from the
+    /// source pad immediately before `webrtcbin`, which is the direction
+    /// required for an encoder to consume an upstream force-key-unit request.
+    pub fn request_keyframe_with_configuration(&self) -> Result<()> {
+        if self.selected_codec != VideoCodec::H264 {
+            return Ok(());
+        }
+
+        let event = gstreamer_video::UpstreamForceKeyUnitEvent::builder()
+            .all_headers(true)
+            .build();
+        if !self.rtp_src_pad.send_event(event) {
+            anyhow::bail!("GStreamer rejected the upstream H.264 keyframe request");
+        }
+        Ok(())
+    }
+
     pub fn selected_codec(&self) -> VideoCodec {
         self.selected_codec
     }
@@ -556,6 +588,13 @@ fn raw_video_caps(width: u32, height: u32, fps: u32) -> Result<gstreamer::Caps> 
         .height(height as i32)
         .framerate(gstreamer::Fraction::new(fps as i32, 1))
         .build())
+}
+
+fn rgba_byte_count(width: u32, height: u32) -> Result<usize> {
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .context("video dimensions overflow while calculating RGBA frame size")
 }
 
 fn rtp_video_caps(codec: VideoCodec) -> gstreamer::Caps {
@@ -640,5 +679,11 @@ mod tests {
         pipeline
             .prepare_video_offer(config.width, config.height)
             .expect("AV1 pipeline did not negotiate RTP caps");
+    }
+
+    #[test]
+    fn rgba_byte_count_matches_active_caps_shape() {
+        assert_eq!(rgba_byte_count(1280, 720).unwrap(), 3_686_400);
+        assert!(rgba_byte_count(u32::MAX, u32::MAX).is_err());
     }
 }

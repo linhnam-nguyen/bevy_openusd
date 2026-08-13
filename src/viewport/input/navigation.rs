@@ -65,6 +65,27 @@ impl ViewportNavigationInput {
         self.wheel_delta = Vec2::ZERO;
     }
 
+    /// Begins a new authoritative stream coordinate mapping. Any movement or
+    /// button state from the previous target must not affect the first frame
+    /// of the new generation, so it is cleared before the client receives
+    /// `ConfigurationApplied` and starts sending the matching generation.
+    pub(crate) fn begin_stream_generation(&mut self, generation: u64) {
+        if generation == 0 || self.generation == generation {
+            return;
+        }
+        self.pointer_delta = Vec2::ZERO;
+        self.wheel_delta = Vec2::ZERO;
+        self.buttons = PointerButtons::default();
+        self.modifiers = InputModifiers::default();
+        self.focused = false;
+        self.generation = generation;
+        self.pan_multiplier = 1.0;
+        self.last_input_sequence = 0;
+        self.last_motion_sequence = 0;
+        self.last_remote_motion_at = None;
+        self.remote_last_activity = None;
+    }
+
     pub(crate) fn apply_remote_command(&mut self, command: InputCommand) {
         match command {
             InputCommand::PointerMotion(motion) => self.apply_pointer_motion(motion),
@@ -175,9 +196,6 @@ impl ViewportNavigationInput {
     }
 
     fn accept_generation(&mut self, generation: u64) -> bool {
-        if generation == 0 {
-            return true;
-        }
         if self.generation == 0 {
             self.generation = generation;
             return true;
@@ -290,4 +308,38 @@ pub(crate) fn apply_local_navigation_input(
         MouseScrollUnit::Line => scroll.delta.y,
         MouseScrollUnit::Pixel => scroll.delta.y / 32.0,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_stream_generation_rejects_old_pointer_mapping() {
+        let mut input = ViewportNavigationInput::with_viewport_size(1280, 720);
+        input.begin_stream_generation(4);
+        input.apply_pointer_motion(PointerMotion {
+            sequence: 1,
+            dx_css_pixels: 12.0,
+            dy_css_pixels: 8.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 1280.0,
+            viewport_css_height: 720.0,
+            stream_generation: 3,
+        });
+        assert_eq!(input.pointer_delta, Vec2::ZERO);
+
+        input.apply_pointer_motion(PointerMotion {
+            sequence: 2,
+            dx_css_pixels: 12.0,
+            dy_css_pixels: 8.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 1280.0,
+            viewport_css_height: 720.0,
+            stream_generation: 4,
+        });
+        assert_eq!(input.pointer_delta, Vec2::new(12.0, 8.0));
+    }
 }

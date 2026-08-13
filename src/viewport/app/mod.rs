@@ -140,7 +140,7 @@ pub(crate) fn run() {
             width: launch_options.width,
             height: launch_options.height,
         })
-        .add_systems(Update, offscreen_resize::apply_initial_stream_configuration)
+        .add_systems(Update, offscreen_resize::apply_stream_configuration)
         .insert_resource(ViewportNavigationInput::with_viewport_size(
             launch_options.width,
             launch_options.height,
@@ -166,10 +166,7 @@ pub(crate) fn run() {
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
         app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
-        let application_interface = app
-            .world()
-            .resource::<RenderServerInterface>()
-            .shared();
+        let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (frame_tx, frame_rx) =
             std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
         let (stream_frame_tx, stream_frame_rx) =
@@ -205,11 +202,11 @@ pub(crate) fn run() {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
                 let (session_tx, session_rx) = tokio::sync::mpsc::channel(32);
-                    let session = viewport_streaming::WebRtcSessionManager::new(
-                        config.clone(),
-                        stream_frame_rx,
-                        application_interface,
-                    );
+                let session = viewport_streaming::WebRtcSessionManager::new(
+                    config.clone(),
+                    stream_frame_rx,
+                    application_interface,
+                );
 
                 tokio::spawn(async move {
                     if let Err(error) = session.run(session_rx).await {
