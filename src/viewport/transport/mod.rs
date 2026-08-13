@@ -1,24 +1,16 @@
-//! Native transport selection and adapters for the viewport process.
-//!
-//! The default `usdview` invocation remains a standalone Frost viewer. Passing
-//! `--stdio` or `--transport stdio` additionally exposes the UI-neutral
-//! `viewport_protocol` contract over JSON Lines on standard input/output.
+//! Render-server transport selection and adapters for the viewport process.
 
 use viewport_protocol::CodecId;
 
 pub(crate) mod frame_capture;
-mod stdio;
 pub(crate) mod webrtc;
 
 pub(crate) use frame_capture::{FrameCapturePlugin, FrameData};
-pub(crate) use stdio::StdioTransportPlugin;
 
-/// A process boundary enabled for this viewport launch.
+/// The delivered viewport transport enabled for this launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewportTransport {
-    /// JSON Lines commands on stdin and events on stdout.
-    Stdio,
-    /// Headless WebRTC streaming server
+    /// Headless WebRTC streaming server.
     WebRtc,
 }
 
@@ -50,10 +42,9 @@ impl Default for LaunchOptions {
 
 /// Parses `usdview` arguments without treating a transport flag as a USD path.
 ///
-/// The ordinary launch shape is still `usdview [path/to/stage.usda]`. For a
-/// native host process, either `usdview --stdio` or
-/// `usdview --transport stdio` enables the JSON Lines adapter. The asset may
-/// appear before or after the transport option.
+/// The delivered launch shape is `usdview --headless --webrtc
+/// [path/to/stage.usda]`. The asset may appear before or after the transport
+/// option.
 pub(crate) fn parse_launch_options<I>(arguments: I) -> Result<LaunchOptions, String>
 where
     I: IntoIterator<Item = String>,
@@ -78,12 +69,8 @@ where
             continue;
         }
 
-        if parse_options && (argument == "--webrtc" || argument == "--stdio") {
-            options.transport = Some(if argument == "--webrtc" {
-                ViewportTransport::WebRtc
-            } else {
-                ViewportTransport::Stdio
-            });
+        if parse_options && argument == "--webrtc" {
+            options.transport = Some(ViewportTransport::WebRtc);
             continue;
         }
 
@@ -121,9 +108,9 @@ where
         }
 
         if parse_options && argument == "--transport" {
-            let transport = arguments.next().ok_or_else(|| {
-                "--transport requires a value such as `stdio` or `webrtc`".to_owned()
-            })?;
+            let transport = arguments
+                .next()
+                .ok_or_else(|| "--transport requires the delivered value `webrtc`".to_owned())?;
             options.transport = Some(parse_transport(&transport)?);
             continue;
         }
@@ -152,10 +139,9 @@ where
 
 fn parse_transport(value: &str) -> Result<ViewportTransport, String> {
     match value {
-        "stdio" => Ok(ViewportTransport::Stdio),
         "webrtc" => Ok(ViewportTransport::WebRtc),
         unsupported => Err(format!(
-            "unsupported transport `{unsupported}`; available transports: `stdio`, `webrtc`"
+            "unsupported transport `{unsupported}`; available transport: `webrtc`"
         )),
     }
 }
@@ -192,38 +178,31 @@ mod tests {
     }
 
     #[test]
-    fn stdio_flags_do_not_become_asset_paths() {
+    fn legacy_stdio_flags_are_rejected() {
         for arguments in [
             vec!["--stdio".to_owned()],
             vec!["--transport".to_owned(), "stdio".to_owned()],
             vec!["--transport=stdio".to_owned()],
         ] {
-            assert_eq!(
-                parse_launch_options(arguments).unwrap(),
-                LaunchOptions {
-                    asset_argument: None,
-                    transport: Some(ViewportTransport::Stdio),
-                    ..Default::default()
-                }
-            );
+            assert!(parse_launch_options(arguments).is_err());
         }
     }
 
     #[test]
     fn transport_and_asset_can_be_supplied_in_either_order() {
         for arguments in [
-            vec!["--stdio".to_owned(), "fixtures/robot.usda".to_owned()],
+            vec!["--webrtc".to_owned(), "fixtures/robot.usda".to_owned()],
             vec![
                 "fixtures/robot.usda".to_owned(),
                 "--transport".to_owned(),
-                "stdio".to_owned(),
+                "webrtc".to_owned(),
             ],
         ] {
             assert_eq!(
                 parse_launch_options(arguments).unwrap(),
                 LaunchOptions {
                     asset_argument: Some("fixtures/robot.usda".to_owned()),
-                    transport: Some(ViewportTransport::Stdio),
+                    transport: Some(ViewportTransport::WebRtc),
                     ..Default::default()
                 }
             );

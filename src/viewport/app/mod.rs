@@ -5,9 +5,7 @@
 //! throughout plugin development: each milestone gets dropped into this
 //! viewer so we can eyeball the projection.
 //!
-//!   cargo run                              # loads assets/animated_spinner.usda
-//!   cargo run -- path/to/robot.usda
-//!   cargo run -- --stdio path/to/robot.usda # native JSON Lines control
+//!   cargo run -- --headless --webrtc path/to/robot.usda
 //!
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
@@ -50,7 +48,7 @@ use crate::viewport::session::{
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
     sweep_variant_tempfiles,
 };
-use crate::viewport::transport::{StdioTransportPlugin, ViewportTransport, parse_launch_options};
+use crate::viewport::transport::{ViewportTransport, parse_launch_options};
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT, ViewerUiPlugin};
 use bevy_glacial::prelude::{
     AxisGizmo, AxisGizmoPlugin, ChaseCamera, GroundGrid, GroundGridPlugin,
@@ -64,8 +62,6 @@ pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
         Ok(options) => options,
         Err(error) => {
-            // `stdout` is a JSON Lines protocol channel under `--stdio`; all
-            // diagnostics, including bad launch options, belong on stderr.
             eprintln!("usdview: {error}");
             std::process::exit(2);
         }
@@ -155,13 +151,6 @@ pub(crate) fn run() {
         app.add_plugins(ViewerKeyboardPlugin)
             .add_plugins(ViewerUiPlugin)
             .add_systems(Startup, open_default_panel);
-    }
-
-    if launch_options.transport == Some(ViewportTransport::Stdio) {
-        // Add this after the bridge plugin so its explicit system ordering can
-        // enqueue stdin commands before bridge application and flush Ready /
-        // command events after the bridge has emitted them.
-        app.add_plugins(StdioTransportPlugin);
     }
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
