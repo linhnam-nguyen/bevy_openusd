@@ -181,6 +181,7 @@ pub(crate) fn run() {
                     width: frame.width,
                     height: frame.height,
                     generation: frame.generation,
+                    captured_at: frame.captured_at,
                 });
             }
         });

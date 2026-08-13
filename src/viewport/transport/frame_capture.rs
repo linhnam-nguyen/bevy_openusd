@@ -12,12 +12,14 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     mpsc::SyncSender,
 };
+use std::time::Instant;
 
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
 #[derive(Resource)]
 pub struct FrameCaptureSink {
     pub sender: SyncSender<FrameData>,
     captured_frames: Arc<AtomicU64>,
+    last_logged_motion: Arc<AtomicU64>,
 }
 
 /// Raw RGBA video frame extracted from the GPU offscreen render target.
@@ -27,6 +29,9 @@ pub struct FrameData {
     pub width: u32,
     pub height: u32,
     pub generation: u64,
+    /// Monotonic time at which the GPU readback became available to the
+    /// streaming boundary. This is diagnostic-only and never crosses the wire.
+    pub captured_at: Instant,
 }
 
 /// Frame capture plugin that registers the frame extraction system in the render schedule.
@@ -39,6 +44,7 @@ impl Plugin for FrameCapturePlugin {
         app.insert_resource(FrameCaptureSink {
             sender: self.sender.clone(),
             captured_frames: Arc::new(AtomicU64::new(0)),
+            last_logged_motion: Arc::new(AtomicU64::new(0)),
         })
         .add_systems(Startup, setup_frame_readback);
     }
@@ -47,7 +53,7 @@ impl Plugin for FrameCapturePlugin {
 fn setup_frame_readback(mut commands: Commands, target: Res<OffscreenTarget>) {
     commands
         .spawn(Readback::texture(target.image_handle.clone()))
-        .observe(|event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>| {
+        .observe(|event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, input: Option<Res<crate::viewport::input::navigation::ViewportNavigationInput>>| {
             if event.data.is_empty() {
                 return;
             }
@@ -70,7 +76,18 @@ fn setup_frame_readback(mut commands: Commands, target: Res<OffscreenTarget>) {
                 width: target.width,
                 height: target.height,
                 generation: target.generation,
+                captured_at: Instant::now(),
             };
+
+            if let Some((sequence, applied_at)) = input.and_then(|input| input.latest_remote_motion())
+                && sink.last_logged_motion.swap(sequence, Ordering::Relaxed) != sequence
+            {
+                bevy::log::info!(
+                    "[viewport-input] remote motion sequence {} to first returned GPU readback: {:.1}ms",
+                    sequence,
+                    frame.captured_at.duration_since(applied_at).as_secs_f64() * 1_000.0,
+                );
+            }
 
             let index = sink.captured_frames.fetch_add(1, Ordering::Relaxed);
             if index < 3 {

@@ -212,6 +212,12 @@ impl EncodePipeline {
             // NAL units. rtpav1pay has no config-interval property.
             payloader.set_property("config-interval", 1i32);
         }
+        if codec == VideoCodec::H265 {
+            // RFC 7798's zero-latency aggregation keeps VPS/SPS/PPS with the
+            // first VCL NAL instead of waiting for a full access unit.
+            payloader.set_property_from_str("aggregate-mode", "zero-latency");
+            payloader.set_property("config-interval", -1i32);
+        }
         // A warm-up buffer is pushed before the WebRTC offer exists. Without
         // an asynchronous boundary here, webrtcbin can backpressure the
         // payloader while it is still waiting for SDP/ICE, which also blocks
@@ -248,6 +254,16 @@ impl EncodePipeline {
             // favors a fresh frame over compression density, so use the
             // fastest low-latency preset for the software fallback.
             let _ = encoder.set_property_from_str("speed-preset", "ultrafast");
+        } else if encoder_name == "vtenc_h265" {
+            // VideoToolbox provides the viable hardware alternative to AV1 on
+            // this Mac. Disable B-frame reordering and select its realtime
+            // CBR mode so H.265 has the same interactive intent as H.264.
+            let _ = encoder.set_property("realtime", true);
+            let _ = encoder.set_property("allow-frame-reordering", false);
+            let _ = encoder.set_property("bitrate", config.h265_bitrate_kbps);
+            let keyint = config.fps.saturating_mul(2).max(1);
+            let _ = encoder.set_property("max-keyframe-interval", keyint as i32);
+            let _ = encoder.set_property_from_str("rate-control", "cbr");
         } else if encoder_name == "svtav1enc" {
             // The installed GStreamer/SVT-AV1 combination can initialize the
             // low-delay `pred-struct=1` mode but does not drain normal encoded

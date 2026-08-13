@@ -146,10 +146,15 @@ impl FrameRouter {
             } else {
                 0
             };
-            if pushed_index > 0 && pushed_index <= 3 {
+            if pushed_index > 0 && (pushed_index <= 3 || pushed_index % 60 == 0) {
                 info!(
-                    "[viewport-frame-pump] accepted frame #{} for {:?} {}x{} generation {}",
-                    pushed_index, codec, frame.width, frame.height, frame.generation
+                    "[viewport-frame-pump] appsrc accepted frame #{} for {:?} {}x{} generation {}; capture-to-appsrc={:.1}ms",
+                    pushed_index,
+                    codec,
+                    frame.width,
+                    frame.height,
+                    frame.generation,
+                    frame.captured_at.elapsed().as_secs_f64() * 1_000.0,
                 );
             }
 
@@ -197,10 +202,15 @@ impl FrameRouter {
         } else {
             0
         };
-        if pushed_index > 0 && pushed_index <= 3 {
+        if pushed_index > 0 && (pushed_index <= 3 || pushed_index % 60 == 0) {
             info!(
-                "[viewport-frame-pump] accepted frame #{} for {:?} {}x{} generation {}",
-                pushed_index, codec, frame.width, frame.height, frame.generation
+                "[viewport-frame-pump] appsrc accepted frame #{} for {:?} {}x{} generation {}; capture-to-appsrc={:.1}ms",
+                pushed_index,
+                codec,
+                frame.width,
+                frame.height,
+                frame.generation,
+                frame.captured_at.elapsed().as_secs_f64() * 1_000.0,
             );
         }
     }

@@ -32,4 +32,6 @@ pub struct VideoFrame {
     pub width: u32,
     pub height: u32,
     pub generation: u64,
+    /// Monotonic capture time retained only for server-side latency diagnostics.
+    pub captured_at: std::time::Instant,
 }
