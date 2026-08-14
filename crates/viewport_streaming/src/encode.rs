@@ -8,10 +8,7 @@ use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use gstreamer_app::AppSrc;
 use log::info;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use viewport_protocol::CodecId;
 
@@ -301,39 +298,6 @@ impl EncodePipeline {
             &rtp_caps_filter,
         ])?;
 
-        // Keep the first three buffers visible at every media boundary. The
-        // AV1 RTP probe alone cannot distinguish an encoder stall from a
-        // parser/payloader stall after the raw frame has been accepted.
-        log_first_buffers(
-            &appsrc
-                .static_pad("src")
-                .context("Failed to get appsrc src pad")?,
-            "appsrc-src",
-        );
-        log_first_buffers(
-            &encoder
-                .static_pad("src")
-                .context("Failed to get encoder src pad")?,
-            "encoder-src",
-        );
-        log_first_buffers(
-            &parser
-                .static_pad("src")
-                .context("Failed to get parser src pad")?,
-            "parser-src",
-        );
-        log_first_buffers(
-            &codec_filter
-                .static_pad("src")
-                .context("Failed to get codec-filter src pad")?,
-            "codec-filter-src",
-        );
-        log_first_buffers(
-            &payloader
-                .static_pad("sink")
-                .context("Failed to get payloader sink pad")?,
-            "payloader-sink",
-        );
         // Set pipeline state to Ready so webrtcbin initializes its pad templates
         pipeline.set_state(gstreamer::State::Ready)?;
 
@@ -352,24 +316,6 @@ impl EncodePipeline {
         rtp_src_pad
             .link(&sink_pad)
             .context("Failed to link RTP caps filter src pad to webrtcbin sink pad")?;
-
-        let rtp_buffer_count = Arc::new(AtomicU64::new(0));
-        let rtp_buffer_count_for_probe = Arc::clone(&rtp_buffer_count);
-        rtp_src_pad.add_probe(gstreamer::PadProbeType::BUFFER, move |_pad, probe_info| {
-            if let Some(gstreamer::PadProbeData::Buffer(buffer)) = &probe_info.data {
-                let index = rtp_buffer_count_for_probe.fetch_add(1, Ordering::Relaxed);
-                if index < 3 {
-                    info!(
-                        "[viewport-encode] {:?} RTP buffer #{}: {} bytes, pts={:?}",
-                        codec,
-                        index + 1,
-                        buffer.size(),
-                        buffer.pts()
-                    );
-                }
-            }
-            gstreamer::PadProbeReturn::Ok
-        });
 
         if let Err(err) = pipeline.set_state(gstreamer::State::Playing) {
             let mut err_detail = String::new();
@@ -617,26 +563,6 @@ fn sync_frame_event() -> gstreamer::Event {
     gstreamer_video::UpstreamForceKeyUnitEvent::builder()
         .all_headers(true)
         .build()
-}
-
-fn log_first_buffers(pad: &gstreamer::Pad, label: &'static str) {
-    let buffer_count = Arc::new(AtomicU64::new(0));
-    let buffer_count_for_probe = Arc::clone(&buffer_count);
-    pad.add_probe(gstreamer::PadProbeType::BUFFER, move |_pad, probe_info| {
-        if let Some(gstreamer::PadProbeData::Buffer(buffer)) = &probe_info.data {
-            let index = buffer_count_for_probe.fetch_add(1, Ordering::Relaxed);
-            if index < 3 {
-                info!(
-                    "[viewport-encode] {label} buffer #{}: {} bytes, pts={:?}, duration={:?}",
-                    index + 1,
-                    buffer.size(),
-                    buffer.pts(),
-                    buffer.duration()
-                );
-            }
-        }
-        gstreamer::PadProbeReturn::Ok
-    });
 }
 
 impl Drop for EncodePipeline {
