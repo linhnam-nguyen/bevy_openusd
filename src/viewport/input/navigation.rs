@@ -29,7 +29,6 @@ pub(crate) struct ViewportNavigationInput {
     pub(crate) pan_multiplier: f32,
     last_input_sequence: u64,
     last_motion_sequence: u64,
-    last_remote_motion_at: Option<Instant>,
     remote_last_activity: Option<Instant>,
 }
 
@@ -46,7 +45,6 @@ impl Default for ViewportNavigationInput {
             pan_multiplier: 1.0,
             last_input_sequence: 0,
             last_motion_sequence: 0,
-            last_remote_motion_at: None,
             remote_last_activity: None,
         }
     }
@@ -82,7 +80,6 @@ impl ViewportNavigationInput {
         self.pan_multiplier = 1.0;
         self.last_input_sequence = 0;
         self.last_motion_sequence = 0;
-        self.last_remote_motion_at = None;
         self.remote_last_activity = None;
     }
 
@@ -148,11 +145,6 @@ impl ViewportNavigationInput {
             return;
         }
         self.last_motion_sequence = motion.sequence;
-        self.last_remote_motion_at = Some(Instant::now());
-        bevy::log::debug!(
-            "[viewport-input] applied remote motion sequence {}",
-            motion.sequence
-        );
         self.pointer_delta = Vec2::new(motion.dx_css_pixels, motion.dy_css_pixels);
         self.wheel_delta = Vec2::new(motion.wheel_x, motion.wheel_y);
         self.pan_multiplier = REMOTE_PAN_MULTIPLIER;
@@ -174,7 +166,6 @@ impl ViewportNavigationInput {
         self.pan_multiplier = 1.0;
         self.last_input_sequence = 0;
         self.last_motion_sequence = 0;
-        self.last_remote_motion_at = None;
         self.remote_last_activity = None;
     }
 
@@ -205,11 +196,6 @@ impl ViewportNavigationInput {
 
     fn note_remote_activity(&mut self) {
         self.remote_last_activity = Some(Instant::now());
-    }
-
-    pub(crate) fn latest_remote_motion(&self) -> Option<(u64, Instant)> {
-        self.last_remote_motion_at
-            .map(|applied_at| (self.last_motion_sequence, applied_at))
     }
 }
 
