@@ -38,15 +38,9 @@ struct ActiveFrameTarget {
     connection_id: u64,
     encoder: Arc<EncodePipeline>,
     codec: CodecId,
-    expected: Option<ExpectedInitialFrame>,
+    expected: Option<ViewportMetrics>,
     current: Option<ActiveStreamConfiguration>,
     applied: Option<ActiveStreamConfiguration>,
-}
-
-#[derive(Clone)]
-struct ExpectedInitialFrame {
-    metrics: ViewportMetrics,
-    caps_applied: bool,
 }
 
 impl FrameRouter {
@@ -82,7 +76,7 @@ impl FrameRouter {
             let newest_generation = active
                 .expected
                 .as_ref()
-                .map(|expected| expected.metrics.generation)
+                .map(|expected| expected.generation)
                 .into_iter()
                 .chain(active.current.as_ref().map(|current| current.generation))
                 .max()
@@ -94,10 +88,7 @@ impl FrameRouter {
                 );
                 return;
             }
-            active.expected = Some(ExpectedInitialFrame {
-                metrics,
-                caps_applied: false,
-            });
+            active.expected = Some(metrics);
             active.current = None;
             active.applied = None;
         }
@@ -128,26 +119,22 @@ impl FrameRouter {
             return;
         };
 
-        if let Some(expected) = expected {
-            if frame.width != expected.metrics.requested_width
-                || frame.height != expected.metrics.requested_height
-                || frame.generation != expected.metrics.generation
+        if let Some(expected_metrics) = expected {
+            if frame.width != expected_metrics.requested_width
+                || frame.height != expected_metrics.requested_height
+                || frame.generation != expected_metrics.generation
             {
                 return;
             }
 
-            let fps = expected.metrics.preferred_fps.unwrap_or(60);
-            if !expected.caps_applied {
-                if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
-                    warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
-                    return;
-                }
-                if let Err(error) = encoder.request_sync_frame_after_caps_change() {
-                    warn!(
-                        "[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}"
-                    );
-                    return;
-                }
+            let fps = expected_metrics.preferred_fps.unwrap_or(60);
+            if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
+                warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
+                return;
+            }
+            if let Err(error) = encoder.request_sync_frame_after_caps_change() {
+                warn!("[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}");
+                return;
             }
 
             if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
@@ -167,7 +154,7 @@ impl FrameRouter {
                 && active
                     .expected
                     .as_ref()
-                    .is_some_and(|current| current.metrics == expected.metrics)
+                    .is_some_and(|current| current == &expected_metrics)
             {
                 active.expected = None;
                 active.current = Some(configuration.clone());
