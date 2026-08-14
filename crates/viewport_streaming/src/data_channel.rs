@@ -13,7 +13,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use viewport_protocol::{
-    ActiveStreamConfiguration, ClientCommand, CommandFamily, HandshakeEvent,
+    ActiveStreamConfiguration, CameraSource, ClientCommand, CommandFamily, HandshakeEvent,
     HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION, ProtocolValidationError,
     ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent, SessionId,
     StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportReadModel,
@@ -31,6 +31,7 @@ pub const INPUT_CHANNEL_PROTOCOL: &str = "usd-hub.viewport-input.v1";
 // Keep a safety margin for the JSON envelope and browser/runtime variation.
 const MAX_APPLICATION_MESSAGE_BYTES: usize = 12 * 1024;
 const INITIAL_SNAPSHOT_CHUNK_PRIMS: usize = 128;
+const MAX_COMPACT_STAGE_DISPLAY_NAME_CHARS: usize = 256;
 /// Flow-control notification threshold for the active reliable control channel.
 const CONTROL_CHANNEL_LOW_WATER_MARK_BYTES: u64 = 64 * 1024;
 
@@ -713,21 +714,21 @@ fn queue_bounded_event(
     }
 }
 
+fn snapshot_event(snapshot: ViewportReadModel, session_snapshot: bool) -> ServerEvent {
+    if session_snapshot {
+        ServerEvent::Session(SessionEvent::Snapshot { state: snapshot })
+    } else {
+        ServerEvent::Viewport(ViewportEvent::Snapshot { state: snapshot })
+    }
+}
+
 fn queue_snapshot(
     state: &mut ApplicationSessionState,
     request_id: Option<String>,
-    snapshot: ViewportReadModel,
+    mut snapshot: ViewportReadModel,
     session_snapshot: bool,
 ) {
-    let event = if session_snapshot {
-        ServerEvent::Session(SessionEvent::Snapshot {
-            state: snapshot.clone(),
-        })
-    } else {
-        ServerEvent::Viewport(ViewportEvent::Snapshot {
-            state: snapshot.clone(),
-        })
-    };
+    let event = snapshot_event(snapshot.clone(), session_snapshot);
     let envelope = next_server_envelope(state, request_id.as_deref(), event);
     if encoded_size(&envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
         state.pending_server_events.push_back(envelope);
@@ -743,6 +744,11 @@ fn queue_snapshot(
     let mut chunk_size = INITIAL_SNAPSHOT_CHUNK_PRIMS.max(1);
 
     loop {
+        if snapshot.scene.prims.is_empty() {
+            queue_compact_snapshot(state, request_id, snapshot, session_snapshot);
+            return;
+        }
+
         let chunks: Vec<ServerEventEnvelope> = snapshot
             .scene
             .prims
@@ -782,16 +788,97 @@ fn queue_snapshot(
         // smaller chunks. One prim per message is the final practical bound.
         state.server_sequence = state.server_sequence.saturating_sub(chunks.len() as u64);
         if chunk_size == 1 {
-            error!("[viewport-data-channel] one prim still exceeds the application message limit");
-            let envelope = next_server_envelope(
-                state,
-                request_id.as_deref(),
-                ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+            let oversized_prims = chunks
+                .iter()
+                .map(|envelope| {
+                    !encoded_size(envelope)
+                        .is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES)
+                })
+                .collect::<Vec<_>>();
+            let omitted_count = oversized_prims
+                .iter()
+                .filter(|oversized| **oversized)
+                .count();
+
+            if omitted_count == 0 {
+                error!(
+                    "[viewport-data-channel] snapshot chunk sizing failed without an oversized prim; sending a compact snapshot"
+                );
+                queue_compact_snapshot(state, request_id, snapshot, session_snapshot);
+                return;
+            }
+
+            snapshot.scene.prims = snapshot
+                .scene
+                .prims
+                .into_iter()
+                .zip(oversized_prims)
+                .filter_map(|(prim, oversized)| (!oversized).then_some(prim))
+                .collect();
+            warn!(
+                "[viewport-data-channel] omitted {omitted_count} prim(s) that exceed the application message limit"
             );
-            state.pending_server_events.push_back(envelope);
-            return;
+            chunk_size = INITIAL_SNAPSHOT_CHUNK_PRIMS.max(1);
+            continue;
         }
         chunk_size = (chunk_size / 2).max(1);
+    }
+}
+
+/// Emits a valid snapshot when every scene-node chunk was removed or when a
+/// non-scene field is too large to repeat in every chunk. This preserves stage
+/// readiness and bounded scene-page metadata without queueing an event the
+/// browser DataChannel cannot send.
+fn queue_compact_snapshot(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    mut snapshot: ViewportReadModel,
+    session_snapshot: bool,
+) {
+    snapshot.scene.prims.clear();
+    snapshot.selection.target = None;
+    snapshot.camera_source = CameraSource::Arcball;
+    snapshot.stage.display_name = truncate_snapshot_display_name(&snapshot.stage.display_name);
+
+    if queue_bounded_event(
+        state,
+        request_id.as_deref(),
+        snapshot_event(snapshot.clone(), session_snapshot),
+    ) {
+        warn!(
+            "[viewport-data-channel] queued a compact snapshot after the full snapshot exceeded the application message limit"
+        );
+        return;
+    }
+
+    // The compact form limits every unbounded snapshot field. Keep a final
+    // defensive fallback independent of an oversized client request ID so no
+    // known-oversized application event enters the reliable queue.
+    let mut minimal = ViewportReadModel::unloaded("remote-stage");
+    minimal.stage.loaded = snapshot.stage.loaded;
+    minimal.scene.total_prims = snapshot.scene.total_prims;
+    minimal.scene.total_roots = snapshot.scene.total_roots;
+    minimal.scene.root_page_size = snapshot.scene.root_page_size;
+    minimal.timeline = snapshot.timeline;
+    minimal.presentation = snapshot.presentation;
+    minimal.physics_running = snapshot.physics_running;
+
+    if !queue_bounded_event(state, None, snapshot_event(minimal, session_snapshot)) {
+        error!(
+            "[viewport-data-channel] failed to queue the bounded minimal snapshot after snapshot compaction"
+        );
+    }
+}
+
+fn truncate_snapshot_display_name(display_name: &str) -> String {
+    let truncated = display_name
+        .chars()
+        .take(MAX_COMPACT_STAGE_DISPLAY_NAME_CHARS)
+        .collect::<String>();
+    if truncated.len() == display_name.len() {
+        truncated
+    } else {
+        format!("{truncated}…")
     }
 }
 
@@ -1165,6 +1252,107 @@ mod tests {
             assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
         }
         assert_eq!(expected_count, Some(expected_index));
+    }
+
+    #[test]
+    fn terminally_oversized_prim_is_omitted_from_bounded_snapshot_chunks() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let mut snapshot = ViewportReadModel::unloaded("stage.usda");
+        snapshot.stage.loaded = true;
+        snapshot.scene.total_prims = 3;
+        snapshot.scene.total_roots = 3;
+        snapshot.scene.root_page_size = 64;
+        snapshot.scene.prims = vec![
+            viewport_protocol::PrimNodeReadModel {
+                anchor: viewport_protocol::SceneAnchor::active_session("/World/KeptA"),
+                parent: None,
+                label: "Kept A".to_owned(),
+                visible: true,
+                has_children: false,
+            },
+            viewport_protocol::PrimNodeReadModel {
+                anchor: viewport_protocol::SceneAnchor::active_session(format!(
+                    "/World/{}",
+                    "x".repeat(MAX_APPLICATION_MESSAGE_BYTES)
+                )),
+                parent: None,
+                label: "Too large".to_owned(),
+                visible: true,
+                has_children: false,
+            },
+            viewport_protocol::PrimNodeReadModel {
+                anchor: viewport_protocol::SceneAnchor::active_session("/World/KeptB"),
+                parent: None,
+                label: "Kept B".to_owned(),
+                visible: true,
+                has_children: false,
+            },
+        ];
+
+        queue_server_event_for_request(
+            &mut state,
+            Some("snapshot-request".to_owned()),
+            ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+        );
+
+        let mut labels = Vec::new();
+        for envelope in &state.pending_server_events {
+            assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+            let ServerEvent::Session(SessionEvent::SnapshotChunk { state, .. }) = &envelope.event
+            else {
+                panic!("remaining snapshot nodes must stay in bounded chunks");
+            };
+            labels.extend(state.scene.prims.iter().map(|prim| prim.label.as_str()));
+        }
+        assert_eq!(labels, ["Kept A", "Kept B"]);
+    }
+
+    #[test]
+    fn oversized_snapshot_metadata_is_compacted_to_a_bounded_snapshot() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let oversized = "x".repeat(MAX_APPLICATION_MESSAGE_BYTES);
+        let mut snapshot = ViewportReadModel::unloaded(oversized.clone());
+        snapshot.stage.loaded = true;
+        snapshot.scene.total_prims = 2_745;
+        snapshot.scene.total_roots = 64;
+        snapshot.scene.root_page_size = 64;
+        snapshot.selection.target = Some(viewport_protocol::SceneAnchor::active_session(
+            oversized.clone(),
+        ));
+        snapshot.camera_source = CameraSource::Authored {
+            prim_path: oversized,
+        };
+
+        queue_server_event_for_request(
+            &mut state,
+            Some("snapshot-request".to_owned()),
+            ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+        );
+
+        assert_eq!(state.pending_server_events.len(), 1);
+        let envelope = state.pending_server_events.front().unwrap();
+        assert_eq!(envelope.sequence, 1);
+        assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+        let ServerEvent::Session(SessionEvent::Snapshot { state }) = &envelope.event else {
+            panic!("oversized metadata must become one bounded snapshot");
+        };
+        assert!(state.scene.prims.is_empty());
+        assert_eq!(state.scene.total_prims, 2_745);
+        assert!(state.selection.target.is_none());
+        assert_eq!(state.camera_source, CameraSource::Arcball);
+        assert!(
+            state.stage.display_name.chars().count() <= MAX_COMPACT_STAGE_DISPLAY_NAME_CHARS + 1
+        );
     }
 
     #[test]
