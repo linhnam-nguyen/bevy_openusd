@@ -21,7 +21,6 @@ use viewport_protocol::{
 };
 
 use crate::RenderServerInterface;
-use crate::channel_backpressure::CONTROL_LOW_WATER_MARK;
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
@@ -32,6 +31,8 @@ pub const INPUT_CHANNEL_PROTOCOL: &str = "usd-hub.viewport-input.v1";
 // Keep a safety margin for the JSON envelope and browser/runtime variation.
 const MAX_APPLICATION_MESSAGE_BYTES: usize = 12 * 1024;
 const INITIAL_SNAPSHOT_CHUNK_PRIMS: usize = 128;
+/// Flow-control notification threshold for the active reliable control channel.
+const CONTROL_CHANNEL_LOW_WATER_MARK_BYTES: u64 = 64 * 1024;
 
 /// Application state shared by the two callbacks attached to one control
 /// DataChannel. It deliberately knows only the transport-neutral protocol.
@@ -1016,7 +1017,7 @@ fn attach_channel_callbacks(
     let control = label == CONTROL_CHANNEL_LABEL;
 
     if control {
-        channel.set_buffered_amount_low_threshold(CONTROL_LOW_WATER_MARK);
+        channel.set_buffered_amount_low_threshold(CONTROL_CHANNEL_LOW_WATER_MARK_BYTES);
         let low_label = label.clone();
         channel.connect_on_buffered_amount_low(move |channel| {
             debug!(
