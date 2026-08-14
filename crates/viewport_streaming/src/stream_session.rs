@@ -41,7 +41,6 @@ struct ActiveFrameTarget {
     expected: Option<ExpectedInitialFrame>,
     current: Option<ActiveStreamConfiguration>,
     applied: Option<ActiveStreamConfiguration>,
-    pushed_frames: u64,
 }
 
 #[derive(Clone)]
@@ -60,7 +59,6 @@ impl FrameRouter {
                 expected: None,
                 current: None,
                 applied: None,
-                pushed_frames: 0,
             });
         }
     }
@@ -115,11 +113,10 @@ impl FrameRouter {
     }
 
     fn push(&self, frame: &VideoFrame) {
-        let Some((connection_id, encoder, codec, expected, current)) =
+        let Some((encoder, codec, expected, current)) =
             self.target.lock().ok().and_then(|target| {
                 target.as_ref().map(|active| {
                     (
-                        active.connection_id,
                         Arc::clone(&active.encoder),
                         active.codec,
                         active.expected.clone(),
@@ -158,27 +155,6 @@ impl FrameRouter {
                 return;
             }
 
-            let pushed_index = if let Ok(mut target) = self.target.lock()
-                && let Some(active) = target.as_mut()
-                && active.connection_id == connection_id
-            {
-                active.pushed_frames += 1;
-                active.pushed_frames
-            } else {
-                0
-            };
-            if pushed_index > 0 && (pushed_index <= 3 || pushed_index % 60 == 0) {
-                info!(
-                    "[viewport-frame-pump] appsrc accepted frame #{} for {:?} {}x{} generation {}; capture-to-appsrc={:.1}ms",
-                    pushed_index,
-                    codec,
-                    frame.width,
-                    frame.height,
-                    frame.generation,
-                    frame.captured_at.elapsed().as_secs_f64() * 1_000.0,
-                );
-            }
-
             let configuration = ActiveStreamConfiguration {
                 width: frame.width,
                 height: frame.height,
@@ -212,27 +188,6 @@ impl FrameRouter {
         if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
             debug!("[viewport-frame-pump] frame push failed: {error:?}");
             return;
-        }
-
-        let pushed_index = if let Ok(mut target) = self.target.lock()
-            && let Some(active) = target.as_mut()
-            && active.connection_id == connection_id
-        {
-            active.pushed_frames += 1;
-            active.pushed_frames
-        } else {
-            0
-        };
-        if pushed_index > 0 && (pushed_index <= 3 || pushed_index % 60 == 0) {
-            info!(
-                "[viewport-frame-pump] appsrc accepted frame #{} for {:?} {}x{} generation {}; capture-to-appsrc={:.1}ms",
-                pushed_index,
-                codec,
-                frame.width,
-                frame.height,
-                frame.generation,
-                frame.captured_at.elapsed().as_secs_f64() * 1_000.0,
-            );
         }
     }
 }
