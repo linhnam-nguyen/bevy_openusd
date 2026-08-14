@@ -156,22 +156,12 @@ pub(crate) fn run() {
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
         app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
-        let (frame_tx, frame_rx) =
-            std::sync::mpsc::sync_channel::<crate::viewport::transport::FrameData>(4);
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
-        std::thread::spawn(move || {
-            while let Ok(frame) = frame_rx.recv() {
-                let _ = stream_frame_tx.try_send(viewport_streaming::VideoFrame {
-                    rgba: frame.rgba,
-                    width: frame.width,
-                    height: frame.height,
-                    generation: frame.generation,
-                });
-            }
-        });
         if launch_options.headless {
-            app.add_plugins(crate::viewport::transport::FrameCapturePlugin { sender: frame_tx });
+            app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
+                sender: stream_frame_tx,
+            });
         }
         let stage_display_name = std::path::Path::new(&asset_path)
             .file_name()

@@ -8,25 +8,17 @@ use bevy::prelude::*;
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::renderer::RenderDevice;
 use std::sync::mpsc::SyncSender;
+use viewport_streaming::VideoFrame;
 
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
 #[derive(Resource)]
 pub struct FrameCaptureSink {
-    pub sender: SyncSender<FrameData>,
-}
-
-/// Raw RGBA video frame extracted from the GPU offscreen render target.
-#[derive(Clone, Debug)]
-pub struct FrameData {
-    pub rgba: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-    pub generation: u64,
+    pub sender: SyncSender<VideoFrame>,
 }
 
 /// Frame capture plugin that registers the frame extraction system in the render schedule.
 pub struct FrameCapturePlugin {
-    pub sender: SyncSender<FrameData>,
+    pub sender: SyncSender<VideoFrame>,
 }
 
 impl Plugin for FrameCapturePlugin {
@@ -59,7 +51,7 @@ fn setup_frame_readback(mut commands: Commands, target: Res<OffscreenTarget>) {
                 return;
             };
 
-            let frame = FrameData {
+            let frame = VideoFrame {
                 rgba,
                 width: target.width,
                 height: target.height,
