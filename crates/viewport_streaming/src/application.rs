@@ -134,10 +134,6 @@ impl RenderServerInterface {
             if motion.sequence <= pending.last_pointer_sequence {
                 return Ok(());
             }
-            log::debug!(
-                "[viewport-input] received remote motion sequence {}",
-                motion.sequence
-            );
             pending.last_pointer_sequence = motion.sequence;
             pending.latest_pointer_motion = Some(motion);
             return Ok(());
