@@ -5,7 +5,6 @@
 //! DataChannel ↔ Bevy protocol message translation.
 
 pub mod application;
-pub mod bridge;
 pub mod channel_backpressure;
 pub mod config;
 pub mod data_channel;
