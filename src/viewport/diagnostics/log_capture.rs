@@ -2,7 +2,7 @@
 //!
 //! Hooks `LogPlugin::custom_layer` to feed a ring buffer that the
 //! viewer's "Log" panel displays. Filtered to the bevy_openusd /
-//! usd_schema crates and INFO-and-stricter so the buffer doesn't
+//! usd_bevy/openusd crates and INFO-and-stricter so the buffer doesn't
 //! fill with framework noise.
 //!
 //! The layer holds an `Arc<Mutex<VecDeque<LogLine>>>`; the same Arc
@@ -63,7 +63,7 @@ where
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let target = event.metadata().target();
         if !(target.starts_with("usd_bevy")
-            || target.starts_with("usd_schema")
+            || target.starts_with("openusd")
             || target.starts_with("usd_rapier")
             || target.starts_with("usdview"))
         {

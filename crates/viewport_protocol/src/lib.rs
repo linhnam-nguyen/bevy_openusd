@@ -18,24 +18,20 @@ pub mod input;
 pub mod stream;
 pub mod viewport;
 
-pub use capabilities::{
-    ClientCapabilities, CommandFamily, InputCapabilities, ServerCapabilities,
-};
+pub use capabilities::{ClientCapabilities, CommandFamily, InputCapabilities, ServerCapabilities};
 pub use codec::{
     ClientWireMessage, ServerWireMessage, decode_client_json_line, decode_json_line,
     decode_server_json_line, encode_client_json_line, encode_json_line, encode_server_json_line,
 };
-pub use commands::{
-    ClientCommand, InputCommand, SessionCommand, StreamCommand,
-};
+pub use commands::{ClientCommand, InputCommand, SessionCommand, StreamCommand};
 pub use envelope::{
-    validate_protocol_version, CausationId, ClientCommandEnvelope, ProtocolValidationError,
-    RequestId, SequenceNumber, ServerEventEnvelope, SessionId,
+    CausationId, ClientCommandEnvelope, ProtocolValidationError, RequestId, SequenceNumber,
+    ServerEventEnvelope, SessionId, validate_protocol_version,
 };
 pub use events::{ServerEvent, SessionEvent, StreamEvent};
 pub use handshake::{
-    ClientHello, HandshakeEvent, HandshakeRejectionReason, ResumeRequest, ResumeResult, ServerHello,
-    SessionRole,
+    ClientHello, HandshakeEvent, HandshakeRejectionReason, ResumeRequest, ResumeResult,
+    ServerHello, SessionRole,
 };
 pub use input::{
     ButtonState, FocusState, InputModifiers, KeyboardInput, PointerButtons, PointerMotion,
@@ -45,10 +41,11 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    CameraSource, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, FocusMode,
-    MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel,
-    SceneSearchMatch, SelectionReadModel, StageLoadState, StageReadModel, TimelineReadModel,
-    ViewportCommand, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
-    ViewportReadModel, ViewportWireMessage,
+    CameraSource, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
+    EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
+    MAX_EDITOR_TEXT_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference,
+    SceneReadModel, SceneSearchMatch, SelectionReadModel, StageLoadState, StageReadModel,
+    TimelineReadModel, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
+    ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage,
 };

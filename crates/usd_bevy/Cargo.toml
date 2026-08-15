@@ -3,14 +3,15 @@ name = "usd_bevy"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
-description = "Bevy plugin: USD asset loader, scene projection, and Rapier physics adapter wrapping `usd_rapier`."
+description = "Bevy plugin: live OpenUSD stage projection, routing, authoring, and marker components."
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
-openusd = { workspace = true, features = ["physics"] }
-usd_schema = { workspace = true }
+openusd = { workspace = true }
+usd_macro = { workspace = true }
 usd_rapier = { workspace = true }
 rapier3d-f64 = { workspace = true }
+glam = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }

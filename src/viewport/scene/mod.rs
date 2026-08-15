@@ -4,10 +4,10 @@ mod runtime;
 mod selection;
 mod skeleton;
 
-pub(crate) use runtime::{draw_selected_prim_highlight, rebuild_tuned_meshes};
+pub(crate) use runtime::draw_selected_prim_highlight;
 pub(crate) use selection::SelectedPrim;
 pub(crate) use skeleton::{
-    HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, draw_joint_gizmos, hide_meshes_on_startup,
+    HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
     setup_skeleton_gizmos_on_top,
 };
 pub(crate) mod visualization;

@@ -1,12 +1,10 @@
 //! Scene framing, focus transitions, and authored-camera mounting.
 
-use bevy::asset::Assets;
 use bevy::prelude::*;
-use usd_bevy::{UsdAsset, UsdPrimRef};
+use usd_bevy::{Projection as UsdProjection, UsdCamera, UsdPrimRef};
 
 use super::{ArcballCamera, CameraMount, FlyTo, apply_rig};
 use crate::viewport::scene::visualization::SceneExtent;
-use crate::viewport::session::StageHandle;
 
 /// Recenter the arcball on whatever the USD projection spawned the moment
 /// enough prims show up to have a valid bounding box. Runs exactly once so
@@ -128,34 +126,19 @@ fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
 /// Copies transform and projection from the selected authored USD camera.
 pub(crate) fn follow_mounted_camera(
     mount: Res<CameraMount>,
-    usd_assets: Res<Assets<UsdAsset>>,
-    stage: Option<Res<StageHandle>>,
-    prims: Query<(&UsdPrimRef, &GlobalTransform)>,
-    mut cameras: Query<(&mut Transform, &mut bevy::camera::Projection), With<Camera3d>>,
+    prims: Query<(&UsdPrimRef, &GlobalTransform, &UsdProjection), With<UsdCamera>>,
+    mut cameras: Query<
+        (&mut Transform, &mut bevy::camera::Projection),
+        (With<Camera3d>, Without<UsdCamera>),
+    >,
 ) {
     let CameraMount::Mounted { prim_path } = &*mount else {
         return;
     };
-    let Some(stage) = stage else { return };
-    let Some(asset) = usd_assets.get(&stage.0) else {
-        return;
-    };
-    let Some(cam_data) = asset
-        .cameras
-        .iter()
-        .find(|c| &c.path == prim_path)
-        .map(|c| c.data.clone())
-    else {
-        return;
-    };
-
     // Find the entity whose UsdPrimRef matches the mounted camera so we
     // can read its world transform. Every geom + xform prim gets a
     // UsdPrimRef, including Camera prims.
-    let Some(gt) = prims
-        .iter()
-        .find(|(pr, _)| pr.path == *prim_path)
-        .map(|(_, gt)| gt)
+    let Some((_, gt, authored_projection)) = prims.iter().find(|(pr, _, _)| pr.path == *prim_path)
     else {
         return;
     };
@@ -169,28 +152,5 @@ pub(crate) fn follow_mounted_camera(
     tr.rotation = world.rotation;
     // Leave scale alone — distorting cameras via scale is a footgun.
 
-    // Swap projection to match the authored camera. `OrthographicProjection`
-    // defaults tend to be too narrow for scene scale, so size from the
-    // authored aperture.
-    use bevy::camera::{OrthographicProjection, PerspectiveProjection, Projection};
-    use usd_schema::camera::Projection as UsdProj;
-    match cam_data.projection.unwrap_or(UsdProj::Perspective) {
-        UsdProj::Perspective => {
-            let fov = cam_data
-                .vertical_fov_rad()
-                .clamp(0.1, core::f32::consts::PI - 0.1);
-            let mut persp = PerspectiveProjection::default();
-            persp.fov = fov;
-            persp.aspect_ratio = cam_data.aspect_ratio().max(0.01);
-            persp.near = cam_data.clip_near.unwrap_or(0.1).max(0.001);
-            persp.far = cam_data.clip_far.unwrap_or(1.0e6);
-            *proj = Projection::Perspective(persp);
-        }
-        UsdProj::Orthographic => {
-            let mut ortho = OrthographicProjection::default_3d();
-            ortho.near = cam_data.clip_near.unwrap_or(0.1);
-            ortho.far = cam_data.clip_far.unwrap_or(1.0e6);
-            *proj = Projection::Orthographic(ortho);
-        }
-    }
+    *proj = authored_projection.clone();
 }

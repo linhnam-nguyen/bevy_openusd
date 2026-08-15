@@ -5763,15 +5763,26 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "bevy",
+ "glam 0.32.1",
  "image",
  "log",
  "openusd",
  "rapier3d-f64",
  "serde",
  "thiserror 2.0.19",
+ "usd_macro",
  "usd_rapier",
- "usd_schema",
  "zip",
+]
+
+[[package]]
+name = "usd_macro"
+version = "0.0.1"
+dependencies = [
+ "openusd",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -5782,16 +5793,6 @@ dependencies = [
  "log",
  "openusd",
  "rapier3d-f64",
- "usd_schema",
-]
-
-[[package]]
-name = "usd_schema"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "glam 0.32.1",
- "openusd",
 ]
 
 [[package]]
@@ -5810,7 +5811,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "usd_bevy",
- "usd_schema",
+ "usd_rapier",
  "viewport_protocol",
  "viewport_streaming",
  "zip",

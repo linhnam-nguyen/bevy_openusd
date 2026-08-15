@@ -243,7 +243,7 @@ mod tests {
                 .reveal_pages
                 .iter()
                 .map(|page| page.parent.as_ref().map(|parent| parent.prim_path.as_str()))
-            .collect::<Vec<_>>(),
+                .collect::<Vec<_>>(),
             vec![None, Some("/World"), Some("/World/Environment")]
         );
     }

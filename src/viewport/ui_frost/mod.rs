@@ -23,14 +23,14 @@ use bevy_frost::widgets::section as nested_section;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::PathBuf;
-use usd_bevy::{UsdAsset, UsdDisplayName, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
+use usd_bevy::{UsdDisplayName, UsdPrimRef, UsdProcedural, UsdSpatialAudio};
 
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportReadModelState};
 use crate::viewport::camera::ArcballCamera;
 use crate::viewport::camera::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
 use crate::viewport::diagnostics::log_capture::{LoaderLog, LogLine};
 use crate::viewport::scene::SelectedPrim;
-use crate::viewport::session::{LoadRequest, LoaderTuning, StageInfo};
+use crate::viewport::session::{LoadRequest, LoaderTuning, StageCameraProjection, StageInfo};
 use viewport_protocol::{FocusMode, ViewportCommand};
 
 mod tree;
@@ -1125,7 +1125,7 @@ fn draw_variants_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    usd_assets: Res<Assets<UsdAsset>>,
+    stage_info: Res<StageInfo>,
     loader_tuning: Res<LoaderTuning>,
     mut viewport_commands: ResMut<ViewportCommandInbox>,
 ) {
@@ -1149,7 +1149,7 @@ fn draw_variants_panel(
         accent_col,
         |pane| {
             pane.section("variants_animation", "Animation clips", true, |ui| {
-                let asset = usd_assets.iter().next().map(|(_, a)| a);
+                let asset = Some(&*stage_info);
                 let Some(asset) = asset else {
                     sub_caption(ui, "(no stage loaded yet)");
                     return;
@@ -1167,14 +1167,14 @@ fn draw_variants_panel(
                 anim_sets.sort_by(|a, b| a.0.cmp(b.0));
 
                 if anim_sets.is_empty() {
-                    if asset.skel_animations.is_empty() {
+                    if asset.skel_animation_count == 0 {
                         sub_caption(ui, "No UsdSkel animations or `anim` variant set found.");
                     } else {
                         sub_caption(
                             ui,
                             &format!(
                                 "{} SkelAnimation prim(s) found; this stage does not expose an `anim` variant switch.",
-                                asset.skel_animations.len()
+                                asset.skel_animation_count
                             ),
                         );
                     }
@@ -1218,7 +1218,7 @@ fn draw_variants_panel(
                 }
             });
             pane.section("variants_all", "Variant sets", true, |ui| {
-                let asset = usd_assets.iter().next().map(|(_, a)| a);
+                let asset = Some(&*stage_info);
                 match asset {
                     Some(asset) if !asset.variants.is_empty() => {
                         sub_caption(
@@ -1392,7 +1392,7 @@ fn draw_cameras_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    usd_assets: Res<Assets<UsdAsset>>,
+    stage_info: Res<StageInfo>,
     mut camera_mount: ResMut<CameraMount>,
     mut bookmarks: ResMut<CameraBookmarks>,
     mut fly: ResMut<FlyTo>,
@@ -1477,7 +1477,7 @@ fn draw_cameras_panel(
             });
 
             pane.section("cameras_all", "Cameras", true, |ui| {
-                let asset = usd_assets.iter().next().map(|(_, a)| a);
+                let asset = Some(&*stage_info);
                 let Some(asset) = asset else {
                     sub_caption(ui, "(no stage loaded yet)");
                     return;
@@ -1512,7 +1512,7 @@ fn draw_cameras_panel(
                         let name = cam.path.rsplit('/').next().unwrap_or(&cam.path);
                         let focal = cam.data.focal_length_mm.unwrap_or(50.0);
                         let proj = match cam.data.projection {
-                            Some(usd_schema::camera::Projection::Orthographic) => "ortho",
+                            Some(StageCameraProjection::Orthographic) => "ortho",
                             _ => "persp",
                         };
                         let label = format!("📷  {name}");
@@ -1845,7 +1845,7 @@ fn draw_timeline_panel(
     accent: Res<AccentColor>,
     read_model: Res<ViewportReadModelState>,
     mut viewport_commands: ResMut<ViewportCommandInbox>,
-    usd_assets: Res<Assets<UsdAsset>>,
+    stage_info: Res<StageInfo>,
 ) {
     if !is_panel_open(&open, RIB_TIMELINE) {
         return;
@@ -1873,8 +1873,7 @@ fn draw_timeline_panel(
         accent_col,
         |pane| {
             pane.section("timeline_playback", "Playback", true, |ui| {
-                let asset = usd_assets.iter().next().map(|(_, a)| a);
-                let animated_count = asset.map(|a| a.animated_prims.len()).unwrap_or(0);
+                let animated_count = stage_info.animated_prim_count;
                 sub_caption(
                     ui,
                     &format!(

@@ -8,8 +8,9 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor, SceneChildrenPage, SceneSearchMatch,
-    StageLoadState, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
+    DEFAULT_SCENE_PAGE_SIZE, EditorStateReadModel, PrimNodeReadModel, SceneAnchor,
+    SceneChildrenPage, SceneSearchMatch, StageLoadState, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -56,6 +57,7 @@ pub(crate) struct ViewportReadModelState {
     requested_scene_pages: HashSet<ScenePageKey>,
     pending_scene_pages: Vec<ScenePageRequest>,
     search: Option<SceneSearchState>,
+    editor: EditorStateReadModel,
 }
 
 impl ViewportReadModelState {
@@ -112,6 +114,10 @@ impl ViewportReadModelState {
         self.search
             .as_ref()
             .map(|search| (search.total, search.has_more))
+    }
+
+    pub(crate) fn editor_state(&self) -> &EditorStateReadModel {
+        &self.editor
     }
 
     /// Returns the next server-side search page without changing the active
@@ -202,6 +208,11 @@ impl ViewportReadModelState {
                     node.visible = *visible;
                 }
             }
+            ViewportEvent::EditorCommandCompleted { state, .. } => {
+                self.editor = state.clone();
+            }
+            ViewportEvent::EditorPrimState { .. }
+            | ViewportEvent::EditorStageExportChunk { .. } => {}
         }
     }
 

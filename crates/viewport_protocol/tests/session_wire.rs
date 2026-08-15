@@ -2,8 +2,8 @@ use viewport_protocol::{
     ActiveStreamConfiguration, ButtonState, ClientCapabilities, ClientCommand,
     ClientCommandEnvelope, ClientHello, CodecId, FocusState, HandshakeEvent, InputCommand,
     InputModifiers, KeyboardInput, PointerButtons, PointerMotion, ProtocolValidationError,
-    ReleaseAllInput, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
-    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch, SessionCommand,
+    ReleaseAllInput, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
+    ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello, SessionCommand,
     SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommand,
     ViewportMetrics, ViewportReadModel, decode_client_json_line, decode_server_json_line,
     encode_client_json_line, encode_server_json_line,
@@ -40,17 +40,16 @@ fn handshake_and_capabilities_round_trip() {
     );
     server.validate().unwrap();
     let server_json = serde_json::to_string(&server).unwrap();
-    assert_eq!(serde_json::from_str::<ServerHello>(&server_json).unwrap(), server);
+    assert_eq!(
+        serde_json::from_str::<ServerHello>(&server_json).unwrap(),
+        server
+    );
 }
 
 #[test]
 fn application_handshake_uses_the_versioned_command_and_event_envelopes() {
     let hello = ClientHello::new("browser-1", ClientCapabilities::default());
-    let command = ClientCommandEnvelope::new(
-        "handshake-1",
-        1,
-        ClientCommand::Handshake(hello),
-    );
+    let command = ClientCommandEnvelope::new("handshake-1", 1, ClientCommand::Handshake(hello));
     assert!(command.session_id.is_none());
     assert_eq!(
         decode_client_json_line(&encode_client_json_line(&command).unwrap()).unwrap(),
@@ -121,7 +120,8 @@ fn every_server_event_family_round_trips_through_a_server_envelope() {
     ];
 
     for (sequence, event) in events.into_iter().enumerate() {
-        let envelope = ServerEventEnvelope::new(SessionId::new("session-1"), sequence as u64 + 1, event);
+        let envelope =
+            ServerEventEnvelope::new(SessionId::new("session-1"), sequence as u64 + 1, event);
         envelope.validate().unwrap();
         let line = encode_server_json_line(&envelope).unwrap();
         assert_eq!(decode_server_json_line(&line).unwrap(), envelope);
@@ -186,6 +186,44 @@ fn lazy_scene_queries_round_trip_with_request_correlation() {
         nodes: vec![node],
     };
     assert_eq!(page.nodes.len(), 1);
+}
+
+#[test]
+fn editor_commands_and_events_round_trip_with_frontend_values() {
+    let command = ClientCommandEnvelope::for_session(
+        "edit-1",
+        SessionId::new("session-1"),
+        10,
+        ClientCommand::Viewport(ViewportCommand::SetAttribute {
+            prim_path: "/World/Box".to_owned(),
+            name: "size".to_owned(),
+            type_name: "double".to_owned(),
+            value: serde_json::json!(2.5),
+        }),
+    );
+    command.validate().unwrap();
+    assert_eq!(
+        decode_client_json_line(&encode_client_json_line(&command).unwrap()).unwrap(),
+        command
+    );
+
+    let event = ServerEventEnvelope::for_request(
+        SessionId::new("session-1"),
+        13,
+        "edit-1",
+        ServerEvent::Viewport(viewport_protocol::ViewportEvent::EditorCommandCompleted {
+            operation: viewport_protocol::EditorOperation::SetAttribute,
+            changed_paths: vec!["/World/Box.size".to_owned()],
+            state: viewport_protocol::EditorStateReadModel {
+                can_undo: true,
+                can_redo: false,
+            },
+        }),
+    );
+    assert_eq!(
+        decode_server_json_line(&encode_server_json_line(&event).unwrap()).unwrap(),
+        event
+    );
 }
 
 #[test]
@@ -294,7 +332,10 @@ fn constructors_reserve_deterministic_request_session_and_sequence_metadata() {
         9,
         ClientCommand::Session(SessionCommand::RequestSnapshot),
     );
-    assert_eq!(command.protocol_version, viewport_protocol::PROTOCOL_VERSION);
+    assert_eq!(
+        command.protocol_version,
+        viewport_protocol::PROTOCOL_VERSION
+    );
     assert_eq!(command.request_id, "request-9");
     assert_eq!(command.sequence, 9);
     assert_eq!(command.session_id, Some(SessionId::new("session-2")));

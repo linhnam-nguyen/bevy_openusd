@@ -13,6 +13,49 @@ pub const DEFAULT_SCENE_PAGE_SIZE: u32 = 64;
 pub const MAX_SCENE_PAGE_SIZE: u32 = 256;
 pub const DEFAULT_SCENE_SEARCH_PAGE_SIZE: u32 = 30;
 pub const MAX_SCENE_SEARCH_RESULTS: u32 = 256;
+pub const MAX_EDITOR_TEXT_BYTES: usize = 8 * 1024 * 1024;
+
+/// JSON value used by the editor wire contract for USD attributes.
+///
+/// The accompanying `type_name` on [`ViewportCommand::SetAttribute`] selects
+/// the USD type (`double`, `float3`, `token[]`, and so on). Keeping the value
+/// JSON-native means the protocol crate remains independent of OpenUSD while
+/// still allowing a frontend to author scalar, vector, matrix, and array
+/// values.
+pub type EditorValue = serde_json::Value;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorOperation {
+    DefinePrim,
+    RemovePrim,
+    RenamePrim,
+    ReparentPrim,
+    MovePrim,
+    SetAttribute,
+    ClearAttribute,
+    SetVariantSelection,
+    SetTransform,
+    LoadPayload,
+    UnloadPayload,
+    Undo,
+    Redo,
+    SaveStageAs,
+    ExportStage,
+    QueryPrim,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditorStateReadModel {
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditorPrimReadModel {
+    pub prim_path: String,
+    pub exists: bool,
+}
 
 /// Stable, renderer-neutral identity for a logical USD target.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -175,6 +218,56 @@ pub enum ViewportCommand {
     SetPhysicsRunning {
         running: bool,
     },
+    DefinePrim {
+        path: String,
+        type_name: String,
+    },
+    RemovePrim {
+        path: String,
+    },
+    RenamePrim {
+        path: String,
+        new_name: String,
+    },
+    ReparentPrim {
+        path: String,
+        new_parent: String,
+    },
+    MovePrim {
+        old_path: String,
+        new_path: String,
+    },
+    SetAttribute {
+        prim_path: String,
+        name: String,
+        type_name: String,
+        value: EditorValue,
+    },
+    ClearAttribute {
+        prim_path: String,
+        name: String,
+    },
+    SetTransform {
+        prim_path: String,
+        translation: [f32; 3],
+        rotation: [f32; 4],
+        scale: [f32; 3],
+    },
+    LoadPayload {
+        prim_path: String,
+    },
+    UnloadPayload {
+        prim_path: String,
+    },
+    UndoEditor,
+    RedoEditor,
+    SaveStageAs {
+        filename: String,
+    },
+    ExportStage,
+    QueryPrim {
+        prim_path: String,
+    },
 }
 
 /// Legacy command envelope retained byte/schema compatible with version 1.
@@ -197,7 +290,136 @@ impl ViewportCommandEnvelope {
     pub fn validate(&self) -> Result<(), crate::ProtocolValidationError> {
         crate::envelope::validate_protocol_version(self.protocol_version)?;
         if self.request_id.trim().is_empty() {
-            return Err(crate::ProtocolValidationError::EmptyField { field: "request_id" });
+            return Err(crate::ProtocolValidationError::EmptyField {
+                field: "request_id",
+            });
+        }
+        self.command.validate()?;
+        Ok(())
+    }
+}
+
+impl ViewportCommand {
+    pub fn validate(&self) -> Result<(), crate::ProtocolValidationError> {
+        use crate::ProtocolValidationError;
+
+        fn path(field: &'static str, value: &str) -> Result<(), ProtocolValidationError> {
+            if value.trim().is_empty() {
+                return Err(ProtocolValidationError::EmptyField { field });
+            }
+            if !value.starts_with('/') || value.contains('\0') {
+                return Err(ProtocolValidationError::InvalidInput { field });
+            }
+            Ok(())
+        }
+
+        fn text(field: &'static str, value: &str) -> Result<(), ProtocolValidationError> {
+            if value.trim().is_empty() {
+                return Err(ProtocolValidationError::EmptyField { field });
+            }
+            if value.len() > MAX_EDITOR_TEXT_BYTES {
+                return Err(ProtocolValidationError::InvalidInput { field });
+            }
+            Ok(())
+        }
+
+        fn finite(field: &'static str, values: &[f32]) -> Result<(), ProtocolValidationError> {
+            if values.iter().all(|value| value.is_finite()) {
+                Ok(())
+            } else {
+                Err(ProtocolValidationError::InvalidInput { field })
+            }
+        }
+
+        match self {
+            Self::DefinePrim {
+                path: value,
+                type_name,
+            } => {
+                path("editor.path", value)?;
+                text("editor.type_name", type_name)?;
+            }
+            Self::RemovePrim { path: value }
+            | Self::LoadPayload { prim_path: value }
+            | Self::UnloadPayload { prim_path: value }
+            | Self::QueryPrim { prim_path: value } => path("editor.prim_path", value)?,
+            Self::RenamePrim {
+                path: value,
+                new_name,
+            } => {
+                path("editor.path", value)?;
+                text("editor.new_name", new_name)?;
+                if new_name.contains('/') {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "editor.new_name",
+                    });
+                }
+            }
+            Self::ReparentPrim {
+                path: value,
+                new_parent,
+            } => {
+                path("editor.path", value)?;
+                path("editor.new_parent", new_parent)?;
+            }
+            Self::MovePrim { old_path, new_path } => {
+                path("editor.old_path", old_path)?;
+                path("editor.new_path", new_path)?;
+            }
+            Self::SetAttribute {
+                prim_path,
+                name,
+                type_name,
+                value,
+            } => {
+                path("editor.prim_path", prim_path)?;
+                text("editor.name", name)?;
+                text("editor.type_name", type_name)?;
+                if serde_json::to_vec(value)
+                    .map(|bytes| bytes.len() > MAX_EDITOR_TEXT_BYTES)
+                    .unwrap_or(true)
+                {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "editor.value",
+                    });
+                }
+            }
+            Self::ClearAttribute { prim_path, name } => {
+                path("editor.prim_path", prim_path)?;
+                text("editor.name", name)?;
+            }
+            Self::SetTransform {
+                prim_path,
+                translation,
+                rotation,
+                scale,
+            } => {
+                path("editor.prim_path", prim_path)?;
+                finite("editor.translation", translation)?;
+                finite("editor.rotation", rotation)?;
+                finite("editor.scale", scale)?;
+            }
+            Self::SaveStageAs { filename } => text("editor.filename", filename)?,
+            Self::SetVariantSelection { .. }
+            | Self::ResetVariantSelection { .. }
+            | Self::RequestSnapshot
+            | Self::RequestSceneChildren { .. }
+            | Self::SearchScene { .. }
+            | Self::ReloadSession
+            | Self::SelectTarget { .. }
+            | Self::FocusTarget { .. }
+            | Self::SetSubtreeVisibility { .. }
+            | Self::SetCameraSource { .. }
+            | Self::SetPlayback { .. }
+            | Self::Seek { .. }
+            | Self::SetOverlay { .. }
+            | Self::SetPrimMarkerBias { .. }
+            | Self::SetLightIntensity { .. }
+            | Self::SetCurveTuning { .. }
+            | Self::SetPhysicsRunning { .. }
+            | Self::UndoEditor
+            | Self::RedoEditor
+            | Self::ExportStage => {}
         }
         Ok(())
     }
@@ -302,9 +524,15 @@ impl ViewportReadModel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum ViewportEvent {
-    Ready { protocol_version: u16 },
-    Snapshot { state: ViewportReadModel },
-    SceneChildren { page: SceneChildrenPage },
+    Ready {
+        protocol_version: u16,
+    },
+    Snapshot {
+        state: ViewportReadModel,
+    },
+    SceneChildren {
+        page: SceneChildrenPage,
+    },
     SearchResults {
         query: String,
         offset: u32,
@@ -312,15 +540,50 @@ pub enum ViewportEvent {
         matches: Vec<SceneSearchMatch>,
         has_more: bool,
     },
-    StageLoadStateChanged { state: StageLoadState },
-    SelectionChanged { selection: SelectionReadModel },
-    CameraTransitionStarted { target: SceneAnchor, mode: FocusMode },
-    PrimVisibilityChanged { target: SceneAnchor, visible: bool },
-    CameraSourceChanged { source: CameraSource },
-    TimelineChanged { timeline: TimelineReadModel },
-    PresentationChanged { presentation: PresentationReadModel },
-    PhysicsChanged { running: bool },
-    CommandRejected { request_id: RequestId, reason: String },
+    StageLoadStateChanged {
+        state: StageLoadState,
+    },
+    SelectionChanged {
+        selection: SelectionReadModel,
+    },
+    CameraTransitionStarted {
+        target: SceneAnchor,
+        mode: FocusMode,
+    },
+    PrimVisibilityChanged {
+        target: SceneAnchor,
+        visible: bool,
+    },
+    CameraSourceChanged {
+        source: CameraSource,
+    },
+    TimelineChanged {
+        timeline: TimelineReadModel,
+    },
+    PresentationChanged {
+        presentation: PresentationReadModel,
+    },
+    PhysicsChanged {
+        running: bool,
+    },
+    CommandRejected {
+        request_id: RequestId,
+        reason: String,
+    },
+    EditorCommandCompleted {
+        operation: EditorOperation,
+        changed_paths: Vec<String>,
+        state: EditorStateReadModel,
+    },
+    EditorPrimState {
+        prim: EditorPrimReadModel,
+    },
+    EditorStageExportChunk {
+        export_id: String,
+        chunk_index: u32,
+        chunk_count: u32,
+        content: String,
+    },
 }
 
 /// Legacy event envelope retained byte/schema compatible with version 1.
