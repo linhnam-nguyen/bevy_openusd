@@ -5771,6 +5771,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "usd_macro",
+ "usd_model",
  "usd_rapier",
  "zip",
 ]
@@ -5786,6 +5787,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "usd_model"
+version = "0.0.1"
+dependencies = [
+ "bitflags 2.13.1",
+]
+
+[[package]]
 name = "usd_rapier"
 version = "0.0.1"
 dependencies = [
@@ -5793,6 +5801,16 @@ dependencies = [
  "log",
  "openusd",
  "rapier3d-f64",
+]
+
+[[package]]
+name = "usd_semantic"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "openusd",
+ "usd_model",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@
 //! is a **non-send** resource (main thread only). The path↔entity index
 //! [`PrimEntities`] is plain data and is a normal `Resource`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -24,10 +24,31 @@ use openusd::usd::{CommittedChange, Stage, StageSinkId};
 ///   variant / reference / layer-mute …); the subtree must be reprojected.
 /// * `changed_info` — a field/value/target changed, namespace intact; the
 ///   corresponding component(s) can be patched in place.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StageChange {
     pub resynced: Vec<String>,
     pub changed_info: Vec<String>,
+}
+
+/// Monotonic revision of the in-memory live stage.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LiveRevision(pub u64);
+
+/// One authoritative, once-drained batch of stage changes.
+///
+/// The batch is retained in [`PendingStageChanges`] for the rest of the
+/// frame, so projection, semantic indexing, and diagnostics can all consume
+/// the same revision without independently draining [`LiveStage`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StageChangeBatch {
+    pub revision: LiveRevision,
+    pub changes: Vec<StageChange>,
+}
+
+impl StageChangeBatch {
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
 }
 
 impl StageChange {
@@ -46,6 +67,7 @@ impl StageChange {
 pub struct LiveStage {
     pub stage: Stage,
     queue: Rc<RefCell<Vec<StageChange>>>,
+    revision: Cell<LiveRevision>,
     // Prim paths whose *next* change was caused by our own author-back and
     // should be swallowed once (the echo guard, PLAN P2). Author-back writes
     // the value the component already holds, so a re-project would be a no-op
@@ -77,14 +99,36 @@ impl LiveStage {
         Self {
             stage,
             queue,
+            revision: Cell::new(LiveRevision::default()),
             suppressed: Rc::new(RefCell::new(std::collections::HashSet::new())),
             sink: Some(sink),
         }
     }
 
     /// Take and clear all changes recorded since the last drain.
-    pub fn drain_changes(&self) -> Vec<StageChange> {
-        std::mem::take(&mut *self.queue.borrow_mut())
+    ///
+    /// A non-empty drain advances the live revision exactly once. Callers
+    /// should pass the returned batch to every consumer for the frame rather
+    /// than draining the stage again.
+    pub fn drain_change_batch(&self) -> Option<StageChangeBatch> {
+        let changes = std::mem::take(&mut *self.queue.borrow_mut());
+        if changes.is_empty() {
+            return None;
+        }
+        let revision = LiveRevision(
+            self.revision
+                .get()
+                .0
+                .checked_add(1)
+                .expect("live stage revision exhausted"),
+        );
+        self.revision.set(revision);
+        Some(StageChangeBatch { revision, changes })
+    }
+
+    /// The most recently drained live revision.
+    pub fn current_revision(&self) -> LiveRevision {
+        self.revision.get()
     }
 
     /// Whether any change is pending (cheap check before doing work).
@@ -154,6 +198,23 @@ pub struct PrimEntities {
     by_entity: HashMap<Entity, String>,
 }
 
+/// The stage-change batch drained for the current frame.
+///
+/// This is intentionally a transient fan-out resource, not another model
+/// representation. It is replaced by [`drain_stage_changes_system`] before
+/// each projection pass and remains readable by later consumers in the same
+/// schedule.
+#[derive(Resource, Default)]
+pub struct PendingStageChanges {
+    batch: Option<StageChangeBatch>,
+}
+
+impl PendingStageChanges {
+    pub fn batch(&self) -> Option<&StageChangeBatch> {
+        self.batch.as_ref()
+    }
+}
+
 impl PrimEntities {
     pub fn insert(&mut self, path: impl Into<String>, entity: Entity) {
         let path = path.into();
@@ -214,7 +275,7 @@ impl PrimEntities {
 // `UsdPrimRef` + `Transform`. Mesh / material / the full field→component
 // routing (RETHINK §12) layer on top of this same shape.
 
-use crate::prim_ref::UsdPrimRef;
+use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 use crate::read::xform::read_transform;
 use crate::route::{SchemaRegistry, StageTime};
 
@@ -370,7 +431,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     );
     world.insert_resource(AnimatedPrims(animated));
     // Projecting authored the initial read; clear so the first sync starts clean.
-    let _ = live.drain_changes();
+    let _ = live.drain_change_batch();
 }
 
 /// Drain the change queue and reproject affected entities.
@@ -381,11 +442,23 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
 ///   to the resynced subtree.
 /// * `changed_info` only → patch the touched prims' transforms in place.
 pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
-    let changes = live.drain_changes();
-    if changes.is_empty() {
+    let Some(batch) = live.drain_change_batch() else {
+        return;
+    };
+    apply_change_batch(world, live, map, &batch);
+}
+
+/// Reproject one already-drained batch without touching the live-stage queue.
+pub fn apply_change_batch(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    batch: &StageChangeBatch,
+) {
+    if batch.is_empty() {
         return;
     }
-    if changes.iter().any(|c| !c.resynced.is_empty()) {
+    if batch.changes.iter().any(|c| !c.resynced.is_empty()) {
         reconcile(world, live, map);
         return;
     }
@@ -395,7 +468,7 @@ pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     // Echo guard: prims we just authored ourselves are swallowed this round.
     let suppressed = live.take_suppressed();
     let mut by_prim: HashMap<String, Vec<String>> = HashMap::new();
-    for change in &changes {
+    for change in &batch.changes {
         for path in change.paths() {
             let prim = prim_of(path).to_string();
             let entry = by_prim.entry(prim).or_default();
@@ -491,6 +564,8 @@ pub struct LiveStagePlugin;
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PrimEntities>()
+            .init_resource::<SemanticEntityIndex>()
+            .init_resource::<PendingStageChanges>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
             .init_resource::<SampledTime>()
@@ -500,7 +575,8 @@ impl Plugin for LiveStagePlugin {
                 Update,
                 (
                     project_on_load_system,
-                    reproject_system,
+                    drain_stage_changes_system,
+                    reproject_from_batch_system,
                     resample_animation_system,
                     apply_display_purposes_system,
                 )
@@ -607,17 +683,112 @@ fn apply_display_purposes_system(world: &mut World) {
     }
 }
 
-/// Drain the live stage's change queue and reproject affected entities.
-fn reproject_system(world: &mut World) {
+/// Drain the live stage's change queue once and publish the batch for this
+/// frame's projection and future semantic consumers.
+fn drain_stage_changes_system(world: &mut World) {
+    let batch = world
+        .get_non_send::<LiveStage>()
+        .and_then(LiveStage::drain_change_batch);
+    world.resource_mut::<PendingStageChanges>().batch = batch;
+}
+
+/// Reproject the batch published by [`drain_stage_changes_system`]. The batch
+/// remains in [`PendingStageChanges`] so later consumers see the same data.
+fn reproject_from_batch_system(world: &mut World) {
+    let batch = world.resource::<PendingStageChanges>().batch.clone();
+    let Some(batch) = batch else {
+        return;
+    };
     let Some(live) = world.remove_non_send::<LiveStage>() else {
         return;
     };
-    if live.has_changes() {
-        let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
-        apply_changes(world, &live, &mut map);
-        world.insert_resource(map);
-    }
+    let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
+    apply_change_batch(world, &live, &mut map, &batch);
+    world.insert_resource(map);
     world.insert_non_send(live);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openusd::usd::Stage;
+
+    #[test]
+    fn non_empty_drains_advance_revision_once_and_are_not_replayed() {
+        let stage = Stage::builder()
+            .in_memory("live-revision.usda")
+            .expect("in-memory stage");
+        let live = LiveStage::new(stage);
+
+        live.enqueue_resync("/World");
+        let first = live.drain_change_batch().expect("first batch");
+        assert_eq!(first.revision, LiveRevision(1));
+        assert_eq!(live.current_revision(), LiveRevision(1));
+        assert_eq!(first.changes.len(), 1);
+        assert!(live.drain_change_batch().is_none());
+
+        live.enqueue_resync("/World/Chair");
+        let second = live.drain_change_batch().expect("second batch");
+        assert_eq!(second.revision, LiveRevision(2));
+        assert_eq!(second.changes[0].resynced, vec!["/World/Chair".to_string()]);
+    }
+
+    #[test]
+    fn pending_batch_is_readable_without_consuming_it() {
+        let batch = StageChangeBatch {
+            revision: LiveRevision(7),
+            changes: vec![StageChange {
+                resynced: vec!["/World".to_string()],
+                changed_info: Vec::new(),
+            }],
+        };
+        let pending = PendingStageChanges {
+            batch: Some(batch.clone()),
+        };
+
+        assert_eq!(pending.batch(), Some(&batch));
+        assert_eq!(pending.batch(), Some(&batch));
+    }
+
+    #[test]
+    fn plugin_publishes_one_batch_for_later_consumers() {
+        let stage = Stage::builder()
+            .in_memory("pending-stage-changes.usda")
+            .expect("in-memory stage");
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+
+        // The first update performs the initial projection and clears any
+        // pre-projection notices, so later notices are the live stream.
+        app.update();
+        assert!(
+            app.world()
+                .resource::<PendingStageChanges>()
+                .batch()
+                .is_none()
+        );
+
+        app.world()
+            .get_non_send::<LiveStage>()
+            .expect("live stage after projection")
+            .enqueue_resync("/World");
+        app.update();
+
+        let pending = app.world().resource::<PendingStageChanges>();
+        let batch = pending.batch().expect("drained batch is published");
+        assert_eq!(batch.revision, LiveRevision(1));
+        assert_eq!(batch.changes.len(), 1);
+
+        // No second drain means the next empty frame clears the fan-out slot.
+        app.update();
+        assert!(
+            app.world()
+                .resource::<PendingStageChanges>()
+                .batch()
+                .is_none()
+        );
+    }
 }
 
 // ─── Authoring back (entity edit → stage) ───────────────────────────

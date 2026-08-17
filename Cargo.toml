@@ -4,6 +4,8 @@ members = [
     "crates/usd_macro",
     "crates/usd_rapier",
     "crates/usd_bevy",
+    "crates/usd_model",
+    "crates/usd_semantic",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
 ]
@@ -16,12 +18,16 @@ openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1
 usd_macro = { path = "crates/usd_macro" }
 usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
+usd_model = { path = "crates/usd_model" }
+usd_semantic = { path = "crates/usd_semantic" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
 
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+bitflags = "2"
+blake3 = "1"
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"

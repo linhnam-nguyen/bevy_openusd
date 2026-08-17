@@ -20,10 +20,11 @@ pub mod sync;
 
 pub use authoring::*;
 pub use live::{
-    AnimatedPrims, LiveStage, LiveStagePlugin, PrimEntities, StageChange, TransformHistory,
-    apply_changes, author_transform, current_transform, project_stage,
+    AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, PendingStageChanges, PrimEntities,
+    StageChange, StageChangeBatch, TransformHistory, apply_change_batch, apply_changes,
+    author_transform, current_transform, project_stage,
 };
-pub use prim_ref::UsdPrimRef;
+pub use prim_ref::{SemanticEntityIndex, UsdEntityKey, UsdPrimRef};
 pub use route::audio::UsdSpatialAudio;
 pub use route::camera::{Projection, UsdCamera};
 pub use route::coverage::UsdProcedural;
@@ -53,6 +54,7 @@ pub struct UsdPlugin;
 impl Plugin for UsdPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<UsdPrimRef>();
+        app.init_resource::<SemanticEntityIndex>();
         if !app.world().contains_resource::<SchemaRegistry>() {
             app.insert_resource(SchemaRegistry::builtin());
         }
