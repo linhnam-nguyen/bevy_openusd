@@ -8,3 +8,4 @@ repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
 bitflags = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

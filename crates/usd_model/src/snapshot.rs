@@ -7,23 +7,24 @@ use crate::identity::{EntityKey, IdentitySource};
 use crate::semantic::SemanticInfo;
 use crate::signature::{GeometrySignature, TransformSignature};
 use crate::value::CanonicalValue;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SemanticProperty {
     pub name: String,
     pub value: CanonicalValue,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SnapshotId(pub String);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SnapshotSource {
     Working { session: String, live_revision: u64 },
     GitCommit { oid: String },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct EntitySnapshot {
     pub key: EntityKey,
     pub prim_path: String,
@@ -36,7 +37,7 @@ pub struct EntitySnapshot {
     pub full_hash: HashDigest,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SemanticSnapshot {
     pub snapshot_id: SnapshotId,
     pub source: SnapshotSource,

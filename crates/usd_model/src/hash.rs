@@ -2,10 +2,12 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// A 256-bit digest used for persistent semantic and cache identity.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct HashDigest([u8; 32]);
 
 impl HashDigest {

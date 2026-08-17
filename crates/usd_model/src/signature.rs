@@ -1,17 +1,18 @@
 //! Quantized transform and geometry signatures.
 
 use crate::hash::HashDigest;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Bounds3 {
     pub min: [f64; 3],
     pub max: [f64; 3],
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct QuantizedPoint3(pub [i64; 3]);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TransformSignature {
     pub translation_mm: [i64; 3],
     pub rotation_quantized: [i32; 4],
@@ -19,7 +20,7 @@ pub struct TransformSignature {
     pub hash: HashDigest,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct GeometrySignature {
     pub vertex_count: u32,
     pub index_count: u32,
@@ -31,5 +32,5 @@ pub struct GeometrySignature {
 }
 
 /// Content-addressed identifier for a derived render payload.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct BlobId(pub String);

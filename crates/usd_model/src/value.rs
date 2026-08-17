@@ -4,7 +4,9 @@
 ///
 /// This intentionally does not expose `openusd::sdf::Value`; historical
 /// snapshots must remain independent from the OpenUSD Rust binding.
-#[derive(Clone, Debug, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CanonicalValue {
     Null,
     Bool(bool),

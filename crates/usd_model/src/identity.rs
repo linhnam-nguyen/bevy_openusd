@@ -1,7 +1,9 @@
 //! Stable identity values for semantic model objects.
 
+use serde::{Deserialize, Serialize};
+
 /// Identity of one logical model object across revisions.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct EntityKey(pub String);
 
 impl EntityKey {
@@ -27,7 +29,7 @@ impl From<&str> for EntityKey {
 }
 
 /// Source used to resolve an [`EntityKey`].
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum IdentitySource {
     RevitUniqueId,
     IfcGuid,

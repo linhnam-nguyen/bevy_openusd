@@ -3,6 +3,7 @@
 //! Viewer implementation lives in [`viewport`], keeping this file as the
 //! composition boundary for the render-server executable.
 
+mod project;
 mod viewport;
 
 fn main() {

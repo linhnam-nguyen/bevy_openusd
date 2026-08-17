@@ -1,6 +1,8 @@
 //! Common semantic fields used for search and grouping.
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SemanticInfo {
     pub category: Option<String>,
     pub family: Option<String>,
