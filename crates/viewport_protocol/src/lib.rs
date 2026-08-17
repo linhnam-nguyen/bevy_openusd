@@ -43,8 +43,9 @@ pub use stream::{
 pub use viewport::{
     CameraSource, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
-    MAX_EDITOR_TEXT_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind,
-    PresentationReadModel, PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference,
+    GroundGridOrigin, MAX_EDITOR_TEXT_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS,
+    OverlayKind, PresentationReadModel, PrimNodeReadModel, SceneAnchor, SceneChildrenPage,
+    ScenePageReference,
     SceneReadModel, SceneSearchMatch, SelectionReadModel, StageLoadState, StageReadModel,
     TimelineReadModel, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
     ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage,

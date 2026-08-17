@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{
     CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, EditorPrimReadModel,
-    EditorStateReadModel, EditorValue, FocusMode, OverlayKind, PROTOCOL_VERSION,
+    EditorStateReadModel, EditorValue, GroundGridOrigin, OverlayKind, PROTOCOL_VERSION,
     PresentationReadModel, SceneAnchor, SelectionReadModel, StageLoadState, StageReadModel,
     TimelineReadModel, ViewportCommand, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
 };
@@ -249,21 +249,27 @@ fn publish_stage_load_state(
                 },
             ));
         }
+        let snapshot = build_read_model(
+            &stage_info,
+            spawned.0 && matches!(state, StageLoadState::Ready),
+            &selected,
+            &scene_index,
+            &camera_mount,
+            &clock,
+            &toggles,
+            &tuning,
+            physics.0,
+        );
+        info!(
+            "[viewport-scene] publishing {:?} snapshot: total_prims={} total_roots={} payload_prims={}",
+            state,
+            snapshot.scene.total_prims,
+            snapshot.scene.total_roots,
+            snapshot.scene.prims.len()
+        );
         outbox.push(ViewportEventEnvelope::new(
             None,
-            ViewportEvent::Snapshot {
-                state: build_read_model(
-                    &stage_info,
-                    spawned.0 && matches!(state, StageLoadState::Ready),
-                    &selected,
-                    &scene_index,
-                    &camera_mount,
-                    &clock,
-                    &toggles,
-                    &tuning,
-                    physics.0,
-                ),
-            },
+            ViewportEvent::Snapshot { state: snapshot },
         ));
         *last = Some((state, scene_index.revision()));
     }
@@ -477,6 +483,10 @@ fn apply_viewport_commands(
             }
             ViewportCommand::SetOverlay { overlay, enabled } => {
                 set_overlay(&mut toggles, overlay, enabled);
+                emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
+            }
+            ViewportCommand::SetGroundGridOrigin { origin } => {
+                toggles.ground_grid_origin = origin;
                 emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
             }
             ViewportCommand::SetPrimMarkerBias { bias } => {
@@ -868,10 +878,9 @@ fn apply_viewport_commands(
 }
 
 /// Applies focus and visibility actions after scene anchors have been mapped
-/// to their private Bevy entities. These implementations deliberately mirror
-/// Frost's current tree behavior: a normal activation frames subtree bounds,
-/// while a context-menu fly-to targets the prim origin at one quarter of the
-/// current camera distance.
+/// to their private Bevy entities. Both selection and fly-to use the same
+/// subtree bounds, so repeating the action does not progressively zoom toward
+/// a prim's transform origin.
 #[allow(clippy::too_many_arguments)]
 fn apply_tree_commands(
     mut inbox: ResMut<ViewportTreeCommandInbox>,
@@ -879,8 +888,11 @@ fn apply_tree_commands(
     mut selected: ResMut<SelectedPrim>,
     scene_index: Res<SceneAnchorIndex>,
     cameras: Query<&ArcballCamera>,
-    transforms: Query<&GlobalTransform>,
+    transforms: Query<&Transform>,
+    child_of: Query<Option<&ChildOf>>,
     extents: Query<&usd_bevy::UsdLocalExtent>,
+    aabbs: Query<Option<&bevy::camera::primitives::Aabb>>,
+    meshes: Query<Option<&Mesh3d>>,
     children: Query<&Children>,
     mut visibility: Query<(Entity, &mut Visibility)>,
     mut fly_to: ResMut<FlyTo>,
@@ -912,28 +924,26 @@ fn apply_tree_commands(
                     continue;
                 };
 
-                let (target_focus, target_distance) = match mode {
-                    FocusMode::FlyToTarget => match transforms.get(entity) {
-                        Ok(transform) => (
-                            transform.translation(),
-                            (camera.distance * 0.25).clamp(0.2, 40.0),
-                        ),
-                        Err(_) => {
-                            reject(
-                                &mut outbox,
-                                request_id,
-                                "cannot focus target before its transform is ready".to_string(),
-                            );
-                            continue;
-                        }
-                    },
-                    FocusMode::FrameTarget => fit_params_for_entity(
-                        entity,
-                        &transforms,
-                        &extents,
-                        &children,
-                        camera.distance,
-                    ),
+                let Some((target_focus, target_distance)) = fit_params_for_entity(
+                    entity,
+                    &transforms,
+                    &child_of,
+                    &extents,
+                    &aabbs,
+                    &meshes,
+                    &children,
+                    camera.distance,
+                ) else {
+                    // A Mesh3d can exist for a frame before Bevy has produced
+                    // its Aabb. Preserve the command and retry next frame so
+                    // the camera never commits to the prim origin as a fake
+                    // fit target.
+                    inbox.push_front(ViewportTreeCommand::Focus {
+                        request_id,
+                        target,
+                        mode,
+                    });
+                    break;
                 };
 
                 selected.0 = Some(entity);
@@ -1012,46 +1022,48 @@ fn set_subtree_visibility(
     }
 }
 
-/// Frost's current subtree-bound calculation, retained verbatim in behavior
-/// behind the protocol so a product client frames the same target the same way.
+/// Computes the subtree bounds used by both public focus modes so a product
+/// client frames the same target the same way.
 fn fit_params_for_entity(
     root: Entity,
-    transforms: &Query<&GlobalTransform>,
+    transforms: &Query<&Transform>,
+    child_of: &Query<Option<&ChildOf>>,
     extents: &Query<&usd_bevy::UsdLocalExtent>,
+    aabbs: &Query<Option<&bevy::camera::primitives::Aabb>>,
+    meshes: &Query<Option<&Mesh3d>>,
     children: &Query<&Children>,
     current_camera_distance: f32,
-) -> (Vec3, f32) {
+) -> Option<(Vec3, f32)> {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     let mut found = false;
+    let mut mesh_bounds_pending = false;
     let mut stack = vec![root];
 
     while let Some(entity) = stack.pop() {
-        if let (Ok(transform), Ok(extent)) = (transforms.get(entity), extents.get(entity)) {
-            let matrix = transform.to_matrix();
-            for index in 0..8 {
-                let corner = Vec3::new(
-                    if index & 1 == 0 {
-                        extent.min[0]
-                    } else {
-                        extent.max[0]
-                    },
-                    if index & 2 == 0 {
-                        extent.min[1]
-                    } else {
-                        extent.max[1]
-                    },
-                    if index & 4 == 0 {
-                        extent.min[2]
-                    } else {
-                        extent.max[2]
-                    },
+        if transforms.get(entity).is_ok() {
+            let matrix = world_matrix(entity, transforms, child_of)?;
+            if let Ok(extent) = extents.get(entity) {
+                include_bounds(
+                    &mut min,
+                    &mut max,
+                    matrix,
+                    Vec3::from_array(extent.min),
+                    Vec3::from_array(extent.max),
                 );
-                let world_corner = matrix.transform_point3(corner);
-                min = min.min(world_corner);
-                max = max.max(world_corner);
+                found = true;
+            } else if let Ok(Some(aabb)) = aabbs.get(entity) {
+                include_bounds(
+                    &mut min,
+                    &mut max,
+                    matrix,
+                    Vec3::from(aabb.center - aabb.half_extents),
+                    Vec3::from(aabb.center + aabb.half_extents),
+                );
+                found = true;
+            } else if meshes.get(entity).ok().flatten().is_some() {
+                mesh_bounds_pending = true;
             }
-            found = true;
         }
         if let Ok(entity_children) = children.get(entity) {
             stack.extend(entity_children.iter());
@@ -1062,14 +1074,71 @@ fn fit_params_for_entity(
         let center = (min + max) * 0.5;
         let size = (max - min).abs();
         let maximum_dimension = size.x.max(size.y).max(size.z).max(0.05);
-        (center, (maximum_dimension * 1.6).clamp(0.2, 200.0))
-    } else if let Ok(transform) = transforms.get(root) {
-        (
-            transform.translation(),
-            (current_camera_distance * 0.25).clamp(0.2, 40.0),
-        )
+        Some((center, (maximum_dimension * 1.6).clamp(0.2, 10_000.0)))
+    } else if mesh_bounds_pending {
+        None
+    } else if transforms.get(root).is_ok() {
+        Some((
+            world_matrix(root, transforms, child_of)?.transform_point3(Vec3::ZERO),
+            current_camera_distance.clamp(0.2, 10_000.0),
+        ))
     } else {
-        (Vec3::ZERO, current_camera_distance)
+        None
+    }
+}
+
+/// Computes the current world matrix from local transforms instead of relying
+/// on `GlobalTransform`, which is propagated later in the frame. This keeps a
+/// selection command correct even when it arrives in the same frame as an
+/// authored transform update.
+fn world_matrix(
+    entity: Entity,
+    transforms: &Query<&Transform>,
+    child_of: &Query<Option<&ChildOf>>,
+) -> Option<Mat4> {
+    let mut chain = Vec::new();
+    let mut current = Some(entity);
+    let mut guard = 0usize;
+    while let Some(entity) = current {
+        let transform = transforms.get(entity).ok()?;
+        chain.push(transform.to_matrix());
+        current = child_of.get(entity).ok().flatten().map(ChildOf::parent);
+        guard += 1;
+        if guard > 10_000 {
+            return None;
+        }
+    }
+
+    Some(
+        chain
+            .into_iter()
+            .rev()
+            .fold(Mat4::IDENTITY, |parent, local| parent * local),
+    )
+}
+
+fn include_bounds(min: &mut Vec3, max: &mut Vec3, matrix: Mat4, local_min: Vec3, local_max: Vec3) {
+    for index in 0..8 {
+        let corner = Vec3::new(
+            if index & 1 == 0 {
+                local_min.x
+            } else {
+                local_max.x
+            },
+            if index & 2 == 0 {
+                local_min.y
+            } else {
+                local_max.y
+            },
+            if index & 4 == 0 {
+                local_min.z
+            } else {
+                local_max.z
+            },
+        );
+        let world_corner = matrix.transform_point3(corner);
+        *min = min.min(world_corner);
+        *max = max.max(world_corner);
     }
 }
 
@@ -1176,6 +1245,7 @@ fn presentation_read_model(
 ) -> PresentationReadModel {
     PresentationReadModel {
         ground_grid: toggles.show_world_grid,
+        ground_grid_origin: toggles.ground_grid_origin,
         world_axes: toggles.show_world_axes,
         prim_markers: toggles.show_prim_markers,
         prim_marker_bias: toggles.prim_marker_bias,
@@ -1539,6 +1609,36 @@ mod tests {
             events[3].event,
             ViewportEvent::PhysicsChanged { running: true }
         ));
+    }
+
+    #[test]
+    fn grid_origin_command_updates_presentation_state_and_event() {
+        let mut app = command_test_app();
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetGroundGridOrigin {
+                origin: GroundGridOrigin::WorldOrigin,
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<DisplayToggles>().ground_grid_origin,
+            GroundGridOrigin::WorldOrigin
+        );
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("grid-origin command publishes a presentation event");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        let ViewportEvent::PresentationChanged { presentation } = event.event else {
+            panic!("expected presentation change");
+        };
+        assert_eq!(
+            presentation.ground_grid_origin,
+            GroundGridOrigin::WorldOrigin
+        );
     }
 
     #[test]

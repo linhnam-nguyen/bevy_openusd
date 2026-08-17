@@ -94,6 +94,17 @@ pub enum OverlayKind {
     Wireframe,
 }
 
+/// Selects the reference plane used by the viewport ground grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroundGridOrigin {
+    /// Follow the lowest loaded renderable geometry bound.
+    #[default]
+    LoadedScene,
+    /// Stay on the Bevy world-origin plane (`y = 0`).
+    WorldOrigin,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FocusMode {
@@ -205,6 +216,9 @@ pub enum ViewportCommand {
     SetOverlay {
         overlay: OverlayKind,
         enabled: bool,
+    },
+    SetGroundGridOrigin {
+        origin: GroundGridOrigin,
     },
     SetPrimMarkerBias {
         bias: f32,
@@ -413,6 +427,7 @@ impl ViewportCommand {
             | Self::SetPlayback { .. }
             | Self::Seek { .. }
             | Self::SetOverlay { .. }
+            | Self::SetGroundGridOrigin { .. }
             | Self::SetPrimMarkerBias { .. }
             | Self::SetLightIntensity { .. }
             | Self::SetCurveTuning { .. }
@@ -457,6 +472,8 @@ pub struct TimelineReadModel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PresentationReadModel {
     pub ground_grid: bool,
+    #[serde(default)]
+    pub ground_grid_origin: GroundGridOrigin,
     pub world_axes: bool,
     pub prim_markers: bool,
     pub prim_marker_bias: f32,
@@ -502,6 +519,7 @@ impl ViewportReadModel {
             },
             presentation: PresentationReadModel {
                 ground_grid: false,
+                ground_grid_origin: GroundGridOrigin::LoadedScene,
                 world_axes: false,
                 prim_markers: false,
                 prim_marker_bias: 1.0,

@@ -11,4 +11,3 @@ pub(crate) use skeleton::{
     setup_skeleton_gizmos_on_top,
 };
 pub(crate) mod visualization;
-pub(crate) use visualization::sync_ground_grid_visibility;

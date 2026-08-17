@@ -93,7 +93,6 @@ impl SceneAnchorIndex {
         &mut self,
         prims: &Query<(
             Entity,
-            &Name,
             &UsdPrimRef,
             Option<&UsdDisplayName>,
             Option<&Visibility>,
@@ -109,16 +108,27 @@ impl SceneAnchorIndex {
             children: Vec<Entity>,
         }
 
-        let prim_entities: HashSet<Entity> = prims.iter().map(|(entity, ..)| entity).collect();
+        let prim_entities: HashSet<Entity> = prims
+            .iter()
+            .filter(|(_, prim, ..)| prim.path != "/")
+            .map(|(entity, ..)| entity)
+            .collect();
         let mut candidates: Vec<Candidate> = prims
             .iter()
+            .filter(|(_, prim, ..)| prim.path != "/")
             .map(
-                |(entity, name, prim, display_name, visibility, children)| Candidate {
+                |(entity, prim, display_name, visibility, children)| Candidate {
                     entity,
                     path: prim.path.clone(),
                     label: display_name
                         .map(|display_name| display_name.0.clone())
-                        .unwrap_or_else(|| name.as_str().to_owned()),
+                        .unwrap_or_else(|| {
+                            prim.path
+                                .rsplit('/')
+                                .find(|segment| !segment.is_empty())
+                                .unwrap_or("/")
+                                .to_owned()
+                        }),
                     visible: !matches!(visibility, Some(Visibility::Hidden)),
                     children: children
                         .map(|children| {
@@ -218,7 +228,6 @@ pub(crate) fn refresh_scene_anchor_index(
             Or<(
                 Added<UsdPrimRef>,
                 Changed<UsdPrimRef>,
-                Changed<Name>,
                 Changed<UsdDisplayName>,
                 Changed<Visibility>,
                 Changed<Children>,
@@ -227,7 +236,6 @@ pub(crate) fn refresh_scene_anchor_index(
     >,
     prims: Query<(
         Entity,
-        &Name,
         &UsdPrimRef,
         Option<&UsdDisplayName>,
         Option<&Visibility>,
@@ -248,5 +256,16 @@ pub(crate) fn refresh_scene_anchor_index(
     }
     if changed || !index.initialized {
         index.rebuild(&prims);
+        let root_count = index
+            .nodes
+            .iter()
+            .filter(|node| node.parent.is_none())
+            .count();
+        info!(
+            "[viewport-scene-index] rebuilt revision={} prims={} roots={}",
+            index.revision,
+            index.nodes.len(),
+            root_count
+        );
     }
 }

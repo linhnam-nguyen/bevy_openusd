@@ -375,6 +375,7 @@ impl ViewportProtocolViewportSnapshot {
                 },
                 presentation: viewport_protocol::PresentationReadModel {
                     ground_grid: true,
+                    ground_grid_origin: viewport_protocol::GroundGridOrigin::LoadedScene,
                     world_axes: true,
                     prim_markers: true,
                     prim_marker_bias: 0.0,

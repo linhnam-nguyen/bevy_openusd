@@ -32,7 +32,6 @@ use crate::viewport::scene::visualization::OverlaysPlugin;
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
-    sync_ground_grid_visibility,
 };
 use crate::viewport::session::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
@@ -118,6 +117,11 @@ pub(crate) fn run() {
         .insert_resource(GroundGrid {
             visible: true,
             color: Color::srgba(0.30, 0.38, 0.50, 0.42),
+            ground_y: None,
+            coverage_radius: bevy_glacial::prelude::LEVEL_HALF
+                .last()
+                .copied()
+                .unwrap_or(640.0),
         })
         .insert_resource(bevy_frost::prelude::AccentColor(
             bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
@@ -227,9 +231,11 @@ pub(crate) fn run() {
                 follow_mounted_camera,
                 tick_stage_time,
                 hide_meshes_on_startup,
-                sync_chase_camera,
-                sync_ground_grid_visibility,
             ),
+        )
+        .add_systems(
+            Update,
+            sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
         );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()

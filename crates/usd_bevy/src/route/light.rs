@@ -177,12 +177,18 @@ impl PrimRoute for LightRoute {
                 e.insert(DirectionalLight {
                     color: lux.color,
                     illuminance: lux.intensity * DISTANT_LUX_SCALE,
+                    shadow_maps_enabled: true,
                     ..default()
                 });
             }
             _ => {
                 let intensity = lux.intensity * POINT_LUMEN_SCALE;
                 let radius = lux.radius.unwrap_or(0.0);
+                // Preserve the legacy viewer behavior: authored point/spot
+                // lights cast shadows, while the high-count cylinder-light
+                // approximation stays shadowless to avoid one cubemap per
+                // fixture overwhelming the renderer.
+                let shadow_maps_enabled = !matches!(lux.area, Some(UsdAreaLight::Cylinder { .. }));
                 if let Some(cone_deg) = lux.cone_angle {
                     let outer = (cone_deg * PI / 180.0).clamp(0.0, PI / 2.0);
                     e.insert(SpotLight {
@@ -191,6 +197,7 @@ impl PrimRoute for LightRoute {
                         radius,
                         outer_angle: outer,
                         inner_angle: outer * 0.9,
+                        shadow_maps_enabled,
                         ..default()
                     });
                 } else {
@@ -198,6 +205,7 @@ impl PrimRoute for LightRoute {
                         color: lux.color,
                         intensity,
                         radius,
+                        shadow_maps_enabled,
                         ..default()
                     });
                 }

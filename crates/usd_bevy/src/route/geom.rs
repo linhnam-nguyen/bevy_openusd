@@ -104,6 +104,11 @@ impl MeshRoute {
             .resource_mut::<Assets<StandardMaterial>>()
             .add(StandardMaterial::default());
         if let Ok(mut e) = world.get_entity_mut(entity) {
+            if let Some([min, max]) = read.extent {
+                e.insert(UsdLocalExtent { min, max });
+            } else {
+                e.remove::<UsdLocalExtent>();
+            }
             e.insert((Mesh3d(mesh_handle), MeshMaterial3d(material)));
             return true;
         }

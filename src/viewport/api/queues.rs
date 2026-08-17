@@ -80,6 +80,10 @@ impl ViewportTreeCommandInbox {
         self.pending.push_back(command);
     }
 
+    pub(crate) fn push_front(&mut self, command: ViewportTreeCommand) {
+        self.pending.push_front(command);
+    }
+
     pub(crate) fn pop(&mut self) -> Option<ViewportTreeCommand> {
         self.pending.pop_front()
     }
