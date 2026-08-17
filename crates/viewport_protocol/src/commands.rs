@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ButtonState, FocusState, InputModifiers, KeyboardInput, PointerMotion,
-    ClientHello, ProtocolValidationError, ReleaseAllInput, ViewportCommand, ViewportMetrics,
+    ButtonState, ClientHello, FocusState, InputModifiers, KeyboardInput, PointerMotion,
+    ProtocolValidationError, ReleaseAllInput, ViewportCommand, ViewportMetrics,
 };
 
 /// Commands accepted from a client. The semantic viewport commands remain in
@@ -25,7 +25,8 @@ impl ClientCommand {
             Self::Handshake(hello) => hello.validate(),
             Self::Stream(StreamCommand::ConfigureViewport { metrics }) => metrics.validate(),
             Self::Input(input) => input.validate(),
-            Self::Session(_) | Self::Stream(_) | Self::Viewport(_) => Ok(()),
+            Self::Session(_) | Self::Stream(_) => Ok(()),
+            Self::Viewport(command) => command.validate(),
         }
     }
 }
@@ -109,7 +110,9 @@ impl InputCommand {
             Self::Keyboard(keyboard) => {
                 validate_sequence(keyboard.sequence)?;
                 if keyboard.code.trim().is_empty() {
-                    return Err(ProtocolValidationError::EmptyField { field: "keyboard.code" });
+                    return Err(ProtocolValidationError::EmptyField {
+                        field: "keyboard.code",
+                    });
                 }
                 if keyboard.code.len() > 64 {
                     return Err(ProtocolValidationError::InvalidInput {

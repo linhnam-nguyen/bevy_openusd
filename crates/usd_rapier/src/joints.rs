@@ -17,9 +17,59 @@
 //!   full per-body bases (Isaac Sim's 90°-rotated chains).
 
 use anyhow::Result;
+use openusd::schemas::physics::{Dof, DriveType};
 use rapier3d_f64::glamx::{DQuat, DVec3};
 use rapier3d_f64::prelude::*;
-use usd_schema::physics::{Dof, JointKind, ReadDrive, ReadJoint};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JointKind {
+    Fixed,
+    Revolute,
+    Prismatic,
+    Spherical,
+    Distance,
+    Generic,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadDrive {
+    pub dof: Dof,
+    pub drive_type: DriveType,
+    pub target_position: Option<f32>,
+    pub target_velocity: Option<f32>,
+    pub damping: f32,
+    pub stiffness: f32,
+    pub max_force: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadLimit {
+    pub dof: Dof,
+    pub low: f32,
+    pub high: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReadJoint {
+    pub path: String,
+    pub kind: JointKind,
+    pub body0: Option<String>,
+    pub body1: Option<String>,
+    pub local_pos0: [f32; 3],
+    pub local_rot0: [f32; 4],
+    pub local_pos1: [f32; 3],
+    pub local_rot1: [f32; 4],
+    pub axis: Option<String>,
+    pub lower_limit: Option<f32>,
+    pub upper_limit: Option<f32>,
+    pub collision_enabled: bool,
+    pub joint_enabled: bool,
+    pub break_force: Option<f32>,
+    pub break_torque: Option<f32>,
+    pub exclude_from_articulation: bool,
+    pub limits: Vec<ReadLimit>,
+    pub drives: Vec<ReadDrive>,
+}
 
 /// Insert the joint into the appropriate Rapier set. `body0`/`body1`
 /// are already-resolved Rapier handles; the caller has converted

@@ -63,4 +63,3 @@ pub fn decode_server_json_line(line: &str) -> serde_json::Result<ServerEventEnve
         ServerWireMessage::Event(envelope) => Ok(envelope),
     }
 }
-

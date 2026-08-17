@@ -4,7 +4,7 @@
 > A lot of the code was carved out of an internal repo to be open-sourced. Special thanks
 > to the team for letting it ship.
 
-A [Bevy](https://bevy.org) 0.18 plugin that loads [OpenUSD](https://openusd.org)
+[A Bevy](https://bevy.org) 0.19 live-stage plugin that loads [OpenUSD](https://openusd.org)
 (`.usda` / `.usdc` / `.usdz`) files as native Bevy scenes, plus an interactive
 viewer/editor binary that ships in the same package.
 
@@ -85,46 +85,44 @@ Keyboard cheat-sheet:
 | `R` | Reload current stage |
 | `Ctrl+K` / `Ctrl+P` | Command palette |
 
-## Use the plugin
+## Use the live-stage plugin
 
 ```rust
 use bevy::prelude::*;
-use bevy_openusd::{UsdAsset, UsdPlugin};
+use openusd::usd::Stage;
+use usd_bevy::{LiveStage, LiveStagePlugin, UsdPlugin};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(UsdPlugin)
-        .add_systems(Startup, load)
+        .add_plugins(LiveStagePlugin)
+        .add_systems(Startup, open_stage)
         .run();
 }
 
-fn load(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let handle: Handle<UsdAsset> = asset_server.load("scene.usdz");
-    commands.insert_resource(Stage(handle));
+fn open_stage(world: &mut World) {
+    let stage = Stage::open("scene.usdz").expect("open USD stage");
+    world.insert_non_send(LiveStage::new(stage));
 }
-
-#[derive(Resource)]
-struct Stage(Handle<UsdAsset>);
 ```
 
-After `SceneRoot(asset.scene.clone())` spawns, the loader's projection appears
-in ECS — every composed prim is an entity carrying `UsdPrimRef { path }` plus
-domain-specific markers (`Mesh3d`, `MeshMaterial3d`, `Light`, `UsdSkelRoot`,
-`UsdRigidBody`, `UsdPhysicsJoint`, `UsdArticulationRoot`, `UsdCustomAttrs`, …).
-Adapter crates pick up the marker components and translate them to engine-side
-representations (Rapier / Avian / your own).
+After `LiveStagePlugin` projects the stage, every composed prim is an entity
+carrying `UsdPrimRef { path }` plus domain-specific markers. The current
+render-server adapts physics markers through the pure `usd_rapier` builders;
+other hosts can consume the same components with their own solver.
 
 ## Layout
 
 ```
 bevy_openusd/
 ├── src/
-│   ├── lib/             plugin: asset loader, scene projection, schema readers
-│   └── bin/             viewer binary (camera, ui, overlays, …)
+│   ├── viewport/        render-server composition, transport, and UI
+│   └── bin/             standalone live-editor binary
 ├── crates/
-│   └── usd_schemas/     typed schema readers — slated for upstreaming into
-│                        openusd-rs, so kept as a sibling crate
+│   ├── usd_bevy/         live-stage projection and schema routes
+│   ├── usd_macro/        USDA snippet macro
+│   └── usd_rapier/       pure OpenUSD physics → Rapier builders
 ├── examples/            standalone tools + probe scripts
 ├── tests/
 │   └── stages/          curated .usda fixtures for integration tests

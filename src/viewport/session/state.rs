@@ -1,23 +1,26 @@
-//! Session-owned resources for the currently opened USD source.
+//! Session-owned state for the currently opened live USD stage.
 
-use bevy::asset::Handle;
 use bevy::prelude::Resource;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use usd_bevy::UsdAsset;
 
-/// Handle of the Bevy asset backing the active USD session.
-#[derive(Resource)]
-pub(crate) struct StageHandle(pub(crate) Handle<UsdAsset>);
+/// Marker and error state for the active stage request.
+///
+/// The stage itself is held by `usd_bevy::LiveStage` as a non-send resource;
+/// this resource only keeps the requested path and an optional open error so
+/// the protocol can distinguish loading from failure.
+#[derive(Resource, Debug, Clone)]
+pub(crate) struct StageHandle {
+    pub(crate) path: PathBuf,
+    pub(crate) error: Option<String>,
+}
 
-/// Whether the current stage asset has been projected into the Bevy world.
-#[derive(Resource, Default)]
+/// Whether the live stage has projected at least one real prim into Bevy.
+#[derive(Resource, Default, Debug, Clone, Copy)]
 pub(crate) struct Spawned(pub(crate) bool);
 
 /// Local filesystem source requested for the current viewport session.
-///
-/// This remains viewport-local: a future host will resolve a revision or
-/// cache reference into the same source abstraction.
-#[derive(Resource)]
+#[derive(Resource, Debug, Clone)]
 pub(crate) struct RequestedAsset {
     pub(crate) name: String,
     pub(crate) root: PathBuf,
@@ -29,90 +32,71 @@ pub struct StageInfo {
     pub default_prim: Option<String>,
     pub layer_count: usize,
     pub variant_count: usize,
-    /// UsdLux totals captured at load time (M9).
     pub lights_directional: usize,
     pub lights_point: usize,
     pub lights_spot: usize,
     pub lights_dome: usize,
-    /// Prims marked `instanceable = true` and, of those, how many were
-    /// recognised as reuses of a prototype we'd already built (M14).
     pub instance_prim_count: usize,
     pub instance_prototype_reuses: usize,
-    /// Prims whose xformOps carry timeSamples (M15).
     pub animated_prim_count: usize,
-    /// UsdSkel totals (M16 read side).
     pub skeleton_count: usize,
     pub skel_root_count: usize,
     pub skel_binding_count: usize,
-    /// UsdRender totals + primary resolution (M19 read side).
     pub render_settings_count: usize,
     pub render_product_count: usize,
     pub render_var_count: usize,
     pub render_primary_resolution: Option<[i32; 2]>,
     pub render_primary_path: Option<String>,
-    /// UsdPhysics totals (M_LAST read side).
     pub rigid_body_count: usize,
     pub physics_scene_count: usize,
     pub joint_count: usize,
-    /// Custom-attribute / customData / assetInfo coverage (M24).
     pub custom_attr_prim_count: usize,
     pub custom_layer_data_entries: usize,
-    /// Subdivision-surface meshes (M25).
     pub subdivision_prim_count: usize,
-    /// Lights with authored `light:link` rels (M26).
     pub light_linked_count: usize,
-    /// Prims carrying `UsdClipsAPI` metadata (M27).
     pub clip_prim_count: usize,
+    pub variants: HashMap<String, Vec<VariantSetInfo>>,
+    pub cameras: Vec<StageCameraInfo>,
+    pub skel_animation_count: usize,
 }
 
-/// Flipped to `true` by the keyboard handler (R key) or the UI panel to
-/// request a force-reload of the current USD asset. The main-loop's
-/// `handle_usd_hot_reload` system reacts on the next frame.
-#[derive(Resource, Default, Debug, Clone)]
-pub struct ReloadRequest {
-    pub requested: bool,
+#[derive(Debug, Clone, Default)]
+pub struct VariantSetInfo {
+    pub name: String,
+    pub selection: Option<String>,
+    /// The current OpenUSD binding exposes effective selections. Options are
+    /// left empty until variant-child enumeration is promoted to its public
+    /// API; authoring still goes through `usd_bevy::authoring::set_variant`.
+    pub options: Vec<String>,
 }
 
-/// Swap the loaded asset at runtime. Set by the Browse-USD file picker.
-/// On the next frame, the viewer despawns current ScenePatchInstances + updates
-/// the RequestedAsset + re-registers the AssetPlugin search roots.
-#[derive(Resource, Default, Debug, Clone)]
-pub struct LoadRequest {
-    pub path: Option<PathBuf>,
+#[derive(Debug, Clone)]
+pub struct StageCameraInfo {
+    pub path: String,
+    pub data: StageCameraData,
 }
 
-/// Live knobs the viewer passes to `UsdLoaderSettings` on every load
-/// / reload: curve + point rendering defaults plus any variant-selection
-/// overrides authored in the Variants panel. Bundled into one Resource
-/// so systems that need both (load_stage, handle_usd_hot_reload,
-/// draw_panel) stay under Bevy's 16-param limit.
+#[derive(Debug, Clone)]
+pub struct StageCameraData {
+    pub focal_length_mm: Option<f32>,
+    pub projection: Option<StageCameraProjection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StageCameraProjection {
+    Perspective,
+    Orthographic,
+}
+
+/// Live editor controls retained by the viewport protocol. Curve values are
+/// kept as presentation state; the current route implementation owns mesh
+/// construction and does not require a loader rebuild.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct LoaderTuning {
     pub curves: CurveTuning,
-    /// `(prim_path, set_name) → selected option`. Empty = honour the
-    /// stage's authored selections.
-    pub variants: std::collections::HashMap<(String, String), String>,
+    pub variants: HashMap<(String, String), String>,
 }
 
-impl LoaderTuning {
-    /// Converts the UI's map-based overrides into loader-facing selections.
-    pub fn to_variant_selections(&self) -> Vec<usd_bevy::VariantSelection> {
-        self.variants
-            .iter()
-            .map(
-                |((prim_path, set_name), option)| usd_bevy::VariantSelection {
-                    prim_path: prim_path.clone(),
-                    set_name: set_name.clone(),
-                    option: option.clone(),
-                },
-            )
-            .collect()
-    }
-}
-
-/// Curve / point rendering defaults. Not a Resource on its own — lives
-/// inside [`LoaderTuning`]. Split so the rebuild-tuned-meshes system
-/// can diff a lightweight `Copy` key without cloning the variant map.
 #[derive(Debug, Clone, Copy)]
 pub struct CurveTuning {
     pub default_radius: f32,
@@ -128,4 +112,16 @@ impl Default for CurveTuning {
             point_scale: 1.0,
         }
     }
+}
+
+/// Flipped by the reload command or the native `R` shortcut.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct ReloadRequest {
+    pub requested: bool,
+}
+
+/// Re-launch request from the native file picker.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct LoadRequest {
+    pub path: Option<PathBuf>,
 }

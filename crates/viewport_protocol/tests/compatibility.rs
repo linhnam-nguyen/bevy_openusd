@@ -35,3 +35,17 @@ fn legacy_event_fixture_keeps_the_version_one_json_shape() {
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
 
+#[test]
+fn ground_grid_origin_command_round_trips_through_json() {
+    let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
+        "grid-origin",
+        ViewportCommand::SetGroundGridOrigin {
+            origin: viewport_protocol::GroundGridOrigin::WorldOrigin,
+        },
+    ));
+    let line = encode_json_line(&message).unwrap();
+
+    assert!(line.contains("set_ground_grid_origin"));
+    assert!(line.contains("world_origin"));
+    assert_eq!(decode_json_line(&line).unwrap(), message);
+}

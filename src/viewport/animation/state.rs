@@ -1,12 +1,5 @@
 use bevy::prelude::Resource;
 
-/// One-frame request to switch the active `UsdSkelAnimation` clip without
-/// rebuilding the USD stage.
-#[derive(Resource, Default, Debug, Clone)]
-pub struct PendingAnimationClip {
-    pub name: Option<String>,
-}
-
 /// Animation playback clock. Time is held in seconds and translated into USD
 /// time codes by the evaluator.
 #[derive(Resource, Debug, Clone, Copy)]

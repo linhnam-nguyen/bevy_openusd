@@ -3,7 +3,7 @@ name = "usd_rapier"
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
-description = "Pure-Rust UsdPhysics → rapier3d-f64 conversion. No Bevy. Consumed by `bevy_openusd_rapier` and any non-Bevy host (gearbox)."
+description = "Pure-Rust UsdPhysics → rapier3d-f64 conversion. No Bevy dependency; consumed by Bevy and non-Bevy hosts."
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
@@ -11,4 +11,3 @@ openusd = { workspace = true, features = ["physics"] }
 rapier3d-f64 = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-usd_schema = { workspace = true }

@@ -18,6 +18,9 @@
 
 use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
+use viewport_protocol::GroundGridOrigin;
+
+use crate::viewport::camera::ArcballCamera;
 
 pub struct OverlaysPlugin;
 
@@ -29,6 +32,32 @@ pub(crate) fn sync_ground_grid_visibility(
     if grid.visible != toggles.show_world_grid {
         grid.visible = toggles.show_world_grid;
     }
+}
+
+/// Binds Glacial's grid to the bottom of the loaded renderable scene. The
+/// small lift is proportional to the geometry extent so millimetre assets do
+/// not float 5 cm above the scene while large assets still avoid z-fighting.
+fn sync_ground_grid_to_scene(
+    extent: Res<SceneExtent>,
+    cameras: Query<&ArcballCamera>,
+    toggles: Res<DisplayToggles>,
+    mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
+) {
+    grid.ground_y = match toggles.ground_grid_origin {
+        GroundGridOrigin::LoadedScene => extent.geometry_ground_y(),
+        GroundGridOrigin::WorldOrigin => Some(0.0),
+    };
+
+    let camera_distance = cameras
+        .single()
+        .map(|camera| camera.distance)
+        .unwrap_or(0.0);
+    grid.coverage_radius = (extent.diag().max(camera_distance) * 2.5).max(
+        bevy_glacial::prelude::LEVEL_HALF
+            .last()
+            .copied()
+            .unwrap_or(640.0),
+    );
 }
 
 impl Plugin for OverlaysPlugin {
@@ -44,11 +73,15 @@ impl Plugin for OverlaysPlugin {
                 Update,
                 (
                     compute_extent,
+                    sync_ground_grid_to_scene,
+                    sync_shadow_cascade_distance,
                     capture_original_light_levels,
                     apply_light_intensity_scale,
                     apply_wireframe_toggle,
+                    sync_ground_grid_visibility,
                 )
-                    .chain(),
+                    .chain()
+                    .before(bevy_glacial::prelude::build_grid_meshes),
             );
     }
 }
@@ -121,6 +154,8 @@ pub struct DisplayToggles {
     /// the eye and doubles as a reference plane since we don't draw a
     /// solid ground plate.
     pub show_world_grid: bool,
+    /// Ground-grid reference plane, controlled by the viewport protocol.
+    pub ground_grid_origin: GroundGridOrigin,
     /// R/G/B axis triad at world origin.
     pub show_world_axes: bool,
     /// Tiny axis gizmo at every geom-bearing prim — invaluable on sparse
@@ -158,6 +193,7 @@ impl Default for DisplayToggles {
         // turns them on via the Overlays panel (O) or the G/X/P hotkeys.
         Self {
             show_world_grid: true,
+            ground_grid_origin: GroundGridOrigin::LoadedScene,
             show_world_axes: false,
             show_prim_markers: false,
             prim_marker_bias: 1.0,
@@ -177,6 +213,9 @@ pub struct SceneExtent {
     pub min: Vec3,
     pub max: Vec3,
     pub count: u32,
+    geometry_min: Vec3,
+    geometry_max: Vec3,
+    geometry_count: u32,
 }
 
 impl Default for SceneExtent {
@@ -185,6 +224,9 @@ impl Default for SceneExtent {
             min: Vec3::splat(f32::INFINITY),
             max: Vec3::splat(f32::NEG_INFINITY),
             count: 0,
+            geometry_min: Vec3::splat(f32::INFINITY),
+            geometry_max: Vec3::splat(f32::NEG_INFINITY),
+            geometry_count: 0,
         }
     }
 }
@@ -208,6 +250,18 @@ impl SceneExtent {
             (self.min + self.max) * 0.5
         }
     }
+
+    /// Returns a scene-derived ground reference just above the lowest
+    /// renderable geometry. This intentionally ignores lights, cameras,
+    /// Xforms, and the synthetic stage root.
+    pub fn geometry_ground_y(&self) -> Option<f32> {
+        if self.geometry_count == 0 {
+            return None;
+        }
+        let geometry_diag = (self.geometry_max - self.geometry_min).length().max(0.01);
+        let lift = (geometry_diag * 0.0005).clamp(0.0001, 0.05);
+        Some(self.geometry_min.y + lift)
+    }
 }
 
 /// Recomputes world-space scene bounds from authored extents or mesh AABBs.
@@ -217,6 +271,7 @@ fn compute_extent(
             &GlobalTransform,
             Option<&usd_bevy::UsdLocalExtent>,
             Option<&bevy::camera::primitives::Aabb>,
+            Option<&Mesh3d>,
         ),
         With<UsdPrimRef>,
     >,
@@ -224,8 +279,13 @@ fn compute_extent(
 ) {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
+    let mut geometry_min = Vec3::splat(f32::INFINITY);
+    let mut geometry_max = Vec3::splat(f32::NEG_INFINITY);
     let mut count = 0u32;
-    for (gt, local, aabb) in prims.iter() {
+    let mut geometry_count = 0u32;
+    for (gt, local, aabb, mesh) in prims.iter() {
+        let mut prim_min = Vec3::splat(f32::INFINITY);
+        let mut prim_max = Vec3::splat(f32::NEG_INFINITY);
         if let Some(le) = local {
             // Project all 8 corners of the authored local AABB through
             // the prim's world transform, then fold min/max. Gives an
@@ -239,8 +299,8 @@ fn compute_extent(
                     if i & 4 == 0 { le.min[2] } else { le.max[2] },
                 );
                 let w = m.transform_point3(c);
-                min = min.min(w);
-                max = max.max(w);
+                prim_min = prim_min.min(w);
+                prim_max = prim_max.max(w);
             }
         } else if let Some(aabb) = aabb {
             // Bevy auto-computes an `Aabb` component for any mesh
@@ -273,17 +333,57 @@ fn compute_extent(
                     },
                 );
                 let w = m.transform_point3(local);
-                min = min.min(w);
-                max = max.max(w);
+                prim_min = prim_min.min(w);
+                prim_max = prim_max.max(w);
             }
         } else {
             // Fallback: just the prim's origin. Coarser but cheap and
             // stable for prims without authored extent.
             let p = gt.translation();
-            min = min.min(p);
-            max = max.max(p);
+            prim_min = prim_min.min(p);
+            prim_max = prim_max.max(p);
+        }
+        min = min.min(prim_min);
+        max = max.max(prim_max);
+        if mesh.is_some() {
+            geometry_min = geometry_min.min(prim_min);
+            geometry_max = geometry_max.max(prim_max);
+            geometry_count += 1;
         }
         count += 1;
     }
-    *extent = SceneExtent { min, max, count };
+    *extent = SceneExtent {
+        min,
+        max,
+        count,
+        geometry_min,
+        geometry_max,
+        geometry_count,
+    };
+}
+
+/// Keeps directional-light shadow coverage aligned with the current viewer
+/// scale. Bevy's default 150 m cascade limit is a good game-world default but
+/// clips shadows when an imported USD stage or its framing camera is larger.
+fn sync_shadow_cascade_distance(
+    extent: Res<SceneExtent>,
+    cameras: Query<&ArcballCamera>,
+    mut lights: Query<&mut bevy::light::CascadeShadowConfig, With<DirectionalLight>>,
+) {
+    let camera_distance = cameras
+        .single()
+        .map(|camera| camera.distance)
+        .unwrap_or(0.0);
+    let desired = (extent.diag().max(camera_distance) * 2.0).clamp(150.0, 10_000.0);
+
+    for mut config in &mut lights {
+        let current = config.bounds.last().copied().unwrap_or_default();
+        if (current - desired).abs() > current.max(1.0) * 0.05 {
+            *config = bevy::light::CascadeShadowConfigBuilder {
+                maximum_distance: desired,
+                ..default()
+            }
+            .into();
+        }
+    }
 }

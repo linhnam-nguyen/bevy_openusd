@@ -5,8 +5,8 @@ mod state;
 
 pub(crate) use lifecycle::{
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
-    sweep_variant_tempfiles,
 };
 pub(crate) use state::{
-    LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageHandle, StageInfo,
+    LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageCameraData,
+    StageCameraInfo, StageCameraProjection, StageHandle, StageInfo, VariantSetInfo,
 };

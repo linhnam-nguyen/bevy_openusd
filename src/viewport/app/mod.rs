@@ -18,35 +18,24 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use headless::HeadlessRenderPlugin;
-use usd_bevy::UsdPlugin;
+use usd_bevy::{LiveStagePlugin, UsdPlugin};
 
-use crate::viewport::animation::{
-    PendingAnimationClip, UsdStageTime, apply_live_animation_clip, drive_blend_shape_weights,
-    drive_skel_animations, evaluate_animated_prims, tick_stage_time,
-};
+use crate::viewport::animation::{UsdStageTime, tick_stage_time};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin};
 use crate::viewport::camera::{
     ArcballCamera, ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to,
     fit_camera_once, follow_mounted_camera, sync_chase_camera,
 };
-use crate::viewport::diagnostics::{
-    debug_dump_layout_once, debug_dump_physics_once, debug_dump_physics_tick,
-    debug_origin_prims_once,
-};
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
-use crate::viewport::physics::{
-    lift_scene_off_ground, spawn_physics_ground, sync_collider_debug_visibility,
-};
+use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::scene::visualization::OverlaysPlugin;
 use crate::viewport::scene::{
-    HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos, draw_joint_gizmos,
-    draw_selected_prim_highlight, hide_meshes_on_startup, rebuild_tuned_meshes,
-    setup_skeleton_gizmos_on_top, sync_ground_grid_visibility,
+    HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
+    draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
 };
 use crate::viewport::session::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
-    sweep_variant_tempfiles,
 };
 use crate::viewport::transport::{ViewportTransport, parse_launch_options};
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT, ViewerUiPlugin};
@@ -119,6 +108,8 @@ pub(crate) fn run() {
     app.add_plugins(EguiPlugin::default())
         .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
         .add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .add_plugins(RapierPhysicsPlugin)
         .add_plugins(ArcballCameraPlugin)
         .add_plugins(GroundGridPlugin)
         .add_plugins(AxisGizmoPlugin)
@@ -126,6 +117,11 @@ pub(crate) fn run() {
         .insert_resource(GroundGrid {
             visible: true,
             color: Color::srgba(0.30, 0.38, 0.50, 0.42),
+            ground_y: None,
+            coverage_radius: bevy_glacial::prelude::LEVEL_HALF
+                .last()
+                .copied()
+                .unwrap_or(640.0),
         })
         .insert_resource(bevy_frost::prelude::AccentColor(
             bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
@@ -144,8 +140,7 @@ pub(crate) fn run() {
     }
 
     app.add_plugins(ViewportBridgePlugin)
-        .add_plugins(OverlaysPlugin)
-        .add_plugins(crate::viewport::physics::gizmos::PhysicsOverlayPlugin);
+        .add_plugins(OverlaysPlugin);
 
     if !launch_options.headless {
         app.add_plugins(ViewerKeyboardPlugin)
@@ -197,19 +192,14 @@ pub(crate) fn run() {
         });
     }
 
-    // The USD physics adapter owns its own Rapier f64 world via
-    // `RapierAdapterPlugin`. The play button on the ribbon flips
-    // `PhysicsActive` to start/stop the sim. Default OFF;
-    // `BEVY_OPENUSD_PHYSICS=1` makes it start playing immediately.
+    // Keep the public play/pause state independent from the transport. The
+    // viewport-owned adapter consumes current `usd_bevy` markers and builds
+    // the Rapier world through the pure `usd_rapier` crate.
     let physics_initially_active = std::env::var("BEVY_OPENUSD_PHYSICS")
         .ok()
         .map(|v| matches!(v.as_str(), "1" | "true" | "on"))
         .unwrap_or(false);
-    app.add_plugins(usd_bevy::physics::RapierAdapterPlugin)
-        .insert_resource(usd_bevy::physics::PhysicsActive(physics_initially_active))
-        .add_systems(Startup, spawn_physics_ground)
-        .add_systems(Update, lift_scene_off_ground)
-        .add_systems(Update, sync_collider_debug_visibility);
+    app.insert_resource(PhysicsActive(physics_initially_active));
 
     app.init_resource::<Spawned>()
         .init_resource::<ReloadRequest>()
@@ -218,7 +208,6 @@ pub(crate) fn run() {
         .init_resource::<FlyTo>()
         .init_resource::<CameraMount>()
         .init_resource::<LoaderTuning>()
-        .init_resource::<PendingAnimationClip>()
         .init_resource::<UsdStageTime>()
         .init_resource::<CameraBookmarks>()
         .insert_resource(StageInfo {
@@ -229,36 +218,25 @@ pub(crate) fn run() {
             name: asset_path,
             root: asset_root.clone(),
         })
-        .add_systems(
-            Startup,
-            (sweep_variant_tempfiles, load_stage, spawn_camera_and_ground),
-        )
+        .add_systems(Startup, (load_stage, spawn_camera_and_ground))
         .add_systems(
             Update,
             (
                 spawn_when_ready,
                 fit_camera_once,
-                debug_origin_prims_once,
-                debug_dump_layout_once,
-                debug_dump_physics_once,
-                debug_dump_physics_tick,
                 handle_usd_hot_reload,
                 apply_load_request,
                 apply_fly_to,
                 draw_selected_prim_highlight,
                 follow_mounted_camera,
-                rebuild_tuned_meshes,
                 tick_stage_time,
-                evaluate_animated_prims,
-                drive_skel_animations,
-                drive_blend_shape_weights,
-                draw_joint_gizmos,
                 hide_meshes_on_startup,
-                sync_chase_camera,
-                sync_ground_grid_visibility,
             ),
         )
-        .add_systems(Update, apply_live_animation_clip);
+        .add_systems(
+            Update,
+            sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
+        );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()
         .map(|v| matches!(v.as_str(), "1" | "true" | "on"))
@@ -285,11 +263,11 @@ fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
     ribbon.toggle(RIBBON_LEFT, RIB_TREE);
 }
 
-/// Resolves the CLI stage argument into an AssetServer-relative name and root.
+/// Resolves the CLI stage argument into a stage path and its asset root.
 ///
 /// - `cargo run` with no argument loads the self-contained spinner sample.
-/// - `cargo run -- path/to/file.usda` roots the AssetServer at the file's
-///   parent directory, preserving relative USD sublayer references.
+/// - `cargo run -- path/to/file.usda` roots relative USD references at the
+///   file's parent directory.
 fn resolve_requested_asset(arg: Option<String>) -> (String, PathBuf) {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 

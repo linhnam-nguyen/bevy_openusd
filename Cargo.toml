@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/usd_schema",
+    "crates/usd_macro",
     "crates/usd_rapier",
     "crates/usd_bevy",
     "crates/viewport_protocol",
@@ -11,13 +11,17 @@ exclude = ["xtra"]
 
 [workspace.dependencies]
 # Keep every USD layer on one exact upstream revision. Updating this single
-# entry updates usd_schema, usd_rapier, and usd_bevy together.
-openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa" }
-usd_schema = { path = "crates/usd_schema" }
+# entry updates usd_macro, usd_rapier, and usd_bevy together.
+openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = ["geom", "shade", "skel", "lux", "physics", "media", "vol", "render", "proc", "ui"] }
+usd_macro = { path = "crates/usd_macro" }
 usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
+
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"
@@ -38,22 +42,33 @@ license = "MIT"
 description = "Interactive viewer for OpenUSD scenes — built on bevy + the usd_bevy plugin."
 repository = "https://github.com/bresilla/bevy_openusd"
 build = "build.rs"
+default-run = "usdview"
+autotests = false
+autoexamples = false
 
 [[bin]]
 name = "usdview"
 path = "src/main.rs"
 
+[[test]]
+name = "live_projection"
+path = "tests/live_projection.rs"
+
+[[test]]
+name = "rapier_bridge"
+path = "tests/rapier_bridge.rs"
+
+[[example]]
+name = "pack_usdz"
+path = "examples/pack_usdz.rs"
+
 [dependencies]
-# The Bevy USD plugin: asset loader, scene projection, marker
-# components, Rapier physics adapter. Single dep brings in everything
-# needed to load a USD into a Bevy app.
+# Current live USD projection and marker routes.
 usd_bevy = { workspace = true }
-# Pure-Rust USD readers/writers — the viewer reads camera projection
-# and anim track data directly off the loaded `Stage` without going
-# through Bevy components.
-usd_schema = { workspace = true }
-# Direct Rapier dep for the viewer's static-ground collider authoring;
-# `usd_bevy::physics::PhysicsWorld` exposes the Rapier sets we mutate.
+# Pure USD-physics → Rapier builders used by the viewport-owned adapter.
+usd_rapier = { workspace = true }
+openusd = { workspace = true }
+# Direct Rapier dep for the viewport-owned f64 simulation state.
 rapier3d-f64 = { workspace = true }
 viewport_protocol = { workspace = true }
 serde_json = { workspace = true }
