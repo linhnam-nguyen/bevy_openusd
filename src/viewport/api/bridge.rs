@@ -17,6 +17,7 @@ use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::semantic::SemanticWorkingStore;
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
 
 /// Installs the in-process implementation of the public viewport contract.
@@ -73,6 +74,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SceneQueryService>()
+            .init_resource::<SemanticWorkingStore>()
             .init_resource::<EditorHistories>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
