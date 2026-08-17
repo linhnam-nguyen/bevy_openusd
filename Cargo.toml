@@ -7,6 +7,7 @@ members = [
     "crates/usd_model",
     "crates/usd_semantic",
     "crates/usd_diff",
+    "crates/usd_git",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
 ]
@@ -22,6 +23,7 @@ usd_bevy = { path = "crates/usd_bevy" }
 usd_model = { path = "crates/usd_model" }
 usd_semantic = { path = "crates/usd_semantic" }
 usd_diff = { path = "crates/usd_diff" }
+usd_git = { path = "crates/usd_git" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
 turso = { version = "0.7.1", default-features = false }
@@ -66,6 +68,10 @@ path = "tests/live_projection.rs"
 [[test]]
 name = "rapier_bridge"
 path = "tests/rapier_bridge.rs"
+
+[[test]]
+name = "git_materialization"
+path = "tests/git_materialization.rs"
 
 [[example]]
 name = "pack_usdz"
@@ -148,5 +154,7 @@ image = { workspace = true, features = ["png"] }
 
 [dev-dependencies]
 openusd = { workspace = true }
+usd_git = { workspace = true }
+tempfile = "3"
 zip = { workspace = true, features = ["deflate"] }
 image = { workspace = true, features = ["png"] }
