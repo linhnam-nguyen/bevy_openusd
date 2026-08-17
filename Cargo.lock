@@ -6861,6 +6861,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "usd_diff"
+version = "0.0.1"
+dependencies = [
+ "usd_model",
+]
+
+[[package]]
 name = "usd_macro"
 version = "0.0.1"
 dependencies = [

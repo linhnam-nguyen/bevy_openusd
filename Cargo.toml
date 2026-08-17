@@ -6,6 +6,7 @@ members = [
     "crates/usd_bevy",
     "crates/usd_model",
     "crates/usd_semantic",
+    "crates/usd_diff",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
 ]
@@ -20,6 +21,7 @@ usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
 usd_model = { path = "crates/usd_model" }
 usd_semantic = { path = "crates/usd_semantic" }
+usd_diff = { path = "crates/usd_diff" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
 turso = { version = "0.7.1", default-features = false }
