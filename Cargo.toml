@@ -76,6 +76,7 @@ path = "examples/pack_usdz.rs"
 usd_bevy = { workspace = true }
 usd_model = { workspace = true }
 usd_semantic = { workspace = true }
+usd_diff = { workspace = true }
 # Pure USD-physics → Rapier builders used by the viewport-owned adapter.
 usd_rapier = { workspace = true }
 openusd = { workspace = true }

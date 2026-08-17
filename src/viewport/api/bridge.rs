@@ -20,7 +20,7 @@ use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::semantic::{
-    SemanticQuery, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
+    SemanticDiffState, SemanticQuery, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
     synchronize_live_stage,
 };
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
@@ -90,6 +90,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<SemanticSyncState>()
+            .init_resource::<SemanticDiffState>()
             .init_resource::<SemanticSearchRequests>()
             .init_resource::<EditorHistories>()
             .add_systems(Startup, emit_viewport_ready)

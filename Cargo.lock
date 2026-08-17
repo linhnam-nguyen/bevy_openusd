@@ -6922,6 +6922,7 @@ dependencies = [
  "tokio",
  "turso",
  "usd_bevy",
+ "usd_diff",
  "usd_model",
  "usd_rapier",
  "usd_semantic",

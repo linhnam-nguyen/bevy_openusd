@@ -12,6 +12,7 @@ use std::sync::{Mutex, mpsc};
 use bevy::prelude::{Resource, World};
 use openusd::usd::{PrimPredicate, Stage};
 use usd_bevy::{LiveRevision, LiveStage, PendingStageChanges};
+use usd_diff::{DiffSummary, StageDiff};
 use usd_model::{EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
@@ -280,6 +281,65 @@ pub(crate) struct SemanticSyncState {
     revision: Option<LiveRevision>,
 }
 
+/// Manual working-vs-baseline comparison state for diagnostics.
+///
+/// The baseline is intentionally an in-memory snapshot. Git-backed baselines
+/// are introduced by the later `usd_git` milestone; this resource only makes
+/// the current live semantic snapshot observable through `usd_diff`.
+#[derive(Resource, Default)]
+pub(crate) struct SemanticDiffState {
+    baseline: Option<SemanticSnapshot>,
+    working: Option<SemanticSnapshot>,
+    session_id: Option<u64>,
+    diff: Option<StageDiff>,
+}
+
+impl SemanticDiffState {
+    pub(crate) fn update_working(&mut self, session_id: u64, snapshot: SemanticSnapshot) {
+        if self.session_id != Some(session_id) {
+            self.baseline = None;
+            self.diff = None;
+            self.session_id = Some(session_id);
+        }
+        self.working = Some(snapshot);
+        self.recompute();
+    }
+
+    pub(crate) fn capture_baseline(&mut self) -> bool {
+        let Some(working) = self.working.clone() else {
+            return false;
+        };
+        self.baseline = Some(working);
+        self.recompute();
+        true
+    }
+
+    pub(crate) fn clear_baseline(&mut self) {
+        self.baseline = None;
+        self.diff = None;
+    }
+
+    pub(crate) fn has_working_snapshot(&self) -> bool {
+        self.working.is_some()
+    }
+
+    pub(crate) fn has_baseline(&self) -> bool {
+        self.baseline.is_some()
+    }
+
+    pub(crate) fn summary(&self) -> Option<DiffSummary> {
+        self.diff.as_ref().map(|diff| diff.summary)
+    }
+
+    fn recompute(&mut self) {
+        self.diff = self
+            .baseline
+            .as_ref()
+            .zip(self.working.as_ref())
+            .map(|(baseline, working)| usd_diff::compare(baseline, working));
+    }
+}
+
 /// Synchronize the semantic working store from the retained live-stage batch.
 ///
 /// This is an exclusive system because `LiveStage` is a non-send resource and
@@ -380,7 +440,10 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot(request_id, snapshot.clone());
             if submitted {
-                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot);
+                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
+                    diff_state.update_working(session_id, snapshot);
+                }
             }
             submitted
         }
@@ -390,7 +453,10 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 .resource::<SemanticWorkingStore>()
                 .submit_delta(request_id, update.request);
             if submitted {
-                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot);
+                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
+                    diff_state.update_working(session_id, snapshot);
+                }
             }
             submitted
         }
@@ -470,12 +536,13 @@ mod tests {
     use bevy::prelude::World;
     use openusd::usd::Stage;
     use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
-    use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotSource};
+    use usd_model::{CanonicalValue, EntityKey, HashDigest, SemanticSnapshot, SnapshotSource};
     use usd_semantic::{SemanticConfig, SemanticExtractor};
 
     use super::{
-        SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse,
-        SemanticSyncState, SemanticWorkingStore, changed_info_update, synchronize_live_stage,
+        SemanticDiffState, SemanticFilter, SemanticIncrementalUpdate, SemanticQuery,
+        SemanticResponse, SemanticSyncState, SemanticWorkingStore, changed_info_update,
+        synchronize_live_stage,
     };
 
     fn snapshot() -> Result<SemanticSnapshot> {
@@ -706,6 +773,47 @@ mod tests {
         assert_eq!(delta.request.upserts[0].prim_path, "/World/Robot");
         assert!(delta.request.removed_paths.is_empty());
         assert_eq!(delta.snapshot.entities.len(), before.entities.len());
+        Ok(())
+    }
+
+    #[test]
+    fn manual_baseline_recomputes_for_working_changes_and_resets_on_reload() -> Result<()> {
+        let initial = snapshot()?;
+        let mut state = SemanticDiffState::default();
+        state.update_working(1, initial.clone());
+
+        assert!(state.capture_baseline());
+        let initial_summary = state.summary().expect("baseline and working are present");
+        assert_eq!(initial_summary.added, 0);
+        assert_eq!(initial_summary.removed, 0);
+        assert_eq!(initial_summary.changed, 0);
+        assert_eq!(initial_summary.unchanged, initial.entities.len());
+
+        let mut changed = initial;
+        let key = changed
+            .entities
+            .keys()
+            .next()
+            .cloned()
+            .expect("fixture contains semantic entities");
+        let entity = changed
+            .entities
+            .get_mut(&key)
+            .expect("entity key came from the snapshot");
+        entity.prim_path.push_str("/Moved");
+        entity.full_hash = HashDigest::new([0xa5; HashDigest::BYTE_LEN]);
+        state.update_working(1, changed);
+
+        let summary = state.summary().expect("baseline and working are present");
+        assert_eq!(summary.changed, 1);
+        assert_eq!(summary.path, 1);
+        assert_eq!(summary.transform, 0);
+        assert_eq!(summary.metadata, 0);
+        assert_eq!(summary.geometry, 0);
+
+        state.update_working(2, snapshot()?);
+        assert!(!state.has_baseline());
+        assert_eq!(state.summary(), None);
         Ok(())
     }
 

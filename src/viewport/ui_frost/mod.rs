@@ -30,6 +30,7 @@ use crate::viewport::camera::ArcballCamera;
 use crate::viewport::camera::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
 use crate::viewport::diagnostics::log_capture::{LoaderLog, LogLine};
 use crate::viewport::scene::SelectedPrim;
+use crate::viewport::semantic::SemanticDiffState;
 use crate::viewport::session::{LoadRequest, LoaderTuning, StageCameraProjection, StageInfo};
 use viewport_protocol::{FocusMode, ViewportCommand};
 
@@ -984,6 +985,7 @@ fn draw_info_panel(
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
     info: Res<StageInfo>,
+    mut diff: ResMut<SemanticDiffState>,
     mut viewport_commands: ResMut<ViewportCommandInbox>,
     prims: Query<&UsdPrimRef>,
     meshes_q: Query<&Mesh3d, With<UsdPrimRef>>,
@@ -1020,6 +1022,34 @@ fn draw_info_panel(
                 readout_row(ui, "prims", &prims.iter().count().to_string());
                 readout_row(ui, "meshes", &meshes_q.iter().count().to_string());
                 readout_row(ui, "variants", &info.variant_count.to_string());
+            });
+            pane.section("info_diff", "Working diff", true, |ui| {
+                if !diff.has_baseline() {
+                    if diff.has_working_snapshot() {
+                        sub_caption(ui, "No manual baseline captured");
+                        if wide_button(ui, "Capture current as baseline", accent_col).clicked() {
+                            diff.capture_baseline();
+                        }
+                    } else {
+                        sub_caption(ui, "Waiting for semantic snapshot");
+                    }
+                } else if let Some(summary) = diff.summary() {
+                    readout_row(ui, "added", &summary.added.to_string());
+                    readout_row(ui, "removed", &summary.removed.to_string());
+                    readout_row(ui, "changed", &summary.changed.to_string());
+                    readout_row(ui, "unchanged", &summary.unchanged.to_string());
+                    let flag_labels = [
+                        format!("{} transform", summary.transform),
+                        format!("{} geometry", summary.geometry),
+                        format!("{} metadata", summary.metadata),
+                        format!("{} path", summary.path),
+                    ];
+                    let refs: Vec<&str> = flag_labels.iter().map(String::as_str).collect();
+                    badge_row(ui, "flags", &refs, accent_col);
+                    if wide_button(ui, "Clear manual baseline", accent_col).clicked() {
+                        diff.clear_baseline();
+                    }
+                }
             });
             pane.section("info_lights", "Lights & instances", true, |ui| {
                 let light_labels = [
