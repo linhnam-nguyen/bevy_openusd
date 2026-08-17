@@ -13,9 +13,12 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use bevy::prelude::*;
 use openusd::usd::{CommittedChange, Stage, StageSinkId};
+
+static NEXT_LIVE_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// One committed stage change, copied out of the borrowed [`CommittedChange`]
 /// so it can outlive the sink callback and be drained on a later frame.
@@ -66,6 +69,7 @@ impl StageChange {
 /// A reprojection system drains the queue once per frame.
 pub struct LiveStage {
     pub stage: Stage,
+    session_id: u64,
     queue: Rc<RefCell<Vec<StageChange>>>,
     revision: Cell<LiveRevision>,
     // Prim paths whose *next* change was caused by our own author-back and
@@ -98,6 +102,7 @@ impl LiveStage {
         });
         Self {
             stage,
+            session_id: NEXT_LIVE_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             queue,
             revision: Cell::new(LiveRevision::default()),
             suppressed: Rc::new(RefCell::new(std::collections::HashSet::new())),
@@ -129,6 +134,11 @@ impl LiveStage {
     /// The most recently drained live revision.
     pub fn current_revision(&self) -> LiveRevision {
         self.revision.get()
+    }
+
+    /// Stable identity for this live-stage lifetime, distinct across reloads.
+    pub fn session_id(&self) -> u64 {
+        self.session_id
     }
 
     /// Whether any change is pending (cheap check before doing work).

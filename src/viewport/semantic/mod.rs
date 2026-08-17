@@ -1,26 +1,42 @@
 //! Working semantic query service backed by an in-memory Turso database.
 //!
-//! This module is intentionally not wired into `ViewportCommand::SearchScene`
-//! yet. `SceneQueryService` remains the active migration path until the
-//! semantic result shape is integrated with scene-anchor reveal paging.
+//! Semantic rows remain renderer-neutral. The viewport bridge adapts their
+//! prim paths through `SceneAnchorIndex` when publishing search results.
 
 mod query;
 mod store;
 
+use std::collections::HashSet;
 use std::sync::{Mutex, mpsc};
 
-use bevy::prelude::Resource;
-use usd_model::SemanticSnapshot;
+use bevy::prelude::{Resource, World};
+use openusd::usd::{PrimPredicate, Stage};
+use usd_bevy::{LiveRevision, LiveStage, PendingStageChanges};
+use usd_model::{EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
+use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 pub(crate) use query::{GroupField, SemanticFilter, SemanticQuery, SemanticQueryResult};
 
 use store::SemanticDatabase;
 
 #[derive(Debug)]
+pub(crate) struct SemanticIncrementalUpdate {
+    pub(crate) snapshot_id: SnapshotId,
+    pub(crate) source: SnapshotSource,
+    pub(crate) config_hash: HashDigest,
+    pub(crate) upserts: Vec<EntitySnapshot>,
+    pub(crate) removed_paths: Vec<String>,
+}
+
+#[derive(Debug)]
 enum SemanticCommand {
     ReplaceSnapshot {
         request_id: String,
         snapshot: SemanticSnapshot,
+    },
+    ApplyDelta {
+        request_id: String,
+        update: SemanticIncrementalUpdate,
     },
     Query {
         request_id: String,
@@ -33,6 +49,11 @@ pub(crate) enum SemanticResponse {
     SnapshotLoaded {
         request_id: String,
         entity_count: u32,
+    },
+    DeltaApplied {
+        request_id: String,
+        upserted: u32,
+        removed: u32,
     },
     QueryResult {
         request_id: String,
@@ -90,6 +111,19 @@ impl SemanticWorkingStore {
             .is_ok()
     }
 
+    pub(crate) fn submit_delta(
+        &self,
+        request_id: impl Into<String>,
+        update: SemanticIncrementalUpdate,
+    ) -> bool {
+        self.commands
+            .send(SemanticCommand::ApplyDelta {
+                request_id: request_id.into(),
+                update,
+            })
+            .is_ok()
+    }
+
     pub(crate) fn drain_responses(&self) -> Vec<SemanticResponse> {
         let Ok(responses) = self.responses.lock() else {
             return Vec::new();
@@ -107,8 +141,44 @@ fn semantic_worker(
         .build()
         .expect("semantic worker runtime should build");
     let mut database = runtime.block_on(SemanticDatabase::open()).ok();
+    let mut buffered_command = None;
 
-    while let Ok(command) = pending_commands.recv() {
+    loop {
+        let Some(command) = buffered_command
+            .take()
+            .or_else(|| pending_commands.recv().ok())
+        else {
+            break;
+        };
+
+        // Preserve the old search-worker behavior: a burst of consecutive
+        // query requests can be coalesced, while snapshot/delta commands stay
+        // ordered and act as barriers for the query stream.
+        let command = match command {
+            SemanticCommand::Query {
+                mut request_id,
+                mut query,
+            } => {
+                while let Ok(next) = pending_commands.try_recv() {
+                    match next {
+                        SemanticCommand::Query {
+                            request_id: newer_request_id,
+                            query: newer_query,
+                        } => {
+                            request_id = newer_request_id;
+                            query = newer_query;
+                        }
+                        other => {
+                            buffered_command = Some(other);
+                            break;
+                        }
+                    }
+                }
+                SemanticCommand::Query { request_id, query }
+            }
+            other => other,
+        };
+
         let (request_id, result, operation) = match command {
             SemanticCommand::ReplaceSnapshot {
                 request_id,
@@ -129,6 +199,25 @@ fn semantic_worker(
                         entity_count: count,
                     }),
                     "snapshot load",
+                )
+            }
+            SemanticCommand::ApplyDelta { request_id, update } => {
+                let result = database.as_mut().map_or_else(
+                    || Err("semantic database is unavailable".to_owned()),
+                    |database| {
+                        runtime
+                            .block_on(database.apply_delta(&update))
+                            .map_err(|error| error.to_string())
+                    },
+                );
+                (
+                    request_id,
+                    result.map(|(upserted, removed)| SemanticResponse::DeltaApplied {
+                        request_id: String::new(),
+                        upserted,
+                        removed,
+                    }),
+                    "semantic delta",
                 )
             }
             SemanticCommand::Query { request_id, query } => {
@@ -158,6 +247,10 @@ fn semantic_worker(
                         request_id: response_id,
                         ..
                     }
+                    | SemanticResponse::DeltaApplied {
+                        request_id: response_id,
+                        ..
+                    }
                     | SemanticResponse::QueryResult {
                         request_id: response_id,
                         ..
@@ -178,14 +271,212 @@ fn semantic_worker(
     }
 }
 
+/// Local authoritative semantic state used to derive the next incremental
+/// update from the same live-stage revision consumed by Bevy projection.
+#[derive(Resource, Default)]
+pub(crate) struct SemanticSyncState {
+    snapshot: Option<SemanticSnapshot>,
+    session_id: Option<u64>,
+    revision: Option<LiveRevision>,
+}
+
+/// Synchronize the semantic working store from the retained live-stage batch.
+///
+/// This is an exclusive system because `LiveStage` is a non-send resource and
+/// extraction must borrow its OpenUSD stage while the resulting ECS resource
+/// state is updated. It runs after `LiveStagePlugin` has drained the batch.
+pub(crate) fn synchronize_live_stage(world: &mut World) {
+    let Some((session_id, live_revision, pending_batch, previous_snapshot, previous_session)) =
+        (|| {
+            let live = world.get_non_send::<LiveStage>()?;
+            let pending_batch = world.resource::<PendingStageChanges>().batch().cloned();
+            let state = world.resource::<SemanticSyncState>();
+            Some((
+                live.session_id(),
+                live.current_revision(),
+                pending_batch,
+                state.snapshot.clone(),
+                state.session_id,
+            ))
+        })()
+    else {
+        return;
+    };
+
+    let previous_snapshot = (previous_session == Some(session_id))
+        .then_some(previous_snapshot)
+        .flatten();
+
+    let extractor = SemanticExtractor::new(SemanticConfig::default());
+    let source = SnapshotSource::Working {
+        session: "viewport-working".to_owned(),
+        live_revision: live_revision.0,
+    };
+
+    let update = {
+        let live = world
+            .get_non_send::<LiveStage>()
+            .expect("live stage exists");
+        match previous_snapshot {
+            None => match extractor.extract(&live.stage, source) {
+                Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                Err(error) => {
+                    bevy::log::error!("[semantic-sync] initial snapshot failed: {error:#}");
+                    return;
+                }
+            },
+            Some(previous_snapshot) => {
+                let Some(batch) = pending_batch else {
+                    return;
+                };
+                let previous_revision = if previous_session == Some(session_id) {
+                    world
+                        .resource::<SemanticSyncState>()
+                        .revision
+                        .unwrap_or_default()
+                } else {
+                    LiveRevision::default()
+                };
+                if batch.revision <= previous_revision {
+                    return;
+                }
+                if batch
+                    .changes
+                    .iter()
+                    .any(|change| !change.resynced.is_empty())
+                {
+                    match extractor.extract(&live.stage, source) {
+                        Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                        Err(error) => {
+                            bevy::log::error!("[semantic-sync] resync rebuild failed: {error:#}");
+                            return;
+                        }
+                    }
+                } else {
+                    match changed_info_update(
+                        &live.stage,
+                        &extractor,
+                        previous_snapshot,
+                        &batch,
+                        source,
+                    ) {
+                        Ok(update) => SemanticSyncAction::Delta(update),
+                        Err(error) => {
+                            bevy::log::error!(
+                                "[semantic-sync] changed-info update failed: {error:#}"
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let request_id = format!("semantic-sync-{}", live_revision.0);
+    let submitted = match update {
+        SemanticSyncAction::Replace(snapshot) => {
+            let submitted = world
+                .resource::<SemanticWorkingStore>()
+                .submit_snapshot(request_id, snapshot.clone());
+            if submitted {
+                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot);
+            }
+            submitted
+        }
+        SemanticSyncAction::Delta(update) => {
+            let snapshot = update.snapshot.clone();
+            let submitted = world
+                .resource::<SemanticWorkingStore>()
+                .submit_delta(request_id, update.request);
+            if submitted {
+                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot);
+            }
+            submitted
+        }
+    };
+    if submitted {
+        let mut state = world.resource_mut::<SemanticSyncState>();
+        state.session_id = Some(session_id);
+        state.revision = Some(live_revision);
+    } else {
+        bevy::log::warn!("[semantic-sync] worker channel is unavailable");
+    }
+}
+
+enum SemanticSyncAction {
+    Replace(SemanticSnapshot),
+    Delta(SemanticDelta),
+}
+
+struct SemanticDelta {
+    request: SemanticIncrementalUpdate,
+    snapshot: SemanticSnapshot,
+}
+
+fn changed_info_update(
+    stage: &Stage,
+    extractor: &SemanticExtractor,
+    mut previous_snapshot: SemanticSnapshot,
+    batch: &usd_bevy::StageChangeBatch,
+    source: SnapshotSource,
+) -> anyhow::Result<SemanticDelta> {
+    let mut affected_paths = HashSet::new();
+    for change in &batch.changes {
+        for path in &change.changed_info {
+            affected_paths.insert(path.split('.').next().unwrap_or(path).to_owned());
+        }
+    }
+
+    let mut available_paths = HashSet::new();
+    stage.traverse(PrimPredicate::DEFAULT, |path| {
+        available_paths.insert(path.as_str().to_owned());
+    })?;
+
+    previous_snapshot
+        .entities
+        .retain(|_, entity| !affected_paths.contains(&entity.prim_path));
+    let mut upserts = Vec::new();
+    let mut removed_paths = Vec::new();
+    let mut sorted_paths: Vec<_> = affected_paths.into_iter().collect();
+    sorted_paths.sort();
+    for path in sorted_paths {
+        if available_paths.contains(&path) {
+            let usd_path = openusd::sdf::path(&path)?;
+            let entity = extractor.extract_entity(stage, &usd_path)?;
+            previous_snapshot
+                .entities
+                .insert(entity.key.clone(), entity.clone());
+            upserts.push(entity);
+        } else {
+            removed_paths.push(path);
+        }
+    }
+
+    let snapshot = extractor.snapshot_from_entities(source, previous_snapshot.entities);
+    let request = SemanticIncrementalUpdate {
+        snapshot_id: snapshot.snapshot_id.clone(),
+        source: snapshot.source.clone(),
+        config_hash: snapshot.config_hash,
+        upserts,
+        removed_paths,
+    };
+    Ok(SemanticDelta { request, snapshot })
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
+    use bevy::prelude::World;
     use openusd::usd::Stage;
-    use usd_model::{EntityKey, SemanticSnapshot, SnapshotSource};
+    use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
+    use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotSource};
     use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-    use super::{SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore};
+    use super::{
+        SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse,
+        SemanticSyncState, SemanticWorkingStore, changed_info_update, synchronize_live_stage,
+    };
 
     fn snapshot() -> Result<SemanticSnapshot> {
         let stage = Stage::open("tests/stages/custom_attrs_extensive.usda")?;
@@ -273,6 +564,176 @@ mod tests {
         assert_eq!(result.rows.len(), 1);
         assert!(!result.groups.is_empty());
         assert!(result.has_more);
+        Ok(())
+    }
+
+    #[test]
+    fn changed_info_delta_updates_only_the_affected_semantic_entity() -> Result<()> {
+        let store = SemanticWorkingStore::default();
+        let snapshot = snapshot()?;
+        let entity_count = snapshot.entities.len() as u32;
+        assert!(store.submit_snapshot("load-delta", snapshot.clone()));
+        let _ = response(&store);
+
+        let mut robot = snapshot
+            .entities
+            .get(&EntityKey::from("/World/Robot"))
+            .cloned()
+            .expect("fixture robot entity");
+        let property = robot
+            .properties
+            .iter_mut()
+            .find(|property| property.name == "userProperties:name")
+            .expect("fixture robot property");
+        property.value = CanonicalValue::Text("cart_02".to_owned());
+
+        assert!(store.submit_delta(
+            "delta-1",
+            SemanticIncrementalUpdate {
+                snapshot_id: snapshot.snapshot_id.clone(),
+                source: SnapshotSource::Working {
+                    session: "semantic-worker-test".to_owned(),
+                    live_revision: 2,
+                },
+                config_hash: snapshot.config_hash,
+                upserts: vec![robot],
+                removed_paths: Vec::new(),
+            },
+        ));
+        assert!(matches!(
+            response(&store),
+            SemanticResponse::DeltaApplied {
+                request_id,
+                upserted: 1,
+                removed: 0,
+            } if request_id == "delta-1"
+        ));
+
+        assert!(store.submit_query(
+            "query-updated-property",
+            SemanticQuery {
+                filters: vec![SemanticFilter::PropertyTextEquals {
+                    name: "userProperties:name".to_owned(),
+                    value: "cart_02".to_owned(),
+                }],
+                ..Default::default()
+            },
+        ));
+        let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+            panic!("expected updated property query result")
+        };
+        assert_eq!(result.total, 1);
+        assert_eq!(result.rows[0].prim_path, "/World/Robot");
+
+        assert!(store.submit_query("query-all-after-delta", SemanticQuery::default()));
+        let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+            panic!("expected full query result")
+        };
+        assert_eq!(result.total, entity_count);
+        Ok(())
+    }
+
+    #[test]
+    fn resync_full_replace_removes_entities_from_the_working_store() -> Result<()> {
+        let store = SemanticWorkingStore::default();
+        let initial = snapshot()?;
+        let initial_count = initial.entities.len() as u32;
+        assert!(store.submit_snapshot("load-resync", initial.clone()));
+        let _ = response(&store);
+
+        let mut entities = initial.entities.clone();
+        entities.remove(&EntityKey::from("/World/Robot"));
+        let rebuilt = SemanticExtractor::new(SemanticConfig::default()).snapshot_from_entities(
+            SnapshotSource::Working {
+                session: "semantic-worker-test".to_owned(),
+                live_revision: 3,
+            },
+            entities,
+        );
+        assert!(store.submit_snapshot("resync-1", rebuilt));
+        assert!(matches!(
+            response(&store),
+            SemanticResponse::SnapshotLoaded {
+                request_id,
+                entity_count
+            } if request_id == "resync-1" && entity_count == initial_count - 1
+        ));
+
+        assert!(store.submit_query(
+            "query-removed-type",
+            SemanticQuery {
+                filters: vec![SemanticFilter::TypeEquals("Cube".to_owned())],
+                ..Default::default()
+            },
+        ));
+        let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+            panic!("expected rebuilt query result")
+        };
+        assert_eq!(result.total, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn changed_info_extraction_replaces_only_the_affected_prim() -> Result<()> {
+        let stage = Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let before = extractor.extract(
+            &stage,
+            SnapshotSource::Working {
+                session: "semantic-sync-test".to_owned(),
+                live_revision: 1,
+            },
+        )?;
+        let batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: vec![StageChange {
+                resynced: Vec::new(),
+                changed_info: vec!["/World/Robot.userProperties:name".to_owned()],
+            }],
+        };
+
+        let delta = changed_info_update(
+            &stage,
+            &extractor,
+            before.clone(),
+            &batch,
+            SnapshotSource::Working {
+                session: "semantic-sync-test".to_owned(),
+                live_revision: 2,
+            },
+        )?;
+        assert_eq!(delta.request.upserts.len(), 1);
+        assert_eq!(delta.request.upserts[0].prim_path, "/World/Robot");
+        assert!(delta.request.removed_paths.is_empty());
+        assert_eq!(delta.snapshot.entities.len(), before.entities.len());
+        Ok(())
+    }
+
+    #[test]
+    fn a_new_live_stage_session_triggers_a_full_semantic_load() -> Result<()> {
+        let mut world = World::new();
+        world.insert_resource(SemanticWorkingStore::default());
+        world.insert_resource(usd_bevy::PendingStageChanges::default());
+        world.insert_resource(SemanticSyncState::default());
+        world.insert_non_send(LiveStage::new(Stage::open(
+            "tests/stages/custom_attrs_extensive.usda",
+        )?));
+
+        synchronize_live_stage(&mut world);
+        assert!(matches!(
+            response(world.resource::<SemanticWorkingStore>()),
+            SemanticResponse::SnapshotLoaded { .. }
+        ));
+
+        world.remove_non_send::<LiveStage>();
+        world.insert_non_send(LiveStage::new(Stage::open(
+            "tests/stages/custom_attrs_extensive.usda",
+        )?));
+        synchronize_live_stage(&mut world);
+        assert!(matches!(
+            response(world.resource::<SemanticWorkingStore>()),
+            SemanticResponse::SnapshotLoaded { .. }
+        ));
         Ok(())
     }
 }

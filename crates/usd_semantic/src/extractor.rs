@@ -34,6 +34,33 @@ impl SemanticExtractor {
     pub fn extract(&self, stage: &Stage, source: SnapshotSource) -> Result<SemanticSnapshot> {
         extract_stage(stage, source, &self.config)
     }
+
+    /// Extract one prim using the same configuration as a full snapshot.
+    ///
+    /// Live-stage synchronization uses this after a changed-info notice so a
+    /// semantic update touches only the affected entity rows.
+    pub fn extract_entity(&self, stage: &Stage, path: &Path) -> Result<EntitySnapshot> {
+        extract_entity(stage, path, &self.config)
+    }
+
+    /// Rebuild the deterministic snapshot identity after replacing entities.
+    ///
+    /// The entity map is supplied by the caller so incremental consumers can
+    /// preserve unaffected entities without re-extracting the whole stage.
+    pub fn snapshot_from_entities(
+        &self,
+        source: SnapshotSource,
+        entities: HashMap<EntityKey, EntitySnapshot>,
+    ) -> SemanticSnapshot {
+        let config_hash = self.config.hash();
+        let snapshot_id = SnapshotId(snapshot_hash(&entities, config_hash).to_hex());
+        SemanticSnapshot {
+            snapshot_id,
+            source,
+            config_hash,
+            entities,
+        }
+    }
 }
 
 /// Extract a deterministic semantic snapshot from the composed stage.

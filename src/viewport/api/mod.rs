@@ -18,5 +18,4 @@ pub(crate) use queues::{
 };
 pub(crate) use read_model::ViewportReadModelState;
 pub(crate) use scene_index::SceneAnchorIndex;
-pub(crate) use scene_query::SceneQueryService;
 pub(crate) use session_registry::SessionRegistry;

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::LiveStage;
@@ -9,15 +11,18 @@ use viewport_protocol::{
 };
 
 use super::{
-    SceneAnchorIndex, SceneQueryService, ViewportCommandInbox, ViewportEventOutbox,
-    ViewportReadModelState, ViewportTreeCommand, ViewportTreeCommandInbox,
+    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
+    ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::semantic::SemanticWorkingStore;
+use crate::viewport::semantic::{
+    SemanticQuery, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
+    synchronize_live_stage,
+};
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
 
 /// Installs the in-process implementation of the public viewport contract.
@@ -29,6 +34,16 @@ struct EditorHistories {
     transforms: usd_bevy::TransformHistory,
     undo_domains: Vec<EditorHistoryDomain>,
     redo_domains: Vec<EditorHistoryDomain>,
+}
+
+#[derive(Resource, Default)]
+struct SemanticSearchRequests {
+    pending: HashMap<String, SemanticSearchRequest>,
+}
+
+struct SemanticSearchRequest {
+    query: String,
+    offset: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -73,8 +88,9 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
-            .init_resource::<SceneQueryService>()
             .init_resource::<SemanticWorkingStore>()
+            .init_resource::<SemanticSyncState>()
+            .init_resource::<SemanticSearchRequests>()
             .init_resource::<EditorHistories>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
@@ -93,10 +109,14 @@ impl Plugin for ViewportBridgePlugin {
                 super::scene_index::refresh_scene_anchor_index
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
+            // LiveStagePlugin drains and reprojects in Update. PostUpdate is
+            // the first schedule where the retained batch is guaranteed to
+            // represent the completed current-frame revision.
+            .add_systems(PostUpdate, synchronize_live_stage)
             .add_systems(
                 Update,
                 (
-                    publish_scene_query_results,
+                    publish_semantic_query_results,
                     dispatch_scene_query_commands,
                     apply_viewport_commands,
                 )
@@ -129,21 +149,54 @@ fn reduce_authoritative_events(
     }
 }
 
-fn publish_scene_query_results(
-    query_service: Res<SceneQueryService>,
+fn publish_semantic_query_results(
+    semantic_store: Res<SemanticWorkingStore>,
+    scene_index: Res<SceneAnchorIndex>,
+    mut search_requests: ResMut<SemanticSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
-    for result in query_service.drain_results() {
-        outbox.push(ViewportEventEnvelope::new(
-            Some(result.request_id),
-            ViewportEvent::SearchResults {
-                query: result.query,
-                offset: result.offset,
-                total: result.total,
-                matches: result.matches,
-                has_more: result.has_more,
-            },
-        ));
+    for response in semantic_store.drain_responses() {
+        match response {
+            SemanticResponse::QueryResult { request_id, result } => {
+                let Some(request) = search_requests.pending.remove(&request_id) else {
+                    // The read model will reject a response whose request is
+                    // no longer current; dropping it here also bounds the
+                    // bridge-side pending request map.
+                    continue;
+                };
+                let matches = result
+                    .rows
+                    .iter()
+                    .filter_map(|row| scene_index.search_match_for_path(&row.prim_path))
+                    .collect();
+                outbox.push(ViewportEventEnvelope::new(
+                    Some(request_id),
+                    ViewportEvent::SearchResults {
+                        query: request.query,
+                        offset: request.offset,
+                        total: result.total,
+                        matches,
+                        has_more: result.has_more,
+                    },
+                ));
+            }
+            SemanticResponse::Failed {
+                request_id,
+                operation,
+                error,
+            } => {
+                if search_requests.pending.remove(&request_id).is_some() {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!("semantic {operation} failed: {error}"),
+                    );
+                } else {
+                    warn!("[semantic-worker] {operation} failed: {error}");
+                }
+            }
+            SemanticResponse::SnapshotLoaded { .. } | SemanticResponse::DeltaApplied { .. } => {}
+        }
     }
 }
 
@@ -159,7 +212,8 @@ fn emit_viewport_ready(mut outbox: ResMut<ViewportEventOutbox>) {
 fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     scene_index: Res<SceneAnchorIndex>,
-    query_service: Res<SceneQueryService>,
+    semantic_store: Res<SemanticWorkingStore>,
+    mut search_requests: ResMut<SemanticSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
     for envelope in inbox.take_scene_query_commands() {
@@ -192,17 +246,33 @@ fn dispatch_scene_query_commands(
                 offset,
                 limit,
             } => {
-                if !query_service.submit_search(
+                let query_text = query.clone();
+                if !semantic_store.submit_query(
                     request_id.clone(),
-                    query,
-                    offset,
-                    limit,
-                    scene_index.nodes_snapshot(),
+                    SemanticQuery {
+                        text: Some(query),
+                        offset,
+                        limit,
+                        ..Default::default()
+                    },
                 ) {
                     reject(
                         &mut outbox,
                         request_id,
-                        "scene search worker is unavailable".to_owned(),
+                        "semantic search worker is unavailable".to_owned(),
+                    );
+                } else {
+                    // Search is a single latest-query projection in the
+                    // viewport read model. Dropping older metadata here also
+                    // makes worker-side query coalescing safe: superseded
+                    // responses are ignored when they arrive.
+                    search_requests.pending.clear();
+                    search_requests.pending.insert(
+                        request_id,
+                        SemanticSearchRequest {
+                            query: query_text,
+                            offset,
+                        },
                     );
                 }
             }
@@ -1534,7 +1604,6 @@ mod tests {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportTreeCommandInbox>()
             .init_resource::<SceneAnchorIndex>()
-            .init_resource::<SceneQueryService>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<CameraMount>()
@@ -1549,6 +1618,24 @@ mod tests {
                 ..default()
             })
             .add_systems(Update, apply_viewport_commands);
+        app
+    }
+
+    fn semantic_search_test_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<SemanticWorkingStore>()
+            .init_resource::<SemanticSearchRequests>()
+            .add_systems(
+                Update,
+                (
+                    publish_semantic_query_results,
+                    dispatch_scene_query_commands,
+                )
+                    .chain(),
+            );
         app
     }
 
@@ -1611,6 +1698,58 @@ mod tests {
             events[3].event,
             ViewportEvent::PhysicsChanged { running: true }
         ));
+    }
+
+    #[test]
+    fn search_scene_routes_through_the_semantic_worker() -> anyhow::Result<()> {
+        let mut app = semantic_search_test_app();
+        let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+        let snapshot =
+            usd_semantic::SemanticExtractor::new(usd_semantic::SemanticConfig::default()).extract(
+                &stage,
+                usd_model::SnapshotSource::Working {
+                    session: "bridge-search-test".to_owned(),
+                    live_revision: 1,
+                },
+            )?;
+        assert!(
+            app.world()
+                .resource::<SemanticWorkingStore>()
+                .submit_snapshot("bridge-load", snapshot,)
+        );
+
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SearchScene {
+                query: "Robot".to_owned(),
+                offset: 0,
+                limit: 10,
+            },
+        );
+
+        for _ in 0..200 {
+            app.update();
+            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
+                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+                let ViewportEvent::SearchResults {
+                    query,
+                    offset,
+                    total,
+                    matches,
+                    has_more,
+                } = event.event
+                else {
+                    panic!("expected semantic search results")
+                };
+                assert_eq!(query, "Robot");
+                assert_eq!(offset, 0);
+                assert_eq!(total, 1);
+                assert!(matches.is_empty());
+                assert!(!has_more);
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("semantic search result did not arrive")
     }
 
     #[test]
