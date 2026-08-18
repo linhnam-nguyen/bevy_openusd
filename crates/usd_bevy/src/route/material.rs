@@ -29,6 +29,10 @@ pub struct TextureCacheStats {
     pub misses: u64,
     pub stale_handles: u64,
     pub load_failures: u64,
+    pub archive_scans: u64,
+    pub archive_entries_scanned: u64,
+    pub archive_hits: u64,
+    pub archive_misses: u64,
 }
 
 /// Counters collected by [`UsdMaterialCache`] for binding reuse and live
@@ -60,6 +64,14 @@ impl UsdTextureCache {
     pub fn reset_stats(&mut self) {
         self.stats = TextureCacheStats::default();
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ArchiveLookupStats {
+    archives_scanned: u64,
+    entries_scanned: u64,
+    hits: u64,
+    misses: u64,
 }
 
 #[derive(Clone)]
@@ -97,11 +109,12 @@ fn material_of(ctx: &RouteCtx) -> Option<(String, ReadPreviewMaterial)> {
     Some((binding.as_str().to_owned(), material))
 }
 
-fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
+fn read_texture_bytes(world: &World, texture_path: &str) -> (Option<Vec<u8>>, ArchiveLookupStats) {
+    let mut archive_stats = ArchiveLookupStats::default();
     let raw_path = Path::new(texture_path);
     if raw_path.is_absolute() && raw_path.exists() {
         if let Ok(bytes) = std::fs::read(raw_path) {
-            return Some(bytes);
+            return (Some(bytes), archive_stats);
         }
     }
 
@@ -118,7 +131,7 @@ fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
     for candidate in &candidates {
         if candidate.exists() {
             if let Ok(bytes) = std::fs::read(candidate) {
-                return Some(bytes);
+                return (Some(bytes), archive_stats);
             }
         }
     }
@@ -152,6 +165,7 @@ fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
     }
 
     for usdz in usdz_files {
+        archive_stats.archives_scanned += 1;
         let Ok(file) = std::fs::File::open(&usdz) else {
             continue;
         };
@@ -160,6 +174,7 @@ fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
         };
 
         for i in 0..archive.len() {
+            archive_stats.entries_scanned += 1;
             let Ok(mut zip_file) = archive.by_index(i) else {
                 continue;
             };
@@ -171,13 +186,17 @@ fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
             {
                 let mut buffer = Vec::new();
                 if zip_file.read_to_end(&mut buffer).is_ok() {
-                    return Some(buffer);
+                    archive_stats.hits += 1;
+                    return (Some(buffer), archive_stats);
                 }
             }
         }
     }
 
-    None
+    if archive_stats.archives_scanned > 0 {
+        archive_stats.misses = 1;
+    }
+    (None, archive_stats)
 }
 
 fn resolve_texture(world: &mut World, path: &str, is_srgb: bool) -> Option<Handle<Image>> {
@@ -201,7 +220,15 @@ fn resolve_texture(world: &mut World, path: &str, is_srgb: bool) -> Option<Handl
         cache.stats.misses += 1;
     }
 
-    let Some(bytes) = read_texture_bytes(world, path) else {
+    let (bytes, archive_stats) = read_texture_bytes(world, path);
+    if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+        cache.stats.archive_scans += archive_stats.archives_scanned;
+        cache.stats.archive_entries_scanned += archive_stats.entries_scanned;
+        cache.stats.archive_hits += archive_stats.hits;
+        cache.stats.archive_misses += archive_stats.misses;
+    }
+
+    let Some(bytes) = bytes else {
         if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
             cache.stats.load_failures += 1;
         }
@@ -400,6 +427,7 @@ mod tests {
                 misses: 1,
                 stale_handles: 0,
                 load_failures: 1,
+                ..Default::default()
             }
         );
     }
@@ -448,6 +476,42 @@ mod tests {
                 misses: 1,
                 stale_handles: 0,
                 load_failures: 0,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn repository_usdz_texture_scan_is_cached() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Image>>();
+        let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/external/usdz_sample.usdz")
+            .canonicalize()
+            .expect("repository USDZ fixture exists");
+        world.insert_resource(UsdTextureCache {
+            archive_paths: vec![archive],
+            ..Default::default()
+        });
+
+        let first = resolve_texture(&mut world, "textures/checker.png", true)
+            .expect("embedded repository texture loads");
+        let second = resolve_texture(&mut world, "textures/checker.png", true)
+            .expect("embedded repository texture cache hit");
+
+        assert_eq!(first, second);
+        assert_eq!(
+            world.resource::<UsdTextureCache>().stats(),
+            TextureCacheStats {
+                lookups: 2,
+                hits: 1,
+                misses: 1,
+                stale_handles: 0,
+                load_failures: 0,
+                archive_scans: 1,
+                archive_entries_scanned: 2,
+                archive_hits: 1,
+                archive_misses: 0,
             }
         );
     }
