@@ -208,7 +208,8 @@ impl ViewportReadModelState {
                     node.visible = *visible;
                 }
             }
-            ViewportEvent::EditorCommandCompleted { state, .. } => {
+            ViewportEvent::EditorCommandCompleted { state, .. }
+            | ViewportEvent::RuntimeMutationBatchAccepted { state, .. } => {
                 self.editor = state.clone();
             }
             ViewportEvent::EditorPrimState { .. }

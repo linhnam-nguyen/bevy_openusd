@@ -2,11 +2,11 @@ use viewport_protocol::{
     ActiveStreamConfiguration, ButtonState, ClientCapabilities, ClientCommand,
     ClientCommandEnvelope, ClientHello, CodecId, FocusState, HandshakeEvent, InputCommand,
     InputModifiers, KeyboardInput, PointerButtons, PointerMotion, ProtocolValidationError,
-    ReleaseAllInput, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
-    ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello, SessionCommand,
-    SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommand,
-    ViewportMetrics, ViewportReadModel, decode_client_json_line, decode_server_json_line,
-    encode_client_json_line, encode_server_json_line,
+    ReleaseAllInput, RuntimeMutation, RuntimeMutationBatch, SceneAnchor, SceneChildrenPage,
+    ScenePageReference, SceneSearchMatch, ServerCapabilities, ServerEvent, ServerEventEnvelope,
+    ServerHello, SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
+    ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel, decode_client_json_line,
+    decode_server_json_line, encode_client_json_line, encode_server_json_line,
 };
 
 fn metrics() -> ViewportMetrics {
@@ -218,6 +218,52 @@ fn editor_commands_and_events_round_trip_with_frontend_values() {
                 can_undo: true,
                 can_redo: false,
             },
+        }),
+    );
+    assert_eq!(
+        decode_server_json_line(&encode_server_json_line(&event).unwrap()).unwrap(),
+        event
+    );
+}
+
+#[test]
+fn runtime_mutation_batch_round_trips_and_validates() {
+    let batch = RuntimeMutationBatch {
+        source_id: "revit-connector".to_owned(),
+        sequence: 8,
+        base_revision: 4,
+        operations: vec![RuntimeMutation::SetAttribute {
+            prim_path: "/World/Box".to_owned(),
+            name: "Comments".to_owned(),
+            type_name: "string".to_owned(),
+            value: serde_json::json!("external edit"),
+        }],
+    };
+    let command = ClientCommandEnvelope::for_session(
+        "runtime-8",
+        SessionId::new("session-1"),
+        14,
+        ClientCommand::Viewport(ViewportCommand::ApplyRuntimeMutationBatch {
+            batch: batch.clone(),
+        }),
+    );
+    command.validate().unwrap();
+    assert_eq!(
+        decode_client_json_line(&encode_client_json_line(&command).unwrap()).unwrap(),
+        command
+    );
+
+    let event = ServerEventEnvelope::for_request(
+        SessionId::new("session-1"),
+        15,
+        "runtime-8",
+        ServerEvent::Viewport(ViewportEvent::RuntimeMutationBatchAccepted {
+            source_id: batch.source_id,
+            sequence: batch.sequence,
+            base_revision: batch.base_revision,
+            applied_operations: 1,
+            changed_paths: vec!["/World/Box.Comments".to_owned()],
+            state: viewport_protocol::EditorStateReadModel::default(),
         }),
     );
     assert_eq!(

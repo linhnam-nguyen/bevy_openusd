@@ -19,26 +19,46 @@ pub enum ServerEvent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum SessionEvent {
-    Ready { snapshot_required: bool },
-    Snapshot { state: ViewportReadModel },
+    Ready {
+        snapshot_required: bool,
+    },
+    Snapshot {
+        state: ViewportReadModel,
+    },
     SnapshotChunk {
         snapshot_id: String,
         chunk_index: u32,
         chunk_count: u32,
         state: ViewportReadModel,
     },
-    Resumed { result: crate::ResumeResult },
-    Pong { nonce: String },
-    Closed { reason: Option<String> },
-    HandshakeRejected { reason: crate::HandshakeRejectionReason },
+    Resumed {
+        result: crate::ResumeResult,
+    },
+    Pong {
+        nonce: String,
+    },
+    Closed {
+        reason: Option<String>,
+    },
+    HandshakeRejected {
+        reason: crate::HandshakeRejectionReason,
+    },
 }
 
 /// Stream lifecycle and active configuration events.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum StreamEvent {
-    ConfigurationAccepted { metrics: crate::ViewportMetrics },
-    ConfigurationApplied { configuration: crate::ActiveStreamConfiguration },
-    ConfigurationRejected { reason: String },
-    Statistics { statistics: crate::StreamStatistics },
+    ConfigurationAccepted {
+        metrics: crate::ViewportMetrics,
+    },
+    ConfigurationApplied {
+        configuration: crate::ActiveStreamConfiguration,
+    },
+    ConfigurationRejected {
+        reason: String,
+    },
+    Statistics {
+        statistics: crate::StreamStatistics,
+    },
 }

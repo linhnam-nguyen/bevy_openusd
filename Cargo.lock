@@ -8143,6 +8143,7 @@ dependencies = [
  "openusd",
  "rapier3d-f64",
  "rfd",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

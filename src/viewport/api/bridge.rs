@@ -1,19 +1,22 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{
     CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, EditorPrimReadModel,
-    EditorStateReadModel, EditorValue, GroundGridOrigin, OverlayKind, PROTOCOL_VERSION,
-    PresentationReadModel, SceneAnchor, SelectionReadModel, StageLoadState, StageReadModel,
-    TimelineReadModel, ViewportCommand, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
+    EditorStateReadModel, EditorValue, OverlayKind, PROTOCOL_VERSION, PresentationReadModel,
+    RuntimeMutation, RuntimeMutationBatch, SceneAnchor, SelectionReadModel, StageLoadState,
+    StageReadModel, TimelineReadModel, ViewportCommand, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel,
 };
 
 use super::{
     SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
     ViewportTreeCommand, ViewportTreeCommandInbox,
 };
+use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
 use crate::viewport::physics::PhysicsActive;
@@ -34,6 +37,54 @@ struct EditorHistories {
     transforms: usd_bevy::TransformHistory,
     undo_domains: Vec<EditorHistoryDomain>,
     redo_domains: Vec<EditorHistoryDomain>,
+}
+
+/// Main-thread admission control for connector-originated writes.
+///
+/// OpenUSD stages are non-send and the normal viewport command system is the
+/// single writer. This resource adds source sequence and live-revision checks
+/// before a runtime batch reaches the existing authoring APIs.
+#[derive(Resource, Default)]
+struct RuntimeMutationCoordinator {
+    last_sequence_by_source: HashMap<String, u64>,
+}
+
+impl RuntimeMutationCoordinator {
+    fn admit(&self, stage: &LiveStage, batch: &RuntimeMutationBatch) -> Result<(), String> {
+        if stage.has_changes() {
+            return Err(
+                "live stage has a pending change batch; retry after the next authoritative revision"
+                    .to_owned(),
+            );
+        }
+        if batch.base_revision != stage.current_revision().0 {
+            return Err(format!(
+                "stale runtime base revision {}; current revision is {}",
+                batch.base_revision,
+                stage.current_revision().0
+            ));
+        }
+        if self
+            .last_sequence_by_source
+            .get(&batch.source_id)
+            .is_some_and(|last| batch.sequence <= *last)
+        {
+            return Err(format!(
+                "runtime sequence {} for source {} is not newer than the last accepted sequence",
+                batch.sequence, batch.source_id
+            ));
+        }
+        Ok(())
+    }
+
+    fn record(&mut self, batch: &RuntimeMutationBatch) {
+        self.last_sequence_by_source
+            .insert(batch.source_id.clone(), batch.sequence);
+    }
+
+    fn reset(&mut self) {
+        self.last_sequence_by_source.clear();
+    }
 }
 
 #[derive(Resource, Default)]
@@ -93,6 +144,9 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<SemanticDiffState>()
             .init_resource::<SemanticSearchRequests>()
             .init_resource::<EditorHistories>()
+            .init_resource::<RuntimeMutationCoordinator>()
+            .init_resource::<RecoverySettings>()
+            .init_resource::<RecoveryRuntimeState>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
                 Update,
@@ -113,7 +167,10 @@ impl Plugin for ViewportBridgePlugin {
             // LiveStagePlugin drains and reprojects in Update. PostUpdate is
             // the first schedule where the retained batch is guaranteed to
             // represent the completed current-frame revision.
-            .add_systems(PostUpdate, synchronize_live_stage)
+            .add_systems(
+                PostUpdate,
+                (synchronize_live_stage, checkpoint_recovery).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -136,6 +193,38 @@ impl Plugin for ViewportBridgePlugin {
                 Update,
                 reduce_authoritative_events.in_set(ViewportBridgeSet::ReduceEvents),
             );
+    }
+}
+
+/// Writes one scratch checkpoint after the authoritative change fan-out has
+/// completed for the frame. The retained batch makes this coarse-grained: no
+/// checkpoint is written on idle frames or for every animation tick.
+fn checkpoint_recovery(
+    settings: Res<RecoverySettings>,
+    mut runtime: ResMut<RecoveryRuntimeState>,
+    pending: Res<usd_bevy::PendingStageChanges>,
+    stage: Option<NonSend<LiveStage>>,
+    stage_info: Res<StageInfo>,
+) {
+    if pending.batch().is_none() {
+        return;
+    }
+    let Some(stage) = stage else {
+        return;
+    };
+    if stage_info.path.trim().is_empty() {
+        return;
+    }
+
+    let store = match runtime.store_for(&settings, stage.session_id()) {
+        Ok(store) => store,
+        Err(error) => {
+            bevy::log::error!("[recovery] cannot create checkpoint store: {error:#}");
+            return;
+        }
+    };
+    if let Err(error) = store.write_checkpoint(&stage, Path::new(&stage_info.path), None) {
+        bevy::log::error!("[recovery] checkpoint failed: {error:#}");
     }
 }
 
@@ -364,6 +453,7 @@ fn apply_viewport_commands(
     mut tuning: ResMut<LoaderTuning>,
     mut physics: ResMut<PhysicsActive>,
     mut histories: ResMut<EditorHistories>,
+    mut runtime_mutations: ResMut<RuntimeMutationCoordinator>,
     stage: Option<NonSend<LiveStage>>,
     stage_info: Res<StageInfo>,
     spawned: Res<Spawned>,
@@ -406,6 +496,7 @@ fn apply_viewport_commands(
             ViewportCommand::ReloadSession => {
                 reload.requested = true;
                 *histories = EditorHistories::default();
+                runtime_mutations.reset();
                 emit_snapshot(
                     &mut outbox,
                     request_id,
@@ -931,6 +1022,35 @@ fn apply_viewport_commands(
                     &histories,
                 );
             }
+            ViewportCommand::ApplyRuntimeMutationBatch { batch } => {
+                let Some(stage) = stage.as_deref() else {
+                    reject(&mut outbox, request_id, "stage is not loaded".to_owned());
+                    continue;
+                };
+                if let Err(error) = batch.validate() {
+                    reject(&mut outbox, request_id, error.to_string());
+                    continue;
+                }
+                if let Err(error) = runtime_mutations.admit(stage, &batch) {
+                    reject(&mut outbox, request_id, error);
+                    continue;
+                }
+                let changed_paths = match apply_runtime_mutations(stage, &mut histories, &batch) {
+                    Ok(changed_paths) => changed_paths,
+                    Err(error) => {
+                        reject(&mut outbox, request_id, error);
+                        continue;
+                    }
+                };
+                runtime_mutations.record(&batch);
+                emit_runtime_mutation_accepted(
+                    &mut outbox,
+                    request_id,
+                    &batch,
+                    changed_paths,
+                    &histories,
+                );
+            }
             ViewportCommand::QueryPrim { prim_path } => {
                 let Some(stage) = stage.as_deref() else {
                     reject(&mut outbox, request_id, "stage is not loaded".to_owned());
@@ -948,6 +1068,118 @@ fn apply_viewport_commands(
             }
         }
     }
+}
+
+fn apply_runtime_mutations(
+    stage: &LiveStage,
+    histories: &mut EditorHistories,
+    batch: &RuntimeMutationBatch,
+) -> Result<Vec<String>, String> {
+    let mut changed_paths = Vec::new();
+
+    for mutation in &batch.operations {
+        match mutation {
+            RuntimeMutation::DefinePrim { path, type_name } => {
+                stage.mark_authored(path.clone());
+                histories
+                    .authoring
+                    .define(&stage.stage, path, type_name)
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Authoring);
+                changed_paths.push(path.clone());
+            }
+            RuntimeMutation::RemovePrim { path } => {
+                stage.mark_authored(path.clone());
+                if usd_bevy::authoring::remove_prim(&stage.stage, path)
+                    .map_err(|error| error.to_string())?
+                {
+                    changed_paths.push(path.clone());
+                }
+            }
+            RuntimeMutation::RenamePrim { path, new_name } => {
+                stage.mark_authored(path.clone());
+                histories
+                    .authoring
+                    .rename(&stage.stage, path, new_name)
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Authoring);
+                changed_paths.push(path.clone());
+            }
+            RuntimeMutation::ReparentPrim { path, new_parent } => {
+                stage.mark_authored(path.clone());
+                histories
+                    .authoring
+                    .reparent(&stage.stage, path, new_parent)
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Authoring);
+                changed_paths.extend([path.clone(), new_parent.clone()]);
+            }
+            RuntimeMutation::MovePrim { old_path, new_path } => {
+                stage.mark_authored(old_path.clone());
+                usd_bevy::authoring::move_prim(&stage.stage, old_path, new_path)
+                    .map_err(|error| error.to_string())?;
+                changed_paths.extend([old_path.clone(), new_path.clone()]);
+            }
+            RuntimeMutation::SetAttribute {
+                prim_path,
+                name,
+                type_name,
+                value,
+            } => {
+                let value = editor_value_to_usd(type_name, value)?;
+                stage.mark_authored(prim_path.clone());
+                histories
+                    .authoring
+                    .set_attr(&stage.stage, prim_path, name, type_name, value)
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Authoring);
+                changed_paths.push(format!("{prim_path}.{name}"));
+            }
+            RuntimeMutation::ClearAttribute { prim_path, name } => {
+                stage.mark_authored(prim_path.clone());
+                usd_bevy::authoring::clear_attribute(&stage.stage, prim_path, name)
+                    .map_err(|error| error.to_string())?;
+                changed_paths.push(format!("{prim_path}.{name}"));
+            }
+            RuntimeMutation::SetTransform {
+                prim_path,
+                translation,
+                rotation,
+                scale,
+            } => {
+                stage.mark_authored(prim_path.clone());
+                histories
+                    .transforms
+                    .author(
+                        &stage.stage,
+                        prim_path,
+                        Transform {
+                            translation: Vec3::from_array(*translation),
+                            rotation: Quat::from_array(*rotation),
+                            scale: Vec3::from_array(*scale),
+                        },
+                    )
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Transform);
+                changed_paths.push(prim_path.clone());
+            }
+            RuntimeMutation::SetVariantSelection {
+                prim_path,
+                set_name,
+                option,
+            } => {
+                stage.mark_authored(prim_path.clone());
+                histories
+                    .authoring
+                    .set_variant(&stage.stage, prim_path, set_name, option)
+                    .map_err(|error| error.to_string())?;
+                histories.record(EditorHistoryDomain::Authoring);
+                changed_paths.push(format!("{prim_path}.{set_name}"));
+            }
+        }
+    }
+
+    Ok(changed_paths)
 }
 
 /// Applies focus and visibility actions after scene anchors have been mapped
@@ -1373,6 +1605,26 @@ fn emit_editor_completed(
     ));
 }
 
+fn emit_runtime_mutation_accepted(
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+    batch: &RuntimeMutationBatch,
+    changed_paths: Vec<String>,
+    histories: &EditorHistories,
+) {
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::RuntimeMutationBatchAccepted {
+            source_id: batch.source_id.clone(),
+            sequence: batch.sequence,
+            base_revision: batch.base_revision,
+            applied_operations: batch.operations.len() as u32,
+            changed_paths,
+            state: histories.state(),
+        },
+    ));
+}
+
 fn emit_editor_export(outbox: &mut ViewportEventOutbox, request_id: &str, content: &str) {
     // Leave room for the event and session envelopes under the transport's
     // 12 KiB application-message ceiling.
@@ -1598,6 +1850,9 @@ fn editor_value_to_usd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings, RecoveryStore};
+    use crate::viewport::semantic::SemanticFilter;
+    use viewport_protocol::GroundGridOrigin;
 
     fn command_test_app() -> App {
         let mut app = App::new();
@@ -1613,12 +1868,48 @@ mod tests {
             .init_resource::<LoaderTuning>()
             .init_resource::<PhysicsActive>()
             .init_resource::<EditorHistories>()
+            .init_resource::<RuntimeMutationCoordinator>()
             .init_resource::<Spawned>()
             .insert_resource(StageInfo {
                 path: "fixtures/spinner.usda".to_owned(),
                 ..default()
             })
             .add_systems(Update, apply_viewport_commands);
+        app
+    }
+
+    fn runtime_semantic_test_app(project_root: std::path::PathBuf) -> App {
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::UsdPlugin)
+            .add_plugins(usd_bevy::LiveStagePlugin)
+            .init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<ViewportTreeCommandInbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<ReloadRequest>()
+            .init_resource::<SelectedPrim>()
+            .init_resource::<CameraMount>()
+            .init_resource::<UsdStageTime>()
+            .init_resource::<DisplayToggles>()
+            .init_resource::<LoaderTuning>()
+            .init_resource::<PhysicsActive>()
+            .init_resource::<EditorHistories>()
+            .init_resource::<RuntimeMutationCoordinator>()
+            .init_resource::<Spawned>()
+            .init_resource::<SemanticWorkingStore>()
+            .init_resource::<SemanticSyncState>()
+            .init_resource::<SemanticDiffState>()
+            .init_resource::<RecoveryRuntimeState>()
+            .insert_resource(RecoverySettings { project_root })
+            .insert_resource(StageInfo {
+                path: "runtime-semantic-test.usda".to_owned(),
+                ..default()
+            })
+            .add_systems(Update, apply_viewport_commands)
+            .add_systems(
+                PostUpdate,
+                (synchronize_live_stage, checkpoint_recovery).chain(),
+            );
         app
     }
 
@@ -1886,5 +2177,268 @@ mod tests {
         assert!(
             matches!(value, Some(openusd::sdf::Value::Double(value)) if (value - 2.5).abs() < f64::EPSILON)
         );
+    }
+
+    #[test]
+    fn runtime_mutation_batch_uses_one_writer_and_preserves_revision_guard() {
+        let mut app = command_test_app();
+        let stage = openusd::usd::Stage::builder()
+            .in_memory("bridge_runtime_batch_test.usda")
+            .unwrap();
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
+
+        let batch = RuntimeMutationBatch {
+            source_id: "connector-a".to_owned(),
+            sequence: 1,
+            base_revision: 0,
+            operations: vec![
+                RuntimeMutation::DefinePrim {
+                    path: "/World/Box".to_owned(),
+                    type_name: "Cube".to_owned(),
+                },
+                RuntimeMutation::SetAttribute {
+                    prim_path: "/World/Box".to_owned(),
+                    name: "size".to_owned(),
+                    type_name: "double".to_owned(),
+                    value: serde_json::json!(3.0),
+                },
+            ],
+        };
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: batch.clone(),
+            },
+        );
+        app.update();
+
+        let accepted = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("runtime batch should publish an acceptance event");
+        assert_eq!(accepted.request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            accepted.event,
+            ViewportEvent::RuntimeMutationBatchAccepted {
+                source_id,
+                sequence: 1,
+                base_revision: 0,
+                applied_operations: 2,
+                ..
+            } if source_id == "connector-a"
+        ));
+
+        let live = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage should remain installed");
+        assert!(usd_bevy::authoring::prim_exists(&live.stage, "/World/Box"));
+        assert!(matches!(
+            live.stage
+                .prim(openusd::sdf::path("/World/Box").unwrap())
+                .attribute("size")
+                .get::<openusd::sdf::Value>()
+                .unwrap(),
+            Some(openusd::sdf::Value::Double(value)) if (value - 3.0).abs() < f64::EPSILON
+        ));
+
+        // Drain the accepted stage notice so the next admission reaches the
+        // sequence guard rather than the pending-batch guard.
+        app.world_mut()
+            .get_non_send_mut::<usd_bevy::LiveStage>()
+            .expect("live stage should remain installed")
+            .drain_change_batch();
+        let stale_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: batch.clone(),
+            },
+        );
+        app.update();
+        let rejected = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("stale runtime batch should be rejected");
+        assert_eq!(rejected.request_id.as_deref(), Some(stale_request.as_str()));
+        assert!(matches!(
+            rejected.event,
+            ViewportEvent::CommandRejected { reason, .. }
+                if reason.contains("stale runtime base revision")
+        ));
+
+        let duplicate_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: RuntimeMutationBatch {
+                    base_revision: 1,
+                    ..batch
+                },
+            },
+        );
+        app.update();
+        let duplicate = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("duplicate runtime batch should be rejected");
+        assert_eq!(
+            duplicate.request_id.as_deref(),
+            Some(duplicate_request.as_str())
+        );
+        assert!(matches!(
+            duplicate.event,
+            ViewportEvent::CommandRejected { reason, .. }
+                if reason.contains("not newer than the last accepted sequence")
+        ));
+    }
+
+    #[test]
+    fn runtime_attribute_batch_reaches_bevy_and_semantic_worker() -> anyhow::Result<()> {
+        let project_root = tempfile::tempdir()?;
+        let mut app = runtime_semantic_test_app(project_root.path().to_path_buf());
+        let stage = openusd::usd::Stage::builder()
+            .in_memory("bridge_runtime_semantic_test.usda")
+            .unwrap();
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        stage
+            .define_prim("/World/Box")
+            .unwrap()
+            .set_type_name("Cube")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
+
+        let mut initial_snapshot_loaded = false;
+        for _ in 0..200 {
+            app.update();
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
+                if matches!(response, SemanticResponse::SnapshotLoaded { .. }) {
+                    initial_snapshot_loaded = true;
+                }
+            }
+            if initial_snapshot_loaded {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            initial_snapshot_loaded,
+            "initial semantic snapshot did not load"
+        );
+
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: RuntimeMutationBatch {
+                    source_id: "connector-a".to_owned(),
+                    sequence: 1,
+                    base_revision: 0,
+                    operations: vec![RuntimeMutation::SetAttribute {
+                        prim_path: "/World/Box".to_owned(),
+                        name: "Comments".to_owned(),
+                        type_name: "string".to_owned(),
+                        value: serde_json::json!("external"),
+                    }],
+                },
+            },
+        );
+        app.update();
+        let accepted = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("runtime batch should publish an acceptance event");
+        assert_eq!(accepted.request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            accepted.event,
+            ViewportEvent::RuntimeMutationBatchAccepted { .. }
+        ));
+
+        let mut semantic_delta_applied = false;
+        for _ in 0..200 {
+            app.update();
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
+                if matches!(response, SemanticResponse::DeltaApplied { .. }) {
+                    semantic_delta_applied = true;
+                }
+            }
+            if semantic_delta_applied {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(semantic_delta_applied, "semantic delta did not apply");
+        assert!(
+            app.world()
+                .resource::<usd_bevy::PrimEntities>()
+                .entity("/World/Box")
+                .is_some(),
+            "Bevy prim index should retain the externally edited prim"
+        );
+
+        let store = app.world().resource::<SemanticWorkingStore>();
+        assert!(store.submit_query(
+            "runtime-query",
+            SemanticQuery {
+                filters: vec![SemanticFilter::PropertyTextEquals {
+                    name: "Comments".to_owned(),
+                    value: "external".to_owned(),
+                }],
+                limit: 10,
+                ..default()
+            },
+        ));
+        let mut matched = false;
+        for _ in 0..200 {
+            app.update();
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
+                if let SemanticResponse::QueryResult { request_id, result } = response
+                    && request_id == "runtime-query"
+                {
+                    matched = result.total == 1
+                        && result.rows.iter().any(|row| row.prim_path == "/World/Box");
+                }
+            }
+            if matched {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(matched, "semantic query should see the external attribute");
+
+        let session_id = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage should remain available")
+            .session_id();
+        let recovery = RecoveryStore::new(project_root.path(), session_id)?;
+        let recovered = recovery
+            .restore()?
+            .expect("runtime mutation should create a recovery checkpoint");
+        assert!(usd_bevy::authoring::prim_exists(
+            &recovered.stage,
+            "/World/Box"
+        ));
+        Ok(())
     }
 }

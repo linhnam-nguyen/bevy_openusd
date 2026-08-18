@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClientCapabilities, ProtocolValidationError, ServerCapabilities, SessionId, ViewportMetrics,
-    PROTOCOL_VERSION,
+    ClientCapabilities, PROTOCOL_VERSION, ProtocolValidationError, ServerCapabilities, SessionId,
+    ViewportMetrics,
 };
 
 /// Role negotiated for a connected viewport client.
@@ -72,11 +72,7 @@ pub struct ServerHello {
 }
 
 impl ServerHello {
-    pub fn new(
-        session_id: SessionId,
-        role: SessionRole,
-        capabilities: ServerCapabilities,
-    ) -> Self {
+    pub fn new(session_id: SessionId, role: SessionRole, capabilities: ServerCapabilities) -> Self {
         Self {
             protocol_version: PROTOCOL_VERSION,
             session_id,

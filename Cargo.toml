@@ -91,6 +91,7 @@ openusd = { workspace = true }
 rapier3d-f64 = { workspace = true }
 viewport_protocol = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }

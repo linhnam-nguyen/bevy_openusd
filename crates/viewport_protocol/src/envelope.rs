@@ -25,7 +25,9 @@ impl SessionId {
 
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
         if self.0.trim().is_empty() {
-            return Err(ProtocolValidationError::EmptyField { field: "session_id" });
+            return Err(ProtocolValidationError::EmptyField {
+                field: "session_id",
+            });
         }
         Ok(())
     }
@@ -34,15 +36,40 @@ impl SessionId {
 /// Validation failures exposed by the transport-neutral contract.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProtocolValidationError {
-    UnsupportedProtocolVersion { received: u16, expected: u16 },
-    EmptyField { field: &'static str },
-    InvalidDimension { field: &'static str, value: u32 },
-    DimensionOutOfRange { field: &'static str, value: u32, maximum: u32 },
-    PixelCountOutOfRange { width: u32, height: u32, maximum: u64 },
-    InvalidDevicePixelRatio { value: f32 },
-    InvalidFrameRate { value: u32 },
-    OddEncodedDimension { field: &'static str, value: u32 },
-    InvalidInput { field: &'static str },
+    UnsupportedProtocolVersion {
+        received: u16,
+        expected: u16,
+    },
+    EmptyField {
+        field: &'static str,
+    },
+    InvalidDimension {
+        field: &'static str,
+        value: u32,
+    },
+    DimensionOutOfRange {
+        field: &'static str,
+        value: u32,
+        maximum: u32,
+    },
+    PixelCountOutOfRange {
+        width: u32,
+        height: u32,
+        maximum: u64,
+    },
+    InvalidDevicePixelRatio {
+        value: f32,
+    },
+    InvalidFrameRate {
+        value: u32,
+    },
+    OddEncodedDimension {
+        field: &'static str,
+        value: u32,
+    },
+    InvalidInput {
+        field: &'static str,
+    },
     InvalidSequence,
 }
 
@@ -71,13 +98,22 @@ impl fmt::Display for ProtocolValidationError {
                 "requested pixel count {width}x{height} exceeds maximum {maximum}"
             ),
             Self::InvalidDevicePixelRatio { value } => {
-                write!(formatter, "device pixel ratio must be finite and in range; got {value}")
+                write!(
+                    formatter,
+                    "device pixel ratio must be finite and in range; got {value}"
+                )
             }
             Self::InvalidFrameRate { value } => {
-                write!(formatter, "frame rate must be between 1 and 240; got {value}")
+                write!(
+                    formatter,
+                    "frame rate must be between 1 and 240; got {value}"
+                )
             }
             Self::OddEncodedDimension { field, value } => {
-                write!(formatter, "{field} must be even for the encoded stream; got {value}")
+                write!(
+                    formatter,
+                    "{field} must be even for the encoded stream; got {value}"
+                )
             }
             Self::InvalidInput { field } => write!(formatter, "invalid viewport input: {field}"),
             Self::InvalidSequence => write!(formatter, "sequence must be greater than zero"),
@@ -141,7 +177,9 @@ impl ClientCommandEnvelope {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
         validate_protocol_version(self.protocol_version)?;
         if self.request_id.trim().is_empty() {
-            return Err(ProtocolValidationError::EmptyField { field: "request_id" });
+            return Err(ProtocolValidationError::EmptyField {
+                field: "request_id",
+            });
         }
         if self.sequence == 0 {
             return Err(ProtocolValidationError::InvalidSequence);
@@ -198,7 +236,9 @@ impl ServerEventEnvelope {
             .as_ref()
             .is_some_and(|request_id| request_id.trim().is_empty())
         {
-            return Err(ProtocolValidationError::EmptyField { field: "request_id" });
+            return Err(ProtocolValidationError::EmptyField {
+                field: "request_id",
+            });
         }
         Ok(())
     }

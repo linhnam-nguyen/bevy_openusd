@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 /// Pointer buttons accompanying reliable input messages.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PointerButtons {
