@@ -62,6 +62,8 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::cache::ProjectionCache>();
         // Texture cache for filesystem and USDZ archives.
         app.init_resource::<route::material::UsdTextureCache>();
+        // Decoded StandardMaterial cache keyed by composed USD Material path.
+        app.init_resource::<route::material::UsdMaterialCache>();
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

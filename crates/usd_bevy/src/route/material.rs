@@ -31,6 +31,17 @@ pub struct TextureCacheStats {
     pub load_failures: u64,
 }
 
+/// Counters collected by [`UsdMaterialCache`] for binding reuse and live
+/// descriptor changes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MaterialCacheStats {
+    pub lookups: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub stale_handles: u64,
+    pub descriptor_changes: u64,
+}
+
 /// Cache of loaded USD textures keyed by authored asset path.
 #[derive(Resource, Default)]
 pub struct UsdTextureCache {
@@ -51,10 +62,39 @@ impl UsdTextureCache {
     }
 }
 
+#[derive(Clone)]
+struct CachedMaterial {
+    descriptor: ReadPreviewMaterial,
+    handle: Handle<StandardMaterial>,
+}
+
+/// Cache of decoded materials keyed by their composed USD Material path.
+///
+/// The descriptor is retained with the handle so a live material edit creates
+/// a fresh asset instead of returning a stale cached handle.
+#[derive(Resource, Default)]
+pub struct UsdMaterialCache {
+    materials: HashMap<String, CachedMaterial>,
+    stats: MaterialCacheStats,
+}
+
+impl UsdMaterialCache {
+    /// Snapshot material-cache counters for diagnostics or profiling.
+    pub fn stats(&self) -> MaterialCacheStats {
+        self.stats
+    }
+
+    /// Clear profiling counters without dropping cached material handles.
+    pub fn reset_stats(&mut self) {
+        self.stats = MaterialCacheStats::default();
+    }
+}
+
 /// The prim's decoded preview material, if it has a binding that resolves.
-fn material_of(ctx: &RouteCtx) -> Option<ReadPreviewMaterial> {
+fn material_of(ctx: &RouteCtx) -> Option<(String, ReadPreviewMaterial)> {
     let binding = read_material_binding(ctx.stage, ctx.path).ok().flatten()?;
-    read_preview_material(ctx.stage, &binding).ok().flatten()
+    let material = read_preview_material(ctx.stage, &binding).ok().flatten()?;
+    Some((binding.as_str().to_owned(), material))
 }
 
 fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
@@ -254,6 +294,57 @@ fn build_standard_material(read: &ReadPreviewMaterial, world: &mut World) -> Sta
     m
 }
 
+fn intern_material(
+    world: &mut World,
+    binding: &str,
+    descriptor: &ReadPreviewMaterial,
+) -> Option<Handle<StandardMaterial>> {
+    world.get_resource::<Assets<StandardMaterial>>()?;
+
+    let cached = world
+        .get_resource::<UsdMaterialCache>()
+        .and_then(|cache| cache.materials.get(binding).cloned());
+    let asset_is_alive = cached.as_ref().is_some_and(|entry| {
+        world
+            .resource::<Assets<StandardMaterial>>()
+            .contains(&entry.handle)
+    });
+    let descriptor_matches = cached
+        .as_ref()
+        .is_some_and(|entry| entry.descriptor == *descriptor);
+
+    if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
+        cache.stats.lookups += 1;
+        if asset_is_alive && descriptor_matches {
+            cache.stats.hits += 1;
+            return cached.map(|entry| entry.handle);
+        }
+        cache.stats.misses += 1;
+        if cached.is_some() {
+            if !asset_is_alive {
+                cache.stats.stale_handles += 1;
+            } else if !descriptor_matches {
+                cache.stats.descriptor_changes += 1;
+            }
+        }
+    }
+
+    let material = build_standard_material(descriptor, world);
+    let handle = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(material);
+    if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
+        cache.materials.insert(
+            binding.to_owned(),
+            CachedMaterial {
+                descriptor: descriptor.clone(),
+                handle: handle.clone(),
+            },
+        );
+    }
+    Some(handle)
+}
+
 impl PrimRoute for MaterialRoute {
     fn matches(&self, ctx: &RouteCtx) -> bool {
         read_material_binding(ctx.stage, ctx.path)
@@ -266,13 +357,12 @@ impl PrimRoute for MaterialRoute {
         if world.get_resource::<Assets<StandardMaterial>>().is_none() {
             return;
         }
-        let Some(read) = material_of(ctx) else {
+        let Some((binding, descriptor)) = material_of(ctx) else {
             return;
         };
-        let material = build_standard_material(&read, world);
-        let handle = world
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(material);
+        let Some(handle) = intern_material(world, &binding, &descriptor) else {
+            return;
+        };
         if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
             mat.0 = handle;
         } else if let Ok(mut e) = world.get_entity_mut(entity) {
@@ -334,5 +424,68 @@ mod tests {
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.stale_handles, 1);
         assert_eq!(stats.load_failures, 1);
+    }
+
+    #[test]
+    fn repository_texture_decode_is_cached() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Image>>();
+        world.insert_resource(UsdTextureCache::default());
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png");
+        let path = path.to_string_lossy().into_owned();
+
+        let first = resolve_texture(&mut world, &path, false).expect("repository texture loads");
+        let second =
+            resolve_texture(&mut world, &path, false).expect("cached repository texture loads");
+
+        assert_eq!(first, second);
+        assert_eq!(
+            world.resource::<UsdTextureCache>().stats(),
+            TextureCacheStats {
+                lookups: 2,
+                hits: 1,
+                misses: 1,
+                stale_handles: 0,
+                load_failures: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn material_binding_cache_reuses_and_invalidates_descriptors() {
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        world.insert_resource(UsdTextureCache::default());
+        world.insert_resource(UsdMaterialCache::default());
+
+        let first_descriptor = ReadPreviewMaterial {
+            diffuse_color: Some([0.8, 0.1, 0.1]),
+            ..Default::default()
+        };
+        let changed_descriptor = ReadPreviewMaterial {
+            diffuse_color: Some([0.1, 0.8, 0.1]),
+            ..Default::default()
+        };
+        let first = intern_material(&mut world, "/World/Materials/Shared", &first_descriptor)
+            .expect("first material should be added");
+        let reused = intern_material(&mut world, "/World/Materials/Shared", &first_descriptor)
+            .expect("same material should be reused");
+        let changed = intern_material(&mut world, "/World/Materials/Shared", &changed_descriptor)
+            .expect("changed material should be rebuilt");
+
+        assert_eq!(first, reused);
+        assert_ne!(first, changed);
+        assert_eq!(world.resource::<Assets<StandardMaterial>>().len(), 2);
+        assert_eq!(
+            world.resource::<UsdMaterialCache>().stats(),
+            MaterialCacheStats {
+                lookups: 3,
+                hits: 1,
+                misses: 2,
+                stale_handles: 0,
+                descriptor_changes: 1,
+            }
+        );
     }
 }
