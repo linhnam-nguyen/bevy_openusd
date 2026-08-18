@@ -82,20 +82,67 @@ fn resolves_and_materializes_a_historical_parent() {
 }
 
 #[test]
-fn commit_creation_is_explicitly_read_only() {
+fn commit_creation_updates_head_from_source_tree() {
+    let repository_dir = create_repository();
+    let source_dir = tempfile::tempdir().expect("create commit source directory");
+    fs::create_dir_all(source_dir.path().join("layers")).unwrap();
+    fs::write(
+        source_dir.path().join("model.usda"),
+        b"#usda 1.0\n(def \"committed\") {}\n",
+    )
+    .unwrap();
+    fs::write(
+        source_dir.path().join("layers/referenced.usda"),
+        b"#usda 1.0\n(def \"layer\") {}\n",
+    )
+    .unwrap();
+
+    let mut repository =
+        Repository::open(repository_dir.path()).expect("open temporary repository");
+    let before = repository.head().unwrap().unwrap();
+
+    let created = repository
+        .create_commit(CommitRequest::new(
+            "commit canonical source tree",
+            source_dir.path(),
+        ))
+        .expect("create commit from canonical source tree");
+
+    let after = repository.head().unwrap().unwrap();
+    assert_ne!(before, after);
+    assert_eq!(created, *after.id());
+    assert_eq!(
+        repository.read_commit(after.id()).unwrap().message,
+        "commit canonical source tree\n"
+    );
+
+    let materialized_root = repository_dir.path().join("committed");
+    repository
+        .materialize_revision(after.id(), &materialized_root)
+        .expect("materialize new commit");
+    assert_eq!(
+        fs::read(materialized_root.join("model.usda")).unwrap(),
+        b"#usda 1.0\n(def \"committed\") {}\n"
+    );
+    assert_eq!(
+        fs::read(materialized_root.join("layers/referenced.usda")).unwrap(),
+        b"#usda 1.0\n(def \"layer\") {}\n"
+    );
+}
+
+#[test]
+fn rejected_commit_leaves_head_unchanged() {
     let repository_dir = create_repository();
     let mut repository =
         Repository::open(repository_dir.path()).expect("open temporary repository");
     let before = repository.head().unwrap().unwrap();
 
-    let result = repository.create_commit(CommitRequest::new(
-        "should not be created in milestone 10",
-        repository_dir.path(),
-    ));
-    assert!(matches!(result, Err(Error::ReadOnly)));
+    let missing_source = repository_dir.path().join("missing-source");
+    let result = repository.create_commit(CommitRequest::new("must not commit", &missing_source));
+    assert!(matches!(result, Err(Error::InvalidSourceDirectory(path)) if path == missing_source));
 
     let after = repository.head().unwrap().unwrap();
-    assert_eq!(before, after);
+    assert_eq!(before, after, "failed commit must not move HEAD");
 }
 
 fn create_repository() -> TempDir {

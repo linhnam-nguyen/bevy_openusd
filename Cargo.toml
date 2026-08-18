@@ -95,6 +95,7 @@ viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+tempfile = "3"
 bevy = { workspace = true, features = [
     "std",
     "async_executor",
@@ -156,6 +157,5 @@ image = { workspace = true, features = ["png"] }
 [dev-dependencies]
 openusd = { workspace = true }
 usd_git = { workspace = true }
-tempfile = "3"
 zip = { workspace = true, features = ["deflate"] }
 image = { workspace = true, features = ["png"] }

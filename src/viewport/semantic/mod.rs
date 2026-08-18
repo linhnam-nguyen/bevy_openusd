@@ -331,6 +331,10 @@ impl SemanticDiffState {
         self.diff.as_ref().map(|diff| diff.summary)
     }
 
+    pub(crate) fn stage_diff(&self) -> Option<&StageDiff> {
+        self.diff.as_ref()
+    }
+
     fn recompute(&mut self) {
         self.diff = self
             .baseline

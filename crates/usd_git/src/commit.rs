@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// Input reserved for the later write/commit pipeline.
+/// Input to the Git commit transaction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitRequest {
     pub message: String,

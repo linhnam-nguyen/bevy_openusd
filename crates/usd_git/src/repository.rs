@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::{Component, Path},
+    path::{Component, Path, PathBuf},
 };
 
 use gix::object::tree::EntryKind;
@@ -133,9 +133,69 @@ impl GitRepository for Repository {
         })
     }
 
-    fn create_commit(&mut self, _request: CommitRequest) -> Result<RevisionId> {
-        Err(Error::ReadOnly)
+    fn create_commit(&mut self, request: CommitRequest) -> Result<RevisionId> {
+        if request.message.trim().is_empty() {
+            return Err(Error::Git("commit message must not be empty".to_owned()));
+        }
+        if !request.source_directory.is_dir() {
+            return Err(Error::InvalidSourceDirectory(request.source_directory));
+        }
+
+        let message = if request.message.ends_with('\n') {
+            request.message
+        } else {
+            format!("{}\n", request.message)
+        };
+        let tree_id = write_source_tree(&self.inner, &request.source_directory)?;
+        let parent = self
+            .inner
+            .head_commit()
+            .ok()
+            .map(|commit| commit.id().detach());
+        let parents = parent.into_iter();
+        let commit_id = self
+            .inner
+            .commit("HEAD", message, tree_id, parents)
+            .map_err(Error::git)?;
+        Ok(RevisionId::new(commit_id.to_string()))
     }
+}
+
+fn write_source_tree(repository: &gix::Repository, source: &Path) -> Result<gix::hash::ObjectId> {
+    let mut entries = fs::read_dir(source)
+        .map_err(Error::from)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    let mut editor = repository.empty_tree().edit().map_err(Error::git)?;
+    for entry in entries {
+        let name = entry.file_name();
+        if name == ".git" {
+            continue;
+        }
+        let relative = PathBuf::from(name.clone());
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(Error::from)?;
+        let (kind, object_id) = if file_type.is_dir() {
+            (EntryKind::Tree, write_source_tree(repository, &path)?)
+        } else if file_type.is_file() {
+            let data = fs::read(&path).map_err(Error::from)?;
+            (
+                EntryKind::Blob,
+                repository.write_blob(data).map_err(Error::git)?.detach(),
+            )
+        } else {
+            return Err(Error::UnsupportedSourceEntry {
+                path,
+                kind: "non-regular file".to_owned(),
+            });
+        };
+        let name = name
+            .to_str()
+            .ok_or_else(|| Error::InvalidPath(relative.clone()))?;
+        editor.upsert(name, kind, object_id).map_err(Error::git)?;
+    }
+    Ok(editor.write().map_err(Error::git)?.detach())
 }
 
 fn ensure_destination_is_empty(destination: &Path) -> Result<()> {

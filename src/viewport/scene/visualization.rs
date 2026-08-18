@@ -20,6 +20,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::GroundGridOrigin;
 
+use super::draw_semantic_diff;
 use crate::viewport::camera::ArcballCamera;
 
 pub struct OverlaysPlugin;
@@ -79,6 +80,7 @@ impl Plugin for OverlaysPlugin {
                     apply_light_intensity_scale,
                     apply_wireframe_toggle,
                     sync_ground_grid_visibility,
+                    draw_semantic_diff,
                 )
                     .chain()
                     .before(bevy_glacial::prelude::build_grid_meshes),

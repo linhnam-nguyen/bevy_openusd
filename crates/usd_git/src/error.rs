@@ -1,6 +1,6 @@
 use std::{fmt, io, path::PathBuf};
 
-/// Errors returned by the read-only Git boundary.
+/// Errors returned by the Git history and commit boundary.
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
@@ -9,6 +9,8 @@ pub enum Error {
     InvalidPath(PathBuf),
     DestinationNotEmpty(PathBuf),
     UnsupportedEntry { path: PathBuf, kind: String },
+    InvalidSourceDirectory(PathBuf),
+    UnsupportedSourceEntry { path: PathBuf, kind: String },
     ReadOnly,
 }
 
@@ -42,6 +44,20 @@ impl fmt::Display for Error {
                 write!(
                     formatter,
                     "unsupported Git tree entry {kind:?} at {}",
+                    path.display()
+                )
+            }
+            Self::InvalidSourceDirectory(path) => {
+                write!(
+                    formatter,
+                    "invalid commit source directory: {}",
+                    path.display()
+                )
+            }
+            Self::UnsupportedSourceEntry { path, kind } => {
+                write!(
+                    formatter,
+                    "unsupported commit source entry {kind:?} at {}",
                     path.display()
                 )
             }
