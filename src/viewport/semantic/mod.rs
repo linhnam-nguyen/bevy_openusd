@@ -287,6 +287,12 @@ pub(crate) struct SemanticSyncState {
     revision: Option<LiveRevision>,
 }
 
+impl SemanticSyncState {
+    pub(crate) fn snapshot(&self) -> Option<&SemanticSnapshot> {
+        self.snapshot.as_ref()
+    }
+}
+
 /// Manual working-vs-baseline comparison state for diagnostics.
 ///
 /// The baseline is intentionally an in-memory snapshot. Git-backed baselines

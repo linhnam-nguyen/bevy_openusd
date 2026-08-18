@@ -5,11 +5,11 @@ use viewport_protocol::{
     ModelDownloadPermission, PointerButtons, PointerMotion, ProtocolValidationError,
     ReleaseAllInput, RuntimeBlobReference, RuntimeMutation, RuntimeMutationBatch,
     RuntimePayloadKind, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
-    SemanticPropertyScope, SemanticSyncPhase, SemanticSyncStatus, ServerCapabilities, ServerEvent,
-    ServerEventEnvelope, ServerHello, SessionCommand, SessionEvent, SessionId, SessionRole,
-    StreamCommand, StreamEvent, ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel,
-    decode_client_json_line, decode_server_json_line, encode_client_json_line,
-    encode_server_json_line,
+    SemanticPropertyScope, SemanticSyncOperation, SemanticSyncPhase, SemanticSyncStatus,
+    ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello, SessionCommand,
+    SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommand,
+    ViewportEvent, ViewportMetrics, ViewportReadModel, decode_client_json_line,
+    decode_server_json_line, encode_client_json_line, encode_server_json_line,
 };
 
 fn metrics() -> ViewportMetrics {
@@ -104,6 +104,9 @@ fn every_client_command_family_round_trips_through_a_client_envelope() {
         ClientCommand::Session(SessionCommand::RequestRuntimeManifest),
         ClientCommand::Session(SessionCommand::RequestRuntimeBlob {
             blob_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        }),
+        ClientCommand::Session(SessionCommand::SemanticSync {
+            operation: SemanticSyncOperation::Provision,
         }),
         ClientCommand::Session(SessionCommand::Ping {
             nonce: "ping-1".to_owned(),

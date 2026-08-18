@@ -54,7 +54,7 @@ pub use runtime_client::{
     HydratedRuntimeDelivery, RuntimeDeliveryAssembler, RuntimeDeliveryClientError,
     RuntimeDeliveryUpdate,
 };
-pub use semantic_sync::{SemanticSyncPhase, SemanticSyncStatus};
+pub use semantic_sync::{SemanticSyncOperation, SemanticSyncPhase, SemanticSyncStatus};
 pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };

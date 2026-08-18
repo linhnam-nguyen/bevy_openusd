@@ -2,6 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Client-requested semantic synchronization operation.
+///
+/// The operation intentionally carries no authorization policy, remote URL,
+/// database name, or credential. The server derives authorization from the
+/// established session and keeps all deployment details private.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticSyncOperation {
+    Provision,
+    Connect,
+    PushSnapshot,
+    PullProjection,
+    Close,
+}
+
 /// Server-owned lifecycle phase for an authorized semantic projection.
 ///
 /// Credentials, remote URLs, and SQL never appear in this type. It is safe to

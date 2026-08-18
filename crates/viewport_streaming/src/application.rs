@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use viewport_protocol::{
     AuthorizationPolicy, ClientCommandEnvelope, InputCommand, PointerMotion, RuntimeManifest,
-    SemanticSyncStatus, SessionId, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
-    ViewportMetrics, ViewportReadModel, validate_runtime_blob_id,
+    SemanticSyncOperation, SemanticSyncStatus, SessionId, ViewportCommandEnvelope, ViewportEvent,
+    ViewportEventEnvelope, ViewportMetrics, ViewportReadModel, validate_runtime_blob_id,
 };
 
 const MAX_PENDING_MESSAGES: usize = 256;
@@ -21,6 +21,7 @@ struct PendingMessages {
     last_pointer_sequence: u64,
     input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
+    semantic_sync_requests: VecDeque<SemanticSyncRequest>,
     latest_snapshot: Option<ViewportReadModel>,
     authorization: AuthorizationPolicy,
     semantic_sync_statuses: HashMap<SessionId, SemanticSyncStatus>,
@@ -46,6 +47,18 @@ pub enum RenderServerPortError {
     QueueClosed,
     QueueFull,
     InvalidPayload,
+}
+
+/// Server-enriched semantic-sync request queued between the transport and the
+/// application runtime. The authorization policy comes from the established
+/// server session, never from the client command payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SemanticSyncRequest {
+    pub request_id: String,
+    pub session_id: SessionId,
+    pub client_name: String,
+    pub authorization: AuthorizationPolicy,
+    pub operation: SemanticSyncOperation,
 }
 
 impl RenderServerInterface {
@@ -94,6 +107,36 @@ impl RenderServerInterface {
             .lock()
             .expect("render-server interface queue is not poisoned")
             .commands
+            .pop_front()
+    }
+
+    pub fn submit_semantic_sync_request(
+        &self,
+        request: SemanticSyncRequest,
+    ) -> Result<(), RenderServerPortError> {
+        if request.request_id.trim().is_empty()
+            || request.client_name.trim().is_empty()
+            || request.session_id.validate().is_err()
+            || request.authorization.validate().is_err()
+        {
+            return Err(RenderServerPortError::InvalidPayload);
+        }
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.semantic_sync_requests.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.semantic_sync_requests.push_back(request);
+        Ok(())
+    }
+
+    pub fn pop_semantic_sync_request(&self) -> Option<SemanticSyncRequest> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .semantic_sync_requests
             .pop_front()
     }
 
@@ -447,8 +490,8 @@ fn safe_display_name(value: &str) -> String {
 mod tests {
     use super::*;
     use viewport_protocol::{
-        InputCommand, PointerMotion, SemanticSyncPhase, SemanticSyncStatus, SessionId,
-        ViewportCommand,
+        InputCommand, PointerMotion, SemanticSyncOperation, SemanticSyncPhase, SemanticSyncStatus,
+        SessionId, ViewportCommand,
     };
 
     #[test]
@@ -653,5 +696,30 @@ mod tests {
 
         interface.clear_semantic_sync_status(&session_id);
         assert!(interface.semantic_sync_status(&session_id).is_none());
+    }
+
+    #[test]
+    fn semantic_sync_requests_preserve_server_context_and_reject_invalid_context() {
+        let interface = RenderServerInterface::default();
+        let request = SemanticSyncRequest {
+            request_id: "sync-1".to_owned(),
+            session_id: SessionId::new("session-sync"),
+            client_name: "native-client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            operation: SemanticSyncOperation::Provision,
+        };
+        interface
+            .submit_semantic_sync_request(request.clone())
+            .expect("valid semantic-sync request should queue");
+        assert_eq!(interface.pop_semantic_sync_request(), Some(request.clone()));
+
+        let invalid = SemanticSyncRequest {
+            client_name: String::new(),
+            ..request
+        };
+        assert_eq!(
+            interface.submit_semantic_sync_request(invalid),
+            Err(RenderServerPortError::InvalidPayload)
+        );
     }
 }

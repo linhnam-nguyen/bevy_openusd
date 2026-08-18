@@ -8,6 +8,7 @@
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     path::PathBuf,
+    sync::mpsc,
 };
 
 use anyhow::{Context, Result, bail};
@@ -116,6 +117,33 @@ pub(crate) struct TursoCloudProvisioningConfig {
 }
 
 impl TursoCloudProvisioningConfig {
+    pub(crate) fn from_environment() -> Result<Self> {
+        let organization_slug = std::env::var("TURSO_ORGANIZATION")
+            .context("TURSO_ORGANIZATION must be set for Turso semantic sync")?;
+        let group_name =
+            std::env::var("TURSO_CLIENT_GROUP").unwrap_or_else(|_| "default".to_owned());
+        let database_prefix = std::env::var("TURSO_CLIENT_DATABASE_PREFIX")
+            .unwrap_or_else(|_| "usdhub-client".to_owned());
+        let local_root = std::env::var_os("TURSO_CLIENT_SYNC_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("usdhub-client-sync"));
+        let token_expiration = std::env::var("TURSO_CLIENT_TOKEN_EXPIRATION").ok();
+        Self::validate(&Self {
+            organization_slug: organization_slug.clone(),
+            group_name: group_name.clone(),
+            database_prefix: database_prefix.clone(),
+            local_root: local_root.clone(),
+            token_expiration: token_expiration.clone(),
+        })?;
+        Ok(Self {
+            organization_slug,
+            group_name,
+            database_prefix,
+            local_root,
+            token_expiration,
+        })
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         validate_turso_slug(&self.organization_slug, "organization slug")?;
         validate_turso_slug(&self.group_name, "group name")?;
@@ -690,6 +718,91 @@ impl TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>> {
         let provider =
             TursoCloudProvisioner::new(TursoPlatformApi::from_environment()?, provisioning)?;
         Ok(Self::new(provider, interface))
+    }
+}
+
+/// Commands sent to the dedicated semantic-sync worker. The worker owns the
+/// application coordinator so Bevy and WebRTC never block on Turso I/O.
+pub(crate) enum TursoClientSyncRuntimeCommand {
+    Provision(TursoClientSyncProvisionRequest),
+    Connect(SessionId),
+    PushSnapshot {
+        session_id: SessionId,
+        snapshot: SemanticSnapshot,
+    },
+    PullProjection(SessionId),
+    Close(SessionId),
+}
+
+/// Opt-in application worker for explicit semantic-sync lifecycle requests.
+#[derive(Clone)]
+pub(crate) struct TursoClientSyncRuntime {
+    commands: mpsc::Sender<TursoClientSyncRuntimeCommand>,
+}
+
+impl TursoClientSyncRuntime {
+    pub(crate) fn from_environment(
+        interface: viewport_streaming::RenderServerInterface,
+    ) -> Result<Option<Self>> {
+        let enabled = std::env::var("TURSO_SEMANTIC_SYNC_ENABLED")
+            .ok()
+            .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "on"));
+        if !enabled {
+            return Ok(None);
+        }
+
+        let provisioning = TursoCloudProvisioningConfig::from_environment()?;
+        let application = TursoClientSyncApplication::from_environment(interface, provisioning)?;
+        let (commands, pending_commands) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("usdhub-semantic-sync".to_owned())
+            .spawn(move || semantic_sync_worker(application, pending_commands))
+            .context("starting semantic-sync worker")?;
+        Ok(Some(Self { commands }))
+    }
+
+    pub(crate) fn submit(&self, command: TursoClientSyncRuntimeCommand) -> Result<()> {
+        self.commands
+            .send(command)
+            .map_err(|_| anyhow::anyhow!("semantic-sync worker is unavailable"))
+    }
+}
+
+fn semantic_sync_worker(
+    mut application: TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>>,
+    pending_commands: mpsc::Receiver<TursoClientSyncRuntimeCommand>,
+) {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            log::error!("[semantic-sync] worker runtime failed to start: {error:#}");
+            return;
+        }
+    };
+
+    while let Ok(command) = pending_commands.recv() {
+        let result = match command {
+            TursoClientSyncRuntimeCommand::Provision(request) => application.provision(request),
+            TursoClientSyncRuntimeCommand::Connect(session_id) => {
+                runtime.block_on(application.connect(&session_id))
+            }
+            TursoClientSyncRuntimeCommand::PushSnapshot {
+                session_id,
+                snapshot,
+            } => runtime
+                .block_on(application.push_snapshot(&session_id, &snapshot))
+                .map(|_| ()),
+            TursoClientSyncRuntimeCommand::PullProjection(session_id) => runtime
+                .block_on(application.pull_projection(&session_id))
+                .map(|_| ()),
+            TursoClientSyncRuntimeCommand::Close(session_id) => application.close(&session_id),
+        };
+        if let Err(error) = result {
+            log::error!("[semantic-sync] lifecycle operation failed: {error:#}");
+        }
     }
 }
 

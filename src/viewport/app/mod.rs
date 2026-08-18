@@ -42,10 +42,19 @@ use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT, ViewerUiPlugin};
 use bevy_glacial::prelude::{
     AxisGizmo, AxisGizmoPlugin, ChaseCamera, GroundGrid, GroundGridPlugin,
 };
+use viewport_protocol::{SemanticSyncPhase, SemanticSyncStatus};
+
+use crate::project::semantic_store::sync::{
+    TursoClientSyncProvisionRequest, TursoClientSyncRuntime, TursoClientSyncRuntimeCommand,
+};
+use crate::viewport::semantic::SemanticSyncState;
 
 /// Tag on the viewer's fallback `DirectionalLight`.
 #[derive(Component)]
 struct DefaultSun;
+
+#[derive(Resource, Default)]
+struct SemanticSyncRuntimeResource(Option<TursoClientSyncRuntime>);
 
 pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
@@ -150,6 +159,17 @@ pub(crate) fn run() {
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
         app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
+        let semantic_sync_runtime = match TursoClientSyncRuntime::from_environment(
+            app.world().resource::<RenderServerInterface>().shared(),
+        ) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                bevy::log::error!("[semantic-sync] runtime configuration failed: {error:#}");
+                None
+            }
+        };
+        app.insert_resource(SemanticSyncRuntimeResource(semantic_sync_runtime))
+            .add_systems(Update, process_semantic_sync_requests);
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
@@ -256,6 +276,81 @@ pub(crate) fn run() {
         .add_systems(Startup, setup_skeleton_gizmos_on_top);
 
     app.run();
+}
+
+fn process_semantic_sync_requests(
+    interface: Res<RenderServerInterface>,
+    runtime: Res<SemanticSyncRuntimeResource>,
+    semantic: Res<SemanticSyncState>,
+) {
+    let application_interface = interface.shared();
+    while let Some(request) = application_interface.pop_semantic_sync_request() {
+        let request_id = request.request_id;
+        let session_id = request.session_id;
+        let operation = request.operation;
+        let client_name = request.client_name;
+        let authorization = request.authorization;
+        let command = match operation {
+            viewport_protocol::SemanticSyncOperation::Provision => {
+                TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+                    session_id: session_id.clone(),
+                    client_name,
+                    authorization,
+                })
+            }
+            viewport_protocol::SemanticSyncOperation::Connect => {
+                TursoClientSyncRuntimeCommand::Connect(session_id.clone())
+            }
+            viewport_protocol::SemanticSyncOperation::PushSnapshot => {
+                let Some(snapshot) = semantic.snapshot().cloned() else {
+                    let _ = application_interface.publish_semantic_sync_status(
+                        session_id.clone(),
+                        SemanticSyncStatus::phase(
+                            SemanticSyncPhase::Failed,
+                            Some("snapshot_unavailable".to_owned()),
+                        ),
+                    );
+                    continue;
+                };
+                TursoClientSyncRuntimeCommand::PushSnapshot {
+                    session_id: session_id.clone(),
+                    snapshot,
+                }
+            }
+            viewport_protocol::SemanticSyncOperation::PullProjection => {
+                TursoClientSyncRuntimeCommand::PullProjection(session_id.clone())
+            }
+            viewport_protocol::SemanticSyncOperation::Close => {
+                TursoClientSyncRuntimeCommand::Close(session_id.clone())
+            }
+        };
+
+        let Some(runtime) = runtime.0.as_ref() else {
+            let status = if operation == viewport_protocol::SemanticSyncOperation::Close {
+                SemanticSyncStatus::phase(SemanticSyncPhase::Closed, None)
+            } else {
+                SemanticSyncStatus::phase(
+                    SemanticSyncPhase::Failed,
+                    Some("runtime_unavailable".to_owned()),
+                )
+            };
+            let _ = application_interface.publish_semantic_sync_status(session_id, status);
+            continue;
+        };
+        if let Err(error) = runtime.submit(command) {
+            bevy::log::warn!(
+                "[semantic-sync] request {} could not reach worker: {error:#}",
+                request_id
+            );
+            let _ = application_interface.publish_semantic_sync_status(
+                session_id,
+                SemanticSyncStatus::phase(
+                    SemanticSyncPhase::Failed,
+                    Some("worker_unavailable".to_owned()),
+                ),
+            );
+        }
+    }
 }
 
 /// Opens the prim tree on startup to give the viewer an immediate focal panel.

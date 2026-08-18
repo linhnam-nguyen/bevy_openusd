@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::SemanticSyncOperation;
 use crate::{
     ButtonState, ClientHello, FocusState, InputModifiers, KeyboardInput, PointerMotion,
     ProtocolValidationError, ReleaseAllInput, ViewportCommand, ViewportMetrics,
@@ -40,6 +41,7 @@ pub enum SessionCommand {
     RequestSnapshot,
     RequestRuntimeManifest,
     RequestRuntimeBlob { blob_id: String },
+    SemanticSync { operation: SemanticSyncOperation },
     Resume { request: crate::ResumeRequest },
     Close { reason: Option<String> },
     Ping { nonce: String },

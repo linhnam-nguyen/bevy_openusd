@@ -15,14 +15,14 @@ use std::{
 use viewport_protocol::{
     ActiveStreamConfiguration, AuthorizationPolicy, CameraSource, ClientCommand, CommandFamily,
     HandshakeEvent, HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION,
-    ProtocolValidationError, SemanticSyncStatus, ServerCapabilities, ServerEvent,
-    ServerEventEnvelope, SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand,
-    StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
-    decode_client_json_line, encode_server_json_line,
+    ProtocolValidationError, SemanticSyncOperation, SemanticSyncStatus, ServerCapabilities,
+    ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent, SessionId, SessionRole,
+    StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel, decode_client_json_line, encode_server_json_line,
 };
 
-use crate::RenderServerInterface;
 use crate::session::{SessionAdmission, SessionAdmissionError};
+use crate::{RenderServerInterface, SemanticSyncRequest};
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
@@ -48,6 +48,7 @@ pub(crate) struct ApplicationSession {
 
 struct ApplicationSessionState {
     session_id: SessionId,
+    client_name: String,
     admission: SessionAdmission,
     role: Option<SessionRole>,
     server_capabilities: ServerCapabilities,
@@ -95,6 +96,7 @@ impl ApplicationSession {
         Self {
             state: Arc::new(Mutex::new(ApplicationSessionState {
                 session_id,
+                client_name: String::new(),
                 admission,
                 role: None,
                 server_capabilities,
@@ -116,6 +118,17 @@ impl ApplicationSession {
     pub(crate) fn release_admission(&self) {
         if let Ok(state) = self.state.lock() {
             state.admission.unregister(&state.session_id);
+            if state.handshaken {
+                let _ = state
+                    .interface
+                    .submit_semantic_sync_request(SemanticSyncRequest {
+                        request_id: format!("disconnect-{}", state.session_id.0),
+                        session_id: state.session_id.clone(),
+                        client_name: state.client_name.clone(),
+                        authorization: state.authorization.clone(),
+                        operation: SemanticSyncOperation::Close,
+                    });
+            }
         }
     }
 
@@ -201,6 +214,7 @@ impl ApplicationSession {
             }
 
             let requested_role = hello.requested_role;
+            state.client_name = hello.client_id.clone();
             if let Err(error) = state
                 .admission
                 .register(state.session_id.clone(), requested_role)
@@ -383,6 +397,35 @@ impl ApplicationSession {
                     request_id,
                     ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
                 );
+            }
+            ClientCommand::Session(SessionCommand::SemanticSync { operation }) => {
+                if operation != SemanticSyncOperation::Close
+                    && (!state.authorization.allows_self_render_delivery()
+                        || !state.authorization.allows_model_download())
+                {
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "semantic synchronization is not authorized for this session".to_owned(),
+                    );
+                    return;
+                }
+                let request = SemanticSyncRequest {
+                    request_id: request_id.clone(),
+                    session_id: state.session_id.clone(),
+                    client_name: state.client_name.clone(),
+                    authorization: state.authorization.clone(),
+                    operation,
+                };
+                if let Err(error) = state.interface.submit_semantic_sync_request(request) {
+                    send_command_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        format!("semantic-sync request rejected: {error:?}"),
+                    );
+                }
             }
             ClientCommand::Session(SessionCommand::RequestRuntimeManifest) => {
                 let Some(manifest) = state.interface.runtime_manifest() else {
