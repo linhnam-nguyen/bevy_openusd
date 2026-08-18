@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use usd_diff::{DiffConfig, compare, compare_with_config};
+use usd_diff::{DiffConfig, RecreationReason, compare, compare_with_config};
 use usd_model::{
     Bounds3, CanonicalValue, ChangeFlags, EntityKey, EntitySnapshot, GeometrySignature, HashDigest,
     IdentitySource, QuantizedPoint3, SemanticInfo, SemanticProperty, SemanticSnapshot, SnapshotId,
@@ -182,7 +182,9 @@ fn additions_and_removals_remain_separate_identity_changes() {
 
     assert_eq!(diff.summary.removed, 1);
     assert_eq!(diff.summary.added, 1);
-    assert!(diff.recreations.is_empty());
+    assert_eq!(diff.recreations.len(), 1);
+    assert_eq!(diff.recreations[0].removed, EntityKey::from("removed"));
+    assert_eq!(diff.recreations[0].added, EntityKey::from("added"));
     assert_eq!(
         diff.entity(&EntityKey::from("removed")).unwrap().presence,
         usd_model::PresenceState::Removed
@@ -191,6 +193,66 @@ fn additions_and_removals_remain_separate_identity_changes() {
         diff.entity(&EntityKey::from("added")).unwrap().presence,
         usd_model::PresenceState::Added
     );
+}
+
+#[test]
+fn recreation_candidates_include_confidence_reasons_and_preserve_details() {
+    let mut removed = entity("old-door", "/World/OldDoor");
+    removed.semantic = SemanticInfo {
+        category: Some("Doors".to_owned()),
+        family: Some("Single".to_owned()),
+        type_name: Some("Door".to_owned()),
+        type_id: Some("door-type".to_owned()),
+        display_name: Some("Old door".to_owned()),
+    };
+
+    let mut added = removed.clone();
+    added.key = EntityKey::from("new-door");
+    added.prim_path = "/World/NewDoor".to_owned();
+    added.semantic.display_name = Some("New door".to_owned());
+
+    let diff = compare(
+        &snapshot("base", [removed.clone()]),
+        &snapshot("current", [added.clone()]),
+    );
+    let candidate = &diff.recreations[0];
+
+    assert_eq!(candidate.score, 100);
+    assert_eq!(
+        candidate.reasons,
+        vec![
+            RecreationReason::SameCategory,
+            RecreationReason::SameFamily,
+            RecreationReason::SameType,
+            RecreationReason::SimilarTransform,
+            RecreationReason::SimilarGeometry,
+        ]
+    );
+    assert_eq!(
+        diff.entity(&EntityKey::from("old-door")).unwrap().old,
+        Some(removed)
+    );
+    assert_eq!(
+        diff.entity(&EntityKey::from("new-door")).unwrap().new,
+        Some(added)
+    );
+}
+
+#[test]
+fn unrelated_one_sided_entities_do_not_create_a_candidate() {
+    let mut removed = entity("old", "/World/Old");
+    removed.semantic.category = Some("Walls".to_owned());
+    removed.semantic.type_name = Some("Wall".to_owned());
+
+    let mut added = entity("new", "/World/New");
+    added.semantic.category = Some("Furniture".to_owned());
+    added.semantic.type_name = Some("Chair".to_owned());
+    added.transform.translation_mm = [10_000, 0, 0];
+    added.geometry.as_mut().unwrap().shape_hash = digest(99);
+
+    let diff = compare(&snapshot("base", [removed]), &snapshot("current", [added]));
+
+    assert!(diff.recreations.is_empty());
 }
 
 #[test]

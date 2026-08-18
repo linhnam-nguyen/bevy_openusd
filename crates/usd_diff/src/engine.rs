@@ -6,10 +6,10 @@ use usd_model::{
     ChangeFlags, EntityKey, EntitySnapshot, PresenceState, SemanticSnapshot, SnapshotId,
 };
 
-use crate::RecreationCandidate;
 use crate::classification::classify_existing;
 use crate::config::DiffConfig;
 use crate::metadata::{MetadataChange, metadata_changes};
+use crate::recreation::{RecreationCandidate, find_recreations};
 
 /// The complete semantic diff between two snapshots.
 #[derive(Clone, Debug, PartialEq)]
@@ -139,14 +139,23 @@ pub fn compare_with_config(
         entities.insert(key, entity);
     }
 
+    let recreations = find_recreations(
+        entities
+            .values()
+            .filter(|entity| entity.presence == PresenceState::Removed)
+            .filter_map(|entity| entity.old.as_ref()),
+        entities
+            .values()
+            .filter(|entity| entity.presence == PresenceState::Added)
+            .filter_map(|entity| entity.new.as_ref()),
+    );
+
     StageDiff {
         baseline: baseline.snapshot_id.clone(),
         current: current.snapshot_id.clone(),
         entities,
         summary,
-        // Heuristic recreation matching belongs to Milestone 14. Keeping
-        // this field explicit makes the non-conversion policy observable.
-        recreations: Vec::new(),
+        recreations,
     }
 }
 

@@ -13,4 +13,4 @@ pub mod recreation;
 pub use config::DiffConfig;
 pub use engine::{DiffSummary, EntityDiff, StageDiff, compare, compare_with_config};
 pub use metadata::{MetadataChange, metadata_changes};
-pub use recreation::RecreationCandidate;
+pub use recreation::{RecreationCandidate, RecreationReason};

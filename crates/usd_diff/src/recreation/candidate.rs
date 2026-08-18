@@ -14,8 +14,8 @@ pub struct RecreationCandidate {
     pub reasons: Vec<RecreationReason>,
 }
 
-/// Evidence used by a future recreation matcher.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Evidence used by the recreation matcher.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecreationReason {
     SameCategory,
     SameFamily,
