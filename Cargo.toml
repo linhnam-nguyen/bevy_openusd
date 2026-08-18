@@ -13,7 +13,6 @@ members = [
 ]
 exclude = ["xtra"]
 
-
 [workspace.dependencies]
 # Keep every USD layer on one exact upstream revision. Updating this single
 # entry updates usd_macro, usd_rapier, and usd_bevy together.
@@ -42,9 +41,9 @@ turso = { version = "0.7.1", default-features = false, features = ["sync"] }
 
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "3.0.3", features = ["full"] }
+syn = { version = "2", features = ["full"] }
 bitflags = "2"
-blake3 = "1.8.5"
+blake3 = "1"
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"
