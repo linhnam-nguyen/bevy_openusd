@@ -16,7 +16,11 @@ use usd_diff::{DiffSummary, StageDiff};
 use usd_model::{EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
+use crate::project::blob_store::FilesystemBlobStore;
 use crate::project::ghost_cache::attach_render_blobs;
+use crate::project::recovery::RecoverySettings;
+use crate::project::runtime_delivery::{build_runtime_delivery, into_delivery_parts};
+use crate::viewport::api::RenderServerInterface;
 
 pub(crate) use query::{GroupField, SemanticFilter, SemanticQuery, SemanticQueryResult};
 
@@ -449,6 +453,7 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
     let request_id = format!("semantic-sync-{}", live_revision.0);
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
+            publish_runtime_delivery(world, &snapshot);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot(request_id, snapshot.clone());
@@ -462,6 +467,7 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         }
         SemanticSyncAction::Delta(update) => {
             let snapshot = update.snapshot.clone();
+            publish_runtime_delivery(world, &snapshot);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_delta(request_id, update.request);
@@ -480,6 +486,49 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         state.revision = Some(live_revision);
     } else {
         bevy::log::warn!("[semantic-sync] worker channel is unavailable");
+    }
+}
+
+fn publish_runtime_delivery(world: &World, snapshot: &SemanticSnapshot) {
+    let Some(interface) = world
+        .get_resource::<RenderServerInterface>()
+        .map(RenderServerInterface::shared)
+    else {
+        // The local/native viewer does not install the WebRTC delivery bus.
+        return;
+    };
+    let Some(settings) = world.get_resource::<RecoverySettings>() else {
+        interface.clear_runtime_delivery();
+        return;
+    };
+    let store = match FilesystemBlobStore::new(
+        settings
+            .project_root
+            .join(crate::project::blob_store::OBJECTS_DIRECTORY),
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            interface.clear_runtime_delivery();
+            bevy::log::error!("[runtime-delivery] cannot create BlobStore: {error:#}");
+            return;
+        }
+    };
+    let bundle = match build_runtime_delivery(
+        &store,
+        snapshot,
+        viewport_protocol::RuntimeProfile::NativeMedium,
+    ) {
+        Ok(bundle) => bundle,
+        Err(error) => {
+            interface.clear_runtime_delivery();
+            bevy::log::warn!("[runtime-delivery] bundle publication skipped: {error:#}");
+            return;
+        }
+    };
+    let (manifest, blobs) = into_delivery_parts(bundle);
+    if let Err(error) = interface.publish_runtime_delivery(manifest, blobs) {
+        interface.clear_runtime_delivery();
+        bevy::log::warn!("[runtime-delivery] bundle publication rejected: {error:?}");
     }
 }
 

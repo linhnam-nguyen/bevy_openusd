@@ -17,6 +17,8 @@ use bevy::mesh::{Indices, Mesh, PrimitiveTopology, VertexAttributeValues};
 use serde::{Deserialize, Serialize};
 use usd_model::BlobId;
 
+pub(crate) const OBJECTS_DIRECTORY: &str = ".usdhub/cache/objects";
+
 /// Storage interface for content-addressed derived payloads.
 pub(crate) trait BlobStore {
     fn put(&self, bytes: &[u8]) -> Result<BlobId>;

@@ -293,6 +293,52 @@ impl RenderServerInterface {
         Ok(())
     }
 
+    /// Atomically replaces the runtime manifest and exactly the verified blob
+    /// bytes referenced by it. A failed publication leaves the previous bundle
+    /// untouched, so a client cannot observe a partial revision.
+    pub fn publish_runtime_delivery(
+        &self,
+        manifest: RuntimeManifest,
+        blobs: Vec<(String, Vec<u8>)>,
+    ) -> Result<(), RenderServerPortError> {
+        manifest
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+        let mut blob_map = HashMap::with_capacity(blobs.len());
+        for (blob_id, bytes) in blobs {
+            if validate_runtime_blob_id(&blob_id).is_err()
+                || blob_map.insert(blob_id, bytes).is_some()
+            {
+                return Err(RenderServerPortError::InvalidPayload);
+            }
+        }
+        let references = manifest.references();
+        if references.len() != blob_map.len()
+            || references.iter().any(|reference| {
+                blob_map
+                    .get(&reference.blob_id)
+                    .is_none_or(|bytes| bytes.len() as u64 != reference.byte_size)
+            })
+        {
+            return Err(RenderServerPortError::InvalidPayload);
+        }
+
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        pending.runtime_manifest = Some(manifest);
+        pending.runtime_blobs = blob_map;
+        Ok(())
+    }
+
+    pub fn clear_runtime_delivery(&self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.runtime_manifest = None;
+            pending.runtime_blobs.clear();
+        }
+    }
+
     /// Publishes verified bytes for one content-addressed runtime object.
     /// Filesystem/object-store adapters remain outside this transport crate;
     /// they provide the bytes only after validating the content address.

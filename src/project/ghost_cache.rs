@@ -13,10 +13,8 @@ use bevy::prelude::{Resource, World};
 use usd_bevy::UsdPrimRef;
 use usd_model::SemanticSnapshot;
 
-use super::blob_store::{FilesystemBlobStore, put_mesh};
+use super::blob_store::{FilesystemBlobStore, OBJECTS_DIRECTORY, put_mesh};
 use super::recovery::RecoverySettings;
-
-const OBJECTS_DIRECTORY: &str = ".usdhub/cache/objects";
 
 /// Runtime counters for historical geometry capture.
 ///

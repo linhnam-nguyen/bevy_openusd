@@ -132,7 +132,7 @@ impl RuntimeManifest {
         })
     }
 
-    fn references(&self) -> Vec<&RuntimeBlobReference> {
+    pub fn references(&self) -> Vec<&RuntimeBlobReference> {
         let mut references =
             Vec::with_capacity(1 + self.meshes.len() + self.materials.len() + self.textures.len());
         references.push(&self.hierarchy);
