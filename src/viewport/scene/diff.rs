@@ -142,7 +142,11 @@ fn draw_historical_entity(
     }
 }
 
-fn historical_world_matrix(stage_diff: &StageDiff, old: &EntitySnapshot, root: Mat4) -> Mat4 {
+pub(super) fn historical_world_matrix(
+    stage_diff: &StageDiff,
+    old: &EntitySnapshot,
+    root: Mat4,
+) -> Mat4 {
     let mut chain = Vec::new();
     let mut path = old.prim_path.as_str();
     while path != "/" {

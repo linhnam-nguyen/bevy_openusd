@@ -20,7 +20,8 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::GroundGridOrigin;
 
-use super::draw_semantic_diff;
+use super::HistoricalGhostState;
+use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
 
 pub struct OverlaysPlugin;
@@ -70,6 +71,7 @@ impl Plugin for OverlaysPlugin {
         // `sync_chase_camera` / `sync_ground_grid_visibility` bridges.
         app.init_resource::<DisplayToggles>()
             .init_resource::<SceneExtent>()
+            .init_resource::<HistoricalGhostState>()
             .add_systems(
                 Update,
                 (
@@ -80,6 +82,7 @@ impl Plugin for OverlaysPlugin {
                     apply_light_intensity_scale,
                     apply_wireframe_toggle,
                     sync_ground_grid_visibility,
+                    hydrate_historical_ghosts,
                     draw_semantic_diff,
                 )
                     .chain()

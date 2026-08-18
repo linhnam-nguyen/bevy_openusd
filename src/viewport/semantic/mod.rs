@@ -16,6 +16,8 @@ use usd_diff::{DiffSummary, StageDiff};
 use usd_model::{EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
+use crate::project::ghost_cache::attach_render_blobs;
+
 pub(crate) use query::{GroupField, SemanticFilter, SemanticQuery, SemanticQueryResult};
 
 use store::SemanticDatabase;
@@ -335,6 +337,10 @@ impl SemanticDiffState {
         self.diff.as_ref()
     }
 
+    pub(crate) fn baseline_snapshot_id(&self) -> Option<&SnapshotId> {
+        self.baseline.as_ref().map(|snapshot| &snapshot.snapshot_id)
+    }
+
     fn recompute(&mut self) {
         self.diff = self
             .baseline
@@ -437,6 +443,9 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         }
     };
 
+    let mut update = update;
+    attach_render_blobs_to_action(world, &mut update);
+
     let request_id = format!("semantic-sync-{}", live_revision.0);
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
@@ -471,6 +480,20 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         state.revision = Some(live_revision);
     } else {
         bevy::log::warn!("[semantic-sync] worker channel is unavailable");
+    }
+}
+
+fn attach_render_blobs_to_action(world: &mut World, action: &mut SemanticSyncAction) {
+    match action {
+        SemanticSyncAction::Replace(snapshot) => attach_render_blobs(world, snapshot),
+        SemanticSyncAction::Delta(update) => {
+            attach_render_blobs(world, &mut update.snapshot);
+            for upsert in &mut update.request.upserts {
+                if let Some(enriched) = update.snapshot.entities.get(&upsert.key) {
+                    *upsert = enriched.clone();
+                }
+            }
+        }
     }
 }
 

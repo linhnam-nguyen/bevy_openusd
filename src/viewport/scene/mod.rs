@@ -1,11 +1,13 @@
 //! Scene-derived state and visual presentation controls.
 
 mod diff;
+mod ghost;
 mod runtime;
 mod selection;
 mod skeleton;
 
 pub(crate) use diff::draw_semantic_diff;
+pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
 pub(crate) use runtime::draw_selected_prim_highlight;
 pub(crate) use selection::SelectedPrim;
 pub(crate) use skeleton::{

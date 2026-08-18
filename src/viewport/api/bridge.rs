@@ -16,6 +16,7 @@ use super::{
     SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
     ViewportTreeCommand, ViewportTreeCommandInbox,
 };
+use crate::project::ghost_cache::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::camera::{ArcballCamera, CameraMount, FlyTo};
@@ -147,6 +148,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<RuntimeMutationCoordinator>()
             .init_resource::<RecoverySettings>()
             .init_resource::<RecoveryRuntimeState>()
+            .init_resource::<HistoricalGeometryCache>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
                 Update,
