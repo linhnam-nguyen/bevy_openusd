@@ -62,6 +62,9 @@ pub enum RuntimeProfile {
 pub struct AuthorizationPolicy {
     pub allowed_delivery_modes: Vec<DeliveryMode>,
     pub model_download: ModelDownloadPermission,
+    /// Exact content-addressed runtime blobs that may leave the server.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_blob_ids: Vec<String>,
     pub semantic_property_scope: SemanticPropertyScope,
     pub history: HistoryPermission,
     pub runtime_profile: RuntimeProfile,
@@ -74,6 +77,7 @@ impl AuthorizationPolicy {
         Self {
             allowed_delivery_modes: vec![DeliveryMode::Stream],
             model_download: ModelDownloadPermission::Denied,
+            allowed_blob_ids: Vec::new(),
             semantic_property_scope: SemanticPropertyScope::None,
             history: HistoryPermission::Denied,
             runtime_profile: RuntimeProfile::ServerStream,
@@ -90,6 +94,17 @@ impl AuthorizationPolicy {
             && self.model_download == ModelDownloadPermission::Denied
         {
             return Err(AuthorizationValidationError::SelfRenderRequiresModelDownload);
+        }
+
+        if self.allows_delivery_mode(DeliveryMode::SelfRender) && self.allowed_blob_ids.is_empty() {
+            return Err(AuthorizationValidationError::SelfRenderRequiresBlobAllowList);
+        }
+        if self
+            .allowed_blob_ids
+            .iter()
+            .any(|blob_id| crate::validate_runtime_blob_id(blob_id).is_err())
+        {
+            return Err(AuthorizationValidationError::InvalidRuntimeBlobId);
         }
 
         if let SemanticPropertyScope::AllowList(paths) = &self.semantic_property_scope {
@@ -119,6 +134,20 @@ impl AuthorizationPolicy {
     /// Returns whether this policy grants possession of runtime model blobs.
     pub fn allows_model_download(&self) -> bool {
         self.model_download == ModelDownloadPermission::Allowed
+    }
+
+    /// Returns whether self-render delivery is one of the authorized paths.
+    pub fn allows_self_render_delivery(&self) -> bool {
+        self.allows_delivery_mode(DeliveryMode::SelfRender)
+    }
+
+    /// Returns whether this exact content-addressed blob may be downloaded.
+    pub fn allows_runtime_blob(&self, blob_id: &str) -> bool {
+        self.allows_model_download()
+            && self
+                .allowed_blob_ids
+                .iter()
+                .any(|allowed| allowed == blob_id)
     }
 
     /// Returns whether this policy grants committed-history queries.
@@ -152,6 +181,8 @@ impl Default for AuthorizationPolicy {
 pub enum AuthorizationValidationError {
     NoDeliveryModes,
     SelfRenderRequiresModelDownload,
+    SelfRenderRequiresBlobAllowList,
+    InvalidRuntimeBlobId,
     EmptySemanticPropertyPath,
     ServerStreamRequiresStream,
     NativeProfileRequiresSelfRender,
@@ -163,6 +194,12 @@ impl fmt::Display for AuthorizationValidationError {
             Self::NoDeliveryModes => "authorization policy must allow a delivery mode",
             Self::SelfRenderRequiresModelDownload => {
                 "self-render delivery requires model-download permission"
+            }
+            Self::SelfRenderRequiresBlobAllowList => {
+                "self-render delivery requires an explicit runtime-blob allow-list"
+            }
+            Self::InvalidRuntimeBlobId => {
+                "authorization policy contains an invalid runtime blob id"
             }
             Self::EmptySemanticPropertyPath => {
                 "semantic-property allow-list contains an empty path"
@@ -202,6 +239,9 @@ mod tests {
         let policy = AuthorizationPolicy {
             allowed_delivery_modes: vec![DeliveryMode::SelfRender],
             model_download: ModelDownloadPermission::Allowed,
+            allowed_blob_ids: vec![
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            ],
             semantic_property_scope: SemanticPropertyScope::AllowList(vec![
                 "xformOp:translate".to_owned(),
             ]),
@@ -221,6 +261,7 @@ mod tests {
         let policy = AuthorizationPolicy {
             allowed_delivery_modes: vec![DeliveryMode::Stream, DeliveryMode::SelfRender],
             model_download: ModelDownloadPermission::Denied,
+            allowed_blob_ids: vec![],
             ..AuthorizationPolicy::default()
         };
 

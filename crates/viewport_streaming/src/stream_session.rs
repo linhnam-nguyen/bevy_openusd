@@ -8,6 +8,7 @@
 use anyhow::{Context, Result};
 use gstreamer::prelude::*;
 use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -23,15 +24,23 @@ use crate::VideoFrame;
 use crate::config::StreamingConfig;
 use crate::data_channel::DataChannelSet;
 use crate::encode::{EncodePipeline, VideoCodec};
+use crate::session::SessionAdmission;
 use crate::signaling::SignalingMessage;
 
 const EXPECTED_MEDIA_SECTIONS: u32 = 2;
 
-/// Routes raw frames to the currently active encoder without exposing the
-/// encoder or GStreamer objects to Bevy.
+/// Routes each raw frame to every admitted encoder without exposing the
+/// encoders or GStreamer objects to Bevy.
 #[derive(Clone, Default)]
 pub(crate) struct FrameRouter {
-    target: Arc<Mutex<Option<ActiveFrameTarget>>>,
+    state: Arc<Mutex<FrameRouterState>>,
+}
+
+#[derive(Default)]
+struct FrameRouterState {
+    targets: HashMap<u64, ActiveFrameTarget>,
+    expected: Option<ViewportMetrics>,
+    current: Option<ActiveStreamConfiguration>,
 }
 
 struct ActiveFrameTarget {
@@ -45,40 +54,44 @@ struct ActiveFrameTarget {
 
 impl FrameRouter {
     fn activate(&self, connection_id: u64, encoder: Arc<EncodePipeline>, codec: CodecId) {
-        if let Ok(mut target) = self.target.lock() {
-            *target = Some(ActiveFrameTarget {
+        if let Ok(mut state) = self.state.lock() {
+            let expected = state.expected.clone();
+            let current = expected.is_none().then(|| state.current.clone()).flatten();
+            state.targets.insert(
                 connection_id,
-                encoder,
-                codec,
-                expected: None,
-                current: None,
-                applied: None,
-            });
+                ActiveFrameTarget {
+                    connection_id,
+                    encoder,
+                    codec,
+                    expected,
+                    current,
+                    applied: None,
+                },
+            );
         }
     }
 
     fn deactivate(&self, connection_id: u64) {
-        if let Ok(mut target) = self.target.lock() {
-            if target
-                .as_ref()
-                .is_some_and(|active| active.connection_id == connection_id)
-            {
-                *target = None;
+        if let Ok(mut state) = self.state.lock() {
+            state.targets.remove(&connection_id);
+            if state.targets.is_empty() {
+                state.expected = None;
+                state.current = None;
             }
         }
     }
 
     fn configure(&self, connection_id: u64, metrics: ViewportMetrics) {
-        if let Ok(mut target) = self.target.lock()
-            && let Some(active) = target.as_mut()
-            && active.connection_id == connection_id
-        {
-            let newest_generation = active
+        if let Ok(mut state) = self.state.lock() {
+            if !state.targets.contains_key(&connection_id) {
+                return;
+            }
+            let newest_generation = state
                 .expected
                 .as_ref()
                 .map(|expected| expected.generation)
                 .into_iter()
-                .chain(active.current.as_ref().map(|current| current.generation))
+                .chain(state.current.as_ref().map(|current| current.generation))
                 .max()
                 .unwrap_or(0);
             if metrics.generation <= newest_generation {
@@ -88,99 +101,137 @@ impl FrameRouter {
                 );
                 return;
             }
-            active.expected = Some(metrics);
-            active.current = None;
-            active.applied = None;
+            state.expected = Some(metrics.clone());
+            state.current = None;
+            for target in state.targets.values_mut() {
+                target.expected = Some(metrics.clone());
+                target.current = None;
+                target.applied = None;
+            }
         }
     }
 
     fn take_applied(&self, connection_id: u64) -> Option<ActiveStreamConfiguration> {
-        let mut target = self.target.lock().ok()?;
-        let active = target.as_mut()?;
-        if active.connection_id != connection_id {
-            return None;
-        }
-        active.applied.take()
+        self.state
+            .lock()
+            .ok()?
+            .targets
+            .get_mut(&connection_id)?
+            .applied
+            .take()
+    }
+
+    fn current_metrics(&self) -> Option<ViewportMetrics> {
+        let state = self.state.lock().ok()?;
+        state.expected.clone().or_else(|| {
+            state.current.as_ref().map(|current| ViewportMetrics {
+                css_width: current.width,
+                css_height: current.height,
+                device_pixel_ratio: 1.0,
+                requested_width: current.width,
+                requested_height: current.height,
+                preferred_fps: Some(current.fps),
+                generation: current.generation,
+            })
+        })
     }
 
     fn push(&self, frame: &VideoFrame) {
-        let Some((encoder, codec, expected, current)) =
-            self.target.lock().ok().and_then(|target| {
-                target.as_ref().map(|active| {
-                    (
-                        Arc::clone(&active.encoder),
-                        active.codec,
-                        active.expected.clone(),
-                        active.current.clone(),
-                    )
-                })
+        let targets = self
+            .state
+            .lock()
+            .ok()
+            .map(|state| {
+                state
+                    .targets
+                    .values()
+                    .map(|target| {
+                        (
+                            target.connection_id,
+                            Arc::clone(&target.encoder),
+                            target.codec,
+                            target.expected.clone(),
+                            target.current.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
             })
-        else {
-            return;
-        };
+            .unwrap_or_default();
 
-        if let Some(expected_metrics) = expected {
-            if frame.width != expected_metrics.requested_width
-                || frame.height != expected_metrics.requested_height
-                || frame.generation != expected_metrics.generation
+        for (connection_id, encoder, codec, expected, current) in targets {
+            if let Some(expected_metrics) = expected {
+                if frame.width != expected_metrics.requested_width
+                    || frame.height != expected_metrics.requested_height
+                    || frame.generation != expected_metrics.generation
+                {
+                    continue;
+                }
+
+                let fps = expected_metrics.preferred_fps.unwrap_or(60);
+                if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
+                    warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
+                    continue;
+                }
+                if let Err(error) = encoder.request_sync_frame_after_caps_change() {
+                    warn!(
+                        "[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}"
+                    );
+                    continue;
+                }
+                if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
+                    debug!("[viewport-frame-pump] frame push failed: {error:?}");
+                    continue;
+                }
+
+                let configuration = ActiveStreamConfiguration {
+                    width: frame.width,
+                    height: frame.height,
+                    fps,
+                    codec,
+                    generation: frame.generation,
+                };
+                if let Ok(mut state) = self.state.lock()
+                    && let Some(target) = state.targets.get_mut(&connection_id)
+                    && target
+                        .expected
+                        .as_ref()
+                        .is_some_and(|current| current == &expected_metrics)
+                {
+                    target.expected = None;
+                    target.current = Some(configuration.clone());
+                    target.applied = Some(configuration.clone());
+                    let all_configured = state.targets.values().all(|target| {
+                        target
+                            .current
+                            .as_ref()
+                            .is_some_and(|current| current == &configuration)
+                    });
+                    if all_configured {
+                        state.current = Some(configuration);
+                        state.expected = None;
+                    }
+                }
+                continue;
+            }
+
+            let Some(current) = current else {
+                continue;
+            };
+            if frame.width != current.width
+                || frame.height != current.height
+                || frame.generation != current.generation
             {
-                return;
+                continue;
             }
-
-            let fps = expected_metrics.preferred_fps.unwrap_or(60);
-            if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
-                warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
-                return;
-            }
-            if let Err(error) = encoder.request_sync_frame_after_caps_change() {
-                warn!("[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}");
-                return;
-            }
-
             if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
                 debug!("[viewport-frame-pump] frame push failed: {error:?}");
-                return;
             }
-
-            let configuration = ActiveStreamConfiguration {
-                width: frame.width,
-                height: frame.height,
-                fps,
-                codec,
-                generation: frame.generation,
-            };
-            if let Ok(mut target) = self.target.lock()
-                && let Some(active) = target.as_mut()
-                && active
-                    .expected
-                    .as_ref()
-                    .is_some_and(|current| current == &expected_metrics)
-            {
-                active.expected = None;
-                active.current = Some(configuration.clone());
-                active.applied = Some(configuration);
-            }
-            return;
-        }
-
-        let Some(current) = current else {
-            return;
-        };
-        if frame.width != current.width
-            || frame.height != current.height
-            || frame.generation != current.generation
-        {
-            return;
-        }
-        if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
-            debug!("[viewport-frame-pump] frame push failed: {error:?}");
-            return;
         }
     }
 }
 
-/// Owns the blocking Bevy-frame receiver and forwards frames to the active
-/// session. Frames arriving while disconnected are intentionally dropped.
+/// Owns the blocking Bevy-frame receiver and forwards frames to all admitted
+/// sessions. Frames arriving while disconnected are intentionally dropped.
 pub(crate) struct FramePump {
     router: FrameRouter,
     stop: Arc<AtomicBool>,
@@ -247,9 +298,22 @@ impl StreamingSession {
         runtime_handle: tokio::runtime::Handle,
         interface: RenderServerInterface,
         initial_viewport: Option<ViewportMetrics>,
+        admission: SessionAdmission,
     ) -> Result<Self> {
+        config
+            .authorization
+            .validate()
+            .map_err(|error| anyhow::anyhow!("invalid streaming authorization policy: {error}"))?;
         let mut session_config = config.clone();
-        if let Some(initial_viewport) = initial_viewport {
+        if let Some(shared_metrics) = frame_router.current_metrics() {
+            session_config.width = shared_metrics.requested_width;
+            session_config.height = shared_metrics.requested_height;
+            session_config.fps = shared_metrics.preferred_fps.unwrap_or(config.fps);
+            info!(
+                "[viewport-session] joining shared stream {}x{} @ {} fps",
+                session_config.width, session_config.height, session_config.fps
+            );
+        } else if let Some(initial_viewport) = initial_viewport {
             let normalized = viewport_protocol::ServerCapabilities::for_codec(config.codec)
                 .stream_limits
                 .normalize(&initial_viewport);
@@ -274,6 +338,8 @@ impl StreamingSession {
             ViewportReadModel::unloaded(session_config.stage_display_name.clone()),
             interface.clone(),
             viewport_protocol::ServerCapabilities::for_codec(session_config.codec),
+            session_config.authorization.clone(),
+            admission,
         );
 
         // DataChannel callbacks are installed before both local channels are
@@ -305,6 +371,13 @@ impl StreamingSession {
         }
         self.application
             .flush_authoritative_events(self.channels.control());
+    }
+
+    pub(crate) fn queue_authoritative_event(
+        &self,
+        event: viewport_protocol::ViewportEventEnvelope,
+    ) {
+        self.application.queue_authoritative_event(event);
     }
 
     pub(crate) async fn create_offer(&self) -> Result<String> {
@@ -405,6 +478,7 @@ impl StreamingSession {
 
 impl Drop for StreamingSession {
     fn drop(&mut self) {
+        self.application.release_admission();
         self.frame_router.deactivate(self.connection_id);
         self.channels.close();
         self.encoder.shutdown();

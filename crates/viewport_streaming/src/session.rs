@@ -1,14 +1,17 @@
 //! WebRTC signaling-to-streaming session coordination.
 //!
 //! Signaling connections carry only SDP, ICE, and lifecycle messages. Once a
-//! connection is accepted, this manager creates one isolated StreamingSession
-//! and enforces the first implementation's one-controller policy.
+//! connection is accepted, this manager creates one isolated StreamingSession.
 
 use anyhow::Result;
 use log::{error, info, warn};
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, mpsc::Receiver},
+    time::Duration,
+};
 use tokio::sync::mpsc;
+use viewport_protocol::{SessionId, SessionRole};
 
 use crate::RenderServerInterface;
 use crate::VideoFrame;
@@ -21,6 +24,71 @@ pub struct WebRtcSessionManager {
     config: StreamingConfig,
     frame_pump: FramePump,
     interface: RenderServerInterface,
+}
+
+/// Shared application-session admission: one controller and any number of
+/// observers. The renderer and frame source remain shared elsewhere.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SessionAdmission {
+    state: Arc<Mutex<SessionAdmissionState>>,
+}
+
+#[derive(Debug, Default)]
+struct SessionAdmissionState {
+    roles: HashMap<SessionId, SessionRole>,
+    controller: Option<SessionId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionAdmissionError {
+    ControllerAlreadyAssigned,
+    SessionAlreadyRegistered,
+}
+
+impl SessionAdmission {
+    pub(crate) fn register(
+        &self,
+        session_id: SessionId,
+        role: SessionRole,
+    ) -> Result<(), SessionAdmissionError> {
+        let mut state = self
+            .state
+            .lock()
+            .expect("session admission state is not poisoned");
+        if state.roles.contains_key(&session_id) {
+            return Err(SessionAdmissionError::SessionAlreadyRegistered);
+        }
+        if role == SessionRole::Controller && state.controller.is_some() {
+            return Err(SessionAdmissionError::ControllerAlreadyAssigned);
+        }
+        if role == SessionRole::Controller {
+            state.controller = Some(session_id.clone());
+        }
+        state.roles.insert(session_id, role);
+        Ok(())
+    }
+
+    pub(crate) fn unregister(&self, session_id: &SessionId) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .expect("session admission state is not poisoned");
+        let removed = state.roles.remove(session_id).is_some();
+        if state.controller.as_ref() == Some(session_id) {
+            state.controller = None;
+        }
+        removed
+    }
+
+    #[cfg(test)]
+    fn role(&self, session_id: &SessionId) -> Option<SessionRole> {
+        self.state
+            .lock()
+            .expect("session admission state is not poisoned")
+            .roles
+            .get(session_id)
+            .copied()
+    }
 }
 
 impl WebRtcSessionManager {
@@ -39,8 +107,8 @@ impl WebRtcSessionManager {
     pub async fn run(self, mut session_rx: mpsc::Receiver<SessionCommand>) -> Result<()> {
         let runtime_handle = tokio::runtime::Handle::current();
         let frame_router = self.frame_pump.router();
-        let mut gate = ConnectionGate::default();
-        let mut active: Option<StreamingSession> = None;
+        let admission = SessionAdmission::default();
+        let mut sessions: HashMap<u64, StreamingSession> = HashMap::new();
         let mut event_tick = tokio::time::interval(Duration::from_millis(16));
 
         info!("[viewport-session] session manager started");
@@ -49,7 +117,14 @@ impl WebRtcSessionManager {
             let next_command = tokio::select! {
                 command = session_rx.recv() => command,
                 _ = event_tick.tick() => {
-                    if let Some(session) = active.as_ref() {
+                    if !sessions.is_empty() {
+                        while let Some(event) = self.interface.pop_viewport_event() {
+                            for session in sessions.values() {
+                                session.queue_authoritative_event(event.clone());
+                            }
+                        }
+                    }
+                    for session in sessions.values() {
                         session.flush_authoritative_events();
                     }
                     continue;
@@ -66,15 +141,15 @@ impl WebRtcSessionManager {
                     reply_tx,
                     initial_viewport,
                 } => {
-                    if !gate.try_claim(connection_id) {
+                    if sessions.contains_key(&connection_id) {
                         send_error(
                             &reply_tx,
-                            "resource_busy",
-                            "viewport already has an active controller",
+                            "connection_already_registered",
+                            "signaling connection already has a streaming session",
                         )
                         .await;
                         warn!(
-                            "[viewport-session] rejected second controller connection {}",
+                            "[viewport-session] rejected duplicate connection {}",
                             connection_id
                         );
                         continue;
@@ -88,10 +163,10 @@ impl WebRtcSessionManager {
                         runtime_handle.clone(),
                         self.interface.clone(),
                         initial_viewport,
+                        admission.clone(),
                     ) {
                         Ok(session) => session,
                         Err(error) => {
-                            gate.release_if(connection_id);
                             send_error(&reply_tx, "session_creation_failed", &error.to_string())
                                 .await;
                             error!(
@@ -105,7 +180,6 @@ impl WebRtcSessionManager {
                     let offer = match session.create_offer().await {
                         Ok(offer) => offer,
                         Err(error) => {
-                            gate.release_if(connection_id);
                             send_error(&reply_tx, "offer_creation_failed", &error.to_string())
                                 .await;
                             error!(
@@ -121,7 +195,6 @@ impl WebRtcSessionManager {
                         .await
                         .is_err()
                     {
-                        gate.release_if(connection_id);
                         warn!(
                             "[viewport-session] signaling peer closed before offer for connection {}",
                             connection_id
@@ -129,20 +202,18 @@ impl WebRtcSessionManager {
                         continue;
                     }
 
-                    active = Some(session);
+                    sessions.insert(connection_id, session);
                 }
                 SessionCommand::ReceivedAnswer { connection_id, sdp } => {
-                    if !gate.is_active(connection_id) {
+                    let Some(session) = sessions.get(&connection_id) else {
                         warn!(
-                            "[viewport-session] ignored SDP answer from stale connection {}",
+                            "[viewport-session] ignored SDP answer from unknown connection {}",
                             connection_id
                         );
                         continue;
-                    }
+                    };
 
-                    if let Some(session) = active.as_ref()
-                        && let Err(error) = session.apply_answer(sdp).await
-                    {
+                    if let Err(error) = session.apply_answer(sdp).await {
                         error!(
                             "[viewport-session] failed to apply SDP answer for connection {}: {error:?}",
                             connection_id
@@ -155,23 +226,20 @@ impl WebRtcSessionManager {
                     sdp_mid,
                     sdp_mline_index,
                 } => {
-                    if !gate.is_active(connection_id) {
+                    let Some(session) = sessions.get(&connection_id) else {
                         warn!(
-                            "[viewport-session] ignored ICE candidate from stale connection {}",
+                            "[viewport-session] ignored ICE candidate from unknown connection {}",
                             connection_id
                         );
                         continue;
-                    }
+                    };
 
-                    if let Some(session) = active.as_ref() {
-                        session.apply_ice(candidate, sdp_mid, sdp_mline_index);
-                    }
+                    session.apply_ice(candidate, sdp_mid, sdp_mline_index);
                 }
                 SessionCommand::ClientDisconnected { connection_id } => {
-                    if gate.release_if(connection_id) {
-                        active.take();
+                    if sessions.remove(&connection_id).is_some() {
                         info!(
-                            "[viewport-session] disconnected active controller {}",
+                            "[viewport-session] disconnected streaming session {}",
                             connection_id
                         );
                     } else {
@@ -184,7 +252,7 @@ impl WebRtcSessionManager {
             }
         }
 
-        drop(active);
+        drop(sessions);
         info!("[viewport-session] session manager stopped");
         Ok(())
     }
@@ -199,54 +267,57 @@ async fn send_error(reply_tx: &mpsc::Sender<SignalingMessage>, code: &str, messa
         .await;
 }
 
-#[derive(Debug, Default)]
-struct ConnectionGate {
-    active: Option<u64>,
-}
-
-impl ConnectionGate {
-    fn try_claim(&mut self, connection_id: u64) -> bool {
-        if self.active.is_some() {
-            return false;
-        }
-        self.active = Some(connection_id);
-        true
-    }
-
-    fn is_active(&self, connection_id: u64) -> bool {
-        self.active == Some(connection_id)
-    }
-
-    fn release_if(&mut self, connection_id: u64) -> bool {
-        if self.is_active(connection_id) {
-            self.active = None;
-            true
-        } else {
-            false
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn second_controller_is_rejected_without_replacing_the_first() {
-        let mut gate = ConnectionGate::default();
-        assert!(gate.try_claim(1));
-        assert!(!gate.try_claim(2));
-        assert!(gate.is_active(1));
-        assert!(!gate.is_active(2));
+    fn one_controller_and_multiple_observers_are_admitted() {
+        let admission = SessionAdmission::default();
+        let controller = SessionId::new("controller");
+        let observer_a = SessionId::new("observer-a");
+        let observer_b = SessionId::new("observer-b");
+
+        admission
+            .register(controller.clone(), SessionRole::Controller)
+            .unwrap();
+        admission
+            .register(observer_a.clone(), SessionRole::Observer)
+            .unwrap();
+        admission
+            .register(observer_b.clone(), SessionRole::Observer)
+            .unwrap();
+
+        assert_eq!(admission.role(&controller), Some(SessionRole::Controller));
+        assert_eq!(admission.role(&observer_a), Some(SessionRole::Observer));
+        assert_eq!(admission.role(&observer_b), Some(SessionRole::Observer));
     }
 
     #[test]
-    fn stale_disconnect_cannot_clear_the_current_controller() {
-        let mut gate = ConnectionGate::default();
-        assert!(gate.try_claim(7));
-        assert!(!gate.release_if(8));
-        assert!(gate.is_active(7));
-        assert!(gate.release_if(7));
-        assert!(!gate.is_active(7));
+    fn second_controller_is_rejected_without_replacing_the_first() {
+        let admission = SessionAdmission::default();
+        let first = SessionId::new("controller-1");
+        admission
+            .register(first.clone(), SessionRole::Controller)
+            .unwrap();
+
+        assert_eq!(
+            admission.register(SessionId::new("controller-2"), SessionRole::Controller),
+            Err(SessionAdmissionError::ControllerAlreadyAssigned)
+        );
+        assert_eq!(admission.role(&first), Some(SessionRole::Controller));
+    }
+
+    #[test]
+    fn unregistering_controller_allows_a_new_controller() {
+        let admission = SessionAdmission::default();
+        let first = SessionId::new("controller-1");
+        admission
+            .register(first.clone(), SessionRole::Controller)
+            .unwrap();
+        assert!(admission.unregister(&first));
+        admission
+            .register(SessionId::new("controller-2"), SessionRole::Controller)
+            .unwrap();
     }
 }

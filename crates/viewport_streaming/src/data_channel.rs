@@ -13,14 +13,16 @@ use std::{
     sync::{Arc, Mutex},
 };
 use viewport_protocol::{
-    ActiveStreamConfiguration, CameraSource, ClientCommand, CommandFamily, HandshakeEvent,
-    HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION, ProtocolValidationError,
-    ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand, SessionEvent, SessionId,
-    StreamCommand, StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportReadModel,
-    decode_client_json_line, encode_server_json_line,
+    ActiveStreamConfiguration, AuthorizationPolicy, CameraSource, ClientCommand, CommandFamily,
+    HandshakeEvent, HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION,
+    ProtocolValidationError, ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand,
+    SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommandEnvelope,
+    ViewportEvent, ViewportEventEnvelope, ViewportReadModel, decode_client_json_line,
+    encode_server_json_line,
 };
 
 use crate::RenderServerInterface;
+use crate::session::{SessionAdmission, SessionAdmissionError};
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
@@ -31,6 +33,8 @@ pub const INPUT_CHANNEL_PROTOCOL: &str = "usd-hub.viewport-input.v1";
 // Keep a safety margin for the JSON envelope and browser/runtime variation.
 const MAX_APPLICATION_MESSAGE_BYTES: usize = 12 * 1024;
 const INITIAL_SNAPSHOT_CHUNK_PRIMS: usize = 128;
+const INITIAL_RUNTIME_MANIFEST_CHUNK_REFS: usize = 64;
+const INITIAL_RUNTIME_BLOB_CHUNK_BYTES: usize = 2048;
 const MAX_COMPACT_STAGE_DISPLAY_NAME_CHARS: usize = 256;
 /// Flow-control notification threshold for the active reliable control channel.
 const CONTROL_CHANNEL_LOW_WATER_MARK_BYTES: u64 = 64 * 1024;
@@ -44,7 +48,10 @@ pub(crate) struct ApplicationSession {
 
 struct ApplicationSessionState {
     session_id: SessionId,
+    admission: SessionAdmission,
+    role: Option<SessionRole>,
     server_capabilities: ServerCapabilities,
+    authorization: AuthorizationPolicy,
     initial_snapshot: ViewportReadModel,
     interface: RenderServerInterface,
     /// The session manager polls this replaceable slot at its regular event
@@ -71,6 +78,8 @@ impl ApplicationSession {
             initial_snapshot,
             interface,
             ServerCapabilities::default(),
+            AuthorizationPolicy::default(),
+            SessionAdmission::default(),
         )
     }
 
@@ -79,11 +88,16 @@ impl ApplicationSession {
         initial_snapshot: ViewportReadModel,
         interface: RenderServerInterface,
         server_capabilities: ServerCapabilities,
+        authorization: AuthorizationPolicy,
+        admission: SessionAdmission,
     ) -> Self {
         Self {
             state: Arc::new(Mutex::new(ApplicationSessionState {
                 session_id,
+                admission,
+                role: None,
                 server_capabilities,
+                authorization,
                 initial_snapshot,
                 interface,
                 pending_stream_configuration: None,
@@ -94,6 +108,12 @@ impl ApplicationSession {
                 recent_request_ids: VecDeque::new(),
                 pending_server_events: VecDeque::new(),
             })),
+        }
+    }
+
+    pub(crate) fn release_admission(&self) {
+        if let Ok(state) = self.state.lock() {
+            state.admission.unregister(&state.session_id);
         }
     }
 
@@ -178,35 +198,54 @@ impl ApplicationSession {
                 return;
             }
 
-            let requested_metrics = state
-                .server_capabilities
-                .stream_limits
-                .normalize(&hello.initial_viewport);
-            let initial_metrics = match state
-                .interface
-                .submit_stream_configuration(requested_metrics)
+            let requested_role = hello.requested_role;
+            if let Err(error) = state
+                .admission
+                .register(state.session_id.clone(), requested_role)
             {
-                Ok(metrics) => metrics,
-                Err(error) => {
-                    warn!(
-                        "[viewport-data-channel] initial stream configuration rejected: {error:?}"
-                    );
-                    send_handshake_rejection(
-                        channel,
-                        &mut state,
-                        HandshakeRejectionReason::UnsupportedCapabilities,
-                    );
-                    return;
+                send_handshake_rejection(channel, &mut state, admission_rejection_for(error));
+                return;
+            }
+            state.role = Some(requested_role);
+
+            let initial_metrics = if requested_role == SessionRole::Controller {
+                let requested_metrics = state
+                    .server_capabilities
+                    .stream_limits
+                    .normalize(&hello.initial_viewport);
+                match state
+                    .interface
+                    .submit_stream_configuration(requested_metrics)
+                {
+                    Ok(metrics) => {
+                        state.pending_stream_configuration = Some(metrics.clone());
+                        state.latest_stream_generation = metrics.generation;
+                        Some(metrics)
+                    }
+                    Err(error) => {
+                        warn!(
+                            "[viewport-data-channel] initial stream configuration rejected: {error:?}"
+                        );
+                        state.admission.unregister(&state.session_id);
+                        state.role = None;
+                        send_handshake_rejection(
+                            channel,
+                            &mut state,
+                            HandshakeRejectionReason::UnsupportedCapabilities,
+                        );
+                        return;
+                    }
                 }
+            } else {
+                None
             };
-            state.pending_stream_configuration = Some(initial_metrics.clone());
-            state.latest_stream_generation = initial_metrics.generation;
 
             state.client_sequence = envelope.sequence;
             remember_request_id(&mut state, request_id);
             state.handshaken = true;
             let session_id = state.session_id.clone();
             let capabilities = state.server_capabilities.clone();
+            let authorization = state.authorization.clone();
             let snapshot = state
                 .interface
                 .take_latest_snapshot(state.initial_snapshot.clone());
@@ -214,20 +253,23 @@ impl ApplicationSession {
                 channel,
                 &mut state,
                 ServerEvent::Handshake(HandshakeEvent::ServerHello(
-                    viewport_protocol::ServerHello::new(
+                    viewport_protocol::ServerHello::with_authorization(
                         session_id.clone(),
                         hello.requested_role,
                         capabilities,
+                        authorization,
                     ),
                 )),
             );
-            send_server_event(
-                channel,
-                &mut state,
-                ServerEvent::Stream(StreamEvent::ConfigurationAccepted {
-                    metrics: initial_metrics,
-                }),
-            );
+            if let Some(initial_metrics) = initial_metrics {
+                send_server_event(
+                    channel,
+                    &mut state,
+                    ServerEvent::Stream(StreamEvent::ConfigurationAccepted {
+                        metrics: initial_metrics,
+                    }),
+                );
+            }
             send_server_event(
                 channel,
                 &mut state,
@@ -274,6 +316,15 @@ impl ApplicationSession {
         }
 
         match envelope.command {
+            ClientCommand::Viewport(command) if state.role != Some(SessionRole::Controller) => {
+                send_command_rejection(
+                    channel,
+                    &mut state,
+                    request_id,
+                    "observer sessions are read-only".to_owned(),
+                );
+                let _ = command;
+            }
             ClientCommand::Viewport(command) => {
                 let viewport_command = ViewportCommandEnvelope {
                     protocol_version: envelope.protocol_version,
@@ -288,6 +339,15 @@ impl ApplicationSession {
                         format!("viewport command rejected: {error:?}"),
                     );
                 }
+            }
+            ClientCommand::Input(command) if state.role != Some(SessionRole::Controller) => {
+                send_command_rejection(
+                    channel,
+                    &mut state,
+                    request_id,
+                    "observer sessions cannot control the viewport".to_owned(),
+                );
+                let _ = command;
             }
             ClientCommand::Input(command) => {
                 if let Err(error) = state.interface.submit_input(command) {
@@ -310,6 +370,89 @@ impl ApplicationSession {
                     ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
                 );
             }
+            ClientCommand::Session(SessionCommand::RequestRuntimeManifest) => {
+                let Some(manifest) = state.interface.runtime_manifest() else {
+                    send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "runtime manifest is not available".to_owned(),
+                    );
+                    return;
+                };
+                match manifest.authorize(&state.authorization) {
+                    Ok(manifest) => send_server_event_for_request(
+                        channel,
+                        &mut state,
+                        request_id,
+                        ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }),
+                    ),
+                    Err(error) => send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        error.to_string(),
+                    ),
+                }
+            }
+            ClientCommand::Session(SessionCommand::RequestRuntimeBlob { blob_id }) => {
+                let Some(manifest) = state.interface.runtime_manifest() else {
+                    send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "runtime manifest is not available".to_owned(),
+                    );
+                    return;
+                };
+                let authorized = match manifest.authorize(&state.authorization) {
+                    Ok(manifest) => manifest,
+                    Err(error) => {
+                        send_runtime_blob_rejection(
+                            channel,
+                            &mut state,
+                            request_id,
+                            error.to_string(),
+                        );
+                        return;
+                    }
+                };
+                if !authorized.allows_blob(&blob_id) {
+                    send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "requested runtime blob is not authorized by the manifest".to_owned(),
+                    );
+                    return;
+                }
+                let Some(bytes) = state.interface.runtime_blob(&blob_id) else {
+                    send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "requested runtime blob is not available".to_owned(),
+                    );
+                    return;
+                };
+                let expected_size = authorized
+                    .references()
+                    .into_iter()
+                    .find(|reference| reference.blob_id == blob_id)
+                    .map(|reference| reference.byte_size);
+                if expected_size != Some(bytes.len() as u64) {
+                    send_runtime_blob_rejection(
+                        channel,
+                        &mut state,
+                        request_id,
+                        "runtime blob byte size does not match its authorized manifest reference"
+                            .to_owned(),
+                    );
+                    return;
+                }
+                queue_runtime_blob(&mut state, Some(&request_id), blob_id, bytes);
+                flush_pending_server_events(channel, &mut state);
+            }
             ClientCommand::Session(SessionCommand::Ping { nonce }) => {
                 send_server_event_for_request(
                     channel,
@@ -317,6 +460,17 @@ impl ApplicationSession {
                     request_id,
                     ServerEvent::Session(SessionEvent::Pong { nonce }),
                 );
+            }
+            ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics })
+                if state.role != Some(SessionRole::Controller) =>
+            {
+                send_stream_configuration_rejection(
+                    channel,
+                    &mut state,
+                    request_id,
+                    "observer sessions cannot resize the shared stream".to_owned(),
+                );
+                let _ = metrics;
             }
             ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics }) => {
                 let requested_metrics = state.server_capabilities.stream_limits.normalize(&metrics);
@@ -386,7 +540,7 @@ impl ApplicationSession {
             error!("[viewport-data-channel] application session state is poisoned");
             return;
         };
-        if !state.handshaken {
+        if !state.handshaken || state.role != Some(SessionRole::Controller) {
             return;
         }
         if let Err(error) = state.interface.submit_input(command) {
@@ -396,7 +550,23 @@ impl ApplicationSession {
 
     pub(crate) fn clear_remote_input(&self) {
         if let Ok(state) = self.state.lock() {
-            state.interface.clear_remote_input();
+            if state.role == Some(SessionRole::Controller) {
+                state.interface.clear_remote_input();
+            }
+        }
+    }
+
+    pub(crate) fn queue_authoritative_event(&self, event: ViewportEventEnvelope) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if state.handshaken {
+            queue_server_event_for_request(
+                &mut state,
+                event.request_id,
+                ServerEvent::Viewport(event.event),
+            );
         }
     }
 
@@ -430,22 +600,7 @@ impl ApplicationSession {
             return;
         }
 
-        let interface = state.interface.clone();
         flush_pending_server_events(channel, &mut state);
-        while state.pending_server_events.is_empty() {
-            let Some(event) = interface.pop_viewport_event() else {
-                break;
-            };
-            queue_server_event_for_request(
-                &mut state,
-                event.request_id,
-                ServerEvent::Viewport(event.event),
-            );
-            flush_pending_server_events(channel, &mut state);
-            if !state.pending_server_events.is_empty() {
-                break;
-            }
-        }
     }
 }
 
@@ -475,6 +630,17 @@ fn rejection_for(error: ProtocolValidationError) -> HandshakeRejectionReason {
             HandshakeRejectionReason::InvalidClientIdentity
         }
         _ => HandshakeRejectionReason::UnsupportedCapabilities,
+    }
+}
+
+fn admission_rejection_for(error: SessionAdmissionError) -> HandshakeRejectionReason {
+    match error {
+        SessionAdmissionError::ControllerAlreadyAssigned => {
+            HandshakeRejectionReason::ControllerAlreadyAssigned
+        }
+        SessionAdmissionError::SessionAlreadyRegistered => {
+            HandshakeRejectionReason::InvalidClientIdentity
+        }
     }
 }
 
@@ -535,6 +701,20 @@ fn send_stream_configuration_rejection(
     );
 }
 
+fn send_runtime_blob_rejection(
+    channel: &WebRTCDataChannel,
+    state: &mut ApplicationSessionState,
+    request_id: String,
+    reason: String,
+) {
+    send_server_event_for_request(
+        channel,
+        state,
+        request_id,
+        ServerEvent::Session(SessionEvent::RuntimeBlobRejected { reason }),
+    );
+}
+
 fn send_server_event_with_request(
     channel: &WebRTCDataChannel,
     state: &mut ApplicationSessionState,
@@ -568,6 +748,17 @@ fn queue_server_event_for_request(
         }
         ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) => {
             queue_scene_children_page(state, request_id, page);
+        }
+        ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }) => {
+            queue_runtime_manifest(state, request_id.as_deref(), manifest);
+        }
+        ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
+            blob_id,
+            chunk_index: _,
+            chunk_count: _,
+            bytes,
+        }) => {
+            queue_runtime_blob(state, request_id.as_deref(), blob_id, bytes);
         }
         event => {
             if !queue_bounded_event(state, request_id.as_deref(), event) {
@@ -696,6 +887,143 @@ fn queue_scene_children_page(
     warn!(
         "[viewport-data-channel] dropping scene child node because it exceeds the application message limit"
     );
+}
+
+fn queue_runtime_manifest(
+    state: &mut ApplicationSessionState,
+    request_id: Option<&str>,
+    manifest: viewport_protocol::AuthorizedRuntimeManifest,
+) {
+    let event = ServerEvent::Session(SessionEvent::RuntimeManifest {
+        manifest: manifest.clone(),
+    });
+    let envelope = next_server_envelope(state, request_id, event);
+    if encoded_size(&envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
+        state.pending_server_events.push_back(envelope);
+        return;
+    }
+
+    state.server_sequence = state.server_sequence.saturating_sub(1);
+    let manifest_id = request_id
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("manifest-{}", state.server_sequence));
+    let total_references =
+        manifest.meshes.len() + manifest.materials.len() + manifest.textures.len();
+    let mut chunk_size = INITIAL_RUNTIME_MANIFEST_CHUNK_REFS.max(1);
+
+    loop {
+        let chunk_count = total_references.max(1).div_ceil(chunk_size);
+        let starting_sequence = state.server_sequence;
+        let mesh_offset = 0;
+        let material_offset = manifest.meshes.len();
+        let texture_offset = material_offset + manifest.materials.len();
+        let mut chunks = Vec::with_capacity(chunk_count);
+
+        for chunk_index in 0..chunk_count {
+            let start = chunk_index * chunk_size;
+            let end = (start + chunk_size).min(total_references);
+            let chunk_manifest = viewport_protocol::AuthorizedRuntimeManifest {
+                revision: manifest.revision.clone(),
+                profile: manifest.profile,
+                hierarchy: manifest.hierarchy.clone(),
+                meshes: clone_manifest_range(&manifest.meshes, mesh_offset, start, end),
+                materials: clone_manifest_range(&manifest.materials, material_offset, start, end),
+                textures: clone_manifest_range(&manifest.textures, texture_offset, start, end),
+                redacted_blob_count: manifest.redacted_blob_count,
+            };
+            chunks.push(next_server_envelope(
+                state,
+                request_id,
+                ServerEvent::Session(SessionEvent::RuntimeManifestChunk {
+                    manifest_id: manifest_id.clone(),
+                    chunk_index: chunk_index as u32,
+                    chunk_count: chunk_count as u32,
+                    manifest: chunk_manifest,
+                }),
+            ));
+        }
+
+        if chunks.iter().all(|envelope| {
+            encoded_size(envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES)
+        }) {
+            state.pending_server_events.extend(chunks);
+            return;
+        }
+
+        state.server_sequence = starting_sequence;
+        if chunk_size == 1 {
+            warn!(
+                "[viewport-data-channel] dropping runtime manifest {manifest_id} because it exceeds the application message limit"
+            );
+            return;
+        }
+        chunk_size = (chunk_size / 2).max(1);
+    }
+}
+
+fn clone_manifest_range<T: Clone>(values: &[T], offset: usize, start: usize, end: usize) -> Vec<T> {
+    let local_start = start.saturating_sub(offset).min(values.len());
+    let local_end = end.saturating_sub(offset).min(values.len());
+    if local_start >= local_end {
+        Vec::new()
+    } else {
+        values[local_start..local_end].to_vec()
+    }
+}
+
+fn queue_runtime_blob(
+    state: &mut ApplicationSessionState,
+    request_id: Option<&str>,
+    blob_id: String,
+    bytes: Vec<u8>,
+) {
+    let mut chunk_size = INITIAL_RUNTIME_BLOB_CHUNK_BYTES.max(1);
+    loop {
+        let chunk_count = bytes.len().max(1).div_ceil(chunk_size);
+        let starting_sequence = state.server_sequence;
+        let mut chunks = Vec::with_capacity(chunk_count);
+        if bytes.is_empty() {
+            chunks.push(next_server_envelope(
+                state,
+                request_id,
+                ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
+                    blob_id: blob_id.clone(),
+                    chunk_index: 0,
+                    chunk_count: 1,
+                    bytes: Vec::new(),
+                }),
+            ));
+        } else {
+            for (chunk_index, chunk) in bytes.chunks(chunk_size).enumerate() {
+                chunks.push(next_server_envelope(
+                    state,
+                    request_id,
+                    ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
+                        blob_id: blob_id.clone(),
+                        chunk_index: chunk_index as u32,
+                        chunk_count: chunk_count as u32,
+                        bytes: chunk.to_vec(),
+                    }),
+                ));
+            }
+        }
+
+        if chunks.iter().all(|envelope| {
+            encoded_size(envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES)
+        }) {
+            state.pending_server_events.extend(chunks);
+            return;
+        }
+
+        state.server_sequence = starting_sequence;
+        if chunk_size == 1 {
+            warn!(
+                "[viewport-data-channel] dropping runtime blob {blob_id} because it exceeds the application message limit"
+            );
+            return;
+        }
+        chunk_size = (chunk_size / 2).max(1);
+    }
 }
 
 fn queue_bounded_event(
@@ -1410,5 +1738,114 @@ mod tests {
             received_nodes += page.nodes.len();
         }
         assert_eq!(received_nodes, 128);
+    }
+
+    #[test]
+    fn runtime_blob_chunks_are_bounded_and_keep_ordered_sequences() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let blob_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let bytes = (0..10_000)
+            .map(|value| (value % 251) as u8)
+            .collect::<Vec<_>>();
+
+        queue_runtime_blob(
+            &mut state,
+            Some("runtime-blob"),
+            blob_id.to_owned(),
+            bytes.clone(),
+        );
+
+        let mut reconstructed: Vec<u8> = Vec::new();
+        let mut expected_sequence = 1;
+        let mut expected_chunk_index = 0;
+        let expected_chunk_count = state.pending_server_events.len() as u32;
+        for envelope in &state.pending_server_events {
+            assert_eq!(envelope.sequence, expected_sequence);
+            expected_sequence += 1;
+            assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+            let ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
+                blob_id: event_blob_id,
+                chunk_index,
+                chunk_count,
+                bytes,
+            }) = &envelope.event
+            else {
+                panic!("runtime blob must be sent as blob chunks");
+            };
+            assert_eq!(event_blob_id, blob_id);
+            assert_eq!(*chunk_index, expected_chunk_index);
+            assert_eq!(*chunk_count, expected_chunk_count);
+            expected_chunk_index += 1;
+            reconstructed.extend(bytes);
+        }
+
+        assert_eq!(reconstructed, bytes);
+        assert_eq!(expected_chunk_index, expected_chunk_count);
+    }
+
+    #[test]
+    fn oversized_runtime_manifests_are_split_without_leaking_unbounded_events() {
+        let session = ApplicationSession::new(
+            SessionId::new("session-1"),
+            ViewportReadModel::unloaded("stage.usda"),
+            RenderServerInterface::default(),
+        );
+        let mut state = session.state.lock().unwrap();
+        let reference = |blob_id: String, kind| viewport_protocol::RuntimeBlobReference {
+            blob_id,
+            payload_kind: kind,
+            payload_version: 1,
+            byte_size: 8,
+        };
+        let manifest = viewport_protocol::AuthorizedRuntimeManifest {
+            revision: "working-7".to_owned(),
+            profile: viewport_protocol::RuntimeProfile::NativeMedium,
+            hierarchy: reference(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+                viewport_protocol::RuntimePayloadKind::Hierarchy,
+            ),
+            meshes: (0..200)
+                .map(|index| {
+                    reference(
+                        format!("{index:064x}"),
+                        viewport_protocol::RuntimePayloadKind::Mesh,
+                    )
+                })
+                .collect(),
+            materials: Vec::new(),
+            textures: Vec::new(),
+            redacted_blob_count: 0,
+        };
+
+        queue_server_event_for_request(
+            &mut state,
+            Some("runtime-manifest".to_owned()),
+            ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }),
+        );
+
+        assert!(state.pending_server_events.len() > 1);
+        let expected_chunk_count = state.pending_server_events.len() as u32;
+        for (expected_sequence, envelope) in state.pending_server_events.iter().enumerate() {
+            assert_eq!(envelope.sequence, expected_sequence as u64 + 1);
+            assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+            let ServerEvent::Session(SessionEvent::RuntimeManifestChunk {
+                manifest_id,
+                chunk_index,
+                chunk_count,
+                manifest,
+            }) = &envelope.event
+            else {
+                panic!("oversized runtime manifests must be chunked");
+            };
+            assert_eq!(manifest_id, "runtime-manifest");
+            assert_eq!(*chunk_index, expected_sequence as u32);
+            assert_eq!(*chunk_count, expected_chunk_count);
+            assert!(manifest.hierarchy.blob_id.starts_with('a'));
+        }
     }
 }

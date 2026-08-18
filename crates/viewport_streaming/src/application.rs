@@ -1,12 +1,13 @@
 //! Shared application bus between the Bevy viewport and WebRTC sessions.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use viewport_protocol::{
-    ClientCommandEnvelope, InputCommand, PointerMotion, ViewportCommandEnvelope, ViewportEvent,
-    ViewportEventEnvelope, ViewportMetrics, ViewportReadModel,
+    ClientCommandEnvelope, InputCommand, PointerMotion, RuntimeManifest, ViewportCommandEnvelope,
+    ViewportEvent, ViewportEventEnvelope, ViewportMetrics, ViewportReadModel,
+    validate_runtime_blob_id,
 };
 
 const MAX_PENDING_MESSAGES: usize = 256;
@@ -21,6 +22,8 @@ struct PendingMessages {
     input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
     latest_snapshot: Option<ViewportReadModel>,
+    runtime_manifest: Option<RuntimeManifest>,
+    runtime_blobs: HashMap<String, Vec<u8>>,
     pending_stream_configuration: Option<ViewportMetrics>,
     // A stream configuration can originate from a newly connected WebView,
     // whose local generation counter starts over at one. Keep this sequence
@@ -271,6 +274,61 @@ impl RenderServerInterface {
         pending.viewport_events.clear();
         pending.latest_snapshot.clone().unwrap_or(fallback)
     }
+
+    /// Publishes the current server-owned runtime inventory. The manifest is
+    /// kept behind this application boundary and is filtered by each session
+    /// authorization policy before it is sent to a client.
+    pub fn publish_runtime_manifest(
+        &self,
+        manifest: RuntimeManifest,
+    ) -> Result<(), RenderServerPortError> {
+        manifest
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        pending.runtime_manifest = Some(manifest);
+        Ok(())
+    }
+
+    /// Publishes verified bytes for one content-addressed runtime object.
+    /// Filesystem/object-store adapters remain outside this transport crate;
+    /// they provide the bytes only after validating the content address.
+    pub fn publish_runtime_blob(
+        &self,
+        blob_id: impl Into<String>,
+        bytes: Vec<u8>,
+    ) -> Result<(), RenderServerPortError> {
+        let blob_id = blob_id.into();
+        if validate_runtime_blob_id(&blob_id).is_err() {
+            return Err(RenderServerPortError::InvalidPayload);
+        }
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        pending.runtime_blobs.insert(blob_id, bytes);
+        Ok(())
+    }
+
+    pub fn runtime_manifest(&self) -> Option<RuntimeManifest> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .runtime_manifest
+            .clone()
+    }
+
+    pub fn runtime_blob(&self, blob_id: &str) -> Option<Vec<u8>> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .runtime_blobs
+            .get(blob_id)
+            .cloned()
+    }
 }
 
 fn safe_display_name(value: &str) -> String {
@@ -425,5 +483,20 @@ mod tests {
             interface.pop_input(),
             Some(InputCommand::ReleaseAll(_))
         ));
+    }
+
+    #[test]
+    fn runtime_delivery_registry_rejects_invalid_ids_and_keeps_valid_payloads() {
+        let interface = RenderServerInterface::default();
+        assert_eq!(
+            interface.publish_runtime_blob("../outside", vec![1, 2, 3]),
+            Err(RenderServerPortError::InvalidPayload)
+        );
+
+        let blob_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        interface
+            .publish_runtime_blob(blob_id, vec![1, 2, 3])
+            .unwrap();
+        assert_eq!(interface.runtime_blob(blob_id), Some(vec![1, 2, 3]));
     }
 }

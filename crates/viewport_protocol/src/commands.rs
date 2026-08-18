@@ -25,7 +25,8 @@ impl ClientCommand {
             Self::Handshake(hello) => hello.validate(),
             Self::Stream(StreamCommand::ConfigureViewport { metrics }) => metrics.validate(),
             Self::Input(input) => input.validate(),
-            Self::Session(_) | Self::Stream(_) => Ok(()),
+            Self::Session(command) => command.validate(),
+            Self::Stream(_) => Ok(()),
             Self::Viewport(command) => command.validate(),
         }
     }
@@ -37,9 +38,24 @@ impl ClientCommand {
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum SessionCommand {
     RequestSnapshot,
+    RequestRuntimeManifest,
+    RequestRuntimeBlob { blob_id: String },
     Resume { request: crate::ResumeRequest },
     Close { reason: Option<String> },
     Ping { nonce: String },
+}
+
+impl SessionCommand {
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        if let Self::RequestRuntimeBlob { blob_id } = self {
+            crate::validate_runtime_blob_id(blob_id).map_err(|_| {
+                ProtocolValidationError::InvalidInput {
+                    field: "runtime.blob_id",
+                }
+            })?;
+        }
+        Ok(())
+    }
 }
 
 /// Stream configuration and diagnostic commands.

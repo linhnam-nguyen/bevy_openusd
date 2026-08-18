@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use viewport_protocol::CodecId;
+use viewport_protocol::{AuthorizationPolicy, CodecId};
 
 /// Preset profiles for streaming quality and frame rate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -30,6 +30,8 @@ pub struct StreamingConfig {
     pub h264_bitrate_kbps: u32,
     pub signaling_addr: SocketAddr,
     pub auth_token_secret: Option<String>,
+    /// Server-owned delivery policy advertised in the application handshake.
+    pub authorization: AuthorizationPolicy,
     pub stun_server: String,
     pub turn_server: Option<String>,
 }
@@ -59,6 +61,7 @@ impl StreamingConfig {
                 h264_bitrate_kbps: 28000,
                 signaling_addr,
                 auth_token_secret: None,
+                authorization: AuthorizationPolicy::default(),
                 stun_server,
                 turn_server: None,
             },
@@ -74,6 +77,7 @@ impl StreamingConfig {
                 h264_bitrate_kbps: 24000,
                 signaling_addr,
                 auth_token_secret: None,
+                authorization: AuthorizationPolicy::default(),
                 stun_server,
                 turn_server: None,
             },
@@ -89,6 +93,7 @@ impl StreamingConfig {
                 h264_bitrate_kbps: 8000,
                 signaling_addr,
                 auth_token_secret: None,
+                authorization: AuthorizationPolicy::default(),
                 stun_server,
                 turn_server: None,
             },

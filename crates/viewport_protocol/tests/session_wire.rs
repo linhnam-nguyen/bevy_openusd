@@ -1,9 +1,10 @@
 use viewport_protocol::{
-    ActiveStreamConfiguration, AuthorizationPolicy, ButtonState, ClientCapabilities, ClientCommand,
-    ClientCommandEnvelope, ClientHello, CodecId, DeliveryMode, FocusState, HandshakeEvent,
-    HistoryPermission, InputCommand, InputModifiers, KeyboardInput, ModelDownloadPermission,
-    PointerButtons, PointerMotion, ProtocolValidationError, ReleaseAllInput, RuntimeMutation,
-    RuntimeMutationBatch, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
+    ActiveStreamConfiguration, AuthorizationPolicy, AuthorizedRuntimeManifest, ButtonState,
+    ClientCapabilities, ClientCommand, ClientCommandEnvelope, ClientHello, CodecId, DeliveryMode,
+    FocusState, HandshakeEvent, HistoryPermission, InputCommand, InputModifiers, KeyboardInput,
+    ModelDownloadPermission, PointerButtons, PointerMotion, ProtocolValidationError,
+    ReleaseAllInput, RuntimeBlobReference, RuntimeMutation, RuntimeMutationBatch,
+    RuntimePayloadKind, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
     SemanticPropertyScope, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
     SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
     ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel, decode_client_json_line,
@@ -53,6 +54,7 @@ fn authorization_policy_round_trips_separately_from_capabilities() {
     let policy = AuthorizationPolicy {
         allowed_delivery_modes: vec![DeliveryMode::Stream],
         model_download: ModelDownloadPermission::Denied,
+        allowed_blob_ids: Vec::new(),
         semantic_property_scope: SemanticPropertyScope::AllowList(vec!["displayName".to_owned()]),
         history: HistoryPermission::ReadOnly,
         runtime_profile: viewport_protocol::RuntimeProfile::ServerStream,
@@ -98,6 +100,10 @@ fn application_handshake_uses_the_versioned_command_and_event_envelopes() {
 #[test]
 fn every_client_command_family_round_trips_through_a_client_envelope() {
     let commands = [
+        ClientCommand::Session(SessionCommand::RequestRuntimeManifest),
+        ClientCommand::Session(SessionCommand::RequestRuntimeBlob {
+            blob_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        }),
         ClientCommand::Session(SessionCommand::Ping {
             nonce: "ping-1".to_owned(),
         }),
@@ -125,6 +131,62 @@ fn every_client_command_family_round_trips_through_a_client_envelope() {
         envelope.validate().unwrap();
         let line = encode_client_json_line(&envelope).unwrap();
         assert_eq!(decode_client_json_line(&line).unwrap(), envelope);
+    }
+}
+
+#[test]
+fn runtime_delivery_events_round_trip_with_blob_metadata_and_chunks() {
+    let hierarchy = RuntimeBlobReference {
+        blob_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        payload_kind: RuntimePayloadKind::Hierarchy,
+        payload_version: 1,
+        byte_size: 3,
+    };
+    let manifest = AuthorizedRuntimeManifest {
+        revision: "working-7".to_owned(),
+        profile: viewport_protocol::RuntimeProfile::NativeMedium,
+        hierarchy: hierarchy.clone(),
+        meshes: Vec::new(),
+        materials: Vec::new(),
+        textures: Vec::new(),
+        redacted_blob_count: 2,
+    };
+    let events = [
+        ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }),
+        ServerEvent::Session(SessionEvent::RuntimeManifestChunk {
+            manifest_id: "runtime-request".to_owned(),
+            chunk_index: 0,
+            chunk_count: 1,
+            manifest: AuthorizedRuntimeManifest {
+                revision: "working-7".to_owned(),
+                profile: viewport_protocol::RuntimeProfile::NativeMedium,
+                hierarchy: hierarchy.clone(),
+                meshes: Vec::new(),
+                materials: Vec::new(),
+                textures: Vec::new(),
+                redacted_blob_count: 2,
+            },
+        }),
+        ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
+            blob_id: hierarchy.blob_id,
+            chunk_index: 0,
+            chunk_count: 1,
+            bytes: vec![1, 2, 3],
+        }),
+        ServerEvent::Session(SessionEvent::RuntimeBlobRejected {
+            reason: "denied".to_owned(),
+        }),
+    ];
+
+    for (sequence, event) in events.into_iter().enumerate() {
+        let envelope = ServerEventEnvelope::for_request(
+            SessionId::new("session-1"),
+            sequence as u64 + 1,
+            "runtime-request",
+            event,
+        );
+        let line = encode_server_json_line(&envelope).unwrap();
+        assert_eq!(decode_server_json_line(&line).unwrap(), envelope);
     }
 }
 

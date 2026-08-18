@@ -31,6 +31,24 @@ pub enum SessionEvent {
         chunk_count: u32,
         state: ViewportReadModel,
     },
+    RuntimeManifest {
+        manifest: crate::AuthorizedRuntimeManifest,
+    },
+    RuntimeManifestChunk {
+        manifest_id: String,
+        chunk_index: u32,
+        chunk_count: u32,
+        manifest: crate::AuthorizedRuntimeManifest,
+    },
+    RuntimeBlobChunk {
+        blob_id: String,
+        chunk_index: u32,
+        chunk_count: u32,
+        bytes: Vec<u8>,
+    },
+    RuntimeBlobRejected {
+        reason: String,
+    },
     Resumed {
         result: crate::ResumeResult,
     },

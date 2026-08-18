@@ -12,6 +12,7 @@ pub mod authorization;
 pub mod capabilities;
 pub mod codec;
 pub mod commands;
+pub mod delivery;
 pub mod envelope;
 pub mod events;
 pub mod handshake;
@@ -29,6 +30,11 @@ pub use codec::{
     decode_server_json_line, encode_client_json_line, encode_json_line, encode_server_json_line,
 };
 pub use commands::{ClientCommand, InputCommand, SessionCommand, StreamCommand};
+pub use delivery::{
+    AuthorizedRuntimeManifest, RuntimeBlobReference, RuntimeManifest,
+    RuntimeManifestAuthorizationError, RuntimeManifestValidationError, RuntimePayloadKind,
+    validate_runtime_blob_id,
+};
 pub use envelope::{
     CausationId, ClientCommandEnvelope, ProtocolValidationError, RequestId, SequenceNumber,
     ServerEventEnvelope, SessionId, validate_protocol_version,
