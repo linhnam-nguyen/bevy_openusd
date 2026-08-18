@@ -124,7 +124,7 @@ fn profiles_embedded_texture_usdz_fixture() {
         .resource::<usd_bevy::route::material::UsdTextureCache>()
         .stats();
     println!(
-        "USDZ texture profile: lookups={}, hits={}, misses={}, stale_handles={}, load_failures={}, archive_scans={}, archive_entries_scanned={}, archive_hits={}, archive_misses={}",
+        "USDZ texture profile: lookups={}, hits={}, misses={}, stale_handles={}, load_failures={}, archive_scans={}, archive_entries_scanned={}, archive_hits={}, archive_misses={}, archive_index_builds={}, archive_index_invalidations={}, archive_entries_indexed={}",
         stats.lookups,
         stats.hits,
         stats.misses,
@@ -133,7 +133,10 @@ fn profiles_embedded_texture_usdz_fixture() {
         stats.archive_scans,
         stats.archive_entries_scanned,
         stats.archive_hits,
-        stats.archive_misses
+        stats.archive_misses,
+        stats.archive_index_builds,
+        stats.archive_index_invalidations,
+        stats.archive_entries_indexed
     );
 
     assert_eq!(stats.lookups, 1);
@@ -145,4 +148,7 @@ fn profiles_embedded_texture_usdz_fixture() {
     assert_eq!(stats.archive_entries_scanned, 2);
     assert_eq!(stats.archive_hits, 1);
     assert_eq!(stats.archive_misses, 0);
+    assert_eq!(stats.archive_index_builds, 1);
+    assert_eq!(stats.archive_index_invalidations, 0);
+    assert_eq!(stats.archive_entries_indexed, 2);
 }
