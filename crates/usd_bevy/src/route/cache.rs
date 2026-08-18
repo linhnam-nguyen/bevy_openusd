@@ -25,6 +25,17 @@ use bevy::prelude::*;
 /// still-referenced meshes simply get re-interned on their next projection.
 const MAX_INTERNED: usize = 8192;
 
+/// Counters collected by [`ProjectionCache`] so cache policy changes can be
+/// based on observed scene behavior rather than assumptions.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProjectionCacheStats {
+    pub lookups: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub stale_handles: u64,
+    pub evictions: u64,
+}
+
 /// Interns projected meshes by geometry signature so identical prims share one
 /// [`Handle<Mesh>`]. Insert via [`crate::UsdPlugin`]; absent ⇒ no interning.
 ///
@@ -35,6 +46,7 @@ const MAX_INTERNED: usize = 8192;
 #[derive(Resource, Default)]
 pub struct ProjectionCache {
     meshes: HashMap<u64, Handle<Mesh>>,
+    stats: ProjectionCacheStats,
 }
 
 impl ProjectionCache {
@@ -47,6 +59,16 @@ impl ProjectionCache {
     pub fn is_empty(&self) -> bool {
         self.meshes.is_empty()
     }
+
+    /// Snapshot hit/miss and eviction counters for diagnostics or profiling.
+    pub fn stats(&self) -> ProjectionCacheStats {
+        self.stats
+    }
+
+    /// Clear profiling counters without dropping cached mesh handles.
+    pub fn reset_stats(&mut self) {
+        self.stats = ProjectionCacheStats::default();
+    }
 }
 
 /// Add `mesh` to `Assets<Mesh>`, reusing an existing handle when a mesh with
@@ -58,16 +80,25 @@ pub fn intern_mesh(world: &mut World, mesh: Mesh) -> Handle<Mesh> {
         return world.resource_mut::<Assets<Mesh>>().add(mesh);
     }
     let sig = mesh_signature(&mesh);
-    if let Some(existing) = world
+    let existing = world
         .resource::<ProjectionCache>()
         .meshes
         .get(&sig)
-        .cloned()
+        .cloned();
+    let is_alive = existing
+        .as_ref()
+        .is_some_and(|handle| world.resource::<Assets<Mesh>>().contains(handle));
     {
-        // Only reuse if the asset is still alive (not unloaded out from under us).
-        if world.resource::<Assets<Mesh>>().contains(&existing) {
-            return existing;
+        let mut cache = world.resource_mut::<ProjectionCache>();
+        cache.stats.lookups += 1;
+        if is_alive {
+            cache.stats.hits += 1;
+            return existing.expect("alive cache entry must have a handle");
         }
+        if existing.is_some() {
+            cache.stats.stale_handles += 1;
+        }
+        cache.stats.misses += 1;
     }
     let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
     let mut cache = world.resource_mut::<ProjectionCache>();
@@ -76,6 +107,7 @@ pub fn intern_mesh(world: &mut World, mesh: Mesh) -> Handle<Mesh> {
     // swept here rather than lingering.
     if cache.meshes.len() >= MAX_INTERNED {
         cache.meshes.clear();
+        cache.stats.evictions += 1;
     }
     cache.meshes.insert(sig, handle.clone());
     handle
@@ -149,5 +181,66 @@ fn hash_attribute(mesh: &Mesh, id: bevy::mesh::MeshVertexAttributeId, h: &mut im
             // so meshes differing only there still get distinct signatures.
             values.len().hash(h);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
+
+    use super::*;
+
+    fn triangle() -> Mesh {
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        mesh.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        );
+        mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
+        mesh
+    }
+
+    #[test]
+    fn stats_distinguish_projection_hit_and_miss() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.insert_resource(ProjectionCache::default());
+
+        let first = intern_mesh(&mut world, triangle());
+        let second = intern_mesh(&mut world, triangle());
+
+        assert_eq!(first, second);
+        assert_eq!(
+            world.resource::<ProjectionCache>().stats(),
+            ProjectionCacheStats {
+                lookups: 2,
+                hits: 1,
+                misses: 1,
+                stale_handles: 0,
+                evictions: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn stale_handle_is_rebuilt_and_counted() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.insert_resource(ProjectionCache::default());
+
+        let first = intern_mesh(&mut world, triangle());
+        world.resource_mut::<Assets<Mesh>>().remove(first.id());
+        let second = intern_mesh(&mut world, triangle());
+
+        assert_ne!(first, second);
+        let stats = world.resource::<ProjectionCache>().stats();
+        assert_eq!(stats.lookups, 2);
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 2);
+        assert_eq!(stats.stale_handles, 1);
     }
 }

@@ -20,11 +20,35 @@ use crate::read::shade::{ReadPreviewMaterial, read_material_binding, read_previe
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
 pub struct MaterialRoute;
 
+/// Counters collected by [`UsdTextureCache`] so texture-cache changes can be
+/// based on observed hit/miss and loading behavior.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TextureCacheStats {
+    pub lookups: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub stale_handles: u64,
+    pub load_failures: u64,
+}
+
 /// Cache of loaded USD textures keyed by authored asset path.
 #[derive(Resource, Default)]
 pub struct UsdTextureCache {
     pub textures: HashMap<String, Handle<Image>>,
     pub archive_paths: Vec<PathBuf>,
+    stats: TextureCacheStats,
+}
+
+impl UsdTextureCache {
+    /// Snapshot hit/miss and loading counters for diagnostics or profiling.
+    pub fn stats(&self) -> TextureCacheStats {
+        self.stats
+    }
+
+    /// Clear profiling counters without dropping cached textures or archives.
+    pub fn reset_stats(&mut self) {
+        self.stats = TextureCacheStats::default();
+    }
 }
 
 /// The prim's decoded preview material, if it has a binding that resolves.
@@ -117,14 +141,38 @@ fn read_texture_bytes(world: &World, texture_path: &str) -> Option<Vec<u8>> {
 }
 
 fn resolve_texture(world: &mut World, path: &str, is_srgb: bool) -> Option<Handle<Image>> {
-    if let Some(cache) = world.get_resource::<UsdTextureCache>() {
-        if let Some(handle) = cache.textures.get(path) {
-            return Some(handle.clone());
+    let cached = world
+        .get_resource::<UsdTextureCache>()
+        .and_then(|cache| cache.textures.get(path).cloned());
+    let cached_is_alive = cached.as_ref().is_some_and(|handle| {
+        world
+            .get_resource::<Assets<Image>>()
+            .is_some_and(|images| images.contains(handle))
+    });
+    if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+        cache.stats.lookups += 1;
+        if cached_is_alive {
+            cache.stats.hits += 1;
+            return cached;
         }
+        if cached.is_some() {
+            cache.stats.stale_handles += 1;
+        }
+        cache.stats.misses += 1;
     }
 
-    let bytes = read_texture_bytes(world, path)?;
-    let img = image::load_from_memory(&bytes).ok()?;
+    let Some(bytes) = read_texture_bytes(world, path) else {
+        if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+            cache.stats.load_failures += 1;
+        }
+        return None;
+    };
+    let Ok(img) = image::load_from_memory(&bytes) else {
+        if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+            cache.stats.load_failures += 1;
+        }
+        return None;
+    };
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
 
@@ -230,5 +278,61 @@ impl PrimRoute for MaterialRoute {
         } else if let Ok(mut e) = world.get_entity_mut(entity) {
             e.insert(MeshMaterial3d(handle));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats_distinguish_texture_hit_and_failed_miss() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Image>>();
+        world.insert_resource(UsdTextureCache::default());
+
+        let handle = world.resource_mut::<Assets<Image>>().add(Image::default());
+        world
+            .resource_mut::<UsdTextureCache>()
+            .textures
+            .insert("cached.png".to_owned(), handle.clone());
+
+        assert_eq!(
+            resolve_texture(&mut world, "cached.png", true),
+            Some(handle)
+        );
+        assert!(resolve_texture(&mut world, "definitely-missing-texture.png", true).is_none());
+        assert_eq!(
+            world.resource::<UsdTextureCache>().stats(),
+            TextureCacheStats {
+                lookups: 2,
+                hits: 1,
+                misses: 1,
+                stale_handles: 0,
+                load_failures: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn stale_texture_handle_is_not_returned() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Image>>();
+        world.insert_resource(UsdTextureCache::default());
+
+        let handle = world.resource_mut::<Assets<Image>>().add(Image::default());
+        world
+            .resource_mut::<UsdTextureCache>()
+            .textures
+            .insert("removed.png".to_owned(), handle.clone());
+        world.resource_mut::<Assets<Image>>().remove(handle.id());
+
+        assert!(resolve_texture(&mut world, "removed.png", true).is_none());
+        let stats = world.resource::<UsdTextureCache>().stats();
+        assert_eq!(stats.lookups, 1);
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.stale_handles, 1);
+        assert_eq!(stats.load_failures, 1);
     }
 }

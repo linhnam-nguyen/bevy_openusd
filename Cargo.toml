@@ -70,6 +70,10 @@ name = "rapier_bridge"
 path = "tests/rapier_bridge.rs"
 
 [[test]]
+name = "cache_profile"
+path = "tests/cache_profile.rs"
+
+[[test]]
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
