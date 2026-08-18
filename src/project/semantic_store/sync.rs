@@ -731,6 +731,10 @@ pub(crate) enum TursoClientSyncRuntimeCommand {
         snapshot: SemanticSnapshot,
     },
     PullProjection(SessionId),
+    UpdateAuthorization {
+        session_id: SessionId,
+        authorization: AuthorizationPolicy,
+    },
     Close(SessionId),
 }
 
@@ -798,6 +802,10 @@ fn semantic_sync_worker(
             TursoClientSyncRuntimeCommand::PullProjection(session_id) => runtime
                 .block_on(application.pull_projection(&session_id))
                 .map(|_| ()),
+            TursoClientSyncRuntimeCommand::UpdateAuthorization {
+                session_id,
+                authorization,
+            } => application.update_authorization(&session_id, authorization),
             TursoClientSyncRuntimeCommand::Close(session_id) => application.close(&session_id),
         };
         if let Err(error) = result {

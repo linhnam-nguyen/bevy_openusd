@@ -47,7 +47,7 @@ use viewport_protocol::{SemanticSyncPhase, SemanticSyncStatus};
 use crate::project::semantic_store::sync::{
     TursoClientSyncProvisionRequest, TursoClientSyncRuntime, TursoClientSyncRuntimeCommand,
 };
-use crate::viewport::semantic::SemanticSyncState;
+use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
 
 /// Tag on the viewer's fallback `DirectionalLight`.
 #[derive(Component)]
@@ -169,7 +169,10 @@ pub(crate) fn run() {
             }
         };
         app.insert_resource(SemanticSyncRuntimeResource(semantic_sync_runtime))
-            .add_systems(Update, process_semantic_sync_requests);
+            .add_systems(
+                PostUpdate,
+                process_semantic_sync_requests.after(synchronize_live_stage),
+            );
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
@@ -287,46 +290,63 @@ fn process_semantic_sync_requests(
     while let Some(request) = application_interface.pop_semantic_sync_request() {
         let request_id = request.request_id;
         let session_id = request.session_id;
-        let operation = request.operation;
         let client_name = request.client_name;
         let authorization = request.authorization;
-        let command = match operation {
-            viewport_protocol::SemanticSyncOperation::Provision => {
-                TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
-                    session_id: session_id.clone(),
-                    client_name,
-                    authorization,
-                })
-            }
-            viewport_protocol::SemanticSyncOperation::Connect => {
-                TursoClientSyncRuntimeCommand::Connect(session_id.clone())
-            }
-            viewport_protocol::SemanticSyncOperation::PushSnapshot => {
-                let Some(snapshot) = semantic.snapshot().cloned() else {
-                    let _ = application_interface.publish_semantic_sync_status(
-                        session_id.clone(),
-                        SemanticSyncStatus::phase(
-                            SemanticSyncPhase::Failed,
-                            Some("snapshot_unavailable".to_owned()),
-                        ),
-                    );
-                    continue;
+
+        let (command, is_close) = match request.kind {
+            viewport_streaming::SemanticSyncRequestKind::Client(operation) => {
+                let is_close = operation == viewport_protocol::SemanticSyncOperation::Close;
+
+                let command = match operation {
+                    viewport_protocol::SemanticSyncOperation::Provision => {
+                        TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+                            session_id: session_id.clone(),
+                            client_name,
+                            authorization,
+                        })
+                    }
+                    viewport_protocol::SemanticSyncOperation::Connect => {
+                        TursoClientSyncRuntimeCommand::Connect(session_id.clone())
+                    }
+                    viewport_protocol::SemanticSyncOperation::PushSnapshot => {
+                        let Some(snapshot) = semantic.snapshot().cloned() else {
+                            let _ = application_interface.publish_semantic_sync_status(
+                                session_id.clone(),
+                                SemanticSyncStatus::phase(
+                                    SemanticSyncPhase::Failed,
+                                    Some("snapshot_unavailable".to_owned()),
+                                ),
+                            );
+                            continue;
+                        };
+
+                        TursoClientSyncRuntimeCommand::PushSnapshot {
+                            session_id: session_id.clone(),
+                            snapshot,
+                        }
+                    }
+                    viewport_protocol::SemanticSyncOperation::PullProjection => {
+                        TursoClientSyncRuntimeCommand::PullProjection(session_id.clone())
+                    }
+                    viewport_protocol::SemanticSyncOperation::Close => {
+                        TursoClientSyncRuntimeCommand::Close(session_id.clone())
+                    }
                 };
-                TursoClientSyncRuntimeCommand::PushSnapshot {
+
+                (command, is_close)
+            }
+
+            viewport_streaming::SemanticSyncRequestKind::AuthorizationChanged => (
+                TursoClientSyncRuntimeCommand::UpdateAuthorization {
                     session_id: session_id.clone(),
-                    snapshot,
-                }
-            }
-            viewport_protocol::SemanticSyncOperation::PullProjection => {
-                TursoClientSyncRuntimeCommand::PullProjection(session_id.clone())
-            }
-            viewport_protocol::SemanticSyncOperation::Close => {
-                TursoClientSyncRuntimeCommand::Close(session_id.clone())
-            }
+                    authorization,
+                },
+                false,
+            ),
         };
 
         let Some(runtime) = runtime.0.as_ref() else {
-            let status = if operation == viewport_protocol::SemanticSyncOperation::Close {
+            let status = if is_close {
                 SemanticSyncStatus::phase(SemanticSyncPhase::Closed, None)
             } else {
                 SemanticSyncStatus::phase(

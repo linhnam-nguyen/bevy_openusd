@@ -22,7 +22,7 @@ use viewport_protocol::{
 };
 
 use crate::session::{SessionAdmission, SessionAdmissionError};
-use crate::{RenderServerInterface, SemanticSyncRequest};
+use crate::{RenderServerInterface, SemanticSyncRequest, SemanticSyncRequestKind};
 
 pub const CONTROL_CHANNEL_LABEL: &str = "viewport-control";
 pub const INPUT_CHANNEL_LABEL: &str = "viewport-input";
@@ -126,7 +126,7 @@ impl ApplicationSession {
                         session_id: state.session_id.clone(),
                         client_name: state.client_name.clone(),
                         authorization: state.authorization.clone(),
-                        operation: SemanticSyncOperation::Close,
+                        kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
                     });
             }
         }
@@ -416,7 +416,7 @@ impl ApplicationSession {
                     session_id: state.session_id.clone(),
                     client_name: state.client_name.clone(),
                     authorization: state.authorization.clone(),
-                    operation,
+                    kind: SemanticSyncRequestKind::Client(operation),
                 };
                 if let Err(error) = state.interface.submit_semantic_sync_request(request) {
                     send_command_rejection(
@@ -656,11 +656,31 @@ impl ApplicationSession {
         if !state.handshaken {
             return;
         }
+
         let authorization = state.interface.authorization_policy();
         if authorization == state.authorization {
             return;
         }
+
+        let semantic_sync_request = SemanticSyncRequest {
+            request_id: format!("authorization-change-{}", state.session_id.0),
+            session_id: state.session_id.clone(),
+            client_name: state.client_name.clone(),
+            authorization: authorization.clone(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+
+        if let Err(error) = state
+            .interface
+            .submit_semantic_sync_request(semantic_sync_request)
+        {
+            error!(
+                "[viewport-data-channel] failed to queue semantic-sync authorization change: {error:?}"
+            );
+        }
+
         state.authorization = authorization.clone();
+
         queue_server_event_for_request(
             &mut state,
             None,

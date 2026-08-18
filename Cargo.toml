@@ -13,10 +13,22 @@ members = [
 ]
 exclude = ["xtra"]
 
+
 [workspace.dependencies]
 # Keep every USD layer on one exact upstream revision. Updating this single
 # entry updates usd_macro, usd_rapier, and usd_bevy together.
-openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = ["geom", "shade", "skel", "lux", "physics", "media", "vol", "render", "proc", "ui"] }
+openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 usd_macro = { path = "crates/usd_macro" }
 usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
@@ -30,9 +42,9 @@ turso = { version = "0.7.1", default-features = false, features = ["sync"] }
 
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", features = ["full"] }
+syn = { version = "3.0.3", features = ["full"] }
 bitflags = "2"
-blake3 = "1"
+blake3 = "1.8.5"
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"
@@ -100,7 +112,11 @@ viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
 tempfile = "3"
 bevy = { workspace = true, features = [
     "std",
@@ -139,7 +155,7 @@ bevy = { workspace = true, features = [
     "wayland",
     "reflect_auto_register",
 ] }
-
+log = { workspace = true }
 anyhow = { workspace = true }
 # Native file-picker dialog for the "Browse USD…" button.
 rfd = "0.17.2"
