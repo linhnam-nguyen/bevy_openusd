@@ -8,6 +8,7 @@
 
 pub const PROTOCOL_VERSION: u16 = 1;
 
+pub mod authorization;
 pub mod capabilities;
 pub mod codec;
 pub mod commands;
@@ -18,6 +19,10 @@ pub mod input;
 pub mod stream;
 pub mod viewport;
 
+pub use authorization::{
+    AuthorizationPolicy, AuthorizationValidationError, DeliveryMode, HistoryPermission,
+    ModelDownloadPermission, RuntimeProfile, SemanticPropertyScope,
+};
 pub use capabilities::{ClientCapabilities, CommandFamily, InputCapabilities, ServerCapabilities};
 pub use codec::{
     ClientWireMessage, ServerWireMessage, decode_client_json_line, decode_json_line,

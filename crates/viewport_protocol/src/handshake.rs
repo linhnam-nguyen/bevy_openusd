@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClientCapabilities, PROTOCOL_VERSION, ProtocolValidationError, ServerCapabilities, SessionId,
-    ViewportMetrics,
+    AuthorizationPolicy, ClientCapabilities, PROTOCOL_VERSION, ProtocolValidationError,
+    ServerCapabilities, SessionId, ViewportMetrics,
 };
 
 /// Role negotiated for a connected viewport client.
@@ -68,6 +68,8 @@ pub struct ServerHello {
     pub session_id: SessionId,
     pub role: SessionRole,
     pub capabilities: ServerCapabilities,
+    #[serde(default, skip_serializing_if = "AuthorizationPolicy::is_default")]
+    pub authorization: AuthorizationPolicy,
     pub resumed: bool,
 }
 
@@ -78,13 +80,36 @@ impl ServerHello {
             session_id,
             role,
             capabilities,
+            authorization: AuthorizationPolicy::default(),
+            resumed: false,
+        }
+    }
+
+    /// Construct a server hello with an explicit session authorization policy.
+    pub fn with_authorization(
+        session_id: SessionId,
+        role: SessionRole,
+        capabilities: ServerCapabilities,
+        authorization: AuthorizationPolicy,
+    ) -> Self {
+        Self {
+            protocol_version: PROTOCOL_VERSION,
+            session_id,
+            role,
+            capabilities,
+            authorization,
             resumed: false,
         }
     }
 
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
         crate::envelope::validate_protocol_version(self.protocol_version)?;
-        self.session_id.validate()
+        self.session_id.validate()?;
+        self.authorization
+            .validate()
+            .map_err(|_| ProtocolValidationError::InvalidInput {
+                field: "authorization",
+            })
     }
 }
 

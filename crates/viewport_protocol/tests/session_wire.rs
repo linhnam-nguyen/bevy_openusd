@@ -1,10 +1,11 @@
 use viewport_protocol::{
-    ActiveStreamConfiguration, ButtonState, ClientCapabilities, ClientCommand,
-    ClientCommandEnvelope, ClientHello, CodecId, FocusState, HandshakeEvent, InputCommand,
-    InputModifiers, KeyboardInput, PointerButtons, PointerMotion, ProtocolValidationError,
-    ReleaseAllInput, RuntimeMutation, RuntimeMutationBatch, SceneAnchor, SceneChildrenPage,
-    ScenePageReference, SceneSearchMatch, ServerCapabilities, ServerEvent, ServerEventEnvelope,
-    ServerHello, SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
+    ActiveStreamConfiguration, AuthorizationPolicy, ButtonState, ClientCapabilities, ClientCommand,
+    ClientCommandEnvelope, ClientHello, CodecId, DeliveryMode, FocusState, HandshakeEvent,
+    HistoryPermission, InputCommand, InputModifiers, KeyboardInput, ModelDownloadPermission,
+    PointerButtons, PointerMotion, ProtocolValidationError, ReleaseAllInput, RuntimeMutation,
+    RuntimeMutationBatch, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
+    SemanticPropertyScope, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
+    SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
     ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel, decode_client_json_line,
     decode_server_json_line, encode_client_json_line, encode_server_json_line,
 };
@@ -40,10 +41,36 @@ fn handshake_and_capabilities_round_trip() {
     );
     server.validate().unwrap();
     let server_json = serde_json::to_string(&server).unwrap();
+    assert!(!server_json.contains("\"authorization\""));
     assert_eq!(
         serde_json::from_str::<ServerHello>(&server_json).unwrap(),
         server
     );
+}
+
+#[test]
+fn authorization_policy_round_trips_separately_from_capabilities() {
+    let policy = AuthorizationPolicy {
+        allowed_delivery_modes: vec![DeliveryMode::Stream],
+        model_download: ModelDownloadPermission::Denied,
+        semantic_property_scope: SemanticPropertyScope::AllowList(vec!["displayName".to_owned()]),
+        history: HistoryPermission::ReadOnly,
+        runtime_profile: viewport_protocol::RuntimeProfile::ServerStream,
+    };
+    let server = ServerHello::with_authorization(
+        SessionId::new("session-policy"),
+        SessionRole::Observer,
+        ServerCapabilities::default(),
+        policy.clone(),
+    );
+
+    server.validate().unwrap();
+    let json = serde_json::to_string(&server).unwrap();
+    let decoded: ServerHello = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(decoded.authorization, policy);
+    assert!(json.contains("authorization"));
+    assert_eq!(decoded.capabilities, ServerCapabilities::default());
 }
 
 #[test]
