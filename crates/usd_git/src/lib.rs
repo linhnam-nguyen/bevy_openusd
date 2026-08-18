@@ -13,7 +13,7 @@ mod revision;
 
 pub use commit::CommitRequest;
 pub use error::{Error, Result};
-pub use history::{CommitInfo, CommitSignature};
+pub use history::{BranchInfo, CommitInfo, CommitSignature};
 pub use materialize::MaterializedRevision;
 pub use repository::{GitRepository, Repository};
 pub use revision::{Revision, RevisionId, RevisionSpec};

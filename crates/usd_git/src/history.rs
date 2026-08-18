@@ -1,5 +1,16 @@
 use crate::RevisionId;
 
+/// Metadata for one local Git branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BranchInfo {
+    /// The short branch name, such as `main` or `feature/editor`.
+    pub name: String,
+    /// The commit currently referenced by this branch.
+    pub tip: RevisionId,
+    /// Whether this is the branch currently checked out by `HEAD`.
+    pub is_current: bool,
+}
+
 /// A Git author or committer identity and timestamp.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitSignature {

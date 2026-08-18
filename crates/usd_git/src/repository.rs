@@ -6,8 +6,8 @@ use std::{
 use gix::object::tree::EntryKind;
 
 use crate::{
-    CommitInfo, CommitRequest, CommitSignature, Error, MaterializedRevision, Result, Revision,
-    RevisionId, RevisionSpec,
+    BranchInfo, CommitInfo, CommitRequest, CommitSignature, Error, MaterializedRevision, Result,
+    Revision, RevisionId, RevisionSpec,
 };
 
 /// The Git boundary used by the rest of USDHub.
@@ -16,7 +16,16 @@ pub trait GitRepository {
 
     fn head(&self) -> Result<Option<Revision>>;
 
+    /// List local branches in stable name order.
+    fn branches(&self) -> Result<Vec<BranchInfo>>;
+
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo>;
+
+    /// Return at most `limit` commits reachable from `id`, newest first.
+    ///
+    /// The requested commit is included as the first entry when `limit` is
+    /// non-zero. Merge histories are traversed through all parents.
+    fn history(&self, id: &RevisionId, limit: usize) -> Result<Vec<CommitInfo>>;
 
     fn materialize_revision(
         &self,
@@ -109,8 +118,54 @@ impl GitRepository for Repository {
         }
     }
 
+    fn branches(&self) -> Result<Vec<BranchInfo>> {
+        let current_name = self
+            .inner
+            .head_name()
+            .map_err(Error::git)?
+            .map(|name| String::from_utf8_lossy(name.shorten()).into_owned());
+        let mut branches = Vec::new();
+        for reference in self
+            .inner
+            .references()
+            .map_err(Error::git)?
+            .local_branches()
+            .map_err(Error::git)?
+        {
+            let mut reference = reference.map_err(Error::git)?;
+            let name = String::from_utf8_lossy(reference.name().shorten()).into_owned();
+            let tip = RevisionId::new(reference.peel_to_id().map_err(Error::git)?.to_string());
+            let is_current = current_name.as_deref() == Some(name.as_str());
+            branches.push(BranchInfo {
+                name,
+                tip,
+                is_current,
+            });
+        }
+        Ok(branches)
+    }
+
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo> {
         self.commit_info(self.commit_for_id(id)?)
+    }
+
+    fn history(&self, id: &RevisionId, limit: usize) -> Result<Vec<CommitInfo>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let tip = self.commit_for_id(id)?;
+        let walk = self
+            .inner
+            .rev_walk([tip.id().detach()])
+            .all()
+            .map_err(Error::git)?;
+        walk.take(limit)
+            .map(|entry| {
+                let info = entry.map_err(Error::git)?;
+                self.commit_info(info.object().map_err(Error::git)?)
+            })
+            .collect()
     }
 
     fn materialize_revision(

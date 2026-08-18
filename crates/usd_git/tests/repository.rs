@@ -82,6 +82,118 @@ fn resolves_and_materializes_a_historical_parent() {
 }
 
 #[test]
+fn lists_local_branches_and_walks_bounded_history() {
+    let repository_dir = create_repository();
+    fs::write(
+        repository_dir.path().join("model.usda"),
+        b"#usda 1.0\n(def \"stage-v2\") {}\n",
+    )
+    .unwrap();
+    run_git(repository_dir.path(), ["add", "."]);
+    run_git(repository_dir.path(), ["commit", "-m", "second USD stage"]);
+    run_git(
+        repository_dir.path(),
+        ["branch", "feature/history", "HEAD~1"],
+    );
+
+    let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
+    let head = repository.head().unwrap().expect("repository has a head");
+    let branches = repository.branches().expect("list local branches");
+
+    assert_eq!(
+        branches
+            .iter()
+            .map(|branch| branch.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["feature/history", "main"]
+    );
+    assert!(!branches[0].is_current);
+    assert!(branches[1].is_current);
+    assert_eq!(branches[1].tip, *head.id());
+
+    let history = repository.history(head.id(), 10).expect("walk history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].id, *head.id());
+    assert_eq!(history[0].message, "second USD stage\n");
+    assert!(history[1].parents.is_empty());
+
+    let bounded = repository
+        .history(head.id(), 1)
+        .expect("walk bounded history");
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(bounded[0].id, *head.id());
+    assert!(repository.history(head.id(), 0).unwrap().is_empty());
+}
+
+#[test]
+fn walks_both_parents_of_a_merge_commit() {
+    let repository_dir = create_repository();
+    run_git(repository_dir.path(), ["branch", "feature/merge"]);
+    run_git(repository_dir.path(), ["checkout", "feature/merge"]);
+    fs::write(
+        repository_dir.path().join("feature.usda"),
+        b"#usda 1.0\n(def \"feature\") {}\n",
+    )
+    .unwrap();
+    run_git(repository_dir.path(), ["add", "feature.usda"]);
+    run_git(repository_dir.path(), ["commit", "-m", "feature USD stage"]);
+    let feature_tip =
+        String::from_utf8_lossy(&run_git(repository_dir.path(), ["rev-parse", "HEAD"]).stdout)
+            .trim()
+            .to_owned();
+
+    run_git(repository_dir.path(), ["checkout", "main"]);
+    fs::write(
+        repository_dir.path().join("main.usda"),
+        b"#usda 1.0\n(def \"main\") {}\n",
+    )
+    .unwrap();
+    run_git(repository_dir.path(), ["add", "main.usda"]);
+    run_git(repository_dir.path(), ["commit", "-m", "main USD stage"]);
+    let main_tip =
+        String::from_utf8_lossy(&run_git(repository_dir.path(), ["rev-parse", "HEAD"]).stdout)
+            .trim()
+            .to_owned();
+    run_git(
+        repository_dir.path(),
+        [
+            "merge",
+            "--no-ff",
+            "feature/merge",
+            "-m",
+            "merge USD stages",
+        ],
+    );
+
+    let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
+    let head = repository.head().unwrap().expect("repository has a head");
+    let history = repository
+        .history(head.id(), 10)
+        .expect("walk merge history");
+
+    assert_eq!(history[0].id, *head.id());
+    assert_eq!(history[0].parents.len(), 2);
+    assert!(
+        history[0]
+            .parents
+            .iter()
+            .any(|parent| parent.as_str() == main_tip)
+    );
+    assert!(
+        history[0]
+            .parents
+            .iter()
+            .any(|parent| parent.as_str() == feature_tip)
+    );
+    assert!(history.iter().any(|commit| commit.id.as_str() == main_tip));
+    assert!(
+        history
+            .iter()
+            .any(|commit| commit.id.as_str() == feature_tip)
+    );
+}
+
+#[test]
 fn commit_creation_updates_head_from_source_tree() {
     let repository_dir = create_repository();
     let source_dir = tempfile::tempdir().expect("create commit source directory");
