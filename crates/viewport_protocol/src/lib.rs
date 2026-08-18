@@ -17,6 +17,8 @@ pub mod envelope;
 pub mod events;
 pub mod handshake;
 pub mod input;
+pub mod runtime_client;
+pub mod semantic_sync;
 pub mod stream;
 pub mod viewport;
 
@@ -48,6 +50,11 @@ pub use input::{
     ButtonState, FocusState, InputModifiers, KeyboardInput, PointerButtons, PointerMotion,
     ReleaseAllInput,
 };
+pub use runtime_client::{
+    HydratedRuntimeDelivery, RuntimeDeliveryAssembler, RuntimeDeliveryClientError,
+    RuntimeDeliveryUpdate,
+};
+pub use semantic_sync::{SemanticSyncPhase, SemanticSyncStatus};
 pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };

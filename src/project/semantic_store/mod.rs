@@ -2,6 +2,7 @@
 
 mod migration;
 mod schema;
+pub(crate) mod sync;
 mod turso;
 
 use std::{future::Future, path::Path};

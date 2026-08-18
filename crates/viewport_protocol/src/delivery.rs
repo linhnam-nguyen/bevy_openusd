@@ -157,6 +157,24 @@ pub struct AuthorizedRuntimeManifest {
 }
 
 impl AuthorizedRuntimeManifest {
+    pub fn validate(&self) -> Result<(), RuntimeManifestValidationError> {
+        let references = self.references();
+        if references.len() > MAX_RUNTIME_BLOB_REFERENCES {
+            return Err(RuntimeManifestValidationError::TooManyBlobReferences);
+        }
+
+        let mut seen = HashSet::with_capacity(references.len());
+        for reference in references {
+            reference.validate()?;
+            if !seen.insert(reference.blob_id.as_str()) {
+                return Err(RuntimeManifestValidationError::DuplicateBlobId(
+                    reference.blob_id.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn allows_blob(&self, blob_id: &str) -> bool {
         self.references()
             .iter()

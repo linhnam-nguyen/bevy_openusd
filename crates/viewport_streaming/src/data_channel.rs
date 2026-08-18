@@ -15,10 +15,10 @@ use std::{
 use viewport_protocol::{
     ActiveStreamConfiguration, AuthorizationPolicy, CameraSource, ClientCommand, CommandFamily,
     HandshakeEvent, HandshakeRejectionReason, InputCommand, PROTOCOL_VERSION,
-    ProtocolValidationError, ServerCapabilities, ServerEvent, ServerEventEnvelope, SessionCommand,
-    SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent, ViewportCommandEnvelope,
-    ViewportEvent, ViewportEventEnvelope, ViewportReadModel, decode_client_json_line,
-    encode_server_json_line,
+    ProtocolValidationError, SemanticSyncStatus, ServerCapabilities, ServerEvent,
+    ServerEventEnvelope, SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand,
+    StreamEvent, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
+    decode_client_json_line, encode_server_json_line,
 };
 
 use crate::RenderServerInterface;
@@ -52,6 +52,7 @@ struct ApplicationSessionState {
     role: Option<SessionRole>,
     server_capabilities: ServerCapabilities,
     authorization: AuthorizationPolicy,
+    semantic_sync_status: Option<SemanticSyncStatus>,
     initial_snapshot: ViewportReadModel,
     interface: RenderServerInterface,
     /// The session manager polls this replaceable slot at its regular event
@@ -98,6 +99,7 @@ impl ApplicationSession {
                 role: None,
                 server_capabilities,
                 authorization,
+                semantic_sync_status: None,
                 initial_snapshot,
                 interface,
                 pending_stream_configuration: None,
@@ -281,6 +283,18 @@ impl ApplicationSession {
                 channel,
                 &mut state,
                 ServerEvent::Session(SessionEvent::Snapshot { state: snapshot }),
+            );
+            let semantic_sync_status = state
+                .interface
+                .semantic_sync_status(&session_id)
+                .unwrap_or_else(SemanticSyncStatus::disabled);
+            state.semantic_sync_status = Some(semantic_sync_status.clone());
+            send_server_event(
+                channel,
+                &mut state,
+                ServerEvent::Session(SessionEvent::SemanticSyncStatus {
+                    status: semantic_sync_status,
+                }),
             );
             return;
         }
@@ -589,6 +603,49 @@ impl ApplicationSession {
                 ServerEvent::Stream(StreamEvent::ConfigurationApplied { configuration }),
             );
         }
+    }
+
+    pub(crate) fn refresh_authorization(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if !state.handshaken {
+            return;
+        }
+        let authorization = state.interface.authorization_policy();
+        if authorization == state.authorization {
+            return;
+        }
+        state.authorization = authorization.clone();
+        queue_server_event_for_request(
+            &mut state,
+            None,
+            ServerEvent::Session(SessionEvent::AuthorizationChanged { authorization }),
+        );
+    }
+
+    pub(crate) fn refresh_semantic_sync_status(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if !state.handshaken {
+            return;
+        }
+        let status = state
+            .interface
+            .semantic_sync_status(&state.session_id)
+            .unwrap_or_else(SemanticSyncStatus::disabled);
+        if state.semantic_sync_status.as_ref() == Some(&status) {
+            return;
+        }
+        state.semantic_sync_status = Some(status.clone());
+        queue_server_event_for_request(
+            &mut state,
+            None,
+            ServerEvent::Session(SessionEvent::SemanticSyncStatus { status }),
+        );
     }
 
     pub(crate) fn flush_authoritative_events(&self, channel: &WebRTCDataChannel) {

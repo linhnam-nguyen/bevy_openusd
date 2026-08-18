@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{HandshakeEvent, ViewportEvent, ViewportReadModel};
+use crate::{AuthorizationPolicy, HandshakeEvent, ViewportEvent, ViewportReadModel};
 
 /// Top-level server events. UI state changes arrive through the semantic
 /// viewport event family and are never synthesized by a transport adapter.
@@ -30,6 +30,12 @@ pub enum SessionEvent {
         chunk_index: u32,
         chunk_count: u32,
         state: ViewportReadModel,
+    },
+    AuthorizationChanged {
+        authorization: AuthorizationPolicy,
+    },
+    SemanticSyncStatus {
+        status: crate::SemanticSyncStatus,
     },
     RuntimeManifest {
         manifest: crate::AuthorizedRuntimeManifest,

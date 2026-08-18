@@ -97,6 +97,9 @@ impl WebRtcSessionManager {
         frame_receiver: Receiver<VideoFrame>,
         interface: RenderServerInterface,
     ) -> Self {
+        if let Err(error) = interface.publish_authorization_policy(config.authorization.clone()) {
+            error!("[viewport-session] invalid authorization policy: {error:?}");
+        }
         Self {
             config,
             frame_pump: FramePump::new(frame_receiver),

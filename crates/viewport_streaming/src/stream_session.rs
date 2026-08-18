@@ -363,6 +363,8 @@ impl StreamingSession {
     }
 
     pub(crate) fn flush_authoritative_events(&self) {
+        self.application.refresh_authorization();
+        self.application.refresh_semantic_sync_status();
         if let Some(metrics) = self.application.take_stream_configuration() {
             self.frame_router.configure(self.connection_id, metrics);
         }

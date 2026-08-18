@@ -5,10 +5,11 @@ use viewport_protocol::{
     ModelDownloadPermission, PointerButtons, PointerMotion, ProtocolValidationError,
     ReleaseAllInput, RuntimeBlobReference, RuntimeMutation, RuntimeMutationBatch,
     RuntimePayloadKind, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneSearchMatch,
-    SemanticPropertyScope, ServerCapabilities, ServerEvent, ServerEventEnvelope, ServerHello,
-    SessionCommand, SessionEvent, SessionId, SessionRole, StreamCommand, StreamEvent,
-    ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel, decode_client_json_line,
-    decode_server_json_line, encode_client_json_line, encode_server_json_line,
+    SemanticPropertyScope, SemanticSyncPhase, SemanticSyncStatus, ServerCapabilities, ServerEvent,
+    ServerEventEnvelope, ServerHello, SessionCommand, SessionEvent, SessionId, SessionRole,
+    StreamCommand, StreamEvent, ViewportCommand, ViewportEvent, ViewportMetrics, ViewportReadModel,
+    decode_client_json_line, decode_server_json_line, encode_client_json_line,
+    encode_server_json_line,
 };
 
 fn metrics() -> ViewportMetrics {
@@ -153,6 +154,12 @@ fn runtime_delivery_events_round_trip_with_blob_metadata_and_chunks() {
     };
     let events = [
         ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }),
+        ServerEvent::Session(SessionEvent::AuthorizationChanged {
+            authorization: AuthorizationPolicy::default(),
+        }),
+        ServerEvent::Session(SessionEvent::SemanticSyncStatus {
+            status: SemanticSyncStatus::phase(SemanticSyncPhase::Provisioned, None),
+        }),
         ServerEvent::Session(SessionEvent::RuntimeManifestChunk {
             manifest_id: "runtime-request".to_owned(),
             chunk_index: 0,

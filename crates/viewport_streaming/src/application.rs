@@ -5,9 +5,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use viewport_protocol::{
-    ClientCommandEnvelope, InputCommand, PointerMotion, RuntimeManifest, ViewportCommandEnvelope,
-    ViewportEvent, ViewportEventEnvelope, ViewportMetrics, ViewportReadModel,
-    validate_runtime_blob_id,
+    AuthorizationPolicy, ClientCommandEnvelope, InputCommand, PointerMotion, RuntimeManifest,
+    SemanticSyncStatus, SessionId, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
+    ViewportMetrics, ViewportReadModel, validate_runtime_blob_id,
 };
 
 const MAX_PENDING_MESSAGES: usize = 256;
@@ -22,6 +22,8 @@ struct PendingMessages {
     input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
     latest_snapshot: Option<ViewportReadModel>,
+    authorization: AuthorizationPolicy,
+    semantic_sync_statuses: HashMap<SessionId, SemanticSyncStatus>,
     runtime_manifest: Option<RuntimeManifest>,
     runtime_blobs: HashMap<String, Vec<u8>>,
     pending_stream_configuration: Option<ViewportMetrics>,
@@ -293,6 +295,62 @@ impl RenderServerInterface {
         Ok(())
     }
 
+    /// Replaces the server-owned authorization policy. Existing sessions
+    /// observe the change at their next reliable event flush and receive an
+    /// explicit policy event before requesting another runtime revision.
+    pub fn publish_authorization_policy(
+        &self,
+        authorization: AuthorizationPolicy,
+    ) -> Result<(), RenderServerPortError> {
+        authorization
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        pending.authorization = authorization;
+        Ok(())
+    }
+
+    pub fn authorization_policy(&self) -> AuthorizationPolicy {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .authorization
+            .clone()
+    }
+
+    /// Publishes the newest semantic-sync lifecycle state for one session.
+    /// Credentials and remote transport details remain outside this bus.
+    pub fn publish_semantic_sync_status(
+        &self,
+        session_id: SessionId,
+        status: SemanticSyncStatus,
+    ) -> Result<(), RenderServerPortError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        pending.semantic_sync_statuses.insert(session_id, status);
+        Ok(())
+    }
+
+    pub fn semantic_sync_status(&self, session_id: &SessionId) -> Option<SemanticSyncStatus> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .semantic_sync_statuses
+            .get(session_id)
+            .cloned()
+    }
+
+    pub fn clear_semantic_sync_status(&self, session_id: &SessionId) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.semantic_sync_statuses.remove(session_id);
+        }
+    }
+
     /// Atomically replaces the runtime manifest and exactly the verified blob
     /// bytes referenced by it. A failed publication leaves the previous bundle
     /// untouched, so a client cannot observe a partial revision.
@@ -388,7 +446,10 @@ fn safe_display_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use viewport_protocol::{InputCommand, PointerMotion, ViewportCommand};
+    use viewport_protocol::{
+        InputCommand, PointerMotion, SemanticSyncPhase, SemanticSyncStatus, SessionId,
+        ViewportCommand,
+    };
 
     #[test]
     fn stream_generation_remains_monotonic_across_webview_reconnects() {
@@ -544,5 +605,53 @@ mod tests {
             .publish_runtime_blob(blob_id, vec![1, 2, 3])
             .unwrap();
         assert_eq!(interface.runtime_blob(blob_id), Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn authorization_policy_is_validated_and_replaceable() {
+        let interface = RenderServerInterface::default();
+        assert_eq!(
+            interface.authorization_policy(),
+            AuthorizationPolicy::default()
+        );
+
+        let mut policy = AuthorizationPolicy::default();
+        policy.semantic_property_scope = viewport_protocol::SemanticPropertyScope::All;
+        interface
+            .publish_authorization_policy(policy.clone())
+            .unwrap();
+
+        assert_eq!(interface.authorization_policy(), policy);
+        assert_eq!(
+            interface.publish_authorization_policy(AuthorizationPolicy {
+                allowed_delivery_modes: Vec::new(),
+                ..AuthorizationPolicy::default()
+            }),
+            Err(RenderServerPortError::InvalidPayload)
+        );
+        assert_eq!(interface.authorization_policy(), policy);
+    }
+
+    #[test]
+    fn semantic_sync_status_is_replaced_per_session_and_can_be_cleared() {
+        let interface = RenderServerInterface::default();
+        let session_id = SessionId::new("session-sync");
+        let ready = SemanticSyncStatus::ready("working-7".to_owned(), "hash-1".to_owned());
+        interface
+            .publish_semantic_sync_status(session_id.clone(), ready.clone())
+            .unwrap();
+        assert_eq!(interface.semantic_sync_status(&session_id), Some(ready));
+
+        let stale = SemanticSyncStatus::phase(
+            SemanticSyncPhase::Stale,
+            Some("authorization_changed".to_owned()),
+        );
+        interface
+            .publish_semantic_sync_status(session_id.clone(), stale.clone())
+            .unwrap();
+        assert_eq!(interface.semantic_sync_status(&session_id), Some(stale));
+
+        interface.clear_semantic_sync_status(&session_id);
+        assert!(interface.semantic_sync_status(&session_id).is_none());
     }
 }
