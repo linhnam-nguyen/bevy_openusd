@@ -211,12 +211,12 @@ impl StageChangeBatch {
 /// Test and profiling suites use this to verify work reduction during subtree
 /// resync without relying on noisy timing assertions.
 #[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ReconcileStats {
-    pub roots: usize,
-    pub visited_stage_prims: usize,
-    pub patched_entities: usize,
-    pub spawned_entities: usize,
-    pub despawned_entities: usize,
+pub(crate) struct ReconcileStats {
+    pub(crate) roots: usize,
+    pub(crate) visited_stage_prims: usize,
+    pub(crate) patched_entities: usize,
+    pub(crate) spawned_entities: usize,
+    pub(crate) despawned_entities: usize,
 }
 
 impl StageChange {
