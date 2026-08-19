@@ -635,9 +635,8 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         animated = animated.len(),
         "projected USD stage"
     );
-    if let Some(mut a) = world.get_resource_mut::<AnimatedPrims>() {
-        a.0 = animated;
-    }
+    world.insert_resource(AnimatedPrims(animated));
+    let _ = live.drain_change_batch();
 }
 
 /// Drain the change queue and reproject affected entities.
