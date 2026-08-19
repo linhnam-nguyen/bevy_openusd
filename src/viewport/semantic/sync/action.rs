@@ -44,12 +44,12 @@ impl SubtreeUpdateError {
     }
 }
 
-pub(crate) enum SemanticSyncAction {
+pub(in crate::viewport::semantic) enum SemanticSyncAction {
     Replace(SemanticSnapshot),
     Delta(SemanticDelta),
 }
 
-pub(crate) struct SemanticDelta {
-    pub(crate) request: SemanticIncrementalUpdate,
-    pub(crate) snapshot: SemanticSnapshot,
+pub(in crate::viewport::semantic) struct SemanticDelta {
+    pub(in crate::viewport::semantic) request: SemanticIncrementalUpdate,
+    pub(in crate::viewport::semantic) snapshot: SemanticSnapshot,
 }

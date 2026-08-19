@@ -8,7 +8,7 @@ use super::super::types::SemanticIncrementalUpdate;
 use super::action::{SemanticDelta, SubtreeUpdateError};
 
 /// Derive a scoped semantic delta for subtree resync notices.
-pub(crate) fn resync_subtree_update(
+pub(in crate::viewport::semantic) fn resync_subtree_update(
     stage: &Stage,
     extractor: &SemanticExtractor,
     previous_snapshot: SemanticSnapshot,

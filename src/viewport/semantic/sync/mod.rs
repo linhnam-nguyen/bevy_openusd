@@ -3,10 +3,13 @@ mod changed_info;
 mod delivery;
 mod subtree;
 
-pub(crate) use action::{SemanticDelta, SemanticSyncAction, SubtreeUpdateError};
-pub(crate) use changed_info::changed_info_update;
-pub(crate) use delivery::{attach_render_blobs_to_action, publish_runtime_delivery};
-pub(crate) use subtree::resync_subtree_update;
+pub(crate) use action::SubtreeUpdateError;
+pub(in crate::viewport::semantic) use action::{SemanticDelta, SemanticSyncAction};
+pub(in crate::viewport::semantic) use changed_info::changed_info_update;
+pub(in crate::viewport::semantic) use delivery::{
+    attach_render_blobs_to_action, publish_runtime_delivery,
+};
+pub(in crate::viewport::semantic) use subtree::resync_subtree_update;
 
 use bevy::prelude::World;
 use usd_bevy::{LiveRevision, LiveStage, PendingStageChanges};

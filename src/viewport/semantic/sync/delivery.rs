@@ -10,7 +10,10 @@ use crate::viewport::api::RenderServerInterface;
 
 use super::action::SemanticSyncAction;
 
-pub(crate) fn publish_runtime_delivery(world: &World, snapshot: &SemanticSnapshot) {
+pub(in crate::viewport::semantic) fn publish_runtime_delivery(
+    world: &World,
+    snapshot: &SemanticSnapshot,
+) {
     let Some(interface) = world
         .get_resource::<RenderServerInterface>()
         .map(RenderServerInterface::shared)
@@ -53,7 +56,7 @@ pub(crate) fn publish_runtime_delivery(world: &World, snapshot: &SemanticSnapsho
     }
 }
 
-pub(crate) fn attach_render_blobs_to_action(
+pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
     world: &mut World,
     action: &mut SemanticSyncAction,
     live_revision: LiveRevision,

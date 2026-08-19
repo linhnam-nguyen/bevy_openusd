@@ -7,7 +7,7 @@ use usd_semantic::SemanticExtractor;
 use super::super::types::SemanticIncrementalUpdate;
 use super::action::{SemanticDelta, SubtreeUpdateError};
 
-pub(crate) fn changed_info_update(
+pub(in crate::viewport::semantic) fn changed_info_update(
     stage: &Stage,
     extractor: &SemanticExtractor,
     previous_snapshot: SemanticSnapshot,
