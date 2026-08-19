@@ -46,6 +46,7 @@ use viewport_protocol::{SemanticSyncPhase, SemanticSyncStatus};
 
 use crate::project::semantic_store::sync::{
     TursoClientSyncProvisionRequest, TursoClientSyncRuntime, TursoClientSyncRuntimeCommand,
+    TursoClientSyncRuntimeSubmitError,
 };
 use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
 
@@ -362,12 +363,13 @@ fn process_semantic_sync_requests(
                 "[semantic-sync] request {} could not reach worker: {error:#}",
                 request_id
             );
+            let detail = match error {
+                TursoClientSyncRuntimeSubmitError::QueueFull => "runtime_queue_full",
+                TursoClientSyncRuntimeSubmitError::WorkerUnavailable => "worker_unavailable",
+            };
             let _ = application_interface.publish_semantic_sync_status(
                 session_id,
-                SemanticSyncStatus::phase(
-                    SemanticSyncPhase::Failed,
-                    Some("worker_unavailable".to_owned()),
-                ),
+                SemanticSyncStatus::phase(SemanticSyncPhase::Failed, Some(detail.to_owned())),
             );
         }
     }

@@ -8,7 +8,7 @@
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     path::PathBuf,
-    sync::mpsc,
+    sync::{Arc, Condvar, Mutex},
 };
 
 use anyhow::{Context, Result, bail};
@@ -723,6 +723,7 @@ impl TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>> {
 
 /// Commands sent to the dedicated semantic-sync worker. The worker owns the
 /// application coordinator so Bevy and WebRTC never block on Turso I/O.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TursoClientSyncRuntimeCommand {
     Provision(TursoClientSyncProvisionRequest),
     Connect(SessionId),
@@ -738,10 +739,139 @@ pub(crate) enum TursoClientSyncRuntimeCommand {
     Close(SessionId),
 }
 
+impl TursoClientSyncRuntimeCommand {
+    pub(crate) fn session_id(&self) -> &SessionId {
+        match self {
+            Self::Provision(request) => &request.session_id,
+            Self::Connect(session_id) => session_id,
+            Self::PushSnapshot { session_id, .. } => session_id,
+            Self::PullProjection(session_id) => session_id,
+            Self::UpdateAuthorization { session_id, .. } => session_id,
+            Self::Close(session_id) => session_id,
+        }
+    }
+
+    pub(crate) fn is_control(&self) -> bool {
+        matches!(self, Self::UpdateAuthorization { .. } | Self::Close(_))
+    }
+}
+
+/// Errors returned when submitting a command to the semantic-sync runtime mailbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TursoClientSyncRuntimeSubmitError {
+    QueueFull,
+    WorkerUnavailable,
+}
+
+impl std::fmt::Display for TursoClientSyncRuntimeSubmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::QueueFull => write!(f, "semantic-sync runtime mailbox queue is full"),
+            Self::WorkerUnavailable => write!(f, "semantic-sync worker is unavailable"),
+        }
+    }
+}
+
+impl std::error::Error for TursoClientSyncRuntimeSubmitError {}
+
+pub(crate) const MAX_PENDING_SYNC_RUNTIME_COMMANDS: usize = 64;
+
+#[derive(Default)]
+struct RuntimeMailboxState {
+    normal: VecDeque<TursoClientSyncRuntimeCommand>,
+    controls: HashMap<SessionId, TursoClientSyncRuntimeCommand>,
+    closed: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct RuntimeMailbox {
+    state: Arc<(Mutex<RuntimeMailboxState>, Condvar)>,
+}
+
+impl RuntimeMailbox {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Arc::new((Mutex::new(RuntimeMailboxState::default()), Condvar::new())),
+        }
+    }
+
+    pub(crate) fn submit(
+        &self,
+        command: TursoClientSyncRuntimeCommand,
+    ) -> std::result::Result<(), TursoClientSyncRuntimeSubmitError> {
+        let (lock, cvar) = &*self.state;
+        let mut state = lock
+            .lock()
+            .map_err(|_| TursoClientSyncRuntimeSubmitError::WorkerUnavailable)?;
+
+        if state.closed {
+            return Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable);
+        }
+
+        let session_id = command.session_id().clone();
+
+        if command.is_control() {
+            let should_insert = match state.controls.get(&session_id) {
+                Some(existing) => match (existing, &command) {
+                    (
+                        TursoClientSyncRuntimeCommand::Close(_),
+                        TursoClientSyncRuntimeCommand::UpdateAuthorization { .. },
+                    ) => false,
+                    _ => true,
+                },
+                None => true,
+            };
+
+            if should_insert {
+                state.controls.insert(session_id.clone(), command);
+            }
+
+            // ALWAYS purge same-session ordinary work whenever
+            // a valid lifecycle control was submitted.
+            state.normal.retain(|cmd| cmd.session_id() != &session_id);
+
+            cvar.notify_one();
+            Ok(())
+        } else {
+            if state.normal.len() >= MAX_PENDING_SYNC_RUNTIME_COMMANDS {
+                return Err(TursoClientSyncRuntimeSubmitError::QueueFull);
+            }
+            state.normal.push_back(command);
+            cvar.notify_one();
+            Ok(())
+        }
+    }
+
+    pub(crate) fn pop(&self) -> Option<TursoClientSyncRuntimeCommand> {
+        let (lock, cvar) = &*self.state;
+        let mut state = lock.lock().ok()?;
+        loop {
+            if let Some(session_id) = state.controls.keys().next().cloned() {
+                return state.controls.remove(&session_id);
+            }
+            if let Some(normal_cmd) = state.normal.pop_front() {
+                return Some(normal_cmd);
+            }
+            if state.closed {
+                return None;
+            }
+            state = cvar.wait(state).ok()?;
+        }
+    }
+
+    pub(crate) fn close(&self) {
+        let (lock, cvar) = &*self.state;
+        if let Ok(mut state) = lock.lock() {
+            state.closed = true;
+            cvar.notify_all();
+        }
+    }
+}
+
 /// Opt-in application worker for explicit semantic-sync lifecycle requests.
 #[derive(Clone)]
 pub(crate) struct TursoClientSyncRuntime {
-    commands: mpsc::Sender<TursoClientSyncRuntimeCommand>,
+    mailbox: RuntimeMailbox,
 }
 
 impl TursoClientSyncRuntime {
@@ -757,24 +887,34 @@ impl TursoClientSyncRuntime {
 
         let provisioning = TursoCloudProvisioningConfig::from_environment()?;
         let application = TursoClientSyncApplication::from_environment(interface, provisioning)?;
-        let (commands, pending_commands) = mpsc::channel();
+        let mailbox = RuntimeMailbox::new();
+        let worker_mailbox = mailbox.clone();
         std::thread::Builder::new()
             .name("usdhub-semantic-sync".to_owned())
-            .spawn(move || semantic_sync_worker(application, pending_commands))
+            .spawn(move || semantic_sync_worker(application, worker_mailbox))
             .context("starting semantic-sync worker")?;
-        Ok(Some(Self { commands }))
+        Ok(Some(Self { mailbox }))
     }
 
-    pub(crate) fn submit(&self, command: TursoClientSyncRuntimeCommand) -> Result<()> {
-        self.commands
-            .send(command)
-            .map_err(|_| anyhow::anyhow!("semantic-sync worker is unavailable"))
+    pub(crate) fn submit(
+        &self,
+        command: TursoClientSyncRuntimeCommand,
+    ) -> std::result::Result<(), TursoClientSyncRuntimeSubmitError> {
+        self.mailbox.submit(command)
+    }
+}
+
+impl Drop for TursoClientSyncRuntime {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.mailbox.state) <= 2 {
+            self.mailbox.close();
+        }
     }
 }
 
 fn semantic_sync_worker(
     mut application: TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>>,
-    pending_commands: mpsc::Receiver<TursoClientSyncRuntimeCommand>,
+    mailbox: RuntimeMailbox,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -787,7 +927,7 @@ fn semantic_sync_worker(
         }
     };
 
-    while let Ok(command) = pending_commands.recv() {
+    while let Some(command) = mailbox.pop() {
         let result = match command {
             TursoClientSyncRuntimeCommand::Provision(request) => application.provision(request),
             TursoClientSyncRuntimeCommand::Connect(session_id) => {
@@ -1781,6 +1921,129 @@ mod tests {
         assert_eq!(
             coordinator.drain_updates().last().unwrap().status.phase,
             SemanticSyncPhase::Closed
+        );
+    }
+
+    #[test]
+    fn runtime_mailbox_enforces_capacity_and_prioritizes_controls() {
+        let mailbox = RuntimeMailbox::new();
+        let session_a = SessionId::new("session-a");
+        let session_b = SessionId::new("session-b");
+
+        // Fill normal capacity
+        for i in 0..MAX_PENDING_SYNC_RUNTIME_COMMANDS {
+            let cmd = TursoClientSyncRuntimeCommand::Connect(SessionId::new(format!("s-{i}")));
+            mailbox.submit(cmd).expect("should submit up to capacity");
+        }
+
+        // Next normal command fails with QueueFull without blocking
+        let overflow = TursoClientSyncRuntimeCommand::Connect(SessionId::new("s-overflow"));
+        assert_eq!(
+            mailbox.submit(overflow),
+            Err(TursoClientSyncRuntimeSubmitError::QueueFull)
+        );
+
+        // Control command for session A is accepted despite full normal queue
+        let auth_a = TursoClientSyncRuntimeCommand::UpdateAuthorization {
+            session_id: session_a.clone(),
+            authorization: AuthorizationPolicy::default(),
+        };
+        mailbox
+            .submit(auth_a.clone())
+            .expect("control command must be accepted when normal is full");
+
+        // Close for session B is accepted despite full normal queue
+        let close_b = TursoClientSyncRuntimeCommand::Close(session_b.clone());
+        mailbox
+            .submit(close_b.clone())
+            .expect("Close control must be accepted when normal is full");
+
+        // First pop must be a control command
+        let first_pop = mailbox.pop().expect("pop should return control");
+        assert!(first_pop.is_control());
+    }
+
+    #[test]
+    fn runtime_mailbox_control_precedence_and_purges_same_session() {
+        let mailbox = RuntimeMailbox::new();
+        let session_a = SessionId::new("session-a");
+        let session_b = SessionId::new("session-b");
+
+        // Queue normal commands for session A and B
+        let prov_a = TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: policy(SemanticPropertyScope::None, false),
+        });
+        let conn_a = TursoClientSyncRuntimeCommand::Connect(session_a.clone());
+        let conn_b = TursoClientSyncRuntimeCommand::Connect(session_b.clone());
+
+        mailbox.submit(prov_a).unwrap();
+        mailbox.submit(conn_a).unwrap();
+        mailbox.submit(conn_b.clone()).unwrap();
+
+        // Submit UpdateAuthorization for A -> purges normal A work (prov_a, conn_a)
+        let auth_a = TursoClientSyncRuntimeCommand::UpdateAuthorization {
+            session_id: session_a.clone(),
+            authorization: AuthorizationPolicy::default(),
+        };
+        mailbox.submit(auth_a).unwrap();
+
+        // Submit Close for A -> supersedes UpdateAuthorization for A
+        let close_a = TursoClientSyncRuntimeCommand::Close(session_a.clone());
+        mailbox.submit(close_a.clone()).unwrap();
+
+        // Subsequent UpdateAuthorization for A cannot supersede Close
+        let auth_a2 = TursoClientSyncRuntimeCommand::UpdateAuthorization {
+            session_id: session_a.clone(),
+            authorization: AuthorizationPolicy::default(),
+        };
+        mailbox.submit(auth_a2).unwrap();
+
+        // Pop 1: Close for A (control)
+        assert_eq!(mailbox.pop(), Some(close_a));
+        // Pop 2: Connect for B (normal B was NOT purged)
+        assert_eq!(mailbox.pop(), Some(conn_b));
+    }
+
+    #[test]
+    fn runtime_mailbox_close_unblocks_worker_and_returns_none() {
+        let mailbox = RuntimeMailbox::new();
+        let worker_mailbox = mailbox.clone();
+
+        let handle = std::thread::spawn(move || {
+            let mut received = Vec::new();
+            while let Some(cmd) = worker_mailbox.pop() {
+                received.push(cmd);
+            }
+            received
+        });
+
+        mailbox
+            .submit(TursoClientSyncRuntimeCommand::Connect(SessionId::new(
+                "s-1",
+            )))
+            .unwrap();
+
+        // Give thread a moment to pop
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        // Close mailbox
+        mailbox.close();
+
+        let received = handle.join().expect("worker thread should join cleanly");
+        assert_eq!(received.len(), 1);
+        assert_eq!(
+            received[0],
+            TursoClientSyncRuntimeCommand::Connect(SessionId::new("s-1"))
+        );
+
+        // Subsequent submit fails with WorkerUnavailable
+        assert_eq!(
+            mailbox.submit(TursoClientSyncRuntimeCommand::Connect(SessionId::new(
+                "s-2"
+            ))),
+            Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable)
         );
     }
 }
