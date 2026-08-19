@@ -13,7 +13,9 @@ use bevy::prelude::{Resource, World};
 use openusd::usd::{PrimPredicate, Stage};
 use usd_bevy::{LiveRevision, LiveStage, PendingStageChanges};
 use usd_diff::{DiffSummary, StageDiff};
-use usd_model::{EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
+use usd_model::{
+    EntityKey, EntitySnapshot, HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource,
+};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use crate::project::blob_store::FilesystemBlobStore;
@@ -420,41 +422,16 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 if batch.revision <= previous_revision {
                     return;
                 }
-                if batch.has_resync() {
-                    let roots = batch.resync_roots();
-                    if roots.contains(&"/".to_string()) || roots.is_empty() {
-                        match extractor.extract(&live.stage, source) {
-                            Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
-                            Err(error) => {
-                                bevy::log::error!(
-                                    "[semantic-sync] resync full rebuild failed: {error:#}"
-                                );
-                                return;
-                            }
-                        }
-                    } else {
-                        match resync_subtree_update(
-                            &live.stage,
-                            &extractor,
-                            previous_snapshot.clone(),
-                            &batch,
-                            source.clone(),
-                        ) {
-                            Ok(update) => SemanticSyncAction::Delta(update),
-                            Err(error) => {
-                                bevy::log::warn!(
-                                    "[semantic-sync] subtree delta extraction failed: {error:#}; falling back to full snapshot rebuild"
-                                );
-                                match extractor.extract(&live.stage, source) {
-                                    Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
-                                    Err(err) => {
-                                        bevy::log::error!(
-                                            "[semantic-sync] full snapshot fallback failed: {err:#}"
-                                        );
-                                        return;
-                                    }
-                                }
-                            }
+                if batch
+                    .changes
+                    .iter()
+                    .any(|change| !change.resynced.is_empty())
+                {
+                    match extractor.extract(&live.stage, source) {
+                        Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                        Err(error) => {
+                            bevy::log::error!("[semantic-sync] resync rebuild failed: {error:#}");
+                            return;
                         }
                     }
                 } else {
@@ -587,80 +564,66 @@ struct SemanticDelta {
     snapshot: SemanticSnapshot,
 }
 
-/// Derive a scoped semantic delta for subtree resync notices.
-fn resync_subtree_update(
+fn changed_info_update(
     stage: &Stage,
     extractor: &SemanticExtractor,
     previous_snapshot: SemanticSnapshot,
     batch: &usd_bevy::StageChangeBatch,
     source: SnapshotSource,
 ) -> anyhow::Result<SemanticDelta> {
-    let roots = batch.resync_roots();
-    if roots.is_empty() || roots.contains(&"/".to_string()) {
-        anyhow::bail!("Stage root resync cannot be processed as a subtree delta");
+    let mut affected_paths = HashSet::new();
+    for change in &batch.changes {
+        for path in &change.changed_info {
+            let prim = usd_bevy::prim_of(path);
+            affected_paths.insert(usd_bevy::normalize_prim_path(prim));
+        }
     }
 
-    // 1. Collect old affected entities from previous snapshot BEFORE mutation
+    let mut available_paths = HashSet::new();
+    stage.traverse(PrimPredicate::DEFAULT, |path| {
+        available_paths.insert(path.as_str().to_owned());
+    })?;
+
+    // 1. Capture old affected keys and paths from previous_snapshot before mutation
     let mut old_affected_keys = HashSet::new();
     let mut old_affected_paths = HashSet::new();
     for (key, entity) in &previous_snapshot.entities {
-        if roots
-            .iter()
-            .any(|root| usd_bevy::is_descendant_or_self(root, &entity.prim_path))
-        {
+        if affected_paths.contains(&entity.prim_path) {
             old_affected_keys.insert(key.clone());
             old_affected_paths.insert(entity.prim_path.clone());
         }
     }
 
-    // 2. Collect current stage subtree prim paths for all minimal roots
-    let mut current_prim_paths = HashSet::new();
-    for root in &roots {
-        let paths = usd_bevy::collect_stage_subtree_paths(stage, root)?;
-        current_prim_paths.extend(paths);
-    }
-
-    // 3. Extract current affected entities
-    let mut current_entities = HashMap::new();
-    let mut sorted_current_paths: Vec<_> = current_prim_paths.into_iter().collect();
-    sorted_current_paths.sort();
-    for path_str in sorted_current_paths {
-        let usd_path = openusd::sdf::path(&path_str)?;
-        let entity = extractor.extract_entity(stage, &usd_path)?;
-        current_entities.insert(entity.key.clone(), entity);
-    }
-
-    // 4. Merge unshaded changed-info notices outside resync roots
-    let unshaded = batch.unshaded_changed_info();
-    let mut unshaded_prim_paths = HashSet::new();
-    for info_path in unshaded {
-        let prim = usd_bevy::prim_of(&info_path);
-        let norm = usd_bevy::normalize_prim_path(prim);
-        if !roots
-            .iter()
-            .any(|root| usd_bevy::is_descendant_or_self(root, &norm))
-        {
-            unshaded_prim_paths.insert(norm);
-        }
-    }
-    let mut sorted_unshaded: Vec<_> = unshaded_prim_paths.into_iter().collect();
-    sorted_unshaded.sort();
-    for path_str in sorted_unshaded {
-        if let Ok(usd_path) = openusd::sdf::path(&path_str) {
-            if let Ok(entity) = extractor.extract_entity(stage, &usd_path) {
-                old_affected_keys.insert(entity.key.clone());
-                old_affected_paths.insert(entity.prim_path.clone());
-                current_entities.insert(entity.key.clone(), entity);
-            }
-        }
-    }
-
-    // 5. Remove old affected entries from working map & validate against identity collisions
     let mut working_entities = previous_snapshot.entities;
     for key in &old_affected_keys {
         working_entities.remove(key);
     }
 
+    // 2. Extract current affected entities and check for internal duplicates
+    let mut current_entities: HashMap<EntityKey, EntitySnapshot> = HashMap::new();
+    let mut path_by_key: HashMap<EntityKey, String> = HashMap::new();
+    let mut sorted_paths: Vec<_> = affected_paths.into_iter().collect();
+    sorted_paths.sort();
+
+    for path in &sorted_paths {
+        if available_paths.contains(path) {
+            let usd_path = openusd::sdf::path(path)?;
+            let entity = extractor.extract_entity(stage, &usd_path)?;
+            if let Some(existing_path) =
+                path_by_key.insert(entity.key.clone(), entity.prim_path.clone())
+            {
+                anyhow::bail!(
+                    "EntityKey collision among extracted prims: '{}' and '{}' both generated key {:?}",
+                    existing_path,
+                    entity.prim_path,
+                    entity.key
+                );
+            }
+            current_entities.insert(entity.key.clone(), entity);
+        }
+    }
+
+    // 3. Reject collisions with unaffected entities in working_entities
     for (key, entity) in &current_entities {
         if let Some(existing) = working_entities.get(key) {
             anyhow::bail!(
@@ -672,7 +635,7 @@ fn resync_subtree_update(
         }
     }
 
-    // 6. Insert upserts and compute removed_paths
+    // 4. Compute upserts and removed_paths
     let mut upserts = Vec::new();
     let mut current_paths_set = HashSet::new();
     for (key, entity) in current_entities {
@@ -688,58 +651,7 @@ fn resync_subtree_update(
         .collect();
     removed_paths.sort();
 
-    // 7. Rebuild authoritative snapshot
     let snapshot = extractor.snapshot_from_entities(source, working_entities);
-    let request = SemanticIncrementalUpdate {
-        snapshot_id: snapshot.snapshot_id.clone(),
-        source: snapshot.source.clone(),
-        config_hash: snapshot.config_hash,
-        upserts,
-        removed_paths,
-    };
-    Ok(SemanticDelta { request, snapshot })
-}
-
-fn changed_info_update(
-    stage: &Stage,
-    extractor: &SemanticExtractor,
-    mut previous_snapshot: SemanticSnapshot,
-    batch: &usd_bevy::StageChangeBatch,
-    source: SnapshotSource,
-) -> anyhow::Result<SemanticDelta> {
-    let mut affected_paths = HashSet::new();
-    for change in &batch.changes {
-        for path in &change.changed_info {
-            affected_paths.insert(path.split('.').next().unwrap_or(path).to_owned());
-        }
-    }
-
-    let mut available_paths = HashSet::new();
-    stage.traverse(PrimPredicate::DEFAULT, |path| {
-        available_paths.insert(path.as_str().to_owned());
-    })?;
-
-    previous_snapshot
-        .entities
-        .retain(|_, entity| !affected_paths.contains(&entity.prim_path));
-    let mut upserts = Vec::new();
-    let mut removed_paths = Vec::new();
-    let mut sorted_paths: Vec<_> = affected_paths.into_iter().collect();
-    sorted_paths.sort();
-    for path in sorted_paths {
-        if available_paths.contains(&path) {
-            let usd_path = openusd::sdf::path(&path)?;
-            let entity = extractor.extract_entity(stage, &usd_path)?;
-            previous_snapshot
-                .entities
-                .insert(entity.key.clone(), entity.clone());
-            upserts.push(entity);
-        } else {
-            removed_paths.push(path);
-        }
-    }
-
-    let snapshot = extractor.snapshot_from_entities(source, previous_snapshot.entities);
     let request = SemanticIncrementalUpdate {
         snapshot_id: snapshot.snapshot_id.clone(),
         source: snapshot.source.clone(),
@@ -1114,17 +1026,19 @@ mod tests {
 
         let resp = response(app.world().resource::<SemanticWorkingStore>());
         match resp {
-            SemanticResponse::DeltaApplied {
-                upserted, removed, ..
-            } => {
-                // Subtree resync extracts and upserts only the 11 prims under /World/B
-                assert_eq!(upserted, 11);
-                assert_eq!(removed, 0);
+            SemanticResponse::SnapshotLoaded { entity_count, .. } => {
+                // Baseline extracts all 34 prims from stage and replaces all rows in Turso
+                assert_eq!(entity_count, 34);
             }
-            other => panic!("expected DeltaApplied for subtree resync, got {other:?}"),
+            SemanticResponse::DeltaApplied { .. } => {
+                panic!(
+                    "unexpected DeltaApplied in baseline resync; baseline must execute ReplaceSnapshot"
+                )
+            }
+            other => panic!("unexpected response: {other:?}"),
         }
 
-        // Query Turso to confirm all 34 rows remain present in working store
+        // Query Turso to confirm all 34 rows are present in working store
         let store = app.world().resource::<SemanticWorkingStore>();
         assert!(store.submit_query("verify-all-34", SemanticQuery::default()));
         let SemanticResponse::QueryResult { result, .. } = response(store) else {
@@ -1135,109 +1049,163 @@ mod tests {
     }
 
     #[test]
-    fn resync_subtree_spawns_and_despawns_semantic_entities() -> Result<()> {
+    fn test_changed_info_captures_old_identities_and_computes_removed_paths() -> Result<()> {
         let stage = Stage::builder()
-            .in_memory("semantic-subtree-spawn-despawn.usda")
+            .in_memory("changed-info-remove.usda")
             .expect("in-memory stage");
 
         stage.define_prim("/World").unwrap();
         stage.define_prim("/World/A").unwrap();
-        stage.define_prim("/World/A/Child1").unwrap();
-        stage.define_prim("/World/A/Child2").unwrap();
         stage.define_prim("/World/B").unwrap();
 
-        let live = LiveStage::new(stage);
-
-        let mut app = App::new();
-        app.add_plugins(usd_bevy::LiveStagePlugin);
-        app.insert_resource(SemanticWorkingStore::default());
-        app.insert_resource(SemanticSyncState::default());
-        app.world_mut().insert_non_send(live);
-        app.add_systems(PostUpdate, synchronize_live_stage);
-
-        app.update();
-        let resp = response(app.world().resource::<SemanticWorkingStore>());
-        assert!(matches!(
-            resp,
-            SemanticResponse::SnapshotLoaded {
-                entity_count: 5,
-                ..
-            }
-        ));
-
-        // Remove Child2, add Child3
-        let live = app.world().get_non_send::<LiveStage>().unwrap();
-        live.stage.remove_prim("/World/A/Child2").unwrap();
-        live.stage.define_prim("/World/A/Child3").unwrap();
-        let _ = live.drain_change_batch();
-        live.load_payload("/World/A");
-
-        app.update();
-
-        let resp = response(app.world().resource::<SemanticWorkingStore>());
-        match resp {
-            SemanticResponse::DeltaApplied {
-                upserted, removed, ..
-            } => {
-                // /World/A, /World/A/Child1, /World/A/Child3 = 3 upserts; /World/A/Child2 = 1 removal
-                assert_eq!(upserted, 3);
-                assert_eq!(removed, 1);
-            }
-            other => panic!("expected DeltaApplied, got {other:?}"),
-        }
-
-        // Query Turso: total 5 rows (/World, /World/A, /World/A/Child1, /World/A/Child3, /World/B)
-        let store = app.world().resource::<SemanticWorkingStore>();
-        assert!(store.submit_query("verify-count-5", SemanticQuery::default()));
-        let SemanticResponse::QueryResult { result, .. } = response(store) else {
-            panic!("expected query result")
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let source = SnapshotSource::Working {
+            session: "test-session".to_owned(),
+            live_revision: 1,
         };
-        assert_eq!(result.total, 5);
+        let initial_snapshot = extractor.extract(&stage, source.clone())?;
+        assert_eq!(initial_snapshot.entities.len(), 3);
+
+        // Remove /World/A from stage, but send changed_info for /World/A
+        stage.remove_prim("/World/A")?;
+
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: vec!["/World/A.xformOp:translate".to_owned()],
+            resynced: Vec::new(),
+        });
+
+        let delta = changed_info_update(&stage, &extractor, initial_snapshot, &batch, source)?;
+        assert_eq!(delta.request.removed_paths, vec!["/World/A"]);
+        assert_eq!(delta.request.upserts.len(), 0);
+        assert_eq!(delta.snapshot.entities.len(), 2);
+        assert!(
+            !delta
+                .snapshot
+                .entities
+                .values()
+                .any(|e| e.prim_path == "/World/A")
+        );
+        assert!(
+            delta
+                .snapshot
+                .entities
+                .values()
+                .any(|e| e.prim_path == "/World/B")
+        );
         Ok(())
     }
 
     #[test]
-    fn resync_stage_root_triggers_full_snapshot_replace() -> Result<()> {
+    fn test_changed_info_rejects_entity_key_collisions() -> Result<()> {
         let stage = Stage::builder()
-            .in_memory("semantic-root-resync.usda")
+            .in_memory("changed-info-collision.usda")
             .expect("in-memory stage");
 
         stage.define_prim("/World").unwrap();
         stage.define_prim("/World/A").unwrap();
         stage.define_prim("/World/B").unwrap();
 
-        let live = LiveStage::new(stage);
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let source = SnapshotSource::Working {
+            session: "test-session".to_owned(),
+            live_revision: 1,
+        };
+        let mut initial_snapshot = extractor.extract(&stage, source.clone())?;
 
-        let mut app = App::new();
-        app.add_plugins(usd_bevy::LiveStagePlugin);
-        app.insert_resource(SemanticWorkingStore::default());
-        app.insert_resource(SemanticSyncState::default());
-        app.world_mut().insert_non_send(live);
-        app.add_systems(PostUpdate, synchronize_live_stage);
+        // Artificially give unaffected entity /World/B the same EntityKey as /World/A's extracted key
+        let a_usd_path = openusd::sdf::path("/World/A")?;
+        let a_entity = extractor.extract_entity(&stage, &a_usd_path)?;
 
-        app.update();
-        let resp = response(app.world().resource::<SemanticWorkingStore>());
-        assert!(matches!(
-            resp,
-            SemanticResponse::SnapshotLoaded {
-                entity_count: 3,
-                ..
-            }
-        ));
+        // Find /World/B in snapshot and replace its key with /World/A's key
+        let b_key = initial_snapshot
+            .entities
+            .iter()
+            .find(|(_, e)| e.prim_path == "/World/B")
+            .map(|(k, _)| k.clone())
+            .unwrap();
+        let mut b_entity = initial_snapshot.entities.remove(&b_key).unwrap();
+        b_entity.key = a_entity.key.clone();
+        initial_snapshot
+            .entities
+            .insert(a_entity.key.clone(), b_entity);
 
-        // Resync root "/"
-        let live = app.world().get_non_send::<LiveStage>().unwrap();
-        live.load_payload("/");
+        // Send changed_info for /World/A only (/World/B is unaffected)
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: vec!["/World/A.xformOp:translate".to_owned()],
+            resynced: Vec::new(),
+        });
 
-        app.update();
+        let result = changed_info_update(&stage, &extractor, initial_snapshot, &batch, source);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("EntityKey collision"),
+            "expected collision error, got: {err_msg}"
+        );
+        Ok(())
+    }
 
-        let resp = response(app.world().resource::<SemanticWorkingStore>());
-        match resp {
-            SemanticResponse::SnapshotLoaded { entity_count, .. } => {
-                assert_eq!(entity_count, 3);
-            }
-            other => panic!("expected SnapshotLoaded for root resync, got {other:?}"),
-        }
+    #[test]
+    fn test_changed_info_propagates_extraction_errors() -> Result<()> {
+        let stage = Stage::builder()
+            .in_memory("changed-info-error.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let source = SnapshotSource::Working {
+            session: "test-session".to_owned(),
+            live_revision: 1,
+        };
+        let initial_snapshot = extractor.extract(&stage, source.clone())?;
+
+        // Send invalid path format in changed_info that fails sdf::path parsing
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: vec!["not_a_valid_usd_path".to_owned()],
+            resynced: Vec::new(),
+        });
+
+        let result =
+            changed_info_update(&stage, &extractor, initial_snapshot, &batch, source.clone());
+        // Stage traverse won't find "not_a_valid_usd_path", so it marks it as removed_paths
+        assert!(result.is_ok());
+
+        // Now test when a path exists in available_paths but openusd::sdf::path or extract_entity fails
+        // Sdf path invalid character
+        let mut batch_invalid = StageChangeBatch {
+            revision: LiveRevision(3),
+            changes: Vec::new(),
+        };
+        // Define a prim with valid path first
+        stage.define_prim("/World/Child").unwrap();
+        let initial_snapshot_2 = extractor.extract(&stage, source.clone())?;
+
+        batch_invalid.changes.push(StageChange {
+            changed_info: vec!["/World/Child".to_owned()],
+            resynced: Vec::new(),
+        });
+        // Normal extraction succeeds
+        let valid_result = changed_info_update(
+            &stage,
+            &extractor,
+            initial_snapshot_2,
+            &batch_invalid,
+            source,
+        );
+        assert!(valid_result.is_ok());
         Ok(())
     }
 }
