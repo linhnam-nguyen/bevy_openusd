@@ -524,6 +524,28 @@ fn traverse_predicate() -> openusd::usd::PrimPredicate {
     )
 }
 
+/// Collects all valid, projected prim paths within a subtree rooted at `root`.
+///
+/// Uses the canonical projection predicate (`ACTIVE | DEFINED & ~ABSTRACT`) so
+/// that subtree reconciliation and semantic extraction see exactly the prims
+/// that the renderer projects.
+///
+/// Returns:
+/// - `root` and all projected descendants in pre-order if `root` exists.
+/// - An empty `Vec` if `root` does not exist on the stage (indicating removal).
+/// - All projected stage prims if `root == "/"`.
+pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> anyhow::Result<Vec<String>> {
+    let normalized_root = normalize_prim_path(root);
+    let mut collected = Vec::new();
+    let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
+        let path_str = path.as_str();
+        if is_descendant_or_self(&normalized_root, path_str) {
+            collected.push(path_str.to_string());
+        }
+    });
+    Ok(collected)
+}
+
 /// Snapshot the registry out of the world (Arc-cheap `Clone`), falling back to
 /// the built-in routes when none is installed — so direct `project_stage` /
 /// `apply_changes` calls in tests work without wiring a registry.
@@ -877,6 +899,7 @@ fn reproject_from_batch_system(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::snippet::UsdSnippet;
     use openusd::usd::Stage;
 
     #[test]
@@ -1197,6 +1220,122 @@ def Xform "World"
                 "/World/D.visibility".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_collect_stage_subtree_paths_synthetic_wide() {
+        let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
+        for group in ["A", "B", "C"] {
+            usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
+            for i in 0..10 {
+                usda.push_str(&format!(
+                    "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
+                ));
+            }
+            usda.push_str("    }\n");
+        }
+        usda.push_str("}\n");
+
+        let stage = UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("synthetic wide stage opens");
+
+        // Subtree /World/B has 1 root + 10 children = 11 prims
+        let b_paths = collect_stage_subtree_paths(&stage, "/World/B").expect("collect /World/B");
+        assert_eq!(b_paths.len(), 11);
+        assert_eq!(b_paths[0], "/World/B");
+        for i in 0..10 {
+            assert!(b_paths.contains(&format!("/World/B/B{i}")));
+        }
+
+        // Leaf prim /World/A/A0 has 1 prim
+        let leaf_paths =
+            collect_stage_subtree_paths(&stage, "/World/A/A0").expect("collect /World/A/A0");
+        assert_eq!(leaf_paths, vec!["/World/A/A0".to_string()]);
+
+        // Full stage root "/" collects all 34 prims
+        let all_paths = collect_stage_subtree_paths(&stage, "/").expect("collect /");
+        assert_eq!(all_paths.len(), 34);
+
+        // Non-existent subtree returns empty
+        let missing =
+            collect_stage_subtree_paths(&stage, "/World/NonExistent").expect("collect missing");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_collect_stage_subtree_paths_deep_overlap() {
+        let stage = UsdSnippet::new(
+            r#"#usda 1.0
+
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Xform "Child"
+        {
+            def Xform "Leaf"
+            {
+            }
+        }
+    }
+    def Xform "B"
+    {
+    }
+}
+"#,
+        )
+        .open_stage()
+        .expect("deep overlap stage opens");
+
+        let a_paths = collect_stage_subtree_paths(&stage, "/World/A").expect("collect /World/A");
+        assert_eq!(
+            a_paths,
+            vec![
+                "/World/A".to_string(),
+                "/World/A/Child".to_string(),
+                "/World/A/Child/Leaf".to_string(),
+            ]
+        );
+
+        let child_paths =
+            collect_stage_subtree_paths(&stage, "/World/A/Child").expect("collect /World/A/Child");
+        assert_eq!(
+            child_paths,
+            vec![
+                "/World/A/Child".to_string(),
+                "/World/A/Child/Leaf".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_collect_stage_subtree_paths_respects_projection_predicate() {
+        let stage = UsdSnippet::new(
+            r#"#usda 1.0
+
+def Xform "World"
+{
+    def Xform "Visible"
+    {
+    }
+    class "_AbstractBase"
+    {
+        def Xform "UnderAbstract"
+        {
+        }
+    }
+}
+"#,
+        )
+        .open_stage()
+        .expect("stage opens");
+
+        let paths = collect_stage_subtree_paths(&stage, "/").expect("collect /");
+        assert!(paths.contains(&"/World".to_string()));
+        assert!(paths.contains(&"/World/Visible".to_string()));
+        // Abstract classes should be excluded by the projection predicate
+        assert!(!paths.iter().any(|p| p.contains("_AbstractBase")));
     }
 }
 
