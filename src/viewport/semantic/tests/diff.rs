@@ -3,11 +3,11 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
-use super::fixtures::response;
 use super::super::{
     SemanticDiffState, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
     synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
 fn test_regression_diff_after_subtree_resync_reflects_affected_only() -> Result<()> {

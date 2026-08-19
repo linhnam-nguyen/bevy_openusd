@@ -5,11 +5,11 @@ use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
 use usd_model::{EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::fixtures::response;
 use super::super::{
     SemanticQuery, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
     resync_subtree_update, synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
 fn test_regression_a_resync_subtree_34_prims_delta_applied() -> Result<()> {
@@ -183,8 +183,7 @@ fn test_regression_c_resync_subtree_with_unshaded_changed_info() -> Result<()> {
         resynced: vec!["/World/A".to_owned()],
     });
 
-    let delta =
-        resync_subtree_update(&live.stage, &extractor, initial_snapshot, &batch, source)?;
+    let delta = resync_subtree_update(&live.stage, &extractor, initial_snapshot, &batch, source)?;
 
     // Newly extracted key for /World/B/Child
     let new_key = EntityKey::from("/World/B/Child");
@@ -265,8 +264,7 @@ fn test_regression_e_unaffected_entity_and_hash_byte_identical() -> Result<()> {
         resynced: vec!["/World/A".to_owned()],
     });
 
-    let delta =
-        resync_subtree_update(&live.stage, &extractor, initial_snapshot, &batch, source)?;
+    let delta = resync_subtree_update(&live.stage, &extractor, initial_snapshot, &batch, source)?;
 
     let after_b = delta
         .snapshot

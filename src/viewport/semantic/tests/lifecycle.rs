@@ -5,11 +5,11 @@ use usd_bevy::LiveStage;
 use usd_model::{EntityKey, HashDigest, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::fixtures::{response, snapshot};
 use super::super::{
     SemanticDiffState, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSyncState,
     SemanticWorkingStore, synchronize_live_stage,
 };
+use super::fixtures::{response, snapshot};
 
 #[test]
 fn resync_full_replace_removes_entities_from_the_working_store() -> Result<()> {

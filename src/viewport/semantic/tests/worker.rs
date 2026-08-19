@@ -1,8 +1,10 @@
 use anyhow::Result;
 use usd_model::EntityKey;
 
+use super::super::{
+    GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore,
+};
 use super::fixtures::{response, snapshot};
-use super::super::{GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore};
 
 #[test]
 fn full_snapshot_bulk_load_supports_type_and_property_queries() -> Result<()> {

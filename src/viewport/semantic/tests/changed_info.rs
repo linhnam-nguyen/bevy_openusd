@@ -4,11 +4,11 @@ use usd_bevy::{LiveRevision, StageChange, StageChangeBatch};
 use usd_model::{CanonicalValue, EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::fixtures::{response, snapshot};
 use super::super::{
     SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse,
     SemanticWorkingStore, SubtreeUpdateError, changed_info_update,
 };
+use super::fixtures::{response, snapshot};
 
 #[test]
 fn changed_info_delta_updates_only_the_affected_semantic_entity() -> Result<()> {
@@ -240,8 +240,7 @@ fn test_changed_info_propagates_extraction_errors() -> Result<()> {
         resynced: Vec::new(),
     });
 
-    let result =
-        changed_info_update(&stage, &extractor, initial_snapshot, &batch, source.clone());
+    let result = changed_info_update(&stage, &extractor, initial_snapshot, &batch, source.clone());
     // Stage traverse won't find "not_a_valid_usd_path", so it marks it as removed_paths
     assert!(result.is_ok());
 

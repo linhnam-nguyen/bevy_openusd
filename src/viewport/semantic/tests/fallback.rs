@@ -5,11 +5,11 @@ use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
 use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::fixtures::response;
 use super::super::{
     SemanticResponse, SemanticSyncState, SemanticWorkingStore, SubtreeUpdateError,
     resync_subtree_update, synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
 fn test_regression_d_collision_triggers_full_snapshot_fallback() -> Result<()> {

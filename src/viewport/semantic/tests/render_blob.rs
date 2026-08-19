@@ -4,15 +4,15 @@ use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
 use usd_model::{EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::fixtures::response;
 use super::super::{
     SemanticResponse, SemanticSyncAction, SemanticSyncState, SemanticWorkingStore,
     attach_render_blobs_to_action, resync_subtree_update, synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
-fn test_regression_resync_subtree_render_blob_enrichment_scoped_to_affected_entities()
--> Result<()> {
+fn test_regression_resync_subtree_render_blob_enrichment_scoped_to_affected_entities() -> Result<()>
+{
     let temp_dir = tempfile::tempdir()?;
     let usda = String::from(
         r#"#usda 1.0

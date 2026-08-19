@@ -3,11 +3,11 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
-use super::fixtures::response;
 use super::super::{
     RenderServerInterface, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
     synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
 fn test_m25_o11_milestone_acceptance_unaffected_sibling_pipeline_invariance() -> Result<()> {

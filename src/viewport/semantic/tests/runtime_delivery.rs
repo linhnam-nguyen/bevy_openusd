@@ -3,11 +3,11 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
-use super::fixtures::response;
 use super::super::{
     RenderServerInterface, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
     synchronize_live_stage,
 };
+use super::fixtures::response;
 
 #[test]
 fn test_regression_subtree_delta_runtime_delivery_manifest_and_blob_reuse() -> Result<()> {
@@ -321,8 +321,7 @@ def Xform "World"
     let no_server_sum: std::time::Duration = timings_no_server.iter().sum();
     let no_server_mean = no_server_sum / no_server_count as u32;
     let no_server_median = if no_server_count % 2 == 0 {
-        (timings_no_server[no_server_count / 2 - 1] + timings_no_server[no_server_count / 2])
-            / 2
+        (timings_no_server[no_server_count / 2 - 1] + timings_no_server[no_server_count / 2]) / 2
     } else {
         timings_no_server[no_server_count / 2]
     };

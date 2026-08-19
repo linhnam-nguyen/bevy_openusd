@@ -3,8 +3,10 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
+use super::super::{
+    SemanticResponse, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
+};
 use super::fixtures::response;
-use super::super::{SemanticResponse, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 
 #[test]
 fn test_regression_payload_load_and_unload_lifecycle() -> Result<()> {
