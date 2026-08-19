@@ -926,9 +926,7 @@ fn semantic_sync_worker(
     mut application: TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>>,
     mailbox: RuntimeMailbox,
 ) {
-    let _worker_guard = RuntimeMailboxWorkerGuard {
-        mailbox: mailbox.clone(),
-    };
+    let worker_guard = RuntimeMailboxWorkerGuard { mailbox };
 
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -941,7 +939,7 @@ fn semantic_sync_worker(
         }
     };
 
-    while let Some(command) = mailbox.pop() {
+    while let Some(command) = worker_guard.mailbox.pop() {
         let result = match command {
             TursoClientSyncRuntimeCommand::Provision(request) => application.provision(request),
             TursoClientSyncRuntimeCommand::Connect(session_id) => {
@@ -2087,6 +2085,45 @@ mod tests {
         assert_eq!(
             mailbox.submit(control_cmd),
             Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable)
+        );
+    }
+
+    #[test]
+    fn runtime_drop_closes_mailbox_and_wakes_blocked_worker() {
+        let mailbox = RuntimeMailbox::new();
+        let worker_mailbox = mailbox.clone();
+        let runtime = TursoClientSyncRuntime { mailbox };
+
+        let handle = std::thread::spawn(move || {
+            let worker_guard = RuntimeMailboxWorkerGuard {
+                mailbox: worker_mailbox,
+            };
+            let mut received = Vec::new();
+            while let Some(cmd) = worker_guard.mailbox.pop() {
+                received.push(cmd);
+            }
+            received
+        });
+
+        runtime
+            .submit(TursoClientSyncRuntimeCommand::Connect(SessionId::new(
+                "s-1",
+            )))
+            .unwrap();
+
+        // Allow worker to pop and block on next pop()
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        // Dropping the only runtime handle must close mailbox and wake the worker
+        drop(runtime);
+
+        let received = handle
+            .join()
+            .expect("worker thread should join cleanly without leaking");
+        assert_eq!(received.len(), 1);
+        assert_eq!(
+            received[0],
+            TursoClientSyncRuntimeCommand::Connect(SessionId::new("s-1"))
         );
     }
 }
