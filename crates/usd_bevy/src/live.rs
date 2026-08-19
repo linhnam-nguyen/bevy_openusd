@@ -530,6 +530,14 @@ fn traverse_predicate() -> openusd::usd::PrimPredicate {
 /// that subtree reconciliation and semantic extraction see exactly the prims
 /// that the renderer projects.
 ///
+/// # Implementation & Complexity Notes
+/// - **Mechanism**: Current helper executes a full-stage traversal (`stage.traverse(...)`)
+///   combined with a boundary-aware ancestry filter ([`is_descendant_or_self`]).
+/// - **Complexity**: `O(total projected prims)` (full-stage traversal).
+///   Subtree resync optimizes downstream work (entity patching/spawning/despawning,
+///   semantic extraction, and database row updates), while OpenUSD traversal itself
+///   operates across the stage.
+///
 /// Returns:
 /// - `root` and all projected descendants in pre-order if `root` exists.
 /// - An empty `Vec` if `root` does not exist on the stage (indicating removal).
@@ -537,12 +545,12 @@ fn traverse_predicate() -> openusd::usd::PrimPredicate {
 pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> anyhow::Result<Vec<String>> {
     let normalized_root = normalize_prim_path(root);
     let mut collected = Vec::new();
-    let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
+    stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
         let path_str = path.as_str();
         if is_descendant_or_self(&normalized_root, path_str) {
             collected.push(path_str.to_string());
         }
-    });
+    })?;
     Ok(collected)
 }
 
