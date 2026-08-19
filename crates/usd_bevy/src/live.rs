@@ -48,9 +48,137 @@ pub struct StageChangeBatch {
     pub changes: Vec<StageChange>,
 }
 
+/// Normalizes a USD prim or property path to its owning prim path without trailing slashes.
+///
+/// Leading `/` is ensured, property specifiers (`.property_name`) are stripped defensively,
+/// and trailing slashes are removed unless the path is the root `"/"`.
+pub fn normalize_prim_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return "/".to_string();
+    }
+    let without_prop = match trimmed.split_once('.') {
+        Some((prim, _prop)) => prim,
+        None => trimmed,
+    };
+    let mut normalized = without_prop.to_string();
+    if !normalized.starts_with('/') {
+        normalized.insert(0, '/');
+    }
+    while normalized.len() > 1 && normalized.ends_with('/') {
+        normalized.pop();
+    }
+    if normalized.is_empty() {
+        "/".to_string()
+    } else {
+        normalized
+    }
+}
+
+/// Checks whether `candidate` is equal to or a descendant of `ancestor` with boundary awareness.
+///
+/// This prevents naive substring matches like `/World/A` falsely matching `/World/AB`.
+pub fn is_descendant_or_self(ancestor: &str, candidate: &str) -> bool {
+    let ancestor = normalize_prim_path(ancestor);
+    let candidate = normalize_prim_path(candidate);
+
+    if ancestor == "/" {
+        return true;
+    }
+    if ancestor == candidate {
+        return true;
+    }
+    if candidate.starts_with(&ancestor) {
+        let after_ancestor = &candidate[ancestor.len()..];
+        return after_ancestor.starts_with('/') || after_ancestor.starts_with('.');
+    }
+    false
+}
+
+/// Normalizes and minimizes a set of resync candidate paths.
+///
+/// Deduplicates exact duplicates, sorts shallowest first, and prunes any child path
+/// whose ancestor is already included. If the stage root `"/"` is present, returns `["/"]`.
+pub fn minimize_resync_roots<I, S>(paths: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut normalized_set = std::collections::HashSet::new();
+    for p in paths {
+        let norm = normalize_prim_path(p.as_ref());
+        if norm == "/" {
+            return vec!["/".to_string()];
+        }
+        normalized_set.insert(norm);
+    }
+
+    if normalized_set.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sorted: Vec<String> = normalized_set.into_iter().collect();
+    // Sort primarily by segment depth (fewer '/' means shallower root), secondarily lexicographically
+    sorted.sort_by(|a, b| {
+        let depth_a = a.matches('/').count();
+        let depth_b = b.matches('/').count();
+        depth_a.cmp(&depth_b).then_with(|| a.cmp(b))
+    });
+
+    let mut accepted: Vec<String> = Vec::new();
+    for candidate in sorted {
+        let is_covered = accepted
+            .iter()
+            .any(|root| is_descendant_or_self(root, &candidate));
+        if !is_covered {
+            accepted.push(candidate);
+        }
+    }
+    accepted
+}
+
 impl StageChangeBatch {
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
+    }
+
+    /// Returns `true` if any change in the batch contains a resync notice.
+    pub fn has_resync(&self) -> bool {
+        self.changes.iter().any(|c| !c.resynced.is_empty())
+    }
+
+    /// Returns the minimal, boundary-aware resync roots that cover all resynced paths
+    /// in this batch.
+    pub fn resync_roots(&self) -> Vec<String> {
+        let all_resynced = self.changes.iter().flat_map(|c| &c.resynced);
+        minimize_resync_roots(all_resynced)
+    }
+
+    /// Checks if a given path (prim or property) falls under any resync root in this batch.
+    pub fn is_path_under_resync(&self, path: &str) -> bool {
+        let roots = self.resync_roots();
+        roots.iter().any(|root| is_descendant_or_self(root, path))
+    }
+
+    /// Returns all `changed_info` paths from this batch that are outside all resync roots.
+    ///
+    /// Changes under a resync root are owned by subtree reconciliation and should not be
+    /// redundantly sparse-patched.
+    pub fn unshaded_changed_info(&self) -> Vec<String> {
+        let roots = self.resync_roots();
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+
+        for change in &self.changes {
+            for info_path in &change.changed_info {
+                let prim_path = normalize_prim_path(info_path);
+                let covered = roots.iter().any(|root| is_descendant_or_self(root, &prim_path));
+                if !covered && seen.insert(info_path.clone()) {
+                    result.push(info_path.clone());
+                }
+            }
+        }
+        result
     }
 }
 
@@ -935,6 +1063,138 @@ def Xform "World"
         let stats = *app.world().resource::<ReconcileStats>();
         assert_eq!(stats.visited_stage_prims, initial_count - 1);
         assert_eq!(stats.patched_entities, initial_count - 1);
+    }
+
+    #[test]
+    fn test_normalize_prim_path() {
+        assert_eq!(normalize_prim_path(""), "/");
+        assert_eq!(normalize_prim_path("   "), "/");
+        assert_eq!(normalize_prim_path("/"), "/");
+        assert_eq!(normalize_prim_path("/World"), "/World");
+        assert_eq!(normalize_prim_path("/World/"), "/World");
+        assert_eq!(normalize_prim_path("World/A/B"), "/World/A/B");
+        assert_eq!(normalize_prim_path("/World/A.property"), "/World/A");
+        assert_eq!(
+            normalize_prim_path("/World/Robot.userProperties:name"),
+            "/World/Robot"
+        );
+        assert_eq!(
+            normalize_prim_path("/World/A/B.xformOp:transform"),
+            "/World/A/B"
+        );
+    }
+
+    #[test]
+    fn test_is_descendant_or_self() {
+        // Root / covers all paths
+        assert!(is_descendant_or_self("/", "/"));
+        assert!(is_descendant_or_self("/", "/World"));
+        assert!(is_descendant_or_self("/", "/World/A/B"));
+
+        // Exact match
+        assert!(is_descendant_or_self("/World/A", "/World/A"));
+
+        // True descendants
+        assert!(is_descendant_or_self("/World/A", "/World/A/B"));
+        assert!(is_descendant_or_self("/World/A", "/World/A/B/Leaf"));
+        assert!(is_descendant_or_self("/World/A", "/World/A.property"));
+
+        // Boundary awareness (avoiding prefix collisions)
+        assert!(!is_descendant_or_self("/World/A", "/World/AB"));
+        assert!(!is_descendant_or_self("/World/A", "/World/A_Other"));
+        assert!(!is_descendant_or_self("/World/A", "/World/B"));
+        assert!(!is_descendant_or_self("/World/A", "/World"));
+    }
+
+    #[test]
+    fn test_minimize_resync_roots() {
+        // Empty
+        assert_eq!(minimize_resync_roots(Vec::<&str>::new()), Vec::<String>::new());
+
+        // Deduplication
+        assert_eq!(
+            minimize_resync_roots(["/World/A", "/World/A"]),
+            vec!["/World/A".to_string()]
+        );
+
+        // Deep overlap minimization
+        let input = [
+            "/World/A/B",
+            "/World/C",
+            "/World/A",
+            "/World/A/B/Leaf",
+            "/World/C/Sub",
+        ];
+        let result = minimize_resync_roots(input);
+        assert_eq!(
+            result,
+            vec!["/World/A".to_string(), "/World/C".to_string()]
+        );
+
+        // Prefix boundary respected
+        let input = ["/World/A", "/World/AB", "/World/A/Child"];
+        let result = minimize_resync_roots(input);
+        assert_eq!(
+            result,
+            vec!["/World/A".to_string(), "/World/AB".to_string()]
+        );
+
+        // Full stage root covers all
+        let input = ["/World/A", "/World/B", "/", "/World/C/D"];
+        let result = minimize_resync_roots(input);
+        assert_eq!(result, vec!["/".to_string()]);
+
+        // Property paths stripped to owning prims
+        let input = ["/World/A.xformOp:transform", "/World/A/Child.property"];
+        let result = minimize_resync_roots(input);
+        assert_eq!(result, vec!["/World/A".to_string()]);
+    }
+
+    #[test]
+    fn test_stage_change_batch_resync_roots_and_unshaded_changed_info() {
+        let batch = StageChangeBatch {
+            revision: LiveRevision(1),
+            changes: vec![
+                StageChange {
+                    resynced: vec![
+                        "/World/A/Child".to_string(),
+                        "/World/A".to_string(),
+                        "/World/C".to_string(),
+                    ],
+                    changed_info: vec![
+                        "/World/A/Child.userProperties:speed".to_string(),
+                        "/World/B.userProperties:name".to_string(),
+                        "/World/C/Leaf.xformOp:transform".to_string(),
+                        "/World/D.visibility".to_string(),
+                    ],
+                },
+                StageChange {
+                    resynced: vec!["/World/C/Sub".to_string()],
+                    changed_info: vec!["/World/D.visibility".to_string()], // duplicate
+                },
+            ],
+        };
+
+        assert!(batch.has_resync());
+        assert_eq!(
+            batch.resync_roots(),
+            vec!["/World/A".to_string(), "/World/C".to_string()]
+        );
+        assert!(batch.is_path_under_resync("/World/A"));
+        assert!(batch.is_path_under_resync("/World/A/Child/Leaf"));
+        assert!(batch.is_path_under_resync("/World/C"));
+        assert!(!batch.is_path_under_resync("/World/B"));
+        assert!(!batch.is_path_under_resync("/World/D"));
+
+        // /World/A/... and /World/C/... are shaded by resync roots /World/A and /World/C
+        let unshaded = batch.unshaded_changed_info();
+        assert_eq!(
+            unshaded,
+            vec![
+                "/World/B.userProperties:name".to_string(),
+                "/World/D.visibility".to_string(),
+            ]
+        );
     }
 }
 

@@ -22,7 +22,8 @@ pub use authoring::*;
 pub use live::{
     AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, PendingStageChanges, PrimEntities,
     StageChange, StageChangeBatch, TransformHistory, apply_change_batch, apply_changes,
-    author_transform, current_transform, project_stage,
+    author_transform, current_transform, is_descendant_or_self, minimize_resync_roots,
+    normalize_prim_path, project_stage,
 };
 pub use prim_ref::{SemanticEntityIndex, UsdEntityKey, UsdPrimRef};
 pub use route::audio::UsdSpatialAudio;
