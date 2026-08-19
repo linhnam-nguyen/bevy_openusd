@@ -22,6 +22,7 @@ struct PendingMessages {
     input_reset: bool,
     viewport_events: VecDeque<ViewportEventEnvelope>,
     semantic_sync_requests: VecDeque<SemanticSyncRequest>,
+    semantic_sync_control_requests: HashMap<SessionId, SemanticSyncRequest>,
     latest_snapshot: Option<ViewportReadModel>,
     authorization: AuthorizationPolicy,
     semantic_sync_statuses: HashMap<SessionId, SemanticSyncStatus>,
@@ -138,12 +139,77 @@ impl RenderServerInterface {
         Ok(())
     }
 
-    pub fn pop_semantic_sync_request(&self) -> Option<SemanticSyncRequest> {
-        self.pending
+    /// Submits an internal server lifecycle/security control request.
+    ///
+    /// Control requests bypass the ordinary bounded request queue, supersede
+    /// pending operations for the same session, and are prioritized on pop.
+    pub(crate) fn submit_semantic_sync_control_request(
+        &self,
+        request: SemanticSyncRequest,
+    ) -> Result<(), RenderServerPortError> {
+        if request.request_id.trim().is_empty()
+            || request.client_name.trim().is_empty()
+            || request.session_id.validate().is_err()
+            || request.authorization.validate().is_err()
+        {
+            return Err(RenderServerPortError::InvalidPayload);
+        }
+
+        let is_allowed_control = match &request.kind {
+            SemanticSyncRequestKind::AuthorizationChanged => true,
+            SemanticSyncRequestKind::Client(SemanticSyncOperation::Close) => true,
+            SemanticSyncRequestKind::Client(_) => false,
+        };
+        if !is_allowed_control {
+            return Err(RenderServerPortError::InvalidPayload);
+        }
+
+        let mut pending = self
+            .pending
             .lock()
-            .expect("render-server interface queue is not poisoned")
-            .semantic_sync_requests
-            .pop_front()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+
+        let should_insert = match pending
+            .semantic_sync_control_requests
+            .get(&request.session_id)
+        {
+            Some(existing) => match (&existing.kind, &request.kind) {
+                (
+                    SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
+                    SemanticSyncRequestKind::AuthorizationChanged,
+                ) => false,
+                _ => true,
+            },
+            None => true,
+        };
+
+        if should_insert {
+            let session_id = request.session_id.clone();
+            pending
+                .semantic_sync_control_requests
+                .insert(session_id.clone(), request);
+            pending
+                .semantic_sync_requests
+                .retain(|req| req.session_id != session_id);
+        }
+
+        Ok(())
+    }
+
+    pub fn pop_semantic_sync_request(&self) -> Option<SemanticSyncRequest> {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("render-server interface queue is not poisoned");
+        if let Some(session_id) = pending
+            .semantic_sync_control_requests
+            .keys()
+            .next()
+            .cloned()
+        {
+            return pending.semantic_sync_control_requests.remove(&session_id);
+        }
+        pending.semantic_sync_requests.pop_front()
     }
 
     pub fn submit_viewport_command(
@@ -712,7 +778,7 @@ mod tests {
             session_id: SessionId::new("session-sync"),
             client_name: "native-client".to_owned(),
             authorization: AuthorizationPolicy::default(),
-            operation: SemanticSyncOperation::Provision,
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
         };
         interface
             .submit_semantic_sync_request(request.clone())
@@ -727,5 +793,155 @@ mod tests {
             interface.submit_semantic_sync_request(invalid),
             Err(RenderServerPortError::InvalidPayload)
         );
+    }
+
+    #[test]
+    fn semantic_sync_control_request_accepted_when_normal_queue_is_full() {
+        let interface = RenderServerInterface::default();
+        for i in 0..MAX_PENDING_MESSAGES {
+            let req = SemanticSyncRequest {
+                request_id: format!("req-{i}"),
+                session_id: SessionId::new(format!("session-{i}")),
+                client_name: "client".to_owned(),
+                authorization: AuthorizationPolicy::default(),
+                kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+            };
+            interface
+                .submit_semantic_sync_request(req)
+                .expect("queueing normal request");
+        }
+
+        // Normal queue is full
+        let extra_normal = SemanticSyncRequest {
+            request_id: "req-overflow".to_owned(),
+            session_id: SessionId::new("session-overflow"),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        assert_eq!(
+            interface.submit_semantic_sync_request(extra_normal),
+            Err(RenderServerPortError::QueueFull)
+        );
+
+        // Control request succeeds despite full normal queue
+        let control_req = SemanticSyncRequest {
+            request_id: "close-ctrl".to_owned(),
+            session_id: SessionId::new("session-ctrl"),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
+        };
+        interface
+            .submit_semantic_sync_control_request(control_req.clone())
+            .expect("control request must succeed when normal queue is full");
+
+        // Control request is popped first
+        assert_eq!(interface.pop_semantic_sync_request(), Some(control_req));
+    }
+
+    #[test]
+    fn semantic_sync_control_precedence_and_purging() {
+        let interface = RenderServerInterface::default();
+        let session_a = SessionId::new("session-a");
+        let session_b = SessionId::new("session-b");
+
+        // Queue normal requests for session A and session B
+        let normal_a = SemanticSyncRequest {
+            request_id: "norm-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::PushSnapshot),
+        };
+        let normal_b = SemanticSyncRequest {
+            request_id: "norm-b".to_owned(),
+            session_id: session_b.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::PushSnapshot),
+        };
+        interface.submit_semantic_sync_request(normal_a).unwrap();
+        interface
+            .submit_semantic_sync_request(normal_b.clone())
+            .unwrap();
+
+        // Control auth changed for session A
+        let auth_a1 = SemanticSyncRequest {
+            request_id: "auth-a1".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .submit_semantic_sync_control_request(auth_a1)
+            .unwrap();
+
+        // Stale normal A should have been purged, but normal B remains
+        // Next control auth changed for session A (newer wins)
+        let auth_a2 = SemanticSyncRequest {
+            request_id: "auth-a2".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .submit_semantic_sync_control_request(auth_a2.clone())
+            .unwrap();
+
+        // Close for session A supersedes AuthorizationChanged
+        let close_a = SemanticSyncRequest {
+            request_id: "close-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
+        };
+        interface
+            .submit_semantic_sync_control_request(close_a.clone())
+            .unwrap();
+
+        // Subsequent AuthorizationChanged cannot supersede Close
+        let auth_a3 = SemanticSyncRequest {
+            request_id: "auth-a3".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .submit_semantic_sync_control_request(auth_a3)
+            .unwrap();
+
+        // First pop must be the Close control request for session A
+        assert_eq!(interface.pop_semantic_sync_request(), Some(close_a));
+        // Next pop must be normal B (session A's normal was purged)
+        assert_eq!(interface.pop_semantic_sync_request(), Some(normal_b));
+        assert_eq!(interface.pop_semantic_sync_request(), None);
+    }
+
+    #[test]
+    fn semantic_sync_control_method_rejects_non_control_operations() {
+        let interface = RenderServerInterface::default();
+        for op in [
+            SemanticSyncOperation::Provision,
+            SemanticSyncOperation::Connect,
+            SemanticSyncOperation::PushSnapshot,
+            SemanticSyncOperation::PullProjection,
+        ] {
+            let req = SemanticSyncRequest {
+                request_id: "req".to_owned(),
+                session_id: SessionId::new("session"),
+                client_name: "client".to_owned(),
+                authorization: AuthorizationPolicy::default(),
+                kind: SemanticSyncRequestKind::Client(op),
+            };
+            assert_eq!(
+                interface.submit_semantic_sync_control_request(req),
+                Err(RenderServerPortError::InvalidPayload)
+            );
+        }
     }
 }
