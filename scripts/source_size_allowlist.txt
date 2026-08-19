@@ -3,16 +3,10 @@
 src/viewport/api/bridge.rs
 src/viewport/ui_frost/mod.rs
 crates/viewport_streaming/src/data_channel.rs
-crates/usd_bevy/src/read/geom.rs
 crates/viewport_streaming/src/application.rs
-crates/usd_bevy/src/route/material.rs
 examples/probe_skel.rs
 crates/viewport_protocol/src/viewport.rs
 crates/viewport_streaming/src/stream_session.rs
-crates/usd_bevy/src/route/reflect.rs
 crates/viewport_streaming/src/encode.rs
-crates/usd_bevy/src/sync.rs
 crates/viewport_protocol/tests/session_wire.rs
 crates/viewport_protocol/src/runtime_client.rs
-crates/usd_bevy/src/read/shade.rs
-crates/usd_bevy/src/authoring.rs
