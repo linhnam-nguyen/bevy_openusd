@@ -17,8 +17,6 @@ crates/viewport_protocol/src/runtime_client.rs
 src/viewport/app/mod.rs
 crates/usd_bevy/src/read/shade.rs
 crates/usd_bevy/src/authoring.rs
-src/project/ghost_cache.rs
 src/viewport/api/read_model.rs
 src/viewport/physics/mod.rs
-src/project/commit.rs
 src/viewport/scene/ghost.rs
