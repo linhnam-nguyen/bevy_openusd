@@ -6,7 +6,7 @@
 //! projection later.
 
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::PathBuf,
     sync::{Arc, Condvar, Mutex},
 };
@@ -761,6 +761,7 @@ impl TursoClientSyncRuntimeCommand {
 pub(crate) enum TursoClientSyncRuntimeSubmitError {
     QueueFull,
     WorkerUnavailable,
+    SessionClosed,
 }
 
 impl std::fmt::Display for TursoClientSyncRuntimeSubmitError {
@@ -768,6 +769,7 @@ impl std::fmt::Display for TursoClientSyncRuntimeSubmitError {
         match self {
             Self::QueueFull => write!(f, "semantic-sync runtime mailbox queue is full"),
             Self::WorkerUnavailable => write!(f, "semantic-sync worker is unavailable"),
+            Self::SessionClosed => write!(f, "semantic-sync session is closed"),
         }
     }
 }
@@ -780,6 +782,7 @@ pub(crate) const MAX_PENDING_SYNC_RUNTIME_COMMANDS: usize = 64;
 struct RuntimeMailboxState {
     normal: VecDeque<TursoClientSyncRuntimeCommand>,
     controls: HashMap<SessionId, TursoClientSyncRuntimeCommand>,
+    closed_sessions: HashSet<SessionId>,
     closed: bool,
 }
 
@@ -811,6 +814,11 @@ impl RuntimeMailbox {
         let session_id = command.session_id().clone();
 
         if command.is_control() {
+            let is_close = matches!(command, TursoClientSyncRuntimeCommand::Close(_));
+            if is_close {
+                state.closed_sessions.insert(session_id.clone());
+            }
+
             let should_insert = match state.controls.get(&session_id) {
                 Some(existing) => match (existing, &command) {
                     (
@@ -833,6 +841,9 @@ impl RuntimeMailbox {
             cvar.notify_one();
             Ok(())
         } else {
+            if state.closed_sessions.contains(&session_id) {
+                return Err(TursoClientSyncRuntimeSubmitError::SessionClosed);
+            }
             if state.normal.len() >= MAX_PENDING_SYNC_RUNTIME_COMMANDS {
                 return Err(TursoClientSyncRuntimeSubmitError::QueueFull);
             }
@@ -894,10 +905,6 @@ impl TursoClientSyncRuntime {
             .spawn(move || semantic_sync_worker(application, worker_mailbox))
             .context("starting semantic-sync worker")?;
         Ok(Some(Self { mailbox }))
-    }
-
-    pub(crate) fn from_mailbox(mailbox: RuntimeMailbox) -> Self {
-        Self { mailbox }
     }
 
     pub(crate) fn submit(
@@ -2212,5 +2219,78 @@ mod tests {
         let status = coordinator.status(&session_id).unwrap();
         assert_eq!(status.phase, SemanticSyncPhase::Failed);
         assert_eq!(status.detail.as_deref(), Some("revoke_failed"));
+    }
+
+    #[test]
+    fn runtime_mailbox_closed_session_rejects_subsequent_normal_commands() {
+        let mailbox = RuntimeMailbox::new();
+        let session_a = SessionId::new("session-a");
+        let session_b = SessionId::new("session-b");
+
+        // Submit Close(A)
+        mailbox
+            .submit(TursoClientSyncRuntimeCommand::Close(session_a.clone()))
+            .expect("Close(A) must be accepted");
+
+        // 1. Later Provision(A) rejected with SessionClosed
+        let prov_a = TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: policy(SemanticPropertyScope::None, false),
+        });
+        assert_eq!(
+            mailbox.submit(prov_a.clone()),
+            Err(TursoClientSyncRuntimeSubmitError::SessionClosed)
+        );
+
+        // 2. Pop Close(A) -> later Provision(A) still rejected with SessionClosed
+        let popped_close = mailbox.pop();
+        assert!(popped_close.is_some());
+        assert_eq!(
+            mailbox.submit(prov_a),
+            Err(TursoClientSyncRuntimeSubmitError::SessionClosed)
+        );
+
+        // 3. Other operations (Connect, Push, Pull) for session A also rejected
+        assert_eq!(
+            mailbox.submit(TursoClientSyncRuntimeCommand::Connect(session_a.clone())),
+            Err(TursoClientSyncRuntimeSubmitError::SessionClosed)
+        );
+        assert_eq!(
+            mailbox.submit(TursoClientSyncRuntimeCommand::PullProjection(
+                session_a.clone()
+            )),
+            Err(TursoClientSyncRuntimeSubmitError::SessionClosed)
+        );
+
+        // 4. Normal work for session B is still accepted
+        let prov_b = TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+            session_id: session_b.clone(),
+            client_name: "client-b".to_owned(),
+            authorization: policy(SemanticPropertyScope::None, false),
+        });
+        assert_eq!(mailbox.submit(prov_b), Ok(()));
+    }
+
+    #[test]
+    fn runtime_mailbox_update_authorization_allows_later_normal_commands() {
+        let mailbox = RuntimeMailbox::new();
+        let session_a = SessionId::new("session-a");
+
+        let auth_a = TursoClientSyncRuntimeCommand::UpdateAuthorization {
+            session_id: session_a.clone(),
+            authorization: AuthorizationPolicy::default(),
+        };
+        mailbox
+            .submit(auth_a)
+            .expect("UpdateAuthorization(A) must be accepted");
+
+        // Later normal command for A is allowed (not closed)
+        let prov_a = TursoClientSyncRuntimeCommand::Provision(TursoClientSyncProvisionRequest {
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: policy(SemanticPropertyScope::None, false),
+        });
+        assert_eq!(mailbox.submit(prov_a), Ok(()));
     }
 }

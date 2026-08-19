@@ -1,6 +1,6 @@
 //! Shared application bus between the Bevy viewport and WebRTC sessions.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +23,7 @@ struct PendingMessages {
     viewport_events: VecDeque<ViewportEventEnvelope>,
     semantic_sync_requests: VecDeque<SemanticSyncRequest>,
     semantic_sync_control_requests: HashMap<SessionId, SemanticSyncRequest>,
+    closed_sessions: HashSet<SessionId>,
     latest_snapshot: Option<ViewportReadModel>,
     authorization: AuthorizationPolicy,
     semantic_sync_statuses: HashMap<SessionId, SemanticSyncStatus>,
@@ -48,6 +49,7 @@ pub enum RenderServerPortError {
     QueueClosed,
     QueueFull,
     InvalidPayload,
+    SessionClosed,
 }
 
 /// Server-enriched semantic-sync request queued between the transport and the
@@ -132,6 +134,9 @@ impl RenderServerInterface {
             .pending
             .lock()
             .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.closed_sessions.contains(&request.session_id) {
+            return Err(RenderServerPortError::SessionClosed);
+        }
         if pending.semantic_sync_requests.len() >= MAX_PENDING_MESSAGES {
             return Err(RenderServerPortError::QueueFull);
         }
@@ -143,7 +148,7 @@ impl RenderServerInterface {
     ///
     /// Control requests bypass the ordinary bounded request queue, supersede
     /// pending operations for the same session, and are prioritized on pop.
-    pub fn submit_semantic_sync_control_request(
+    pub(crate) fn submit_semantic_sync_control_request(
         &self,
         request: SemanticSyncRequest,
     ) -> Result<(), RenderServerPortError> {
@@ -169,6 +174,14 @@ impl RenderServerInterface {
             .lock()
             .map_err(|_| RenderServerPortError::QueueClosed)?;
 
+        let session_id = request.session_id.clone();
+        if matches!(
+            request.kind,
+            SemanticSyncRequestKind::Client(SemanticSyncOperation::Close)
+        ) {
+            pending.closed_sessions.insert(session_id.clone());
+        }
+
         let should_insert = match pending
             .semantic_sync_control_requests
             .get(&request.session_id)
@@ -183,7 +196,6 @@ impl RenderServerInterface {
             None => true,
         };
 
-        let session_id = request.session_id.clone();
         if should_insert {
             pending
                 .semantic_sync_control_requests
@@ -880,7 +892,17 @@ mod tests {
         let interface = RenderServerInterface::default();
         let session_a = SessionId::new("session-a");
 
-        // 1. Submit Close(A)
+        // 1. Queue normal Provision(A)
+        let provision_a = SemanticSyncRequest {
+            request_id: "prov-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        interface.submit_semantic_sync_request(provision_a).unwrap();
+
+        // 2. Submit Close(A)
         let close_a = SemanticSyncRequest {
             request_id: "close-a".to_owned(),
             session_id: session_a.clone(),
@@ -891,16 +913,6 @@ mod tests {
         interface
             .submit_semantic_sync_control_request(close_a.clone())
             .unwrap();
-
-        // 2. Queue normal Provision(A)
-        let provision_a = SemanticSyncRequest {
-            request_id: "prov-a".to_owned(),
-            session_id: session_a.clone(),
-            client_name: "client".to_owned(),
-            authorization: AuthorizationPolicy::default(),
-            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
-        };
-        interface.submit_semantic_sync_request(provision_a).unwrap();
 
         // 3. Submit AuthorizationChanged(A)
         let auth_a = SemanticSyncRequest {
@@ -1009,5 +1021,101 @@ mod tests {
                 Err(RenderServerPortError::InvalidPayload)
             );
         }
+    }
+
+    #[test]
+    fn closed_session_rejects_subsequent_normal_requests_at_application_queue() {
+        let interface = RenderServerInterface::default();
+        let session_a = SessionId::new("session-a");
+        let session_b = SessionId::new("session-b");
+
+        // Submit Close(A)
+        let close_a = SemanticSyncRequest {
+            request_id: "close-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
+        };
+        interface
+            .submit_semantic_sync_control_request(close_a)
+            .expect("Close(A) must be accepted");
+
+        // 1. Later Provision(A) rejected with SessionClosed
+        let prov_a = SemanticSyncRequest {
+            request_id: "prov-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        assert_eq!(
+            interface.submit_semantic_sync_request(prov_a.clone()),
+            Err(RenderServerPortError::SessionClosed)
+        );
+
+        // 2. Pop Close(A) -> later Provision(A) still rejected with SessionClosed
+        let popped_close = interface.pop_semantic_sync_request();
+        assert!(popped_close.is_some());
+        assert_eq!(
+            interface.submit_semantic_sync_request(prov_a),
+            Err(RenderServerPortError::SessionClosed)
+        );
+
+        // 3. Other operations (Connect, Push, Pull) for session A also rejected
+        for op in [
+            SemanticSyncOperation::Connect,
+            SemanticSyncOperation::PushSnapshot,
+            SemanticSyncOperation::PullProjection,
+        ] {
+            let req = SemanticSyncRequest {
+                request_id: "req-a".to_owned(),
+                session_id: session_a.clone(),
+                client_name: "client-a".to_owned(),
+                authorization: AuthorizationPolicy::default(),
+                kind: SemanticSyncRequestKind::Client(op),
+            };
+            assert_eq!(
+                interface.submit_semantic_sync_request(req),
+                Err(RenderServerPortError::SessionClosed)
+            );
+        }
+
+        // 4. Normal work for session B is still accepted
+        let prov_b = SemanticSyncRequest {
+            request_id: "prov-b".to_owned(),
+            session_id: session_b.clone(),
+            client_name: "client-b".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        assert_eq!(interface.submit_semantic_sync_request(prov_b), Ok(()));
+    }
+
+    #[test]
+    fn update_authorization_allows_later_normal_requests_at_application_queue() {
+        let interface = RenderServerInterface::default();
+        let session_a = SessionId::new("session-a");
+
+        let auth_a = SemanticSyncRequest {
+            request_id: "auth-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .submit_semantic_sync_control_request(auth_a)
+            .expect("UpdateAuthorization(A) must be accepted");
+
+        // Later normal request for A is allowed (not closed)
+        let prov_a = SemanticSyncRequest {
+            request_id: "prov-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client-a".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        assert_eq!(interface.submit_semantic_sync_request(prov_a), Ok(()));
     }
 }
