@@ -7,6 +7,20 @@ use serde::{Deserialize, Serialize};
 /// The operation intentionally carries no authorization policy, remote URL,
 /// database name, or credential. The server derives authorization from the
 /// established session and keeps all deployment details private.
+///
+/// # Lease and Token Rotation Policy (Milestone 24 / R6)
+/// - **Policy Change Rotation**: An authorization policy change revokes the
+///   per-session database lease, drops client credentials, and marks the session
+///   `Stale`. Reconnecting/reprovisioning requires an explicit fresh lease under
+///   the new server-approved policy.
+/// - **Disconnect Rotation**: Disconnecting or submitting `Close` revokes the
+///   database lease and destroys credentials. Reconnecting begins a new session
+///   lifecycle that receives a fresh lease.
+/// - **Token Lifetime & Refresh**: Token expiration is configured server-side
+///   (e.g., `TURSO_CLIENT_TOKEN_EXPIRATION`). Milestone 24 does not perform
+///   in-place background token mutation or timer refreshes; token expiration
+///   requires explicit reprovisioning. Clients never choose or negotiate raw
+///   Turso token lifetime directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticSyncOperation {
@@ -37,6 +51,19 @@ pub enum SemanticSyncPhase {
 }
 
 /// The current synchronization read model for one viewport session.
+///
+/// # Lifecycle Semantics (Milestone 24 / R5)
+/// - `SemanticSyncStatus` represents the **latest authoritative lifecycle state**
+///   for a given `SessionId`.
+/// - It is **NOT** an asynchronous completion receipt or result for a specific
+///   `request_id X`.
+/// - Individual request IDs are used at the transport layer for immediate command
+///   validation and deduplication, while `SemanticSyncStatus` reflects the
+///   current session-wide state.
+/// - `detail` contains stable, sanitized reason codes (e.g. `provision_failed`,
+///   `connect_failed`, `authorization_changed`, `revoke_failed`,
+///   `runtime_queue_full`, `worker_unavailable`, `session_closed`), never raw
+///   credentials, JWTs, database URLs, or SQL error strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticSyncStatus {
     pub phase: SemanticSyncPhase,

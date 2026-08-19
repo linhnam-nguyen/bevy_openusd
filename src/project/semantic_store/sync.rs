@@ -990,6 +990,23 @@ struct TursoClientSyncSession {
 /// `push_snapshot`, `pull_projection`, `update_authorization`, and `close`
 /// calls. No background task or implicit bootstrap can replicate data before
 /// the application has authorized and opened the session.
+///
+/// # Lease and Token Rotation Policy (Milestone 24 / R6)
+/// - **Policy Change Rotation**: Authorization policy changes trigger immediate
+///   revocation of the old per-session database lease, clearing local credentials
+///   and transitioning the session to `SemanticSyncPhase::Stale` with detail
+///   `"authorization_changed"`. Reconnecting requires an explicit fresh lease
+///   under the new server-approved policy.
+/// - **Disconnect Rotation**: Disconnecting or invoking `close` revokes the
+///   database lease and destroys local credentials and client connections.
+///   Subsequent reconnects start a new authenticated session lifecycle that
+///   obtains a brand-new lease.
+/// - **Reprovisioning**: Once a session enters `Stale` or `Closed`, the coordinator
+///   allows explicit reprovisioning to obtain a fresh lease and reset status.
+/// - **Server-Owned Token Lifetime**: Token expiration is governed strictly by
+///   server configuration (`TURSO_CLIENT_TOKEN_EXPIRATION`). Milestone 24 does
+///   not perform silent in-place token refreshes; token expiration requires
+///   explicit reprovisioning. Clients never select or negotiate Turso token lifetime.
 #[allow(dead_code)]
 pub(crate) struct TursoClientSyncCoordinator<P> {
     provisioner: P,

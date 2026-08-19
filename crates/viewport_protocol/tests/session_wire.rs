@@ -564,22 +564,54 @@ fn client_wire_command_cannot_encode_authorization_changed() {
 }
 
 #[test]
-fn semantic_sync_status_wire_event_never_contains_credentials_or_urls() {
-    let status = SemanticSyncStatus {
-        phase: SemanticSyncPhase::Ready,
-        source_snapshot_id: Some("snap-123".to_owned()),
-        projection_hash: Some("hash-abc".to_owned()),
-        detail: Some("ready".to_owned()),
-    };
-    let event = ServerEvent::Session(SessionEvent::SemanticSyncStatus { status });
-    let envelope = ServerEventEnvelope::new(SessionId::new("session-1"), 1, event);
-    let json = serde_json::to_string(&envelope).unwrap();
+fn semantic_sync_status_wire_event_with_approved_reason_codes_never_contains_credentials_or_urls() {
+    // Verified production reason codes across viewport_streaming and TursoClientSyncCoordinator:
+    let approved_reason_codes = [
+        (SemanticSyncPhase::Failed, Some("provision_failed")),
+        (SemanticSyncPhase::Failed, Some("connect_failed")),
+        (SemanticSyncPhase::Failed, Some("revoke_failed")),
+        (SemanticSyncPhase::Failed, Some("pull_failed")),
+        (SemanticSyncPhase::Failed, Some("push_failed")),
+        (SemanticSyncPhase::Failed, Some("runtime_queue_full")),
+        (SemanticSyncPhase::Failed, Some("worker_unavailable")),
+        (SemanticSyncPhase::Failed, Some("session_closed")),
+        (SemanticSyncPhase::Stale, Some("authorization_changed")),
+        (SemanticSyncPhase::Provisioning, None),
+        (SemanticSyncPhase::Provisioned, None),
+        (SemanticSyncPhase::Connecting, None),
+        (SemanticSyncPhase::Pulling, None),
+        (SemanticSyncPhase::Pushing, None),
+        (SemanticSyncPhase::Closed, None),
+        (SemanticSyncPhase::Disabled, None),
+    ];
 
-    assert!(!json.contains("token"));
-    assert!(!json.contains("secret"));
-    assert!(!json.contains("password"));
-    assert!(!json.contains("url"));
-    assert!(!json.contains("http"));
-    assert!(!json.contains("database"));
-    assert!(!json.contains("jwt"));
+    for (phase, detail) in approved_reason_codes {
+        let status = SemanticSyncStatus::phase(phase, detail.map(|s| s.to_owned()));
+        let event = ServerEvent::Session(SessionEvent::SemanticSyncStatus { status });
+        let envelope = ServerEventEnvelope::new(SessionId::new("session-1"), 1, event);
+        let json = serde_json::to_string(&envelope).unwrap();
+
+        assert!(!json.contains("token"));
+        assert!(!json.contains("secret"));
+        assert!(!json.contains("password"));
+        assert!(!json.contains("url"));
+        assert!(!json.contains("http"));
+        assert!(!json.contains("database"));
+        assert!(!json.contains("jwt"));
+    }
+
+    // Ready phase test with explicit provenance/hash fields
+    let ready_status = SemanticSyncStatus::ready("snap-123".to_owned(), "hash-abc".to_owned());
+    let ready_event = ServerEvent::Session(SessionEvent::SemanticSyncStatus {
+        status: ready_status,
+    });
+    let ready_envelope = ServerEventEnvelope::new(SessionId::new("session-1"), 2, ready_event);
+    let ready_json = serde_json::to_string(&ready_envelope).unwrap();
+    assert!(!ready_json.contains("token"));
+    assert!(!ready_json.contains("secret"));
+    assert!(!ready_json.contains("password"));
+    assert!(!ready_json.contains("url"));
+    assert!(!ready_json.contains("http"));
+    assert!(!ready_json.contains("database"));
+    assert!(!ready_json.contains("jwt"));
 }
