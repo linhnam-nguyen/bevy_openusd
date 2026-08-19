@@ -14,9 +14,6 @@ use schema::SCHEMA_SQL;
 
 pub(crate) struct SemanticDatabase {
     _database: turso::Database,
-    #[cfg(test)]
-    pub(crate) connection: turso::Connection,
-    #[cfg(not(test))]
     connection: turso::Connection,
 }
 
