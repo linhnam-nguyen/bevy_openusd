@@ -10,7 +10,7 @@ use viewport_protocol::{
     ViewportEventEnvelope, ViewportMetrics, ViewportReadModel, validate_runtime_blob_id,
 };
 
-const MAX_PENDING_MESSAGES: usize = 256;
+pub(crate) const MAX_PENDING_MESSAGES: usize = 256;
 
 #[derive(Debug, Default)]
 struct PendingMessages {
