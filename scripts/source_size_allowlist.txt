@@ -3,4 +3,3 @@
 src/viewport/api/bridge.rs
 src/viewport/ui_frost/mod.rs
 crates/viewport_streaming/src/data_channel.rs
-examples/probe_skel.rs
