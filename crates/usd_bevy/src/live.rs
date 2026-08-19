@@ -75,6 +75,27 @@ pub fn normalize_prim_path(path: &str) -> String {
     }
 }
 
+/// Validates that a path string can safely represent a normalized OpenUSD prim path.
+///
+/// Returns the normalized path if valid, or an error if the path contains invalid syntax,
+/// unresolvable relative components, or cannot be parsed by OpenUSD.
+pub fn validate_prim_path(path: &str) -> anyhow::Result<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return Ok("/".to_string());
+    }
+    if trimmed.contains("//") || trimmed.contains("..") || trimmed.split('/').any(|seg| seg == ".") {
+        anyhow::bail!("path '{path}' contains unsafe relative or empty segments");
+    }
+    let normalized = normalize_prim_path(path);
+    if normalized == "/" {
+        return Ok(normalized);
+    }
+    openusd::sdf::path(&normalized)
+        .map_err(|e| anyhow::anyhow!("invalid OpenUSD prim path '{normalized}': {e:#}"))?;
+    Ok(normalized)
+}
+
 /// Checks whether `candidate` is equal to or a descendant of `ancestor` with boundary awareness.
 ///
 /// This prevents naive substring matches like `/World/A` falsely matching `/World/AB`.
@@ -327,7 +348,7 @@ impl LiveStage {
     /// composition but do **not** fire the authoring change sink (they are
     /// stage load-rule changes, not layer-edit commits), so we synthesize the
     /// notice ourselves — the reconcile then materializes/despawns the subtree.
-    fn enqueue_resync(&self, prim: &str) {
+    pub fn enqueue_resync(&self, prim: &str) {
         self.queue.borrow_mut().push(StageChange {
             resynced: vec![prim.to_string()],
             changed_info: Vec::new(),
@@ -543,7 +564,7 @@ fn traverse_predicate() -> openusd::usd::PrimPredicate {
 /// - An empty `Vec` if `root` does not exist on the stage (indicating removal).
 /// - All projected stage prims if `root == "/"`.
 pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> anyhow::Result<Vec<String>> {
-    let normalized_root = normalize_prim_path(root);
+    let normalized_root = validate_prim_path(root)?;
     let mut collected = Vec::new();
     stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
         let path_str = path.as_str();
@@ -569,12 +590,6 @@ fn registry_of(world: &World) -> SchemaRegistry {
 /// empty world — call once on load.
 pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let stage = &live.stage;
-    let registry = registry_of(world);
-    // The stage-root entity (the pseudo-root `/`) carries the up-axis rotation;
-    // every top-level prim hangs off it, so Bevy's transform propagation
-    // composes prim-local transforms into correct world transforms and the
-    // whole scene stands upright on the grid. It is not a real prim, so no
-    // routes run on it (they would clobber the up-axis rotation).
     let root = world
         .spawn((
             UsdPrimRef {
@@ -586,35 +601,31 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         .id();
     map.insert("/", root);
 
-    let mut prim_count = 0usize;
-    let mut animated: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
-        // Traversal is pre-order, so the parent prim's entity already exists.
-        let parent = map.entity(parent_path(path.as_str())).unwrap_or(root);
-        let entity = world
-            .spawn((
-                UsdPrimRef {
-                    path: path.as_str().to_string(),
-                },
-                ChildOf(parent),
-            ))
-            .id();
-        map.insert(path.as_str().to_string(), entity);
-        prim_count += 1;
-        if prim_is_animated(stage, path) {
-            animated.insert(path.as_str().to_string());
-        }
-        // Every prim→component mapping goes through the registry.
-        registry.project_prim(stage, path, world, entity);
+    let registry = registry_of(world);
+    let mut ordered: Vec<String> = Vec::new();
+    let _ = stage.traverse(traverse_predicate(), |p: &openusd::sdf::Path| {
+        ordered.push(p.as_str().to_string());
     });
-    bevy::log::info!(
-        target: "usd_bevy::live",
-        "projected {prim_count} prims ({} animated)",
-        animated.len()
-    );
-    world.insert_resource(AnimatedPrims(animated));
-    // Projecting authored the initial read; clear so the first sync starts clean.
-    let _ = live.drain_change_batch();
+    ordered.sort_by_key(|p| p.matches('/').count());
+
+    let mut animated = std::collections::HashSet::new();
+    for path in ordered {
+        let Ok(p) = openusd::sdf::path(&path) else {
+            continue;
+        };
+        if prim_is_animated(stage, &p) {
+            animated.insert(path.clone());
+        }
+        let parent = map.entity(parent_path(&path)).unwrap_or(root);
+        let mut e = world.spawn(UsdPrimRef { path: path.clone() });
+        e.insert(ChildOf(parent));
+        let entity = e.id();
+        map.insert(path.clone(), entity);
+        registry.project_prim(stage, &p, world, entity);
+    }
+    if let Some(mut animated_res) = world.get_resource_mut::<AnimatedPrims>() {
+        animated_res.0 = animated;
+    }
 }
 
 /// Drain the change queue and reproject affected entities.
@@ -631,34 +642,37 @@ pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     apply_change_batch(world, live, map, &batch);
 }
 
-/// Helper to apply sparse property patches for `changed_info` notices.
+/// Sparse property patch applied per owning prim. Each prim's registered route
+/// runs with `changed` pointing to only the properties modified in the batch.
 fn apply_sparse_changed_info(
     world: &mut World,
     live: &LiveStage,
-    map: &PrimEntities,
-    info_paths: &[String],
+    map: &mut PrimEntities,
+    changed_info: &[String],
 ) {
-    if info_paths.is_empty() {
+    if changed_info.is_empty() {
         return;
     }
     let registry = registry_of(world);
     let suppressed = live.take_suppressed();
-    let mut by_prim: HashMap<String, Vec<String>> = HashMap::new();
-    for path in info_paths {
-        let prim = prim_of(path).to_string();
-        let entry = by_prim.entry(prim).or_default();
-        if let Some(prop) = property_of(path) {
-            entry.push(prop.to_string());
-        }
+    let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
+    for prop_path in changed_info {
+        let prim = prim_of(prop_path);
+        let prop = property_of(prop_path).unwrap_or("");
+        per_prim
+            .entry(prim.to_string())
+            .or_default()
+            .push(prop.to_string());
     }
-    for (prim, props) in by_prim {
+
+    for (prim, props) in per_prim {
         if suppressed.contains(&prim) {
             continue;
         }
-        let Some(entity) = map.entity(&prim) else {
+        let Ok(p) = openusd::sdf::path(&prim) else {
             continue;
         };
-        let Ok(p) = openusd::sdf::path(&prim) else {
+        let Some(entity) = map.entity(&prim) else {
             continue;
         };
         let prop_refs: Vec<&str> = props.iter().map(String::as_str).collect();
@@ -688,7 +702,30 @@ pub fn apply_change_batch(
             );
             reconcile_full(world, live, map);
         } else {
-            reconcile_subtrees(world, live, map, &roots, batch.revision);
+            // Explicit resync-root validation after normalization
+            let mut validated_roots = Vec::with_capacity(roots.len());
+            let mut unnormalizable = false;
+            for r in &roots {
+                match validate_prim_path(r) {
+                    Ok(val) => validated_roots.push(val),
+                    Err(err) => {
+                        bevy::log::warn!(
+                            target: "usd_bevy",
+                            resync_fallback_reason = "unnormalizable_root",
+                            root_count = roots.len(),
+                            live_revision = batch.revision.0,
+                            "[subtree-reconcile] root '{r}' cannot represent a safe OpenUSD prim path: {err:#}; falling back to full reconcile"
+                        );
+                        unnormalizable = true;
+                        break;
+                    }
+                }
+            }
+            if unnormalizable {
+                reconcile_full(world, live, map);
+            } else {
+                reconcile_subtrees(world, live, map, &validated_roots, batch.revision);
+            }
         }
         let unshaded = batch.unshaded_changed_info();
         apply_sparse_changed_info(world, live, map, &unshaded);
