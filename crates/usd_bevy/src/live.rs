@@ -413,10 +413,10 @@ impl PrimEntities {
     /// Every `(path, entity)` whose path is `prefix` or a descendant of it —
     /// the set a `resynced` parent invalidates.
     pub fn subtree(&self, prefix: &str) -> Vec<(String, Entity)> {
-        let with_slash = format!("{prefix}/");
+        let norm = normalize_prim_path(prefix);
         self.by_path
             .iter()
-            .filter(|(p, _)| p.as_str() == prefix || p.starts_with(&with_slash))
+            .filter(|(p, _)| is_descendant_or_self(&norm, p.as_str()))
             .map(|(p, e)| (p.clone(), *e))
             .collect()
     }
@@ -631,33 +631,24 @@ pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     apply_change_batch(world, live, map, &batch);
 }
 
-/// Reproject one already-drained batch without touching the live-stage queue.
-pub fn apply_change_batch(
+/// Helper to apply sparse property patches for `changed_info` notices.
+fn apply_sparse_changed_info(
     world: &mut World,
     live: &LiveStage,
-    map: &mut PrimEntities,
-    batch: &StageChangeBatch,
+    map: &PrimEntities,
+    info_paths: &[String],
 ) {
-    if batch.is_empty() {
+    if info_paths.is_empty() {
         return;
     }
-    if batch.changes.iter().any(|c| !c.resynced.is_empty()) {
-        reconcile(world, live, map);
-        return;
-    }
-    // `changed_info` only: group the changed *property* paths by owning prim so
-    // each route sees exactly which properties changed and can patch sparsely.
     let registry = registry_of(world);
-    // Echo guard: prims we just authored ourselves are swallowed this round.
     let suppressed = live.take_suppressed();
     let mut by_prim: HashMap<String, Vec<String>> = HashMap::new();
-    for change in &batch.changes {
-        for path in change.paths() {
-            let prim = prim_of(path).to_string();
-            let entry = by_prim.entry(prim).or_default();
-            if let Some(prop) = property_of(path) {
-                entry.push(prop.to_string());
-            }
+    for path in info_paths {
+        let prim = prim_of(path).to_string();
+        let entry = by_prim.entry(prim).or_default();
+        if let Some(prop) = property_of(path) {
+            entry.push(prop.to_string());
         }
     }
     for (prim, props) in by_prim {
@@ -675,10 +666,147 @@ pub fn apply_change_batch(
     }
 }
 
-/// Reconcile the projected entities against the stage's current prims:
+/// Reproject one already-drained batch without touching the live-stage queue.
+pub fn apply_change_batch(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    batch: &StageChangeBatch,
+) {
+    if batch.is_empty() {
+        return;
+    }
+    if batch.has_resync() {
+        let roots = batch.resync_roots();
+        if roots.contains(&"/".to_string()) || roots.is_empty() {
+            reconcile_full(world, live, map);
+        } else {
+            reconcile_subtrees(world, live, map, &roots);
+        }
+        let unshaded = batch.unshaded_changed_info();
+        apply_sparse_changed_info(world, live, map, &unshaded);
+        return;
+    }
+
+    // `changed_info` only: group all changed property paths by owning prim and patch sparsely.
+    let all_changed_info: Vec<String> = batch
+        .changes
+        .iter()
+        .flat_map(|c| &c.changed_info)
+        .cloned()
+        .collect();
+    apply_sparse_changed_info(world, live, map, &all_changed_info);
+}
+
+/// Reconcile specific subtrees against the stage's current prims.
+fn reconcile_subtrees(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    roots: &[String],
+) {
+    let stage = &live.stage;
+    let registry = registry_of(world);
+    let root_entity = map.entity("/");
+
+    let mut old_entities: HashMap<String, Entity> = HashMap::new();
+    for root in roots {
+        for (path, entity) in map.subtree(root) {
+            if path != "/" {
+                old_entities.insert(path, entity);
+            }
+        }
+    }
+
+    let mut current_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for root in roots {
+        if let Ok(paths) = collect_stage_subtree_paths(stage, root) {
+            for p in paths {
+                current_paths.insert(p);
+            }
+        }
+    }
+
+    // 1. Despawn removed prims (old_paths - current_paths), deepest first
+    let mut removed: Vec<(String, Entity)> = old_entities
+        .iter()
+        .filter(|(path, _)| !current_paths.contains(*path))
+        .map(|(path, entity)| (path.clone(), *entity))
+        .collect();
+    removed.sort_by(|(a, _), (b, _)| b.matches('/').count().cmp(&a.matches('/').count()));
+
+    let despawned_count = removed.len();
+    for (path, entity) in removed {
+        world.despawn(entity);
+        map.remove_path(&path);
+    }
+
+    // 2. Spawn new prims (current_paths - old_paths), shallowest first
+    let mut added: Vec<String> = current_paths
+        .iter()
+        .filter(|path| !old_entities.contains_key(*path))
+        .cloned()
+        .collect();
+    added.sort_by(|a, b| a.matches('/').count().cmp(&b.matches('/').count()));
+
+    let mut spawned_count = 0usize;
+    for path in &added {
+        let Ok(p) = openusd::sdf::path(path) else {
+            continue;
+        };
+        let parent = map.entity(parent_path(path)).or(root_entity);
+        let mut e = world.spawn(UsdPrimRef { path: path.clone() });
+        if let Some(parent) = parent {
+            e.insert(ChildOf(parent));
+        }
+        let entity = e.id();
+        map.insert(path.clone(), entity);
+        registry.project_prim(stage, &p, world, entity);
+        spawned_count += 1;
+    }
+
+    // 3. Repatch existing prims (current_paths ∩ old_paths)
+    let mut patched_count = 0usize;
+    for path in &current_paths {
+        if let Some(&entity) = old_entities.get(path) {
+            if let Ok(p) = openusd::sdf::path(path) {
+                registry.patch_prim(stage, &p, world, entity, &[]);
+                patched_count += 1;
+            }
+        }
+    }
+
+    // 4. Maintain AnimatedPrims for the affected subtrees
+    if let Some(mut animated_res) = world.get_resource_mut::<AnimatedPrims>() {
+        // Remove existing animated paths under affected roots
+        animated_res.0.retain(|anim_path| {
+            !roots
+                .iter()
+                .any(|root| is_descendant_or_self(root, anim_path))
+        });
+        // Re-scan current paths in the subtrees
+        for path in &current_paths {
+            if let Ok(p) = openusd::sdf::path(path) {
+                if prim_is_animated(stage, &p) {
+                    animated_res.0.insert(path.clone());
+                }
+            }
+        }
+    }
+
+    world.insert_resource(ReconcileStats {
+        roots: roots.len(),
+        visited_stage_prims: current_paths.len(),
+        patched_entities: patched_count,
+        spawned_entities: spawned_count,
+        despawned_entities: despawned_count,
+    });
+}
+
+/// Reconcile the projected entities against the stage's current prims (full stage):
 /// despawn entities whose prim was removed, spawn entities for new prims,
 /// patch transforms on the rest.
-fn reconcile(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
+fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let stage = &live.stage;
     let registry = registry_of(world);
     let mut current: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -988,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_synthetic_wide_baseline_records_full_stage_work() {
+    fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
         let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
         for group in ["A", "B", "C"] {
             usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
@@ -1012,7 +1140,7 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<PrimEntities>().len(), 35);
 
-        // Baseline resync on /World/B
+        // Subtree resync targeting /World/B (1 root + 10 children = 11 prims)
         app.world()
             .get_non_send::<LiveStage>()
             .expect("live stage exists")
@@ -1020,14 +1148,18 @@ mod tests {
         app.update();
 
         let stats = *app.world().resource::<ReconcileStats>();
-        assert_eq!(stats.visited_stage_prims, 34);
-        assert_eq!(stats.patched_entities, 34);
+        assert_eq!(stats.roots, 1);
+        assert_eq!(stats.visited_stage_prims, 11);
+        assert_eq!(stats.patched_entities, 11);
         assert_eq!(stats.spawned_entities, 0);
         assert_eq!(stats.despawned_entities, 0);
+
+        // All 35 entities remain mapped
+        assert_eq!(app.world().resource::<PrimEntities>().len(), 35);
     }
 
     #[test]
-    fn reconcile_deep_overlap_baseline_records_full_stage_work() {
+    fn reconcile_deep_overlap_minimizes_roots_and_scopes_work() {
         let stage = crate::snippet::UsdSnippet::new(
             r#"#usda 1.0
 
@@ -1066,14 +1198,16 @@ def Xform "World"
         app.update();
 
         let stats = *app.world().resource::<ReconcileStats>();
-        assert_eq!(stats.visited_stage_prims, 6);
-        assert_eq!(stats.patched_entities, 6);
+        // Minimizes to 1 root (/World/A) and visits/patches only 3 prims (/World/A, /World/A/Child, /World/A/Child/Leaf)
+        assert_eq!(stats.roots, 1);
+        assert_eq!(stats.visited_stage_prims, 3);
+        assert_eq!(stats.patched_entities, 3);
         assert_eq!(stats.spawned_entities, 0);
         assert_eq!(stats.despawned_entities, 0);
     }
 
     #[test]
-    fn reconcile_real_materials_fixture_baseline_records_full_stage_work() {
+    fn reconcile_real_materials_fixture_scopes_to_materials_subtree() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/stages/materials.usda");
         let stage =
@@ -1085,7 +1219,7 @@ def Xform "World"
         app.update();
 
         let initial_count = app.world().resource::<PrimEntities>().len();
-        assert!(initial_count > 0);
+        assert_eq!(initial_count, 13); // 12 prims + root "/"
 
         app.world()
             .get_non_send::<LiveStage>()
@@ -1094,8 +1228,63 @@ def Xform "World"
         app.update();
 
         let stats = *app.world().resource::<ReconcileStats>();
-        assert_eq!(stats.visited_stage_prims, initial_count - 1);
-        assert_eq!(stats.patched_entities, initial_count - 1);
+        assert_eq!(stats.roots, 1);
+        assert_eq!(stats.visited_stage_prims, 7);
+        assert_eq!(stats.patched_entities, 7);
+        assert_eq!(stats.spawned_entities, 0);
+        assert_eq!(stats.despawned_entities, 0);
+    }
+
+    #[test]
+    fn reconcile_subtree_spawns_and_despawns_while_preserving_sibling_entity_ids() {
+        let stage = Stage::builder()
+            .in_memory("subtree-spawn-despawn.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+        stage.define_prim("/World/A/Child1").unwrap();
+        stage.define_prim("/World/A/Child2").unwrap();
+        stage.define_prim("/World/B").unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let world_b_entity = app
+            .world()
+            .resource::<PrimEntities>()
+            .entity("/World/B")
+            .unwrap();
+        let child1_entity = app
+            .world()
+            .resource::<PrimEntities>()
+            .entity("/World/A/Child1")
+            .unwrap();
+
+        // Author changes in /World/A subtree: remove Child2, define Child3
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.remove_prim("/World/A/Child2").unwrap();
+        live.stage.define_prim("/World/A/Child3").unwrap();
+        let _ = live.drain_change_batch();
+        live.enqueue_resync("/World/A");
+
+        app.update();
+
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.roots, 1);
+        assert_eq!(stats.visited_stage_prims, 3); // /World/A, /World/A/Child1, /World/A/Child3
+        assert_eq!(stats.patched_entities, 2); // /World/A, /World/A/Child1
+        assert_eq!(stats.spawned_entities, 1); // /World/A/Child3
+        assert_eq!(stats.despawned_entities, 1); // /World/A/Child2
+
+        // Verify entity preservation and removal
+        let prim_entities = app.world().resource::<PrimEntities>();
+        assert_eq!(prim_entities.entity("/World/B"), Some(world_b_entity));
+        assert_eq!(prim_entities.entity("/World/A/Child1"), Some(child1_entity));
+        assert!(prim_entities.entity("/World/A/Child2").is_none());
+        assert!(prim_entities.entity("/World/A/Child3").is_some());
     }
 
     #[test]
