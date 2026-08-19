@@ -5,8 +5,5 @@ src/viewport/ui_frost/mod.rs
 crates/viewport_streaming/src/data_channel.rs
 crates/viewport_streaming/src/application.rs
 examples/probe_skel.rs
-crates/viewport_protocol/src/viewport.rs
 crates/viewport_streaming/src/stream_session.rs
 crates/viewport_streaming/src/encode.rs
-crates/viewport_protocol/tests/session_wire.rs
-crates/viewport_protocol/src/runtime_client.rs

@@ -1,0 +1,7 @@
+pub const DEFAULT_SCENE_PAGE_SIZE: u32 = 64;
+pub const MAX_SCENE_PAGE_SIZE: u32 = 256;
+pub const DEFAULT_SCENE_SEARCH_PAGE_SIZE: u32 = 30;
+pub const MAX_SCENE_SEARCH_RESULTS: u32 = 256;
+pub const MAX_EDITOR_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_RUNTIME_MUTATIONS: usize = 1024;
+pub const MAX_RUNTIME_SOURCE_ID_BYTES: usize = 256;

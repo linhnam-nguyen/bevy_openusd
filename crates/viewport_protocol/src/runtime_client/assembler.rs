@@ -1,145 +1,27 @@
-//! Client-side assembly of authorized self-render runtime payloads.
-//!
-//! This module is transport-neutral. A native or frontend adapter feeds it
-//! the `SessionEvent` values received from the reliable control channel; it
-//! never receives filesystem paths and it never treats an incomplete bundle as
-//! renderable.
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    error::Error,
-    fmt,
-};
+use crate::{AuthorizedRuntimeManifest, SessionEvent};
 
-use crate::{
-    AuthorizationPolicy, AuthorizedRuntimeManifest, RuntimeManifestValidationError, SessionEvent,
-};
+use super::types::{HydratedRuntimeDelivery, RuntimeDeliveryClientError, RuntimeDeliveryUpdate};
 
 const MAX_RUNTIME_CHUNKS: u32 = 1_000_000;
 
-/// A complete authorized runtime that is ready for local hydration.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HydratedRuntimeDelivery {
-    pub manifest: AuthorizedRuntimeManifest,
-    blobs: BTreeMap<String, Vec<u8>>,
+#[derive(Debug)]
+struct ManifestChunkAssembly {
+    manifest_id: String,
+    chunk_count: u32,
+    chunks: BTreeMap<u32, AuthorizedRuntimeManifest>,
 }
 
-impl HydratedRuntimeDelivery {
-    /// Returns verified bytes for a blob named by the authorized manifest.
-    pub fn blob(&self, blob_id: &str) -> Option<&[u8]> {
-        self.blobs.get(blob_id).map(Vec::as_slice)
-    }
-
-    /// Returns the verified blob set in deterministic identifier order.
-    pub fn blobs(&self) -> impl Iterator<Item = (&str, &[u8])> {
-        self.blobs
-            .iter()
-            .map(|(blob_id, bytes)| (blob_id.as_str(), bytes.as_slice()))
-    }
+#[derive(Debug)]
+struct BlobChunkAssembly {
+    chunk_count: u32,
+    chunks: BTreeMap<u32, Vec<u8>>,
+    received_bytes: u64,
 }
 
-/// Progress reported after applying one runtime delivery event.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeDeliveryUpdate {
-    Ignored,
-    ManifestAccepted,
-    ManifestChunkAccepted { complete: bool },
-    BlobChunkAccepted { blob_id: String, complete: bool },
-    BlobRejected { reason: String },
-    AuthorizationChanged { authorization: AuthorizationPolicy },
-}
-
-/// Errors raised while assembling an authorized runtime bundle.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeDeliveryClientError {
-    InvalidManifest(RuntimeManifestValidationError),
-    EmptyManifestId,
-    InvalidChunkCount,
-    ChunkIndexOutOfRange,
-    ManifestChunkCountChanged,
-    ManifestChunkConflict,
-    ManifestMetadataMismatch,
-    DuplicateBlobId(String),
-    ManifestRequired,
-    BlobNotAuthorized(String),
-    BlobChunkCountChanged,
-    BlobChunkConflict,
-    BlobAlreadyComplete(String),
-    BlobSizeExceeded {
-        blob_id: String,
-        expected: u64,
-        received: u64,
-    },
-    BlobSizeMismatch {
-        blob_id: String,
-        expected: u64,
-        received: u64,
-    },
-}
-
-impl fmt::Display for RuntimeDeliveryClientError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidManifest(error) => {
-                write!(formatter, "invalid authorized manifest: {error}")
-            }
-            Self::EmptyManifestId => formatter.write_str("runtime manifest id is empty"),
-            Self::InvalidChunkCount => formatter.write_str("runtime chunk count is invalid"),
-            Self::ChunkIndexOutOfRange => {
-                formatter.write_str("runtime chunk index is out of range")
-            }
-            Self::ManifestChunkCountChanged => {
-                formatter.write_str("runtime manifest chunk count changed mid-assembly")
-            }
-            Self::ManifestChunkConflict => {
-                formatter.write_str("runtime manifest chunk was received with conflicting data")
-            }
-            Self::ManifestMetadataMismatch => {
-                formatter.write_str("runtime manifest chunks disagree on revision or profile")
-            }
-            Self::DuplicateBlobId(blob_id) => {
-                write!(formatter, "runtime manifest repeats blob id {blob_id:?}")
-            }
-            Self::ManifestRequired => formatter.write_str("runtime manifest is required first"),
-            Self::BlobNotAuthorized(blob_id) => {
-                write!(
-                    formatter,
-                    "runtime blob {blob_id:?} is not in the authorized manifest"
-                )
-            }
-            Self::BlobChunkCountChanged => {
-                formatter.write_str("runtime blob chunk count changed mid-assembly")
-            }
-            Self::BlobChunkConflict => {
-                formatter.write_str("runtime blob chunk was received with conflicting data")
-            }
-            Self::BlobAlreadyComplete(blob_id) => {
-                write!(formatter, "runtime blob {blob_id:?} is already complete")
-            }
-            Self::BlobSizeExceeded {
-                blob_id,
-                expected,
-                received,
-            } => write!(
-                formatter,
-                "runtime blob {blob_id:?} exceeds declared size {expected} with {received} bytes"
-            ),
-            Self::BlobSizeMismatch {
-                blob_id,
-                expected,
-                received,
-            } => write!(
-                formatter,
-                "runtime blob {blob_id:?} has {received} bytes, expected {expected}"
-            ),
-        }
-    }
-}
-
-impl Error for RuntimeDeliveryClientError {}
-
-/// Reassembles one authorized runtime revision without exposing incomplete
-/// or unauthorized bytes to a local renderer.
+/// Accumulates runtime manifests and content-addressed blobs until a full
+/// authorized payload has been verified.
 #[derive(Debug, Default)]
 pub struct RuntimeDeliveryAssembler {
     manifest: Option<AuthorizedRuntimeManifest>,
@@ -384,20 +266,6 @@ impl RuntimeDeliveryAssembler {
     }
 }
 
-#[derive(Debug)]
-struct ManifestChunkAssembly {
-    manifest_id: String,
-    chunk_count: u32,
-    chunks: BTreeMap<u32, AuthorizedRuntimeManifest>,
-}
-
-#[derive(Debug)]
-struct BlobChunkAssembly {
-    chunk_count: u32,
-    chunks: BTreeMap<u32, Vec<u8>>,
-    received_bytes: u64,
-}
-
 fn validate_chunk_coordinates(
     chunk_index: u32,
     chunk_count: u32,
@@ -461,150 +329,4 @@ fn merge_manifest_chunks(
         .validate()
         .map_err(RuntimeDeliveryClientError::InvalidManifest)?;
     Ok(merged)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{RuntimeBlobReference, RuntimePayloadKind, RuntimeProfile};
-
-    const HIERARCHY_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const MESH_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-
-    fn reference(blob_id: &str, kind: RuntimePayloadKind, byte_size: u64) -> RuntimeBlobReference {
-        RuntimeBlobReference {
-            blob_id: blob_id.to_owned(),
-            payload_kind: kind,
-            payload_version: 1,
-            byte_size,
-        }
-    }
-
-    fn manifest(meshes: Vec<RuntimeBlobReference>) -> AuthorizedRuntimeManifest {
-        AuthorizedRuntimeManifest {
-            revision: "working-7".to_owned(),
-            profile: RuntimeProfile::NativeMedium,
-            hierarchy: reference(HIERARCHY_ID, RuntimePayloadKind::Hierarchy, 3),
-            meshes,
-            materials: Vec::new(),
-            textures: Vec::new(),
-            redacted_blob_count: 1,
-        }
-    }
-
-    #[test]
-    fn assembles_out_of_order_manifest_and_blob_chunks() {
-        let mut assembler = RuntimeDeliveryAssembler::default();
-        let full = manifest(vec![
-            reference(MESH_ID, RuntimePayloadKind::Mesh, 4),
-            reference(
-                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-                RuntimePayloadKind::Mesh,
-                2,
-            ),
-        ]);
-        let first = AuthorizedRuntimeManifest {
-            meshes: vec![full.meshes[0].clone()],
-            ..full.clone()
-        };
-        let second = AuthorizedRuntimeManifest {
-            meshes: vec![full.meshes[1].clone()],
-            ..full.clone()
-        };
-
-        assert!(
-            !assembler
-                .accept_manifest_chunk("manifest-7", 1, 2, second)
-                .unwrap()
-        );
-        assert!(
-            assembler
-                .accept_manifest_chunk("manifest-7", 0, 2, first)
-                .unwrap()
-        );
-        assert!(!assembler.is_ready());
-
-        assert!(
-            !assembler
-                .accept_blob_chunk(MESH_ID, 1, 2, vec![3, 4])
-                .unwrap()
-        );
-        assert!(
-            assembler
-                .accept_blob_chunk(MESH_ID, 0, 2, vec![1, 2])
-                .unwrap()
-        );
-        assert!(
-            assembler
-                .accept_blob_chunk(HIERARCHY_ID, 0, 1, vec![9, 8, 7])
-                .unwrap()
-        );
-        assert!(
-            assembler
-                .accept_blob_chunk(
-                    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-                    0,
-                    1,
-                    vec![5, 6],
-                )
-                .unwrap()
-        );
-
-        let hydrated = assembler.hydrated().unwrap();
-        assert_eq!(hydrated.blob(HIERARCHY_ID), Some([9, 8, 7].as_slice()));
-        assert_eq!(hydrated.blob(MESH_ID), Some([1, 2, 3, 4].as_slice()));
-    }
-
-    #[test]
-    fn rejects_unauthorized_or_wrong_sized_blob() {
-        let mut assembler = RuntimeDeliveryAssembler::default();
-        assembler
-            .accept_manifest(manifest(Vec::new()))
-            .expect("fixture manifest is valid");
-
-        assert!(matches!(
-            assembler.accept_blob_chunk(
-                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-                0,
-                1,
-                vec![1],
-            ),
-            Err(RuntimeDeliveryClientError::BlobNotAuthorized(_))
-        ));
-        assert!(matches!(
-            assembler.accept_blob_chunk(HIERARCHY_ID, 0, 1, vec![1, 2]),
-            Err(RuntimeDeliveryClientError::BlobSizeMismatch { .. })
-        ));
-        assert!(!assembler.is_ready());
-    }
-
-    #[test]
-    fn applies_session_events_and_replaces_old_revision() {
-        let mut assembler = RuntimeDeliveryAssembler::default();
-        let event = SessionEvent::RuntimeManifest {
-            manifest: manifest(Vec::new()),
-        };
-        assert_eq!(
-            assembler.apply_session_event(&event).unwrap(),
-            RuntimeDeliveryUpdate::ManifestAccepted
-        );
-        assert!(matches!(
-            assembler
-                .apply_session_event(&SessionEvent::RuntimeBlobRejected {
-                    reason: "denied".to_owned(),
-                })
-                .unwrap(),
-            RuntimeDeliveryUpdate::BlobRejected { .. }
-        ));
-
-        assembler
-            .accept_blob_chunk(HIERARCHY_ID, 0, 1, vec![1, 2, 3])
-            .unwrap();
-        assert!(assembler.is_ready());
-
-        let mut replacement = manifest(Vec::new());
-        replacement.revision = "working-8".to_owned();
-        assembler.accept_manifest(replacement).unwrap();
-        assert!(!assembler.is_ready());
-    }
 }
