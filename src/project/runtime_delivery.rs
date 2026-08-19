@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use usd_model::{Bounds3, EntitySnapshot, SemanticSnapshot, TransformSignature};
 use viewport_protocol::{
     RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind, RuntimeProfile,
@@ -115,27 +115,27 @@ fn hierarchy_entity(
     }
 }
 
-#[derive(Debug, Serialize)]
-struct RuntimeHierarchyBlob {
-    version: u16,
-    revision: String,
-    entities: Vec<RuntimeHierarchyEntity>,
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub(crate) struct RuntimeHierarchyBlob {
+    pub(crate) version: u16,
+    pub(crate) revision: String,
+    pub(crate) entities: Vec<RuntimeHierarchyEntity>,
 }
 
-#[derive(Debug, Serialize)]
-struct RuntimeHierarchyEntity {
-    entity_key: String,
-    prim_path: String,
-    transform: TransformSignature,
-    geometry: Option<RuntimeHierarchyGeometry>,
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub(crate) struct RuntimeHierarchyEntity {
+    pub(crate) entity_key: String,
+    pub(crate) prim_path: String,
+    pub(crate) transform: TransformSignature,
+    pub(crate) geometry: Option<RuntimeHierarchyGeometry>,
 }
 
-#[derive(Debug, Serialize)]
-struct RuntimeHierarchyGeometry {
-    blob_id: String,
-    vertex_count: u32,
-    index_count: u32,
-    local_bounds: Bounds3,
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub(crate) struct RuntimeHierarchyGeometry {
+    pub(crate) blob_id: String,
+    pub(crate) vertex_count: u32,
+    pub(crate) index_count: u32,
+    pub(crate) local_bounds: Bounds3,
 }
 
 /// Return the bundle parts for the atomic application-interface publish.
