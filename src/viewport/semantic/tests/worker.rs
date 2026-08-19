@@ -1,0 +1,73 @@
+use anyhow::Result;
+use usd_model::EntityKey;
+
+use super::fixtures::{response, snapshot};
+use super::super::{GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore};
+
+#[test]
+fn full_snapshot_bulk_load_supports_type_and_property_queries() -> Result<()> {
+    let store = SemanticWorkingStore::default();
+    let snapshot = snapshot()?;
+    let expected_entities = snapshot.entities.len() as u32;
+    assert!(store.submit_snapshot("load-1", snapshot));
+    assert!(matches!(
+        response(&store),
+        SemanticResponse::SnapshotLoaded {
+            request_id,
+            entity_count
+        } if request_id == "load-1" && entity_count == expected_entities
+    ));
+
+    assert!(store.submit_query(
+        "query-type",
+        SemanticQuery {
+            filters: vec![SemanticFilter::TypeEquals("Cube".to_owned())],
+            ..Default::default()
+        },
+    ));
+    let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+        panic!("expected query result")
+    };
+    assert_eq!(result.total, 1);
+    assert_eq!(result.rows[0].entity_key, EntityKey::from("/World/Robot"));
+
+    assert!(store.submit_query(
+        "query-property",
+        SemanticQuery {
+            filters: vec![SemanticFilter::PropertyTextEquals {
+                name: "userProperties:name".to_owned(),
+                value: "cart_01".to_owned(),
+            }],
+            ..Default::default()
+        },
+    ));
+    let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+        panic!("expected property query result")
+    };
+    assert_eq!(result.total, 1);
+    assert_eq!(result.rows[0].prim_path, "/World/Robot");
+    Ok(())
+}
+
+#[test]
+fn schema_query_supports_grouping_and_pagination() -> Result<()> {
+    let store = SemanticWorkingStore::default();
+    assert!(store.submit_snapshot("load-2", snapshot()?));
+    let _ = response(&store);
+    assert!(store.submit_query(
+        "query-group",
+        SemanticQuery {
+            group_by: vec![GroupField::TypeName],
+            limit: 1,
+            ..Default::default()
+        },
+    ));
+    let SemanticResponse::QueryResult { result, .. } = response(&store) else {
+        panic!("expected grouped query result")
+    };
+    assert!(result.total >= 2);
+    assert_eq!(result.rows.len(), 1);
+    assert!(!result.groups.is_empty());
+    assert!(result.has_more);
+    Ok(())
+}
