@@ -119,6 +119,15 @@ pub(crate) fn attach_render_blobs_for_entities(
         return;
     };
 
+    let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
+        bevy::log::warn!(
+            target: "ghost_cache",
+            resync_fallback_reason = "missing_prim_entities_index",
+            "[ghost-cache] attach_render_blobs_for_entities called without PrimEntities resource"
+        );
+        return;
+    };
+
     let store = match FilesystemBlobStore::new(project_root.join(OBJECTS_DIRECTORY)) {
         Ok(store) => store,
         Err(error) => {
@@ -129,41 +138,19 @@ pub(crate) fn attach_render_blobs_for_entities(
 
     let entity_count = entities.len() as u64;
 
-    // Collect mesh handle ONLY for the affected entities that need geometry attachment
-    let mesh_handles: HashMap<String, bevy::asset::Handle<Mesh>> =
-        if let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() {
-            let mut map_handles = HashMap::new();
-            for entity in entities.iter() {
-                if let Some(geometry) = entity.geometry.as_ref() {
-                    if geometry.render_blob.is_none() {
-                        if let Some(bevy_entity) = map.entity(&entity.prim_path) {
-                            if let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity) {
-                                map_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());
-                            }
-                        }
+    // Collect mesh handle ONLY for the affected entities using O(1) PrimEntities index lookup
+    let mut mesh_handles = HashMap::new();
+    for entity in entities.iter() {
+        if let Some(geometry) = entity.geometry.as_ref() {
+            if geometry.render_blob.is_none() {
+                if let Some(bevy_entity) = map.entity(&entity.prim_path) {
+                    if let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity) {
+                        mesh_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());
                     }
                 }
             }
-            map_handles
-        } else {
-            let path_set: std::collections::HashSet<&str> = entities
-                .iter()
-                .filter(|e| {
-                    e.geometry
-                        .as_ref()
-                        .map_or(false, |g| g.render_blob.is_none())
-                })
-                .map(|e| e.prim_path.as_str())
-                .collect();
-            let mut query = world.query::<(&UsdPrimRef, &Mesh3d)>();
-            let mut query_handles = HashMap::new();
-            for (prim, mesh) in query.iter(world) {
-                if path_set.contains(prim.path.as_str()) {
-                    query_handles.insert(prim.path.clone(), mesh.0.clone());
-                }
-            }
-            query_handles
-        };
+        }
+    }
 
     let Some(meshes) = world.get_resource::<Assets<Mesh>>() else {
         return;

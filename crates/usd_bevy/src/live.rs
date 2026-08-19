@@ -679,9 +679,16 @@ pub fn apply_change_batch(
     if batch.has_resync() {
         let roots = batch.resync_roots();
         if roots.contains(&"/".to_string()) || roots.is_empty() {
+            bevy::log::warn!(
+                target: "usd_bevy",
+                resync_fallback_reason = "root_is_stage_root_or_empty",
+                root_count = roots.len(),
+                live_revision = batch.revision.0,
+                "[subtree-reconcile] stage root '/' or empty roots in batch; falling back to full reconcile"
+            );
             reconcile_full(world, live, map);
         } else {
-            reconcile_subtrees(world, live, map, &roots);
+            reconcile_subtrees(world, live, map, &roots, batch.revision);
         }
         let unshaded = batch.unshaded_changed_info();
         apply_sparse_changed_info(world, live, map, &unshaded);
@@ -704,11 +711,16 @@ fn reconcile_subtrees(
     live: &LiveStage,
     map: &mut PrimEntities,
     roots: &[String],
+    revision: LiveRevision,
 ) {
     let stage = &live.stage;
     let registry = registry_of(world);
     let Some(root_entity) = map.entity("/") else {
         bevy::log::warn!(
+            target: "usd_bevy",
+            resync_fallback_reason = "root_entity_missing",
+            root_count = roots.len(),
+            live_revision = revision.0,
             "[subtree-reconcile] stage root '/' missing from PrimEntities; falling back to full reconcile"
         );
         reconcile_full(world, live, map);
@@ -732,6 +744,10 @@ fn reconcile_subtrees(
             }
             Err(error) => {
                 bevy::log::warn!(
+                    target: "usd_bevy",
+                    resync_fallback_reason = "subtree_collection_failed",
+                    root_count = roots.len(),
+                    live_revision = revision.0,
                     "[subtree-reconcile] collection failed for root '{root}': {error:#}; falling back to full reconcile"
                 );
                 reconcile_full(world, live, map);
@@ -758,6 +774,10 @@ fn reconcile_subtrees(
 
         if !parent_will_exist {
             bevy::log::warn!(
+                target: "usd_bevy",
+                resync_fallback_reason = "unresolved_parent",
+                root_count = roots.len(),
+                live_revision = revision.0,
                 "[subtree-reconcile] parent '{parent_str}' for new prim '{path}' is missing; falling back to full reconcile"
             );
             reconcile_full(world, live, map);
@@ -796,6 +816,10 @@ fn reconcile_subtrees(
         };
         let Some(parent) = parent else {
             bevy::log::error!(
+                target: "usd_bevy",
+                resync_fallback_reason = "missing_parent_entity",
+                root_count = roots.len(),
+                live_revision = revision.0,
                 "[subtree-reconcile] parent '{parent_str}' missing during spawn for '{path}'; falling back to full reconcile"
             );
             reconcile_full(world, live, map);
@@ -983,8 +1007,10 @@ fn project_on_load_system(world: &mut World) {
         return;
     }
     // Only project once per session: skip if the bimap is already populated.
-    if !world.resource::<PrimEntities>().is_empty() {
-        return;
+    if let Some(map) = world.get_resource::<PrimEntities>() {
+        if !map.is_empty() {
+            return;
+        }
     }
     let Some(live) = world.remove_non_send::<LiveStage>() else {
         return;

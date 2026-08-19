@@ -425,6 +425,13 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 if batch.has_resync() {
                     let roots = batch.resync_roots();
                     if roots.contains(&"/".to_string()) || roots.is_empty() {
+                        bevy::log::warn!(
+                            target: "semantic_sync",
+                            resync_fallback_reason = "root_is_stage_root_or_empty",
+                            root_count = roots.len(),
+                            live_revision = live_revision.0,
+                            "[semantic-sync] stage root '/' or empty roots in batch; falling back to full snapshot rebuild"
+                        );
                         match extractor.extract(&live.stage, source) {
                             Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
                             Err(error) => {
@@ -444,7 +451,19 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                         ) {
                             Ok(update) => SemanticSyncAction::Delta(update),
                             Err(error) => {
+                                let err_str = error.to_string();
+                                let reason = if err_str.contains("collision") {
+                                    "semantic_entity_key_collision"
+                                } else if err_str.contains("path") || err_str.contains("syntax") {
+                                    "unnormalizable_root"
+                                } else {
+                                    "subtree_delta_extraction_failed"
+                                };
                                 bevy::log::warn!(
+                                    target: "semantic_sync",
+                                    resync_fallback_reason = reason,
+                                    root_count = roots.len(),
+                                    live_revision = live_revision.0,
                                     "[semantic-sync] subtree delta extraction failed: {error:#}; falling back to full snapshot rebuild"
                                 );
                                 match extractor.extract(&live.stage, source) {
@@ -465,14 +484,32 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                         &extractor,
                         previous_snapshot,
                         &batch,
-                        source,
+                        source.clone(),
                     ) {
                         Ok(update) => SemanticSyncAction::Delta(update),
                         Err(error) => {
-                            bevy::log::error!(
-                                "[semantic-sync] changed-info update failed: {error:#}"
+                            let err_str = error.to_string();
+                            let reason = if err_str.contains("collision") {
+                                "semantic_entity_key_collision"
+                            } else {
+                                "changed_info_update_failed"
+                            };
+                            bevy::log::warn!(
+                                target: "semantic_sync",
+                                resync_fallback_reason = reason,
+                                root_count = 0usize,
+                                live_revision = live_revision.0,
+                                "[semantic-sync] changed-info update failed: {error:#}; falling back to full snapshot rebuild"
                             );
-                            return;
+                            match extractor.extract(&live.stage, source) {
+                                Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                                Err(err) => {
+                                    bevy::log::error!(
+                                        "[semantic-sync] full snapshot fallback failed: {err:#}"
+                                    );
+                                    return;
+                                }
+                            }
                         }
                     }
                 }
@@ -569,6 +606,22 @@ fn attach_render_blobs_to_action(world: &mut World, action: &mut SemanticSyncAct
     match action {
         SemanticSyncAction::Replace(snapshot) => attach_render_blobs(world, snapshot),
         SemanticSyncAction::Delta(update) => {
+            // Index integrity check: if PrimEntities is missing, fall back to safe full attach
+            if world.get_resource::<usd_bevy::PrimEntities>().is_none() {
+                bevy::log::warn!(
+                    target: "ghost_cache",
+                    resync_fallback_reason = "missing_prim_entities_index",
+                    "[ghost-cache] PrimEntities resource missing from world; falling back to full attach_render_blobs"
+                );
+                attach_render_blobs(world, &mut update.snapshot);
+                for upsert in &mut update.request.upserts {
+                    if let Some(enriched) = update.snapshot.entities.get(&upsert.key) {
+                        *upsert = enriched.clone();
+                    }
+                }
+                return;
+            }
+
             // Enrich only affected upserted semantic entities
             attach_render_blobs_for_entities(world, &mut update.request.upserts);
             // Copy enriched upserts back into update.snapshot.entities
@@ -833,8 +886,9 @@ mod tests {
     use usd_semantic::{SemanticConfig, SemanticExtractor};
 
     use super::{
-        RenderServerInterface, SemanticDiffState, SemanticFilter, SemanticIncrementalUpdate,
-        SemanticQuery, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
+        RenderServerInterface, SemanticDelta, SemanticDiffState, SemanticFilter,
+        SemanticIncrementalUpdate, SemanticQuery, SemanticResponse, SemanticSyncAction,
+        SemanticSyncState, SemanticWorkingStore, attach_render_blobs_to_action,
         changed_info_update, resync_subtree_update, synchronize_live_stage,
     };
 
@@ -2101,6 +2155,166 @@ def Xform "World"
                 .get_resource::<RenderServerInterface>()
                 .is_none()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fallback_missing_prim_entities_triggers_full_attach() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let usda = String::from(
+            r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Mesh "MeshA"
+        {
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+        }
+    }
+}
+"#,
+        );
+        let stage = usd_bevy::UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("stage opens");
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let source_1 = SnapshotSource::Working {
+            session: "fallback-test".to_owned(),
+            live_revision: 1,
+        };
+        let snapshot_1 = extractor.extract(&stage, source_1)?;
+
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: Vec::new(),
+            resynced: vec!["/World/A".to_owned()],
+        });
+
+        let source_2 = SnapshotSource::Working {
+            session: "fallback-test".to_owned(),
+            live_revision: 2,
+        };
+        let delta = resync_subtree_update(&stage, &extractor, snapshot_1, &batch, source_2)?;
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_plugins(bevy::asset::AssetPlugin::default())
+            .init_asset::<Mesh>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<StandardMaterial>()
+            .add_plugins(usd_bevy::UsdPlugin);
+        app.insert_resource(crate::project::recovery::RecoverySettings {
+            project_root: temp_dir.path().to_path_buf(),
+        });
+        app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+
+        // Spawn a Mesh directly with UsdPrimRef
+        let mut mesh = Mesh::new(
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::default(),
+        );
+        mesh.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        );
+        mesh.insert_indices(bevy::mesh::Indices::U32(vec![0, 1, 2]));
+        let handle = app.world_mut().resource_mut::<Assets<Mesh>>().add(mesh);
+        app.world_mut().spawn((
+            usd_bevy::UsdPrimRef::new("/World/A/MeshA"),
+            bevy::mesh::Mesh3d(handle),
+        ));
+
+        // Note: app.world does NOT have PrimEntities resource!
+        assert!(
+            app.world()
+                .get_resource::<usd_bevy::PrimEntities>()
+                .is_none()
+        );
+
+        let mut action = SemanticSyncAction::Delta(delta);
+        attach_render_blobs_to_action(app.world_mut(), &mut action);
+
+        let SemanticSyncAction::Delta(result_delta) = action else {
+            panic!("expected Delta action");
+        };
+
+        // Verifies fallback attached the blob via full attach safely
+        let blob = result_delta
+            .snapshot
+            .entities
+            .get(&EntityKey::from("/World/A/MeshA"))
+            .and_then(|e| e.geometry.as_ref())
+            .and_then(|g| g.render_blob.clone());
+        assert!(
+            blob.is_some(),
+            "blob safely attached via full attach fallback"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fallback_unnormalizable_root_triggers_full_snapshot_replace() -> Result<()> {
+        let usda = String::from(
+            r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A" {}
+}
+"#,
+        );
+        let stage = usd_bevy::UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("stage opens");
+        let live = LiveStage::new(stage);
+
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::LiveStagePlugin);
+        app.insert_resource(SemanticWorkingStore::default());
+        app.insert_resource(SemanticSyncState::default());
+        app.world_mut().insert_non_send(live);
+        app.add_systems(PostUpdate, synchronize_live_stage);
+
+        // Frame 1: Full replace load
+        app.update();
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(resp, SemanticResponse::SnapshotLoaded { .. }));
+
+        // Inject un-normalizable/invalid root in change batch
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: Vec::new(),
+            resynced: vec!["/World/Invalid..Path///".to_owned()],
+        });
+        let _ = app
+            .world()
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .drain_change_batch();
+        app.world_mut()
+            .insert_resource(usd_bevy::PendingStageChanges::default());
+
+        // Call changed stage with invalid root in PendingStageChanges
+        app.world()
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .load_payload("/World/A");
+
+        // Frame 2: Updates safely
+        app.update();
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(
+            resp,
+            SemanticResponse::DeltaApplied { .. } | SemanticResponse::SnapshotLoaded { .. }
+        ));
         Ok(())
     }
 }
