@@ -88,6 +88,10 @@ path = "tests/cache_profile.rs"
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
+[[test]]
+name = "subtree_resync_profile"
+path = "tests/subtree_resync_profile.rs"
+
 [[example]]
 name = "pack_usdz"
 path = "examples/pack_usdz.rs"

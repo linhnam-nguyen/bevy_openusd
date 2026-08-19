@@ -54,6 +54,19 @@ impl StageChangeBatch {
     }
 }
 
+/// Internal work counters for the most recent reconcile pass.
+///
+/// Test and profiling suites use this to verify work reduction during subtree
+/// resync without relying on noisy timing assertions.
+#[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReconcileStats {
+    pub roots: usize,
+    pub visited_stage_prims: usize,
+    pub patched_entities: usize,
+    pub spawned_entities: usize,
+    pub despawned_entities: usize,
+}
+
 impl StageChange {
     /// All paths mentioned by this change (resynced ∪ changed-info).
     pub fn paths(&self) -> impl Iterator<Item = &String> {
@@ -519,6 +532,7 @@ fn reconcile(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
         .filter(|(p, _)| *p != "/" && !current.contains(*p))
         .map(|(p, e)| (p.to_string(), e))
         .collect();
+    let despawned_count = stale.len();
     for (path, entity) in stale {
         world.despawn(entity);
         map.remove_path(&path);
@@ -532,6 +546,8 @@ fn reconcile(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let mut ordered: Vec<&String> = current.iter().collect();
     ordered.sort_by_key(|p| p.matches('/').count());
     let mut animated: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut patched_count = 0usize;
+    let mut spawned_count = 0usize;
     for path in ordered {
         let Ok(p) = openusd::sdf::path(path) else {
             continue;
@@ -541,6 +557,7 @@ fn reconcile(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
         }
         if let Some(entity) = map.entity(path) {
             registry.patch_prim(stage, &p, world, entity, &[]);
+            patched_count += 1;
         } else {
             let parent = map.entity(parent_path(path)).or(root);
             let mut e = world.spawn(UsdPrimRef { path: path.clone() });
@@ -550,10 +567,18 @@ fn reconcile(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
             let entity = e.id();
             map.insert(path.clone(), entity);
             registry.project_prim(stage, &p, world, entity);
+            spawned_count += 1;
         }
     }
     // Refresh the animated set for the reconciled prim set.
     world.insert_resource(AnimatedPrims(animated));
+    world.insert_resource(ReconcileStats {
+        roots: 1,
+        visited_stage_prims: current.len(),
+        patched_entities: patched_count,
+        spawned_entities: spawned_count,
+        despawned_entities: despawned_count,
+    });
 }
 
 // ─── Bevy plugin + systems ──────────────────────────────────────────
@@ -576,6 +601,7 @@ impl Plugin for LiveStagePlugin {
         app.init_resource::<PrimEntities>()
             .init_resource::<SemanticEntityIndex>()
             .init_resource::<PendingStageChanges>()
+            .init_resource::<ReconcileStats>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
             .init_resource::<SampledTime>()
