@@ -29,7 +29,7 @@ $(info Project: $(PROJECT_NAME) v$(PROJECT_VERSION))
 $(info Display: $(BACKEND) backend)
 $(info ------------------------------------------)
 
-.PHONY: build b compile c run r serve-web build-web test t test-all check check-all harden bench clean docs release help h
+.PHONY: build b compile c run r serve-web build-web test t test-all check check-all check-source-size harden bench clean docs release help h
 
 build:
 	@$(CARGO) build $(APP_TARGET)
@@ -63,6 +63,9 @@ t: test
 test-all:
 	@$(CARGO) test --workspace --all-targets
 
+check-source-size:
+	@./scripts/check_rust_file_size.sh
+
 check:
 	@$(CARGO) check $(APP_TARGET)
 
@@ -72,6 +75,7 @@ check-all:
 harden:
 	@git diff --check
 	@$(CARGO) fmt --all -- --check
+	@./scripts/check_rust_file_size.sh
 	@$(CARGO) check --workspace --no-default-features
 	@$(CARGO) test --workspace --no-default-features
 	@$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings

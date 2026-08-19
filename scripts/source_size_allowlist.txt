@@ -1,0 +1,30 @@
+# Pre-existing >400-line Rust files inventory (M26-R0 baseline)
+# These will be refactored and removed from this allowlist during Milestone 26.
+src/viewport/semantic/mod.rs
+src/viewport/api/bridge.rs
+src/project/semantic_store/sync.rs
+src/viewport/ui_frost/mod.rs
+crates/usd_bevy/src/live.rs
+crates/viewport_streaming/src/data_channel.rs
+src/viewport/semantic/store.rs
+crates/usd_bevy/src/read/geom.rs
+crates/viewport_streaming/src/application.rs
+crates/usd_bevy/src/route/material.rs
+src/project/semantic_store/turso.rs
+crates/usd_bevy/src/mesh.rs
+examples/probe_skel.rs
+crates/viewport_protocol/src/viewport.rs
+crates/viewport_streaming/src/stream_session.rs
+crates/usd_bevy/src/route/reflect.rs
+crates/viewport_streaming/src/encode.rs
+crates/usd_bevy/src/sync.rs
+crates/viewport_protocol/tests/session_wire.rs
+crates/viewport_protocol/src/runtime_client.rs
+src/viewport/app/mod.rs
+crates/usd_bevy/src/read/shade.rs
+crates/usd_bevy/src/authoring.rs
+src/project/ghost_cache.rs
+src/viewport/api/read_model.rs
+src/viewport/physics/mod.rs
+src/project/commit.rs
+src/viewport/scene/ghost.rs
