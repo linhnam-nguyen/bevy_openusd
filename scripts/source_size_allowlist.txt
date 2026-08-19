@@ -1,4 +1,3 @@
 # Pre-existing >400-line Rust files inventory (M26-R0 baseline)
 # These will be refactored and removed from this allowlist during Milestone 26.
 src/viewport/api/bridge.rs
-src/viewport/ui_frost/mod.rs
