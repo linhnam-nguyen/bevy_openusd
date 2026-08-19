@@ -1,16 +1,16 @@
-use std::collections::{HashMap, HashSet};
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::prelude::*;
+use std::collections::{HashMap, HashSet};
 
-use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
-use super::ReconcileStats;
-use super::full::reconcile_full;
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::change::LiveRevision;
 use super::super::index::PrimEntities;
 use super::super::path::{is_descendant_or_self, parent_path};
 use super::super::projection::{collect_stage_subtree_paths, registry_of};
 use super::super::stage::LiveStage;
+use super::ReconcileStats;
+use super::full::reconcile_full;
+use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 
 /// Reconcile specific subtrees against the stage's current prims.
 pub(super) fn reconcile_subtrees(

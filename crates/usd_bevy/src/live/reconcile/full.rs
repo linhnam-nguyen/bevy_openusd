@@ -1,14 +1,14 @@
-use std::collections::HashSet;
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::prelude::*;
+use std::collections::HashSet;
 
-use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
-use super::ReconcileStats;
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::index::PrimEntities;
 use super::super::path::parent_path;
 use super::super::projection::{registry_of, stage_up_axis, traverse_predicate};
 use super::super::stage::LiveStage;
+use super::ReconcileStats;
+use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 
 /// Reconcile the projected entities against the stage's current prims (full stage).
 pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {

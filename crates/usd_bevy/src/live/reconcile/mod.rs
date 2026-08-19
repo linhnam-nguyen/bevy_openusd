@@ -1,16 +1,16 @@
 mod full;
 mod subtree;
 
-use std::collections::HashMap;
 use bevy::prelude::*;
+use std::collections::HashMap;
 
-use full::reconcile_full;
-use subtree::reconcile_subtrees;
 use super::change::StageChangeBatch;
 use super::index::PrimEntities;
 use super::path::{prim_of, property_of, validate_prim_path};
 use super::projection::registry_of;
 use super::stage::LiveStage;
+use full::reconcile_full;
+use subtree::reconcile_subtrees;
 
 /// Internal work counters for the most recent reconcile pass.
 ///
