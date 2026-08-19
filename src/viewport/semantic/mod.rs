@@ -2574,16 +2574,25 @@ def Xform "World"
             let _ = response(app.world().resource::<SemanticWorkingStore>());
 
             // Resync /World/A
-            app.world().get_non_send::<LiveStage>().unwrap().load_payload("/World/A");
+            app.world()
+                .get_non_send::<LiveStage>()
+                .unwrap()
+                .load_payload("/World/A");
             let t0 = std::time::Instant::now();
             app.update();
             let _ = response(app.world().resource::<SemanticWorkingStore>());
             timings_no_server.push(t0.elapsed());
         }
-        let (no_server_mean, no_server_median) = (
-            timings_no_server.iter().sum::<std::time::Duration>() / timings_no_server.len() as u32,
-            timings_no_server[timings_no_server.len() / 2],
-        );
+        timings_no_server.sort();
+        let no_server_count = timings_no_server.len();
+        let no_server_sum: std::time::Duration = timings_no_server.iter().sum();
+        let no_server_mean = no_server_sum / no_server_count as u32;
+        let no_server_median = if no_server_count % 2 == 0 {
+            (timings_no_server[no_server_count / 2 - 1] + timings_no_server[no_server_count / 2])
+                / 2
+        } else {
+            timings_no_server[no_server_count / 2]
+        };
 
         // 2. Measure with RenderServerInterface (Remote Self-Render Mode)
         let mut timings_with_server = Vec::new();
@@ -2612,26 +2621,46 @@ def Xform "World"
             let _ = response(app.world().resource::<SemanticWorkingStore>());
 
             // Resync /World/A
-            app.world().get_non_send::<LiveStage>().unwrap().load_payload("/World/A");
+            app.world()
+                .get_non_send::<LiveStage>()
+                .unwrap()
+                .load_payload("/World/A");
             let t0 = std::time::Instant::now();
             app.update();
             let _ = response(app.world().resource::<SemanticWorkingStore>());
             timings_with_server.push(t0.elapsed());
         }
-        let (with_server_mean, with_server_median) = (
-            timings_with_server.iter().sum::<std::time::Duration>() / timings_with_server.len() as u32,
-            timings_with_server[timings_with_server.len() / 2],
-        );
+        timings_with_server.sort();
+        let with_server_count = timings_with_server.len();
+        let with_server_sum: std::time::Duration = timings_with_server.iter().sum();
+        let with_server_mean = with_server_sum / with_server_count as u32;
+        let with_server_median = if with_server_count % 2 == 0 {
+            (timings_with_server[with_server_count / 2 - 1]
+                + timings_with_server[with_server_count / 2])
+                / 2
+        } else {
+            timings_with_server[with_server_count / 2]
+        };
 
-        println!("\n-----------------------------------------------------------------------------------------");
-        println!("Server Delivery Isolated Overhead Benchmark:");
-        println!("  Local Native (No RenderServerInterface): mean = {:?}, median = {:?}", no_server_mean, no_server_median);
-        println!("  Remote Self-Render (With Delivery):      mean = {:?}, median = {:?}", with_server_mean, with_server_median);
-        println!("  Isolated Delivery Manifest Cost:         mean = {:?}, median = {:?}",
-            with_server_mean.saturating_sub(no_server_mean),
-            with_server_median.saturating_sub(no_server_median)
+        println!(
+            "\n-----------------------------------------------------------------------------------------"
         );
-        println!("-----------------------------------------------------------------------------------------\n");
+        println!("Server Delivery Whole-Frame Benchmark:");
+        println!(
+            "  Local Native Whole-Frame (No Server):    mean = {:?}, median = {:?}",
+            no_server_mean, no_server_median
+        );
+        println!(
+            "  Server-Enabled Whole-Frame (Delivery):   mean = {:?}, median = {:?}",
+            with_server_mean, with_server_median
+        );
+        println!(
+            "  Estimated Server-Delivery Overhead:      mean = {:?}",
+            with_server_mean.saturating_sub(no_server_mean)
+        );
+        println!(
+            "-----------------------------------------------------------------------------------------\n"
+        );
         Ok(())
     }
 }
