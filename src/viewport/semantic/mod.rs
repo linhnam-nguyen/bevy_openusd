@@ -616,6 +616,7 @@ fn changed_info_update(
 mod tests {
     use anyhow::Result;
     use bevy::prelude::World;
+    use bevy::prelude::*;
     use openusd::usd::Stage;
     use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
     use usd_model::{CanonicalValue, EntityKey, HashDigest, SemanticSnapshot, SnapshotSource};
@@ -946,15 +947,17 @@ mod tests {
             .expect("synthetic wide stage opens");
         let live = LiveStage::new(stage);
 
-        let mut world = World::new();
-        world.insert_resource(SemanticWorkingStore::default());
-        world.insert_resource(usd_bevy::PendingStageChanges::default());
-        world.insert_resource(SemanticSyncState::default());
-        world.insert_non_send(live);
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::LiveStagePlugin);
+        app.insert_resource(SemanticWorkingStore::default());
+        app.insert_resource(SemanticSyncState::default());
+        app.world_mut().insert_non_send(live);
+        app.add_systems(PostUpdate, synchronize_live_stage);
 
-        // Initial synchronization -> Full snapshot load (34 prims)
-        synchronize_live_stage(&mut world);
-        let resp = response(world.resource::<SemanticWorkingStore>());
+        // Initial frame: LiveStagePlugin performs initial project_stage,
+        // synchronize_live_stage performs initial full snapshot load (34 prims)
+        app.update();
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
         let initial_count = match resp {
             SemanticResponse::SnapshotLoaded { entity_count, .. } => entity_count,
             other => panic!("expected initial SnapshotLoaded, got {other:?}"),
@@ -962,14 +965,16 @@ mod tests {
         assert_eq!(initial_count, 34);
 
         // Enqueue resync on /World/B (11 prims affected)
-        let live = world.get_non_send::<LiveStage>().unwrap();
-        live.load_payload("/World/B");
-        let batch = live.drain_change_batch().expect("change batch drained");
-        world.resource_mut::<usd_bevy::PendingStageChanges>().batch = Some(batch);
+        app.world()
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .load_payload("/World/B");
 
-        // Re-synchronize: in baseline, resync forces ReplaceSnapshot (not Delta)
-        synchronize_live_stage(&mut world);
-        let resp = response(world.resource::<SemanticWorkingStore>());
+        // Next frame: LiveStagePlugin drains the change batch into PendingStageChanges,
+        // and synchronize_live_stage consumes it through normal Bevy scheduling.
+        app.update();
+
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
         match resp {
             SemanticResponse::SnapshotLoaded { entity_count, .. } => {
                 // Baseline extracts all 34 prims from stage and replaces all rows in Turso
@@ -984,7 +989,7 @@ mod tests {
         }
 
         // Query Turso to confirm rows are present
-        let store = world.resource::<SemanticWorkingStore>();
+        let store = app.world().resource::<SemanticWorkingStore>();
         assert!(store.submit_query("verify-all-34", SemanticQuery::default()));
         let SemanticResponse::QueryResult { result, .. } = response(store) else {
             panic!("expected query result")

@@ -227,16 +227,12 @@ pub struct PrimEntities {
 /// representation. It is replaced by [`drain_stage_changes_system`] before
 /// each projection pass and remains readable by later consumers in the same
 /// schedule.
-#[derive(Resource, Default, Clone, Debug, Eq, PartialEq)]
+#[derive(Resource, Default)]
 pub struct PendingStageChanges {
-    pub batch: Option<StageChangeBatch>,
+    batch: Option<StageChangeBatch>,
 }
 
 impl PendingStageChanges {
-    pub fn new(batch: Option<StageChangeBatch>) -> Self {
-        Self { batch }
-    }
-
     pub fn batch(&self) -> Option<&StageChangeBatch> {
         self.batch.as_ref()
     }
