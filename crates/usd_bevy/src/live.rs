@@ -775,6 +775,9 @@ fn reconcile_subtrees(
 
     let despawned_count = removed.len();
     for (path, entity) in removed {
+        if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
+            semantic_idx.remove_entity(entity);
+        }
         world.despawn(entity);
         map.remove_path(&path);
     }
@@ -868,6 +871,9 @@ fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
         .collect();
     let despawned_count = stale.len();
     for (path, entity) in stale {
+        if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
+            semantic_idx.remove_entity(entity);
+        }
         world.despawn(entity);
         map.remove_path(&path);
     }
@@ -1445,6 +1451,125 @@ def Xform "World"
         assert_eq!(stats.patched_entities, 3);
         assert_eq!(stats.spawned_entities, 0);
         assert_eq!(stats.despawned_entities, 0);
+    }
+
+    #[test]
+    fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
+        let usda = r#"#usda 1.0
+(
+    startTimeCode = 0
+    endTimeCode = 10
+)
+
+def Xform "World"
+{
+    def Xform "AnimOutside"
+    {
+        double3 xformOp:translate.timeSamples = {
+            0: (0, 0, 0),
+            10: (10, 0, 0),
+        }
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "A"
+    {
+        def Xform "AnimInsideOld"
+        {
+            double3 xformOp:translate.timeSamples = {
+                0: (0, 0, 0),
+                10: (0, 5, 0),
+            }
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+}
+"#;
+
+        let stage = crate::snippet::UsdSnippet::new(usda)
+            .open_stage()
+            .expect("animated stage opens");
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let anim = app.world().resource::<AnimatedPrims>();
+        assert!(anim.0.contains("/World/AnimOutside"));
+        assert!(anim.0.contains("/World/A/AnimInsideOld"));
+
+        // Remove /World/A/AnimInsideOld and define /World/A/StaticNew
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.remove_prim("/World/A/AnimInsideOld").unwrap();
+        live.stage.define_prim("/World/A/StaticNew").unwrap();
+
+        let _ = live.drain_change_batch();
+        live.enqueue_resync("/World/A");
+        app.update();
+
+        let anim_after = app.world().resource::<AnimatedPrims>();
+        // Unaffected outside animated path is preserved
+        assert!(anim_after.0.contains("/World/AnimOutside"));
+        // Old subtree animated path was cleaned
+        assert!(!anim_after.0.contains("/World/A/AnimInsideOld"));
+        // Static new path is not animated
+        assert!(!anim_after.0.contains("/World/A/StaticNew"));
+    }
+
+    #[test]
+    fn test_reconcile_subtrees_maintains_semantic_entity_index() {
+        use usd_model::EntityKey;
+
+        let stage = Stage::builder()
+            .in_memory("semantic-index-subtree.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+        stage.define_prim("/World/A/Child").unwrap();
+        stage.define_prim("/World/B").unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let world_b_entity = app
+            .world()
+            .resource::<PrimEntities>()
+            .entity("/World/B")
+            .unwrap();
+        let child_entity = app
+            .world()
+            .resource::<PrimEntities>()
+            .entity("/World/A/Child")
+            .unwrap();
+
+        let key_b = EntityKey::new("entity_b");
+        let key_child = EntityKey::new("entity_child");
+
+        // Register semantic keys
+        {
+            let mut semantic_index = app.world_mut().resource_mut::<SemanticEntityIndex>();
+            semantic_index.insert(key_b.clone(), world_b_entity);
+            semantic_index.insert(key_child.clone(), child_entity);
+        }
+
+        // Remove /World/A/Child and enqueue resync on /World/A
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.remove_prim("/World/A/Child").unwrap();
+        let _ = live.drain_change_batch();
+        live.enqueue_resync("/World/A");
+
+        app.update();
+
+        let semantic_index = app.world().resource::<SemanticEntityIndex>();
+        // Sibling outside subtree remains mapped
+        assert_eq!(semantic_index.entity(&key_b), Some(world_b_entity));
+        assert_eq!(semantic_index.key(world_b_entity), Some(&key_b));
+
+        // Despawned entity mapping is completely cleaned
+        assert!(semantic_index.entity(&key_child).is_none());
+        assert!(semantic_index.key(child_entity).is_none());
     }
 
     #[test]
