@@ -6,7 +6,6 @@ crates/viewport_streaming/src/data_channel.rs
 crates/usd_bevy/src/read/geom.rs
 crates/viewport_streaming/src/application.rs
 crates/usd_bevy/src/route/material.rs
-src/project/semantic_store/turso.rs
 crates/usd_bevy/src/mesh.rs
 examples/probe_skel.rs
 crates/viewport_protocol/src/viewport.rs
