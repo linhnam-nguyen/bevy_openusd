@@ -851,9 +851,14 @@ fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let stage = &live.stage;
     let registry = registry_of(world);
     let mut current: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let _ = stage.traverse(traverse_predicate(), |p: &openusd::sdf::Path| {
+    if let Err(error) = stage.traverse(traverse_predicate(), |p: &openusd::sdf::Path| {
         current.insert(p.as_str().to_string());
-    });
+    }) {
+        bevy::log::error!(
+            "[reconcile_full] stage traversal failed: {error:#}; aborting full reconcile without mutating entity mappings"
+        );
+        return;
+    }
 
     // Despawn entities for prims no longer present (never the `/` stage root).
     let stale: Vec<(String, Entity)> = map
@@ -1410,6 +1415,36 @@ def Xform "World"
         let prim_entities = app.world().resource::<PrimEntities>();
         assert!(prim_entities.entity("/").is_some());
         assert!(prim_entities.entity("/World/NewPrim").is_some());
+    }
+
+    #[test]
+    fn test_reconcile_full_resync_root_path_reconciles_entire_stage() {
+        let stage = Stage::builder()
+            .in_memory("full-reconcile-root.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+        stage.define_prim("/World/B").unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        assert_eq!(app.world().resource::<PrimEntities>().len(), 4); // /, /World, /World/A, /World/B
+
+        // Enqueue resync on "/" which directly invokes reconcile_full
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.enqueue_resync("/");
+        app.update();
+
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.roots, 1);
+        assert_eq!(stats.visited_stage_prims, 3); // /World, /World/A, /World/B
+        assert_eq!(stats.patched_entities, 3);
+        assert_eq!(stats.spawned_entities, 0);
+        assert_eq!(stats.despawned_entities, 0);
     }
 
     #[test]
