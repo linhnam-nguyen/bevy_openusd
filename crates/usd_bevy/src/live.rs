@@ -501,13 +501,13 @@ fn parent_path(path: &str) -> &str {
 }
 
 /// The prim path owning a (possibly property) path: `/Foo.bar` → `/Foo`.
-fn prim_of(path: &str) -> &str {
+pub fn prim_of(path: &str) -> &str {
     path.split('.').next().unwrap_or(path)
 }
 
 /// The property part of a (possibly property) path: `/Foo.xformOp:x` →
 /// `Some("xformOp:x")`; a bare prim path → `None`.
-fn property_of(path: &str) -> Option<&str> {
+pub fn property_of(path: &str) -> Option<&str> {
     path.split_once('.').map(|(_, prop)| prop)
 }
 

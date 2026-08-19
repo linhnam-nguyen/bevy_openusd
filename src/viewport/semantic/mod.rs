@@ -6,7 +6,7 @@
 mod query;
 mod store;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, mpsc};
 
 use bevy::prelude::{Resource, World};
@@ -420,16 +420,41 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 if batch.revision <= previous_revision {
                     return;
                 }
-                if batch
-                    .changes
-                    .iter()
-                    .any(|change| !change.resynced.is_empty())
-                {
-                    match extractor.extract(&live.stage, source) {
-                        Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
-                        Err(error) => {
-                            bevy::log::error!("[semantic-sync] resync rebuild failed: {error:#}");
-                            return;
+                if batch.has_resync() {
+                    let roots = batch.resync_roots();
+                    if roots.contains(&"/".to_string()) || roots.is_empty() {
+                        match extractor.extract(&live.stage, source) {
+                            Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                            Err(error) => {
+                                bevy::log::error!(
+                                    "[semantic-sync] resync full rebuild failed: {error:#}"
+                                );
+                                return;
+                            }
+                        }
+                    } else {
+                        match resync_subtree_update(
+                            &live.stage,
+                            &extractor,
+                            previous_snapshot.clone(),
+                            &batch,
+                            source.clone(),
+                        ) {
+                            Ok(update) => SemanticSyncAction::Delta(update),
+                            Err(error) => {
+                                bevy::log::warn!(
+                                    "[semantic-sync] subtree delta extraction failed: {error:#}; falling back to full snapshot rebuild"
+                                );
+                                match extractor.extract(&live.stage, source) {
+                                    Ok(snapshot) => SemanticSyncAction::Replace(snapshot),
+                                    Err(err) => {
+                                        bevy::log::error!(
+                                            "[semantic-sync] full snapshot fallback failed: {err:#}"
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
@@ -560,6 +585,119 @@ enum SemanticSyncAction {
 struct SemanticDelta {
     request: SemanticIncrementalUpdate,
     snapshot: SemanticSnapshot,
+}
+
+/// Derive a scoped semantic delta for subtree resync notices.
+fn resync_subtree_update(
+    stage: &Stage,
+    extractor: &SemanticExtractor,
+    previous_snapshot: SemanticSnapshot,
+    batch: &usd_bevy::StageChangeBatch,
+    source: SnapshotSource,
+) -> anyhow::Result<SemanticDelta> {
+    let roots = batch.resync_roots();
+    if roots.is_empty() || roots.contains(&"/".to_string()) {
+        anyhow::bail!("Stage root resync cannot be processed as a subtree delta");
+    }
+
+    // 1. Collect old affected entities from previous snapshot BEFORE mutation
+    let mut old_affected_keys = HashSet::new();
+    let mut old_affected_paths = HashSet::new();
+    for (key, entity) in &previous_snapshot.entities {
+        if roots
+            .iter()
+            .any(|root| usd_bevy::is_descendant_or_self(root, &entity.prim_path))
+        {
+            old_affected_keys.insert(key.clone());
+            old_affected_paths.insert(entity.prim_path.clone());
+        }
+    }
+
+    // 2. Collect current stage subtree prim paths for all minimal roots
+    let mut current_prim_paths = HashSet::new();
+    for root in &roots {
+        let paths = usd_bevy::collect_stage_subtree_paths(stage, root)?;
+        current_prim_paths.extend(paths);
+    }
+
+    // 3. Extract current affected entities
+    let mut current_entities = HashMap::new();
+    let mut sorted_current_paths: Vec<_> = current_prim_paths.into_iter().collect();
+    sorted_current_paths.sort();
+    for path_str in sorted_current_paths {
+        let usd_path = openusd::sdf::path(&path_str)?;
+        let entity = extractor.extract_entity(stage, &usd_path)?;
+        current_entities.insert(entity.key.clone(), entity);
+    }
+
+    // 4. Merge unshaded changed-info notices outside resync roots
+    let unshaded = batch.unshaded_changed_info();
+    let mut unshaded_prim_paths = HashSet::new();
+    for info_path in unshaded {
+        let prim = usd_bevy::prim_of(&info_path);
+        let norm = usd_bevy::normalize_prim_path(prim);
+        if !roots
+            .iter()
+            .any(|root| usd_bevy::is_descendant_or_self(root, &norm))
+        {
+            unshaded_prim_paths.insert(norm);
+        }
+    }
+    let mut sorted_unshaded: Vec<_> = unshaded_prim_paths.into_iter().collect();
+    sorted_unshaded.sort();
+    for path_str in sorted_unshaded {
+        if let Ok(usd_path) = openusd::sdf::path(&path_str) {
+            if let Ok(entity) = extractor.extract_entity(stage, &usd_path) {
+                old_affected_keys.insert(entity.key.clone());
+                old_affected_paths.insert(entity.prim_path.clone());
+                current_entities.insert(entity.key.clone(), entity);
+            }
+        }
+    }
+
+    // 5. Remove old affected entries from working map & validate against identity collisions
+    let mut working_entities = previous_snapshot.entities;
+    for key in &old_affected_keys {
+        working_entities.remove(key);
+    }
+
+    for (key, entity) in &current_entities {
+        if let Some(existing) = working_entities.get(key) {
+            anyhow::bail!(
+                "EntityKey collision: extracted entity at '{}' collided with unaffected entity at '{}' (key: {:?})",
+                entity.prim_path,
+                existing.prim_path,
+                key
+            );
+        }
+    }
+
+    // 6. Insert upserts and compute removed_paths
+    let mut upserts = Vec::new();
+    let mut current_paths_set = HashSet::new();
+    for (key, entity) in current_entities {
+        current_paths_set.insert(entity.prim_path.clone());
+        working_entities.insert(key, entity.clone());
+        upserts.push(entity);
+    }
+    upserts.sort_by(|a, b| a.prim_path.cmp(&b.prim_path));
+
+    let mut removed_paths: Vec<String> = old_affected_paths
+        .into_iter()
+        .filter(|path| !current_paths_set.contains(path))
+        .collect();
+    removed_paths.sort();
+
+    // 7. Rebuild authoritative snapshot
+    let snapshot = extractor.snapshot_from_entities(source, working_entities);
+    let request = SemanticIncrementalUpdate {
+        snapshot_id: snapshot.snapshot_id.clone(),
+        source: snapshot.source.clone(),
+        config_hash: snapshot.config_hash,
+        upserts,
+        removed_paths,
+    };
+    Ok(SemanticDelta { request, snapshot })
 }
 
 fn changed_info_update(
@@ -976,25 +1114,130 @@ mod tests {
 
         let resp = response(app.world().resource::<SemanticWorkingStore>());
         match resp {
-            SemanticResponse::SnapshotLoaded { entity_count, .. } => {
-                // Baseline extracts all 34 prims from stage and replaces all rows in Turso
-                assert_eq!(entity_count, 34);
+            SemanticResponse::DeltaApplied {
+                upserted, removed, ..
+            } => {
+                // Subtree resync extracts and upserts only the 11 prims under /World/B
+                assert_eq!(upserted, 11);
+                assert_eq!(removed, 0);
             }
-            SemanticResponse::DeltaApplied { .. } => {
-                panic!(
-                    "unexpected DeltaApplied in baseline resync; baseline must execute ReplaceSnapshot"
-                )
-            }
-            other => panic!("unexpected response: {other:?}"),
+            other => panic!("expected DeltaApplied for subtree resync, got {other:?}"),
         }
 
-        // Query Turso to confirm rows are present
+        // Query Turso to confirm all 34 rows remain present in working store
         let store = app.world().resource::<SemanticWorkingStore>();
         assert!(store.submit_query("verify-all-34", SemanticQuery::default()));
         let SemanticResponse::QueryResult { result, .. } = response(store) else {
             panic!("expected query result")
         };
         assert_eq!(result.total, 34);
+        Ok(())
+    }
+
+    #[test]
+    fn resync_subtree_spawns_and_despawns_semantic_entities() -> Result<()> {
+        let stage = Stage::builder()
+            .in_memory("semantic-subtree-spawn-despawn.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+        stage.define_prim("/World/A/Child1").unwrap();
+        stage.define_prim("/World/A/Child2").unwrap();
+        stage.define_prim("/World/B").unwrap();
+
+        let live = LiveStage::new(stage);
+
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::LiveStagePlugin);
+        app.insert_resource(SemanticWorkingStore::default());
+        app.insert_resource(SemanticSyncState::default());
+        app.world_mut().insert_non_send(live);
+        app.add_systems(PostUpdate, synchronize_live_stage);
+
+        app.update();
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(
+            resp,
+            SemanticResponse::SnapshotLoaded {
+                entity_count: 5,
+                ..
+            }
+        ));
+
+        // Remove Child2, add Child3
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.remove_prim("/World/A/Child2").unwrap();
+        live.stage.define_prim("/World/A/Child3").unwrap();
+        let _ = live.drain_change_batch();
+        live.load_payload("/World/A");
+
+        app.update();
+
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        match resp {
+            SemanticResponse::DeltaApplied {
+                upserted, removed, ..
+            } => {
+                // /World/A, /World/A/Child1, /World/A/Child3 = 3 upserts; /World/A/Child2 = 1 removal
+                assert_eq!(upserted, 3);
+                assert_eq!(removed, 1);
+            }
+            other => panic!("expected DeltaApplied, got {other:?}"),
+        }
+
+        // Query Turso: total 5 rows (/World, /World/A, /World/A/Child1, /World/A/Child3, /World/B)
+        let store = app.world().resource::<SemanticWorkingStore>();
+        assert!(store.submit_query("verify-count-5", SemanticQuery::default()));
+        let SemanticResponse::QueryResult { result, .. } = response(store) else {
+            panic!("expected query result")
+        };
+        assert_eq!(result.total, 5);
+        Ok(())
+    }
+
+    #[test]
+    fn resync_stage_root_triggers_full_snapshot_replace() -> Result<()> {
+        let stage = Stage::builder()
+            .in_memory("semantic-root-resync.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+        stage.define_prim("/World/B").unwrap();
+
+        let live = LiveStage::new(stage);
+
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::LiveStagePlugin);
+        app.insert_resource(SemanticWorkingStore::default());
+        app.insert_resource(SemanticSyncState::default());
+        app.world_mut().insert_non_send(live);
+        app.add_systems(PostUpdate, synchronize_live_stage);
+
+        app.update();
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(
+            resp,
+            SemanticResponse::SnapshotLoaded {
+                entity_count: 3,
+                ..
+            }
+        ));
+
+        // Resync root "/"
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.load_payload("/");
+
+        app.update();
+
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        match resp {
+            SemanticResponse::SnapshotLoaded { entity_count, .. } => {
+                assert_eq!(entity_count, 3);
+            }
+            other => panic!("expected SnapshotLoaded for root resync, got {other:?}"),
+        }
         Ok(())
     }
 }
