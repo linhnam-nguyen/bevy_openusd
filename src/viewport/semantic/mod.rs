@@ -19,7 +19,7 @@ use usd_model::{
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use crate::project::blob_store::FilesystemBlobStore;
-use crate::project::ghost_cache::attach_render_blobs;
+use crate::project::ghost_cache::{attach_render_blobs, attach_render_blobs_for_entities};
 use crate::project::recovery::RecoverySettings;
 use crate::project::runtime_delivery::{build_runtime_delivery, into_delivery_parts};
 use crate::viewport::api::RenderServerInterface;
@@ -569,10 +569,12 @@ fn attach_render_blobs_to_action(world: &mut World, action: &mut SemanticSyncAct
     match action {
         SemanticSyncAction::Replace(snapshot) => attach_render_blobs(world, snapshot),
         SemanticSyncAction::Delta(update) => {
-            attach_render_blobs(world, &mut update.snapshot);
-            for upsert in &mut update.request.upserts {
-                if let Some(enriched) = update.snapshot.entities.get(&upsert.key) {
-                    *upsert = enriched.clone();
+            // Enrich only affected upserted semantic entities
+            attach_render_blobs_for_entities(world, &mut update.request.upserts);
+            // Copy enriched upserts back into update.snapshot.entities
+            for upsert in &update.request.upserts {
+                if let Some(entity) = update.snapshot.entities.get_mut(&upsert.key) {
+                    entity.geometry = upsert.geometry.clone();
                 }
             }
         }
@@ -1742,6 +1744,119 @@ def Xform "World"
             source,
         );
         assert!(valid_result.is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn test_regression_resync_subtree_render_blob_enrichment_scoped_to_affected_entities()
+    -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let usda = String::from(
+            r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Mesh "MeshA"
+        {
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+        }
+    }
+    def Xform "B"
+    {
+        def Mesh "MeshB"
+        {
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+        }
+    }
+}
+"#,
+        );
+
+        let stage = usd_bevy::UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("synthetic stage opens");
+        let live = LiveStage::new(stage);
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_plugins(bevy::asset::AssetPlugin::default())
+            .init_asset::<Mesh>()
+            .init_asset::<bevy::image::Image>()
+            .init_asset::<StandardMaterial>()
+            .add_plugins(usd_bevy::UsdPlugin)
+            .add_plugins(usd_bevy::LiveStagePlugin);
+        app.insert_resource(crate::project::recovery::RecoverySettings {
+            project_root: temp_dir.path().to_path_buf(),
+        });
+        app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+        app.insert_resource(SemanticWorkingStore::default());
+        app.insert_resource(SemanticSyncState::default());
+        app.world_mut().insert_non_send(live);
+        app.add_systems(PostUpdate, synchronize_live_stage);
+
+        // Frame 1: Full replace load
+        app.update();
+
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(resp, SemanticResponse::SnapshotLoaded { .. }));
+
+        // Get initial blob reference on /World/B/MeshB
+        let sync_state = app.world().resource::<SemanticSyncState>();
+        let snapshot = sync_state.snapshot.as_ref().expect("snapshot present");
+        let b_key = EntityKey::from("/World/B/MeshB");
+        let b_blob_before = snapshot
+            .entities
+            .get(&b_key)
+            .and_then(|e| e.geometry.as_ref())
+            .and_then(|g| g.render_blob.clone())
+            .expect("/World/B/MeshB has render_blob");
+
+        // Reset cache counters to 0 to measure only the subtree resync delta work
+        {
+            let mut cache = app
+                .world_mut()
+                .resource_mut::<crate::project::ghost_cache::HistoricalGeometryCache>();
+            *cache = crate::project::ghost_cache::HistoricalGeometryCache::default();
+        }
+
+        // Resync /World/A (affected prims: /World/A and /World/A/MeshA)
+        app.world()
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .load_payload("/World/A");
+
+        // Frame 2: Subtree delta update
+        app.update();
+
+        let resp = response(app.world().resource::<SemanticWorkingStore>());
+        assert!(matches!(resp, SemanticResponse::DeltaApplied { .. }));
+
+        // Verify HistoricalGeometryCache: only /World/A affected entities and mesh were scanned!
+        let cache = *app
+            .world()
+            .resource::<crate::project::ghost_cache::HistoricalGeometryCache>();
+        assert_eq!(cache.snapshots_seen, 1);
+        // Scanned ONLY the affected /World/A entities (2: /World/A and /World/A/MeshA), NOT the whole stage (5 prims)!
+        assert_eq!(cache.semantic_entities_scanned, 2);
+        // Scanned ONLY the affected mesh handle for /World/A/MeshA (1 mesh), NOT all meshes (2 meshes)!
+        assert_eq!(cache.mesh_handles_scanned, 1);
+
+        // Verify unaffected /World/B/MeshB render blob identity is unchanged
+        let sync_state = app.world().resource::<SemanticSyncState>();
+        let snapshot = sync_state.snapshot.as_ref().expect("snapshot present");
+        let b_blob_after = snapshot
+            .entities
+            .get(&b_key)
+            .and_then(|e| e.geometry.as_ref())
+            .and_then(|g| g.render_blob.clone())
+            .expect("/World/B/MeshB has render_blob");
+
+        assert_eq!(b_blob_before, b_blob_after);
         Ok(())
     }
 }

@@ -663,7 +663,7 @@ fn unix_time_ms() -> i64 {
 mod tests {
     use super::{SCHEMA_VERSION, SemanticDatabase, SemanticFilter, SemanticQuery};
     use openusd::sdf::Value;
-    use usd_model::{EntityKey, SnapshotSource};
+    use usd_model::SnapshotSource;
     use usd_semantic::{SemanticConfig, SemanticExtractor};
 
     #[test]
