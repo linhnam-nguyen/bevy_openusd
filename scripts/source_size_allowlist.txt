@@ -5,7 +5,6 @@ src/project/semantic_store/sync.rs
 src/viewport/ui_frost/mod.rs
 crates/usd_bevy/src/live.rs
 crates/viewport_streaming/src/data_channel.rs
-src/viewport/semantic/store.rs
 crates/usd_bevy/src/read/geom.rs
 crates/viewport_streaming/src/application.rs
 crates/usd_bevy/src/route/material.rs
