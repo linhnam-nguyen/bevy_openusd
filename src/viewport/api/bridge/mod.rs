@@ -1,0 +1,27 @@
+//! In-process implementation of the public viewport bridge contract.
+//!
+//! This module is decomposed as follows:
+//! - [`state`]     — ECS resources and system-set enum
+//! - [`plugin`]    — `ViewportBridgePlugin` registration and lifecycle systems
+//! - [`scene_query`] — scene-query dispatch and semantic-search publishing
+//! - [`commands`]  — `apply_viewport_commands` system
+//! - [`mutations`] — `apply_runtime_mutations` helper
+//! - [`tree`]      — `apply_tree_commands` and subtree-geometry helpers
+//! - [`helpers`]   — read-model builders and event emitters
+//! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
+
+mod commands;
+mod convert;
+mod editor_commands;
+mod helpers;
+mod mutations;
+mod plugin;
+mod scene_query;
+mod state;
+mod tree;
+
+#[cfg(test)]
+mod tests;
+
+pub(crate) use plugin::ViewportBridgePlugin;
+pub(crate) use state::ViewportBridgeSet;
