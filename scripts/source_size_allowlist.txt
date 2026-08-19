@@ -14,9 +14,5 @@ crates/viewport_streaming/src/encode.rs
 crates/usd_bevy/src/sync.rs
 crates/viewport_protocol/tests/session_wire.rs
 crates/viewport_protocol/src/runtime_client.rs
-src/viewport/app/mod.rs
 crates/usd_bevy/src/read/shade.rs
 crates/usd_bevy/src/authoring.rs
-src/viewport/api/read_model.rs
-src/viewport/physics/mod.rs
-src/viewport/scene/ghost.rs
