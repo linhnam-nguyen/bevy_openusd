@@ -84,7 +84,8 @@ pub fn validate_prim_path(path: &str) -> anyhow::Result<String> {
     if trimmed.is_empty() || trimmed == "/" {
         return Ok("/".to_string());
     }
-    if trimmed.contains("//") || trimmed.contains("..") || trimmed.split('/').any(|seg| seg == ".") {
+    if trimmed.contains("//") || trimmed.contains("..") || trimmed.split('/').any(|seg| seg == ".")
+    {
         anyhow::bail!("path '{path}' contains unsafe relative or empty segments");
     }
     let normalized = normalize_prim_path(path);
@@ -590,6 +591,12 @@ fn registry_of(world: &World) -> SchemaRegistry {
 /// empty world — call once on load.
 pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let stage = &live.stage;
+    let registry = registry_of(world);
+    // The stage-root entity (the pseudo-root `/`) carries the up-axis rotation;
+    // every top-level prim hangs off it, so Bevy's transform propagation
+    // composes prim-local transforms into correct world transforms and the
+    // whole scene stands upright on the grid. It is not a real prim, so no
+    // routes run on it (they would clobber the up-axis rotation).
     let root = world
         .spawn((
             UsdPrimRef {
@@ -601,30 +608,35 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         .id();
     map.insert("/", root);
 
-    let registry = registry_of(world);
-    let mut ordered: Vec<String> = Vec::new();
-    let _ = stage.traverse(traverse_predicate(), |p: &openusd::sdf::Path| {
-        ordered.push(p.as_str().to_string());
-    });
-    ordered.sort_by_key(|p| p.matches('/').count());
-
-    let mut animated = std::collections::HashSet::new();
-    for path in ordered {
-        let Ok(p) = openusd::sdf::path(&path) else {
-            continue;
-        };
-        if prim_is_animated(stage, &p) {
-            animated.insert(path.clone());
+    let mut prim_count = 0usize;
+    let mut animated: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
+        // Traversal is pre-order, so the parent prim's entity already exists.
+        let parent = map.entity(parent_path(path.as_str())).unwrap_or(root);
+        let entity = world
+            .spawn((
+                UsdPrimRef {
+                    path: path.as_str().to_string(),
+                },
+                ChildOf(parent),
+            ))
+            .id();
+        map.insert(path.as_str().to_string(), entity);
+        prim_count += 1;
+        if prim_is_animated(stage, path) {
+            animated.insert(path.as_str().to_string());
         }
-        let parent = map.entity(parent_path(&path)).unwrap_or(root);
-        let mut e = world.spawn(UsdPrimRef { path: path.clone() });
-        e.insert(ChildOf(parent));
-        let entity = e.id();
-        map.insert(path.clone(), entity);
-        registry.project_prim(stage, &p, world, entity);
-    }
-    if let Some(mut animated_res) = world.get_resource_mut::<AnimatedPrims>() {
-        animated_res.0 = animated;
+        // Every prim→component mapping goes through the registry.
+        registry.project_prim(stage, path, world, entity);
+    });
+    bevy::log::info!(
+        session = live.session_id(),
+        prims = prim_count,
+        animated = animated.len(),
+        "projected USD stage"
+    );
+    if let Some(mut a) = world.get_resource_mut::<AnimatedPrims>() {
+        a.0 = animated;
     }
 }
 
@@ -658,11 +670,10 @@ fn apply_sparse_changed_info(
     let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
     for prop_path in changed_info {
         let prim = prim_of(prop_path);
-        let prop = property_of(prop_path).unwrap_or("");
-        per_prim
-            .entry(prim.to_string())
-            .or_default()
-            .push(prop.to_string());
+        let entry = per_prim.entry(prim.to_string()).or_default();
+        if let Some(prop) = property_of(prop_path) {
+            entry.push(prop.to_string());
+        }
     }
 
     for (prim, props) in per_prim {
@@ -691,40 +702,42 @@ pub fn apply_change_batch(
         return;
     }
     if batch.has_resync() {
-        let roots = batch.resync_roots();
-        if roots.contains(&"/".to_string()) || roots.is_empty() {
-            bevy::log::warn!(
-                target: "usd_bevy",
-                resync_fallback_reason = "root_is_stage_root_or_empty",
-                root_count = roots.len(),
-                live_revision = batch.revision.0,
-                "[subtree-reconcile] stage root '/' or empty roots in batch; falling back to full reconcile"
-            );
+        // Validate RAW resynced paths from batch.changes BEFORE calling batch.resync_roots()
+        let all_resynced: Vec<&str> = batch
+            .changes
+            .iter()
+            .flat_map(|c| c.resynced.iter().map(String::as_str))
+            .collect();
+        let mut unnormalizable = false;
+        for r in &all_resynced {
+            if let Err(err) = validate_prim_path(r) {
+                bevy::log::warn!(
+                    target: "usd_bevy",
+                    resync_fallback_reason = "unnormalizable_root",
+                    root_count = all_resynced.len(),
+                    live_revision = batch.revision.0,
+                    "[subtree-reconcile] root '{r}' cannot represent a safe OpenUSD prim path: {err:#}; falling back to full reconcile"
+                );
+                unnormalizable = true;
+                break;
+            }
+        }
+
+        if unnormalizable {
             reconcile_full(world, live, map);
         } else {
-            // Explicit resync-root validation after normalization
-            let mut validated_roots = Vec::with_capacity(roots.len());
-            let mut unnormalizable = false;
-            for r in &roots {
-                match validate_prim_path(r) {
-                    Ok(val) => validated_roots.push(val),
-                    Err(err) => {
-                        bevy::log::warn!(
-                            target: "usd_bevy",
-                            resync_fallback_reason = "unnormalizable_root",
-                            root_count = roots.len(),
-                            live_revision = batch.revision.0,
-                            "[subtree-reconcile] root '{r}' cannot represent a safe OpenUSD prim path: {err:#}; falling back to full reconcile"
-                        );
-                        unnormalizable = true;
-                        break;
-                    }
-                }
-            }
-            if unnormalizable {
+            let roots = batch.resync_roots();
+            if roots.contains(&"/".to_string()) || roots.is_empty() {
+                bevy::log::warn!(
+                    target: "usd_bevy",
+                    resync_fallback_reason = "root_is_stage_root_or_empty",
+                    root_count = roots.len(),
+                    live_revision = batch.revision.0,
+                    "[subtree-reconcile] stage root '/' or empty roots in batch; falling back to full reconcile"
+                );
                 reconcile_full(world, live, map);
             } else {
-                reconcile_subtrees(world, live, map, &validated_roots, batch.revision);
+                reconcile_subtrees(world, live, map, &roots, batch.revision);
             }
         }
         let unshaded = batch.unshaded_changed_info();
@@ -1881,6 +1894,108 @@ def Xform "World"
         assert!(paths.contains(&"/World/Visible".to_string()));
         // Abstract classes should be excluded by the projection predicate
         assert!(!paths.iter().any(|p| p.contains("_AbstractBase")));
+    }
+
+    #[test]
+    fn test_reconcile_invalid_raw_resync_root_chooses_full_reconcile() {
+        let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
+        for group in ["A", "B", "C"] {
+            usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
+            for i in 0..10 {
+                usda.push_str(&format!(
+                    "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
+                ));
+            }
+            usda.push_str("    }\n");
+        }
+        usda.push_str("}\n");
+
+        let stage = UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("synthetic wide stage opens");
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+
+        // Initial frame: 35 entities projected
+        app.update();
+        assert_eq!(app.world().resource::<PrimEntities>().len(), 35);
+
+        // Enqueue invalid / unnormalizable resync root
+        app.world()
+            .get_non_send::<LiveStage>()
+            .expect("live stage exists")
+            .enqueue_resync("/World/B/Invalid..Path///");
+        app.update();
+
+        // Full reconcile visits all 34 stage prims, not just the 11 in subtree /World/B
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.visited_stage_prims, 34);
+        assert_eq!(stats.patched_entities, 34);
+        assert_eq!(app.world().resource::<PrimEntities>().len(), 35);
+    }
+
+    #[test]
+    fn test_bare_prim_changed_info_repatches_transform() {
+        let usda = r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A"
+    {
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+"#;
+        let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
+        let live = LiveStage::new(stage);
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(live);
+        app.update();
+
+        let entity = app
+            .world()
+            .resource::<PrimEntities>()
+            .entity("/World/A")
+            .unwrap();
+        let initial_transform = *app.world().get::<Transform>(entity).unwrap();
+        assert_eq!(initial_transform.translation, Vec3::ZERO);
+
+        // Author a new translation on /World/A
+        {
+            let live = app.world().get_non_send::<LiveStage>().unwrap();
+            author_transform(
+                &live.stage,
+                "/World/A",
+                &Transform::from_translation(Vec3::new(10.0, 20.0, 30.0)),
+            )
+            .unwrap();
+            let _ = live.drain_change_batch();
+        }
+
+        // Manually submit a bare prim changed_info (no .property suffix)
+        let live = app.world_mut().remove_non_send::<LiveStage>().unwrap();
+        let mut map = app.world_mut().remove_resource::<PrimEntities>().unwrap();
+        let batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: vec![StageChange {
+                resynced: Vec::new(),
+                changed_info: vec!["/World/A".to_string()],
+            }],
+        };
+        apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+        app.world_mut().insert_non_send(live);
+        app.world_mut().insert_resource(map);
+
+        // Verify Transform component was repatched to the new translation
+        let updated_transform = *app.world().get::<Transform>(entity).unwrap();
+        assert_eq!(
+            updated_transform.translation,
+            Vec3::new(10.0, 20.0, 30.0),
+            "bare prim changed_info must repatch transform"
+        );
     }
 }
 
