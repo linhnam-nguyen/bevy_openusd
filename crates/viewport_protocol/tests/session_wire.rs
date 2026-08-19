@@ -540,3 +540,46 @@ impl ViewportProtocolViewportSnapshot {
         }
     }
 }
+
+#[test]
+fn client_wire_command_cannot_encode_authorization_changed() {
+    // ClientCommand and SessionCommand only expose client-initiated operations (Provision, Connect, PushSnapshot, PullProjection, Close).
+    // AuthorizationChanged is an internal server-only request kind that has no client wire representation.
+    let valid_client_ops = [
+        SemanticSyncOperation::Provision,
+        SemanticSyncOperation::Connect,
+        SemanticSyncOperation::PushSnapshot,
+        SemanticSyncOperation::PullProjection,
+        SemanticSyncOperation::Close,
+    ];
+    for op in valid_client_ops {
+        let cmd = ClientCommand::Session(SessionCommand::SemanticSync { operation: op });
+        let envelope =
+            ClientCommandEnvelope::for_session("req-1", SessionId::new("session-1"), 1, cmd);
+        envelope.validate().unwrap();
+        let json = serde_json::to_string(&envelope).unwrap();
+        assert!(!json.contains("authorization_changed"));
+        assert!(!json.contains("AuthorizationChanged"));
+    }
+}
+
+#[test]
+fn semantic_sync_status_wire_event_never_contains_credentials_or_urls() {
+    let status = SemanticSyncStatus {
+        phase: SemanticSyncPhase::Ready,
+        source_snapshot_id: Some("snap-123".to_owned()),
+        projection_hash: Some("hash-abc".to_owned()),
+        detail: Some("ready".to_owned()),
+    };
+    let event = ServerEvent::Session(SessionEvent::SemanticSyncStatus { status });
+    let envelope = ServerEventEnvelope::new(SessionId::new("session-1"), 1, event);
+    let json = serde_json::to_string(&envelope).unwrap();
+
+    assert!(!json.contains("token"));
+    assert!(!json.contains("secret"));
+    assert!(!json.contains("password"));
+    assert!(!json.contains("url"));
+    assert!(!json.contains("http"));
+    assert!(!json.contains("database"));
+    assert!(!json.contains("jwt"));
+}
