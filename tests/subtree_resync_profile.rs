@@ -9,11 +9,8 @@ use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use usd_bevy::{
-    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
-    UsdPlugin, UsdSnippet, collect_stage_subtree_paths,
-};
-use usd_model::{EntityKey, SnapshotSource};
+use usd_bevy::{LiveStage, LiveStagePlugin, UsdPlugin, UsdSnippet, collect_stage_subtree_paths};
+use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 fn build_test_app() -> App {
@@ -129,8 +126,13 @@ where
     let all_paths = collect_stage_subtree_paths(&sample_stage, "/").expect("collect all paths");
     let total_prims = all_paths.len();
 
+    let minimal_roots = usd_bevy::minimize_resync_roots(resync_targets);
+    if name == "deep-overlap" {
+        assert_eq!(minimal_roots, vec!["/World/A"]);
+    }
+
     let mut affected_paths_set = std::collections::HashSet::new();
-    for root in resync_targets {
+    for root in &minimal_roots {
         if let Ok(paths) = collect_stage_subtree_paths(&sample_stage, root) {
             for p in paths {
                 affected_paths_set.insert(p);
@@ -202,10 +204,11 @@ where
         let stage = stage_factory();
 
         let t_total = Instant::now();
-        // Subtree discovery
+        // Subtree discovery using minimized roots
         let t_disc = Instant::now();
+        let minimal_roots = usd_bevy::minimize_resync_roots(resync_targets);
         let mut discovered_paths = std::collections::HashSet::new();
-        for root in resync_targets {
+        for root in &minimal_roots {
             if let Ok(paths) = collect_stage_subtree_paths(&stage, root) {
                 for p in paths {
                     discovered_paths.insert(p);
@@ -302,7 +305,7 @@ fn profiles_m25_o10_empirical_benchmark_suite() {
     );
     println!("  O0 Fixture Source SHA:   01e4fdff");
     println!("  O9 Frozen Base SHA:      ab363128");
-    println!("  O10 Benchmark SHA:       26e0e99a");
+    println!("  Benchmark Commit Target: Current workspace HEAD");
     println!("  Execution Methodology:   OLD = current binary forced through full '/' reconcile;");
     println!(
         "                           NEW = same current binary using scoped subtree reconcile."
