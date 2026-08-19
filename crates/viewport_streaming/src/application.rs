@@ -143,7 +143,7 @@ impl RenderServerInterface {
     ///
     /// Control requests bypass the ordinary bounded request queue, supersede
     /// pending operations for the same session, and are prioritized on pop.
-    pub(crate) fn submit_semantic_sync_control_request(
+    pub fn submit_semantic_sync_control_request(
         &self,
         request: SemanticSyncRequest,
     ) -> Result<(), RenderServerPortError> {

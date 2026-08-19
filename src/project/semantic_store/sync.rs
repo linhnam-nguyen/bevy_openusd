@@ -896,6 +896,10 @@ impl TursoClientSyncRuntime {
         Ok(Some(Self { mailbox }))
     }
 
+    pub(crate) fn from_mailbox(mailbox: RuntimeMailbox) -> Self {
+        Self { mailbox }
+    }
+
     pub(crate) fn submit(
         &self,
         command: TursoClientSyncRuntimeCommand,
@@ -1686,6 +1690,7 @@ mod tests {
     struct RecordingProvisioner {
         provisioned: Arc<Mutex<Vec<SessionId>>>,
         revoked: Arc<Mutex<Vec<SessionId>>>,
+        fail_revoke: Arc<Mutex<bool>>,
     }
 
     impl TursoClientSyncProvisioner for RecordingProvisioner {
@@ -1708,6 +1713,9 @@ mod tests {
         }
 
         fn revoke(&self, session_id: &SessionId) -> Result<()> {
+            if *self.fail_revoke.lock().expect("fail_revoke lock") {
+                bail!("simulated revoke failure");
+            }
             self.revoked
                 .lock()
                 .expect("revoke records should not be poisoned")
@@ -2125,5 +2133,84 @@ mod tests {
             received[0],
             TursoClientSyncRuntimeCommand::Connect(SessionId::new("s-1"))
         );
+    }
+
+    #[test]
+    fn coordinator_reprovisions_fresh_lease_after_stale_or_closed() {
+        let provisioner = RecordingProvisioner::default();
+        let provisioned = provisioner.provisioned.clone();
+        let revoked = provisioner.revoked.clone();
+        let mut coordinator = TursoClientSyncCoordinator::new(provisioner);
+        let session_id = SessionId::new("session-lifecycle");
+
+        let request = TursoClientSyncProvisionRequest {
+            session_id: session_id.clone(),
+            client_name: "client".to_owned(),
+            authorization: policy(SemanticPropertyScope::None, false),
+        };
+
+        // 1. Initial provision
+        coordinator.provision(request.clone()).unwrap();
+        assert_eq!(
+            coordinator.status(&session_id).unwrap().phase,
+            SemanticSyncPhase::Provisioned
+        );
+        assert_eq!(provisioned.lock().unwrap().len(), 1);
+
+        // 2. Invalidate via authorization downgrade -> Stale (revoked once)
+        coordinator
+            .update_authorization(&session_id, AuthorizationPolicy::default())
+            .unwrap();
+        assert_eq!(
+            coordinator.status(&session_id).unwrap().phase,
+            SemanticSyncPhase::Stale
+        );
+        assert_eq!(revoked.lock().unwrap().len(), 1);
+
+        // 3. Re-provision after Stale -> fresh lease obtained
+        coordinator.provision(request.clone()).unwrap();
+        assert_eq!(
+            coordinator.status(&session_id).unwrap().phase,
+            SemanticSyncPhase::Provisioned
+        );
+        assert_eq!(provisioned.lock().unwrap().len(), 2);
+
+        // 4. Close session -> Closed (revoked once more)
+        coordinator.close(&session_id).unwrap();
+        assert_eq!(revoked.lock().unwrap().len(), 2);
+        assert_eq!(
+            coordinator.drain_updates().last().unwrap().status.phase,
+            SemanticSyncPhase::Closed
+        );
+
+        // 5. Re-provision new lifecycle under same session ID -> fresh lease
+        coordinator.provision(request).unwrap();
+        assert_eq!(
+            coordinator.status(&session_id).unwrap().phase,
+            SemanticSyncPhase::Provisioned
+        );
+        assert_eq!(provisioned.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn coordinator_revoke_failure_emits_failed_status_with_detail() {
+        let provisioner = RecordingProvisioner::default();
+        *provisioner.fail_revoke.lock().unwrap() = true;
+        let mut coordinator = TursoClientSyncCoordinator::new(provisioner);
+        let session_id = SessionId::new("session-revoke-fail");
+
+        coordinator
+            .provision(TursoClientSyncProvisionRequest {
+                session_id: session_id.clone(),
+                client_name: "client".to_owned(),
+                authorization: policy(SemanticPropertyScope::None, false),
+            })
+            .unwrap();
+
+        let result = coordinator.update_authorization(&session_id, AuthorizationPolicy::default());
+        assert!(result.is_err());
+        let status = coordinator.status(&session_id).unwrap();
+        assert_eq!(status.phase, SemanticSyncPhase::Failed);
+        assert_eq!(status.detail.as_deref(), Some("revoke_failed"));
     }
 }

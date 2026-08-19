@@ -495,3 +495,74 @@ fn spawn_camera_and_ground(mut commands: Commands) {
     // Ground plate intentionally gone — the WorldGrid overlay provides the
     // reference plane now, sized and faded to match the scene extent.
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::semantic_store::sync::RuntimeMailbox;
+    use viewport_protocol::{AuthorizationPolicy, SessionId};
+    use viewport_streaming::{SemanticSyncRequest, SemanticSyncRequestKind};
+
+    #[test]
+    fn process_semantic_sync_requests_routes_controls_to_runtime() {
+        let mut app = App::new();
+        let interface = RenderServerInterface::default();
+        let mailbox = RuntimeMailbox::new();
+        let runtime = TursoClientSyncRuntime::from_mailbox(mailbox.clone());
+        let session_id = SessionId::new("session-routing-test");
+
+        app.insert_resource(interface.clone());
+        app.insert_resource(SemanticSyncRuntimeResource(Some(runtime)));
+        app.insert_resource(SemanticSyncState::default());
+
+        app.add_systems(Update, process_semantic_sync_requests);
+
+        // Submit AuthorizationChanged control request
+        let auth_policy = AuthorizationPolicy::stream_only();
+        let auth_req = SemanticSyncRequest {
+            request_id: "req-auth-1".to_owned(),
+            session_id: session_id.clone(),
+            client_name: "test-client".to_owned(),
+            authorization: auth_policy.clone(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .shared()
+            .submit_semantic_sync_control_request(auth_req)
+            .expect("submitting control request");
+
+        app.update();
+
+        // Verify runtime mailbox received UpdateAuthorization
+        let popped = mailbox.pop().expect("mailbox should receive command");
+        assert_eq!(
+            popped,
+            TursoClientSyncRuntimeCommand::UpdateAuthorization {
+                session_id: session_id.clone(),
+                authorization: auth_policy,
+            }
+        );
+
+        // Submit Close control request
+        let close_req = SemanticSyncRequest {
+            request_id: "req-close-1".to_owned(),
+            session_id: session_id.clone(),
+            client_name: "test-client".to_owned(),
+            authorization: AuthorizationPolicy::stream_only(),
+            kind: SemanticSyncRequestKind::Client(viewport_protocol::SemanticSyncOperation::Close),
+        };
+        interface
+            .shared()
+            .submit_semantic_sync_control_request(close_req)
+            .expect("submitting close request");
+
+        app.update();
+
+        // Verify runtime mailbox received Close
+        let popped_close = mailbox.pop().expect("mailbox should receive close");
+        assert_eq!(
+            popped_close,
+            TursoClientSyncRuntimeCommand::Close(session_id)
+        );
+    }
+}
