@@ -172,7 +172,9 @@ impl StageChangeBatch {
         for change in &self.changes {
             for info_path in &change.changed_info {
                 let prim_path = normalize_prim_path(info_path);
-                let covered = roots.iter().any(|root| is_descendant_or_self(root, &prim_path));
+                let covered = roots
+                    .iter()
+                    .any(|root| is_descendant_or_self(root, &prim_path));
                 if !covered && seen.insert(info_path.clone()) {
                     result.push(info_path.clone());
                 }
@@ -1109,7 +1111,10 @@ def Xform "World"
     #[test]
     fn test_minimize_resync_roots() {
         // Empty
-        assert_eq!(minimize_resync_roots(Vec::<&str>::new()), Vec::<String>::new());
+        assert_eq!(
+            minimize_resync_roots(Vec::<&str>::new()),
+            Vec::<String>::new()
+        );
 
         // Deduplication
         assert_eq!(
@@ -1126,10 +1131,7 @@ def Xform "World"
             "/World/C/Sub",
         ];
         let result = minimize_resync_roots(input);
-        assert_eq!(
-            result,
-            vec!["/World/A".to_string(), "/World/C".to_string()]
-        );
+        assert_eq!(result, vec!["/World/A".to_string(), "/World/C".to_string()]);
 
         // Prefix boundary respected
         let input = ["/World/A", "/World/AB", "/World/A/Child"];
