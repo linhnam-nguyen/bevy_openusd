@@ -1281,16 +1281,22 @@ mod tests {
             session: "test-c".to_owned(),
             live_revision: 1,
         };
-        let initial_snapshot = extractor.extract(&stage, source.clone())?;
+        let mut initial_snapshot = extractor.extract(&stage, source.clone())?;
         assert_eq!(initial_snapshot.entities.len(), 5);
 
-        // Find old /World/B/Child entity
-        let old_b_child = initial_snapshot
+        // Mutate initial_snapshot so /World/B/Child has a genuinely different old key
+        let old_key = EntityKey::new("revit:old-unique-id-999");
+        let original_key = initial_snapshot
             .entities
-            .values()
-            .find(|e| e.prim_path == "/World/B/Child")
-            .cloned()
+            .iter()
+            .find(|(_, e)| e.prim_path == "/World/B/Child")
+            .map(|(k, _)| k.clone())
             .unwrap();
+        let mut b_child_entity = initial_snapshot.entities.remove(&original_key).unwrap();
+        b_child_entity.key = old_key.clone();
+        initial_snapshot
+            .entities
+            .insert(old_key.clone(), b_child_entity);
 
         // Mutate /World/A/Child and /World/B/Child on stage
         let live = LiveStage::new(stage);
@@ -1308,7 +1314,11 @@ mod tests {
         let delta =
             resync_subtree_update(&live.stage, &extractor, initial_snapshot, &batch, source)?;
 
-        // /World/B/Child appears in upserts exactly once
+        // Newly extracted key for /World/B/Child
+        let new_key = EntityKey::from("/World/B/Child");
+        assert_ne!(old_key, new_key);
+
+        // delta.upserts: exactly one /World/B/Child entity with key == new_key
         let b_child_upserts: Vec<_> = delta
             .request
             .upserts
@@ -1316,17 +1326,29 @@ mod tests {
             .filter(|e| e.prim_path == "/World/B/Child")
             .collect();
         assert_eq!(b_child_upserts.len(), 1);
+        assert_eq!(b_child_upserts[0].key, new_key);
 
         // Total upserts = 2 (/World/A + /World/A/Child) + 1 (/World/B/Child) = 3
         assert_eq!(delta.request.upserts.len(), 3);
         assert_eq!(delta.request.removed_paths.len(), 0);
 
-        // Snapshot has all 5 entities
+        // delta.snapshot: does NOT contain old_key, DOES contain new_key
+        assert!(!delta.snapshot.entities.contains_key(&old_key));
+        assert!(delta.snapshot.entities.contains_key(&new_key));
+
+        // delta.snapshot has only one entity whose prim_path == /World/B/Child
+        let b_child_in_snapshot: Vec<_> = delta
+            .snapshot
+            .entities
+            .values()
+            .filter(|e| e.prim_path == "/World/B/Child")
+            .collect();
+        assert_eq!(b_child_in_snapshot.len(), 1);
         assert_eq!(delta.snapshot.entities.len(), 5);
         Ok(())
     }
 
-    // Regression D: duplicate EntityKey collision -> subtree delta fails -> full snapshot fallback
+    // Regression D: duplicate EntityKey collision with unaffected entity -> subtree delta fails -> full snapshot fallback
     #[test]
     fn test_regression_d_collision_triggers_full_snapshot_fallback() -> Result<()> {
         let stage = Stage::builder()
@@ -1393,6 +1415,58 @@ mod tests {
             }
             other => panic!("expected full SnapshotLoaded fallback on collision, got {other:?}"),
         }
+        Ok(())
+    }
+
+    // Regression D2: direct duplicate EntityKey collision between two current affected prims
+    #[test]
+    fn test_regression_d2_direct_current_current_collision_error() -> Result<()> {
+        let usda = r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Xform "Child1"
+        {
+            string revit:uniqueId = "dup-123"
+        }
+        def Xform "Child2"
+        {
+            string revit:uniqueId = "dup-123"
+        }
+    }
+}
+"#;
+        let stage = usd_bevy::UsdSnippet::new(usda)
+            .open_stage()
+            .expect("stage opens");
+
+        let mut config = SemanticConfig::default();
+        config.identity.revit_unique_id_candidates = vec!["revit:uniqueId".to_string()];
+        let extractor = SemanticExtractor::new(config);
+        let source = SnapshotSource::Working {
+            session: "test-d2".to_owned(),
+            live_revision: 1,
+        };
+
+        let initial_snapshot = extractor.snapshot_from_entities(source.clone(), Default::default());
+
+        let mut batch = StageChangeBatch {
+            revision: LiveRevision(2),
+            changes: Vec::new(),
+        };
+        batch.changes.push(StageChange {
+            changed_info: Vec::new(),
+            resynced: vec!["/World/A".to_owned()],
+        });
+
+        let result = resync_subtree_update(&stage, &extractor, initial_snapshot, &batch, source);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("Duplicate EntityKey collision"),
+            "expected duplicate key collision error, got: {err_msg}"
+        );
         Ok(())
     }
 
