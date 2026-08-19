@@ -6,9 +6,9 @@ use usd_model::SemanticSnapshot;
 /// update from the same live-stage revision consumed by Bevy projection.
 #[derive(Resource, Default)]
 pub(crate) struct SemanticSyncState {
-    pub(crate) snapshot: Option<SemanticSnapshot>,
-    pub(crate) session_id: Option<u64>,
-    pub(crate) revision: Option<LiveRevision>,
+    pub(super) snapshot: Option<SemanticSnapshot>,
+    pub(super) session_id: Option<u64>,
+    pub(super) revision: Option<LiveRevision>,
 }
 
 impl SemanticSyncState {
