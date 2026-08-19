@@ -41,7 +41,7 @@ impl TursoSemanticStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn connection(&self) -> &turso::Connection {
+    pub(super) fn connection(&self) -> &turso::Connection {
         &self.connection
     }
 }
