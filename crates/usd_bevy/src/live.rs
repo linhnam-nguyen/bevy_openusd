@@ -707,7 +707,13 @@ fn reconcile_subtrees(
 ) {
     let stage = &live.stage;
     let registry = registry_of(world);
-    let root_entity = map.entity("/");
+    let Some(root_entity) = map.entity("/") else {
+        bevy::log::warn!(
+            "[subtree-reconcile] stage root '/' missing from PrimEntities; falling back to full reconcile"
+        );
+        reconcile_full(world, live, map);
+        return;
+    };
 
     let mut old_entities: HashMap<String, Entity> = HashMap::new();
     for root in roots {
@@ -720,14 +726,46 @@ fn reconcile_subtrees(
 
     let mut current_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
     for root in roots {
-        if let Ok(paths) = collect_stage_subtree_paths(stage, root) {
-            for p in paths {
-                current_paths.insert(p);
+        match collect_stage_subtree_paths(stage, root) {
+            Ok(paths) => {
+                current_paths.extend(paths);
+            }
+            Err(error) => {
+                bevy::log::warn!(
+                    "[subtree-reconcile] collection failed for root '{root}': {error:#}; falling back to full reconcile"
+                );
+                reconcile_full(world, live, map);
+                return;
             }
         }
     }
 
-    // 1. Despawn removed prims (old_paths - current_paths), deepest first
+    // 1. Preflight parent integrity for all new prims (current_paths - old_paths) BEFORE any mutations
+    let mut added: Vec<String> = current_paths
+        .iter()
+        .filter(|path| !old_entities.contains_key(*path))
+        .cloned()
+        .collect();
+    added.sort_by(|a, b| a.matches('/').count().cmp(&b.matches('/').count()));
+
+    for path in &added {
+        let parent_str = parent_path(path);
+        let parent_will_exist = if parent_str == "/" {
+            true
+        } else {
+            current_paths.contains(parent_str) || map.entity(parent_str).is_some()
+        };
+
+        if !parent_will_exist {
+            bevy::log::warn!(
+                "[subtree-reconcile] parent '{parent_str}' for new prim '{path}' is missing; falling back to full reconcile"
+            );
+            reconcile_full(world, live, map);
+            return;
+        }
+    }
+
+    // 2. Despawn removed prims (old_paths - current_paths), deepest first
     let mut removed: Vec<(String, Entity)> = old_entities
         .iter()
         .filter(|(path, _)| !current_paths.contains(*path))
@@ -741,31 +779,34 @@ fn reconcile_subtrees(
         map.remove_path(&path);
     }
 
-    // 2. Spawn new prims (current_paths - old_paths), shallowest first
-    let mut added: Vec<String> = current_paths
-        .iter()
-        .filter(|path| !old_entities.contains_key(*path))
-        .cloned()
-        .collect();
-    added.sort_by(|a, b| a.matches('/').count().cmp(&b.matches('/').count()));
-
+    // 3. Spawn new prims (current_paths - old_paths), shallowest first
     let mut spawned_count = 0usize;
     for path in &added {
         let Ok(p) = openusd::sdf::path(path) else {
             continue;
         };
-        let parent = map.entity(parent_path(path)).or(root_entity);
+        let parent_str = parent_path(path);
+        let parent = if parent_str == "/" {
+            Some(root_entity)
+        } else {
+            map.entity(parent_str)
+        };
+        let Some(parent) = parent else {
+            bevy::log::error!(
+                "[subtree-reconcile] parent '{parent_str}' missing during spawn for '{path}'; falling back to full reconcile"
+            );
+            reconcile_full(world, live, map);
+            return;
+        };
         let mut e = world.spawn(UsdPrimRef { path: path.clone() });
-        if let Some(parent) = parent {
-            e.insert(ChildOf(parent));
-        }
+        e.insert(ChildOf(parent));
         let entity = e.id();
         map.insert(path.clone(), entity);
         registry.project_prim(stage, &p, world, entity);
         spawned_count += 1;
     }
 
-    // 3. Repatch existing prims (current_paths ∩ old_paths)
+    // 4. Repatch existing prims (current_paths ∩ old_paths)
     let mut patched_count = 0usize;
     for path in &current_paths {
         if let Some(&entity) = old_entities.get(path) {
@@ -776,7 +817,7 @@ fn reconcile_subtrees(
         }
     }
 
-    // 4. Maintain AnimatedPrims for the affected subtrees
+    // 5. Maintain AnimatedPrims for the affected subtrees
     if let Some(mut animated_res) = world.get_resource_mut::<AnimatedPrims>() {
         // Remove existing animated paths under affected roots
         animated_res.0.retain(|anim_path| {
@@ -830,7 +871,19 @@ fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     // reapply routes on existing ones. Both go through the registry: new prims
     // get a full `project_prim`; existing prims get a full re-patch (empty
     // `changed` = "reapply everything", the conservative choice on a resync).
-    let root = map.entity("/");
+    let root = map.entity("/").unwrap_or_else(|| {
+        let r = world
+            .spawn((
+                UsdPrimRef {
+                    path: "/".to_string(),
+                },
+                Transform::from_rotation(stage_up_axis(stage)),
+                Visibility::default(),
+            ))
+            .id();
+        map.insert("/", r);
+        r
+    });
     let mut ordered: Vec<&String> = current.iter().collect();
     ordered.sort_by_key(|p| p.matches('/').count());
     let mut animated: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -847,7 +900,7 @@ fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
             registry.patch_prim(stage, &p, world, entity, &[]);
             patched_count += 1;
         } else {
-            let parent = map.entity(parent_path(path)).or(root);
+            let parent = map.entity(parent_path(path)).or(Some(root));
             let mut e = world.spawn(UsdPrimRef { path: path.clone() });
             if let Some(parent) = parent {
                 e.insert(ChildOf(parent));
@@ -1285,6 +1338,78 @@ def Xform "World"
         assert_eq!(prim_entities.entity("/World/A/Child1"), Some(child1_entity));
         assert!(prim_entities.entity("/World/A/Child2").is_none());
         assert!(prim_entities.entity("/World/A/Child3").is_some());
+    }
+
+    #[test]
+    fn test_reconcile_subtrees_missing_external_parent_triggers_full_fallback() {
+        let stage = Stage::builder()
+            .in_memory("missing-external-parent.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+        stage.define_prim("/World/A").unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        // Simulate corrupted map where external parent /World/A was removed from PrimEntities
+        app.world_mut()
+            .resource_mut::<PrimEntities>()
+            .remove_path("/World/A");
+
+        // Define a new child /World/A/B on stage
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.define_prim("/World/A/B").unwrap();
+        let _ = live.drain_change_batch();
+        // Enqueue resync scoped to /World/A/B
+        live.enqueue_resync("/World/A/B");
+
+        app.update();
+
+        // Preflight detected missing external parent /World/A and aborted subtree reconcile,
+        // falling back to reconcile_full which restored the complete hierarchy.
+        let prim_entities = app.world().resource::<PrimEntities>();
+        let a_entity = prim_entities.entity("/World/A").expect("/World/A restored");
+        let b_entity = prim_entities
+            .entity("/World/A/B")
+            .expect("/World/A/B spawned");
+
+        // Verify /World/A/B is child of /World/A, NOT child of stage root "/"
+        let b_child_of = app.world().get::<ChildOf>(b_entity).expect("has ChildOf");
+        assert_eq!(b_child_of.parent(), a_entity);
+    }
+
+    #[test]
+    fn test_reconcile_subtrees_missing_stage_root_triggers_full_fallback() {
+        let stage = Stage::builder()
+            .in_memory("missing-stage-root.usda")
+            .expect("in-memory stage");
+
+        stage.define_prim("/World").unwrap();
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        // Simulate missing stage root "/"
+        app.world_mut()
+            .resource_mut::<PrimEntities>()
+            .remove_path("/");
+
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.stage.define_prim("/World/NewPrim").unwrap();
+        let _ = live.drain_change_batch();
+        live.enqueue_resync("/World/NewPrim");
+
+        app.update();
+
+        // Subtree reconcile falls back to full reconcile and restores "/"
+        let prim_entities = app.world().resource::<PrimEntities>();
+        assert!(prim_entities.entity("/").is_some());
+        assert!(prim_entities.entity("/World/NewPrim").is_some());
     }
 
     #[test]
