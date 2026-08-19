@@ -926,4 +926,70 @@ mod tests {
         ));
         Ok(())
     }
+
+    #[test]
+    fn resync_notice_triggers_full_snapshot_replace_in_semantic_store_baseline() -> Result<()> {
+        let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
+        for group in ["A", "B", "C"] {
+            usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
+            for i in 0..10 {
+                usda.push_str(&format!(
+                    "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
+                ));
+            }
+            usda.push_str("    }\n");
+        }
+        usda.push_str("}\n");
+
+        let stage = usd_bevy::UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("synthetic wide stage opens");
+        let live = LiveStage::new(stage);
+
+        let mut world = World::new();
+        world.insert_resource(SemanticWorkingStore::default());
+        world.insert_resource(usd_bevy::PendingStageChanges::default());
+        world.insert_resource(SemanticSyncState::default());
+        world.insert_non_send(live);
+
+        // Initial synchronization -> Full snapshot load (34 prims)
+        synchronize_live_stage(&mut world);
+        let resp = response(world.resource::<SemanticWorkingStore>());
+        let initial_count = match resp {
+            SemanticResponse::SnapshotLoaded { entity_count, .. } => entity_count,
+            other => panic!("expected initial SnapshotLoaded, got {other:?}"),
+        };
+        assert_eq!(initial_count, 34);
+
+        // Enqueue resync on /World/B (11 prims affected)
+        let live = world.get_non_send::<LiveStage>().unwrap();
+        live.load_payload("/World/B");
+        let batch = live.drain_change_batch().expect("change batch drained");
+        world.resource_mut::<usd_bevy::PendingStageChanges>().batch = Some(batch);
+
+        // Re-synchronize: in baseline, resync forces ReplaceSnapshot (not Delta)
+        synchronize_live_stage(&mut world);
+        let resp = response(world.resource::<SemanticWorkingStore>());
+        match resp {
+            SemanticResponse::SnapshotLoaded { entity_count, .. } => {
+                // Baseline extracts all 34 prims from stage and replaces all rows in Turso
+                assert_eq!(entity_count, 34);
+            }
+            SemanticResponse::DeltaApplied { .. } => {
+                panic!(
+                    "unexpected DeltaApplied in baseline resync; baseline must execute ReplaceSnapshot"
+                )
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+
+        // Query Turso to confirm rows are present
+        let store = world.resource::<SemanticWorkingStore>();
+        assert!(store.submit_query("verify-all-34", SemanticQuery::default()));
+        let SemanticResponse::QueryResult { result, .. } = response(store) else {
+            panic!("expected query result")
+        };
+        assert_eq!(result.total, 34);
+        Ok(())
+    }
 }

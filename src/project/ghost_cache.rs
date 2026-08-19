@@ -21,13 +21,15 @@ use super::recovery::RecoverySettings;
 /// The resource is intentionally a small diagnostics surface. The frontend
 /// must receive a future read-model projection rather than inspecting this
 /// Bevy resource directly.
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct HistoricalGeometryCache {
     pub(crate) snapshots_seen: u64,
     pub(crate) blob_references_attached: u64,
     pub(crate) capture_failures: u64,
     pub(crate) ghost_mesh_hydrations: u64,
     pub(crate) ghost_load_failures: u64,
+    pub(crate) mesh_handles_scanned: u64,
+    pub(crate) semantic_entities_scanned: u64,
 }
 
 /// Attach persistent render-blob identities to the semantic snapshot's mesh
@@ -55,6 +57,8 @@ pub(crate) fn attach_render_blobs(world: &mut World, snapshot: &mut SemanticSnap
         }
     };
 
+    let handle_count = mesh_handles.len() as u64;
+    let entity_count = snapshot.entities.len() as u64;
     let mut captured = HashMap::new();
     let mut failures = 0;
     for (path, handle) in mesh_handles {
@@ -92,6 +96,8 @@ pub(crate) fn attach_render_blobs(world: &mut World, snapshot: &mut SemanticSnap
         cache.snapshots_seen += 1;
         cache.blob_references_attached += attached;
         cache.capture_failures += failures;
+        cache.mesh_handles_scanned += handle_count;
+        cache.semantic_entities_scanned += entity_count;
     }
 }
 
@@ -212,6 +218,103 @@ mod tests {
                 .blob_references_attached,
             1
         );
+        assert_eq!(
+            world
+                .resource::<HistoricalGeometryCache>()
+                .mesh_handles_scanned,
+            1
+        );
+        assert_eq!(
+            world
+                .resource::<HistoricalGeometryCache>()
+                .semantic_entities_scanned,
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn profiles_render_blob_baseline_scans_all_meshes_and_entities() -> anyhow::Result<()> {
+        let project = tempdir()?;
+        let mut world = World::new();
+        world.insert_resource(RecoverySettings {
+            project_root: project.path().to_path_buf(),
+        });
+        world.insert_resource(HistoricalGeometryCache::default());
+        world.insert_resource(Assets::<Mesh>::default());
+
+        // Spawn 3 meshes
+        for path in ["/World/Mesh1", "/World/Mesh2", "/World/Mesh3"] {
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            );
+            mesh.insert_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            );
+            mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
+            let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+            world.spawn((UsdPrimRef::new(path), Mesh3d(handle)));
+        }
+
+        // Build snapshot with 10 entities (only Mesh1 matches geometry)
+        let mut entities = std::collections::HashMap::new();
+        for i in 0..10 {
+            let path = if i == 0 {
+                "/World/Mesh1".to_owned()
+            } else {
+                format!("/World/Other{i}")
+            };
+            let key = EntityKey::from(path.clone());
+            let entity = EntitySnapshot {
+                key: key.clone(),
+                prim_path: path.clone(),
+                identity_source: IdentitySource::PrimPath,
+                semantic: SemanticInfo::default(),
+                transform: TransformSignature {
+                    translation_mm: [0; 3],
+                    rotation_quantized: [0; 4],
+                    scale_quantized: [10_000; 3],
+                    hash: digest(),
+                },
+                geometry: (i == 0).then_some(GeometrySignature {
+                    vertex_count: 3,
+                    index_count: 3,
+                    local_bounds: Bounds3 {
+                        min: [0.0; 3],
+                        max: [1.0; 3],
+                    },
+                    local_centroid: QuantizedPoint3([500; 3]),
+                    topology_hash: digest(),
+                    shape_hash: digest(),
+                    render_blob: None,
+                }),
+                properties: Vec::new(),
+                metadata_hash: digest(),
+                full_hash: digest(),
+            };
+            entities.insert(key, entity);
+        }
+
+        let mut snap = SemanticSnapshot {
+            snapshot_id: SnapshotId("baseline-blob-test".to_owned()),
+            source: SnapshotSource::Working {
+                session: "test".to_owned(),
+                live_revision: 1,
+            },
+            config_hash: digest(),
+            entities,
+        };
+
+        attach_render_blobs(&mut world, &mut snap);
+
+        let cache = *world.resource::<HistoricalGeometryCache>();
+        assert_eq!(cache.snapshots_seen, 1);
+        assert_eq!(cache.mesh_handles_scanned, 3);
+        assert_eq!(cache.semantic_entities_scanned, 10);
+        assert_eq!(cache.blob_references_attached, 1);
+        assert_eq!(cache.capture_failures, 0);
         Ok(())
     }
 }

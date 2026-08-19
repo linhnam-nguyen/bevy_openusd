@@ -59,12 +59,12 @@ impl StageChangeBatch {
 /// Test and profiling suites use this to verify work reduction during subtree
 /// resync without relying on noisy timing assertions.
 #[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ReconcileStats {
-    pub roots: usize,
-    pub visited_stage_prims: usize,
-    pub patched_entities: usize,
-    pub spawned_entities: usize,
-    pub despawned_entities: usize,
+pub(crate) struct ReconcileStats {
+    pub(crate) roots: usize,
+    pub(crate) visited_stage_prims: usize,
+    pub(crate) patched_entities: usize,
+    pub(crate) spawned_entities: usize,
+    pub(crate) despawned_entities: usize,
 }
 
 impl StageChange {
@@ -227,12 +227,16 @@ pub struct PrimEntities {
 /// representation. It is replaced by [`drain_stage_changes_system`] before
 /// each projection pass and remains readable by later consumers in the same
 /// schedule.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone, Debug, Eq, PartialEq)]
 pub struct PendingStageChanges {
-    batch: Option<StageChangeBatch>,
+    pub batch: Option<StageChangeBatch>,
 }
 
 impl PendingStageChanges {
+    pub fn new(batch: Option<StageChangeBatch>) -> Self {
+        Self { batch }
+    }
+
     pub fn batch(&self) -> Option<&StageChangeBatch> {
         self.batch.as_ref()
     }
@@ -824,6 +828,117 @@ mod tests {
                 .batch()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn reconcile_synthetic_wide_baseline_records_full_stage_work() {
+        let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
+        for group in ["A", "B", "C"] {
+            usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
+            for i in 0..10 {
+                usda.push_str(&format!(
+                    "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
+                ));
+            }
+            usda.push_str("    }\n");
+        }
+        usda.push_str("}\n");
+
+        let stage = crate::snippet::UsdSnippet::new(&usda)
+            .open_stage()
+            .expect("synthetic wide stage opens");
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+
+        // Initial frame performs initial project_stage
+        app.update();
+        assert_eq!(app.world().resource::<PrimEntities>().len(), 35);
+
+        // Baseline resync on /World/B
+        app.world()
+            .get_non_send::<LiveStage>()
+            .expect("live stage exists")
+            .enqueue_resync("/World/B");
+        app.update();
+
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.visited_stage_prims, 34);
+        assert_eq!(stats.patched_entities, 34);
+        assert_eq!(stats.spawned_entities, 0);
+        assert_eq!(stats.despawned_entities, 0);
+    }
+
+    #[test]
+    fn reconcile_deep_overlap_baseline_records_full_stage_work() {
+        let stage = crate::snippet::UsdSnippet::new(
+            r#"#usda 1.0
+
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Xform "Child"
+        {
+            def Xform "Leaf"
+            {
+            }
+        }
+    }
+    def Xform "B"
+    {
+    }
+    def Xform "C"
+    {
+    }
+}
+"#,
+        )
+        .open_stage()
+        .expect("deep overlap stage opens");
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let live = app.world().get_non_send::<LiveStage>().unwrap();
+        live.enqueue_resync("/World/A");
+        live.enqueue_resync("/World/A/Child");
+        live.enqueue_resync("/World/A/Child/Leaf");
+        app.update();
+
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.visited_stage_prims, 6);
+        assert_eq!(stats.patched_entities, 6);
+        assert_eq!(stats.spawned_entities, 0);
+        assert_eq!(stats.despawned_entities, 0);
+    }
+
+    #[test]
+    fn reconcile_real_materials_fixture_baseline_records_full_stage_work() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/stages/materials.usda");
+        let stage =
+            Stage::open(path.to_str().expect("valid path")).expect("materials fixture opens");
+
+        let mut app = App::new();
+        app.add_plugins(LiveStagePlugin);
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let initial_count = app.world().resource::<PrimEntities>().len();
+        assert!(initial_count > 0);
+
+        app.world()
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .enqueue_resync("/World/Materials");
+        app.update();
+
+        let stats = *app.world().resource::<ReconcileStats>();
+        assert_eq!(stats.visited_stage_prims, initial_count - 1);
+        assert_eq!(stats.patched_entities, initial_count - 1);
     }
 }
 
