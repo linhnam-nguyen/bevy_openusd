@@ -183,15 +183,18 @@ impl RenderServerInterface {
             None => true,
         };
 
+        let session_id = request.session_id.clone();
         if should_insert {
-            let session_id = request.session_id.clone();
             pending
                 .semantic_sync_control_requests
                 .insert(session_id.clone(), request);
-            pending
-                .semantic_sync_requests
-                .retain(|req| req.session_id != session_id);
         }
+
+        // ALWAYS purge same-session ordinary work whenever
+        // a valid lifecycle control was submitted.
+        pending
+            .semantic_sync_requests
+            .retain(|req| req.session_id != session_id);
 
         Ok(())
     }
@@ -841,6 +844,82 @@ mod tests {
     }
 
     #[test]
+    fn semantic_sync_control_latest_authorization_changed_wins() {
+        let interface = RenderServerInterface::default();
+        let session_a = SessionId::new("session-a");
+
+        let auth_a1 = SemanticSyncRequest {
+            request_id: "auth-a1".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        let auth_a2 = SemanticSyncRequest {
+            request_id: "auth-a2".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+
+        interface
+            .submit_semantic_sync_control_request(auth_a1)
+            .unwrap();
+        interface
+            .submit_semantic_sync_control_request(auth_a2.clone())
+            .unwrap();
+
+        // Latest AuthorizationChanged explicitly replaces the earlier one
+        assert_eq!(interface.pop_semantic_sync_request(), Some(auth_a2));
+        assert_eq!(interface.pop_semantic_sync_request(), None);
+    }
+
+    #[test]
+    fn semantic_sync_control_close_remains_and_purges_normal_work_on_subsequent_auth_change() {
+        let interface = RenderServerInterface::default();
+        let session_a = SessionId::new("session-a");
+
+        // 1. Submit Close(A)
+        let close_a = SemanticSyncRequest {
+            request_id: "close-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
+        };
+        interface
+            .submit_semantic_sync_control_request(close_a.clone())
+            .unwrap();
+
+        // 2. Queue normal Provision(A)
+        let provision_a = SemanticSyncRequest {
+            request_id: "prov-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::Client(SemanticSyncOperation::Provision),
+        };
+        interface.submit_semantic_sync_request(provision_a).unwrap();
+
+        // 3. Submit AuthorizationChanged(A)
+        let auth_a = SemanticSyncRequest {
+            request_id: "auth-a".to_owned(),
+            session_id: session_a.clone(),
+            client_name: "client".to_owned(),
+            authorization: AuthorizationPolicy::default(),
+            kind: SemanticSyncRequestKind::AuthorizationChanged,
+        };
+        interface
+            .submit_semantic_sync_control_request(auth_a)
+            .unwrap();
+
+        // 4. Assert: Close remains the control request, and normal Provision(A) was purged
+        assert_eq!(interface.pop_semantic_sync_request(), Some(close_a));
+        assert_eq!(interface.pop_semantic_sync_request(), None);
+    }
+
+    #[test]
     fn semantic_sync_control_precedence_and_purging() {
         let interface = RenderServerInterface::default();
         let session_a = SessionId::new("session-a");
@@ -876,19 +955,6 @@ mod tests {
         };
         interface
             .submit_semantic_sync_control_request(auth_a1)
-            .unwrap();
-
-        // Stale normal A should have been purged, but normal B remains
-        // Next control auth changed for session A (newer wins)
-        let auth_a2 = SemanticSyncRequest {
-            request_id: "auth-a2".to_owned(),
-            session_id: session_a.clone(),
-            client_name: "client".to_owned(),
-            authorization: AuthorizationPolicy::default(),
-            kind: SemanticSyncRequestKind::AuthorizationChanged,
-        };
-        interface
-            .submit_semantic_sync_control_request(auth_a2.clone())
             .unwrap();
 
         // Close for session A supersedes AuthorizationChanged
