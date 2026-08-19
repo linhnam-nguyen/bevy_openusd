@@ -912,10 +912,24 @@ impl Drop for TursoClientSyncRuntime {
     }
 }
 
+struct RuntimeMailboxWorkerGuard {
+    mailbox: RuntimeMailbox,
+}
+
+impl Drop for RuntimeMailboxWorkerGuard {
+    fn drop(&mut self) {
+        self.mailbox.close();
+    }
+}
+
 fn semantic_sync_worker(
     mut application: TursoClientSyncApplication<TursoCloudProvisioner<TursoPlatformApi>>,
     mailbox: RuntimeMailbox,
 ) {
+    let _worker_guard = RuntimeMailboxWorkerGuard {
+        mailbox: mailbox.clone(),
+    };
+
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -2043,6 +2057,35 @@ mod tests {
             mailbox.submit(TursoClientSyncRuntimeCommand::Connect(SessionId::new(
                 "s-2"
             ))),
+            Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable)
+        );
+    }
+
+    #[test]
+    fn runtime_mailbox_worker_exit_marks_mailbox_closed_and_rejects_submits() {
+        let mailbox = RuntimeMailbox::new();
+        let worker_mailbox = mailbox.clone();
+
+        let handle = std::thread::spawn(move || {
+            let _worker_guard = RuntimeMailboxWorkerGuard {
+                mailbox: worker_mailbox,
+            };
+            // Simulate early worker exit (e.g. startup error or crash)
+        });
+
+        handle.join().expect("worker thread should join cleanly");
+
+        // Normal submit returns WorkerUnavailable
+        let normal_cmd = TursoClientSyncRuntimeCommand::Connect(SessionId::new("s-1"));
+        assert_eq!(
+            mailbox.submit(normal_cmd),
+            Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable)
+        );
+
+        // Control submit also returns WorkerUnavailable
+        let control_cmd = TursoClientSyncRuntimeCommand::Close(SessionId::new("s-1"));
+        assert_eq!(
+            mailbox.submit(control_cmd),
             Err(TursoClientSyncRuntimeSubmitError::WorkerUnavailable)
         );
     }
