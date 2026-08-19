@@ -3,7 +3,6 @@
 src/viewport/api/bridge.rs
 src/project/semantic_store/sync.rs
 src/viewport/ui_frost/mod.rs
-crates/usd_bevy/src/live.rs
 crates/viewport_streaming/src/data_channel.rs
 crates/usd_bevy/src/read/geom.rs
 crates/viewport_streaming/src/application.rs
