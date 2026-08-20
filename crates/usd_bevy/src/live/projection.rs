@@ -77,7 +77,16 @@ pub(super) fn registry_of(world: &World) -> SchemaRegistry {
 /// Project every prim in the stage into an entity (`UsdPrimRef` +
 /// `Transform`), recording the path↔entity bimap. Idempotent only on an
 /// empty world — call once on load.
+/// Initial stage projection timing and prim count metrics.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct ProjectionStats {
+    pub initial_projection_ms: Option<f64>,
+    pub initial_projection_prims: u64,
+    pub stage_traversal_ms: Option<f64>,
+}
+
 pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
+    let start = std::time::Instant::now();
     let stage = &live.stage;
     let registry = registry_of(world);
     let root = world
@@ -110,13 +119,20 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         }
         registry.project_prim(stage, path, world, entity);
     });
+    let duration = start.elapsed().as_secs_f64() * 1000.0;
     bevy::log::info!(
         session = live.session_id(),
         prims = prim_count,
         animated = animated.len(),
+        duration_ms = duration,
         "projected USD stage"
     );
     world.insert_resource(AnimatedPrims(animated));
+    world.insert_resource(ProjectionStats {
+        initial_projection_ms: Some(duration),
+        initial_projection_prims: prim_count as u64,
+        stage_traversal_ms: Some(duration),
+    });
     let _ = live.drain_change_batch();
 }
 

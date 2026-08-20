@@ -18,7 +18,7 @@ pub use path::{
     is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
     validate_prim_path,
 };
-pub use projection::{collect_stage_subtree_paths, project_stage};
+pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
 pub use stage::LiveStage;
