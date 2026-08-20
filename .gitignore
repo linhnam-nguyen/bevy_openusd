@@ -9,3 +9,7 @@ assets/.bevy_openusd_tmp_*.usda
 
 # Vendored 3rd-party USD asset packs (large + duplicates upstream).
 assets/external/agilebot/
+
+# OS-generated metadata files
+.DS_Store
+**/.DS_Store

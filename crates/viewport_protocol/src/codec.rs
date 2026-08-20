@@ -2,9 +2,7 @@
 
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{
-    ClientCommandEnvelope, ServerEventEnvelope, ViewportWireMessage,
-};
+use crate::{ClientCommandEnvelope, ServerEventEnvelope, ViewportWireMessage};
 
 /// A client-to-server wire record for the decomposed contract.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -42,9 +40,7 @@ pub fn decode_json_line(line: &str) -> serde_json::Result<ViewportWireMessage> {
     decode_json_frame(line)
 }
 
-pub fn encode_client_json_line(
-    message: &ClientCommandEnvelope,
-) -> serde_json::Result<String> {
+pub fn encode_client_json_line(message: &ClientCommandEnvelope) -> serde_json::Result<String> {
     encode_json_frame(&ClientWireMessage::Command(message.clone()))
 }
 

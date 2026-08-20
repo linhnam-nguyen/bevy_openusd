@@ -12,19 +12,22 @@
 
 pub(crate) mod headless;
 mod offscreen_resize;
-
-use std::path::PathBuf;
+mod scene;
+mod sync;
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use bevy_frost::prelude::AccentColor;
+use bevy_glacial::prelude::{AxisGizmoPlugin, GroundGrid, GroundGridPlugin};
 use headless::HeadlessRenderPlugin;
 use usd_bevy::{LiveStagePlugin, UsdPlugin};
 
+use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin};
 use crate::viewport::camera::{
-    ArcballCamera, ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to,
-    fit_camera_once, follow_mounted_camera, sync_chase_camera,
+    ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
+    follow_mounted_camera, sync_chase_camera,
 };
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
@@ -33,19 +36,16 @@ use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
 };
+use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
 };
 use crate::viewport::transport::{ViewportTransport, parse_launch_options};
-use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT, ViewerUiPlugin};
-use bevy_glacial::prelude::{
-    AxisGizmo, AxisGizmoPlugin, ChaseCamera, GroundGrid, GroundGridPlugin,
-};
+use crate::viewport::ui_frost::ViewerUiPlugin;
 
-/// Tag on the viewer's fallback `DirectionalLight`.
-#[derive(Component)]
-struct DefaultSun;
+use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
+use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 
 pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
@@ -123,9 +123,9 @@ pub(crate) fn run() {
                 .copied()
                 .unwrap_or(640.0),
         })
-        .insert_resource(bevy_frost::prelude::AccentColor(
-            bevy_egui::egui::Color32::from_rgb(0x4A, 0x90, 0xE2),
-        ));
+        .insert_resource(AccentColor(bevy_egui::egui::Color32::from_rgb(
+            0x4A, 0x90, 0xE2,
+        )));
 
     if launch_options.headless {
         app.add_plugins(HeadlessRenderPlugin {
@@ -150,6 +150,20 @@ pub(crate) fn run() {
 
     if launch_options.transport == Some(ViewportTransport::WebRtc) {
         app.add_plugins(crate::viewport::transport::webrtc::WebRtcTransportPlugin);
+        let semantic_sync_runtime = match TursoClientSyncRuntime::from_environment(
+            app.world().resource::<RenderServerInterface>().shared(),
+        ) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                bevy::log::error!("[semantic-sync] runtime configuration failed: {error:#}");
+                None
+            }
+        };
+        app.insert_resource(SemanticSyncRuntimeResource(semantic_sync_runtime))
+            .add_systems(
+                PostUpdate,
+                process_semantic_sync_requests.after(synchronize_live_stage),
+            );
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
@@ -256,125 +270,4 @@ pub(crate) fn run() {
         .add_systems(Startup, setup_skeleton_gizmos_on_top);
 
     app.run();
-}
-
-/// Opens the prim tree on startup to give the viewer an immediate focal panel.
-fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
-    ribbon.toggle(RIBBON_LEFT, RIB_TREE);
-}
-
-/// Resolves the CLI stage argument into a stage path and its asset root.
-///
-/// - `cargo run` with no argument loads the self-contained spinner sample.
-/// - `cargo run -- path/to/file.usda` roots relative USD references at the
-///   file's parent directory.
-fn resolve_requested_asset(arg: Option<String>) -> (String, PathBuf) {
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    match arg {
-        None => (
-            "animated_spinner.usda".to_string(),
-            workspace_root.join("assets"),
-        ),
-        Some(raw) => {
-            let path = PathBuf::from(&raw);
-            let abs = if path.is_absolute() {
-                path
-            } else {
-                std::env::current_dir()
-                    .unwrap_or_else(|_| workspace_root.clone())
-                    .join(path)
-            };
-            let file = abs
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| raw.clone());
-            let dir = abs
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| workspace_root.clone());
-            (file, dir)
-        }
-    }
-}
-
-/// Spawns the default arcball camera, fallback light, and ground-support entities.
-fn spawn_camera_and_ground(mut commands: Commands) {
-    use bevy::camera::{Hdr, PerspectiveProjection, Projection};
-    use bevy::core_pipeline::tonemapping::Tonemapping;
-
-    // Arcball camera targeting origin; focus/distance get tuned once the
-    // stage lands (stretch goal: fit-to-bounds).
-    //
-    // **HDR + ACES tone mapping + bloom** are essential for PBR
-    // materials to look right. In Bevy 0.18 HDR is a `Hdr` marker
-    // component (was a `hdr: bool` field on `Camera` previously), and
-    // bloom lives in `bevy::post_process`. Without HDR, emissive
-    // textures and metallic specular highlights clamp to LDR and look
-    // chalky; ACES tone mapping (the curve usdview / Quick Look apply)
-    // restores the filmic falloff. Bloom adds the soft edge around
-    // light sources and bright reflections.
-    commands.spawn((
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection {
-            // The default 10cm near plane made close inspection feel like
-            // "zoom stopped early" on small robotics/USD details. Keep it
-            // tight so the arcball can dolly into millimetre-scale features.
-            near: 0.0001,
-            ..default()
-        }),
-        Hdr,
-        // AgX is the modern filmic curve Blender / Krita default to.
-        // ACES is more contrasty + clips highlights harder; with a
-        // single 50k-lux sun ACES turned the teapot into a pure-white
-        // blob. AgX rolls highlights gently, reproduces albedo more
-        // faithfully, and tolerates wider exposure ranges before
-        // clipping.
-        Tonemapping::AgX,
-        // Bloom is OFF by default — turn it on with `Bloom::default()`
-        // once the user wants it. With strong direct lighting + HDR +
-        // ACES, the default bloom radius blew the highlights out into
-        // halos that overlapped the entire silhouette.
-        // (Re-enable: add `Bloom::default()` here.)
-        Transform::from_xyz(3.0, 2.5, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ArcballCamera {
-            focus: Vec3::new(0.0, 0.4, 0.0),
-            distance: 4.0,
-            ..default()
-        },
-        // bevy_glacial's GroundGridPlugin queries `&ChaseCamera` to
-        // pick the LOD level. Tag our arcball-camera entity so the
-        // grid follows our actual viewport without us having to
-        // adopt their full ChaseCameraPlugin (we keep our orbit
-        // controls). `sync_chase_camera` mirrors focus/distance/yaw
-        // every frame.
-        ChaseCamera::default(),
-    ));
-    // World-origin axis triad — replaces our hand-rolled
-    // `draw_axes` overlay system.
-    commands.spawn((
-        Name::new("WorldAxes"),
-        Transform::default(),
-        AxisGizmo::default(),
-    ));
-    // Indoor-overcast lux. With HDR + AgX a single 5k-lux sun reads
-    // closer to a quick-look studio render than 50k did — an order of
-    // magnitude lower because HDR + AgX preserve dynamic range above
-    // 1.0 instead of clipping; we don't need to push raw lux.
-    // Ambient stays modest so PBR keeps its contrast.
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 5_000.0,
-            shadow_maps_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(4.0, 6.0, 3.0).looking_at(Vec3::ZERO, Vec3::Y),
-        DefaultSun,
-    ));
-    commands.insert_resource(bevy::light::GlobalAmbientLight {
-        brightness: 200.0,
-        ..default()
-    });
-    // Ground plate intentionally gone — the WorldGrid overlay provides the
-    // reference plane now, sized and faded to match the scene extent.
 }

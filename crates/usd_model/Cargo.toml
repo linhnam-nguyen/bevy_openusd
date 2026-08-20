@@ -1,0 +1,11 @@
+[package]
+name = "usd_model"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "Pure semantic and diff domain types for USDHub."
+repository = "https://github.com/bresilla/bevy_openusd"
+
+[dependencies]
+bitflags = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

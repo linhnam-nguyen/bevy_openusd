@@ -4,6 +4,10 @@ members = [
     "crates/usd_macro",
     "crates/usd_rapier",
     "crates/usd_bevy",
+    "crates/usd_model",
+    "crates/usd_semantic",
+    "crates/usd_diff",
+    "crates/usd_git",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
 ]
@@ -12,16 +16,34 @@ exclude = ["xtra"]
 [workspace.dependencies]
 # Keep every USD layer on one exact upstream revision. Updating this single
 # entry updates usd_macro, usd_rapier, and usd_bevy together.
-openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = ["geom", "shade", "skel", "lux", "physics", "media", "vol", "render", "proc", "ui"] }
+openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 usd_macro = { path = "crates/usd_macro" }
 usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
+usd_model = { path = "crates/usd_model" }
+usd_semantic = { path = "crates/usd_semantic" }
+usd_diff = { path = "crates/usd_diff" }
+usd_git = { path = "crates/usd_git" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
+turso = { version = "0.7.1", default-features = false, features = ["sync"] }
 
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+bitflags = "2"
+blake3 = "1"
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"
@@ -58,6 +80,18 @@ path = "tests/live_projection.rs"
 name = "rapier_bridge"
 path = "tests/rapier_bridge.rs"
 
+[[test]]
+name = "cache_profile"
+path = "tests/cache_profile.rs"
+
+[[test]]
+name = "git_materialization"
+path = "tests/git_materialization.rs"
+
+[[test]]
+name = "subtree_resync_profile"
+path = "tests/subtree_resync_profile.rs"
+
 [[example]]
 name = "pack_usdz"
 path = "examples/pack_usdz.rs"
@@ -65,6 +99,10 @@ path = "examples/pack_usdz.rs"
 [dependencies]
 # Current live USD projection and marker routes.
 usd_bevy = { workspace = true }
+usd_model = { workspace = true }
+usd_semantic = { workspace = true }
+usd_diff = { workspace = true }
+usd_git = { workspace = true }
 # Pure USD-physics → Rapier builders used by the viewport-owned adapter.
 usd_rapier = { workspace = true }
 openusd = { workspace = true }
@@ -72,8 +110,17 @@ openusd = { workspace = true }
 rapier3d-f64 = { workspace = true }
 viewport_protocol = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 viewport_streaming = { workspace = true }
+turso = { workspace = true }
+blake3 = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
+tempfile = "3"
 bevy = { workspace = true, features = [
     "std",
     "async_executor",
@@ -111,7 +158,7 @@ bevy = { workspace = true, features = [
     "wayland",
     "reflect_auto_register",
 ] }
-
+log = { workspace = true }
 anyhow = { workspace = true }
 # Native file-picker dialog for the "Browse USD…" button.
 rfd = "0.17.2"
@@ -134,5 +181,6 @@ image = { workspace = true, features = ["png"] }
 
 [dev-dependencies]
 openusd = { workspace = true }
+usd_git = { workspace = true }
 zip = { workspace = true, features = ["deflate"] }
 image = { workspace = true, features = ["png"] }

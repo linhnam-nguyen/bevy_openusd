@@ -8,6 +8,7 @@ repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
 openusd = { workspace = true }
+usd_model = { workspace = true }
 usd_macro = { workspace = true }
 usd_rapier = { workspace = true }
 rapier3d-f64 = { workspace = true }

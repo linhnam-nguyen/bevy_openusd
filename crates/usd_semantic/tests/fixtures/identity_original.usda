@@ -1,0 +1,18 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def Xform "Building"
+    {
+        def Xform "Wall_A"
+        {
+            custom string source:revitUniqueId = "revit-wall-001-opaque"
+            custom string source:ifcGuid = "ifc-wall-001"
+            custom string source:applicationGuid = "app-wall-001"
+            custom string source:assetIdentifier = "asset-wall-001"
+        }
+    }
+}

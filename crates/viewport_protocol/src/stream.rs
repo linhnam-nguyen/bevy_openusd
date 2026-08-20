@@ -61,7 +61,10 @@ impl StreamLimits {
     /// server remains the authority for dimensions, pixel budget, and frame
     /// rate, so every accepted request passes through this method first.
     pub fn normalize(&self, metrics: &ViewportMetrics) -> ViewportMetrics {
-        let mut width = metrics.requested_width.min(self.max_width).max(self.min_width);
+        let mut width = metrics
+            .requested_width
+            .min(self.max_width)
+            .max(self.min_width);
         let mut height = metrics
             .requested_height
             .min(self.max_height)
@@ -71,7 +74,8 @@ impl StreamLimits {
         height = even_dimension(height, self.min_height);
 
         if u64::from(width) * u64::from(height) > self.max_pixel_count {
-            let scale = (self.max_pixel_count as f64 / (u64::from(width) * u64::from(height)) as f64)
+            let scale = (self.max_pixel_count as f64
+                / (u64::from(width) * u64::from(height)) as f64)
                 .sqrt();
             width = even_dimension((f64::from(width) * scale).floor() as u32, self.min_width);
             height = even_dimension((f64::from(height) * scale).floor() as u32, self.min_height);
@@ -136,8 +140,7 @@ impl ViewportMetrics {
 
         if self.device_pixel_ratio.is_nan()
             || !self.device_pixel_ratio.is_finite()
-            || !(MIN_DEVICE_PIXEL_RATIO..=MAX_DEVICE_PIXEL_RATIO)
-                .contains(&self.device_pixel_ratio)
+            || !(MIN_DEVICE_PIXEL_RATIO..=MAX_DEVICE_PIXEL_RATIO).contains(&self.device_pixel_ratio)
         {
             return Err(ProtocolValidationError::InvalidDevicePixelRatio {
                 value: self.device_pixel_ratio,
@@ -270,7 +273,9 @@ mod tests {
 
         assert_eq!(normalized.requested_width % 2, 0);
         assert_eq!(normalized.requested_height % 2, 0);
-        assert!(u64::from(normalized.requested_width) * u64::from(normalized.requested_height)
-            <= MAX_PIXEL_COUNT);
+        assert!(
+            u64::from(normalized.requested_width) * u64::from(normalized.requested_height)
+                <= MAX_PIXEL_COUNT
+        );
     }
 }

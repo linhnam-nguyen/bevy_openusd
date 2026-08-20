@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{
     DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
-    SceneChildrenPage, SceneReadModel,
+    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
 use crate::viewport::session::Spawned;
@@ -81,12 +81,63 @@ impl SceneAnchorIndex {
         }
     }
 
-    pub(crate) fn nodes_snapshot(&self) -> Vec<PrimNodeReadModel> {
-        self.nodes.clone()
+    /// Resolves a semantic row into the current runtime tree representation.
+    ///
+    /// Semantic storage owns searchable identity and metadata; this index
+    /// owns the session-local anchor, visibility, hierarchy, and reveal-page
+    /// information required by the viewport protocol.
+    pub(crate) fn search_match_for_path(&self, prim_path: &str) -> Option<SceneSearchMatch> {
+        let node = self
+            .nodes
+            .iter()
+            .find(|node| node.anchor.prim_path == prim_path)?;
+        let by_anchor: HashMap<SceneAnchor, &PrimNodeReadModel> = self
+            .nodes
+            .iter()
+            .map(|node| (node.anchor.clone(), node))
+            .collect();
+
+        let mut ancestry = Vec::new();
+        let mut current = Some(node);
+        while let Some(node) = current {
+            ancestry.push(node);
+            current = node
+                .parent
+                .as_ref()
+                .and_then(|parent| by_anchor.get(parent).copied());
+        }
+
+        let reveal_pages = ancestry
+            .into_iter()
+            .rev()
+            .map(|node| ScenePageReference {
+                parent: node.parent.clone(),
+                page: self.sibling_page(node),
+            })
+            .collect();
+
+        Some(SceneSearchMatch {
+            anchor: node.anchor.clone(),
+            parent: node.parent.clone(),
+            label: node.label.clone(),
+            visible: node.visible,
+            has_children: node.has_children,
+            reveal_pages,
+        })
     }
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    fn sibling_page(&self, node: &PrimNodeReadModel) -> u32 {
+        let index = self
+            .nodes
+            .iter()
+            .filter(|candidate| candidate.parent.as_ref() == node.parent.as_ref())
+            .position(|candidate| candidate.anchor == node.anchor)
+            .unwrap_or_default();
+        (index as u32) / DEFAULT_SCENE_PAGE_SIZE
     }
 
     fn rebuild(
@@ -266,6 +317,56 @@ pub(crate) fn refresh_scene_anchor_index(
             index.revision,
             index.nodes.len(),
             root_count
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
+        PrimNodeReadModel {
+            anchor: SceneAnchor::active_session(path),
+            parent: parent.map(SceneAnchor::active_session),
+            label: label.to_owned(),
+            visible: true,
+            has_children: false,
+        }
+    }
+
+    #[test]
+    fn semantic_path_resolution_preserves_runtime_reveal_pages() {
+        let mut index = SceneAnchorIndex::default();
+        index.nodes = vec![
+            node("/World", None, "World"),
+            node("/World/Environment", Some("/World"), "Environment"),
+            node(
+                "/World/Environment/Door",
+                Some("/World/Environment"),
+                "Door",
+            ),
+        ];
+
+        let result = index
+            .search_match_for_path("/World/Environment/Door")
+            .expect("semantic row resolves to a runtime node");
+        assert_eq!(result.label, "Door");
+        assert_eq!(result.reveal_pages.len(), 3);
+        assert_eq!(result.reveal_pages[0].parent, None);
+        assert_eq!(
+            result.reveal_pages[1]
+                .parent
+                .as_ref()
+                .map(|anchor| anchor.prim_path.as_str()),
+            Some("/World")
+        );
+        assert_eq!(
+            result.reveal_pages[2]
+                .parent
+                .as_ref()
+                .map(|anchor| anchor.prim_path.as_str()),
+            Some("/World/Environment")
         );
     }
 }

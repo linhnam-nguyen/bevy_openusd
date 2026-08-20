@@ -12,7 +12,9 @@ pub mod session;
 pub mod signaling;
 pub mod stream_session;
 
-pub use application::{RenderServerInterface, RenderServerPortError};
+pub use application::{
+    RenderServerInterface, RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestKind,
+};
 pub use config::{StreamingConfig, StreamingPreset};
 pub use data_channel::{
     CONTROL_CHANNEL_LABEL, CONTROL_CHANNEL_PROTOCOL, INPUT_CHANNEL_LABEL, INPUT_CHANNEL_PROTOCOL,
