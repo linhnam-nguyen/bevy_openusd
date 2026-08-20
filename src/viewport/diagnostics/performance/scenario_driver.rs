@@ -302,18 +302,30 @@ pub fn scenario_action_driver_system(
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S23IsolationSlowFailingDataWorker => {
-            if let Some(ref iface) = interface {
+            // Keep the first failing request current until its delayed worker
+            // response returns. Only then start the query burst; otherwise
+            // latest-query replacement removes the probe's correlation entry
+            // before the failure can reach the normal requester bridge.
+            let failure_probe = frame == 1;
+            let backlog_burst = (16..=36).contains(&frame);
+            if (failure_probe || backlog_burst)
+                && let Some(ref iface) = interface
+            {
                 let cmd = ViewportCommand::SearchScene {
                     query: "root".into(),
                     offset: 0,
                     limit: 20,
                 };
                 let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
-                    format!("s23-q-{frame}"),
+                    if failure_probe {
+                        "s23-failure-probe".into()
+                    } else {
+                        format!("s23-burst-q-{frame}")
+                    },
                     cmd,
                 ));
+                driver.action_executions += 1;
             }
-            driver.action_executions += 1;
         }
         BenchmarkScenarioId::S24IsolationAuthRevocationPropagation => {
             if frame == 20 {
