@@ -60,7 +60,16 @@ pub fn scenario_action_driver_system(
         | BenchmarkScenarioId::S9NativeRecoveryIdle
         | BenchmarkScenarioId::S11WebRtcIdleConnected
         | BenchmarkScenarioId::S12WebRtcIdleClientConnected
-        | BenchmarkScenarioId::S16WebRtcRemoteVisuallyEmpty => {}
+        | BenchmarkScenarioId::S16WebRtcRemoteVisuallyEmpty
+        | BenchmarkScenarioId::S13WebRtcRemoteGridVisibilityCommand
+        | BenchmarkScenarioId::S14WebRtcRemoteGroundOriginCommand
+        | BenchmarkScenarioId::S15WebRtcRemoteOrbitPan
+        | BenchmarkScenarioId::S17WebRtcRemoteAuthoritativeUsdEdit
+        | BenchmarkScenarioId::S18WebRtcRemoteCommandAfterLongIdle => {
+            // S12-S18 are real-client scenarios. Their UsdHubUI harness owns
+            // the action and the WebRTC round trip; the benchmark server only
+            // observes the resulting authoritative state and renderer metrics.
+        }
 
         BenchmarkScenarioId::S3NativeCameraOrbitPan => {
             if let Some(ref mut nav) = navigation {
@@ -105,93 +114,6 @@ pub fn scenario_action_driver_system(
             if frame == 5 {
                 if let Some(ref mut live) = live_stage {
                     let _ = live.stage.define_prim("/Root/BenchmarkMarker");
-                    driver.action_executions += 1;
-                }
-            }
-        }
-        BenchmarkScenarioId::S13WebRtcRemoteGridVisibilityCommand => {
-            if frame % 15 == 0 {
-                if let Some(ref iface) = interface {
-                    let cmd = ViewportCommand::SetOverlay {
-                        overlay: OverlayKind::GroundGrid,
-                        enabled: frame % 30 < 15,
-                    };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
-                        format!("s13-{frame}"),
-                        cmd,
-                    ));
-                    driver.action_executions += 1;
-                }
-            }
-        }
-        BenchmarkScenarioId::S14WebRtcRemoteGroundOriginCommand => {
-            if frame % 10 == 0 {
-                if let Some(ref iface) = interface {
-                    let origin = if (frame / 10) % 2 == 0 {
-                        GroundGridOrigin::LoadedScene
-                    } else {
-                        GroundGridOrigin::WorldOrigin
-                    };
-                    let cmd = ViewportCommand::SetGroundGridOrigin { origin };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
-                        format!("s14-{frame}"),
-                        cmd,
-                    ));
-                    driver.action_executions += 1;
-                }
-            }
-        }
-        BenchmarkScenarioId::S15WebRtcRemoteOrbitPan => {
-            if let Some(ref iface) = interface {
-                let motion = PointerMotion {
-                    sequence: frame,
-                    dx_css_pixels: (frame as f32 * 0.05).sin() * 4.0,
-                    dy_css_pixels: (frame as f32 * 0.05).cos() * 3.0,
-                    wheel_x: 0.0,
-                    wheel_y: if frame % 30 == 0 { 120.0 } else { 0.0 },
-                    viewport_css_width: 1920.0,
-                    viewport_css_height: 1080.0,
-                    stream_generation: 1,
-                };
-                let _ = iface.submit_pointer_motion(motion);
-                let btn = ButtonState {
-                    sequence: frame,
-                    buttons: PointerButtons {
-                        primary: true,
-                        secondary: true,
-                        auxiliary: false,
-                    },
-                    modifiers: InputModifiers::default(),
-                    stream_generation: 1,
-                };
-                let _ = iface.submit_input(InputCommand::ButtonState(btn));
-                driver.action_executions += 1;
-            }
-        }
-        BenchmarkScenarioId::S17WebRtcRemoteAuthoritativeUsdEdit => {
-            if frame == 5 {
-                if let Some(ref iface) = interface {
-                    let cmd = ViewportCommand::SetAttribute {
-                        prim_path: "/root/hummingbird".into(),
-                        name: "xformOp:translate".into(),
-                        type_name: "double3".into(),
-                        value: serde_json::json!([1.0, 2.0, 3.0]),
-                    };
-                    let _ = iface
-                        .submit_viewport_command(ViewportCommandEnvelope::new("s17-edit-1", cmd));
-                    driver.action_executions += 1;
-                }
-            }
-        }
-        BenchmarkScenarioId::S18WebRtcRemoteCommandAfterLongIdle => {
-            if frame == 60 {
-                if let Some(ref iface) = interface {
-                    let cmd = ViewportCommand::SetOverlay {
-                        overlay: OverlayKind::GroundGrid,
-                        enabled: false,
-                    };
-                    let _ = iface
-                        .submit_viewport_command(ViewportCommandEnvelope::new("s18-idle-cmd", cmd));
                     driver.action_executions += 1;
                 }
             }
