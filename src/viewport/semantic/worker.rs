@@ -1,4 +1,9 @@
-use std::sync::{Mutex, mpsc};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc::{self, SyncSender, TrySendError},
+};
+use std::time::Duration;
 
 use bevy::prelude::Resource;
 use usd_model::SemanticSnapshot;
@@ -26,21 +31,35 @@ enum SemanticCommand {
 /// The Bevy-facing channel endpoint for the dedicated semantic worker.
 #[derive(Resource, Debug)]
 pub(crate) struct SemanticWorkingStore {
-    commands: mpsc::Sender<SemanticCommand>,
+    commands: SyncSender<SemanticCommand>,
     responses: Mutex<mpsc::Receiver<SemanticResponse>>,
+    test_control: Arc<SemanticWorkerTestControl>,
+}
+
+/// Controlled worker behavior used only by the isolation benchmark scenario.
+/// The delay and failure happen on the dedicated worker thread, never in a
+/// Bevy system, so the scenario can prove that rendering remains responsive
+/// while data-plane work is slow or failing.
+#[derive(Debug, Default)]
+pub(crate) struct SemanticWorkerTestControl {
+    query_delay_ms: AtomicU64,
+    fail_queries: AtomicBool,
 }
 
 impl Default for SemanticWorkingStore {
     fn default() -> Self {
-        let (commands, pending_commands) = mpsc::channel();
+        let (commands, pending_commands) = mpsc::sync_channel(8);
         let (responses, pending_responses) = mpsc::channel();
+        let test_control = Arc::new(SemanticWorkerTestControl::default());
+        let worker_control = Arc::clone(&test_control);
         std::thread::Builder::new()
             .name("usdview-semantic-worker".to_owned())
-            .spawn(move || semantic_worker(pending_commands, responses))
+            .spawn(move || semantic_worker(pending_commands, responses, worker_control))
             .expect("semantic worker should start");
         Self {
             commands,
             responses: Mutex::new(pending_responses),
+            test_control,
         }
     }
 }
@@ -52,7 +71,7 @@ impl SemanticWorkingStore {
         snapshot: SemanticSnapshot,
     ) -> bool {
         self.commands
-            .send(SemanticCommand::ReplaceSnapshot {
+            .try_send(SemanticCommand::ReplaceSnapshot {
                 request_id: request_id.into(),
                 snapshot,
             })
@@ -60,12 +79,20 @@ impl SemanticWorkingStore {
     }
 
     pub(crate) fn submit_query(&self, request_id: impl Into<String>, query: SemanticQuery) -> bool {
+        self.try_submit_query(request_id, query).is_ok()
+    }
+
+    pub(crate) fn try_submit_query(
+        &self,
+        request_id: impl Into<String>,
+        query: SemanticQuery,
+    ) -> Result<(), SemanticSubmitError> {
         self.commands
-            .send(SemanticCommand::Query {
+            .try_send(SemanticCommand::Query {
                 request_id: request_id.into(),
                 query,
             })
-            .is_ok()
+            .map_err(SemanticSubmitError::from)
     }
 
     pub(crate) fn submit_delta(
@@ -74,11 +101,20 @@ impl SemanticWorkingStore {
         update: SemanticIncrementalUpdate,
     ) -> bool {
         self.commands
-            .send(SemanticCommand::ApplyDelta {
+            .try_send(SemanticCommand::ApplyDelta {
                 request_id: request_id.into(),
                 update,
             })
             .is_ok()
+    }
+
+    pub(crate) fn configure_test_mode(&self, query_delay: Duration, fail_queries: bool) {
+        self.test_control
+            .query_delay_ms
+            .store(query_delay.as_millis().min(u64::MAX as u128) as u64, Ordering::Release);
+        self.test_control
+            .fail_queries
+            .store(fail_queries, Ordering::Release);
     }
 
     pub(crate) fn drain_responses(&self) -> Vec<SemanticResponse> {
@@ -89,9 +125,25 @@ impl SemanticWorkingStore {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SemanticSubmitError {
+    QueueFull,
+    WorkerClosed,
+}
+
+impl From<TrySendError<SemanticCommand>> for SemanticSubmitError {
+    fn from(error: TrySendError<SemanticCommand>) -> Self {
+        match error {
+            TrySendError::Full(_) => Self::QueueFull,
+            TrySendError::Disconnected(_) => Self::WorkerClosed,
+        }
+    }
+}
+
 fn semantic_worker(
     pending_commands: mpsc::Receiver<SemanticCommand>,
     responses: mpsc::Sender<SemanticResponse>,
+    test_control: Arc<SemanticWorkerTestControl>,
 ) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -178,12 +230,20 @@ fn semantic_worker(
                 )
             }
             SemanticCommand::Query { request_id, query } => {
+                let delay_ms = test_control.query_delay_ms.load(Ordering::Acquire);
+                if delay_ms > 0 {
+                    std::thread::sleep(Duration::from_millis(delay_ms));
+                }
                 let result = database.as_ref().map_or_else(
                     || Err("semantic database is unavailable".to_owned()),
                     |database| {
-                        runtime
-                            .block_on(database.query(&query))
-                            .map_err(|error| error.to_string())
+                        if test_control.fail_queries.load(Ordering::Acquire) {
+                            Err("controlled benchmark query failure".to_owned())
+                        } else {
+                            runtime
+                                .block_on(database.query(&query))
+                                .map_err(|error| error.to_string())
+                        }
                     },
                 );
                 (

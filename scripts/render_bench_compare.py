@@ -13,11 +13,55 @@ import os
 import sys
 from pathlib import Path
 
-REQUIRED_TIMING_FIELDS = ["median_frame_ms", "p95_frame_ms", "actual_renderer_fps", "warmup_frames", "measured_frames"]
-REQUIRED_IDENTITY_FIELDS = ["scenario_code", "scene_label", "build_profile", "width", "height", "requested_fps", "backend", "gpu_adapter", "glacial_sha"]
-REQUIRED_GRID_FIELDS = ["structural_rebuilds", "vertices_generated", "indices_generated", "compute_extent_calls", "sync_calls"]
-REQUIRED_SEM_FIELDS = ["snapshot_clones", "sync_calls", "recovery_checkpoints"]
-REQUIRED_SECTIONS = ["identity", "timing", "incident_grid", "incident_semantic", "webrtc_metrics", "isolation_metrics", "cache_snapshot", "phase_metrics"]
+REQUIRED_TOP_LEVEL_FIELDS = [
+    "schema_version", "identity", "requested_configuration", "effective_configuration",
+    "configuration_matches", "expected_steady_state", "observed_steady_state",
+    "steady_state_matches", "timing", "incident_grid", "incident_semantic",
+    "webrtc_metrics", "isolation_metrics", "phase_metrics", "cache_snapshot", "raw_samples",
+]
+REQUIRED_IDENTITY_FIELDS = [
+    "schema_version", "checkpoint_id", "git_sha", "glacial_sha", "scenario_code",
+    "scene_label", "scene_path", "build_profile", "os", "backend", "gpu_adapter",
+    "width", "height", "requested_fps",
+]
+REQUIRED_TIMING_FIELDS = [
+    "warmup_frames", "measured_frames", "median_frame_ms", "p95_frame_ms", "min_frame_ms",
+    "max_frame_ms", "actual_renderer_fps", "avg_fps", "p95_fps_equivalent", "wall_median_ms",
+    "wall_p95_ms", "gpu_median_frame_ms", "gpu_p95_frame_ms",
+]
+REQUIRED_GRID_FIELDS = [
+    "compute_extent_calls", "prims_scanned", "sync_calls", "host_writes", "visible_writes",
+    "ground_y_writes", "coverage_radius_writes", "value_changes", "changed_observations",
+    "update_alpha_calls", "lines_rebuilt", "dots_rebuilt", "structural_rebuilds",
+    "vertices_generated", "indices_generated",
+]
+REQUIRED_SEM_FIELDS = [
+    "sync_calls", "idle_skips", "snapshot_clones", "initial_extractions",
+    "initial_extraction_failures", "fallback_extractions", "subtree_extractions",
+    "worker_submissions", "worker_submission_failures", "recovery_checkpoints", "recovery_successes",
+]
+REQUIRED_WEBRTC_FIELDS = [
+    "remote_commands_drained", "remote_inputs_applied", "authoritative_events_published",
+    "captured_frames", "frame_queue_drops",
+]
+REQUIRED_ISOLATION_FIELDS = [
+    "sync_db_auth_waits_in_bevy", "query_saturations", "query_requests", "query_results",
+    "query_failures", "query_high_water", "query_median_latency_ms", "query_p95_latency_ms",
+    "auth_validation_bursts", "auth_lookup_count", "auth_snapshot_hits", "auth_validations",
+    "auth_failures", "auth_high_water",
+]
+REQUIRED_CACHE_FIELDS = [
+    "live_stage_prims", "live_stage_animated_prims", "cached_materials", "cached_textures",
+    "material_hits", "material_misses", "texture_hits", "texture_misses",
+]
+REQUIRED_PHASE_FIELDS = [
+    "initial_projection_ms", "initial_projection_prims", "stage_traversal_ms", "mesh_generation_ms",
+    "primvar_expansion_ms", "normal_generation_ms", "material_resolve_ms",
+]
+REQUIRED_SECTIONS = [
+    "identity", "timing", "incident_grid", "incident_semantic", "webrtc_metrics",
+    "isolation_metrics", "cache_snapshot", "phase_metrics",
+]
 
 def load_report(path: str) -> dict:
     if not os.path.exists(path):
@@ -29,14 +73,20 @@ def load_report(path: str) -> dict:
     return data
 
 def validate_required_fields(data: dict, file_label: str):
-    for sec in REQUIRED_SECTIONS:
-        if sec not in data:
-            raise ValueError(f"{file_label} missing required section: {sec}")
+    for field in REQUIRED_TOP_LEVEL_FIELDS:
+        if field not in data:
+            raise ValueError(f"{file_label} missing required top-level field: {field}")
+    if data["schema_version"] != 1:
+        raise ValueError(f"{file_label} has unsupported schema_version: {data['schema_version']}")
 
     ident = data["identity"]
     timing = data["timing"]
     grid = data["incident_grid"]
     sem = data["incident_semantic"]
+    webrtc = data["webrtc_metrics"]
+    isolation = data["isolation_metrics"]
+    cache = data["cache_snapshot"]
+    phase = data["phase_metrics"]
 
     for f in REQUIRED_IDENTITY_FIELDS:
         if f not in ident:
@@ -50,6 +100,15 @@ def validate_required_fields(data: dict, file_label: str):
     for f in REQUIRED_SEM_FIELDS:
         if f not in sem:
             raise ValueError(f"{file_label} missing required incident_semantic field: {f}")
+    for section, fields, value in (
+        ("webrtc_metrics", REQUIRED_WEBRTC_FIELDS, webrtc),
+        ("isolation_metrics", REQUIRED_ISOLATION_FIELDS, isolation),
+        ("cache_snapshot", REQUIRED_CACHE_FIELDS, cache),
+        ("phase_metrics", REQUIRED_PHASE_FIELDS, phase),
+    ):
+        for field in fields:
+            if field not in value:
+                raise ValueError(f"{file_label} missing required {section} field: {field}")
 
 def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", label_b: str = "Candidate") -> bool:
     validate_required_fields(report_a, label_a)
@@ -94,9 +153,9 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     if id_a["requested_fps"] != id_b["requested_fps"]:
         raise ValueError(f"Requested FPS mismatch: {id_a['requested_fps']} vs {id_b['requested_fps']}")
 
-    cfg_match_a = report_a.get("configuration_matches", False)
-    cfg_match_b = report_b.get("configuration_matches", False)
-    cfg_consistent = (report_a.get("requested_configuration") == report_b.get("requested_configuration"))
+    cfg_match_a = report_a["configuration_matches"]
+    cfg_match_b = report_b["configuration_matches"]
+    cfg_consistent = report_a["requested_configuration"] == report_b["requested_configuration"]
 
     if not cfg_consistent:
         raise ValueError(f"Requested configuration mismatch between {label_a} and {label_b}")
@@ -127,43 +186,43 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     print(f"{'Configuration Invariant Matches':<36} | {str(cfg_match_a):<15} | {str(cfg_match_b):<15} | {'OK' if cfg_consistent else 'INCOMPARABLE'}")
 
     # Grid Incidents (Incident A)
-    grid_rebuild_a = grid_a.get("structural_rebuilds", 0)
-    grid_rebuild_b = grid_b.get("structural_rebuilds", 0)
+    grid_rebuild_a = grid_a["structural_rebuilds"]
+    grid_rebuild_b = grid_b["structural_rebuilds"]
     status_grid = "CLEAN" if grid_rebuild_b == 0 else f"VIOLATION (+{grid_rebuild_b})"
     print(f"{'Grid Structural Rebuilds':<36} | {grid_rebuild_a:<15} | {grid_rebuild_b:<15} | {status_grid}")
 
-    grid_verts_a = grid_a.get("vertices_generated", 0)
-    grid_verts_b = grid_b.get("vertices_generated", 0)
+    grid_verts_a = grid_a["vertices_generated"]
+    grid_verts_b = grid_b["vertices_generated"]
     print(f"{'Grid Vertices Generated':<36} | {grid_verts_a:<15} | {grid_verts_b:<15} | {grid_verts_b - grid_verts_a:+}")
 
     # Semantic Incidents (Incident B)
-    sem_clones_a = sem_a.get("snapshot_clones", 0)
-    sem_clones_b = sem_b.get("snapshot_clones", 0)
+    sem_clones_a = sem_a["snapshot_clones"]
+    sem_clones_b = sem_b["snapshot_clones"]
     status_sem = "CLEAN" if sem_clones_b == 0 else f"VIOLATION (+{sem_clones_b})"
     print(f"{'Semantic Snapshot Clones':<36} | {sem_clones_a:<15} | {sem_clones_b:<15} | {status_sem}")
 
-    rec_a = sem_a.get("recovery_checkpoints", 0)
-    rec_b = sem_b.get("recovery_checkpoints", 0)
+    rec_a = sem_a["recovery_checkpoints"]
+    rec_b = sem_b["recovery_checkpoints"]
     print(f"{'Recovery Checkpoints':<36} | {rec_a:<15} | {rec_b:<15} | {rec_b - rec_a:+}")
 
     # WebRTC Metrics
-    cmd_a = webrtc_a.get("remote_commands_drained", 0)
-    cmd_b = webrtc_b.get("remote_commands_drained", 0)
+    cmd_a = webrtc_a["remote_commands_drained"]
+    cmd_b = webrtc_b["remote_commands_drained"]
     print(f"{'Remote Commands Drained':<36} | {cmd_a:<15} | {cmd_b:<15} | {cmd_b - cmd_a:+}")
 
-    caps_a = webrtc_a.get("captured_frames", 0)
-    caps_b = webrtc_b.get("captured_frames", 0)
+    caps_a = webrtc_a["captured_frames"]
+    caps_b = webrtc_b["captured_frames"]
     print(f"{'Captured Video Frames':<36} | {caps_a:<15} | {caps_b:<15} | {caps_b - caps_a:+}")
 
     # Isolation Invariants
-    iso_waits_a = iso_a.get("sync_db_auth_waits_in_bevy", 0)
-    iso_waits_b = iso_b.get("sync_db_auth_waits_in_bevy", 0)
+    iso_waits_a = iso_a["sync_db_auth_waits_in_bevy"]
+    iso_waits_b = iso_b["sync_db_auth_waits_in_bevy"]
     status_iso = "CLEAN" if iso_waits_b == 0 else f"VIOLATION (+{iso_waits_b})"
     print(f"{'Sync DB Auth Waits in Bevy':<36} | {iso_waits_a:<15} | {iso_waits_b:<15} | {status_iso}")
 
     # Cache Snapshot
-    mats_a = cache_a.get("cached_materials", 0)
-    mats_b = cache_b.get("cached_materials", 0)
+    mats_a = cache_a["cached_materials"]
+    mats_b = cache_b["cached_materials"]
     print(f"{'Cached Standard Materials':<36} | {mats_a:<15} | {mats_b:<15} | {mats_b - mats_a:+}")
     print(f"{'='*80}\n")
     return cfg_consistent and cfg_match_a and cfg_match_b

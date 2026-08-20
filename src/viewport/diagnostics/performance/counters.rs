@@ -66,8 +66,10 @@ pub struct RendererCounters {
     pub query_high_water: u64,
     pub query_median_latency_ms: Option<f64>,
     pub query_p95_latency_ms: Option<f64>,
+    query_latency_samples_ms: Vec<f64>,
     pub auth_validation_bursts: u64,
     pub auth_lookup_count: u64,
+    pub auth_snapshot_hits: u64,
     pub auth_validations: u64,
     pub auth_failures: u64,
     pub auth_high_water: u64,
@@ -131,8 +133,10 @@ impl Default for RendererCounters {
             query_high_water: 0,
             query_median_latency_ms: None,
             query_p95_latency_ms: None,
+            query_latency_samples_ms: Vec::new(),
             auth_validation_bursts: 0,
             auth_lookup_count: 0,
+            auth_snapshot_hits: 0,
             auth_validations: 0,
             auth_failures: 0,
             auth_high_water: 0,
@@ -185,12 +189,50 @@ impl RendererCounters {
         self.query_high_water = 0;
         self.query_median_latency_ms = None;
         self.query_p95_latency_ms = None;
+        self.query_latency_samples_ms.clear();
         self.auth_validation_bursts = 0;
         self.auth_lookup_count = 0;
+        self.auth_snapshot_hits = 0;
         self.auth_validations = 0;
         self.auth_failures = 0;
         self.auth_high_water = 0;
     }
+
+    pub fn record_query_latency_ms(&mut self, latency_ms: f64) {
+        if latency_ms.is_finite() && latency_ms >= 0.0 {
+            self.query_latency_samples_ms.push(latency_ms);
+        }
+    }
+
+    pub fn finalize_query_latency(&mut self) {
+        if self.query_latency_samples_ms.is_empty() {
+            self.query_median_latency_ms = None;
+            self.query_p95_latency_ms = None;
+            return;
+        }
+
+        self.query_latency_samples_ms
+            .sort_by(|left, right| left.total_cmp(right));
+        self.query_median_latency_ms = Some(percentile(
+            &self.query_latency_samples_ms,
+            0.50,
+        ));
+        self.query_p95_latency_ms = Some(percentile(
+            &self.query_latency_samples_ms,
+            0.95,
+        ));
+    }
+}
+
+fn percentile(sorted: &[f64], pct: f64) -> f64 {
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let rank = pct * (sorted.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+    let weight = rank - lower as f64;
+    sorted[lower] * (1.0 - weight) + sorted[upper] * weight
 }
 
 /// Marks frame start instant in the `First` schedule.
@@ -233,5 +275,18 @@ mod tests {
         assert_eq!(counters.grid_structural_rebuilds, 0);
         assert_eq!(counters.semantic_snapshot_clones, 0);
         assert!(!counters.configuration_grid_enabled);
+    }
+
+    #[test]
+    fn query_latency_percentiles_are_derived_from_completed_samples() {
+        let mut counters = RendererCounters::default();
+        counters.record_query_latency_ms(9.0);
+        counters.record_query_latency_ms(1.0);
+        counters.record_query_latency_ms(5.0);
+
+        counters.finalize_query_latency();
+
+        assert_eq!(counters.query_median_latency_ms, Some(5.0));
+        assert_eq!(counters.query_p95_latency_ms, Some(8.6));
     }
 }

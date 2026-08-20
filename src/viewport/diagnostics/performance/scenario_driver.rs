@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_glacial::prelude::GroundGrid;
+use std::time::Duration;
 use super::counters::RendererCounters;
 use super::runner::BenchmarkRunState;
 use super::scenario::BenchmarkScenarioId;
@@ -10,6 +11,7 @@ use crate::viewport::camera::ArcballCameraSet;
 use crate::viewport::input::ViewportNavigationInput;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::transport::webrtc::WebRtcTransportState;
+use crate::viewport::semantic::SemanticWorkingStore;
 use viewport_protocol::{
     ButtonState, GroundGridOrigin, InputCommand, InputModifiers, OverlayKind, PointerButtons,
     PointerMotion, SessionId, SessionRole, ViewportCommand, ViewportCommandEnvelope,
@@ -29,6 +31,7 @@ pub fn setup_scenario_driver_system(
     mut grid: Option<ResMut<GroundGrid>>,
     mut toggles: Option<ResMut<DisplayToggles>>,
     mut webrtc_state: Option<ResMut<WebRtcTransportState>>,
+    semantic_store: Option<Res<SemanticWorkingStore>>,
 ) {
     let Some(driver) = driver else { return };
     if driver.scenario_id == Some(BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused) {
@@ -39,7 +42,23 @@ pub fn setup_scenario_driver_system(
             grid.visible = false;
         }
     }
+    if driver.scenario_id == Some(BenchmarkScenarioId::S23IsolationSlowFailingDataWorker) {
+        if let Some(store) = semantic_store {
+            store.configure_test_mode(Duration::from_millis(100), true);
+        }
+    }
     if let Some(ref mut state) = webrtc_state {
+        if matches!(
+            driver.scenario_id,
+            Some(
+                BenchmarkScenarioId::S21IsolationNavigationUnderAuth
+                    | BenchmarkScenarioId::S24IsolationAuthRevocationPropagation
+            )
+        ) {
+            let _ = state
+                .sessions
+                .register(SessionId::new("bench-controller"), SessionRole::Controller);
+        }
         for i in 0..200 {
             let sid = SessionId::new(format!("bench-session-{i}"));
             let _ = state.sessions.register(sid, SessionRole::Observer);
@@ -205,12 +224,6 @@ pub fn scenario_action_driver_system(
             }
         }
         BenchmarkScenarioId::S19IsolationQuerySaturation => {
-            if let Some(ref mut c) = counters {
-                c.query_saturations += 1;
-                c.query_requests += 1;
-                c.query_results += 1;
-                c.query_high_water = c.query_high_water.max(1);
-            }
             if let Some(ref iface) = interface {
                 let cmd = ViewportCommand::SearchScene { query: "root".into(), offset: 0, limit: 50 };
                 let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s19-q-{frame}"), cmd));
@@ -229,40 +242,64 @@ pub fn scenario_action_driver_system(
             }
             if let Some(ref mut c) = counters {
                 c.auth_validation_bursts += 1;
-                c.auth_lookup_count += validated;
                 c.auth_validations += validated;
-                c.auth_high_water = c.auth_high_water.max(50);
+                c.auth_snapshot_hits += validated;
+                c.auth_high_water = c.auth_high_water.max(validated);
             }
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S21IsolationNavigationUnderAuth => {
-            if let Some(ref mut nav) = navigation {
-                nav.pointer_delta = Vec2::new(2.0, 1.0);
-                nav.buttons.primary = true;
-                nav.buttons.secondary = true;
-                nav.focused = true;
-            }
-            let mut validated = 0u64;
-            if let Some(ref state) = webrtc_state {
+            let controller = SessionId::new("bench-controller");
+            let mut validations = 0u64;
+            let mut accepted = 0u64;
+            if let (Some(iface), Some(state)) = (&interface, &webrtc_state) {
                 for i in 0..20 {
-                    let sid = SessionId::new(format!("bench-session-{}", (frame * 20 + i) % 100));
-                    if state.sessions.role(&sid).is_some() {
-                        validated += 1;
+                    let sequence = frame.saturating_mul(40).saturating_add(i * 2 + 1);
+                    let motion = PointerMotion {
+                        sequence,
+                        dx_css_pixels: 2.0,
+                        dy_css_pixels: 1.0,
+                        wheel_x: 0.0,
+                        wheel_y: if i == 0 { 120.0 } else { 0.0 },
+                        viewport_css_width: 1920.0,
+                        viewport_css_height: 1080.0,
+                        stream_generation: 1,
+                    };
+                    let button = ButtonState {
+                        sequence: sequence + 1,
+                        buttons: PointerButtons {
+                            primary: true,
+                            secondary: true,
+                            auxiliary: false,
+                        },
+                        modifiers: InputModifiers::default(),
+                        stream_generation: 1,
+                    };
+                    for command in [
+                        InputCommand::PointerMotion(motion),
+                        InputCommand::ButtonState(button),
+                    ] {
+                        validations += 1;
+                        if state.sessions.role(&controller).is_some()
+                            && state
+                                .submit_authenticated_input(&controller, iface, command)
+                                .is_ok()
+                        {
+                            accepted += 1;
+                        }
                     }
                 }
             }
             if let Some(ref mut c) = counters {
-                c.auth_lookup_count += validated;
-                c.auth_validations += validated;
+                c.auth_validations += validations;
+                c.auth_snapshot_hits += validations;
+                c.auth_high_water = c.auth_high_water.max(validations);
             }
-            driver.action_executions += 1;
+            if accepted > 0 {
+                driver.action_executions += 1;
+            }
         }
         BenchmarkScenarioId::S22IsolationQueryCommandConcurrency => {
-            if let Some(ref mut c) = counters {
-                c.query_saturations += 1;
-                c.query_requests += 1;
-                c.query_results += 1;
-            }
             if let Some(ref iface) = interface {
                 let q = ViewportCommand::SearchScene { query: "hummingbird".into(), offset: 0, limit: 20 };
                 let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s22-q-{frame}"), q));
@@ -272,23 +309,51 @@ pub fn scenario_action_driver_system(
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S23IsolationSlowFailingDataWorker => {
-            if let Some(ref mut c) = counters {
-                c.query_requests += 1;
-                c.query_failures += 1; // Worker rejection/failure injection
+            if let Some(ref iface) = interface {
+                let cmd = ViewportCommand::SearchScene {
+                    query: "root".into(),
+                    offset: 0,
+                    limit: 20,
+                };
+                let _ = iface.submit_viewport_command(
+                    ViewportCommandEnvelope::new(format!("s23-q-{frame}"), cmd),
+                );
             }
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S24IsolationAuthRevocationPropagation => {
-            if frame % 20 == 0 {
-                let mut revoked = false;
-                if let Some(ref mut state) = webrtc_state {
-                    let sid = SessionId::new(format!("bench-session-{}", frame / 20));
-                    revoked = state.sessions.unregister(&sid);
-                }
-                if let Some(ref mut c) = counters {
-                    if revoked {
-                        c.auth_lookup_count += 1;
-                        c.auth_validations += 1;
+            if frame == 20 {
+                let controller = SessionId::new("bench-controller");
+                let revoked = webrtc_state
+                    .as_mut()
+                    .is_some_and(|state| state.sessions.unregister(&controller));
+                if revoked {
+                    let rejected_after_revoke = if let (Some(iface), Some(state)) =
+                        (&interface, &webrtc_state)
+                    {
+                        state
+                            .submit_authenticated_input(
+                                &controller,
+                                iface,
+                                InputCommand::ButtonState(ButtonState {
+                                    sequence: frame,
+                                    buttons: PointerButtons::default(),
+                                    modifiers: InputModifiers::default(),
+                                    stream_generation: 1,
+                                }),
+                            )
+                            .is_err()
+                    } else {
+                        false
+                    };
+                    if rejected_after_revoke
+                        && webrtc_state
+                            .as_ref()
+                            .is_some_and(|state| state.sessions.role(&controller).is_none())
+                    {
+                        if let Some(ref mut c) = counters {
+                            c.auth_failures += 1;
+                        }
                     }
                 }
             }

@@ -64,6 +64,7 @@ pub struct IsolationReportSummary {
     pub query_p95_latency_ms: Option<f64>,
     pub auth_validation_bursts: u64,
     pub auth_lookup_count: u64,
+    pub auth_snapshot_hits: u64,
     pub auth_validations: u64,
     pub auth_failures: u64,
     pub auth_high_water: u64,

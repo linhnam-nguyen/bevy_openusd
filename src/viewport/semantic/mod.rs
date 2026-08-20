@@ -23,7 +23,7 @@ pub(in crate::viewport::semantic) use sync::{
 };
 pub(crate) use sync::{SubtreeUpdateError, synchronize_live_stage};
 pub(crate) use types::{SemanticIncrementalUpdate, SemanticResponse};
-pub(crate) use worker::SemanticWorkingStore;
+pub(crate) use worker::{SemanticSubmitError, SemanticWorkingStore};
 
 #[cfg(test)]
 mod tests;

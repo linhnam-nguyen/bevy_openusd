@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bevy::prelude::*;
 use viewport_protocol::{
     PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope,
@@ -15,6 +17,7 @@ use crate::viewport::physics::PhysicsActive;
 use super::helpers::{build_read_model, reject};
 use super::state::{SemanticSearchRequest, SemanticSearchRequests};
 use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
+use crate::viewport::diagnostics::performance::RendererCounters;
 
 /// Drains semantic-worker responses and publishes search results.
 pub(super) fn publish_semantic_query_results(
@@ -22,6 +25,7 @@ pub(super) fn publish_semantic_query_results(
     scene_index: Res<SceneAnchorIndex>,
     mut search_requests: ResMut<SemanticSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
+    mut counters: Option<ResMut<RendererCounters>>,
 ) {
     use crate::viewport::semantic::SemanticResponse;
     for response in semantic_store.drain_responses() {
@@ -33,6 +37,12 @@ pub(super) fn publish_semantic_query_results(
                     // bridge-side pending request map.
                     continue;
                 };
+                if let Some(ref mut counters) = counters {
+                    counters.query_results += 1;
+                    counters.record_query_latency_ms(
+                        request.submitted_at.elapsed().as_secs_f64() * 1000.0,
+                    );
+                }
                 let matches = result
                     .rows
                     .iter()
@@ -54,7 +64,13 @@ pub(super) fn publish_semantic_query_results(
                 operation,
                 error,
             } => {
-                if search_requests.pending.remove(&request_id).is_some() {
+                if let Some(request) = search_requests.pending.remove(&request_id) {
+                    if let Some(ref mut counters) = counters {
+                        counters.query_failures += 1;
+                        counters.record_query_latency_ms(
+                            request.submitted_at.elapsed().as_secs_f64() * 1000.0,
+                        );
+                    }
                     reject(
                         &mut outbox,
                         request_id,
@@ -76,6 +92,7 @@ pub(super) fn dispatch_scene_query_commands(
     semantic_store: Res<SemanticWorkingStore>,
     mut search_requests: ResMut<SemanticSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
+    mut counters: Option<ResMut<RendererCounters>>,
 ) {
     for envelope in inbox.take_scene_query_commands() {
         let request_id = envelope.request_id;
@@ -108,7 +125,7 @@ pub(super) fn dispatch_scene_query_commands(
                 limit,
             } => {
                 let query_text = query.clone();
-                if !semantic_store.submit_query(
+                match semantic_store.try_submit_query(
                     request_id.clone(),
                     SemanticQuery {
                         text: Some(query),
@@ -117,24 +134,47 @@ pub(super) fn dispatch_scene_query_commands(
                         ..Default::default()
                     },
                 ) {
-                    reject(
-                        &mut outbox,
-                        request_id,
-                        "semantic search worker is unavailable".to_owned(),
-                    );
-                } else {
-                    // Search is a single latest-query projection in the
-                    // viewport read model. Dropping older metadata here also
-                    // makes worker-side query coalescing safe: superseded
-                    // responses are ignored when they arrive.
-                    search_requests.pending.clear();
-                    search_requests.pending.insert(
-                        request_id,
-                        SemanticSearchRequest {
-                            query: query_text,
-                            offset,
-                        },
-                    );
+                    Ok(()) => {
+                        // Search is a single latest-query projection in the
+                        // viewport read model. Dropping older metadata here also
+                        // makes worker-side query coalescing safe: superseded
+                        // responses are ignored when they arrive.
+                        search_requests.pending.clear();
+                        search_requests.pending.insert(
+                            request_id,
+                            SemanticSearchRequest {
+                                query: query_text,
+                                offset,
+                                submitted_at: Instant::now(),
+                            },
+                        );
+                        if let Some(ref mut counters) = counters {
+                            counters.query_requests += 1;
+                            counters.query_high_water = counters
+                                .query_high_water
+                                .max(search_requests.pending.len() as u64);
+                        }
+                    }
+                    Err(error) => {
+                        if let Some(ref mut counters) = counters {
+                            counters.query_failures += 1;
+                            if matches!(
+                                error,
+                                crate::viewport::semantic::SemanticSubmitError::QueueFull
+                            ) {
+                                counters.query_saturations += 1;
+                            }
+                        }
+                        let message = match error {
+                            crate::viewport::semantic::SemanticSubmitError::QueueFull => {
+                                "semantic search worker queue is full"
+                            }
+                            crate::viewport::semantic::SemanticSubmitError::WorkerClosed => {
+                                "semantic search worker is unavailable"
+                            }
+                        };
+                        reject(&mut outbox, request_id, message.to_owned());
+                    }
                 }
             }
             _ => unreachable!("scene query inbox only contains query commands"),

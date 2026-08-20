@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use std::path::Path;
-use viewport_protocol::{ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{InputCommand, SessionId, SessionRole, ViewportEvent, ViewportEventEnvelope};
 
 use crate::viewport::api::{
     RenderServerInterface, SessionRegistry, ViewportBridgeSet, ViewportCommandInbox,
@@ -29,6 +29,32 @@ pub struct WebRtcTransportState {
     pub control: ChannelState,
     pub input: ChannelState,
     pub sessions: SessionRegistry,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthenticatedInputError {
+    NotController,
+    QueueRejected,
+}
+
+impl WebRtcTransportState {
+    /// Applies the same in-memory admission snapshot used after a WebRTC
+    /// session handshake before allowing input onto the renderer bus. The
+    /// benchmark uses this adapter to exercise the production input consumer;
+    /// database/network authorization is intentionally not performed here.
+    pub(crate) fn submit_authenticated_input(
+        &self,
+        session_id: &SessionId,
+        interface: &RenderServerInterface,
+        command: InputCommand,
+    ) -> Result<(), AuthenticatedInputError> {
+        if self.sessions.role(session_id) != Some(SessionRole::Controller) {
+            return Err(AuthenticatedInputError::NotController);
+        }
+        interface
+            .submit_input(command)
+            .map_err(|_| AuthenticatedInputError::QueueRejected)
+    }
 }
 
 pub struct WebRtcTransportPlugin;

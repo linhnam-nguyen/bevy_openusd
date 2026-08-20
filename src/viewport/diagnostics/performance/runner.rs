@@ -130,10 +130,11 @@ fn finalize_benchmark_report(world: &mut World) {
         .get_resource::<BenchmarkRunState>()
         .cloned()
         .expect("BenchmarkRunState must exist");
-    let counters = world
+    let mut counters = world
         .get_resource::<RendererCounters>()
         .cloned()
         .expect("RendererCounters must exist");
+    counters.finalize_query_latency();
 
     let grid_resource = world.get_resource::<GroundGrid>();
     let grid_visible = grid_resource.map(|g| g.visible).unwrap_or(false);
@@ -230,6 +231,7 @@ fn finalize_benchmark_report(world: &mut World) {
         query_p95_latency_ms: counters.query_p95_latency_ms,
         auth_validation_bursts: counters.auth_validation_bursts,
         auth_lookup_count: counters.auth_lookup_count,
+        auth_snapshot_hits: counters.auth_snapshot_hits,
         auth_validations: counters.auth_validations,
         auth_failures: counters.auth_failures,
         auth_high_water: counters.auth_high_water,
