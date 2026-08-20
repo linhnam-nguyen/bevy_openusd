@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 SCENARIOS = {
@@ -50,6 +51,7 @@ SCENARIOS = {
 }
 
 CLIENT_EVIDENCE_FIELDS = [
+    "run_id",
     "scenario_code",
     "connected",
     "server_hello_received",
@@ -77,7 +79,7 @@ def wait_for_signaling_server(host: str = "127.0.0.1", port: int = 8080, timeout
     return False
 
 
-def validate_client_evidence(path: Path, scenario_id: str):
+def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
     if not path.exists():
         raise ValueError(
             f"client harness did not write the required evidence artifact: {path}"
@@ -90,6 +92,8 @@ def validate_client_evidence(path: Path, scenario_id: str):
     missing = [field for field in CLIENT_EVIDENCE_FIELDS if field not in evidence]
     if missing:
         raise ValueError(f"client evidence is missing fields: {', '.join(missing)}")
+    if evidence["run_id"] != run_id:
+        raise ValueError("client evidence run ID does not match the current benchmark run")
     if evidence["scenario_code"] != scenario_id:
         raise ValueError(
             f"client evidence scenario mismatch: {evidence['scenario_code']} != {scenario_id}"
@@ -169,12 +173,14 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     server = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         if info.get("client_required") and client_command:
+            run_id = uuid.uuid4().hex
+            client_evidence_path = Path(f"{output_path}.client.json").absolute()
             if not wait_for_signaling_server():
                 print(f"WebRTC signaling server did not become ready for {scenario_id}", file=sys.stderr)
                 return False
-            client_evidence_path = Path(f"{output_path}.client.json").absolute()
             client_env = os.environ.copy()
             client_env.update({
+                "USDHUB_BENCHMARK_RUN_ID": run_id,
                 "USDHUB_BENCHMARK_SCENARIO": scenario_id,
                 "USDHUB_BENCHMARK_OUTPUT": output_path,
                 "USDHUB_BENCHMARK_LABEL": label,
@@ -195,7 +201,7 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
                 print(f"Client harness failed for {scenario_id} with exit code {client_returncode}", file=sys.stderr)
                 return False
             try:
-                validate_client_evidence(client_evidence_path, scenario_id)
+                validate_client_evidence(client_evidence_path, scenario_id, run_id)
             except ValueError as error:
                 print(str(error), file=sys.stderr)
                 return False

@@ -1,7 +1,7 @@
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
-    mpsc::{self, SyncSender, TrySendError},
+    mpsc,
 };
 use std::time::Duration;
 
@@ -11,6 +11,8 @@ use usd_model::SemanticSnapshot;
 use super::query::SemanticQuery;
 use super::store::SemanticDatabase;
 use super::types::{SemanticIncrementalUpdate, SemanticResponse};
+
+const BENCHMARK_QUERY_CAPACITY: u64 = 8;
 
 #[derive(Debug)]
 enum SemanticCommand {
@@ -32,7 +34,6 @@ enum SemanticCommand {
 #[derive(Resource, Debug)]
 pub(crate) struct SemanticWorkingStore {
     commands: mpsc::Sender<SemanticCommand>,
-    benchmark_queries: SyncSender<SemanticCommand>,
     benchmark_mode: AtomicBool,
     responses: Mutex<mpsc::Receiver<SemanticResponse>>,
     test_control: Arc<SemanticWorkerTestControl>,
@@ -53,7 +54,6 @@ pub(crate) struct SemanticWorkerTestControl {
 impl Default for SemanticWorkingStore {
     fn default() -> Self {
         let (commands, pending_commands) = mpsc::channel();
-        let (benchmark_queries, pending_benchmark_queries) = mpsc::sync_channel(8);
         let (responses, pending_responses) = mpsc::channel();
         let test_control = Arc::new(SemanticWorkerTestControl::default());
         let worker_control = Arc::clone(&test_control);
@@ -65,7 +65,6 @@ impl Default for SemanticWorkingStore {
             .spawn(move || {
                 semantic_worker(
                     pending_commands,
-                    pending_benchmark_queries,
                     responses,
                     worker_control,
                     worker_query_pending,
@@ -74,7 +73,6 @@ impl Default for SemanticWorkingStore {
             .expect("semantic worker should start");
         Self {
             commands,
-            benchmark_queries,
             benchmark_mode: AtomicBool::new(false),
             responses: Mutex::new(pending_responses),
             test_control,
@@ -111,20 +109,12 @@ impl SemanticWorkingStore {
             request_id: request_id.into(),
             query,
         };
-        let result: Result<(), SemanticSubmitError> = if self.benchmark_mode.load(Ordering::Acquire)
-        {
-            self.benchmark_queries
-                .try_send(command)
-                .map_err(SemanticSubmitError::from)
-        } else {
-            self.commands
-                .send(command)
-                .map_err(SemanticSubmitError::from)
-        };
-        if result.is_ok() {
-            self.note_query_enqueued();
+        self.reserve_query_slot()?;
+        if let Err(error) = self.commands.send(command) {
+            self.query_pending.fetch_sub(1, Ordering::AcqRel);
+            return Err(SemanticSubmitError::from(error));
         }
-        result
+        Ok(())
     }
 
     pub(crate) fn submit_delta(
@@ -155,9 +145,27 @@ impl SemanticWorkingStore {
         self.query_high_water.load(Ordering::Acquire)
     }
 
-    fn note_query_enqueued(&self) {
-        let pending = self.query_pending.fetch_add(1, Ordering::AcqRel) + 1;
+    fn reserve_query_slot(&self) -> Result<(), SemanticSubmitError> {
+        let pending = if self.benchmark_mode.load(Ordering::Acquire) {
+            loop {
+                let pending = self.query_pending.load(Ordering::Acquire);
+                if pending >= BENCHMARK_QUERY_CAPACITY {
+                    return Err(SemanticSubmitError::QueueFull);
+                }
+                if let Ok(previous) = self.query_pending.compare_exchange_weak(
+                    pending,
+                    pending + 1,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    break previous + 1;
+                }
+            }
+        } else {
+            self.query_pending.fetch_add(1, Ordering::AcqRel) + 1
+        };
         self.query_high_water.fetch_max(pending, Ordering::AcqRel);
+        Ok(())
     }
 
     pub(crate) fn drain_responses(&self) -> Vec<SemanticResponse> {
@@ -174,15 +182,6 @@ pub(crate) enum SemanticSubmitError {
     WorkerClosed,
 }
 
-impl From<TrySendError<SemanticCommand>> for SemanticSubmitError {
-    fn from(error: TrySendError<SemanticCommand>) -> Self {
-        match error {
-            TrySendError::Full(_) => Self::QueueFull,
-            TrySendError::Disconnected(_) => Self::WorkerClosed,
-        }
-    }
-}
-
 impl From<mpsc::SendError<SemanticCommand>> for SemanticSubmitError {
     fn from(_: mpsc::SendError<SemanticCommand>) -> Self {
         Self::WorkerClosed
@@ -191,7 +190,6 @@ impl From<mpsc::SendError<SemanticCommand>> for SemanticSubmitError {
 
 fn semantic_worker(
     pending_commands: mpsc::Receiver<SemanticCommand>,
-    pending_benchmark_queries: mpsc::Receiver<SemanticCommand>,
     responses: mpsc::Sender<SemanticResponse>,
     test_control: Arc<SemanticWorkerTestControl>,
     query_pending: Arc<AtomicU64>,
@@ -206,7 +204,7 @@ fn semantic_worker(
     loop {
         let Some(command) = buffered_command
             .take()
-            .or_else(|| next_worker_command(&pending_commands, &pending_benchmark_queries))
+            .or_else(|| pending_commands.recv().ok())
         else {
             break;
         };
@@ -220,9 +218,7 @@ fn semantic_worker(
                 mut query,
             } => {
                 query_pending.fetch_sub(1, Ordering::AcqRel);
-                while let Some(next) =
-                    try_next_worker_command(&pending_commands, &pending_benchmark_queries)
-                {
+                while let Ok(next) = pending_commands.try_recv() {
                     match next {
                         SemanticCommand::Query {
                             request_id: newer_request_id,
@@ -341,37 +337,4 @@ fn semantic_worker(
             break;
         }
     }
-}
-
-fn next_worker_command(
-    primary: &mpsc::Receiver<SemanticCommand>,
-    benchmark_queries: &mpsc::Receiver<SemanticCommand>,
-) -> Option<SemanticCommand> {
-    loop {
-        if let Some(command) = try_next_worker_command(primary, benchmark_queries) {
-            return Some(command);
-        }
-
-        match primary.recv_timeout(Duration::from_millis(1)) {
-            Ok(command) => return Some(command),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return benchmark_queries.recv().ok();
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if let Ok(command) = benchmark_queries.try_recv() {
-                    return Some(command);
-                }
-            }
-        }
-    }
-}
-
-fn try_next_worker_command(
-    primary: &mpsc::Receiver<SemanticCommand>,
-    benchmark_queries: &mpsc::Receiver<SemanticCommand>,
-) -> Option<SemanticCommand> {
-    if let Ok(command) = primary.try_recv() {
-        return Some(command);
-    }
-    benchmark_queries.try_recv().ok()
 }

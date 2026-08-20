@@ -103,5 +103,10 @@ fn benchmark_query_boundary_is_bounded_without_changing_normal_submission() {
         queue_full,
         "benchmark query traffic must expose bounded backpressure"
     );
-    assert!(benchmark_store.query_queue_high_water() > 0);
+    let high_water = benchmark_store.query_queue_high_water();
+    assert!(high_water > 0);
+    assert!(
+        high_water <= 8,
+        "benchmark queue HWM exceeded its capacity: {high_water}"
+    );
 }
