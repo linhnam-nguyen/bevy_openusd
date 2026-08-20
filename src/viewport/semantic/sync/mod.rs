@@ -26,22 +26,37 @@ use super::worker::SemanticWorkingStore;
 /// extraction must borrow its OpenUSD stage while the resulting ECS resource
 /// state is updated. It runs after `LiveStagePlugin` has drained the batch.
 pub(crate) fn synchronize_live_stage(world: &mut World) {
-    let Some((session_id, live_revision, pending_batch, previous_snapshot, previous_session)) =
-        (|| {
-            let live = world.get_non_send::<LiveStage>()?;
-            let pending_batch = world.resource::<PendingStageChanges>().batch().cloned();
-            let state = world.resource::<SemanticSyncState>();
-            Some((
-                live.session_id(),
-                live.current_revision(),
-                pending_batch,
-                state.snapshot.clone(),
-                state.session_id,
-            ))
-        })()
-    else {
+    if world.get_non_send::<LiveStage>().is_some() {
+        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
+            c.semantic_sync_calls += 1;
+        }
+    }
+
+    let info = (|| {
+        let live = world.get_non_send::<LiveStage>()?;
+        let pending_batch = world.resource::<PendingStageChanges>().batch().cloned();
+        let state = world.resource::<SemanticSyncState>();
+        let has_snap = state.snapshot.is_some();
+        let snap = state.snapshot.clone();
+        Some((
+            live.session_id(),
+            live.current_revision(),
+            pending_batch,
+            snap,
+            has_snap,
+            state.session_id,
+        ))
+    })();
+
+    let Some((session_id, live_revision, pending_batch, previous_snapshot, had_snapshot, previous_session)) = info else {
         return;
     };
+
+    if had_snapshot {
+        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
+            c.semantic_snapshot_clones += 1;
+        }
+    }
 
     let root_count = pending_batch
         .as_ref()
@@ -57,6 +72,17 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
     let previous_snapshot = (previous_session == Some(session_id))
         .then_some(previous_snapshot)
         .flatten();
+
+    if previous_snapshot.is_none() {
+        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
+            c.semantic_initial_extractions += 1;
+        }
+    } else if pending_batch.is_none() {
+        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
+            c.semantic_idle_skips += 1;
+        }
+        return;
+    }
 
     let extractor = SemanticExtractor::new(SemanticConfig::default());
     let source = SnapshotSource::Working {
@@ -240,6 +266,9 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         }
     };
     if submitted {
+        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
+            c.semantic_worker_submissions += 1;
+        }
         let mut state = world.resource_mut::<SemanticSyncState>();
         state.session_id = Some(session_id);
         state.revision = Some(live_revision);

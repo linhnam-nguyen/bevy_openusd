@@ -100,6 +100,7 @@ pub(super) fn checkpoint_recovery(
     pending: Res<usd_bevy::PendingStageChanges>,
     stage: Option<NonSend<LiveStage>>,
     stage_info: Res<StageInfo>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     if pending.batch().is_none() {
         return;
@@ -120,6 +121,8 @@ pub(super) fn checkpoint_recovery(
     };
     if let Err(error) = store.write_checkpoint(&stage, Path::new(&stage_info.path), None) {
         bevy::log::error!("[recovery] checkpoint failed: {error:#}");
+    } else if let Some(ref mut c) = counters {
+        c.recovery_checkpoints += 1;
     }
 }
 

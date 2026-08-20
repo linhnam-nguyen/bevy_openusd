@@ -210,6 +210,7 @@ pub(crate) fn reset_navigation_frame(mut input: ResMut<ViewportNavigationInput>)
 pub(crate) fn apply_remote_navigation_input(
     interface: Option<Res<crate::viewport::api::RenderServerInterface>>,
     mut input: ResMut<ViewportNavigationInput>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     let Some(interface) = interface else {
         return;
@@ -218,9 +219,15 @@ pub(crate) fn apply_remote_navigation_input(
         input.clear_remote_state();
     }
     while let Some(command) = interface.pop_input() {
+        if let Some(ref mut c) = counters {
+            c.remote_inputs_applied += 1;
+        }
         input.apply_remote_command(command);
     }
     if let Some(motion) = interface.take_latest_pointer_motion() {
+        if let Some(ref mut c) = counters {
+            c.remote_inputs_applied += 1;
+        }
         input.apply_pointer_motion(motion);
     }
     input.expire_remote_input();

@@ -14,4 +14,6 @@ pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
     setup_skeleton_gizmos_on_top,
 };
+pub(crate) mod extent;
 pub(crate) mod visualization;
+pub use extent::SceneExtent;

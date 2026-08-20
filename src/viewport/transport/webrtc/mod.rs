@@ -57,8 +57,12 @@ impl Plugin for WebRtcTransportPlugin {
 fn drain_remote_commands(
     interface: Res<RenderServerInterface>,
     mut inbox: ResMut<ViewportCommandInbox>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     while let Some(command) = interface.pop_viewport_command() {
+        if let Some(ref mut c) = counters {
+            c.remote_commands_drained += 1;
+        }
         inbox.push(command);
     }
 }
@@ -66,6 +70,7 @@ fn drain_remote_commands(
 fn publish_authoritative_events(
     interface: Res<RenderServerInterface>,
     mut outbox: ResMut<ViewportEventOutbox>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     while let Some(event) = outbox.pop() {
         let event = sanitize_event(event);
@@ -75,6 +80,8 @@ fn publish_authoritative_events(
             );
             outbox.push_front(event);
             break;
+        } else if let Some(ref mut c) = counters {
+            c.authoritative_events_published += 1;
         }
     }
 }

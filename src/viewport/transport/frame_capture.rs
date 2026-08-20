@@ -33,7 +33,7 @@ impl Plugin for FrameCapturePlugin {
 fn setup_frame_readback(mut commands: Commands, target: Res<OffscreenTarget>) {
     commands
         .spawn(Readback::texture(target.image_handle.clone()))
-        .observe(|event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>| {
+        .observe(|event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
             if event.data.is_empty() {
                 return;
             }
@@ -58,7 +58,15 @@ fn setup_frame_readback(mut commands: Commands, target: Res<OffscreenTarget>) {
                 generation: target.generation,
             };
 
-            let _ = sink.sender.try_send(frame);
+            if let Some(ref mut c) = counters {
+                c.captured_frames += 1;
+            }
+
+            if sink.sender.try_send(frame).is_err() {
+                if let Some(ref mut c) = counters {
+                    c.frame_queue_drops += 1;
+                }
+            }
         });
 }
 
