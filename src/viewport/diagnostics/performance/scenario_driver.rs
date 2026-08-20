@@ -1,8 +1,5 @@
 //! Live runtime action driver for benchmark probe scenarios (S1..S24).
 
-use bevy::prelude::*;
-use bevy_glacial::prelude::GroundGrid;
-use std::time::Duration;
 use super::counters::RendererCounters;
 use super::runner::BenchmarkRunState;
 use super::scenario::BenchmarkScenarioId;
@@ -11,11 +8,16 @@ use crate::viewport::camera::ArcballCameraSet;
 use crate::viewport::input::ViewportNavigationInput;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::transport::webrtc::WebRtcTransportState;
-use crate::viewport::semantic::SemanticWorkingStore;
+use bevy::prelude::*;
+use bevy_glacial::prelude::GroundGrid;
 use viewport_protocol::{
     ButtonState, GroundGridOrigin, InputCommand, InputModifiers, OverlayKind, PointerButtons,
-    PointerMotion, SessionId, SessionRole, ViewportCommand, ViewportCommandEnvelope,
+    PointerMotion, SessionId, ViewportCommand, ViewportCommandEnvelope,
 };
+
+#[path = "scenario_driver_setup.rs"]
+mod setup;
+pub use setup::setup_scenario_driver_system;
 
 /// Resource configuring the active scenario action driver.
 #[derive(Resource, Debug, Clone, Default)]
@@ -23,47 +25,6 @@ pub struct ActiveScenarioDriver {
     pub scenario_id: Option<BenchmarkScenarioId>,
     pub frame_counter: u64,
     pub action_executions: u64,
-}
-
-/// Applies startup configurations for specific scenarios (e.g. S2 grid disabled, session registration).
-pub fn setup_scenario_driver_system(
-    driver: Option<Res<ActiveScenarioDriver>>,
-    mut grid: Option<ResMut<GroundGrid>>,
-    mut toggles: Option<ResMut<DisplayToggles>>,
-    mut webrtc_state: Option<ResMut<WebRtcTransportState>>,
-    semantic_store: Option<Res<SemanticWorkingStore>>,
-) {
-    let Some(driver) = driver else { return };
-    if driver.scenario_id == Some(BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused) {
-        if let Some(ref mut toggles) = toggles {
-            toggles.show_world_grid = false;
-        }
-        if let Some(ref mut grid) = grid {
-            grid.visible = false;
-        }
-    }
-    if driver.scenario_id == Some(BenchmarkScenarioId::S23IsolationSlowFailingDataWorker) {
-        if let Some(store) = semantic_store {
-            store.configure_test_mode(Duration::from_millis(100), true);
-        }
-    }
-    if let Some(ref mut state) = webrtc_state {
-        if matches!(
-            driver.scenario_id,
-            Some(
-                BenchmarkScenarioId::S21IsolationNavigationUnderAuth
-                    | BenchmarkScenarioId::S24IsolationAuthRevocationPropagation
-            )
-        ) {
-            let _ = state
-                .sessions
-                .register(SessionId::new("bench-controller"), SessionRole::Controller);
-        }
-        for i in 0..200 {
-            let sid = SessionId::new(format!("bench-session-{i}"));
-            let _ = state.sessions.register(sid, SessionRole::Observer);
-        }
-    }
 }
 
 /// Drives live actions during each frame for dynamic scenarios (S3..S6, S10, S13..S15, S17..S24).
@@ -155,7 +116,10 @@ pub fn scenario_action_driver_system(
                         overlay: OverlayKind::GroundGrid,
                         enabled: frame % 30 < 15,
                     };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s13-{frame}"), cmd));
+                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                        format!("s13-{frame}"),
+                        cmd,
+                    ));
                     driver.action_executions += 1;
                 }
             }
@@ -169,7 +133,10 @@ pub fn scenario_action_driver_system(
                         GroundGridOrigin::WorldOrigin
                     };
                     let cmd = ViewportCommand::SetGroundGridOrigin { origin };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s14-{frame}"), cmd));
+                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                        format!("s14-{frame}"),
+                        cmd,
+                    ));
                     driver.action_executions += 1;
                 }
             }
@@ -189,7 +156,11 @@ pub fn scenario_action_driver_system(
                 let _ = iface.submit_pointer_motion(motion);
                 let btn = ButtonState {
                     sequence: frame,
-                    buttons: PointerButtons { primary: true, secondary: true, auxiliary: false },
+                    buttons: PointerButtons {
+                        primary: true,
+                        secondary: true,
+                        auxiliary: false,
+                    },
                     modifiers: InputModifiers::default(),
                     stream_generation: 1,
                 };
@@ -206,7 +177,8 @@ pub fn scenario_action_driver_system(
                         type_name: "double3".into(),
                         value: serde_json::json!([1.0, 2.0, 3.0]),
                     };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new("s17-edit-1", cmd));
+                    let _ = iface
+                        .submit_viewport_command(ViewportCommandEnvelope::new("s17-edit-1", cmd));
                     driver.action_executions += 1;
                 }
             }
@@ -218,15 +190,23 @@ pub fn scenario_action_driver_system(
                         overlay: OverlayKind::GroundGrid,
                         enabled: false,
                     };
-                    let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new("s18-idle-cmd", cmd));
+                    let _ = iface
+                        .submit_viewport_command(ViewportCommandEnvelope::new("s18-idle-cmd", cmd));
                     driver.action_executions += 1;
                 }
             }
         }
         BenchmarkScenarioId::S19IsolationQuerySaturation => {
             if let Some(ref iface) = interface {
-                let cmd = ViewportCommand::SearchScene { query: "root".into(), offset: 0, limit: 50 };
-                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s19-q-{frame}"), cmd));
+                let cmd = ViewportCommand::SearchScene {
+                    query: "root".into(),
+                    offset: 0,
+                    limit: 50,
+                };
+                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                    format!("s19-q-{frame}"),
+                    cmd,
+                ));
             }
             driver.action_executions += 1;
         }
@@ -301,10 +281,23 @@ pub fn scenario_action_driver_system(
         }
         BenchmarkScenarioId::S22IsolationQueryCommandConcurrency => {
             if let Some(ref iface) = interface {
-                let q = ViewportCommand::SearchScene { query: "hummingbird".into(), offset: 0, limit: 20 };
-                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s22-q-{frame}"), q));
-                let cmd = ViewportCommand::SetOverlay { overlay: OverlayKind::GroundGrid, enabled: true };
-                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s22-c-{frame}"), cmd));
+                let q = ViewportCommand::SearchScene {
+                    query: "hummingbird".into(),
+                    offset: 0,
+                    limit: 20,
+                };
+                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                    format!("s22-q-{frame}"),
+                    q,
+                ));
+                let cmd = ViewportCommand::SetOverlay {
+                    overlay: OverlayKind::GroundGrid,
+                    enabled: true,
+                };
+                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                    format!("s22-c-{frame}"),
+                    cmd,
+                ));
             }
             driver.action_executions += 1;
         }
@@ -315,9 +308,10 @@ pub fn scenario_action_driver_system(
                     offset: 0,
                     limit: 20,
                 };
-                let _ = iface.submit_viewport_command(
-                    ViewportCommandEnvelope::new(format!("s23-q-{frame}"), cmd),
-                );
+                let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(
+                    format!("s23-q-{frame}"),
+                    cmd,
+                ));
             }
             driver.action_executions += 1;
         }
@@ -328,24 +322,23 @@ pub fn scenario_action_driver_system(
                     .as_mut()
                     .is_some_and(|state| state.sessions.unregister(&controller));
                 if revoked {
-                    let rejected_after_revoke = if let (Some(iface), Some(state)) =
-                        (&interface, &webrtc_state)
-                    {
-                        state
-                            .submit_authenticated_input(
-                                &controller,
-                                iface,
-                                InputCommand::ButtonState(ButtonState {
-                                    sequence: frame,
-                                    buttons: PointerButtons::default(),
-                                    modifiers: InputModifiers::default(),
-                                    stream_generation: 1,
-                                }),
-                            )
-                            .is_err()
-                    } else {
-                        false
-                    };
+                    let rejected_after_revoke =
+                        if let (Some(iface), Some(state)) = (&interface, &webrtc_state) {
+                            state
+                                .submit_authenticated_input(
+                                    &controller,
+                                    iface,
+                                    InputCommand::ButtonState(ButtonState {
+                                        sequence: frame,
+                                        buttons: PointerButtons::default(),
+                                        modifiers: InputModifiers::default(),
+                                        stream_generation: 1,
+                                    }),
+                                )
+                                .is_err()
+                        } else {
+                            false
+                        };
                     if rejected_after_revoke
                         && webrtc_state
                             .as_ref()
@@ -385,47 +378,5 @@ impl Plugin for ScenarioDriverPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn s2_driver_disables_grid_on_startup() {
-        let mut app = App::new();
-        app.insert_resource(ActiveScenarioDriver {
-            scenario_id: Some(BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused),
-            frame_counter: 0,
-            action_executions: 0,
-        });
-        app.insert_resource(GroundGrid { visible: true, ..Default::default() });
-        app.insert_resource(DisplayToggles { show_world_grid: true, ..Default::default() });
-        app.add_systems(Startup, setup_scenario_driver_system);
-        app.update();
-
-        assert!(!app.world().resource::<GroundGrid>().visible);
-        assert!(!app.world().resource::<DisplayToggles>().show_world_grid);
-    }
-
-    #[test]
-    fn s4_driver_toggles_grid_visibility() {
-        let mut app = App::new();
-        app.insert_resource(ActiveScenarioDriver {
-            scenario_id: Some(BenchmarkScenarioId::S4NativeGridVisibilityToggle),
-            frame_counter: 14,
-            action_executions: 0,
-        });
-        app.insert_resource(BenchmarkRunState {
-            scene_ready: true,
-            warmup_frames_remaining: 0,
-            target_frames_remaining: 120,
-            samples: vec![],
-            is_completed: false,
-        });
-        app.insert_resource(GroundGrid { visible: true, ..Default::default() });
-        app.insert_resource(DisplayToggles { show_world_grid: true, ..Default::default() });
-        app.add_systems(Update, scenario_action_driver_system);
-        app.update();
-
-        assert!(!app.world().resource::<DisplayToggles>().show_world_grid);
-        assert_eq!(app.world().resource::<ActiveScenarioDriver>().action_executions, 1);
-    }
-}
+#[path = "scenario_driver_tests.rs"]
+mod tests;

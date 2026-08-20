@@ -31,9 +31,13 @@ enum SemanticCommand {
 /// The Bevy-facing channel endpoint for the dedicated semantic worker.
 #[derive(Resource, Debug)]
 pub(crate) struct SemanticWorkingStore {
-    commands: SyncSender<SemanticCommand>,
+    commands: mpsc::Sender<SemanticCommand>,
+    benchmark_queries: SyncSender<SemanticCommand>,
+    benchmark_mode: AtomicBool,
     responses: Mutex<mpsc::Receiver<SemanticResponse>>,
     test_control: Arc<SemanticWorkerTestControl>,
+    query_pending: Arc<AtomicU64>,
+    query_high_water: Arc<AtomicU64>,
 }
 
 /// Controlled worker behavior used only by the isolation benchmark scenario.
@@ -48,18 +52,34 @@ pub(crate) struct SemanticWorkerTestControl {
 
 impl Default for SemanticWorkingStore {
     fn default() -> Self {
-        let (commands, pending_commands) = mpsc::sync_channel(8);
+        let (commands, pending_commands) = mpsc::channel();
+        let (benchmark_queries, pending_benchmark_queries) = mpsc::sync_channel(8);
         let (responses, pending_responses) = mpsc::channel();
         let test_control = Arc::new(SemanticWorkerTestControl::default());
         let worker_control = Arc::clone(&test_control);
+        let query_pending = Arc::new(AtomicU64::new(0));
+        let query_high_water = Arc::new(AtomicU64::new(0));
+        let worker_query_pending = Arc::clone(&query_pending);
         std::thread::Builder::new()
             .name("usdview-semantic-worker".to_owned())
-            .spawn(move || semantic_worker(pending_commands, responses, worker_control))
+            .spawn(move || {
+                semantic_worker(
+                    pending_commands,
+                    pending_benchmark_queries,
+                    responses,
+                    worker_control,
+                    worker_query_pending,
+                )
+            })
             .expect("semantic worker should start");
         Self {
             commands,
+            benchmark_queries,
+            benchmark_mode: AtomicBool::new(false),
             responses: Mutex::new(pending_responses),
             test_control,
+            query_pending,
+            query_high_water,
         }
     }
 }
@@ -71,7 +91,7 @@ impl SemanticWorkingStore {
         snapshot: SemanticSnapshot,
     ) -> bool {
         self.commands
-            .try_send(SemanticCommand::ReplaceSnapshot {
+            .send(SemanticCommand::ReplaceSnapshot {
                 request_id: request_id.into(),
                 snapshot,
             })
@@ -87,12 +107,24 @@ impl SemanticWorkingStore {
         request_id: impl Into<String>,
         query: SemanticQuery,
     ) -> Result<(), SemanticSubmitError> {
-        self.commands
-            .try_send(SemanticCommand::Query {
-                request_id: request_id.into(),
-                query,
-            })
-            .map_err(SemanticSubmitError::from)
+        let command = SemanticCommand::Query {
+            request_id: request_id.into(),
+            query,
+        };
+        let result: Result<(), SemanticSubmitError> = if self.benchmark_mode.load(Ordering::Acquire)
+        {
+            self.benchmark_queries
+                .try_send(command)
+                .map_err(SemanticSubmitError::from)
+        } else {
+            self.commands
+                .send(command)
+                .map_err(SemanticSubmitError::from)
+        };
+        if result.is_ok() {
+            self.note_query_enqueued();
+        }
+        result
     }
 
     pub(crate) fn submit_delta(
@@ -101,7 +133,7 @@ impl SemanticWorkingStore {
         update: SemanticIncrementalUpdate,
     ) -> bool {
         self.commands
-            .try_send(SemanticCommand::ApplyDelta {
+            .send(SemanticCommand::ApplyDelta {
                 request_id: request_id.into(),
                 update,
             })
@@ -109,12 +141,23 @@ impl SemanticWorkingStore {
     }
 
     pub(crate) fn configure_test_mode(&self, query_delay: Duration, fail_queries: bool) {
-        self.test_control
-            .query_delay_ms
-            .store(query_delay.as_millis().min(u64::MAX as u128) as u64, Ordering::Release);
+        self.benchmark_mode.store(true, Ordering::Release);
+        self.test_control.query_delay_ms.store(
+            query_delay.as_millis().min(u64::MAX as u128) as u64,
+            Ordering::Release,
+        );
         self.test_control
             .fail_queries
             .store(fail_queries, Ordering::Release);
+    }
+
+    pub(crate) fn query_queue_high_water(&self) -> u64 {
+        self.query_high_water.load(Ordering::Acquire)
+    }
+
+    fn note_query_enqueued(&self) {
+        let pending = self.query_pending.fetch_add(1, Ordering::AcqRel) + 1;
+        self.query_high_water.fetch_max(pending, Ordering::AcqRel);
     }
 
     pub(crate) fn drain_responses(&self) -> Vec<SemanticResponse> {
@@ -140,10 +183,18 @@ impl From<TrySendError<SemanticCommand>> for SemanticSubmitError {
     }
 }
 
+impl From<mpsc::SendError<SemanticCommand>> for SemanticSubmitError {
+    fn from(_: mpsc::SendError<SemanticCommand>) -> Self {
+        Self::WorkerClosed
+    }
+}
+
 fn semantic_worker(
     pending_commands: mpsc::Receiver<SemanticCommand>,
+    pending_benchmark_queries: mpsc::Receiver<SemanticCommand>,
     responses: mpsc::Sender<SemanticResponse>,
     test_control: Arc<SemanticWorkerTestControl>,
+    query_pending: Arc<AtomicU64>,
 ) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -155,7 +206,7 @@ fn semantic_worker(
     loop {
         let Some(command) = buffered_command
             .take()
-            .or_else(|| pending_commands.recv().ok())
+            .or_else(|| next_worker_command(&pending_commands, &pending_benchmark_queries))
         else {
             break;
         };
@@ -168,12 +219,16 @@ fn semantic_worker(
                 mut request_id,
                 mut query,
             } => {
-                while let Ok(next) = pending_commands.try_recv() {
+                query_pending.fetch_sub(1, Ordering::AcqRel);
+                while let Some(next) =
+                    try_next_worker_command(&pending_commands, &pending_benchmark_queries)
+                {
                     match next {
                         SemanticCommand::Query {
                             request_id: newer_request_id,
                             query: newer_query,
                         } => {
+                            query_pending.fetch_sub(1, Ordering::AcqRel);
                             request_id = newer_request_id;
                             query = newer_query;
                         }
@@ -286,4 +341,37 @@ fn semantic_worker(
             break;
         }
     }
+}
+
+fn next_worker_command(
+    primary: &mpsc::Receiver<SemanticCommand>,
+    benchmark_queries: &mpsc::Receiver<SemanticCommand>,
+) -> Option<SemanticCommand> {
+    loop {
+        if let Some(command) = try_next_worker_command(primary, benchmark_queries) {
+            return Some(command);
+        }
+
+        match primary.recv_timeout(Duration::from_millis(1)) {
+            Ok(command) => return Some(command),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return benchmark_queries.recv().ok();
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Ok(command) = benchmark_queries.try_recv() {
+                    return Some(command);
+                }
+            }
+        }
+    }
+}
+
+fn try_next_worker_command(
+    primary: &mpsc::Receiver<SemanticCommand>,
+    benchmark_queries: &mpsc::Receiver<SemanticCommand>,
+) -> Option<SemanticCommand> {
+    if let Ok(command) = primary.try_recv() {
+        return Some(command);
+    }
+    benchmark_queries.try_recv().ok()
 }

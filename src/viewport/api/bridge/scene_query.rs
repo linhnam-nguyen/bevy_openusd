@@ -1,23 +1,19 @@
 use std::time::Instant;
 
 use bevy::prelude::*;
-use viewport_protocol::{
-    PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope,
-};
+use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
-use crate::viewport::api::{
-    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
-};
-use crate::viewport::camera::CameraMount;
-use crate::viewport::animation::UsdStageTime;
-use crate::viewport::scene::SelectedPrim;
-use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::{LoaderTuning, StageHandle, StageInfo, Spawned};
-use crate::viewport::physics::PhysicsActive;
 use super::helpers::{build_read_model, reject};
 use super::state::{SemanticSearchRequest, SemanticSearchRequests};
-use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
+use crate::viewport::animation::UsdStageTime;
+use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::camera::CameraMount;
 use crate::viewport::diagnostics::performance::RendererCounters;
+use crate::viewport::physics::PhysicsActive;
+use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
+use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Drains semantic-worker responses and publishes search results.
 pub(super) fn publish_semantic_query_results(
@@ -150,9 +146,6 @@ pub(super) fn dispatch_scene_query_commands(
                         );
                         if let Some(ref mut counters) = counters {
                             counters.query_requests += 1;
-                            counters.query_high_water = counters
-                                .query_high_water
-                                .max(search_requests.pending.len() as u64);
                         }
                     }
                     Err(error) => {

@@ -8,10 +8,13 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import shlex
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SCENARIOS = {
@@ -45,6 +48,82 @@ SCENARIOS = {
     "S23": {"fixture": "assets/external/hummingbird.usdz", "desc": "Isolation Slow/Failing Data Worker", "topology": "isolation"},
     "S24": {"fixture": "assets/external/hummingbird.usdz", "desc": "Isolation Auth Revocation Propagation", "topology": "isolation"},
 }
+
+CLIENT_EVIDENCE_FIELDS = [
+    "scenario_code",
+    "connected",
+    "server_hello_received",
+    "session_ready",
+    "video_received",
+    "video_frames_observed",
+    "command_sent",
+    "authoritative_event_received",
+    "client_state_reduced",
+    "request_ids",
+    "input_events_observed",
+]
+
+EVENT_REQUIRED_SCENARIOS = {"S13", "S14", "S17", "S18"}
+
+
+def wait_for_signaling_server(host: str = "127.0.0.1", port: int = 8080, timeout: float = 30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.25):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
+def validate_client_evidence(path: Path, scenario_id: str):
+    if not path.exists():
+        raise ValueError(
+            f"client harness did not write the required evidence artifact: {path}"
+        )
+    try:
+        evidence = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid client evidence artifact {path}: {error}") from error
+
+    missing = [field for field in CLIENT_EVIDENCE_FIELDS if field not in evidence]
+    if missing:
+        raise ValueError(f"client evidence is missing fields: {', '.join(missing)}")
+    if evidence["scenario_code"] != scenario_id:
+        raise ValueError(
+            f"client evidence scenario mismatch: {evidence['scenario_code']} != {scenario_id}"
+        )
+    for field in (
+        "connected",
+        "server_hello_received",
+        "session_ready",
+        "video_received",
+        "client_state_reduced",
+    ):
+        if evidence[field] is not True:
+            raise ValueError(f"client evidence field {field} is not true")
+    if type(evidence["video_frames_observed"]) is not int or evidence["video_frames_observed"] <= 0:
+        raise ValueError("client evidence must report at least one received video frame")
+    if type(evidence["input_events_observed"]) is not int or evidence["input_events_observed"] < 0:
+        raise ValueError("client evidence input_events_observed must be a non-negative integer")
+    if not isinstance(evidence["request_ids"], list) or not all(
+        isinstance(request_id, str) and request_id for request_id in evidence["request_ids"]
+    ):
+        raise ValueError("client evidence request_ids must be a list of non-empty strings")
+
+    if scenario_id in EVENT_REQUIRED_SCENARIOS:
+        if evidence["command_sent"] is not True or evidence["authoritative_event_received"] is not True:
+            raise ValueError(
+                f"{scenario_id} requires a client command and an authoritative event"
+            )
+        if not evidence["request_ids"]:
+            raise ValueError(f"{scenario_id} requires at least one correlated request ID")
+    elif scenario_id == "S15":
+        if evidence["command_sent"] is not True or evidence["input_events_observed"] <= 0:
+            raise ValueError("S15 requires client input traffic and observed input activity")
+    elif evidence["command_sent"] is not False:
+        raise ValueError(f"{scenario_id} must not claim an unconfigured client command")
 
 def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False, fixture_override: str = None, client_command: str = None):
     info = SCENARIOS.get(scenario_id)
@@ -90,11 +169,17 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     server = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         if info.get("client_required") and client_command:
+            if not wait_for_signaling_server():
+                print(f"WebRTC signaling server did not become ready for {scenario_id}", file=sys.stderr)
+                return False
+            client_evidence_path = Path(f"{output_path}.client.json").absolute()
             client_env = os.environ.copy()
             client_env.update({
                 "USDHUB_BENCHMARK_SCENARIO": scenario_id,
                 "USDHUB_BENCHMARK_OUTPUT": output_path,
                 "USDHUB_BENCHMARK_LABEL": label,
+                "USDHUB_BENCHMARK_EVIDENCE": str(client_evidence_path),
+                "USDHUB_BENCHMARK_SIGNALING_URL": "ws://127.0.0.1:8080",
             })
             client = subprocess.Popen(shlex.split(client_command), env=client_env)
         server_stdout, server_stderr = server.communicate()
@@ -109,10 +194,18 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
             if client_returncode != 0:
                 print(f"Client harness failed for {scenario_id} with exit code {client_returncode}", file=sys.stderr)
                 return False
+            try:
+                validate_client_evidence(client_evidence_path, scenario_id)
+            except ValueError as error:
+                print(str(error), file=sys.stderr)
+                return False
     finally:
         if client is not None and client.poll() is None:
             client.terminate()
             client.wait(timeout=5)
+        if server.poll() is None:
+            server.terminate()
+            server.wait(timeout=5)
 
     if server.returncode != 0:
         print(f"Execution failed for {scenario_id}:\n{server_stderr}", file=sys.stderr)

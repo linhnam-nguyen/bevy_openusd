@@ -15,6 +15,7 @@ use super::collector::{collect_cache_snapshot_from_world, collect_phase_metrics_
 use super::counters::RendererCounters;
 use super::sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode};
 use super::scenario::{BenchmarkScenarioId, ScenarioProbeDefinition, SteadyStateExpectations};
+use crate::viewport::semantic::SemanticWorkingStore;
 
 /// Launch options configuring automated benchmark execution.
 #[derive(Resource, Debug, Clone)]
@@ -134,6 +135,9 @@ fn finalize_benchmark_report(world: &mut World) {
         .get_resource::<RendererCounters>()
         .cloned()
         .expect("RendererCounters must exist");
+    if let Some(semantic_store) = world.get_resource::<SemanticWorkingStore>() {
+        counters.query_high_water = semantic_store.query_queue_high_water();
+    }
     counters.finalize_query_latency();
 
     let grid_resource = world.get_resource::<GroundGrid>();
@@ -147,7 +151,10 @@ fn finalize_benchmark_report(world: &mut World) {
         .unwrap_or_else(|| "no_stage".to_string());
 
     let requested_config = RenderConfiguration {
-        grid: scenario_def.as_ref().map(|d| d.grid_enabled).unwrap_or(true),
+        grid: scenario_def
+            .as_ref()
+            .map(|d| d.grid_enabled)
+            .unwrap_or(true),
         shadows: true,
         edges: false,
         render_mode: RenderMode::Shaded,
