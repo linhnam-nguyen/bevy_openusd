@@ -64,7 +64,6 @@ impl SceneExtent {
     }
 }
 
-/// Recomputes world-space scene bounds from authored extents or mesh AABBs.
 pub(crate) fn compute_extent(
     prims: Query<
         (
@@ -76,7 +75,11 @@ pub(crate) fn compute_extent(
         With<UsdPrimRef>,
     >,
     mut extent: ResMut<SceneExtent>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
+    if let Some(ref mut c) = counters {
+        c.grid_compute_extent_calls += 1;
+    }
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     let mut geometry_min = Vec3::splat(f32::INFINITY);

@@ -44,9 +44,6 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     cache_a = report_a.get("cache_snapshot", {})
     cache_b = report_b.get("cache_snapshot", {})
 
-    config_a = report_a.get("effective_configuration", {})
-    config_b = report_b.get("effective_configuration", {})
-
     med_a = timing_a.get("median_frame_ms", 0.0)
     med_b = timing_b.get("median_frame_ms", 0.0)
     p95_a = timing_a.get("p95_frame_ms", 0.0)
@@ -73,7 +70,8 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     # Configuration Match
     cfg_match_a = report_a.get("configuration_matches", False)
     cfg_match_b = report_b.get("configuration_matches", False)
-    print(f"{'Configuration Invariant Matches':<36} | {str(cfg_match_a):<15} | {str(cfg_match_b):<15} | {'OK' if cfg_match_b else 'MISMATCH'}")
+    cfg_consistent = (report_a.get("requested_configuration") == report_b.get("requested_configuration"))
+    print(f"{'Configuration Invariant Matches':<36} | {str(cfg_match_a):<15} | {str(cfg_match_b):<15} | {'OK' if cfg_consistent else 'INCOMPARABLE'}")
 
     # Grid Incidents (Incident A)
     grid_rebuild_a = grid_a.get("structural_rebuilds", 0)
@@ -115,7 +113,7 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     mats_b = cache_b.get("cached_materials", 0)
     print(f"{'Cached Standard Materials':<36} | {mats_a:<15} | {mats_b:<15} | {mats_b - mats_a:+}")
     print(f"{'='*80}\n")
-    return True
+    return cfg_consistent
 
 def main():
     parser = argparse.ArgumentParser(description="Compare rendering benchmark JSON reports")
@@ -150,16 +148,25 @@ def main():
                 print(f"Error: Missing candidate evidence for {path_a.name} in {dir_b}", file=sys.stderr)
                 all_ok = False
                 continue
-            rep_a = load_report(str(path_a))
-            rep_b = load_report(str(path_b))
-            compare_single(rep_a, rep_b, args.label_a, args.label_b)
+            try:
+                rep_a = load_report(str(path_a))
+                rep_b = load_report(str(path_b))
+                if not compare_single(rep_a, rep_b, args.label_a, args.label_b):
+                    all_ok = False
+            except Exception as e:
+                print(f"Error comparing {path_a.name}: {e}", file=sys.stderr)
+                all_ok = False
         sys.exit(0 if all_ok else 1)
 
     elif args.file_a and args.file_b:
-        rep_a = load_report(args.file_a)
-        rep_b = load_report(args.file_b)
-        compare_single(rep_a, rep_b, args.label_a, args.label_b)
-        sys.exit(0)
+        try:
+            rep_a = load_report(args.file_a)
+            rep_b = load_report(args.file_b)
+            ok = compare_single(rep_a, rep_b, args.label_a, args.label_b)
+            sys.exit(0 if ok else 1)
+        except Exception as e:
+            print(f"Error comparing reports: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
         parser.print_help()
         sys.exit(1)

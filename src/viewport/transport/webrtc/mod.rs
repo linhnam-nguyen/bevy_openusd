@@ -54,7 +54,7 @@ impl Plugin for WebRtcTransportPlugin {
     }
 }
 
-fn drain_remote_commands(
+pub(crate) fn drain_remote_commands(
     interface: Res<RenderServerInterface>,
     mut inbox: ResMut<ViewportCommandInbox>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
@@ -67,7 +67,7 @@ fn drain_remote_commands(
     }
 }
 
-fn publish_authoritative_events(
+pub(crate) fn publish_authoritative_events(
     interface: Res<RenderServerInterface>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,

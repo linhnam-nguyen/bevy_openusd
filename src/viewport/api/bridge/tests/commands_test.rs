@@ -251,4 +251,38 @@ mod tests {
         let value = live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).attribute("size").get::<openusd::sdf::Value>().unwrap();
         assert!(matches!(value, Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON));
     }
+
+    #[test]
+    fn usdhub_ui_webrtc_gateway_round_trip_harness() {
+        let mut app = command_test_app();
+        let interface = crate::viewport::api::RenderServerInterface::default();
+        app.insert_resource(interface.clone());
+        app.add_systems(
+            PreUpdate,
+            crate::viewport::transport::webrtc::drain_remote_commands
+                .before(apply_viewport_commands),
+        );
+        app.add_systems(
+            PostUpdate,
+            crate::viewport::transport::webrtc::publish_authoritative_events
+                .after(apply_viewport_commands),
+        );
+
+        let command_envelope = ViewportCommandEnvelope::new(
+            "test-req-1",
+            ViewportCommand::SetOverlay {
+                overlay: OverlayKind::GroundGrid,
+                enabled: false,
+            },
+        );
+        interface
+            .submit_viewport_command(command_envelope)
+            .expect("must submit");
+
+        app.update();
+
+        let toggles = app.world().resource::<DisplayToggles>();
+        assert!(!toggles.show_world_grid);
+        assert_eq!(toggles.light_intensity_scale, 1.0);
+    }
 }

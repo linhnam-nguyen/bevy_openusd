@@ -36,28 +36,16 @@ pub(crate) fn sync_ground_grid_visibility(
     }
 }
 
-/// Binds Glacial's grid to the bottom of the loaded renderable scene. The
-/// small lift is proportional to the geometry extent so millimetre assets do
-/// not float 5 cm above the scene while large assets still avoid z-fighting.
 fn sync_ground_grid_to_scene(
     extent: Res<SceneExtent>,
     cameras: Query<&ArcballCamera>,
     toggles: Res<DisplayToggles>,
     mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
+    grid_meshes: Query<(&bevy_glacial::prelude::LocalGrid, &Mesh3d)>,
+    meshes: Res<Assets<Mesh>>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
-    if let Some(ref mut c) = counters {
-        c.grid_sync_calls += 1;
-        c.grid_compute_extent_calls += 1;
-        c.grid_host_writes += 2;
-        if grid.visible {
-            c.grid_structural_rebuilds += 1;
-            c.grid_vertices_generated += 801_000;
-            c.grid_indices_generated += 1_480_000;
-        }
-    }
-
-    grid.ground_y = match toggles.ground_grid_origin {
+    let desired_ground_y = match toggles.ground_grid_origin {
         GroundGridOrigin::LoadedScene => extent.geometry_ground_y(),
         GroundGridOrigin::WorldOrigin => Some(0.0),
     };
@@ -66,12 +54,48 @@ fn sync_ground_grid_to_scene(
         .single()
         .map(|camera| camera.distance)
         .unwrap_or(0.0);
-    grid.coverage_radius = (extent.diag().max(camera_distance) * 2.5).max(
+    let desired_radius = (extent.diag().max(camera_distance) * 2.5).max(
         bevy_glacial::prelude::LEVEL_HALF
             .last()
             .copied()
             .unwrap_or(640.0),
     );
+
+    let prev_ground_y = grid.ground_y;
+    let prev_radius = grid.coverage_radius;
+
+    // Mutate the resource (unconditionally in unoptimized baseline)
+    grid.ground_y = desired_ground_y;
+    grid.coverage_radius = desired_radius;
+
+    if let Some(ref mut c) = counters {
+        c.grid_sync_calls += 1;
+        let mut field_writes = 0u64;
+        if prev_ground_y != desired_ground_y {
+            field_writes += 1;
+        }
+        if (prev_radius - desired_radius).abs() > 1e-4 {
+            field_writes += 1;
+        }
+        // In the unoptimized baseline, every frame mutates both fields unconditionally (2 host writes per frame)
+        c.grid_host_writes += field_writes.max(2);
+
+        if grid.visible && grid.ground_y.is_some() {
+            let mut total_verts = 0u64;
+            let mut total_indices = 0u64;
+            for (_lg, mesh_handle) in grid_meshes.iter() {
+                if let Some(m) = meshes.get(&mesh_handle.0) {
+                    total_verts += m.count_vertices() as u64;
+                    if let Some(indices) = m.indices() {
+                        total_indices += indices.len() as u64;
+                    }
+                }
+            }
+            c.grid_structural_rebuilds += 1;
+            c.grid_vertices_generated += total_verts;
+            c.grid_indices_generated += total_indices;
+        }
+    }
 }
 
 impl Plugin for OverlaysPlugin {

@@ -33,6 +33,7 @@ pub struct BenchmarkLaunchConfig {
 /// Dynamic runtime state of the benchmark execution.
 #[derive(Resource, Debug, Clone)]
 pub struct BenchmarkRunState {
+    pub scene_ready: bool,
     pub warmup_frames_remaining: u64,
     pub target_frames_remaining: u64,
     pub samples: Vec<FrameSample>,
@@ -42,6 +43,7 @@ pub struct BenchmarkRunState {
 impl BenchmarkRunState {
     pub fn new(warmup: u64, target: u64) -> Self {
         Self {
+            scene_ready: false,
             warmup_frames_remaining: warmup,
             target_frames_remaining: target,
             samples: Vec::with_capacity(target as usize + warmup as usize),
@@ -52,12 +54,33 @@ impl BenchmarkRunState {
 
 /// Exclusive Bevy system executing at `Last` to capture frames and exit when complete.
 pub fn benchmark_stepper_system(world: &mut World) {
+    let config = world.get_resource::<BenchmarkLaunchConfig>().cloned();
+    let is_s8 = config
+        .as_ref()
+        .and_then(|c| c.scenario)
+        .map(|s| s == BenchmarkScenarioId::S8NativeNoLiveStage)
+        .unwrap_or(false);
+    let scene_count = world
+        .get_resource::<crate::viewport::scene::SceneExtent>()
+        .map(|e| e.count)
+        .unwrap_or(0);
+    let has_live = world.get_non_send::<usd_bevy::LiveStage>().is_some();
+    let is_ready = is_s8 || scene_count > 0 || has_live;
+
     let mut should_finalize = false;
 
     if let (Some(counters), Some(mut run_state)) = (
         world.get_resource::<RendererCounters>().cloned(),
         world.get_resource_mut::<BenchmarkRunState>(),
     ) {
+        if !run_state.scene_ready {
+            if is_ready {
+                run_state.scene_ready = true;
+            } else {
+                return;
+            }
+        }
+
         if run_state.warmup_frames_remaining > 0 {
             run_state.warmup_frames_remaining -= 1;
             run_state.samples.push(FrameSample {
@@ -180,15 +203,27 @@ fn finalize_benchmark_report(world: &mut World) {
     let phase_metrics = collect_phase_metrics_from_world(world);
     let cache_snapshot = collect_cache_snapshot_from_world(world);
 
-    let identity = BenchmarkIdentity::new(
+    let (gpu_adapter, backend) = if let Some(adapter_info) =
+        world.get_resource::<bevy::render::renderer::RenderAdapterInfo>()
+    {
+        (
+            adapter_info.name.clone(),
+            format!("{:?}", adapter_info.backend).to_lowercase(),
+        )
+    } else {
+        ("unknown".to_string(), "unknown".to_string())
+    };
+
+    let mut identity = BenchmarkIdentity::new(
         &config.label,
         &scene_label,
         scenario_code,
-        "Metal GPU Adapter".into(),
+        gpu_adapter,
         config.width,
         config.height,
         config.requested_fps,
     );
+    identity.backend = backend;
 
     let report = PerformanceReport {
         schema_version: 1,

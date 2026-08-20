@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 SCENARIOS = {
-    # Native steady-state (S1..S10)
+    # Native steady-state & presentation regression probes (S1..S10)
     "S1": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Hummingbird Grid ON (paused)", "topology": "native"},
     "S2": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Hummingbird Grid OFF (paused)", "topology": "native"},
     "S3": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Camera Orbit/Pan", "topology": "native"},
@@ -45,7 +45,7 @@ SCENARIOS = {
     "S24": {"fixture": "assets/external/hummingbird.usdz", "desc": "Isolation Auth Revocation Propagation", "topology": "isolation"},
 }
 
-def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True):
+def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False):
     info = SCENARIOS.get(scenario_id)
     if not info:
         print(f"Error: Unknown scenario {scenario_id}", file=sys.stderr)
@@ -60,8 +60,9 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     if topology in ("webrtc", "isolation"):
         cmd.extend(["--headless", "--webrtc"])
     else:
-        # For native automated execution on headless CI/benchmark environments
-        cmd.append("--headless")
+        # Native scenarios run real native Frost composition unless force_headless requested
+        if force_headless:
+            cmd.append("--headless")
 
     cmd.extend([
         "--benchmark",
@@ -95,6 +96,7 @@ def main():
     parser.add_argument("--output-dir", default="target/benchmark/baseline", help="Directory for multi-scenario output")
     parser.add_argument("--label", default="baseline", help="Benchmark run label")
     parser.add_argument("--debug", action="store_true", help="Run debug build instead of release")
+    parser.add_argument("--force-headless", action="store_true", help="Force headless execution for native scenarios")
 
     args = parser.parse_args()
     release = not args.debug
@@ -104,13 +106,13 @@ def main():
         success = True
         for sc in sorted(SCENARIOS.keys(), key=lambda x: int(x[1:])):
             out_file = os.path.join(args.output_dir, f"{sc.lower()}.json")
-            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release):
+            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release, args.force_headless):
                 success = False
         sys.exit(0 if success else 1)
     elif args.scenario:
         out_file = args.output or f"{args.scenario.lower()}.json"
         os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
-        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release)
+        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release, args.force_headless)
         sys.exit(0 if success else 1)
     else:
         parser.print_help()
