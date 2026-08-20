@@ -5,7 +5,9 @@
 
 use bevy::prelude::*;
 use std::path::Path;
-use viewport_protocol::{InputCommand, SessionId, SessionRole, ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{
+    InputCommand, SessionId, SessionRole, ViewportEvent, ViewportEventEnvelope,
+};
 
 use crate::viewport::api::{
     RenderServerInterface, SessionRegistry, ViewportBridgeSet, ViewportCommandInbox,
@@ -88,6 +90,9 @@ pub(crate) fn drain_remote_commands(
     while let Some(command) = interface.pop_viewport_command() {
         if let Some(ref mut c) = counters {
             c.remote_commands_drained += 1;
+            if c.first_remote_command_received_frame.is_none() {
+                c.first_remote_command_received_frame = Some(c.frame_count);
+            }
         }
         inbox.push(command);
     }
@@ -108,6 +113,9 @@ pub(crate) fn publish_authoritative_events(
             break;
         } else if let Some(ref mut c) = counters {
             c.authoritative_events_published += 1;
+            if c.first_authoritative_event_published_frame.is_none() {
+                c.first_authoritative_event_published_frame = Some(c.frame_count);
+            }
         }
     }
 }

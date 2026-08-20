@@ -33,6 +33,9 @@ fn s4_driver_toggles_grid_visibility() {
     });
     app.insert_resource(BenchmarkRunState {
         scene_ready: true,
+        client_ready: false,
+        measurement_started: false,
+        measurement_idle_signaled: false,
         warmup_frames_remaining: 0,
         target_frames_remaining: 120,
         samples: vec![],

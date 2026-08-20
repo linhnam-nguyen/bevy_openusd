@@ -29,12 +29,19 @@ pub struct BenchmarkLaunchConfig {
     pub height: u32,
     pub requested_fps: f64,
     pub asset_path: Option<String>,
+    pub client_ready_file: Option<PathBuf>,
+    pub measurement_start_file: Option<PathBuf>,
+    pub measurement_idle_file: Option<PathBuf>,
+    pub measurement_complete_file: Option<PathBuf>,
 }
 
 /// Dynamic runtime state of the benchmark execution.
 #[derive(Resource, Debug, Clone)]
 pub struct BenchmarkRunState {
     pub scene_ready: bool,
+    pub client_ready: bool,
+    pub measurement_started: bool,
+    pub measurement_idle_signaled: bool,
     pub warmup_frames_remaining: u64,
     pub target_frames_remaining: u64,
     pub samples: Vec<FrameSample>,
@@ -45,6 +52,9 @@ impl BenchmarkRunState {
     pub fn new(warmup: u64, target: u64) -> Self {
         Self {
             scene_ready: false,
+            client_ready: false,
+            measurement_started: false,
+            measurement_idle_signaled: false,
             warmup_frames_remaining: warmup,
             target_frames_remaining: target,
             samples: Vec::with_capacity(target as usize + warmup as usize),
@@ -69,11 +79,29 @@ pub fn benchmark_stepper_system(world: &mut World) {
     let is_ready = is_s8 || scene_count > 0 || has_live;
 
     let mut should_finalize = false;
+    let mut warmup_finished = false;
 
     if let (Some(counters), Some(mut run_state)) = (
         world.get_resource::<RendererCounters>().cloned(),
         world.get_resource_mut::<BenchmarkRunState>(),
     ) {
+        if config
+            .as_ref()
+            .is_some_and(|config| config.client_ready_file.is_some())
+            && !run_state.client_ready
+        {
+            let Some(path) = config
+                .as_ref()
+                .and_then(|config| config.client_ready_file.as_ref())
+            else {
+                return;
+            };
+            if !path.exists() {
+                return;
+            }
+            run_state.client_ready = true;
+        }
+
         if !run_state.scene_ready {
             if is_ready {
                 run_state.scene_ready = true;
@@ -91,19 +119,30 @@ pub fn benchmark_stepper_system(world: &mut World) {
                 gpu_duration_ms: None,
             });
             if run_state.warmup_frames_remaining == 0 {
-                // Reset counters at warmup boundary so reported steady-state metrics
-                // represent ONLY post-warmup measured frames!
-                if let Some(mut c) = world.get_resource_mut::<RendererCounters>() {
-                    c.reset();
-                }
-                if let Some(mut gc) =
-                    world.get_resource_mut::<bevy_glacial::prelude::GlacialGridCounters>()
-                {
-                    *gc = Default::default();
-                }
+                run_state.measurement_started = true;
+                warmup_finished = true;
             }
         } else if run_state.target_frames_remaining > 0 {
             run_state.target_frames_remaining -= 1;
+            let measured_frames = config.as_ref().map_or(0, |config| {
+                config
+                    .target_frames
+                    .saturating_sub(run_state.target_frames_remaining)
+            });
+            if !run_state.measurement_idle_signaled
+                && config.as_ref().is_some_and(|config| {
+                    config.measurement_idle_file.is_some()
+                        && measured_frames >= config.target_frames.saturating_div(2).max(1).min(60)
+                })
+            {
+                run_state.measurement_idle_signaled = true;
+                if let Some(path) = config
+                    .as_ref()
+                    .and_then(|config| config.measurement_idle_file.as_ref())
+                {
+                    touch_marker(path);
+                }
+            }
             run_state.samples.push(FrameSample {
                 frame_index: counters.frame_count,
                 cpu_duration_ms: counters.frame_cpu_duration_ms,
@@ -114,6 +153,24 @@ pub fn benchmark_stepper_system(world: &mut World) {
                 run_state.is_completed = true;
                 should_finalize = true;
             }
+        }
+    }
+
+    if warmup_finished {
+        // Reset counters at the warm-up boundary so reported steady-state
+        // metrics represent only post-warm-up measured frames.
+        if let Some(mut c) = world.get_resource_mut::<RendererCounters>() {
+            c.reset();
+        }
+        if let Some(mut gc) = world.get_resource_mut::<bevy_glacial::prelude::GlacialGridCounters>()
+        {
+            *gc = Default::default();
+        }
+        if let Some(path) = config
+            .as_ref()
+            .and_then(|config| config.measurement_start_file.as_ref())
+        {
+            touch_marker(path);
         }
     }
 
@@ -223,6 +280,9 @@ fn finalize_benchmark_report(world: &mut World) {
         remote_commands_drained: counters.remote_commands_drained,
         remote_inputs_applied: counters.remote_inputs_applied,
         authoritative_events_published: counters.authoritative_events_published,
+        first_remote_command_received_frame: counters.first_remote_command_received_frame,
+        first_authoritative_event_published_frame: counters
+            .first_authoritative_event_published_frame,
         captured_frames: counters.captured_frames,
         frame_queue_drops: counters.frame_queue_drops,
     };
@@ -298,7 +358,18 @@ fn finalize_benchmark_report(world: &mut World) {
         }
     }
 
+    if let Some(path) = config.measurement_complete_file.as_ref() {
+        touch_marker(path);
+    }
+
     std::process::exit(0);
+}
+
+fn touch_marker(path: &PathBuf) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = File::create(path);
 }
 
 /// Plugin registering benchmark resources and the stepper system.
@@ -318,20 +389,5 @@ impl Plugin for BenchmarkRunnerPlugin {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn benchmark_run_state_transitions() {
-        let mut state = BenchmarkRunState::new(2, 3);
-        assert_eq!(state.warmup_frames_remaining, 2);
-        assert_eq!(state.target_frames_remaining, 3);
-        assert!(!state.is_completed);
-
-        state.warmup_frames_remaining = 0;
-        state.target_frames_remaining = 0;
-        state.is_completed = true;
-
-        assert!(state.is_completed);
-    }
-}
+#[path = "runner_tests.rs"]
+mod tests;

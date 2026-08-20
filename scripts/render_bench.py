@@ -58,11 +58,21 @@ CLIENT_EVIDENCE_FIELDS = [
     "session_ready",
     "video_received",
     "video_frames_observed",
+    "video_frames_during_measurement",
+    "measurement_started",
+    "measurement_complete",
+    "measurement_idle_observed",
     "command_sent",
+    "command_enqueue_observed",
     "authoritative_event_received",
+    "client_event_receipt_observed",
     "client_state_reduced",
     "request_ids",
+    "matched_request_ids",
     "input_events_observed",
+    "orbit_pan_events_observed",
+    "zoom_dolly_events_observed",
+    "zoom_delta_observed",
 ]
 
 EVENT_REQUIRED_SCENARIOS = {"S13", "S14", "S17", "S18"}
@@ -104,11 +114,17 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
         "session_ready",
         "video_received",
         "client_state_reduced",
+        "measurement_started",
+        "measurement_complete",
     ):
         if evidence[field] is not True:
             raise ValueError(f"client evidence field {field} is not true")
     if type(evidence["video_frames_observed"]) is not int or evidence["video_frames_observed"] <= 0:
         raise ValueError("client evidence must report at least one received video frame")
+    if type(evidence["video_frames_during_measurement"]) is not int or evidence["video_frames_during_measurement"] <= 0:
+        raise ValueError("client evidence must report video frames during the measured window")
+    if type(evidence["measurement_idle_observed"]) is not bool:
+        raise ValueError("client evidence measurement_idle_observed must be boolean")
     if type(evidence["input_events_observed"]) is not int or evidence["input_events_observed"] < 0:
         raise ValueError("client evidence input_events_observed must be a non-negative integer")
     if not isinstance(evidence["request_ids"], list) or not all(
@@ -117,15 +133,21 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
         raise ValueError("client evidence request_ids must be a list of non-empty strings")
 
     if scenario_id in EVENT_REQUIRED_SCENARIOS:
-        if evidence["command_sent"] is not True or evidence["authoritative_event_received"] is not True:
+        if evidence["command_sent"] is not True or evidence["command_enqueue_observed"] is not True or evidence["authoritative_event_received"] is not True or evidence["client_event_receipt_observed"] is not True:
             raise ValueError(
                 f"{scenario_id} requires a client command and an authoritative event"
             )
         if not evidence["request_ids"]:
             raise ValueError(f"{scenario_id} requires at least one correlated request ID")
+        if scenario_id in {"S13", "S14"} and len(evidence["matched_request_ids"]) < 2:
+            raise ValueError(f"{scenario_id} requires both ordered client commands")
+        if scenario_id == "S18" and evidence["measurement_idle_observed"] is not True:
+            raise ValueError("S18 requires the measured idle barrier before its command")
     elif scenario_id == "S15":
-        if evidence["command_sent"] is not True or evidence["input_events_observed"] <= 0:
+        if evidence["command_sent"] is not True or evidence["command_enqueue_observed"] is not True or evidence["input_events_observed"] <= 0:
             raise ValueError("S15 requires client input traffic and observed input activity")
+        if evidence["orbit_pan_events_observed"] <= 0 or evidence["zoom_dolly_events_observed"] <= 0 or evidence["zoom_delta_observed"] == 0:
+            raise ValueError("S15 requires separate orbit/pan and zoom/dolly input phases")
     elif evidence["command_sent"] is not False:
         raise ValueError(f"{scenario_id} must not claim an unconfigured client command")
 
@@ -155,6 +177,23 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
         if force_headless:
             cmd.append("--headless")
 
+    client_required = bool(info.get("client_required"))
+    run_id = None
+    client_evidence_path = None
+    ready_file = None
+    measurement_start_file = None
+    measurement_idle_file = None
+    measurement_complete_file = None
+    if client_required:
+        run_id = uuid.uuid4().hex
+        client_evidence_path = Path(f"{output_path}.client.json").absolute()
+        ready_file = Path(f"{output_path}.client-ready").absolute()
+        measurement_start_file = Path(f"{output_path}.measurement-start").absolute()
+        measurement_idle_file = Path(f"{output_path}.measurement-idle").absolute()
+        measurement_complete_file = Path(f"{output_path}.measurement-complete").absolute()
+        for marker in (ready_file, measurement_start_file, measurement_idle_file, measurement_complete_file):
+            marker.unlink(missing_ok=True)
+
     cmd.extend([
         "--benchmark",
         "--benchmark-scenario", scenario_id,
@@ -163,6 +202,13 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
         "--benchmark-output", output_path,
         "--benchmark-label", label,
     ])
+    if client_required:
+        cmd.extend([
+            "--benchmark-client-ready-file", str(ready_file),
+            "--benchmark-measurement-start-file", str(measurement_start_file),
+            "--benchmark-measurement-idle-file", str(measurement_idle_file),
+            "--benchmark-measurement-complete-file", str(measurement_complete_file),
+        ])
 
     fixture = fixture_override if fixture_override is not None else info.get("fixture")
     if fixture and os.path.exists(fixture):
@@ -172,9 +218,7 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     client = None
     server = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        if info.get("client_required") and client_command:
-            run_id = uuid.uuid4().hex
-            client_evidence_path = Path(f"{output_path}.client.json").absolute()
+        if client_required and client_command:
             if not wait_for_signaling_server():
                 print(f"WebRTC signaling server did not become ready for {scenario_id}", file=sys.stderr)
                 return False
@@ -186,6 +230,10 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
                 "USDHUB_BENCHMARK_LABEL": label,
                 "USDHUB_BENCHMARK_EVIDENCE": str(client_evidence_path),
                 "USDHUB_BENCHMARK_SIGNALING_URL": "ws://127.0.0.1:8080",
+                "USDHUB_BENCHMARK_READY_FILE": str(ready_file),
+                "USDHUB_BENCHMARK_MEASUREMENT_START_FILE": str(measurement_start_file),
+                "USDHUB_BENCHMARK_MEASUREMENT_IDLE_FILE": str(measurement_idle_file),
+                "USDHUB_BENCHMARK_MEASUREMENT_COMPLETE_FILE": str(measurement_complete_file),
             })
             client = subprocess.Popen(shlex.split(client_command), env=client_env)
         server_stdout, server_stderr = server.communicate()

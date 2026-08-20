@@ -30,6 +30,10 @@ pub(crate) struct LaunchOptions {
     pub(crate) benchmark_frames: u64,
     pub(crate) benchmark_output: Option<String>,
     pub(crate) benchmark_label: String,
+    pub(crate) benchmark_client_ready_file: Option<String>,
+    pub(crate) benchmark_measurement_start_file: Option<String>,
+    pub(crate) benchmark_measurement_idle_file: Option<String>,
+    pub(crate) benchmark_measurement_complete_file: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -48,6 +52,10 @@ impl Default for LaunchOptions {
             benchmark_frames: 120,
             benchmark_output: None,
             benchmark_label: "baseline".to_string(),
+            benchmark_client_ready_file: None,
+            benchmark_measurement_start_file: None,
+            benchmark_measurement_idle_file: None,
+            benchmark_measurement_complete_file: None,
         }
     }
 }
@@ -176,6 +184,36 @@ where
             continue;
         }
 
+        if parse_options && argument == "--benchmark-client-ready-file" {
+            options.benchmark_client_ready_file =
+                Some(arguments.next().ok_or_else(|| {
+                    "--benchmark-client-ready-file requires a file path".to_owned()
+                })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-start-file" {
+            options.benchmark_measurement_start_file = Some(arguments.next().ok_or_else(|| {
+                "--benchmark-measurement-start-file requires a file path".to_owned()
+            })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-idle-file" {
+            options.benchmark_measurement_idle_file = Some(arguments.next().ok_or_else(|| {
+                "--benchmark-measurement-idle-file requires a file path".to_owned()
+            })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-complete-file" {
+            options.benchmark_measurement_complete_file =
+                Some(arguments.next().ok_or_else(|| {
+                    "--benchmark-measurement-complete-file requires a file path".to_owned()
+                })?);
+            continue;
+        }
+
         if parse_options {
             if let Some(transport) = argument.strip_prefix("--transport=") {
                 options.transport = Some(parse_transport(transport)?);
@@ -195,6 +233,22 @@ where
             }
             if let Some(lbl) = argument.strip_prefix("--benchmark-label=") {
                 options.benchmark_label = lbl.to_string();
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-client-ready-file=") {
+                options.benchmark_client_ready_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-start-file=") {
+                options.benchmark_measurement_start_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-idle-file=") {
+                options.benchmark_measurement_idle_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-complete-file=") {
+                options.benchmark_measurement_complete_file = Some(path.to_string());
                 continue;
             }
             if argument.starts_with('-') {
@@ -319,7 +373,10 @@ mod tests {
         assert_eq!(options.benchmark_scenario, Some("S1".to_string()));
         assert_eq!(options.benchmark_warmup_frames, 10);
         assert_eq!(options.benchmark_frames, 50);
-        assert_eq!(options.benchmark_output, Some("target/out.json".to_string()));
+        assert_eq!(
+            options.benchmark_output,
+            Some("target/out.json".to_string())
+        );
         assert_eq!(options.benchmark_label, "baseline");
     }
 }

@@ -47,6 +47,8 @@ pub struct WebRtcReportSummary {
     pub remote_commands_drained: u64,
     pub remote_inputs_applied: u64,
     pub authoritative_events_published: u64,
+    pub first_remote_command_received_frame: Option<u64>,
+    pub first_authoritative_event_published_frame: Option<u64>,
     pub captured_frames: u64,
     pub frame_queue_drops: u64,
 }
@@ -150,10 +152,7 @@ pub fn calculate_percentile(sorted: &[f64], pct: f64) -> f64 {
 }
 
 /// Calculates timing aggregate from raw frame samples and warmup count.
-pub fn aggregate_frames(
-    samples: &[FrameSample],
-    warmup_count: usize,
-) -> FrameTimingAggregate {
+pub fn aggregate_frames(samples: &[FrameSample], warmup_count: usize) -> FrameTimingAggregate {
     let measured_samples = if samples.len() > warmup_count {
         &samples[warmup_count..]
     } else {

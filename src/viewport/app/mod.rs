@@ -232,25 +232,53 @@ pub(crate) fn run() {
         .and_then(crate::viewport::diagnostics::performance::BenchmarkScenarioId::from_code);
 
     let is_s8 = benchmark_scenario
-        == Some(crate::viewport::diagnostics::performance::BenchmarkScenarioId::S8NativeNoLiveStage);
+        == Some(
+            crate::viewport::diagnostics::performance::BenchmarkScenarioId::S8NativeNoLiveStage,
+        );
 
     if launch_options.benchmark {
-        app.add_plugins(crate::viewport::diagnostics::performance::ScenarioDriverPlugin {
-            scenario_id: benchmark_scenario,
-        })
-        .add_plugins(crate::viewport::diagnostics::performance::BenchmarkRunnerPlugin {
-            config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
-                scenario: benchmark_scenario,
-                warmup_frames: launch_options.benchmark_warmup_frames,
-                target_frames: launch_options.benchmark_frames,
-                output_path: launch_options.benchmark_output.map(std::path::PathBuf::from),
-                label: launch_options.benchmark_label.clone(),
-                width: launch_options.width,
-                height: launch_options.height,
-                requested_fps: launch_options.fps as f64,
-                asset_path: if is_s8 { None } else { launch_options.asset_argument.clone() },
+        app.add_plugins(
+            crate::viewport::diagnostics::performance::ScenarioDriverPlugin {
+                scenario_id: benchmark_scenario,
             },
-        });
+        )
+        .add_plugins(
+            crate::viewport::diagnostics::performance::BenchmarkRunnerPlugin {
+                config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
+                    scenario: benchmark_scenario,
+                    warmup_frames: launch_options.benchmark_warmup_frames,
+                    target_frames: launch_options.benchmark_frames,
+                    output_path: launch_options
+                        .benchmark_output
+                        .map(std::path::PathBuf::from),
+                    label: launch_options.benchmark_label.clone(),
+                    width: launch_options.width,
+                    height: launch_options.height,
+                    requested_fps: launch_options.fps as f64,
+                    asset_path: if is_s8 {
+                        None
+                    } else {
+                        launch_options.asset_argument.clone()
+                    },
+                    client_ready_file: launch_options
+                        .benchmark_client_ready_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_start_file: launch_options
+                        .benchmark_measurement_start_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_idle_file: launch_options
+                        .benchmark_measurement_idle_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_complete_file: launch_options
+                        .benchmark_measurement_complete_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                },
+            },
+        );
     }
 
     app.init_resource::<Spawned>()
@@ -263,7 +291,11 @@ pub(crate) fn run() {
         .init_resource::<UsdStageTime>()
         .init_resource::<CameraBookmarks>()
         .insert_resource(StageInfo {
-            path: if is_s8 { String::new() } else { asset_path.clone() },
+            path: if is_s8 {
+                String::new()
+            } else {
+                asset_path.clone()
+            },
             ..default()
         })
         .insert_resource(RequestedAsset {

@@ -54,6 +54,8 @@ pub struct RendererCounters {
     pub remote_commands_drained: u64,
     pub remote_inputs_applied: u64,
     pub authoritative_events_published: u64,
+    pub first_remote_command_received_frame: Option<u64>,
+    pub first_authoritative_event_published_frame: Option<u64>,
     pub captured_frames: u64,
     pub frame_queue_drops: u64,
 
@@ -122,6 +124,8 @@ impl Default for RendererCounters {
             remote_commands_drained: 0,
             remote_inputs_applied: 0,
             authoritative_events_published: 0,
+            first_remote_command_received_frame: None,
+            first_authoritative_event_published_frame: None,
             captured_frames: 0,
             frame_queue_drops: 0,
 
@@ -178,6 +182,8 @@ impl RendererCounters {
         self.remote_commands_drained = 0;
         self.remote_inputs_applied = 0;
         self.authoritative_events_published = 0;
+        self.first_remote_command_received_frame = None;
+        self.first_authoritative_event_published_frame = None;
         self.captured_frames = 0;
         self.frame_queue_drops = 0;
 
@@ -213,14 +219,8 @@ impl RendererCounters {
 
         self.query_latency_samples_ms
             .sort_by(|left, right| left.total_cmp(right));
-        self.query_median_latency_ms = Some(percentile(
-            &self.query_latency_samples_ms,
-            0.50,
-        ));
-        self.query_p95_latency_ms = Some(percentile(
-            &self.query_latency_samples_ms,
-            0.95,
-        ));
+        self.query_median_latency_ms = Some(percentile(&self.query_latency_samples_ms, 0.50));
+        self.query_p95_latency_ms = Some(percentile(&self.query_latency_samples_ms, 0.95));
     }
 }
 
