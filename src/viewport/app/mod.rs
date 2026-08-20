@@ -55,7 +55,7 @@ pub(crate) fn run() {
             std::process::exit(2);
         }
     };
-    let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument);
+    let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument.clone());
 
     let mut app = App::new();
 
@@ -215,6 +215,44 @@ pub(crate) fn run() {
         .unwrap_or(false);
     app.insert_resource(PhysicsActive(physics_initially_active));
 
+    // Performance and incident diagnostics
+    app.init_resource::<crate::viewport::diagnostics::performance::RendererCounters>()
+        .add_systems(
+            First,
+            crate::viewport::diagnostics::performance::start_frame_timing_system,
+        )
+        .add_systems(
+            Last,
+            crate::viewport::diagnostics::performance::collect_renderer_counters_system,
+        );
+
+    let benchmark_scenario = launch_options
+        .benchmark_scenario
+        .as_deref()
+        .and_then(crate::viewport::diagnostics::performance::BenchmarkScenarioId::from_code);
+
+    let is_s8 = benchmark_scenario
+        == Some(crate::viewport::diagnostics::performance::BenchmarkScenarioId::S8NativeNoLiveStage);
+
+    if launch_options.benchmark {
+        app.add_plugins(crate::viewport::diagnostics::performance::ScenarioDriverPlugin {
+            scenario_id: benchmark_scenario,
+        })
+        .add_plugins(crate::viewport::diagnostics::performance::BenchmarkRunnerPlugin {
+            config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
+                scenario: benchmark_scenario,
+                warmup_frames: launch_options.benchmark_warmup_frames,
+                target_frames: launch_options.benchmark_frames,
+                output_path: launch_options.benchmark_output.map(std::path::PathBuf::from),
+                label: launch_options.benchmark_label.clone(),
+                width: launch_options.width,
+                height: launch_options.height,
+                requested_fps: launch_options.fps as f64,
+                asset_path: if is_s8 { None } else { launch_options.asset_argument.clone() },
+            },
+        });
+    }
+
     app.init_resource::<Spawned>()
         .init_resource::<ReloadRequest>()
         .init_resource::<LoadRequest>()
@@ -225,32 +263,37 @@ pub(crate) fn run() {
         .init_resource::<UsdStageTime>()
         .init_resource::<CameraBookmarks>()
         .insert_resource(StageInfo {
-            path: asset_path.clone(),
+            path: if is_s8 { String::new() } else { asset_path.clone() },
             ..default()
         })
         .insert_resource(RequestedAsset {
-            name: asset_path,
+            name: if is_s8 { String::new() } else { asset_path },
             root: asset_root.clone(),
         })
-        .add_systems(Startup, (load_stage, spawn_camera_and_ground))
-        .add_systems(
-            Update,
-            (
-                spawn_when_ready,
-                fit_camera_once,
-                handle_usd_hot_reload,
-                apply_load_request,
-                apply_fly_to,
-                draw_selected_prim_highlight,
-                follow_mounted_camera,
-                tick_stage_time,
-                hide_meshes_on_startup,
-            ),
-        )
-        .add_systems(
-            Update,
-            sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
-        );
+        .add_systems(Startup, spawn_camera_and_ground);
+
+    if !is_s8 {
+        app.add_systems(Startup, load_stage);
+    }
+
+    app.add_systems(
+        Update,
+        (
+            spawn_when_ready,
+            fit_camera_once,
+            handle_usd_hot_reload,
+            apply_load_request,
+            apply_fly_to,
+            draw_selected_prim_highlight,
+            follow_mounted_camera,
+            tick_stage_time,
+            hide_meshes_on_startup,
+        ),
+    )
+    .add_systems(
+        Update,
+        sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
+    );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()
         .map(|v| matches!(v.as_str(), "1" | "true" | "on"))

@@ -24,6 +24,12 @@ pub(crate) struct LaunchOptions {
     pub(crate) height: u32,
     pub(crate) fps: u32,
     pub(crate) codec: CodecId,
+    pub(crate) benchmark: bool,
+    pub(crate) benchmark_scenario: Option<String>,
+    pub(crate) benchmark_warmup_frames: u64,
+    pub(crate) benchmark_frames: u64,
+    pub(crate) benchmark_output: Option<String>,
+    pub(crate) benchmark_label: String,
 }
 
 impl Default for LaunchOptions {
@@ -36,6 +42,12 @@ impl Default for LaunchOptions {
             height: 1080,
             fps: 60,
             codec: CodecId::H264,
+            benchmark: false,
+            benchmark_scenario: None,
+            benchmark_warmup_frames: 30,
+            benchmark_frames: 120,
+            benchmark_output: None,
+            benchmark_label: "baseline".to_string(),
         }
     }
 }
@@ -115,6 +127,55 @@ where
             continue;
         }
 
+        if parse_options && argument == "--benchmark" {
+            options.benchmark = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-scenario" {
+            let sc = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-scenario requires an identifier like S1".to_owned())?;
+            options.benchmark_scenario = Some(sc);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-warmup-frames" {
+            let warmup = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-warmup-frames requires an integer".to_owned())?;
+            options.benchmark_warmup_frames = warmup
+                .parse::<u64>()
+                .map_err(|e| format!("invalid warmup frames: {e}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-frames" {
+            let frames = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-frames requires an integer".to_owned())?;
+            options.benchmark_frames = frames
+                .parse::<u64>()
+                .map_err(|e| format!("invalid frames count: {e}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-output" {
+            let output = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-output requires a file path".to_owned())?;
+            options.benchmark_output = Some(output);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-label" {
+            let label = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-label requires a label string".to_owned())?;
+            options.benchmark_label = label;
+            continue;
+        }
+
         if parse_options {
             if let Some(transport) = argument.strip_prefix("--transport=") {
                 options.transport = Some(parse_transport(transport)?);
@@ -122,6 +183,18 @@ where
             }
             if let Some(codec) = argument.strip_prefix("--codec=") {
                 options.codec = parse_codec(codec)?;
+                continue;
+            }
+            if let Some(sc) = argument.strip_prefix("--benchmark-scenario=") {
+                options.benchmark_scenario = Some(sc.to_string());
+                continue;
+            }
+            if let Some(out) = argument.strip_prefix("--benchmark-output=") {
+                options.benchmark_output = Some(out.to_string());
+                continue;
+            }
+            if let Some(lbl) = argument.strip_prefix("--benchmark-label=") {
+                options.benchmark_label = lbl.to_string();
                 continue;
             }
             if argument.starts_with('-') {
@@ -223,5 +296,30 @@ mod tests {
                 .codec,
             CodecId::H265
         );
+    }
+
+    #[test]
+    fn benchmark_flags_are_parsed_correctly() {
+        let options = parse_launch_options(vec![
+            "--benchmark".to_owned(),
+            "--benchmark-scenario".to_owned(),
+            "S1".to_owned(),
+            "--benchmark-warmup-frames".to_owned(),
+            "10".to_owned(),
+            "--benchmark-frames".to_owned(),
+            "50".to_owned(),
+            "--benchmark-output".to_owned(),
+            "target/out.json".to_owned(),
+            "--benchmark-label".to_owned(),
+            "baseline".to_owned(),
+        ])
+        .unwrap();
+
+        assert!(options.benchmark);
+        assert_eq!(options.benchmark_scenario, Some("S1".to_string()));
+        assert_eq!(options.benchmark_warmup_frames, 10);
+        assert_eq!(options.benchmark_frames, 50);
+        assert_eq!(options.benchmark_output, Some("target/out.json".to_string()));
+        assert_eq!(options.benchmark_label, "baseline");
     }
 }

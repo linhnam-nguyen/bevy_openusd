@@ -9,13 +9,16 @@ use crate::viewport::api::RenderServerInterface;
 use crate::viewport::input::ViewportNavigationInput;
 
 pub(crate) fn apply_stream_configuration(
-    interface: Res<RenderServerInterface>,
+    interface: Option<Res<RenderServerInterface>>,
     mut target: ResMut<OffscreenTarget>,
     mut images: ResMut<Assets<Image>>,
     mut navigation: Option<ResMut<ViewportNavigationInput>>,
     mut render_targets: Query<&mut RenderTarget, With<Camera3d>>,
     mut readbacks: Query<&mut Readback>,
 ) {
+    let Some(interface) = interface else {
+        return;
+    };
     let Some(metrics) = interface.take_stream_configuration() else {
         return;
     };
