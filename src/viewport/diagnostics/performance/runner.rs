@@ -89,6 +89,18 @@ pub fn benchmark_stepper_system(world: &mut World) {
                 wall_interval_ms: counters.frame_wall_interval_ms,
                 gpu_duration_ms: None,
             });
+            if run_state.warmup_frames_remaining == 0 {
+                // Reset counters at warmup boundary so reported steady-state metrics
+                // represent ONLY post-warmup measured frames!
+                if let Some(mut c) = world.get_resource_mut::<RendererCounters>() {
+                    c.reset();
+                }
+                if let Some(mut gc) =
+                    world.get_resource_mut::<bevy_glacial::prelude::GlacialGridCounters>()
+                {
+                    *gc = Default::default();
+                }
+            }
         } else if run_state.target_frames_remaining > 0 {
             run_state.target_frames_remaining -= 1;
             run_state.samples.push(FrameSample {
@@ -169,8 +181,17 @@ fn finalize_benchmark_report(world: &mut World) {
 
     let incident_grid = IncidentGridSummary {
         compute_extent_calls: counters.grid_compute_extent_calls,
+        prims_scanned: counters.grid_prims_scanned,
         sync_calls: counters.grid_sync_calls,
         host_writes: counters.grid_host_writes,
+        visible_writes: counters.grid_visible_writes,
+        ground_y_writes: counters.grid_ground_y_writes,
+        coverage_radius_writes: counters.grid_coverage_radius_writes,
+        value_changes: counters.grid_value_changes,
+        changed_observations: counters.grid_changed_observations,
+        update_alpha_calls: counters.grid_update_alpha_calls,
+        lines_rebuilt: counters.grid_lines_rebuilt,
+        dots_rebuilt: counters.grid_dots_rebuilt,
         structural_rebuilds: counters.grid_structural_rebuilds,
         vertices_generated: counters.grid_vertices_generated,
         indices_generated: counters.grid_indices_generated,
@@ -181,8 +202,13 @@ fn finalize_benchmark_report(world: &mut World) {
         idle_skips: counters.semantic_idle_skips,
         snapshot_clones: counters.semantic_snapshot_clones,
         initial_extractions: counters.semantic_initial_extractions,
+        initial_extraction_failures: counters.semantic_initial_extraction_failures,
+        fallback_extractions: counters.semantic_fallback_extractions,
+        subtree_extractions: counters.semantic_subtree_extractions,
         worker_submissions: counters.semantic_worker_submissions,
+        worker_submission_failures: counters.semantic_worker_submission_failures,
         recovery_checkpoints: counters.recovery_checkpoints,
+        recovery_successes: counters.recovery_successes,
     };
 
     let webrtc_metrics = WebRtcReportSummary {

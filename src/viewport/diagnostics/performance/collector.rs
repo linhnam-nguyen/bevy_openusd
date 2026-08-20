@@ -23,10 +23,18 @@ pub fn collect_phase_metrics_from_world(world: &World) -> PhaseMetrics {
     let initial_projection_prims = proj_stats.map(|s| s.initial_projection_prims).unwrap_or(0);
     let stage_traversal_ms = proj_stats.and_then(|s| s.stage_traversal_ms);
 
-    let mesh_generation_ms = phase_timings.and_then(|t| t.mesh_generation_ms);
-    let primvar_expansion_ms = phase_timings.and_then(|t| t.primvar_expansion_ms);
-    let normal_generation_ms = phase_timings.and_then(|t| t.normal_generation_ms);
-    let material_resolve_ms = phase_timings.and_then(|t| t.material_resolve_ms);
+    let mesh_generation_ms = phase_timings
+        .and_then(|t| t.mesh_generation_ms)
+        .or_else(|| proj_stats.and_then(|s| s.mesh_generation_ms));
+    let primvar_expansion_ms = phase_timings
+        .and_then(|t| t.primvar_expansion_ms)
+        .or_else(|| proj_stats.and_then(|s| s.primvar_expansion_ms));
+    let normal_generation_ms = phase_timings
+        .and_then(|t| t.normal_generation_ms)
+        .or_else(|| proj_stats.and_then(|s| s.normal_generation_ms));
+    let material_resolve_ms = phase_timings
+        .and_then(|t| t.material_resolve_ms)
+        .or_else(|| proj_stats.and_then(|s| s.material_resolve_ms));
 
     PhaseMetrics {
         initial_projection_ms,
@@ -74,7 +82,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cache_snapshot_empty_behavior() {
+    fn cache_snapshot_empty_world() {
         let world = World::new();
         let snapshot = collect_cache_snapshot_from_world(&world);
         assert_eq!(snapshot.live_stage_prims, 0);
@@ -90,12 +98,16 @@ mod tests {
             initial_projection_ms: Some(12.5),
             initial_projection_prims: 34,
             stage_traversal_ms: Some(8.2),
+            mesh_generation_ms: Some(2.1),
+            primvar_expansion_ms: Some(0.8),
+            normal_generation_ms: Some(0.7),
+            material_resolve_ms: Some(0.7),
         });
 
         let metrics = collect_phase_metrics_from_world(&world);
         assert_eq!(metrics.initial_projection_ms, Some(12.5));
         assert_eq!(metrics.initial_projection_prims, 34);
         assert_eq!(metrics.stage_traversal_ms, Some(8.2));
-        assert_eq!(metrics.mesh_generation_ms, None);
+        assert_eq!(metrics.mesh_generation_ms, Some(2.1));
     }
 }

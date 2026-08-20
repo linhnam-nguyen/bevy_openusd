@@ -284,5 +284,15 @@ mod tests {
         let toggles = app.world().resource::<DisplayToggles>();
         assert!(!toggles.show_world_grid);
         assert_eq!(toggles.light_intensity_scale, 1.0);
+
+        // Pop authoritative event and verify request-ID reduction
+        let event = interface
+            .pop_viewport_event()
+            .expect("server must publish authoritative event back to interface");
+        assert_eq!(event.request_id.as_deref(), Some("test-req-1"));
+        assert!(matches!(
+            event.event,
+            ViewportEvent::PresentationChanged { presentation } if !presentation.ground_grid
+        ));
     }
 }

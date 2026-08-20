@@ -41,8 +41,7 @@ fn sync_ground_grid_to_scene(
     cameras: Query<&ArcballCamera>,
     toggles: Res<DisplayToggles>,
     mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
-    grid_meshes: Query<(&bevy_glacial::prelude::LocalGrid, &Mesh3d)>,
-    meshes: Res<Assets<Mesh>>,
+    glacial_counters: Option<Res<bevy_glacial::prelude::GlacialGridCounters>>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     let desired_ground_y = match toggles.ground_grid_origin {
@@ -63,37 +62,40 @@ fn sync_ground_grid_to_scene(
 
     let prev_ground_y = grid.ground_y;
     let prev_radius = grid.coverage_radius;
+    let prev_vis = grid.visible;
 
     // Mutate the resource (unconditionally in unoptimized baseline)
     grid.ground_y = desired_ground_y;
     grid.coverage_radius = desired_radius;
+    grid.visible = toggles.show_world_grid;
 
     if let Some(ref mut c) = counters {
         c.grid_sync_calls += 1;
-        let mut field_writes = 0u64;
+        c.grid_host_writes += 3;
+        c.grid_visible_writes += 1;
+        c.grid_ground_y_writes += 1;
+        c.grid_coverage_radius_writes += 1;
+
         if prev_ground_y != desired_ground_y {
-            field_writes += 1;
+            c.grid_value_changes += 1;
         }
         if (prev_radius - desired_radius).abs() > 1e-4 {
-            field_writes += 1;
+            c.grid_value_changes += 1;
         }
-        // In the unoptimized baseline, every frame mutates both fields unconditionally (2 host writes per frame)
-        c.grid_host_writes += field_writes.max(2);
+        if prev_vis != toggles.show_world_grid {
+            c.grid_value_changes += 1;
+        }
+        if grid.is_changed() {
+            c.grid_changed_observations += 1;
+        }
 
-        if grid.visible && grid.ground_y.is_some() {
-            let mut total_verts = 0u64;
-            let mut total_indices = 0u64;
-            for (_lg, mesh_handle) in grid_meshes.iter() {
-                if let Some(m) = meshes.get(&mesh_handle.0) {
-                    total_verts += m.count_vertices() as u64;
-                    if let Some(indices) = m.indices() {
-                        total_indices += indices.len() as u64;
-                    }
-                }
-            }
-            c.grid_structural_rebuilds += 1;
-            c.grid_vertices_generated += total_verts;
-            c.grid_indices_generated += total_indices;
+        if let Some(ref gc) = glacial_counters {
+            c.grid_update_alpha_calls = gc.alpha_rebuild_calls;
+            c.grid_lines_rebuilt = gc.lines_rebuilt;
+            c.grid_dots_rebuilt = gc.dots_rebuilt;
+            c.grid_structural_rebuilds = gc.alpha_rebuild_calls;
+            c.grid_vertices_generated = gc.vertices_generated;
+            c.grid_indices_generated = gc.indices_generated;
         }
     }
 }

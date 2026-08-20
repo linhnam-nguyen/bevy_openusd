@@ -22,8 +22,17 @@ pub struct RendererCounters {
 
     // Incident A counters (GroundGrid)
     pub grid_compute_extent_calls: u64,
+    pub grid_prims_scanned: u64,
     pub grid_sync_calls: u64,
     pub grid_host_writes: u64,
+    pub grid_visible_writes: u64,
+    pub grid_ground_y_writes: u64,
+    pub grid_coverage_radius_writes: u64,
+    pub grid_value_changes: u64,
+    pub grid_changed_observations: u64,
+    pub grid_update_alpha_calls: u64,
+    pub grid_lines_rebuilt: u64,
+    pub grid_dots_rebuilt: u64,
     pub grid_structural_rebuilds: u64,
     pub grid_vertices_generated: u64,
     pub grid_indices_generated: u64,
@@ -33,8 +42,13 @@ pub struct RendererCounters {
     pub semantic_idle_skips: u64,
     pub semantic_snapshot_clones: u64,
     pub semantic_initial_extractions: u64,
+    pub semantic_initial_extraction_failures: u64,
+    pub semantic_fallback_extractions: u64,
+    pub semantic_subtree_extractions: u64,
     pub semantic_worker_submissions: u64,
+    pub semantic_worker_submission_failures: u64,
     pub recovery_checkpoints: u64,
+    pub recovery_successes: u64,
 
     // WebRTC remote stream counters
     pub remote_commands_drained: u64,
@@ -67,8 +81,17 @@ impl Default for RendererCounters {
             configuration_material_overrides: true,
 
             grid_compute_extent_calls: 0,
+            grid_prims_scanned: 0,
             grid_sync_calls: 0,
             grid_host_writes: 0,
+            grid_visible_writes: 0,
+            grid_ground_y_writes: 0,
+            grid_coverage_radius_writes: 0,
+            grid_value_changes: 0,
+            grid_changed_observations: 0,
+            grid_update_alpha_calls: 0,
+            grid_lines_rebuilt: 0,
+            grid_dots_rebuilt: 0,
             grid_structural_rebuilds: 0,
             grid_vertices_generated: 0,
             grid_indices_generated: 0,
@@ -77,8 +100,13 @@ impl Default for RendererCounters {
             semantic_idle_skips: 0,
             semantic_snapshot_clones: 0,
             semantic_initial_extractions: 0,
+            semantic_initial_extraction_failures: 0,
+            semantic_fallback_extractions: 0,
+            semantic_subtree_extractions: 0,
             semantic_worker_submissions: 0,
+            semantic_worker_submission_failures: 0,
             recovery_checkpoints: 0,
+            recovery_successes: 0,
 
             remote_commands_drained: 0,
             remote_inputs_applied: 0,
@@ -97,16 +125,18 @@ impl Default for RendererCounters {
 impl RendererCounters {
     /// Resets runtime metrics for measurement windows while preserving configuration.
     pub fn reset(&mut self) {
-        self.frame_count = 0;
-        self.measured_frame_count = 0;
-        self.frame_start_instant = None;
-        self.last_frame_instant = None;
-        self.frame_cpu_duration_ms = 0.0;
-        self.frame_wall_interval_ms = None;
-
         self.grid_compute_extent_calls = 0;
+        self.grid_prims_scanned = 0;
         self.grid_sync_calls = 0;
         self.grid_host_writes = 0;
+        self.grid_visible_writes = 0;
+        self.grid_ground_y_writes = 0;
+        self.grid_coverage_radius_writes = 0;
+        self.grid_value_changes = 0;
+        self.grid_changed_observations = 0;
+        self.grid_update_alpha_calls = 0;
+        self.grid_lines_rebuilt = 0;
+        self.grid_dots_rebuilt = 0;
         self.grid_structural_rebuilds = 0;
         self.grid_vertices_generated = 0;
         self.grid_indices_generated = 0;
@@ -115,8 +145,13 @@ impl RendererCounters {
         self.semantic_idle_skips = 0;
         self.semantic_snapshot_clones = 0;
         self.semantic_initial_extractions = 0;
+        self.semantic_initial_extraction_failures = 0;
+        self.semantic_fallback_extractions = 0;
+        self.semantic_subtree_extractions = 0;
         self.semantic_worker_submissions = 0;
+        self.semantic_worker_submission_failures = 0;
         self.recovery_checkpoints = 0;
+        self.recovery_successes = 0;
 
         self.remote_commands_drained = 0;
         self.remote_inputs_applied = 0;

@@ -9,8 +9,17 @@ use super::scenario::SteadyStateExpectations;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct IncidentGridSummary {
     pub compute_extent_calls: u64,
+    pub prims_scanned: u64,
     pub sync_calls: u64,
     pub host_writes: u64,
+    pub visible_writes: u64,
+    pub ground_y_writes: u64,
+    pub coverage_radius_writes: u64,
+    pub value_changes: u64,
+    pub changed_observations: u64,
+    pub update_alpha_calls: u64,
+    pub lines_rebuilt: u64,
+    pub dots_rebuilt: u64,
     pub structural_rebuilds: u64,
     pub vertices_generated: u64,
     pub indices_generated: u64,
@@ -23,8 +32,13 @@ pub struct IncidentSemanticSummary {
     pub idle_skips: u64,
     pub snapshot_clones: u64,
     pub initial_extractions: u64,
+    pub initial_extraction_failures: u64,
+    pub fallback_extractions: u64,
+    pub subtree_extractions: u64,
     pub worker_submissions: u64,
+    pub worker_submission_failures: u64,
     pub recovery_checkpoints: u64,
+    pub recovery_successes: u64,
 }
 
 /// Summary metrics for WebRTC remote streaming path.

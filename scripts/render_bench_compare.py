@@ -13,27 +13,54 @@ import os
 import sys
 from pathlib import Path
 
+REQUIRED_TIMING_FIELDS = ["median_frame_ms", "p95_frame_ms", "actual_renderer_fps", "warmup_frames", "measured_frames"]
+REQUIRED_IDENTITY_FIELDS = ["scenario_code", "scene_label", "build_profile", "width", "height"]
+REQUIRED_GRID_FIELDS = ["structural_rebuilds", "vertices_generated", "indices_generated", "compute_extent_calls", "sync_calls"]
+REQUIRED_SEM_FIELDS = ["snapshot_clones", "sync_calls", "recovery_checkpoints"]
+
 def load_report(path: str) -> dict:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Report file does not exist: {path}")
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if "schema_version" not in data:
-        raise ValueError(f"Invalid benchmark report schema: {path}")
+        raise ValueError(f"Invalid benchmark report schema (missing schema_version): {path}")
     return data
 
+def validate_required_fields(data: dict, file_label: str):
+    ident = data.get("identity", {})
+    timing = data.get("timing", {})
+    grid = data.get("incident_grid", {})
+    sem = data.get("incident_semantic", {})
+
+    for f in REQUIRED_IDENTITY_FIELDS:
+        if f not in ident:
+            raise ValueError(f"{file_label} missing required identity field: {f}")
+    for f in REQUIRED_TIMING_FIELDS:
+        if f not in timing:
+            raise ValueError(f"{file_label} missing required timing field: {f}")
+    for f in REQUIRED_GRID_FIELDS:
+        if f not in grid:
+            raise ValueError(f"{file_label} missing required incident_grid field: {f}")
+    for f in REQUIRED_SEM_FIELDS:
+        if f not in sem:
+            raise ValueError(f"{file_label} missing required incident_semantic field: {f}")
+
 def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", label_b: str = "Candidate") -> bool:
-    id_a = report_a.get("identity", {})
-    id_b = report_b.get("identity", {})
+    validate_required_fields(report_a, label_a)
+    validate_required_fields(report_b, label_b)
 
-    timing_a = report_a.get("timing", {})
-    timing_b = report_b.get("timing", {})
+    id_a = report_a["identity"]
+    id_b = report_b["identity"]
 
-    grid_a = report_a.get("incident_grid", {})
-    grid_b = report_b.get("incident_grid", {})
+    timing_a = report_a["timing"]
+    timing_b = report_b["timing"]
 
-    sem_a = report_a.get("incident_semantic", {})
-    sem_b = report_b.get("incident_semantic", {})
+    grid_a = report_a["incident_grid"]
+    grid_b = report_b["incident_grid"]
+
+    sem_a = report_a["incident_semantic"]
+    sem_b = report_b["incident_semantic"]
 
     webrtc_a = report_a.get("webrtc_metrics", {})
     webrtc_b = report_b.get("webrtc_metrics", {})
@@ -44,12 +71,29 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     cache_a = report_a.get("cache_snapshot", {})
     cache_b = report_b.get("cache_snapshot", {})
 
-    med_a = timing_a.get("median_frame_ms", 0.0)
-    med_b = timing_b.get("median_frame_ms", 0.0)
-    p95_a = timing_a.get("p95_frame_ms", 0.0)
-    p95_b = timing_b.get("p95_frame_ms", 0.0)
-    fps_a = timing_a.get("actual_renderer_fps", 0.0)
-    fps_b = timing_b.get("actual_renderer_fps", 0.0)
+    # Strict configuration invariant checks
+    if id_a["scenario_code"] != id_b["scenario_code"]:
+        raise ValueError(f"Scenario code mismatch: {id_a['scenario_code']} vs {id_b['scenario_code']}")
+    if id_a["scene_label"] != id_b["scene_label"]:
+        raise ValueError(f"Scene label mismatch: {id_a['scene_label']} vs {id_b['scene_label']}")
+    if (id_a["width"], id_a["height"]) != (id_b["width"], id_b["height"]):
+        raise ValueError(f"Resolution mismatch: {id_a['width']}x{id_a['height']} vs {id_b['width']}x{id_b['height']}")
+    if id_a["build_profile"] != id_b["build_profile"]:
+        raise ValueError(f"Build profile mismatch: {id_a['build_profile']} vs {id_b['build_profile']}")
+
+    cfg_match_a = report_a.get("configuration_matches", False)
+    cfg_match_b = report_b.get("configuration_matches", False)
+    cfg_consistent = (report_a.get("requested_configuration") == report_b.get("requested_configuration"))
+
+    if not cfg_consistent:
+        raise ValueError(f"Requested configuration mismatch between {label_a} and {label_b}")
+
+    med_a = timing_a["median_frame_ms"]
+    med_b = timing_b["median_frame_ms"]
+    p95_a = timing_a["p95_frame_ms"]
+    p95_b = timing_b["p95_frame_ms"]
+    fps_a = timing_a["actual_renderer_fps"]
+    fps_b = timing_b["actual_renderer_fps"]
 
     speedup_med = ((med_a - med_b) / med_a * 100.0) if med_a > 0 else 0.0
     speedup_p95 = ((p95_a - p95_b) / p95_a * 100.0) if p95_a > 0 else 0.0
@@ -67,10 +111,6 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     print(f"{'P95 CPU Frame (ms)':<36} | {p95_a:<15.3f} | {p95_b:<15.3f} | {speedup_p95:+.1f}%")
     print(f"{'Actual Bevy Renderer FPS':<36} | {fps_a:<15.1f} | {fps_b:<15.1f} | {fps_delta:+.1f}%")
 
-    # Configuration Match
-    cfg_match_a = report_a.get("configuration_matches", False)
-    cfg_match_b = report_b.get("configuration_matches", False)
-    cfg_consistent = (report_a.get("requested_configuration") == report_b.get("requested_configuration"))
     print(f"{'Configuration Invariant Matches':<36} | {str(cfg_match_a):<15} | {str(cfg_match_b):<15} | {'OK' if cfg_consistent else 'INCOMPARABLE'}")
 
     # Grid Incidents (Incident A)
@@ -113,7 +153,7 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     mats_b = cache_b.get("cached_materials", 0)
     print(f"{'Cached Standard Materials':<36} | {mats_a:<15} | {mats_b:<15} | {mats_b - mats_a:+}")
     print(f"{'='*80}\n")
-    return cfg_consistent
+    return cfg_consistent and cfg_match_a and cfg_match_b
 
 def main():
     parser = argparse.ArgumentParser(description="Compare rendering benchmark JSON reports")
@@ -167,9 +207,9 @@ def main():
         except Exception as e:
             print(f"Error comparing reports: {e}", file=sys.stderr)
             sys.exit(1)
-    else:
-        parser.print_help()
-        sys.exit(1)
+        else:
+            parser.print_help()
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

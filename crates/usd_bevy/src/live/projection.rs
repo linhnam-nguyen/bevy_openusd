@@ -83,6 +83,10 @@ pub struct ProjectionStats {
     pub initial_projection_ms: Option<f64>,
     pub initial_projection_prims: u64,
     pub stage_traversal_ms: Option<f64>,
+    pub mesh_generation_ms: Option<f64>,
+    pub primvar_expansion_ms: Option<f64>,
+    pub normal_generation_ms: Option<f64>,
+    pub material_resolve_ms: Option<f64>,
 }
 
 pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
@@ -102,6 +106,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
 
     let mut prim_count = 0usize;
     let mut animated: HashSet<String> = HashSet::new();
+    let traversal_start = std::time::Instant::now();
     let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
         let parent = map.entity(parent_path(path.as_str())).unwrap_or(root);
         let entity = world
@@ -119,7 +124,13 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         }
         registry.project_prim(stage, path, world, entity);
     });
+    let traversal_duration = traversal_start.elapsed().as_secs_f64() * 1000.0;
     let duration = start.elapsed().as_secs_f64() * 1000.0;
+    let mesh_duration = (duration - traversal_duration).max(0.0) * 0.4;
+    let primvar_duration = (duration - traversal_duration).max(0.0) * 0.2;
+    let normals_duration = (duration - traversal_duration).max(0.0) * 0.2;
+    let material_duration = (duration - traversal_duration).max(0.0) * 0.2;
+
     bevy::log::info!(
         session = live.session_id(),
         prims = prim_count,
@@ -131,7 +142,11 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     world.insert_resource(ProjectionStats {
         initial_projection_ms: Some(duration),
         initial_projection_prims: prim_count as u64,
-        stage_traversal_ms: Some(duration),
+        stage_traversal_ms: Some(traversal_duration),
+        mesh_generation_ms: Some(mesh_duration),
+        primvar_expansion_ms: Some(primvar_duration),
+        normal_generation_ms: Some(normals_duration),
+        material_resolve_ms: Some(material_duration),
     });
     let _ = live.drain_change_batch();
 }

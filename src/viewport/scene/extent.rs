@@ -129,6 +129,9 @@ pub(crate) fn compute_extent(
         }
         count += 1;
     }
+    if let Some(ref mut c) = counters {
+        c.grid_prims_scanned += count as u64;
+    }
     *extent = SceneExtent {
         min,
         max,
