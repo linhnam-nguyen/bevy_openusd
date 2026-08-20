@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-PROJECT_NAME := $(shell sed -n '/^[[:space:]]*[^#\[[:space:]]/p' PROJECT | head -1 | tr -d '[:space:]')
-PROJECT_VERSION := $(shell sed -n '/^[[:space:]]*[^#\[[:space:]]/p' PROJECT | sed -n '2p' | tr -d '[:space:]')
+PROJECT_NAME := $(shell sed -e 's/\#.*//' PROJECT | grep -v '^\s*$$' | head -1 | tr -d '[:space:]')
+PROJECT_VERSION := $(shell sed -e 's/\#.*//' PROJECT | grep -v '^\s*$$' | sed -n '2p' | tr -d '[:space:]')
 ifeq ($(PROJECT_NAME),)
     $(error Error: PROJECT file not found or invalid)
 endif
