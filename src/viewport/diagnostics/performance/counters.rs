@@ -60,8 +60,17 @@ pub struct RendererCounters {
     // Data Plane Isolation counters
     pub sync_db_auth_waits_in_bevy: u64,
     pub query_saturations: u64,
+    pub query_requests: u64,
+    pub query_results: u64,
+    pub query_failures: u64,
+    pub query_high_water: u64,
+    pub query_median_latency_ms: Option<f64>,
+    pub query_p95_latency_ms: Option<f64>,
     pub auth_validation_bursts: u64,
     pub auth_lookup_count: u64,
+    pub auth_validations: u64,
+    pub auth_failures: u64,
+    pub auth_high_water: u64,
 }
 
 impl Default for RendererCounters {
@@ -116,8 +125,17 @@ impl Default for RendererCounters {
 
             sync_db_auth_waits_in_bevy: 0,
             query_saturations: 0,
+            query_requests: 0,
+            query_results: 0,
+            query_failures: 0,
+            query_high_water: 0,
+            query_median_latency_ms: None,
+            query_p95_latency_ms: None,
             auth_validation_bursts: 0,
             auth_lookup_count: 0,
+            auth_validations: 0,
+            auth_failures: 0,
+            auth_high_water: 0,
         }
     }
 }
@@ -161,8 +179,17 @@ impl RendererCounters {
 
         self.sync_db_auth_waits_in_bevy = 0;
         self.query_saturations = 0;
+        self.query_requests = 0;
+        self.query_results = 0;
+        self.query_failures = 0;
+        self.query_high_water = 0;
+        self.query_median_latency_ms = None;
+        self.query_p95_latency_ms = None;
         self.auth_validation_bursts = 0;
         self.auth_lookup_count = 0;
+        self.auth_validations = 0;
+        self.auth_failures = 0;
+        self.auth_high_water = 0;
     }
 }
 

@@ -14,9 +14,10 @@ import sys
 from pathlib import Path
 
 REQUIRED_TIMING_FIELDS = ["median_frame_ms", "p95_frame_ms", "actual_renderer_fps", "warmup_frames", "measured_frames"]
-REQUIRED_IDENTITY_FIELDS = ["scenario_code", "scene_label", "build_profile", "width", "height"]
+REQUIRED_IDENTITY_FIELDS = ["scenario_code", "scene_label", "build_profile", "width", "height", "requested_fps", "backend", "gpu_adapter", "glacial_sha"]
 REQUIRED_GRID_FIELDS = ["structural_rebuilds", "vertices_generated", "indices_generated", "compute_extent_calls", "sync_calls"]
 REQUIRED_SEM_FIELDS = ["snapshot_clones", "sync_calls", "recovery_checkpoints"]
+REQUIRED_SECTIONS = ["identity", "timing", "incident_grid", "incident_semantic", "webrtc_metrics", "isolation_metrics", "cache_snapshot", "phase_metrics"]
 
 def load_report(path: str) -> dict:
     if not os.path.exists(path):
@@ -28,10 +29,14 @@ def load_report(path: str) -> dict:
     return data
 
 def validate_required_fields(data: dict, file_label: str):
-    ident = data.get("identity", {})
-    timing = data.get("timing", {})
-    grid = data.get("incident_grid", {})
-    sem = data.get("incident_semantic", {})
+    for sec in REQUIRED_SECTIONS:
+        if sec not in data:
+            raise ValueError(f"{file_label} missing required section: {sec}")
+
+    ident = data["identity"]
+    timing = data["timing"]
+    grid = data["incident_grid"]
+    sem = data["incident_semantic"]
 
     for f in REQUIRED_IDENTITY_FIELDS:
         if f not in ident:
@@ -62,14 +67,14 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
     sem_a = report_a["incident_semantic"]
     sem_b = report_b["incident_semantic"]
 
-    webrtc_a = report_a.get("webrtc_metrics", {})
-    webrtc_b = report_b.get("webrtc_metrics", {})
+    webrtc_a = report_a["webrtc_metrics"]
+    webrtc_b = report_b["webrtc_metrics"]
 
-    iso_a = report_a.get("isolation_metrics", {})
-    iso_b = report_b.get("isolation_metrics", {})
+    iso_a = report_a["isolation_metrics"]
+    iso_b = report_b["isolation_metrics"]
 
-    cache_a = report_a.get("cache_snapshot", {})
-    cache_b = report_b.get("cache_snapshot", {})
+    cache_a = report_a["cache_snapshot"]
+    cache_b = report_b["cache_snapshot"]
 
     # Strict configuration invariant checks
     if id_a["scenario_code"] != id_b["scenario_code"]:
@@ -80,6 +85,14 @@ def compare_single(report_a: dict, report_b: dict, label_a: str = "Baseline", la
         raise ValueError(f"Resolution mismatch: {id_a['width']}x{id_a['height']} vs {id_b['width']}x{id_b['height']}")
     if id_a["build_profile"] != id_b["build_profile"]:
         raise ValueError(f"Build profile mismatch: {id_a['build_profile']} vs {id_b['build_profile']}")
+    if id_a["backend"] != id_b["backend"]:
+        raise ValueError(f"Renderer backend mismatch: {id_a['backend']} vs {id_b['backend']}")
+    if id_a["gpu_adapter"] != id_b["gpu_adapter"]:
+        raise ValueError(f"GPU adapter mismatch: {id_a['gpu_adapter']} vs {id_b['gpu_adapter']}")
+    if id_a["glacial_sha"] != id_b["glacial_sha"]:
+        raise ValueError(f"Glacial SHA mismatch: {id_a['glacial_sha']} vs {id_b['glacial_sha']}")
+    if id_a["requested_fps"] != id_b["requested_fps"]:
+        raise ValueError(f"Requested FPS mismatch: {id_a['requested_fps']} vs {id_b['requested_fps']}")
 
     cfg_match_a = report_a.get("configuration_matches", False)
     cfg_match_b = report_b.get("configuration_matches", False)
@@ -207,9 +220,9 @@ def main():
         except Exception as e:
             print(f"Error comparing reports: {e}", file=sys.stderr)
             sys.exit(1)
-        else:
-            parser.print_help()
-            sys.exit(1)
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

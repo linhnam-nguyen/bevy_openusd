@@ -222,8 +222,17 @@ fn finalize_benchmark_report(world: &mut World) {
     let isolation_metrics = IsolationReportSummary {
         sync_db_auth_waits_in_bevy: counters.sync_db_auth_waits_in_bevy,
         query_saturations: counters.query_saturations,
+        query_requests: counters.query_requests,
+        query_results: counters.query_results,
+        query_failures: counters.query_failures,
+        query_high_water: counters.query_high_water,
+        query_median_latency_ms: counters.query_median_latency_ms,
+        query_p95_latency_ms: counters.query_p95_latency_ms,
         auth_validation_bursts: counters.auth_validation_bursts,
         auth_lookup_count: counters.auth_lookup_count,
+        auth_validations: counters.auth_validations,
+        auth_failures: counters.auth_failures,
+        auth_high_water: counters.auth_high_water,
     };
 
     let phase_metrics = collect_phase_metrics_from_world(world);

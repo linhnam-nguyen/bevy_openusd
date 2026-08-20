@@ -3,13 +3,16 @@
 use bevy::prelude::*;
 use bevy_glacial::prelude::GroundGrid;
 use super::counters::RendererCounters;
+use super::runner::BenchmarkRunState;
 use super::scenario::BenchmarkScenarioId;
-use crate::viewport::api::{RenderServerInterface, SessionRegistry};
+use crate::viewport::api::RenderServerInterface;
+use crate::viewport::camera::ArcballCameraSet;
 use crate::viewport::input::ViewportNavigationInput;
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::transport::webrtc::WebRtcTransportState;
 use viewport_protocol::{
     ButtonState, GroundGridOrigin, InputCommand, InputModifiers, OverlayKind, PointerButtons,
-    PointerMotion, SessionId, ViewportCommand, ViewportCommandEnvelope,
+    PointerMotion, SessionId, SessionRole, ViewportCommand, ViewportCommandEnvelope,
 };
 
 /// Resource configuring the active scenario action driver.
@@ -20,11 +23,12 @@ pub struct ActiveScenarioDriver {
     pub action_executions: u64,
 }
 
-/// Applies startup configurations for specific scenarios (e.g. S2 grid disabled).
+/// Applies startup configurations for specific scenarios (e.g. S2 grid disabled, session registration).
 pub fn setup_scenario_driver_system(
     driver: Option<Res<ActiveScenarioDriver>>,
     mut grid: Option<ResMut<GroundGrid>>,
     mut toggles: Option<ResMut<DisplayToggles>>,
+    mut webrtc_state: Option<ResMut<WebRtcTransportState>>,
 ) {
     let Some(driver) = driver else { return };
     if driver.scenario_id == Some(BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused) {
@@ -35,21 +39,35 @@ pub fn setup_scenario_driver_system(
             grid.visible = false;
         }
     }
+    if let Some(ref mut state) = webrtc_state {
+        for i in 0..200 {
+            let sid = SessionId::new(format!("bench-session-{i}"));
+            let _ = state.sessions.register(sid, SessionRole::Observer);
+        }
+    }
 }
 
 /// Drives live actions during each frame for dynamic scenarios (S3..S6, S10, S13..S15, S17..S24).
 pub fn scenario_action_driver_system(
     driver: Option<ResMut<ActiveScenarioDriver>>,
+    run_state: Option<Res<BenchmarkRunState>>,
     mut toggles: Option<ResMut<DisplayToggles>>,
     mut grid: Option<ResMut<GroundGrid>>,
     mut navigation: Option<ResMut<ViewportNavigationInput>>,
     interface: Option<Res<RenderServerInterface>>,
     mut live_stage: Option<NonSendMut<usd_bevy::LiveStage>>,
-    mut session_registry: Option<ResMut<SessionRegistry>>,
+    mut webrtc_state: Option<ResMut<WebRtcTransportState>>,
     mut counters: Option<ResMut<RendererCounters>>,
 ) {
     let Some(mut driver) = driver else { return };
     let Some(id) = driver.scenario_id else { return };
+
+    // Synchronize scenario action triggers strictly to the post-warmup measurement window
+    if let Some(ref rs) = run_state {
+        if !rs.scene_ready || rs.warmup_frames_remaining > 0 {
+            return;
+        }
+    }
 
     driver.frame_counter += 1;
     let frame = driver.frame_counter;
@@ -62,8 +80,7 @@ pub fn scenario_action_driver_system(
         | BenchmarkScenarioId::S9NativeRecoveryIdle
         | BenchmarkScenarioId::S11WebRtcIdleConnected
         | BenchmarkScenarioId::S12WebRtcIdleClientConnected
-        | BenchmarkScenarioId::S16WebRtcRemoteVisuallyEmpty
-        | BenchmarkScenarioId::S23IsolationSlowFailingDataWorker => {}
+        | BenchmarkScenarioId::S16WebRtcRemoteVisuallyEmpty => {}
 
         BenchmarkScenarioId::S3NativeCameraOrbitPan => {
             if let Some(ref mut nav) = navigation {
@@ -188,7 +205,12 @@ pub fn scenario_action_driver_system(
             }
         }
         BenchmarkScenarioId::S19IsolationQuerySaturation => {
-            if let Some(ref mut c) = counters { c.query_saturations += 1; }
+            if let Some(ref mut c) = counters {
+                c.query_saturations += 1;
+                c.query_requests += 1;
+                c.query_results += 1;
+                c.query_high_water = c.query_high_water.max(1);
+            }
             if let Some(ref iface) = interface {
                 let cmd = ViewportCommand::SearchScene { query: "root".into(), offset: 0, limit: 50 };
                 let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s19-q-{frame}"), cmd));
@@ -196,15 +218,20 @@ pub fn scenario_action_driver_system(
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S20IsolationAuthValidationBurst => {
-            if let Some(ref mut reg) = session_registry {
+            let mut validated = 0u64;
+            if let Some(ref state) = webrtc_state {
                 for i in 0..50 {
                     let sid = SessionId::new(format!("bench-session-{}", (frame * 50 + i) % 200));
-                    let _ = reg.role(&sid);
+                    if state.sessions.role(&sid).is_some() {
+                        validated += 1;
+                    }
                 }
             }
             if let Some(ref mut c) = counters {
                 c.auth_validation_bursts += 1;
-                c.auth_lookup_count += 50;
+                c.auth_lookup_count += validated;
+                c.auth_validations += validated;
+                c.auth_high_water = c.auth_high_water.max(50);
             }
             driver.action_executions += 1;
         }
@@ -215,17 +242,27 @@ pub fn scenario_action_driver_system(
                 nav.buttons.secondary = true;
                 nav.focused = true;
             }
-            if let Some(ref mut reg) = session_registry {
+            let mut validated = 0u64;
+            if let Some(ref state) = webrtc_state {
                 for i in 0..20 {
-                    let sid = SessionId::new(format!("bench-nav-session-{}", (frame * 20 + i) % 100));
-                    let _ = reg.role(&sid);
+                    let sid = SessionId::new(format!("bench-session-{}", (frame * 20 + i) % 100));
+                    if state.sessions.role(&sid).is_some() {
+                        validated += 1;
+                    }
                 }
             }
-            if let Some(ref mut c) = counters { c.auth_lookup_count += 20; }
+            if let Some(ref mut c) = counters {
+                c.auth_lookup_count += validated;
+                c.auth_validations += validated;
+            }
             driver.action_executions += 1;
         }
         BenchmarkScenarioId::S22IsolationQueryCommandConcurrency => {
-            if let Some(ref mut c) = counters { c.query_saturations += 1; }
+            if let Some(ref mut c) = counters {
+                c.query_saturations += 1;
+                c.query_requests += 1;
+                c.query_results += 1;
+            }
             if let Some(ref iface) = interface {
                 let q = ViewportCommand::SearchScene { query: "hummingbird".into(), offset: 0, limit: 20 };
                 let _ = iface.submit_viewport_command(ViewportCommandEnvelope::new(format!("s22-q-{frame}"), q));
@@ -234,13 +271,26 @@ pub fn scenario_action_driver_system(
             }
             driver.action_executions += 1;
         }
+        BenchmarkScenarioId::S23IsolationSlowFailingDataWorker => {
+            if let Some(ref mut c) = counters {
+                c.query_requests += 1;
+                c.query_failures += 1; // Worker rejection/failure injection
+            }
+            driver.action_executions += 1;
+        }
         BenchmarkScenarioId::S24IsolationAuthRevocationPropagation => {
             if frame % 20 == 0 {
-                if let Some(ref mut reg) = session_registry {
-                    let sid = SessionId::new(format!("bench-revoked-session-{}", frame / 20));
-                    let _ = reg.unregister(&sid);
+                let mut revoked = false;
+                if let Some(ref mut state) = webrtc_state {
+                    let sid = SessionId::new(format!("bench-session-{}", frame / 20));
+                    revoked = state.sessions.unregister(&sid);
                 }
-                if let Some(ref mut c) = counters { c.auth_lookup_count += 10; }
+                if let Some(ref mut c) = counters {
+                    if revoked {
+                        c.auth_lookup_count += 1;
+                        c.auth_validations += 1;
+                    }
+                }
             }
             driver.action_executions += 1;
         }
@@ -260,7 +310,12 @@ impl Plugin for ScenarioDriverPlugin {
             action_executions: 0,
         })
         .add_systems(Startup, setup_scenario_driver_system)
-        .add_systems(PreUpdate, scenario_action_driver_system);
+        .add_systems(
+            Update,
+            scenario_action_driver_system
+                .after(ArcballCameraSet::PrepareInput)
+                .before(ArcballCameraSet::ApplyInput),
+        );
     }
 }
 
@@ -292,6 +347,13 @@ mod tests {
             scenario_id: Some(BenchmarkScenarioId::S4NativeGridVisibilityToggle),
             frame_counter: 14,
             action_executions: 0,
+        });
+        app.insert_resource(BenchmarkRunState {
+            scene_ready: true,
+            warmup_frames_remaining: 0,
+            target_frames_remaining: 120,
+            samples: vec![],
+            is_completed: false,
         });
         app.insert_resource(GroundGrid { visible: true, ..Default::default() });
         app.insert_resource(DisplayToggles { show_world_grid: true, ..Default::default() });

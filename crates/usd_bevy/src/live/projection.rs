@@ -126,10 +126,6 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     });
     let traversal_duration = traversal_start.elapsed().as_secs_f64() * 1000.0;
     let duration = start.elapsed().as_secs_f64() * 1000.0;
-    let mesh_duration = (duration - traversal_duration).max(0.0) * 0.4;
-    let primvar_duration = (duration - traversal_duration).max(0.0) * 0.2;
-    let normals_duration = (duration - traversal_duration).max(0.0) * 0.2;
-    let material_duration = (duration - traversal_duration).max(0.0) * 0.2;
 
     bevy::log::info!(
         session = live.session_id(),
@@ -143,10 +139,10 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         initial_projection_ms: Some(duration),
         initial_projection_prims: prim_count as u64,
         stage_traversal_ms: Some(traversal_duration),
-        mesh_generation_ms: Some(mesh_duration),
-        primvar_expansion_ms: Some(primvar_duration),
-        normal_generation_ms: Some(normals_duration),
-        material_resolve_ms: Some(material_duration),
+        mesh_generation_ms: None,
+        primvar_expansion_ms: None,
+        normal_generation_ms: None,
+        material_resolve_ms: None,
     });
     let _ = live.drain_change_batch();
 }

@@ -52,12 +52,21 @@ pub struct WebRtcReportSummary {
 }
 
 /// Summary metrics for Render / Data-Plane Isolation invariants.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct IsolationReportSummary {
     pub sync_db_auth_waits_in_bevy: u64,
     pub query_saturations: u64,
+    pub query_requests: u64,
+    pub query_results: u64,
+    pub query_failures: u64,
+    pub query_high_water: u64,
+    pub query_median_latency_ms: Option<f64>,
+    pub query_p95_latency_ms: Option<f64>,
     pub auth_validation_bursts: u64,
     pub auth_lookup_count: u64,
+    pub auth_validations: u64,
+    pub auth_failures: u64,
+    pub auth_high_water: u64,
 }
 
 /// Aggregated statistical timing metrics across measured frames.

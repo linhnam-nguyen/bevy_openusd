@@ -45,7 +45,7 @@ SCENARIOS = {
     "S24": {"fixture": "assets/external/hummingbird.usdz", "desc": "Isolation Auth Revocation Propagation", "topology": "isolation"},
 }
 
-def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False):
+def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False, fixture_override: str = None):
     info = SCENARIOS.get(scenario_id)
     if not info:
         print(f"Error: Unknown scenario {scenario_id}", file=sys.stderr)
@@ -73,7 +73,7 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
         "--benchmark-label", label,
     ])
 
-    fixture = info.get("fixture")
+    fixture = fixture_override if fixture_override is not None else info.get("fixture")
     if fixture and os.path.exists(fixture):
         cmd.append(fixture)
 
@@ -89,6 +89,7 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
 def main():
     parser = argparse.ArgumentParser(description="Render optimization benchmark runner")
     parser.add_argument("--scenario", help="Scenario ID to run (e.g. S1)")
+    parser.add_argument("--fixture", help="Optional fixture override (e.g. assets/external/Kitchen_set.usdz)")
     parser.add_argument("--all", action="store_true", help="Run all S1..S24 scenarios")
     parser.add_argument("--warmup", type=int, default=30, help="Warmup frame count")
     parser.add_argument("--frames", type=int, default=120, help="Measured frame count")
@@ -106,13 +107,13 @@ def main():
         success = True
         for sc in sorted(SCENARIOS.keys(), key=lambda x: int(x[1:])):
             out_file = os.path.join(args.output_dir, f"{sc.lower()}.json")
-            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release, args.force_headless):
+            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture):
                 success = False
         sys.exit(0 if success else 1)
     elif args.scenario:
         out_file = args.output or f"{args.scenario.lower()}.json"
         os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
-        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release, args.force_headless)
+        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture)
         sys.exit(0 if success else 1)
     else:
         parser.print_help()
