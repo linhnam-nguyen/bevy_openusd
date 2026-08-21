@@ -85,6 +85,10 @@ name = "cache_profile"
 path = "tests/cache_profile.rs"
 
 [[test]]
+name = "progressive_load_profile"
+path = "tests/progressive_load_profile.rs"
+
+[[test]]
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
