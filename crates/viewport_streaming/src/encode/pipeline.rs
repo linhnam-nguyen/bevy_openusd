@@ -270,18 +270,13 @@ impl EncodePipeline {
     }
 
     /// Pushes a traced frame while preserving its monotonic capture timestamp
-    /// as the GStreamer presentation timestamp.
+    /// for transport metrics while leaving live media timestamps to appsrc.
     pub fn push_frame(&self, frame: &VideoFrame) -> Result<()> {
-        // Correlation identity is allocated at render time, but the media
-        // clock starts when the GPU readback is complete. Keeping the
-        // post-readback timestamp on the GStreamer buffer avoids delaying the
-        // live pipeline by the render-to-readback offset while retaining the
-        // render sequence for transport metrics.
-        let presentation_timestamp_ns = frame
-            .trace
-            .readback_timestamp_ns
-            .unwrap_or(frame.trace.timestamp_ns);
-        self.push_rgba_frame_with_trace(&frame.rgba, Some(presentation_timestamp_ns))
+        // Correlation identity and stage timestamps stay on FrameTrace. The
+        // live appsrc owns the media running clock; absolute process-relative
+        // PTS values would make WebRTC wait for a timestamp it cannot align to
+        // its pipeline base time.
+        self.push_rgba_frame(&frame.rgba)
     }
 
     fn push_rgba_frame_with_trace(
