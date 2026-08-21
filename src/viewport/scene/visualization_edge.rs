@@ -45,7 +45,8 @@ pub(super) fn init_edge_overlay_material(
         unlit: true,
         alpha_mode: AlphaMode::Blend,
         cull_mode: None,
-        depth_bias: 1.0,
+        // Metal rejects depth bias for the generated LineList topology.
+        depth_bias: 0.0,
         ..default()
     })));
 }

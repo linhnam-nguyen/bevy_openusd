@@ -4,7 +4,10 @@ pub mod aggregate;
 pub mod collector;
 pub mod counters;
 pub mod decision;
+pub mod matrix;
+mod matrix_report;
 pub mod runner;
+mod runner_plugin;
 pub mod sample;
 pub mod scenario;
 pub mod scenario_driver;
@@ -19,7 +22,12 @@ pub use collector::{
 };
 pub use counters::{RendererCounters, collect_renderer_counters_system, start_frame_timing_system};
 pub use decision::{GroundGridDecisionHelper, SemanticDecisionHelper, SemanticSyncWorkAction};
-pub use runner::{BenchmarkLaunchConfig, BenchmarkRunState, BenchmarkRunnerPlugin};
+pub use matrix::RendererMatrixRun;
+pub use matrix_report::{
+    RendererMatrixCadenceReport, RendererMatrixCaseReport, RendererMatrixReport,
+};
+pub use runner::{BenchmarkLaunchConfig, BenchmarkRunState};
+pub use runner_plugin::BenchmarkRunnerPlugin;
 pub use sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode, SCHEMA_VERSION};
 pub use scenario::{
     BenchmarkScenarioId, ScenarioCategory, ScenarioProbeDefinition, SteadyStateExpectations,

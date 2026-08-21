@@ -252,11 +252,17 @@ pub(crate) fn run() {
             crate::viewport::diagnostics::performance::BenchmarkRunnerPlugin {
                 config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
                     scenario: benchmark_scenario,
+                    renderer_matrix: launch_options.benchmark_renderer_matrix,
                     warmup_frames: launch_options.benchmark_warmup_frames,
                     target_frames: launch_options.benchmark_frames,
                     output_path: launch_options
                         .benchmark_output
-                        .map(std::path::PathBuf::from),
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| {
+                            launch_options
+                                .benchmark_renderer_matrix
+                                .then(|| "target/m3-c6-renderer-matrix.json".into())
+                        }),
                     label: launch_options.benchmark_label.clone(),
                     width: launch_options.width,
                     height: launch_options.height,

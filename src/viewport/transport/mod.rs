@@ -25,6 +25,7 @@ pub(crate) struct LaunchOptions {
     pub(crate) fps: u32,
     pub(crate) codec: CodecId,
     pub(crate) benchmark: bool,
+    pub(crate) benchmark_renderer_matrix: bool,
     pub(crate) benchmark_scenario: Option<String>,
     pub(crate) benchmark_warmup_frames: u64,
     pub(crate) benchmark_frames: u64,
@@ -47,6 +48,7 @@ impl Default for LaunchOptions {
             fps: 60,
             codec: CodecId::H264,
             benchmark: false,
+            benchmark_renderer_matrix: false,
             benchmark_scenario: None,
             benchmark_warmup_frames: 30,
             benchmark_frames: 120,
@@ -137,6 +139,12 @@ where
 
         if parse_options && argument == "--benchmark" {
             options.benchmark = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-renderer-matrix" {
+            options.benchmark = true;
+            options.benchmark_renderer_matrix = true;
             continue;
         }
 
@@ -378,5 +386,13 @@ mod tests {
             Some("target/out.json".to_string())
         );
         assert_eq!(options.benchmark_label, "baseline");
+    }
+
+    #[test]
+    fn renderer_matrix_benchmark_flag_selects_the_release_matrix_runner() {
+        let options = parse_launch_options(vec!["--benchmark-renderer-matrix".to_owned()]).unwrap();
+
+        assert!(options.benchmark);
+        assert!(options.benchmark_renderer_matrix);
     }
 }

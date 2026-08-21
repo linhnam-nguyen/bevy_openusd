@@ -21,6 +21,7 @@ use crate::viewport::semantic::SemanticWorkingStore;
 #[derive(Resource, Debug, Clone)]
 pub struct BenchmarkLaunchConfig {
     pub scenario: Option<BenchmarkScenarioId>,
+    pub renderer_matrix: bool,
     pub warmup_frames: u64,
     pub target_frames: u64,
     pub output_path: Option<PathBuf>,
@@ -380,22 +381,6 @@ fn touch_marker(path: &PathBuf) {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = File::create(path);
-}
-
-/// Plugin registering benchmark resources and the stepper system.
-pub struct BenchmarkRunnerPlugin {
-    pub config: BenchmarkLaunchConfig,
-}
-
-impl Plugin for BenchmarkRunnerPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(self.config.clone())
-            .insert_resource(BenchmarkRunState::new(
-                self.config.warmup_frames,
-                self.config.target_frames,
-            ))
-            .add_systems(Last, benchmark_stepper_system);
-    }
 }
 
 #[cfg(test)]
