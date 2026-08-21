@@ -196,3 +196,36 @@ fn source_mesh_key_changes_for_rendered_content_but_not_extent() {
     extent.extent = Some([[-10.0, -10.0, -10.0], [10.0, 10.0, 10.0]]);
     assert_eq!(source_mesh_key(&extent), key);
 }
+
+#[test]
+fn fallback_material_is_shared_across_meshes() {
+    let (stage, path) = mesh_stage();
+    let ctx = RouteCtx::new(&stage, &path);
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    let first_entity = world.spawn_empty().id();
+    let second_entity = world.spawn_empty().id();
+    let route = MeshRoute;
+
+    route.project(&ctx, &mut world, first_entity);
+    route.project(&ctx, &mut world, second_entity);
+
+    assert_eq!(
+        world
+            .get::<MeshMaterial3d<StandardMaterial>>(first_entity)
+            .expect("first fallback material")
+            .0,
+        world
+            .get::<MeshMaterial3d<StandardMaterial>>(second_entity)
+            .expect("second fallback material")
+            .0,
+        "identical fallback materials must share one handle"
+    );
+    assert_eq!(
+        world
+            .get_resource::<Assets<StandardMaterial>>()
+            .map(Assets::len),
+        Some(1)
+    );
+}
