@@ -100,6 +100,33 @@ where
             continue;
         }
 
+        if parse_options && argument == "--width" {
+            options.width = arguments
+                .next()
+                .ok_or_else(|| "--width requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid width: {error}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--height" {
+            options.height = arguments
+                .next()
+                .ok_or_else(|| "--height requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid height: {error}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--fps" {
+            options.fps = arguments
+                .next()
+                .ok_or_else(|| "--fps requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid FPS: {error}"))?;
+            continue;
+        }
+
         if parse_options && argument == "--preset" {
             let preset = arguments
                 .next()

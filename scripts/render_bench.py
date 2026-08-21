@@ -74,6 +74,7 @@ CLIENT_EVIDENCE_FIELDS = [
     "zoom_dolly_events_observed",
     "zoom_delta_observed",
     "video_observation",
+    "stream_configuration",
     "completion_blockers",
 ]
 
@@ -134,7 +135,7 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
     for field in (
         "decoded_fps",
         "decode_ms",
-        "total_delay_ms",
+        "estimated_network_plus_decode_ms",
         "network_rtt_ms",
         "network_jitter_ms",
     ):
@@ -148,6 +149,36 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
             "client evidence reports incomplete benchmark state: "
             + ", ".join(evidence["completion_blockers"])
         )
+    stream_configuration = evidence["stream_configuration"]
+    if not isinstance(stream_configuration, dict):
+        raise ValueError("client evidence stream_configuration must be an object")
+    required_configuration_fields = (
+        "requested_width",
+        "requested_height",
+        "requested_fps",
+        "accepted_width",
+        "accepted_height",
+        "accepted_fps",
+        "accepted_generation",
+        "applied_width",
+        "applied_height",
+        "applied_fps",
+        "applied_generation",
+    )
+    if any(stream_configuration.get(field) is None for field in required_configuration_fields):
+        raise ValueError("client evidence must report the complete stream configuration chain")
+    if (
+        stream_configuration["requested_width"] != stream_configuration["accepted_width"]
+        or stream_configuration["requested_height"] != stream_configuration["accepted_height"]
+        or stream_configuration["requested_fps"] != stream_configuration["accepted_fps"]
+        or stream_configuration["accepted_width"] != stream_configuration["applied_width"]
+        or stream_configuration["accepted_height"] != stream_configuration["applied_height"]
+        or stream_configuration["accepted_fps"] != stream_configuration["applied_fps"]
+        or stream_configuration["accepted_generation"] != stream_configuration["applied_generation"]
+        or video_observation["decoded_width"] != stream_configuration["applied_width"]
+        or video_observation["decoded_height"] != stream_configuration["applied_height"]
+    ):
+        raise ValueError("client evidence stream configuration does not match decoded video")
     if type(evidence["measurement_idle_observed"]) is not bool:
         raise ValueError("client evidence measurement_idle_observed must be boolean")
     if type(evidence["input_events_observed"]) is not int or evidence["input_events_observed"] < 0:
@@ -176,7 +207,7 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
     elif evidence["command_sent"] is not False:
         raise ValueError(f"{scenario_id} must not claim an unconfigured client command")
 
-def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False, fixture_override: str = None, client_command: str = None):
+def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False, fixture_override: str = None, client_command: str = None, stream_width: int = None, stream_height: int = None, stream_fps: int = None):
     info = SCENARIOS.get(scenario_id)
     if not info:
         print(f"Error: Unknown scenario {scenario_id}", file=sys.stderr)
@@ -235,6 +266,10 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
         "--benchmark-output", output_path,
         "--benchmark-label", label,
     ])
+    stream_width = stream_width or 1920
+    stream_height = stream_height or 1080
+    stream_fps = stream_fps or 60
+    cmd.extend(["--width", str(stream_width), "--height", str(stream_height), "--fps", str(stream_fps)])
     if client_required:
         cmd.extend([
             "--benchmark-client-ready-file", str(ready_file),
@@ -267,6 +302,9 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
                 "USDHUB_BENCHMARK_MEASUREMENT_START_FILE": str(measurement_start_file),
                 "USDHUB_BENCHMARK_MEASUREMENT_IDLE_FILE": str(measurement_idle_file),
                 "USDHUB_BENCHMARK_MEASUREMENT_COMPLETE_FILE": str(measurement_complete_file),
+                "USDHUB_BENCHMARK_REQUESTED_WIDTH": str(stream_width),
+                "USDHUB_BENCHMARK_REQUESTED_HEIGHT": str(stream_height),
+                "USDHUB_BENCHMARK_REQUESTED_FPS": str(stream_fps),
             })
             client = subprocess.Popen(shlex.split(client_command), env=client_env)
         server_stdout, server_stderr = server.communicate()
@@ -321,6 +359,14 @@ def main():
     parser.add_argument("--label", default="baseline", help="Benchmark run label")
     parser.add_argument("--debug", action="store_true", help="Run debug build instead of release")
     parser.add_argument("--force-headless", action="store_true", help="Force headless execution for native scenarios")
+    parser.add_argument("--stream-width", type=int, help="Requested WebRTC stream width for S12-S18")
+    parser.add_argument("--stream-height", type=int, help="Requested WebRTC stream height for S12-S18")
+    parser.add_argument("--stream-fps", type=int, help="Requested WebRTC stream FPS for S12-S18")
+    parser.add_argument(
+        "--configuration-matrix",
+        action="store_true",
+        help="Run the focused real-client S12 stream configuration matrix",
+    )
     parser.add_argument(
         "--client-command",
         help="External UsdHubUI benchmark harness command for S12-S18; it must drive the live client and exit",
@@ -329,18 +375,55 @@ def main():
     args = parser.parse_args()
     release = not args.debug
 
+    if args.configuration_matrix:
+        if not args.client_command:
+            parser.error("--configuration-matrix requires --client-command")
+        os.makedirs(args.output_dir, exist_ok=True)
+        cases = [
+            (1280, 720, 30), (1280, 720, 60), (1280, 720, 120),
+            (1920, 1080, 30), (1920, 1080, 60), (1920, 1080, 120),
+            (2560, 1440, 30), (2560, 1440, 60), (2560, 1440, 120),
+        ]
+        results = []
+        for width, height, fps in cases:
+            stem = f"s12-{width}x{height}-{fps}fps"
+            output_path = os.path.join(args.output_dir, f"{stem}.json")
+            passed = run_scenario(
+                "S12", args.warmup, args.frames, output_path, args.label, release,
+                args.force_headless, args.fixture, args.client_command, width, height, fps,
+            )
+            results.append({
+                "width": width,
+                "height": height,
+                "requested_fps": fps,
+                "status": "passed" if passed else "failed",
+                "server_report": output_path,
+                "client_report": f"{output_path}.client.json",
+            })
+        summary = {
+            "schema_version": 1,
+            "scenario": "S12",
+            "cases": results,
+            "unsupported_cases": [],
+            "support_status": "all_requested_cases_executed",
+        }
+        Path(args.output_dir, "configuration-matrix.json").write_text(
+            json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+        )
+        sys.exit(0 if all(result["status"] == "passed" for result in results) else 1)
+
     if args.all:
         os.makedirs(args.output_dir, exist_ok=True)
         success = True
         for sc in sorted(SCENARIOS.keys(), key=lambda x: int(x[1:])):
             out_file = os.path.join(args.output_dir, f"{sc.lower()}.json")
-            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture, args.client_command):
+            if not run_scenario(sc, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture, args.client_command, args.stream_width, args.stream_height, args.stream_fps):
                 success = False
         sys.exit(0 if success else 1)
     elif args.scenario:
         out_file = args.output or f"{args.scenario.lower()}.json"
         os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
-        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture, args.client_command)
+        success = run_scenario(args.scenario, args.warmup, args.frames, out_file, args.label, release, args.force_headless, args.fixture, args.client_command, args.stream_width, args.stream_height, args.stream_fps)
         sys.exit(0 if success else 1)
     else:
         parser.print_help()

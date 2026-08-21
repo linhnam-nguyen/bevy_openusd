@@ -93,6 +93,23 @@ fn benchmark_flags_are_parsed_correctly() {
 }
 
 #[test]
+fn stream_configuration_flags_select_the_requested_matrix_case() {
+    let options = parse_launch_options(vec![
+        "--width".to_owned(),
+        "1280".to_owned(),
+        "--height".to_owned(),
+        "720".to_owned(),
+        "--fps".to_owned(),
+        "120".to_owned(),
+    ])
+    .unwrap();
+
+    assert_eq!(options.width, 1280);
+    assert_eq!(options.height, 720);
+    assert_eq!(options.fps, 120);
+}
+
+#[test]
 fn renderer_matrix_benchmark_flag_selects_the_release_matrix_runner() {
     let options = parse_launch_options(vec!["--benchmark-renderer-matrix".to_owned()]).unwrap();
 
