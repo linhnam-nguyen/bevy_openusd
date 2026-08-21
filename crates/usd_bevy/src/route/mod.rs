@@ -146,6 +146,11 @@ impl<'a> RouteCtx<'a> {
 ///   `changed_info` with the set of property names that changed. Defaults to
 ///   [`project`](PrimRoute::project) for routes that can't refine.
 pub trait PrimRoute: Send + Sync + 'static {
+    /// Optional stable key used by narrow route diagnostics.
+    fn telemetry_key(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Does this route apply to the prim? Cheap check off [`RouteCtx`]
     /// (`typeName`, applied API schema, or attribute-namespace presence).
     fn matches(&self, ctx: &RouteCtx) -> bool;
@@ -238,7 +243,13 @@ impl SchemaRegistry {
     pub fn project_prim(&self, stage: &Stage, path: &Path, world: &mut World, entity: Entity) {
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
+            if route.telemetry_key() == Some("material") {
+                material::record_match(world);
+            }
             if route.matches(&ctx) {
+                if route.telemetry_key() == Some("material") {
+                    material::record_project(world);
+                }
                 route.project(&ctx, world, entity);
             }
         }
@@ -256,7 +267,13 @@ impl SchemaRegistry {
     ) {
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
+            if route.telemetry_key() == Some("material") {
+                material::record_match(world);
+            }
             if route.matches(&ctx) {
+                if route.telemetry_key() == Some("material") {
+                    material::record_patch(world);
+                }
                 route.patch(&ctx, world, entity, changed);
             }
         }

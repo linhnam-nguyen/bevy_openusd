@@ -10,8 +10,9 @@ use super::texture_cache::resolve_texture;
 pub struct MaterialRoute;
 
 /// The prim's decoded preview material, if it has a binding that resolves.
-fn material_of(ctx: &RouteCtx) -> Option<(String, ReadPreviewMaterial)> {
+fn material_of(ctx: &RouteCtx, world: &mut World) -> Option<(String, ReadPreviewMaterial)> {
     let binding = read_material_binding(ctx.stage, ctx.path).ok().flatten()?;
+    super::record_descriptor_read(world);
     let material = read_preview_material(ctx.stage, &binding).ok().flatten()?;
     Some((binding.as_str().to_owned(), material))
 }
@@ -71,18 +72,23 @@ pub(super) fn build_standard_material(
 }
 
 impl PrimRoute for MaterialRoute {
+    fn telemetry_key(&self) -> Option<&'static str> {
+        Some("material")
+    }
+
     fn matches(&self, ctx: &RouteCtx) -> bool {
-        read_material_binding(ctx.stage, ctx.path)
-            .ok()
-            .flatten()
-            .is_some()
+        ctx.type_name.is_some()
+            || read_material_binding(ctx.stage, ctx.path)
+                .ok()
+                .flatten()
+                .is_some()
     }
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
         if world.get_resource::<Assets<StandardMaterial>>().is_none() {
             return;
         }
-        let Some((binding, descriptor)) = material_of(ctx) else {
+        let Some((binding, descriptor)) = material_of(ctx, world) else {
             return;
         };
         let Some(handle) = intern_material(world, &binding, &descriptor) else {

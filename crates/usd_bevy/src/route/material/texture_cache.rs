@@ -17,6 +17,7 @@ pub struct TextureCacheStats {
     pub misses: u64,
     pub stale_handles: u64,
     pub load_failures: u64,
+    pub decode_calls: u64,
     pub color_space_misses: u64,
     pub archive_scans: u64,
     pub archive_entries_scanned: u64,
@@ -130,6 +131,9 @@ pub(super) fn resolve_texture(
         }
         return None;
     };
+    if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+        cache.stats.decode_calls += 1;
+    }
     let Ok(img) = image::load_from_memory(&bytes) else {
         if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
             cache.stats.load_failures += 1;
