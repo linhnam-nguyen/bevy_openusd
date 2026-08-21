@@ -11,15 +11,13 @@ pub mod scenario_driver;
 
 pub use aggregate::{
     CacheSnapshot, FrameTimingAggregate, IncidentGridSummary, IncidentSemanticSummary,
-    IsolationReportSummary, PerformanceReport, PhaseMetrics, WebRtcReportSummary, aggregate_frames,
-    calculate_percentile,
+    IsolationReportSummary, PerformanceReport, PhaseMetrics, RendererCadenceSummary,
+    WebRtcReportSummary, aggregate_frames, calculate_percentile,
 };
 pub use collector::{
     ProjectionPhaseTimings, collect_cache_snapshot_from_world, collect_phase_metrics_from_world,
 };
-pub use counters::{
-    RendererCounters, collect_renderer_counters_system, start_frame_timing_system,
-};
+pub use counters::{RendererCounters, collect_renderer_counters_system, start_frame_timing_system};
 pub use decision::{GroundGridDecisionHelper, SemanticDecisionHelper, SemanticSyncWorkAction};
 pub use runner::{BenchmarkLaunchConfig, BenchmarkRunState, BenchmarkRunnerPlugin};
 pub use sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode, SCHEMA_VERSION};

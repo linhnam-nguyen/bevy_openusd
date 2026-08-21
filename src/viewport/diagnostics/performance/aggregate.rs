@@ -53,6 +53,16 @@ pub struct WebRtcReportSummary {
     pub frame_queue_drops: u64,
 }
 
+/// Renderer and encoder cadence are reported independently so a stream cap
+/// cannot be mistaken for the rate at which Bevy actually produced frames.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct RendererCadenceSummary {
+    pub requested_fps: Option<u32>,
+    pub effective_renderer_target_fps: Option<u32>,
+    pub actual_rendered_fps: Option<f64>,
+    pub encoded_fps: Option<f64>,
+}
+
 /// Summary metrics for Render / Data-Plane Isolation invariants.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct IsolationReportSummary {
@@ -130,6 +140,7 @@ pub struct PerformanceReport {
     pub incident_grid: IncidentGridSummary,
     pub incident_semantic: IncidentSemanticSummary,
     pub webrtc_metrics: WebRtcReportSummary,
+    pub renderer_cadence: RendererCadenceSummary,
     pub isolation_metrics: IsolationReportSummary,
     pub phase_metrics: PhaseMetrics,
     pub cache_snapshot: CacheSnapshot,

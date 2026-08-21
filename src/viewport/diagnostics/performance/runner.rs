@@ -9,7 +9,7 @@ use bevy_glacial::prelude::GroundGrid;
 
 use super::aggregate::{
     IncidentGridSummary, IncidentSemanticSummary, IsolationReportSummary, PerformanceReport,
-    WebRtcReportSummary, aggregate_frames,
+    RendererCadenceSummary, WebRtcReportSummary, aggregate_frames,
 };
 use super::collector::{collect_cache_snapshot_from_world, collect_phase_metrics_from_world};
 use super::counters::RendererCounters;
@@ -244,6 +244,15 @@ fn finalize_benchmark_report(world: &mut World) {
 
     let timing = aggregate_frames(&run_state.samples, config.warmup_frames as usize);
 
+    let renderer_cadence = RendererCadenceSummary {
+        requested_fps: counters.requested_renderer_fps,
+        effective_renderer_target_fps: counters.effective_renderer_target_fps,
+        actual_rendered_fps: counters
+            .actual_rendered_fps
+            .or((timing.actual_renderer_fps > 0.0).then_some(timing.actual_renderer_fps)),
+        encoded_fps: counters.encoded_fps,
+    };
+
     let incident_grid = IncidentGridSummary {
         compute_extent_calls: counters.grid_compute_extent_calls,
         prims_scanned: counters.grid_prims_scanned,
@@ -342,6 +351,7 @@ fn finalize_benchmark_report(world: &mut World) {
         incident_grid,
         incident_semantic,
         webrtc_metrics,
+        renderer_cadence,
         isolation_metrics,
         phase_metrics,
         cache_snapshot,

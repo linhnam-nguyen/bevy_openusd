@@ -3,6 +3,8 @@
 use bevy::prelude::*;
 use std::time::Instant;
 
+use crate::viewport::app::cadence::RendererCadence;
+
 /// Runtime counters for renderer frame pacing, incident diagnostics, WebRTC, and ECS health.
 #[derive(Resource, Debug, Clone)]
 pub struct RendererCounters {
@@ -13,6 +15,10 @@ pub struct RendererCounters {
     pub last_frame_instant: Option<Instant>,
     pub frame_cpu_duration_ms: f64,
     pub frame_wall_interval_ms: Option<f64>,
+    pub requested_renderer_fps: Option<u32>,
+    pub effective_renderer_target_fps: Option<u32>,
+    pub actual_rendered_fps: Option<f64>,
+    pub encoded_fps: Option<f64>,
 
     // Configuration flags observed
     pub configuration_grid_enabled: bool,
@@ -87,6 +93,10 @@ impl Default for RendererCounters {
             last_frame_instant: None,
             frame_cpu_duration_ms: 0.0,
             frame_wall_interval_ms: None,
+            requested_renderer_fps: None,
+            effective_renderer_target_fps: None,
+            actual_rendered_fps: None,
+            encoded_fps: None,
 
             configuration_grid_enabled: true,
             configuration_shadows_enabled: true,
@@ -186,6 +196,7 @@ impl RendererCounters {
         self.first_authoritative_event_published_frame = None;
         self.captured_frames = 0;
         self.frame_queue_drops = 0;
+        self.actual_rendered_fps = None;
 
         self.sync_db_auth_waits_in_bevy = 0;
         self.query_saturations = 0;
@@ -241,7 +252,10 @@ pub fn start_frame_timing_system(mut counters: ResMut<RendererCounters>) {
 }
 
 /// Collects frame CPU duration and inter-frame wall-clock delta in the `Last` schedule.
-pub fn collect_renderer_counters_system(mut counters: ResMut<RendererCounters>) {
+pub fn collect_renderer_counters_system(
+    mut counters: ResMut<RendererCounters>,
+    cadence: Option<Res<RendererCadence>>,
+) {
     let now = Instant::now();
     counters.frame_count += 1;
 
@@ -255,8 +269,17 @@ pub fn collect_renderer_counters_system(mut counters: ResMut<RendererCounters>) 
     if let Some(last) = counters.last_frame_instant {
         let wall_interval = now.duration_since(last).as_secs_f64() * 1000.0;
         counters.frame_wall_interval_ms = Some(wall_interval);
+        if wall_interval > 0.0 {
+            counters.actual_rendered_fps = Some(1000.0 / wall_interval);
+        }
     }
     counters.last_frame_instant = Some(now);
+
+    if let Some(cadence) = cadence {
+        counters.requested_renderer_fps = cadence.requested_fps();
+        counters.effective_renderer_target_fps = cadence.effective_renderer_target_fps();
+        counters.encoded_fps = cadence.effective_encoded_fps().map(f64::from);
+    }
 }
 
 #[cfg(test)]

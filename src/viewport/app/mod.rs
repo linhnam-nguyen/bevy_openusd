@@ -10,6 +10,7 @@
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
+pub(crate) mod cadence;
 pub(crate) mod headless;
 mod offscreen_resize;
 mod scene;
@@ -24,14 +25,14 @@ use usd_bevy::{LiveStagePlugin, UsdPlugin};
 
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
-use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin};
+use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
 use crate::viewport::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
     follow_mounted_camera, sync_chase_camera,
 };
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
-use crate::viewport::scene::visualization::OverlaysPlugin;
+use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
@@ -77,10 +78,7 @@ pub(crate) fn run() {
                     custom_layer:
                         crate::viewport::diagnostics::log_capture::loader_log_custom_layer,
                     ..Default::default()
-                })
-                .add(bevy::app::ScheduleRunnerPlugin::run_loop(
-                    std::time::Duration::from_secs_f64(1.0 / launch_options.fps as f64),
-                )),
+                }),
         );
     } else {
         app.add_plugins(
@@ -125,14 +123,18 @@ pub(crate) fn run() {
         })
         .insert_resource(AccentColor(bevy_egui::egui::Color32::from_rgb(
             0x4A, 0x90, 0xE2,
-        )));
+        )))
+        .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
 
     if launch_options.headless {
         app.add_plugins(HeadlessRenderPlugin {
             width: launch_options.width,
             height: launch_options.height,
         })
-        .add_systems(Update, offscreen_resize::apply_stream_configuration)
+        .add_systems(
+            Update,
+            offscreen_resize::apply_stream_configuration.before(ViewportBridgeSet::ApplyCommands),
+        )
         .insert_resource(ViewportNavigationInput::with_viewport_size(
             launch_options.width,
             launch_options.height,
@@ -141,6 +143,10 @@ pub(crate) fn run() {
 
     app.add_plugins(ViewportBridgePlugin)
         .add_plugins(OverlaysPlugin);
+    app.world_mut()
+        .resource_mut::<DisplayToggles>()
+        .renderer
+        .preferred_fps = Some(launch_options.fps);
 
     if !launch_options.headless {
         app.add_plugins(ViewerKeyboardPlugin)
@@ -343,6 +349,10 @@ pub(crate) fn run() {
     // no way to verify the joint hierarchy is alive.
     app.init_gizmo_group::<SkeletonGizmos>()
         .add_systems(Startup, setup_skeleton_gizmos_on_top);
+
+    if launch_options.headless {
+        app.set_runner(cadence::run_headless);
+    }
 
     app.run();
 }

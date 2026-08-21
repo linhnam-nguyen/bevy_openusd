@@ -13,7 +13,9 @@ mod tests {
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::semantic::SemanticWorkingStore;
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
+    use crate::viewport::api::bridge::commands::apply_pending_renderer_cadence;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
+    use crate::viewport::app::cadence::RendererCadence;
     use crate::viewport::api::bridge::scene_query::{
         dispatch_scene_query_commands, publish_semantic_query_results,
     };
@@ -198,6 +200,39 @@ mod tests {
             panic!("renderer configuration should publish an authoritative presentation event");
         };
         assert_eq!(presentation.renderer, RendererConfiguration::default());
+    }
+
+    #[test]
+    fn renderer_fps_event_is_published_only_after_cadence_application() {
+        let mut app = command_test_app();
+        app.insert_resource(RendererCadence::new(Some(60)))
+            .add_systems(
+                Update,
+                apply_pending_renderer_cadence.after(apply_viewport_commands),
+            );
+        let configuration = RendererConfiguration {
+            preferred_fps: Some(120),
+            ..Default::default()
+        };
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration { configuration },
+        );
+
+        app.update();
+
+        let cadence = app.world().resource::<RendererCadence>();
+        assert_eq!(cadence.effective_renderer_target_fps(), Some(120));
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("applied FPS must publish a presentation event");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        let ViewportEvent::PresentationChanged { presentation } = event.event else {
+            panic!("FPS application must publish a presentation event");
+        };
+        assert_eq!(presentation.renderer.preferred_fps, Some(120));
     }
 
     #[test]
