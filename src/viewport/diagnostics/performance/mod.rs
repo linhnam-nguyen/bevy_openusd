@@ -1,5 +1,7 @@
 //! Rendering performance diagnostics, steady-state invariant tracking, and benchmark suite.
 
+#![allow(unused_imports)]
+
 pub mod aggregate;
 pub mod collector;
 pub mod counters;

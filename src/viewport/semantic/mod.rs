@@ -3,6 +3,8 @@
 //! Semantic rows remain renderer-neutral. The viewport bridge adapts their
 //! prim paths through `SceneAnchorIndex` when publishing search results.
 
+#![allow(unused_imports)]
+
 mod diff;
 mod query;
 mod state;

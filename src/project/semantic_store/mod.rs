@@ -15,7 +15,7 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 pub(crate) use query::{
     GroupField, SemanticFilter, SemanticGroup, SemanticQuery, SemanticQueryResult,
-    SemanticQueryRow, SortField, SortRule,
+    SemanticQueryRow, SortField,
 };
 
 mod query;

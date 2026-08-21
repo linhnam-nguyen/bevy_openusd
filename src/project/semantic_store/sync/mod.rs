@@ -1,5 +1,7 @@
 //! Authorization-safe semantic projections for client synchronization.
 
+#![allow(unused_imports)]
+
 mod client;
 mod client_config;
 mod coordinator;
