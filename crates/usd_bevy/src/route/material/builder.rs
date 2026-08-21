@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::read::shade::{ReadPreviewMaterial, read_material_binding, read_preview_material};
 
 use super::super::{PrimRoute, RouteCtx};
+use super::consumers::MaterialConsumerIndex;
 use super::material_cache::intern_material;
 use super::texture_cache::resolve_texture;
 
@@ -15,6 +16,65 @@ fn material_of(ctx: &RouteCtx, world: &mut World) -> Option<(String, ReadPreview
     super::record_descriptor_read(world);
     let material = read_preview_material(ctx.stage, &binding).ok().flatten()?;
     Some((binding.as_str().to_owned(), material))
+}
+
+fn is_material_network_prim(ctx: &RouteCtx) -> bool {
+    matches!(ctx.type_name.as_deref(), Some("Material" | "Shader"))
+}
+
+fn material_patch_relevant(ctx: &RouteCtx, changed: &[&str]) -> bool {
+    if changed.is_empty() || changed.iter().any(|p| p.starts_with("material:binding")) {
+        return true;
+    }
+    if !is_material_network_prim(ctx) {
+        return false;
+    }
+    changed.iter().any(|property| {
+        property.starts_with("inputs:")
+            || property.starts_with("outputs:")
+            || property.starts_with("info:")
+    })
+}
+
+fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
+    let binding = read_material_binding(ctx.stage, ctx.path)
+        .ok()
+        .flatten()
+        .map(|path| path.as_str().to_owned());
+    if world.get_resource::<MaterialConsumerIndex>().is_none() {
+        world.init_resource::<MaterialConsumerIndex>();
+    }
+    world.resource_mut::<MaterialConsumerIndex>().update(
+        ctx.prim_str(),
+        binding.as_deref(),
+        entity,
+    );
+
+    let Some((binding, descriptor)) = material_of(ctx, world) else {
+        return;
+    };
+    let Some(handle) = intern_material(world, &binding, &descriptor) else {
+        return;
+    };
+    if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
+        mat.0 = handle;
+    } else if let Ok(mut e) = world.get_entity_mut(entity) {
+        e.insert(MeshMaterial3d(handle));
+    }
+}
+
+fn reproject_consumers(ctx: &RouteCtx, world: &mut World) {
+    let entries = world
+        .get_resource::<MaterialConsumerIndex>()
+        .map(|index| index.consumer_entities_for(ctx.prim_str()))
+        .unwrap_or_default();
+    for (path, entity) in entries {
+        let Ok(path) = openusd::sdf::path(&path) else {
+            continue;
+        };
+        let consumer_ctx = RouteCtx::at(ctx.stage, &path, ctx.time);
+        apply_bound_material(&consumer_ctx, world, entity);
+    }
 }
 
 pub(super) fn build_standard_material(
@@ -88,16 +148,22 @@ impl PrimRoute for MaterialRoute {
         if world.get_resource::<Assets<StandardMaterial>>().is_none() {
             return;
         }
-        let Some((binding, descriptor)) = material_of(ctx, world) else {
+        apply_bound_material(ctx, world, entity);
+    }
+
+    fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
+        if !material_patch_relevant(ctx, changed) {
             return;
-        };
-        let Some(handle) = intern_material(world, &binding, &descriptor) else {
-            return;
-        };
-        if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
-            mat.0 = handle;
-        } else if let Ok(mut e) = world.get_entity_mut(entity) {
-            e.insert(MeshMaterial3d(handle));
+        }
+        if read_material_binding(ctx.stage, ctx.path)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            apply_bound_material(ctx, world, entity);
+        }
+        if is_material_network_prim(ctx) {
+            reproject_consumers(ctx, world);
         }
     }
 }

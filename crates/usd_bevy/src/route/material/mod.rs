@@ -7,10 +7,12 @@
 
 mod archive;
 mod builder;
+mod consumers;
 mod material_cache;
 mod texture_cache;
 
 pub use builder::MaterialRoute;
+pub(crate) use consumers::MaterialConsumerIndex;
 pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
 pub use texture_cache::{TextureCacheKey, TextureCacheStats, UsdTextureCache};
 

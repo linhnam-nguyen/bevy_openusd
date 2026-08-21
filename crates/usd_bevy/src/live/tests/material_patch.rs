@@ -1,0 +1,173 @@
+use bevy::asset::Assets;
+use bevy::mesh::{Mesh, Mesh3d};
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
+use bevy::prelude::*;
+use openusd::gf::Vec3f;
+use openusd::sdf::Value;
+use openusd::usd::Stage;
+
+use crate::UsdPlugin;
+use crate::live::{
+    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
+    apply_change_batch,
+};
+use crate::route::material::MaterialRouteDiagnostics;
+
+const RED_BOX: &str = "/World/RedBox";
+const RED: &str = "/World/Materials/Red";
+const GREEN: &str = "/World/Materials/GreenMetal";
+
+fn build_app() -> App {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/stages/materials.usda");
+    let stage = Stage::open(path.to_str().expect("fixture path is valid"))
+        .expect("materials fixture opens");
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+    app
+}
+
+fn entity(app: &App, path: &str) -> Entity {
+    app.world()
+        .resource::<PrimEntities>()
+        .entity(path)
+        .unwrap_or_else(|| panic!("{path} entity exists"))
+}
+
+fn material_handle(app: &App, path: &str) -> Handle<StandardMaterial> {
+    app.world()
+        .get::<MeshMaterial3d<StandardMaterial>>(entity(app, path))
+        .expect("material component exists")
+        .0
+        .clone()
+}
+
+fn mesh_handle(app: &App, path: &str) -> Handle<Mesh> {
+    app.world()
+        .get::<Mesh3d>(entity(app, path))
+        .expect("mesh component exists")
+        .0
+        .clone()
+}
+
+fn apply_pending(app: &mut App) {
+    let live = app
+        .world_mut()
+        .remove_non_send::<LiveStage>()
+        .expect("live stage exists");
+    let batch = live.drain_change_batch().expect("pending material edit");
+    let mut map = app
+        .world_mut()
+        .remove_resource::<PrimEntities>()
+        .expect("prim map exists");
+    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    app.world_mut().insert_resource(map);
+    app.world_mut().insert_non_send(live);
+}
+
+fn patch_only(app: &mut App, path: &str, property: &str) {
+    let live = app
+        .world_mut()
+        .remove_non_send::<LiveStage>()
+        .expect("live stage exists");
+    let mut map = app
+        .world_mut()
+        .remove_resource::<PrimEntities>()
+        .expect("prim map exists");
+    let batch = StageChangeBatch {
+        revision: LiveRevision(100),
+        changes: vec![StageChange {
+            resynced: Vec::new(),
+            changed_info: vec![format!("{path}.{property}")],
+        }],
+    };
+    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    app.world_mut().insert_resource(map);
+    app.world_mut().insert_non_send(live);
+}
+
+fn set_material_color(app: &mut App, material: &str, color: [f32; 3]) {
+    let live = app.world().get_non_send::<LiveStage>().expect("stage");
+    let path = openusd::sdf::path(material).expect("material path");
+    live.stage
+        .prim(path)
+        .attribute("inputs:diffuseColor")
+        .set(Value::Vec3f(Vec3f::from(color)))
+        .expect("material color authoring succeeds");
+    apply_pending(app);
+}
+
+#[test]
+fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
+    let mut app = build_app();
+    let red_before = material_handle(&app, RED_BOX);
+    let red_mesh = mesh_handle(&app, RED_BOX);
+    let green_mesh = mesh_handle(&app, "/World/GreenBall");
+    let initial_cache = app
+        .world()
+        .resource::<crate::route::material::UsdMaterialCache>()
+        .stats();
+
+    patch_only(&mut app, RED_BOX, "xformOp:translate");
+    patch_only(&mut app, RED_BOX, "size");
+    assert_eq!(material_handle(&app, RED_BOX), red_before);
+    assert_eq!(mesh_handle(&app, RED_BOX), red_mesh);
+    assert_eq!(
+        app.world()
+            .resource::<crate::route::material::UsdMaterialCache>()
+            .stats(),
+        initial_cache,
+        "transform and geometry edits must not read material descriptors"
+    );
+
+    let green_before = material_handle(&app, "/World/GreenBall");
+    set_material_color(&mut app, RED, [0.2, 0.3, 0.9]);
+    assert_ne!(material_handle(&app, RED_BOX), red_before);
+    assert_eq!(material_handle(&app, "/World/GreenBall"), green_before);
+    assert_eq!(mesh_handle(&app, RED_BOX), red_mesh);
+    assert_eq!(mesh_handle(&app, "/World/GreenBall"), green_mesh);
+
+    let live = app.world().get_non_send::<LiveStage>().expect("stage");
+    live.stage
+        .prim(openusd::sdf::path(RED_BOX).unwrap())
+        .relationship("material:binding")
+        .set_targets([openusd::sdf::path(GREEN).unwrap()])
+        .expect("binding authoring succeeds");
+    apply_pending(&mut app);
+    assert_eq!(
+        material_handle(&app, RED_BOX),
+        material_handle(&app, "/World/GreenBall"),
+        "binding edit must switch to the existing shared material"
+    );
+
+    let before_unrelated = material_handle(&app, RED_BOX);
+    set_material_color(&mut app, "/World/Materials/EmissiveBlue", [0.9, 0.8, 0.1]);
+    assert_eq!(material_handle(&app, RED_BOX), before_unrelated);
+    assert_eq!(mesh_handle(&app, RED_BOX), red_mesh);
+    assert_eq!(mesh_handle(&app, "/World/GreenBall"), green_mesh);
+
+    let diagnostics = *app.world().resource::<MaterialRouteDiagnostics>();
+    assert!(diagnostics.matches > 0);
+    assert!(diagnostics.projects > 0);
+    assert!(diagnostics.patches >= 4);
+    assert!(diagnostics.descriptor_reads >= 7);
+}
+
+#[test]
+fn shader_input_patch_reaches_only_its_material_consumers() {
+    let mut app = build_app();
+    let red_before = material_handle(&app, RED_BOX);
+    let green_before = material_handle(&app, "/World/GreenBall");
+
+    patch_only(&mut app, "/World/Materials/Red/Surface", "inputs:file");
+
+    assert_eq!(material_handle(&app, RED_BOX), red_before);
+    assert_eq!(material_handle(&app, "/World/GreenBall"), green_before);
+    let diagnostics = *app.world().resource::<MaterialRouteDiagnostics>();
+    assert!(diagnostics.patches > 0);
+}
