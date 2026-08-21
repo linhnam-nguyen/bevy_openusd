@@ -2,6 +2,7 @@ mod animation;
 mod changed_info;
 mod fallback;
 mod indexes;
+mod mesh_patch;
 mod paths;
 mod payload;
 mod reconcile;
