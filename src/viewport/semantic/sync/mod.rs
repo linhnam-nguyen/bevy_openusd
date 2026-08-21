@@ -36,27 +36,59 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         let live = world.get_non_send::<LiveStage>()?;
         let pending_batch = world.resource::<PendingStageChanges>().batch().cloned();
         let state = world.resource::<SemanticSyncState>();
-        let has_snap = state.snapshot.is_some();
-        let snap = state.snapshot.clone();
         Some((
             live.session_id(),
             live.current_revision(),
             pending_batch,
-            snap,
-            has_snap,
+            state.snapshot.is_some(),
             state.session_id,
+            state.revision,
         ))
     })();
 
-    let Some((session_id, live_revision, pending_batch, previous_snapshot, had_snapshot, previous_session)) = info else {
+    let Some((
+        session_id,
+        live_revision,
+        pending_batch,
+        has_snapshot,
+        previous_session,
+        previous_revision,
+    )) = info
+    else {
         return;
     };
 
-    if had_snapshot {
-        if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
-            c.semantic_snapshot_clones += 1;
+    let same_session = previous_session == Some(session_id);
+    if same_session && has_snapshot && pending_batch.is_none() {
+        if let Some(mut c) =
+            world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+        {
+            c.semantic_idle_skips += 1;
         }
+        return;
     }
+
+    if same_session
+        && pending_batch
+            .as_ref()
+            .is_some_and(|batch| batch.revision <= previous_revision.unwrap_or_default())
+    {
+        return;
+    }
+
+    let previous_snapshot = if same_session {
+        let snapshot = world.resource::<SemanticSyncState>().snapshot.clone();
+        if snapshot.is_some() {
+            if let Some(mut c) =
+                world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+            {
+                c.semantic_snapshot_clones += 1;
+            }
+        }
+        snapshot
+    } else {
+        None
+    };
 
     let root_count = pending_batch
         .as_ref()
@@ -68,10 +100,6 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
             }
         })
         .unwrap_or(0);
-
-    let previous_snapshot = (previous_session == Some(session_id))
-        .then_some(previous_snapshot)
-        .flatten();
 
     if previous_snapshot.is_none() {
         if let Some(mut c) = world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>() {
@@ -106,14 +134,7 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                 let Some(batch) = pending_batch else {
                     return;
                 };
-                let previous_revision = if previous_session == Some(session_id) {
-                    world
-                        .resource::<SemanticSyncState>()
-                        .revision
-                        .unwrap_or_default()
-                } else {
-                    LiveRevision::default()
-                };
+                let previous_revision = previous_revision.unwrap_or(LiveRevision::default());
                 if batch.revision <= previous_revision {
                     return;
                 }
