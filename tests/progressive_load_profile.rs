@@ -24,9 +24,12 @@ struct M7C6Artifact {
     build_profile: &'static str,
     fixture: &'static str,
     stage_open_ms: f64,
+    plan_build_ms: f64,
+    planning_updates: u64,
+    planning_work_items: u64,
     first_projected_prim_ms: f64,
     first_mesh_ms: f64,
-    first_geometry_frame_ms: f64,
+    first_geometry_available_ms: f64,
     progress_25_ms: f64,
     progress_50_ms: f64,
     progress_75_ms: f64,
@@ -93,7 +96,7 @@ fn records_m7_progressive_load_benchmark_artifact() {
     let projection_started = Instant::now();
     let mut update_samples = Vec::new();
     let mut milestones = [None; 4];
-    let mut first_geometry_frame_ms = None;
+    let mut first_geometry_available_ms = None;
     let loading_updates = loop {
         assert!(update_samples.len() < 10_000, "projection did not finish");
         let update_started = Instant::now();
@@ -116,8 +119,8 @@ fn records_m7_progressive_load_benchmark_artifact() {
             let mut query = world.query_filtered::<Entity, With<Mesh3d>>();
             query.iter(world).next().is_some()
         };
-        if first_geometry_frame_ms.is_none() && has_geometry {
-            first_geometry_frame_ms = Some(elapsed_ms);
+        if first_geometry_available_ms.is_none() && has_geometry {
+            first_geometry_available_ms = Some(elapsed_ms);
         }
         if readiness == ProjectionReadiness::Ready {
             break update_samples.len();
@@ -126,15 +129,18 @@ fn records_m7_progressive_load_benchmark_artifact() {
 
     let state = app.world().resource::<ProgressiveProjectionState>();
     let artifact = M7C6Artifact {
-        schema: "usdhub.m7.c6.progressive-load.v1",
+        schema: "usdhub.m7.c6.progressive-load.v2",
         checkpoint: "M7-C6",
         git_sha: benchmark_git_sha(),
         build_profile: "release",
         fixture,
         stage_open_ms,
+        plan_build_ms: state.planning_ms().unwrap_or_default(),
+        planning_updates: state.planning_updates(),
+        planning_work_items: state.planning_work_items(),
         first_projected_prim_ms: state.first_projected_prim_ms().unwrap_or_default(),
         first_mesh_ms: state.first_mesh_ms().unwrap_or_default(),
-        first_geometry_frame_ms: first_geometry_frame_ms.unwrap_or_default(),
+        first_geometry_available_ms: first_geometry_available_ms.unwrap_or_default(),
         progress_25_ms: milestones[0].unwrap_or_default(),
         progress_50_ms: milestones[1].unwrap_or_default(),
         progress_75_ms: milestones[2].unwrap_or_default(),
@@ -147,9 +153,12 @@ fn records_m7_progressive_load_benchmark_artifact() {
         plan_builds: state.plan_builds(),
         resident_short_circuits: state.resident_short_circuits(),
     };
+    assert!(artifact.plan_build_ms > 0.0);
+    assert!(artifact.planning_updates > 0);
+    assert!(artifact.planning_work_items > 0);
     assert!(artifact.first_projected_prim_ms > 0.0);
     assert!(artifact.first_mesh_ms > 0.0);
-    assert!(artifact.first_geometry_frame_ms > 0.0);
+    assert!(artifact.first_geometry_available_ms > 0.0);
     assert!(artifact.progress_100_ms > 0.0);
     let artifact_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/m7-progressive-load.json");
