@@ -27,7 +27,7 @@ pub(super) struct EdgeOverlayMaterial(pub(super) Handle<StandardMaterial>);
 
 /// Marks a child entity as the cached edge pass for one USD mesh entity.
 #[derive(Component, Debug)]
-pub(super) struct EdgeOverlay {
+pub(crate) struct EdgeOverlay {
     source_mesh: AssetId<Mesh>,
 }
 

@@ -1,17 +1,17 @@
 //! Release benchmark for the M3 renderer configuration matrix and cadence.
 
 use bevy::prelude::*;
-use bevy_glacial::prelude::GroundGrid;
 use viewport_protocol::{RenderMode as ProtocolRenderMode, RendererConfiguration, ViewportCommand};
 
 use super::aggregate::RendererCadenceSummary;
+use super::matrix_probe::{effective_renderer_configuration, matrix_identity};
 use super::matrix_report::{RendererMatrixCadenceReport, RendererMatrixCaseReport};
 use super::runner::BenchmarkLaunchConfig;
 use super::sample::{RenderConfiguration, RenderMode};
 use crate::viewport::api::ViewportCommandInbox;
 use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::diagnostics::performance::RendererCounters;
-use crate::viewport::scene::visualization::{DisplayToggles, EdgeOverlayStats};
+use crate::viewport::scene::visualization::DisplayToggles;
 
 const MATRIX_FPS_SAMPLES: [u32; 3] = [30, 60, 120];
 
@@ -84,7 +84,13 @@ pub fn renderer_matrix_stepper_system(world: &mut World) {
     world.insert_resource(run);
     if complete {
         let run = world.resource::<RendererMatrixRun>();
-        super::matrix_report::finalize_matrix_report(&config, &run.cases, &run.cadence_samples);
+        let identity = matrix_identity(world, &config);
+        super::matrix_report::finalize_matrix_report(
+            &config,
+            identity,
+            &run.cases,
+            &run.cadence_samples,
+        );
     }
 }
 
@@ -314,34 +320,6 @@ fn queue_fps_configuration(world: &mut World, fps: u32) {
     world
         .resource_mut::<ViewportCommandInbox>()
         .send(ViewportCommand::SetRendererConfiguration { configuration });
-}
-
-fn effective_renderer_configuration(world: &World) -> RenderConfiguration {
-    let grid = world
-        .get_resource::<GroundGrid>()
-        .is_some_and(|ground_grid| ground_grid.visible);
-    let render_mode = world
-        .get_resource::<bevy::pbr::wireframe::WireframeConfig>()
-        .map_or(RenderMode::Shaded, |config| {
-            if config.global {
-                RenderMode::Wireframe
-            } else {
-                RenderMode::Shaded
-            }
-        });
-    let edges = world
-        .get_resource::<EdgeOverlayStats>()
-        .is_some_and(|stats| stats.enabled);
-    let shadows = world
-        .get_resource::<DisplayToggles>()
-        .is_some_and(|toggles| toggles.renderer.shadows);
-    RenderConfiguration {
-        grid,
-        shadows,
-        edges,
-        render_mode,
-        material_overrides: true,
-    }
 }
 
 fn reset_counters(world: &mut World) {

@@ -19,7 +19,7 @@ mod edge_mesh;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
 
-pub(crate) use edge::EdgeOverlayStats;
+pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
 pub struct OverlaysPlugin;
 

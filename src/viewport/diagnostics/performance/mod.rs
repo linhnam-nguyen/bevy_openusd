@@ -5,6 +5,7 @@ pub mod collector;
 pub mod counters;
 pub mod decision;
 pub mod matrix;
+mod matrix_probe;
 mod matrix_report;
 pub mod runner;
 mod runner_plugin;

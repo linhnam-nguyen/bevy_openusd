@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::aggregate::RendererCadenceSummary;
 use super::runner::BenchmarkLaunchConfig;
-use super::sample::RenderConfiguration;
+use super::sample::{BenchmarkIdentity, RenderConfiguration};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RendererMatrixCaseReport {
@@ -24,6 +24,10 @@ pub struct RendererMatrixCadenceReport {
 pub struct RendererMatrixReport {
     pub schema_version: u32,
     pub release_profile: bool,
+    pub identity: BenchmarkIdentity,
+    pub scene_hash: Option<String>,
+    pub warmup_frames: u64,
+    pub measured_frames: u64,
     pub cases: Vec<RendererMatrixCaseReport>,
     pub cadence_samples: Vec<RendererMatrixCadenceReport>,
     pub passed: bool,
@@ -31,6 +35,7 @@ pub struct RendererMatrixReport {
 
 pub fn finalize_matrix_report(
     config: &BenchmarkLaunchConfig,
+    identity: BenchmarkIdentity,
     cases: &[RendererMatrixCaseReport],
     cadence_samples: &[RendererMatrixCadenceReport],
 ) {
@@ -46,6 +51,14 @@ pub fn finalize_matrix_report(
     let report = RendererMatrixReport {
         schema_version: 1,
         release_profile: !cfg!(debug_assertions),
+        scene_hash: config.asset_path.as_deref().and_then(|path| {
+            std::fs::read(path)
+                .ok()
+                .map(|bytes| blake3::hash(&bytes).to_hex().to_string())
+        }),
+        warmup_frames: config.warmup_frames,
+        measured_frames: config.target_frames,
+        identity,
         cases: cases.to_vec(),
         cadence_samples: cadence_samples.to_vec(),
         passed,
