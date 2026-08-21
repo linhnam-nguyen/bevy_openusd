@@ -18,7 +18,7 @@
 
 use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
-use viewport_protocol::GroundGridOrigin;
+use viewport_protocol::{GroundGridOrigin, RenderMode, RendererConfiguration};
 
 use super::HistoricalGhostState;
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
@@ -32,8 +32,8 @@ pub(crate) fn sync_ground_grid_visibility(
     toggles: Res<DisplayToggles>,
     mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
 ) {
-    if grid.visible != toggles.show_world_grid {
-        grid.visible = toggles.show_world_grid;
+    if grid.visible != toggles.renderer.grid {
+        grid.visible = toggles.renderer.grid;
     }
 }
 
@@ -75,7 +75,7 @@ fn sync_ground_grid_to_scene(
         desired_radius,
         GroundGridDecisionHelper::DEFAULT_TOLERANCE,
     );
-    let visibility_changed = prev_vis != toggles.show_world_grid;
+    let visibility_changed = prev_vis != toggles.renderer.grid;
 
     if ground_y_changed {
         grid.ground_y = desired_ground_y;
@@ -84,7 +84,7 @@ fn sync_ground_grid_to_scene(
         grid.coverage_radius = desired_radius;
     }
     if visibility_changed {
-        grid.visible = toggles.show_world_grid;
+        grid.visible = toggles.renderer.grid;
     }
 
     if let Some(ref mut c) = counters {
@@ -136,6 +136,8 @@ impl Plugin for OverlaysPlugin {
                     sync_ground_grid_to_scene,
                     sync_shadow_cascade_distance,
                     capture_original_light_levels,
+                    capture_original_shadow_settings,
+                    apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_wireframe_toggle,
                     sync_ground_grid_visibility,
@@ -159,6 +161,12 @@ pub struct OriginalIlluminance(pub f32);
 #[derive(Component, Debug, Copy, Clone)]
 pub struct OriginalLightIntensity(pub f32);
 
+/// Captured authored shadow policy for one light. Global renderer shadow
+/// control temporarily disables shadows without losing authored per-light
+/// choices that must be restored when shadows are enabled again.
+#[derive(Component, Debug, Copy, Clone)]
+pub struct OriginalShadowEnabled(pub bool);
+
 /// Records authored light strengths once, preserving a stable scaling baseline.
 fn capture_original_light_levels(
     mut cmds: Commands,
@@ -177,6 +185,57 @@ fn capture_original_light_levels(
     }
     for (e, l) in &sp {
         cmds.entity(e).insert(OriginalLightIntensity(l.intensity));
+    }
+}
+
+/// Latches each light's authored shadow policy exactly once.
+fn capture_original_shadow_settings(
+    mut cmds: Commands,
+    dir: Query<
+        (Entity, &DirectionalLight),
+        (Added<DirectionalLight>, Without<OriginalShadowEnabled>),
+    >,
+    pt: Query<(Entity, &PointLight), (Added<PointLight>, Without<OriginalShadowEnabled>)>,
+    sp: Query<(Entity, &SpotLight), (Added<SpotLight>, Without<OriginalShadowEnabled>)>,
+) {
+    for (entity, light) in &dir {
+        cmds.entity(entity)
+            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    }
+    for (entity, light) in &pt {
+        cmds.entity(entity)
+            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    }
+    for (entity, light) in &sp {
+        cmds.entity(entity)
+            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    }
+}
+
+/// Applies the global shadow option while preserving authored per-light state.
+fn apply_shadow_toggle(
+    toggles: Res<DisplayToggles>,
+    mut dir: Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
+    mut pt: Query<(&mut PointLight, &OriginalShadowEnabled)>,
+    mut sp: Query<(&mut SpotLight, &OriginalShadowEnabled)>,
+) {
+    for (mut light, authored) in &mut dir {
+        let desired = toggles.renderer.shadows && authored.0;
+        if light.shadow_maps_enabled != desired {
+            light.shadow_maps_enabled = desired;
+        }
+    }
+    for (mut light, authored) in &mut pt {
+        let desired = toggles.renderer.shadows && authored.0;
+        if light.shadow_maps_enabled != desired {
+            light.shadow_maps_enabled = desired;
+        }
+    }
+    for (mut light, authored) in &mut sp {
+        let desired = toggles.renderer.shadows && authored.0;
+        if light.shadow_maps_enabled != desired {
+            light.shadow_maps_enabled = desired;
+        }
     }
 }
 
@@ -204,18 +263,17 @@ fn apply_wireframe_toggle(
     toggles: Res<DisplayToggles>,
     mut cfg: ResMut<bevy::pbr::wireframe::WireframeConfig>,
 ) {
-    if cfg.global != toggles.wireframe {
-        cfg.global = toggles.wireframe;
+    let wireframe = toggles.renderer.render_mode == RenderMode::Wireframe;
+    if cfg.global != wireframe {
+        cfg.global = wireframe;
     }
 }
 
 /// Persistent overlay state, mutated by the Overlays panel + keyboard.
 #[derive(Resource, Debug, Clone)]
 pub struct DisplayToggles {
-    /// Ground grid — auto-sized + radially faded. On by default; anchors
-    /// the eye and doubles as a reference plane since we don't draw a
-    /// solid ground plate.
-    pub show_world_grid: bool,
+    /// Authoritative renderer options applied by the viewport systems.
+    pub renderer: RendererConfiguration,
     /// Ground-grid reference plane, controlled by the viewport protocol.
     pub ground_grid_origin: GroundGridOrigin,
     /// R/G/B axis triad at world origin.
@@ -235,8 +293,6 @@ pub struct DisplayToggles {
     /// projection's `UsdPhysicsJoint` / `UsdArticulationRoot` /
     /// `UsdPhysicsScene` markers without needing an engine attached.
     pub show_physics: bool,
-    /// Global wireframe mode — drives `WireframeConfig.global`.
-    pub wireframe: bool,
     /// Rapier collider debug-render — draws each collider's wireframe
     /// in world space. On by default when physics is enabled so the
     /// user can verify the collider matches the visual mesh.
@@ -254,14 +310,13 @@ impl Default for DisplayToggles {
         // wireframe-only scenes but clutter up a real lit scene. User
         // turns them on via the Overlays panel (O) or the G/X/P hotkeys.
         Self {
-            show_world_grid: true,
+            renderer: RendererConfiguration::default(),
             ground_grid_origin: GroundGridOrigin::LoadedScene,
             show_world_axes: false,
             show_prim_markers: false,
             prim_marker_bias: 1.0,
             show_skeleton: false,
             show_physics: false,
-            wireframe: false,
             show_colliders: false,
             light_intensity_scale: 1.0,
         }
@@ -294,5 +349,145 @@ fn sync_shadow_cascade_distance(
             }
             .into();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy_glacial::prelude::GroundGrid;
+
+    #[test]
+    fn grid_visibility_reads_the_authoritative_renderer_configuration() {
+        let mut app = App::new();
+        app.insert_resource(DisplayToggles::default())
+            .insert_resource(GroundGrid {
+                visible: true,
+                ..default()
+            })
+            .add_systems(Update, sync_ground_grid_visibility);
+
+        app.world_mut()
+            .resource_mut::<DisplayToggles>()
+            .renderer
+            .grid = false;
+        app.update();
+
+        assert!(!app.world().resource::<GroundGrid>().visible);
+    }
+
+    #[test]
+    fn shadows_disable_globally_and_restore_each_authored_setting() {
+        let mut app = App::new();
+        let authored_on = app
+            .world_mut()
+            .spawn(DirectionalLight {
+                shadow_maps_enabled: true,
+                ..default()
+            })
+            .id();
+        let authored_off = app
+            .world_mut()
+            .spawn(DirectionalLight {
+                shadow_maps_enabled: false,
+                ..default()
+            })
+            .id();
+        app.insert_resource(DisplayToggles::default()).add_systems(
+            Update,
+            (capture_original_shadow_settings, apply_shadow_toggle).chain(),
+        );
+
+        app.update();
+        app.update();
+        assert!(
+            app.world()
+                .get::<DirectionalLight>(authored_on)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+        assert!(
+            !app.world()
+                .get::<DirectionalLight>(authored_off)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+
+        app.world_mut()
+            .resource_mut::<DisplayToggles>()
+            .renderer
+            .shadows = false;
+        app.update();
+        assert!(
+            !app.world()
+                .get::<DirectionalLight>(authored_on)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+        assert!(
+            !app.world()
+                .get::<DirectionalLight>(authored_off)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+
+        app.world_mut()
+            .resource_mut::<DisplayToggles>()
+            .renderer
+            .shadows = true;
+        app.update();
+        assert!(
+            app.world()
+                .get::<DirectionalLight>(authored_on)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+        assert!(
+            !app.world()
+                .get::<DirectionalLight>(authored_off)
+                .unwrap()
+                .shadow_maps_enabled
+        );
+    }
+
+    #[test]
+    fn render_mode_round_trip_updates_bevy_wireframe_without_touching_edges() {
+        let mut app = App::new();
+        app.insert_resource(DisplayToggles {
+            renderer: RendererConfiguration {
+                edges: true,
+                ..default()
+            },
+            ..default()
+        })
+        .insert_resource(bevy::pbr::wireframe::WireframeConfig {
+            global: false,
+            ..default()
+        })
+        .add_systems(Update, apply_wireframe_toggle);
+
+        app.world_mut()
+            .resource_mut::<DisplayToggles>()
+            .renderer
+            .render_mode = RenderMode::Wireframe;
+        app.update();
+        assert!(
+            app.world()
+                .resource::<bevy::pbr::wireframe::WireframeConfig>()
+                .global
+        );
+        assert!(app.world().resource::<DisplayToggles>().renderer.edges);
+
+        app.world_mut()
+            .resource_mut::<DisplayToggles>()
+            .renderer
+            .render_mode = RenderMode::Shaded;
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<bevy::pbr::wireframe::WireframeConfig>()
+                .global
+        );
+        assert!(app.world().resource::<DisplayToggles>().renderer.edges);
     }
 }

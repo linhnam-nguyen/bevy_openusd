@@ -30,6 +30,7 @@ impl ViewportProtocolViewportSnapshot {
                     time_codes_per_second: 24.0,
                 },
                 presentation: viewport_protocol::PresentationReadModel {
+                    renderer: viewport_protocol::RendererConfiguration::default(),
                     ground_grid: true,
                     ground_grid_origin: viewport_protocol::GroundGridOrigin::LoadedScene,
                     world_axes: true,

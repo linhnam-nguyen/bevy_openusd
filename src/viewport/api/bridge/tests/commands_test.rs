@@ -81,7 +81,10 @@ mod tests {
 
         app.update();
 
-        assert!(app.world().resource::<DisplayToggles>().wireframe);
+        assert_eq!(
+            app.world().resource::<DisplayToggles>().renderer.render_mode,
+            RenderMode::Wireframe
+        );
         assert!(app.world().resource::<UsdStageTime>().playing);
         assert_eq!(app.world().resource::<UsdStageTime>().seconds, 1.0 / 24.0);
         assert!(app.world().resource::<PhysicsActive>().0);
@@ -175,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn renderer_configuration_rejection_preserves_command_correlation() {
+    fn renderer_configuration_applies_and_preserves_command_correlation() {
         let mut app = command_test_app();
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::SetRendererConfiguration {
@@ -191,11 +194,90 @@ mod tests {
             .pop()
             .expect("unsupported renderer configuration must publish a response");
         assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-        assert!(matches!(
-            event.event,
-            ViewportEvent::CommandRejected { reason, .. }
-                if reason.contains("M3-C2")
-        ));
+        let ViewportEvent::PresentationChanged { presentation } = event.event else {
+            panic!("renderer configuration should publish an authoritative presentation event");
+        };
+        assert_eq!(presentation.renderer, RendererConfiguration::default());
+    }
+
+    #[test]
+    fn renderer_configuration_keeps_edges_independent_from_render_mode() {
+        let mut app = command_test_app();
+        let shaded_edges = RendererConfiguration {
+            edges: true,
+            render_mode: RenderMode::Shaded,
+            ..Default::default()
+        };
+        let first_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration {
+                configuration: shaded_edges,
+            },
+        );
+        app.update();
+
+        let first_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("shaded edge configuration should publish a response");
+        assert_eq!(first_event.request_id.as_deref(), Some(first_request.as_str()));
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, shaded_edges);
+
+        let wireframe_edges = RendererConfiguration {
+            render_mode: RenderMode::Wireframe,
+            ..shaded_edges
+        };
+        let second_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration {
+                configuration: wireframe_edges,
+            },
+        );
+        app.update();
+
+        let second_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("wireframe configuration should publish a response");
+        assert_eq!(second_event.request_id.as_deref(), Some(second_request.as_str()));
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, wireframe_edges);
+        assert!(wireframe_edges.edges);
+    }
+
+    #[test]
+    fn repeated_renderer_configuration_is_idempotent() {
+        let mut app = command_test_app();
+        let configuration = RendererConfiguration {
+            grid: false,
+            shadows: false,
+            edges: true,
+            render_mode: RenderMode::Wireframe,
+            preferred_fps: Some(120),
+        };
+
+        let first_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration { configuration },
+        );
+        app.update();
+        let first_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("first renderer configuration should publish a response");
+        assert_eq!(first_event.request_id.as_deref(), Some(first_request.as_str()));
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
+
+        let second_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration { configuration },
+        );
+        app.update();
+        let second_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("repeated renderer configuration should publish a response");
+        assert_eq!(second_event.request_id.as_deref(), Some(second_request.as_str()));
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
     }
 
     #[test]
@@ -306,7 +388,7 @@ mod tests {
         app.update();
 
         let toggles = app.world().resource::<DisplayToggles>();
-        assert!(!toggles.show_world_grid);
+        assert!(!toggles.renderer.grid);
         assert_eq!(toggles.light_intensity_scale, 1.0);
 
         // Pop authoritative event and verify request-ID reduction

@@ -1,16 +1,17 @@
 use viewport_protocol::{
     CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, OverlayKind,
-    PresentationReadModel, RuntimeMutationBatch, SceneAnchor, SelectionReadModel, StageReadModel,
-    TimelineReadModel, ViewportEvent, ViewportEventEnvelope, ViewportReadModel, PROTOCOL_VERSION,
+    PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch, SceneAnchor,
+    SelectionReadModel, StageReadModel, TimelineReadModel, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel,
 };
 
-use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
+use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
+use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::camera::CameraMount;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
-use super::state::EditorHistories;
 
 pub(super) fn resolve_anchor(
     anchor: &SceneAnchor,
@@ -24,19 +25,21 @@ pub(super) fn resolve_anchor(
     })
 }
 
-pub(super) fn set_overlay(
-    toggles: &mut DisplayToggles,
-    overlay: OverlayKind,
-    enabled: bool,
-) {
+pub(super) fn set_overlay(toggles: &mut DisplayToggles, overlay: OverlayKind, enabled: bool) {
     match overlay {
-        OverlayKind::GroundGrid => toggles.show_world_grid = enabled,
+        OverlayKind::GroundGrid => toggles.renderer.grid = enabled,
         OverlayKind::WorldAxes => toggles.show_world_axes = enabled,
         OverlayKind::PrimMarkers => toggles.show_prim_markers = enabled,
         OverlayKind::Skeleton => toggles.show_skeleton = enabled,
         OverlayKind::Physics => toggles.show_physics = enabled,
         OverlayKind::Colliders => toggles.show_colliders = enabled,
-        OverlayKind::Wireframe => toggles.wireframe = enabled,
+        OverlayKind::Wireframe => {
+            toggles.renderer.render_mode = if enabled {
+                RenderMode::Wireframe
+            } else {
+                RenderMode::Shaded
+            };
+        }
     }
 }
 
@@ -121,7 +124,8 @@ pub(super) fn presentation_read_model(
     tuning: &LoaderTuning,
 ) -> PresentationReadModel {
     PresentationReadModel {
-        ground_grid: toggles.show_world_grid,
+        renderer: toggles.renderer,
+        ground_grid: toggles.renderer.grid,
         ground_grid_origin: toggles.ground_grid_origin,
         world_axes: toggles.show_world_axes,
         prim_markers: toggles.show_prim_markers,
@@ -129,7 +133,7 @@ pub(super) fn presentation_read_model(
         skeleton: toggles.show_skeleton,
         physics: toggles.show_physics,
         colliders: toggles.show_colliders,
-        wireframe: toggles.wireframe,
+        wireframe: toggles.renderer.render_mode == RenderMode::Wireframe,
         light_intensity_scale: toggles.light_intensity_scale,
         curve_tuning: ProtocolCurveTuning {
             default_radius: tuning.curves.default_radius,

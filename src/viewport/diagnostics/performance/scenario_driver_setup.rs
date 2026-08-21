@@ -18,7 +18,7 @@ pub fn setup_scenario_driver_system(
     let Some(driver) = driver else { return };
     if driver.scenario_id == Some(BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused) {
         if let Some(ref mut toggles) = toggles {
-            toggles.show_world_grid = false;
+            toggles.renderer.grid = false;
         }
         if let Some(ref mut grid) = grid {
             grid.visible = false;

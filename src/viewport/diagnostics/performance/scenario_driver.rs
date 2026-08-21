@@ -84,7 +84,7 @@ pub fn scenario_action_driver_system(
         BenchmarkScenarioId::S4NativeGridVisibilityToggle => {
             if frame % 15 == 0 {
                 if let Some(ref mut t) = toggles {
-                    t.show_world_grid = !t.show_world_grid;
+                    t.renderer.grid = !t.renderer.grid;
                     driver.action_executions += 1;
                 }
             }

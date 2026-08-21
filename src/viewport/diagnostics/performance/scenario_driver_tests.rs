@@ -13,14 +13,14 @@ fn s2_driver_disables_grid_on_startup() {
         ..Default::default()
     });
     app.insert_resource(DisplayToggles {
-        show_world_grid: true,
+        renderer: viewport_protocol::RendererConfiguration::default(),
         ..Default::default()
     });
     app.add_systems(Startup, setup_scenario_driver_system);
     app.update();
 
     assert!(!app.world().resource::<GroundGrid>().visible);
-    assert!(!app.world().resource::<DisplayToggles>().show_world_grid);
+    assert!(!app.world().resource::<DisplayToggles>().renderer.grid);
 }
 
 #[test]
@@ -46,13 +46,13 @@ fn s4_driver_toggles_grid_visibility() {
         ..Default::default()
     });
     app.insert_resource(DisplayToggles {
-        show_world_grid: true,
+        renderer: viewport_protocol::RendererConfiguration::default(),
         ..Default::default()
     });
     app.add_systems(Update, scenario_action_driver_system);
     app.update();
 
-    assert!(!app.world().resource::<DisplayToggles>().show_world_grid);
+    assert!(!app.world().resource::<DisplayToggles>().renderer.grid);
     assert_eq!(
         app.world()
             .resource::<ActiveScenarioDriver>()

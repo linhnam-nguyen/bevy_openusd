@@ -199,6 +199,8 @@ pub struct TimelineReadModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PresentationReadModel {
+    #[serde(default)]
+    pub renderer: RendererConfiguration,
     pub ground_grid: bool,
     #[serde(default)]
     pub ground_grid_origin: GroundGridOrigin,
@@ -246,6 +248,7 @@ impl ViewportReadModel {
                 time_codes_per_second: 24.0,
             },
             presentation: PresentationReadModel {
+                renderer: RendererConfiguration::default(),
                 ground_grid: false,
                 ground_grid_origin: GroundGridOrigin::LoadedScene,
                 world_axes: false,
