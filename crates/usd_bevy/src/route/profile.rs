@@ -4,8 +4,25 @@
 //! benchmark runners can snapshot deterministic counts and bounded expensive
 //! prim records without changing the normal projection path.
 
+use bevy::platform::hash::FixedHasher;
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
+use std::hash::{BuildHasher, Hash, Hasher};
+
+pub const REASON_EXPANDED_PRIMVARS: u32 = 1 << 0;
+pub const REASON_GENERATED_NORMALS: u32 = 1 << 1;
+pub const REASON_SUBDIVISION: u32 = 1 << 2;
+pub const REASON_DISPLAY_COLOR: u32 = 1 << 3;
+pub const REASON_DISPLAY_OPACITY: u32 = 1 << 4;
+pub const REASON_CACHE_MISS: u32 = 1 << 5;
+pub const REASON_HIGH_VERTEX_EXPANSION: u32 = 1 << 6;
+
+/// Stable redaction-safe identity for a USD prim path.
+pub fn hash_prim_path(path: &str) -> u64 {
+    let mut hasher = FixedHasher.build_hasher();
+    path.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// Compact, allocation-free interpolation classification for profile output.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -87,6 +104,7 @@ pub fn classify_topology(counts: &[i32]) -> GeometryTopologyClass {
 /// One profiled USD mesh conversion.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct GeometryProfileRecord {
+    pub prim_path_hash: u64,
     pub read_mesh_ms: f64,
     pub mesh_from_usd_ms: f64,
     pub topology_triangulation_ms: f64,
@@ -113,6 +131,7 @@ pub struct GeometryProfileRecord {
     pub topology_class: GeometryTopologyClass,
     pub subdivision: GeometrySubdivisionClass,
     pub vertex_source_ratio: f64,
+    pub reason_flags: u32,
 }
 
 impl GeometryProfileRecord {

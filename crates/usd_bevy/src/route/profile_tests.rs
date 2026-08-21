@@ -50,3 +50,30 @@ fn characterizes_topology_and_primvar_categories_without_allocating_labels() {
     assert_eq!(profile.totals.uv_interpolation_counts[5], 1);
     assert_eq!(profile.totals.vertex_source_ratio_sum, 2.0);
 }
+
+#[test]
+fn top_records_use_stable_redaction_safe_identity_and_reason_bits() {
+    assert_eq!(hash_prim_path("/World/Mesh"), hash_prim_path("/World/Mesh"));
+    assert_ne!(
+        hash_prim_path("/World/Mesh"),
+        hash_prim_path("/World/Other")
+    );
+
+    let mut profile = GeometryProfile::default();
+    profile.record(GeometryProfileRecord {
+        prim_path_hash: hash_prim_path("/World/Mesh"),
+        reason_flags: REASON_EXPANDED_PRIMVARS | REASON_CACHE_MISS,
+        read_mesh_ms: 1.0,
+        ..Default::default()
+    });
+
+    assert_eq!(
+        profile.records[0].prim_path_hash,
+        hash_prim_path("/World/Mesh")
+    );
+    assert_ne!(
+        profile.records[0].reason_flags & REASON_EXPANDED_PRIMVARS,
+        0
+    );
+    assert_ne!(profile.records[0].reason_flags & REASON_CACHE_MISS, 0);
+}

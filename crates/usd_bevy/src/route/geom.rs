@@ -6,7 +6,11 @@ use bevy::prelude::*;
 use std::time::Instant;
 
 use super::cache::{intern_mesh, intern_mesh_profiled};
-use super::profile::{GeometryProfile, GeometryProfileRecord};
+use super::profile::{
+    GeometryProfile, GeometryProfileRecord, GeometrySubdivisionClass, REASON_CACHE_MISS,
+    REASON_DISPLAY_COLOR, REASON_DISPLAY_OPACITY, REASON_EXPANDED_PRIMVARS,
+    REASON_GENERATED_NORMALS, REASON_HIGH_VERTEX_EXPANSION, REASON_SUBDIVISION, hash_prim_path,
+};
 use super::{DisplayPurposes, PrimRoute, RouteCtx};
 use crate::read::geom::{VisibilityState, read_effective_purpose, read_mesh, read_visibility};
 
@@ -120,9 +124,32 @@ impl MeshRoute {
             (intern_mesh(world, mesh), Default::default())
         };
         if profile_enabled {
+            let mut reason_flags = 0;
+            if build_metrics.expanded_primvars > 0 {
+                reason_flags |= REASON_EXPANDED_PRIMVARS;
+            }
+            if build_metrics.generated_normals {
+                reason_flags |= REASON_GENERATED_NORMALS;
+            }
+            if build_metrics.subdivision != GeometrySubdivisionClass::None {
+                reason_flags |= REASON_SUBDIVISION;
+            }
+            if build_metrics.display_color {
+                reason_flags |= REASON_DISPLAY_COLOR;
+            }
+            if build_metrics.display_opacity {
+                reason_flags |= REASON_DISPLAY_OPACITY;
+            }
+            if !intern_metrics.cache_hit {
+                reason_flags |= REASON_CACHE_MISS;
+            }
+            if build_metrics.vertex_source_ratio > 1.0 {
+                reason_flags |= REASON_HIGH_VERTEX_EXPANSION;
+            }
             world
                 .resource_mut::<GeometryProfile>()
                 .record(GeometryProfileRecord {
+                    prim_path_hash: hash_prim_path(ctx.path.as_str()),
                     read_mesh_ms,
                     mesh_from_usd_ms: build_metrics.mesh_from_usd_ms,
                     topology_triangulation_ms: build_metrics.topology_triangulation_ms,
@@ -149,6 +176,7 @@ impl MeshRoute {
                     topology_class: build_metrics.topology_class,
                     subdivision: build_metrics.subdivision,
                     vertex_source_ratio: build_metrics.vertex_source_ratio,
+                    reason_flags,
                 });
         }
         let material = world
