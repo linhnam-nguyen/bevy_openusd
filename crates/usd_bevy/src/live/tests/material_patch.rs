@@ -171,3 +171,23 @@ fn shader_input_patch_reaches_only_its_material_consumers() {
     let diagnostics = *app.world().resource::<MaterialRouteDiagnostics>();
     assert!(diagnostics.patches > 0);
 }
+
+#[test]
+fn repeated_material_edits_keep_standard_material_assets_bounded() {
+    let mut app = build_app();
+    let initial_assets = app.world().resource::<Assets<StandardMaterial>>().len();
+
+    for i in 0..32 {
+        let n = i as f32 / 32.0;
+        set_material_color(&mut app, RED, [n, 1.0 - n, 0.25]);
+    }
+
+    let assets = app.world().resource::<Assets<StandardMaterial>>();
+    let stats = app
+        .world()
+        .resource::<crate::route::material::UsdMaterialCache>()
+        .stats();
+    assert_eq!(assets.len(), initial_assets);
+    assert_eq!(stats.retired_assets, stats.cleaned_assets);
+    assert!(stats.cleaned_assets >= 32);
+}

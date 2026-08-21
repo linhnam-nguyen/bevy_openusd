@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
@@ -15,6 +15,8 @@ pub struct MaterialCacheStats {
     pub misses: u64,
     pub stale_handles: u64,
     pub descriptor_changes: u64,
+    pub retired_assets: u64,
+    pub cleaned_assets: u64,
 }
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ pub(super) struct CachedMaterial {
 #[derive(Resource, Default)]
 pub struct UsdMaterialCache {
     pub(super) materials: HashMap<String, CachedMaterial>,
+    pub(super) retired_handles: Vec<Handle<StandardMaterial>>,
     pub(super) stats: MaterialCacheStats,
 }
 
@@ -76,6 +79,10 @@ pub(super) fn intern_material(
                 cache.stats.stale_handles += 1;
             } else if !descriptor_matches {
                 cache.stats.descriptor_changes += 1;
+                if let Some(entry) = cached.as_ref() {
+                    cache.retired_handles.push(entry.handle.clone());
+                    cache.stats.retired_assets += 1;
+                }
             }
         }
     }
@@ -94,4 +101,38 @@ pub(super) fn intern_material(
         );
     }
     Some(handle)
+}
+
+/// Remove retired material assets only after no projected mesh references them.
+pub(super) fn cleanup_retired_materials(world: &mut World) {
+    let retired = world
+        .get_resource_mut::<UsdMaterialCache>()
+        .map(|mut cache| std::mem::take(&mut cache.retired_handles))
+        .unwrap_or_default();
+    if retired.is_empty() {
+        return;
+    }
+
+    let referenced: HashSet<_> = {
+        let mut query = world.query::<&MeshMaterial3d<StandardMaterial>>();
+        query.iter(world).map(|material| material.0.id()).collect()
+    };
+    let mut retained = Vec::new();
+    let mut cleaned = 0;
+    {
+        let Some(mut assets) = world.get_resource_mut::<Assets<StandardMaterial>>() else {
+            return;
+        };
+        for handle in retired {
+            if referenced.contains(&handle.id()) {
+                retained.push(handle);
+            } else if assets.remove(handle.id()).is_some() {
+                cleaned += 1;
+            }
+        }
+    }
+    if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
+        cache.retired_handles.extend(retained);
+        cache.stats.cleaned_assets += cleaned;
+    }
 }

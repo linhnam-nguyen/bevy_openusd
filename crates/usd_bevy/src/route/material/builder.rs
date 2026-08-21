@@ -4,7 +4,7 @@ use crate::read::shade::{ReadPreviewMaterial, read_material_binding, read_previe
 
 use super::super::{PrimRoute, RouteCtx};
 use super::consumers::MaterialConsumerIndex;
-use super::material_cache::intern_material;
+use super::material_cache::{cleanup_retired_materials, intern_material};
 use super::texture_cache::resolve_texture;
 
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
@@ -56,11 +56,14 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     let Some(handle) = intern_material(world, &binding, &descriptor) else {
         return;
     };
-    if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
-        mat.0 = handle;
-    } else if let Ok(mut e) = world.get_entity_mut(entity) {
-        e.insert(MeshMaterial3d(handle));
+    {
+        if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
+            mat.0 = handle;
+        } else if let Ok(mut e) = world.get_entity_mut(entity) {
+            e.insert(MeshMaterial3d(handle));
+        }
     }
+    cleanup_retired_materials(world);
 }
 
 fn reproject_consumers(ctx: &RouteCtx, world: &mut World) {
