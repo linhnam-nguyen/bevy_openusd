@@ -1,169 +1,156 @@
-# M9 streaming latency and frame transport
+# M9 streaming latency and frame transport — correction packet
 
-M9 is the streaming transport milestone. Its implementation keeps renderer
-cadence and media cadence observable as separate data planes, carries frame
-identity through readback and encoding, and keeps video backpressure bounded
-without sharing the reliable command path with frame traffic.
+M9 correction status: **COMPLETE / AWAITING REVIEW**.
 
-## Checkpoint commits
+This packet supersedes the earlier M9 freeze note. The earlier C6 packet was
+not sufficient because its connected run had server-side transport evidence
+but no decoded-browser completion artifact. This correction keeps the
+renderer, readback, queue, encoder, and client data planes separate and adds
+the missing production client proof.
 
-```text
-M9-C1  63abb28934d676294ef30adc312fc36ce50799b7
-M9-C2  4a8b4f0c0c5fdc4484112953aa5b9cdf537721dd
-M9-C3  8fecef3eb664085939778d8e387926daba1cd6ce
-M9-C4  7ab7b82acc1d73d2cb634552f4bd1f63f6d2fd6c
-M9-C5  1d88795ea015012a73f32f974467d3bd7844bc29
-M9-C6  <this documentation and freeze commit>
-```
+## Effective revisions
 
-The M9 source changes are confined to the viewport transport and streaming
-crates, their diagnostics/report wiring, and the focused configuration tests.
-The C6 commit contains the milestone packet and plan update; it does not
-change the runtime implementation after the C5 gates.
-
-## Implementation result
-
-### C1 — frame identity and timestamps
-
-`VideoFrame` now carries a monotonic `FrameTrace` containing a sequence number
-and process-relative timestamp, in addition to dimensions and generation.
-The trace is preserved from readback through the bounded frame queue and into
-the encoder. Encoder buffers receive the source timestamp as PTS and retain
-the configured duration. Pixel ownership is moved into `Arc<Vec<u8>>` so the
-transport can share the completed frame without an additional full-frame
-conversion.
-
-### C2 — capture and drop accounting
-
-`FrameTransportMetrics` records readback completion, capture, queueing,
-queue-full drops, invalid readbacks, repacking/copy bytes, generation drops,
-encoder submission/push/failure, disconnect drops, and capture-to-queue and
-capture-to-encoder latency. The metrics are included in the performance report
-without changing the existing drop policy.
-
-### C3 — readback copy gate
-
-Aligned readback rows keep the original `Vec<u8>`. Padded rows are compacted
-in place with `copy_within` and truncated, avoiding a second full-frame
-allocation. Focused tests cover aligned rows, padded rows, and capacity
-behavior. No unsafe zero-copy path was introduced without an ownership proof.
-
-### C4 — bounded render/readback/encode overlap
-
-Each active video target owns a bounded `sync_channel(2)` and a named encoder
-worker. Enqueue is non-blocking; a saturated or disconnected video target
-drops only video work and increments the corresponding transport metric.
-Generation checks run both before enqueue and in the worker. Worker teardown
-joins before session encoder shutdown. Reliable data/control channels remain
-separate and are not dropped because video is overloaded. Focused tests cover
-queue saturation, disconnect, generation mismatch, and reconnect behavior.
-
-### C5 — configuration matrix
-
-The streaming test suite validates raw GStreamer caps for:
+Backend (`bevy_openusd`, `develop/optimisation-rendering`):
 
 ```text
-1280×720, 1920×1080, 2560×1440
-30, 60, 120 FPS
+M9-C1+    332faca  correlate render identity with readback
+M9-C2+    44d9cfe  measure readback and encoder push stages
+M9-C3     8fecef3  retained from the accepted M9 chain; no new change
+M9-C4+    96a2010  test production frame-router saturation
+M9-C5+    d39d674  require real browser video evidence
+M9-C5+++  f446bb6  report incomplete client diagnostics
+M9-C1++   c541517  keep media PTS on the readback clock; runtime check rejected
+M9-C1+++  38a02cf  restore the live appsrc media clock
 ```
 
-The matrix test checks the actual caps structure fields used by the pipeline.
-Runtime codec coverage remains limited to codecs available in the executing
-GStreamer installation.
-
-## Runtime benchmark packet
-
-The generated artifacts are local ignored benchmark outputs and are not source
-files. They are retained at:
-
-- [`target/m9-s11.json`](../target/m9-s11.json)
-- [`target/m9-s12-long.json`](../target/m9-s12-long.json)
-
-Both artifacts run the M9-C5 source revision
-`1d88795ea015012a73f32f974467d3bd7844bc29`, with Glacial pinned to
-`424c97b057fc9b9521b020fffa132ee3d022cf6b`, on macOS Metal / Apple M4 at
-1920×1080 and requested 60 FPS.
-
-### S11 — renderer-only control
-
-This run intentionally had no connected video encoder. Across 120 measured
-frames:
+The effective backend revision for the final packet is:
 
 ```text
-median / p95 CPU frame       19.5505835 / 20.9658229 ms
-actual renderer FPS          48.6072
-readback completions         120
-queued frames                120
-queue-full drops             0
-invalid readbacks            0
-generation drops             0
-encoder submissions/pushes   0 / 0
-disconnect drops             120
-capture→queue avg / max      0.0087747 / 0.014334 ms
+38a02cfc5b95192c28a72ba52d7705d29151b30b
 ```
 
-The disconnect count is expected for a renderer-only run and is not reported
-as an encoder failure.
-
-### S12 — server-side connected transport
-
-The Tauri/WebRTC launch was exercised with an explicit Trunk server and the
-server-side report completed. The external client harness did not finish, so
-this is transport/encoder evidence, not decoded-browser proof. Across 120
-measured frames:
+The final UI revision is:
 
 ```text
-median / p95 CPU frame       19.711354 / 20.4794982 ms
-actual renderer FPS          47.8822
-encoded FPS                  60
-readback completions         120
-queued frames                120
-queue-full drops             0
-invalid readbacks            0
-generation drops             0
-encoder submitted/pushed     120 / 120
-encoder queue drops/failures 0 / 0
-disconnect drops             0
-capture→queue avg / max      0.00895765 / 0.016375 ms
-capture→encoder avg / max    0.02215661 / 0.051708 ms
-repacked frames              120
+4aac298446657877e4453a2960f985a7f3e03b2d
 ```
 
-No frontend FPS, decoded-video dimensions, browser decode latency, RTT, or
-jitter claim is made from this run because the client harness did not produce
-its completion artifact. That limitation is explicit for milestone review.
+The Glacial dependency remains pinned to:
 
-The GStreamer test run emitted the environment's existing GLib/GTK plugin
-scanner warnings while the focused caps test still passed. They did not
-produce a Rust test failure.
+```text
+424c97b057fc9b9521b020fffa132ee3d022cf6b
+```
+
+## Correction results
+
+### C1 — identity and live media timing
+
+Render identity is assigned before readback completion and correlated through
+the bounded readback queue. Missing correlations are counted and do not create
+a replacement identity after readback. `FrameTrace` remains the source of
+sequence and latency metrics.
+
+The first correction attempted to use the readback timestamp as live media
+PTS. A real S12 client run still delivered only one video frame, so that
+revision was rejected by runtime evidence. `M9-C1+++` restores the live
+`appsrc` media clock while retaining the trace for correlation and metrics.
+This is the effective transport fix: the browser now receives a continuous
+decoded stream.
+
+### C2 — stage accounting
+
+The backend reports renderer cadence separately from readback and encoder
+push cadence, and records render→readback, readback→queue,
+readback→encoder-queue, readback→encoder-worker, and readback→encoder-push
+latencies. The final connected S12–S18 runs each completed 120 readbacks,
+120 queued frames, 120 encoder submissions, and 120 pushes. Every connected
+scenario reported zero queue-full drops, generation drops, encoder queue drops,
+encoder failures, disconnect drops, and readback identity misses.
+
+For S12–S18, renderer cadence was 41.30–55.40 FPS, while measured readback
+and encoder-push cadence was 45.68–48.34 FPS. In S12, the stage averages were:
+
+```text
+render→readback             44.9775 ms   max 50.4836 ms
+readback→queue               0.1842 ms   max  0.4573 ms
+readback→encoder queue       0.1955 ms   max  0.5155 ms
+readback→encoder worker      0.2001 ms   max  0.5288 ms
+readback→encoder push        0.3842 ms   max  0.7240 ms
+```
+
+### C4 — bounded production routing
+
+The production `FrameRouter` is exercised with a slow fake encoder. Saturation
+is non-blocking and bounded, stale generations are rejected, disconnect and
+reconnect are covered, and reliable control traffic remains independent of
+video overload. The focused `viewport_streaming` library suite passed all 53
+tests.
+
+### C5 — real client completion evidence
+
+The actual UsdHubUI/Tauri/WebRTC client harness now requires a received and
+decoded browser video frame with positive dimensions. It records decoded
+dimensions/FPS, decode and total delay, RTT/jitter where reported, dropped
+frames, and explicit completion blockers. Missing client data is persisted as a
+diagnostic sidecar instead of being inferred or silently treated as success.
+
+The effective C1+++ media-clock revision was required for the live client
+completion path. The seven S12–S18 client artifacts report:
+
+```text
+decoded dimensions       1440 × 960 in every scenario
+decoded FPS              46.91–48.00
+frames during measure    138–145
+dropped frames           0 in every scenario
+completion blockers      [] in every scenario
+```
+
+### C6 — final release packet
+
+The exact release suite was rerun after the effective backend correction:
+
+```text
+python3 scripts/render_bench.py --all --warmup 30 --frames 120 \
+  --output-dir target/benchmark/m9-final-c541517-4aac298 \
+  --label m9-final-correction \
+  --client-command <fresh Trunk + Tauri WebRTC client command>
+```
+
+All S1–S24 scenarios passed. The two Kitchen variants also passed:
+
+```text
+target/benchmark/m9-final-c541517-4aac298/kitchen-grid-on.json
+target/benchmark/m9-final-c541517-4aac298/kitchen-grid-off.json
+```
+
+The output directory contains 24 server reports, seven real client reports
+for S12–S18, and the two Kitchen reports. S1–S24 remain the authoritative
+release matrix; no unavailable client values are inferred for renderer-only or
+isolation scenarios.
+
+The final client artifacts are pinned to the backend/UI revisions above. The
+server reports include renderer FPS, readback FPS, encoder-push FPS, frame
+counts, drop counters, copy/repack counts, and all measured transport stages.
+The client reports include decoded browser dimensions/FPS, decode/total delay,
+RTT/jitter observations, dropped frames, lifecycle readiness, and blockers.
 
 ## Self-gates
 
-The checkpoint gates passed as follows:
+Passed before this packet was committed:
 
 ```text
-M9-C1  cargo check -p viewport_streaming --tests
-      cargo test -p viewport_streaming frame_metrics -- --nocapture
-      cargo check -p usd_bevy --tests
-
-M9-C2  cargo check -p usd_bevy --tests
-      cargo test -p viewport_streaming frame_metrics -- --nocapture
-
-M9-C3  cargo check -p viewport_streaming --tests
-      cargo test --bin usdview viewport::transport::frame_capture -- --nocapture
-      cargo check -p usdview --tests
-
-M9-C4  cargo check -p viewport_streaming --tests
-      cargo test -p viewport_streaming --lib
-      cargo check -p usdview --tests
-
-M9-C5  cargo test -p viewport_streaming encode::tests::raw_caps_preserve -- --nocapture
+cargo test -p viewport_streaming --lib                         53 passed
+cargo check -p usdview --tests                                 passed
+cargo test -p usd_hub_desktop                                  96 passed
+cargo check -p usd_hub_desktop --target wasm32-unknown-unknown passed
+cargo check --manifest-path UsdHubUI/src-tauri/Cargo.toml      passed
+python3 scripts/render_bench.py --all ...                      S1–S24 passed
+Kitchen grid-on/grid-off benchmark                            passed
+git diff --check                                               passed
 ```
 
-The final C6 gate reruns the focused streaming tests, the viewport transport
-tests, the `usdview` test compile, `rustfmt --check` for the changed Rust
-files, and `git diff --check` before committing this packet.
+The existing GStreamer plugin-scanner warnings and inherited workspace lint
+debt remain visible; neither caused a gate failure. No `Instance2` directory
+was inspected or modified.
 
-No frontend checkout or `Instance2` path was touched.
-
-**M9 status: COMPLETE / AWAITING REVIEW.**
+**M9 status: COMPLETE / AWAITING REVIEW. M10 has not started.**
