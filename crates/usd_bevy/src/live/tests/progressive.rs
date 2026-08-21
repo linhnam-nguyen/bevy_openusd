@@ -330,3 +330,41 @@ def Xform "Reloaded"
     let paths = sorted_paths(app.world().resource::<PrimEntities>());
     assert_eq!(paths, vec!["/", "/Reloaded", "/Reloaded/Child"]);
 }
+
+#[test]
+fn readiness_is_additive_and_progress_is_monotonic() {
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_resource(crate::live::ProjectionBudget::work_items(1));
+    assert_eq!(
+        app.world()
+            .resource::<crate::live::ProgressiveProjectionState>()
+            .readiness(),
+        ProjectionReadiness::Idle
+    );
+    app.world_mut()
+        .insert_non_send(LiveStage::new(hierarchy_stage()));
+    app.update();
+    let projecting = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(projecting.readiness(), ProjectionReadiness::Projecting);
+    assert!(projecting.progress() > 0.0 && projecting.progress() < 1.0);
+    let first_progress = projecting.progress();
+
+    app.update();
+    let second_progress = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>()
+        .progress();
+    assert!(second_progress > first_progress);
+    run_until_ready(&mut app);
+    let mut ready = app
+        .world_mut()
+        .resource_mut::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(ready.readiness(), ProjectionReadiness::Ready);
+    assert_eq!(ready.progress(), 1.0);
+    ready.cancel();
+    assert_eq!(ready.readiness(), ProjectionReadiness::Ready);
+}
