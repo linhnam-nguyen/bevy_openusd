@@ -5,12 +5,42 @@
 //! scene and an embedded-texture USDZ before any cache policy change is made.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use bevy::image::Image;
 use bevy::mesh::Mesh;
+use bevy::pbr::StandardMaterial;
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use usd_bevy::{LiveStage, PrimEntities, UsdPlugin, project_stage};
+use serde::Serialize;
+use usd_bevy::{
+    LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin, apply_change_batch, project_stage,
+};
+
+#[derive(Debug, Serialize)]
+struct M6C5Artifact {
+    schema: &'static str,
+    checkpoint: &'static str,
+    fixture: &'static str,
+    unique_bindings: usize,
+    material_assets_before_edit: usize,
+    material_assets_after_edit: usize,
+    initial_projection_ms: f64,
+    live_edit_ms: f64,
+    initial_material_lookups: u64,
+    initial_material_hits: u64,
+    initial_material_misses: u64,
+    initial_descriptor_changes: u64,
+    live_material_lookups: u64,
+    live_material_hits: u64,
+    live_material_misses: u64,
+    live_descriptor_changes: u64,
+    live_retired_assets: u64,
+    live_cleaned_assets: u64,
+    initial_texture_entries: usize,
+    initial_texture_decode_calls: u64,
+    live_texture_decode_calls: u64,
+}
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -24,6 +54,37 @@ fn build_test_app() -> App {
         .init_asset::<StandardMaterial>()
         .add_plugins(UsdPlugin);
     app
+}
+
+fn build_live_material_app() -> App {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/stages/materials.usda");
+    let stage = Stage::open(path.to_str().expect("materials fixture path is valid"))
+        .expect("materials fixture opens");
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+    app
+}
+
+fn apply_live_material_edit(app: &mut App) -> f64 {
+    let started = Instant::now();
+    let live = app
+        .world_mut()
+        .remove_non_send::<LiveStage>()
+        .expect("live stage exists");
+    let batch = live.drain_change_batch().expect("material edit is queued");
+    let mut map = app
+        .world_mut()
+        .remove_resource::<PrimEntities>()
+        .expect("prim map exists");
+    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    app.world_mut().insert_resource(map);
+    app.world_mut().insert_non_send(live);
+    started.elapsed().as_secs_f64() * 1000.0
 }
 
 #[test]
@@ -151,4 +212,97 @@ fn profiles_embedded_texture_usdz_fixture() {
     assert_eq!(stats.archive_index_builds, 1);
     assert_eq!(stats.archive_index_invalidations, 0);
     assert_eq!(stats.archive_entries_indexed, 2);
+}
+
+#[test]
+fn records_m6_shared_material_benchmark_artifact() {
+    let mut app = build_live_material_app();
+    let initial_projection_ms = app
+        .world()
+        .resource::<usd_bevy::ProjectionStats>()
+        .initial_projection_ms
+        .expect("initial projection timing");
+    let initial_material = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdMaterialCache>()
+        .stats();
+    let unique_bindings = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdMaterialCache>()
+        .len();
+    let material_assets_before_edit = app.world().resource::<Assets<StandardMaterial>>().len();
+    let initial_texture = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdTextureCache>()
+        .stats();
+
+    {
+        let live = app.world().get_non_send::<LiveStage>().expect("stage");
+        live.stage
+            .prim(openusd::sdf::path("/World/Materials/Red").unwrap())
+            .attribute("inputs:diffuseColor")
+            .set(openusd::sdf::Value::Vec3f(openusd::gf::Vec3f::from([
+                0.2, 0.3, 0.9,
+            ])))
+            .expect("material edit authors");
+    }
+    app.world_mut()
+        .resource_mut::<usd_bevy::route::material::UsdMaterialCache>()
+        .reset_stats();
+    app.world_mut()
+        .resource_mut::<usd_bevy::route::material::UsdTextureCache>()
+        .reset_stats();
+    let live_edit_ms = apply_live_material_edit(&mut app);
+    let live_material = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdMaterialCache>()
+        .stats();
+    let live_texture = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdTextureCache>()
+        .stats();
+    let material_assets_after_edit = app.world().resource::<Assets<StandardMaterial>>().len();
+
+    let artifact = M6C5Artifact {
+        schema: "usdhub.m6.c5.shared-material.v1",
+        checkpoint: "M6-C5",
+        fixture: "tests/stages/materials.usda",
+        unique_bindings,
+        material_assets_before_edit,
+        material_assets_after_edit,
+        initial_projection_ms,
+        live_edit_ms,
+        initial_material_lookups: initial_material.lookups,
+        initial_material_hits: initial_material.hits,
+        initial_material_misses: initial_material.misses,
+        initial_descriptor_changes: initial_material.descriptor_changes,
+        live_material_lookups: live_material.lookups,
+        live_material_hits: live_material.hits,
+        live_material_misses: live_material.misses,
+        live_descriptor_changes: live_material.descriptor_changes,
+        live_retired_assets: live_material.retired_assets,
+        live_cleaned_assets: live_material.cleaned_assets,
+        initial_texture_entries: app
+            .world()
+            .resource::<usd_bevy::route::material::UsdTextureCache>()
+            .textures
+            .len(),
+        initial_texture_decode_calls: initial_texture.decode_calls,
+        live_texture_decode_calls: live_texture.decode_calls,
+    };
+    let artifact_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/m6-c5-shared-material.json");
+    std::fs::write(
+        &artifact_path,
+        serde_json::to_vec_pretty(&artifact).expect("M6 artifact serializes"),
+    )
+    .expect("M6 artifact writes");
+    assert_eq!(unique_bindings, 3);
+    assert_eq!(material_assets_after_edit, material_assets_before_edit);
+    assert_eq!(live_material.retired_assets, live_material.cleaned_assets);
+    assert_eq!(live_texture.decode_calls, 0);
+    println!(
+        "M6-C5 shared-material artifact: {}",
+        artifact_path.display()
+    );
 }

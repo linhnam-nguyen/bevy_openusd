@@ -37,6 +37,11 @@ pub struct UsdMaterialCache {
 }
 
 impl UsdMaterialCache {
+    /// Number of composed Material paths currently interned.
+    pub fn len(&self) -> usize {
+        self.materials.len()
+    }
+
     /// Snapshot material-cache counters for diagnostics or profiling.
     pub fn stats(&self) -> MaterialCacheStats {
         self.stats
