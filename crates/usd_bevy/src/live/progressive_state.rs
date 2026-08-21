@@ -71,7 +71,7 @@ pub struct ProgressiveProjectionState {
     pub(super) entities: Vec<Option<Entity>>,
     pub(super) animated: HashSet<String>,
     pub(super) started_at: Option<Instant>,
-    pub(super) planning_ms: Option<f64>,
+    pub(super) plan_complete_ms: Option<f64>,
     pub(super) planning_updates: u64,
     pub(super) planning_work_items: u64,
     pub(super) first_projected_prim_ms: Option<f64>,
@@ -113,8 +113,8 @@ impl ProgressiveProjectionState {
     pub fn plan(&self) -> Option<&ProjectionPlan> {
         self.plan.as_ref()
     }
-    pub fn planning_ms(&self) -> Option<f64> {
-        self.planning_ms
+    pub fn plan_complete_ms(&self) -> Option<f64> {
+        self.plan_complete_ms
     }
     pub fn planning_updates(&self) -> u64 {
         self.planning_updates

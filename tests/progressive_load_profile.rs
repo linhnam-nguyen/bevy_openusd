@@ -24,7 +24,7 @@ struct M7C6Artifact {
     build_profile: &'static str,
     fixture: &'static str,
     stage_open_ms: f64,
-    plan_build_ms: f64,
+    plan_complete_ms: f64,
     planning_updates: u64,
     planning_work_items: u64,
     first_projected_prim_ms: f64,
@@ -68,6 +68,19 @@ fn percentile_95(samples: &[f64]) -> f64 {
     sorted[index]
 }
 
+fn milestone_ms(
+    samples: &[(f64, usize)],
+    final_total: usize,
+    numerator: usize,
+    denominator: usize,
+) -> f64 {
+    let required = final_total.saturating_mul(numerator).div_ceil(denominator);
+    samples
+        .iter()
+        .find(|(_, completed)| *completed >= required)
+        .map_or(0.0, |(elapsed_ms, _)| *elapsed_ms)
+}
+
 fn benchmark_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
@@ -95,7 +108,7 @@ fn records_m7_progressive_load_benchmark_artifact() {
     app.world_mut().insert_non_send(LiveStage::new(stage));
     let projection_started = Instant::now();
     let mut update_samples = Vec::new();
-    let mut milestones = [None; 4];
+    let mut progress_samples = Vec::new();
     let mut first_geometry_available_ms = None;
     let loading_updates = loop {
         assert!(update_samples.len() < 10_000, "projection did not finish");
@@ -104,16 +117,11 @@ fn records_m7_progressive_load_benchmark_artifact() {
         let update_ms = update_started.elapsed().as_secs_f64() * 1000.0;
         update_samples.push(update_ms);
         let elapsed_ms = projection_started.elapsed().as_secs_f64() * 1000.0;
-        let (readiness, completed, total) = {
+        let (readiness, completed) = {
             let state = app.world().resource::<ProgressiveProjectionState>();
-            (state.readiness(), state.completed(), state.total())
+            (state.readiness(), state.completed())
         };
-        let progress = completed as f64 / total.max(1) as f64;
-        for (index, threshold) in [0.25, 0.50, 0.75, 1.0].into_iter().enumerate() {
-            if milestones[index].is_none() && progress >= threshold {
-                milestones[index] = Some(elapsed_ms);
-            }
-        }
+        progress_samples.push((elapsed_ms, completed));
         let has_geometry = {
             let world = app.world_mut();
             let mut query = world.query_filtered::<Entity, With<Mesh3d>>();
@@ -129,22 +137,22 @@ fn records_m7_progressive_load_benchmark_artifact() {
 
     let state = app.world().resource::<ProgressiveProjectionState>();
     let artifact = M7C6Artifact {
-        schema: "usdhub.m7.c6.progressive-load.v2",
-        checkpoint: "M7-C6",
+        schema: "usdhub.m7.c6.progressive-load.v3",
+        checkpoint: "M7-C6++",
         git_sha: benchmark_git_sha(),
         build_profile: "release",
         fixture,
         stage_open_ms,
-        plan_build_ms: state.planning_ms().unwrap_or_default(),
+        plan_complete_ms: state.plan_complete_ms().unwrap_or_default(),
         planning_updates: state.planning_updates(),
         planning_work_items: state.planning_work_items(),
         first_projected_prim_ms: state.first_projected_prim_ms().unwrap_or_default(),
         first_mesh_ms: state.first_mesh_ms().unwrap_or_default(),
         first_geometry_available_ms: first_geometry_available_ms.unwrap_or_default(),
-        progress_25_ms: milestones[0].unwrap_or_default(),
-        progress_50_ms: milestones[1].unwrap_or_default(),
-        progress_75_ms: milestones[2].unwrap_or_default(),
-        progress_100_ms: milestones[3].unwrap_or_default(),
+        progress_25_ms: milestone_ms(&progress_samples, state.total(), 1, 4),
+        progress_50_ms: milestone_ms(&progress_samples, state.total(), 1, 2),
+        progress_75_ms: milestone_ms(&progress_samples, state.total(), 3, 4),
+        progress_100_ms: milestone_ms(&progress_samples, state.total(), 1, 1),
         total_projection_ms: projection_started.elapsed().as_secs_f64() * 1000.0,
         p95_update_ms: percentile_95(&update_samples),
         longest_main_thread_stall_ms: update_samples.iter().copied().fold(0.0, f64::max),
@@ -153,7 +161,7 @@ fn records_m7_progressive_load_benchmark_artifact() {
         plan_builds: state.plan_builds(),
         resident_short_circuits: state.resident_short_circuits(),
     };
-    assert!(artifact.plan_build_ms > 0.0);
+    assert!(artifact.plan_complete_ms > 0.0);
     assert!(artifact.planning_updates > 0);
     assert!(artifact.planning_work_items > 0);
     assert!(artifact.first_projected_prim_ms > 0.0);

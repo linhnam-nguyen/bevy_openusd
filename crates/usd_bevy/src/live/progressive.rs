@@ -122,7 +122,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     state.entities = vec![None];
     state.animated.clear();
     state.started_at = Some(generation_started);
-    state.planning_ms = None;
+    state.plan_complete_ms = None;
     state.planning_updates = 0;
     state.planning_work_items = 0;
     state.first_projected_prim_ms = None;
@@ -247,7 +247,7 @@ fn finalize_plan(world: &mut World) {
     state.total = plan.len();
     state.plan = Some(plan);
     state.readiness = ProjectionReadiness::Projecting;
-    state.planning_ms = state
+    state.plan_complete_ms = state
         .started_at
         .map(|start| start.elapsed().as_secs_f64() * 1000.0);
 }
