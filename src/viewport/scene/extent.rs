@@ -72,11 +72,39 @@ pub(crate) fn compute_extent(
             Option<&bevy::camera::primitives::Aabb>,
             Option<&Mesh3d>,
         ),
-        With<UsdPrimRef>,
+        (
+            With<UsdPrimRef>,
+            Or<(
+                Added<UsdPrimRef>,
+                Changed<UsdPrimRef>,
+                Changed<Transform>,
+                Changed<GlobalTransform>,
+                Changed<usd_bevy::UsdLocalExtent>,
+                Changed<bevy::camera::primitives::Aabb>,
+                Changed<Mesh3d>,
+            )>,
+        ),
     >,
+    mut removed_prims: RemovedComponents<UsdPrimRef>,
+    mut removed_transforms: RemovedComponents<Transform>,
+    mut removed_global_transforms: RemovedComponents<GlobalTransform>,
+    mut removed_extents: RemovedComponents<usd_bevy::UsdLocalExtent>,
+    mut removed_aabbs: RemovedComponents<bevy::camera::primitives::Aabb>,
+    mut removed_meshes: RemovedComponents<Mesh3d>,
     mut extent: ResMut<SceneExtent>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
+    let scene_changed = !prims.is_empty()
+        || removed_prims.read().next().is_some()
+        || removed_transforms.read().next().is_some()
+        || removed_global_transforms.read().next().is_some()
+        || removed_extents.read().next().is_some()
+        || removed_aabbs.read().next().is_some()
+        || removed_meshes.read().next().is_some();
+    if !scene_changed {
+        return;
+    }
+
     if let Some(ref mut c) = counters {
         c.grid_compute_extent_calls += 1;
     }
