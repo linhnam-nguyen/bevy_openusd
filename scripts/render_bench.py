@@ -73,6 +73,7 @@ CLIENT_EVIDENCE_FIELDS = [
     "orbit_pan_events_observed",
     "zoom_dolly_events_observed",
     "zoom_delta_observed",
+    "video_observation",
 ]
 
 EVENT_REQUIRED_SCENARIOS = {"S13", "S14", "S17", "S18"}
@@ -123,6 +124,24 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
         raise ValueError("client evidence must report at least one received video frame")
     if type(evidence["video_frames_during_measurement"]) is not int or evidence["video_frames_during_measurement"] <= 0:
         raise ValueError("client evidence must report video frames during the measured window")
+    video_observation = evidence["video_observation"]
+    if not isinstance(video_observation, dict):
+        raise ValueError("client evidence video_observation must be an object")
+    for field in ("decoded_width", "decoded_height"):
+        if type(video_observation.get(field)) is not int or video_observation[field] <= 0:
+            raise ValueError(f"client evidence must report positive decoded video {field[8:]}")
+    for field in (
+        "decoded_fps",
+        "decode_ms",
+        "total_delay_ms",
+        "network_rtt_ms",
+        "network_jitter_ms",
+    ):
+        value = video_observation.get(field)
+        if value is not None and (type(value) not in (int, float) or value < 0):
+            raise ValueError(f"client evidence {field} must be a non-negative number or null")
+    if type(video_observation.get("dropped_frames")) is not int or video_observation["dropped_frames"] < 0:
+        raise ValueError("client evidence dropped_frames must be a non-negative integer")
     if type(evidence["measurement_idle_observed"]) is not bool:
         raise ValueError("client evidence measurement_idle_observed must be boolean")
     if type(evidence["input_events_observed"]) is not int or evidence["input_events_observed"] < 0:
@@ -239,7 +258,9 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
         server_stdout, server_stderr = server.communicate()
         if client is not None:
             try:
-                client_returncode = client.wait(timeout=10)
+                client_returncode = client.wait(
+                    timeout=float(os.environ.get("USDHUB_BENCHMARK_CLIENT_TIMEOUT", "60"))
+                )
             except subprocess.TimeoutExpired:
                 client.terminate()
                 client.wait(timeout=5)
