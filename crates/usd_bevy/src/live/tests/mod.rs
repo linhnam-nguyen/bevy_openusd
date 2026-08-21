@@ -8,5 +8,6 @@ mod paths;
 mod payload;
 mod progressive;
 mod progressive_plan;
+mod progressive_restart;
 mod reconcile;
 mod stage;

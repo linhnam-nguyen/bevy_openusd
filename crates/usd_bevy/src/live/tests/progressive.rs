@@ -155,7 +155,7 @@ fn work_budget_projects_one_entry_per_update_and_reaches_final_equality() {
         .world()
         .resource::<crate::live::ProgressiveProjectionState>();
     assert_eq!(partial.completed(), 1, "one root entry is projected first");
-    assert_eq!(partial.readiness(), ProjectionReadiness::Projecting);
+    assert_eq!(partial.readiness(), ProjectionReadiness::Planning);
     assert_eq!(app.world().resource::<PrimEntities>().len(), 1);
 
     run_until_ready(&mut app);
@@ -180,7 +180,7 @@ fn explicit_time_budget_can_yield_without_consuming_work() {
         .world()
         .resource::<crate::live::ProgressiveProjectionState>();
     assert_eq!(state.completed(), 0);
-    assert_eq!(state.readiness(), ProjectionReadiness::Projecting);
+    assert_eq!(state.readiness(), ProjectionReadiness::Planning);
 }
 
 #[test]
@@ -275,8 +275,8 @@ fn readiness_is_additive_and_progress_is_monotonic() {
     let projecting = app
         .world()
         .resource::<crate::live::ProgressiveProjectionState>();
-    assert_eq!(projecting.readiness(), ProjectionReadiness::Projecting);
-    assert!(projecting.progress() > 0.0 && projecting.progress() < 1.0);
+    assert_eq!(projecting.readiness(), ProjectionReadiness::Planning);
+    assert_eq!(projecting.progress(), 0.0);
     let first_progress = projecting.progress();
 
     app.update();
@@ -284,7 +284,7 @@ fn readiness_is_additive_and_progress_is_monotonic() {
         .world()
         .resource::<crate::live::ProgressiveProjectionState>()
         .progress();
-    assert!(second_progress > first_progress);
+    assert!(second_progress >= first_progress);
     run_until_ready(&mut app);
     let mut ready = app
         .world_mut()

@@ -3,7 +3,7 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 
 use super::index::PrimEntities;
-use super::progressive::ProgressiveProjectionState;
+use super::progressive_state::ProgressiveProjectionState;
 
 pub(super) fn resident_projection(
     world: &World,

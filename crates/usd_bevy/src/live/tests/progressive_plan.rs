@@ -1,4 +1,4 @@
-use crate::live::{ProjectionPlan, collect_stage_subtree_paths};
+use crate::live::{ProjectionPlan, ProjectionPlanBuilder, collect_stage_subtree_paths};
 use crate::snippet::UsdSnippet;
 
 fn hierarchy_stage() -> openusd::usd::Stage {
@@ -97,4 +97,26 @@ fn subtree_plan_preserves_root_and_parent_relation() {
     assert_eq!(plan.paths().collect::<Vec<_>>(), vec!["/", "/A", "/A/Leaf"]);
     assert_eq!(plan.entry(1).unwrap().parent_index(), Some(0));
     assert_eq!(plan.entry(2).unwrap().parent_index(), Some(1));
+}
+
+#[test]
+fn incremental_builder_yields_parent_before_child_work() {
+    let stage = hierarchy_stage();
+    let mut builder = ProjectionPlanBuilder::new(&stage);
+    assert_eq!(builder.len(), 1);
+    assert!(!builder.is_finished());
+
+    assert!(!builder.advance_one().expect("root expansion succeeds"));
+    assert_eq!(builder.len(), 4);
+    assert_eq!(builder.entry(1).unwrap().path(), "/A");
+    assert_eq!(builder.entry(3).unwrap().path(), "/Z");
+
+    while !builder.is_finished() {
+        builder.advance_one().expect("parent expansion succeeds");
+    }
+    let plan = builder.finish().expect("incremental plan finishes");
+    assert_eq!(
+        plan.paths().collect::<Vec<_>>(),
+        vec!["/", "/A", "/B", "/Z", "/A/Leaf", "/Z/Child"]
+    );
 }

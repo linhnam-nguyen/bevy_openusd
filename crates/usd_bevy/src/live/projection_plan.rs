@@ -1,9 +1,9 @@
 use anyhow::{Result, anyhow};
 use openusd::usd::Stage;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
 
 use super::path::{parent_path, validate_prim_path};
-use super::projection::traverse_predicate;
 
 /// One deterministic unit of initial projection work.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,41 +30,100 @@ pub struct ProjectionPlan {
     entries: Vec<ProjectionPlanEntry>,
 }
 
+/// Incrementally builds a deterministic parent-before-child plan.
+#[derive(Clone)]
+pub struct ProjectionPlanBuilder {
+    stage: Stage,
+    pending: VecDeque<(String, usize)>,
+    entries: Vec<ProjectionPlanEntry>,
+}
+
+impl fmt::Debug for ProjectionPlanBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProjectionPlanBuilder")
+            .field("pending", &self.pending)
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+
+impl ProjectionPlanBuilder {
+    /// Start with only the synthetic stage root; no scene traversal occurs.
+    pub fn new(stage: &Stage) -> Self {
+        let mut pending = VecDeque::new();
+        pending.push_back(("/".to_string(), 0));
+        Self {
+            stage: stage.clone(),
+            pending,
+            entries: vec![ProjectionPlanEntry {
+                path: "/".to_string(),
+                parent: None,
+            }],
+        }
+    }
+
+    /// Number of entries discovered so far, including the synthetic root.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether every queued parent has been expanded.
+    pub fn is_finished(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// Access a discovered entry while the plan is still being built.
+    pub fn entry(&self, index: usize) -> Option<&ProjectionPlanEntry> {
+        self.entries.get(index)
+    }
+
+    /// Expand one parent and enqueue its valid children in lexical order.
+    pub fn advance_one(&mut self) -> Result<bool> {
+        let Some((parent_path, parent_index)) = self.pending.pop_front() else {
+            return Ok(true);
+        };
+        let parent = self.stage.prim(openusd::sdf::path(&parent_path)?);
+        if parent_path != "/" && parent.is_instance()? {
+            return Ok(self.pending.is_empty());
+        }
+        let mut children = parent.children()?;
+        children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
+        for child in children {
+            if !child.is_active()? || !child.is_defined()? || child.is_abstract()? {
+                continue;
+            }
+            let path = child.path().as_str().to_string();
+            let index = self.entries.len();
+            self.entries.push(ProjectionPlanEntry {
+                path: path.clone(),
+                parent: Some(parent_index),
+            });
+            self.pending.push_back((path, index));
+        }
+        Ok(self.pending.is_empty())
+    }
+
+    /// Finish an exhausted builder and return its immutable plan.
+    pub fn finish(self) -> Result<ProjectionPlan> {
+        if !self.is_finished() {
+            return Err(anyhow!("projection plan builder still has pending parents"));
+        }
+        Ok(ProjectionPlan {
+            entries: self.entries,
+        })
+    }
+}
+
 impl ProjectionPlan {
     /// Build a plan using the same active/defined/non-abstract predicate as
     /// ordinary live projection and subtree reconciliation.
     pub fn from_stage(stage: &Stage) -> Result<Self> {
-        let mut paths = vec!["/".to_string()];
-        stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
-            if path.as_str() != "/" {
-                paths.push(path.as_str().to_string());
-            }
-        })?;
-        paths.sort_unstable_by(|left, right| {
-            left.matches('/')
-                .count()
-                .cmp(&right.matches('/').count())
-                .then_with(|| left.cmp(right))
-        });
-
-        let indices: HashMap<String, usize> = paths
-            .iter()
-            .enumerate()
-            .map(|(index, path)| (path.clone(), index))
-            .collect();
-        let mut entries = Vec::with_capacity(paths.len());
-        for path in paths {
-            let parent = if path == "/" {
-                None
-            } else {
-                let parent_path = parent_path(&path);
-                Some(*indices.get(parent_path).ok_or_else(|| {
-                    anyhow!("projection parent '{parent_path}' missing for '{path}'")
-                })?)
-            };
-            entries.push(ProjectionPlanEntry { path, parent });
+        let mut builder = ProjectionPlanBuilder::new(stage);
+        while !builder.is_finished() {
+            builder.advance_one()?;
         }
-        Ok(Self { entries })
+        builder.finish()
     }
 
     /// Build a plan and validate its root argument before filtering it.

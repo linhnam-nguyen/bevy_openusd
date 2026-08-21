@@ -1,179 +1,15 @@
 use bevy::mesh::Mesh3d;
 use bevy::prelude::*;
-use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::progressive_cleanup::clear_projection;
 use super::progressive_resident::resident_projection;
+use super::progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 use super::projection::{ProjectionStats, project_plan_entry, registry_of};
-use super::projection_plan::ProjectionPlan;
+use super::projection_plan::ProjectionPlanBuilder;
 use super::stage::LiveStage;
-
-/// A bounded amount of projection work for one Bevy update.
-#[derive(Resource, Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProjectionBudget {
-    /// Maximum number of plan entries to project in one update.
-    pub max_work_items: Option<usize>,
-    /// Optional wall-clock limit checked between plan entries.
-    pub max_duration: Option<Duration>,
-}
-
-impl ProjectionBudget {
-    /// Disable both limits. This is the compatibility/default mode.
-    pub const fn unlimited() -> Self {
-        Self {
-            max_work_items: None,
-            max_duration: None,
-        }
-    }
-
-    /// Limit one update to at most `items` entries.
-    pub const fn work_items(items: usize) -> Self {
-        Self {
-            max_work_items: Some(items),
-            max_duration: None,
-        }
-    }
-
-    /// Limit one update by elapsed wall-clock time.
-    pub fn time(duration: Duration) -> Self {
-        Self {
-            max_work_items: None,
-            max_duration: Some(duration),
-        }
-    }
-}
-
-impl Default for ProjectionBudget {
-    fn default() -> Self {
-        Self::unlimited()
-    }
-}
-
-/// Additive readiness state for progressive projection. This does not replace
-/// any application-level stage-load state; it only describes this projection.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ProjectionReadiness {
-    #[default]
-    Idle,
-    Planning,
-    Projecting,
-    Ready,
-    Cancelled,
-    Failed,
-}
-
-/// Session-owned progress and generation state for the initial projection.
-#[derive(Resource, Clone, Debug, Default)]
-pub struct ProgressiveProjectionState {
-    generation: u64,
-    session_id: Option<u64>,
-    readiness: ProjectionReadiness,
-    completed: usize,
-    total: usize,
-    plan: Option<ProjectionPlan>,
-    next_index: usize,
-    entities: Vec<Option<Entity>>,
-    animated: HashSet<String>,
-    started_at: Option<Instant>,
-    first_projected_prim_ms: Option<f64>,
-    first_mesh_ms: Option<f64>,
-    restart_requested: bool,
-    last_error: Option<String>,
-    cancelled_generations: u64,
-    plan_builds: u64,
-    resident_short_circuits: u64,
-    resident_validation_requested: bool,
-}
-
-impl ProgressiveProjectionState {
-    /// Current generation; a new stage session always advances it.
-    pub fn generation(&self) -> u64 {
-        self.generation
-    }
-
-    /// Current live-stage session owner.
-    pub fn session_id(&self) -> Option<u64> {
-        self.session_id
-    }
-
-    /// Current additive projection readiness.
-    pub fn readiness(&self) -> ProjectionReadiness {
-        self.readiness
-    }
-
-    /// Number of completed plan entries.
-    pub fn completed(&self) -> usize {
-        self.completed
-    }
-
-    /// Total plan entries, including the synthetic root.
-    pub fn total(&self) -> usize {
-        self.total
-    }
-
-    /// Completion ratio in `[0, 1]`.
-    pub fn progress(&self) -> f32 {
-        if self.total == 0 {
-            0.0
-        } else {
-            self.completed as f32 / self.total as f32
-        }
-    }
-
-    /// The current deterministic plan, retained for diagnostics after ready.
-    pub fn plan(&self) -> Option<&ProjectionPlan> {
-        self.plan.as_ref()
-    }
-
-    /// Time from planning start to the first projected non-root prim.
-    pub fn first_projected_prim_ms(&self) -> Option<f64> {
-        self.first_projected_prim_ms
-    }
-
-    /// Time from planning start to the first entity carrying `Mesh3d`.
-    pub fn first_mesh_ms(&self) -> Option<f64> {
-        self.first_mesh_ms
-    }
-
-    /// Number of cancelled generations in this resource lifetime.
-    pub fn cancelled_generations(&self) -> u64 {
-        self.cancelled_generations
-    }
-
-    /// Number of plans built, including reload/restart plans.
-    pub fn plan_builds(&self) -> u64 {
-        self.plan_builds
-    }
-
-    /// Number of resident-projection short circuits.
-    pub fn resident_short_circuits(&self) -> u64 {
-        self.resident_short_circuits
-    }
-
-    /// Request one validation of resident mesh/material handles on the next
-    /// ready-state update. The normal idle path remains constant-time.
-    pub fn invalidate_resident_cache(&mut self) {
-        self.resident_validation_requested = true;
-    }
-
-    /// Last planning/projection error, if any.
-    pub fn last_error(&self) -> Option<&str> {
-        self.last_error.as_deref()
-    }
-
-    /// Cancel the active generation. The next update starts a fresh plan and
-    /// clears partial entities before projecting the current stage.
-    pub fn cancel(&mut self) {
-        if self.readiness == ProjectionReadiness::Projecting {
-            self.readiness = ProjectionReadiness::Cancelled;
-            self.restart_requested = true;
-            self.cancelled_generations += 1;
-        }
-    }
-}
 
 /// The exclusive system that owns initial projection planning and draining.
 pub(super) fn project_on_load_system(world: &mut World) {
@@ -194,7 +30,11 @@ pub(super) fn project_on_load_system(world: &mut World) {
         )
     };
     let map_len = world.resource::<PrimEntities>().len();
-    if readiness == ProjectionReadiness::Projecting && has_changes {
+    if matches!(
+        readiness,
+        ProjectionReadiness::Planning | ProjectionReadiness::Projecting
+    ) && has_changes
+    {
         world
             .resource_mut::<ProgressiveProjectionState>()
             .restart_requested = true;
@@ -216,8 +56,12 @@ pub(super) fn project_on_load_system(world: &mut World) {
         return;
     }
     if state_session == Some(session_id)
-        && readiness == ProjectionReadiness::Projecting
+        && matches!(
+            readiness,
+            ProjectionReadiness::Planning | ProjectionReadiness::Projecting
+        )
         && !has_changes
+        && !restart_requested
     {
         let Some(live) = world.remove_non_send::<LiveStage>() else {
             return;
@@ -257,34 +101,34 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
         clear_projection(world, map);
     }
 
-    let plan_result = ProjectionPlan::from_stage(&live.stage);
+    let generation_started = Instant::now();
+    let plan_builder = ProjectionPlanBuilder::new(&live.stage);
+    world.remove_non_send::<ProjectionPlanBuilder>();
+    world.insert_non_send(plan_builder);
     world.insert_resource(AnimatedPrims::default());
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
     state.readiness = ProjectionReadiness::Planning;
     state.plan_builds += 1;
     state.last_error = None;
-    let Ok(plan) = plan_result else {
-        state.readiness = ProjectionReadiness::Failed;
-        state.last_error = Some("failed to build deterministic projection plan".to_string());
-        return;
-    };
     state.generation = state
         .generation
         .checked_add(1)
         .expect("projection generation exhausted");
     state.session_id = Some(session_id);
-    state.readiness = ProjectionReadiness::Projecting;
     state.completed = 0;
-    state.total = plan.len();
+    state.total = 0;
+    state.plan = None;
     state.next_index = 0;
-    state.entities = vec![None; plan.len()];
+    state.entities = vec![None];
     state.animated.clear();
-    state.started_at = Some(Instant::now());
+    state.started_at = Some(generation_started);
+    state.planning_ms = None;
+    state.planning_updates = 0;
+    state.planning_work_items = 0;
     state.first_projected_prim_ms = None;
     state.first_mesh_ms = None;
     state.restart_requested = false;
     state.resident_validation_requested = false;
-    state.plan = Some(plan);
     world.insert_resource(ProjectionStats::default());
 }
 
@@ -293,6 +137,11 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
     let started = Instant::now();
     let mut processed = 0usize;
     let registry = registry_of(world);
+    if world.contains_non_send::<ProjectionPlanBuilder>() {
+        world
+            .resource_mut::<ProgressiveProjectionState>()
+            .planning_updates += 1;
+    }
     loop {
         if budget
             .max_work_items
@@ -303,14 +152,54 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
         {
             break;
         }
+        let plan_is_finished = world
+            .get_non_send::<ProjectionPlanBuilder>()
+            .is_some_and(ProjectionPlanBuilder::is_finished);
+        if plan_is_finished {
+            finalize_plan(world);
+            continue;
+        }
+        let needs_plan_work = {
+            let next_index = world.resource::<ProgressiveProjectionState>().next_index;
+            world
+                .get_non_send::<ProjectionPlanBuilder>()
+                .is_some_and(|builder| next_index >= builder.len())
+        };
+        if needs_plan_work {
+            let result = world
+                .get_non_send_mut::<ProjectionPlanBuilder>()
+                .expect("planning state exists")
+                .advance_one();
+            processed += 1;
+            match result {
+                Ok(_) => {
+                    let discovered = world
+                        .get_non_send::<ProjectionPlanBuilder>()
+                        .map_or(0, ProjectionPlanBuilder::len);
+                    let mut state = world.resource_mut::<ProgressiveProjectionState>();
+                    state.planning_work_items += 1;
+                    state.entities.resize(discovered, None);
+                }
+                Err(error) => {
+                    fail_generation(world, error);
+                    break;
+                }
+            }
+            continue;
+        }
         let (index, entry, parent) = {
             let state = world.resource::<ProgressiveProjectionState>();
-            let Some(entry) = state
-                .plan
-                .as_ref()
-                .and_then(|plan| plan.entry(state.next_index))
-                .cloned()
-            else {
+            let entry = world
+                .get_non_send::<ProjectionPlanBuilder>()
+                .and_then(|builder| builder.entry(state.next_index))
+                .or_else(|| {
+                    state
+                        .plan
+                        .as_ref()
+                        .and_then(|plan| plan.entry(state.next_index))
+                })
+                .cloned();
+            let Some(entry) = entry else {
                 break;
             };
             let parent = entry
@@ -349,10 +238,33 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
     finish_if_ready(world, live);
 }
 
+fn finalize_plan(world: &mut World) {
+    let builder = world
+        .remove_non_send::<ProjectionPlanBuilder>()
+        .expect("finished projection planner exists");
+    let plan = builder.finish().expect("finished planner produces a plan");
+    let mut state = world.resource_mut::<ProgressiveProjectionState>();
+    state.total = plan.len();
+    state.plan = Some(plan);
+    state.readiness = ProjectionReadiness::Projecting;
+    state.planning_ms = state
+        .started_at
+        .map(|start| start.elapsed().as_secs_f64() * 1000.0);
+}
+
+fn fail_generation(world: &mut World, error: anyhow::Error) {
+    let mut state = world.resource_mut::<ProgressiveProjectionState>();
+    state.readiness = ProjectionReadiness::Failed;
+    state.last_error = Some(format!(
+        "failed to build deterministic projection plan: {error:#}"
+    ));
+    world.remove_non_send::<ProjectionPlanBuilder>();
+}
+
 fn finish_if_ready(world: &mut World, live: &LiveStage) {
     let (ready, animated, duration_ms, prims) = {
         let mut state = world.resource_mut::<ProgressiveProjectionState>();
-        let complete = state.completed == state.total;
+        let complete = state.total > 0 && state.completed == state.total;
         if !complete {
             return;
         }
