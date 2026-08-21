@@ -25,7 +25,8 @@ pub(crate) struct RendererCadence {
     local_generation: u64,
     applied_generation: u64,
     effective_encoded_fps: Option<u32>,
-    pending: Option<PendingCadence>,
+    pending_stream: Option<PendingCadence>,
+    pending_local: Option<PendingCadence>,
 }
 
 /// Result of applying a pending cadence request.
@@ -62,18 +63,17 @@ impl RendererCadence {
         self.effective_encoded_fps
     }
 
-    /// Queues a renderer command. Local commands use their own generation
-    /// namespace and therefore cannot make a browser stream update appear
-    /// stale.
+    /// Queues a renderer command without discarding an accepted stream update.
+    /// A local request has priority when both sources request a different
+    /// target; the stream request remains queued for the next application.
     pub(crate) fn request_local(&mut self, fps: Option<u32>, request_id: String) -> bool {
         self.local_generation = self.local_generation.saturating_add(1);
         self.requested_fps = fps;
         if self.effective_renderer_target_fps == fps {
-            self.pending = None;
             return false;
         }
 
-        self.pending = Some(PendingCadence {
+        self.pending_local = Some(PendingCadence {
             fps,
             generation: self.local_generation,
             request_id: Some(request_id),
@@ -89,7 +89,7 @@ impl RendererCadence {
         }
         self.latest_stream_generation = generation;
         self.requested_fps = fps;
-        self.pending = Some(PendingCadence {
+        self.pending_stream = Some(PendingCadence {
             fps,
             generation,
             request_id: None,
@@ -98,7 +98,13 @@ impl RendererCadence {
     }
 
     pub(crate) fn apply_pending(&mut self) -> Option<AppliedCadence> {
-        let pending = self.pending.take()?;
+        // A typed renderer command is the explicit local authority for its
+        // own request. A stream request is never overwritten: if local wins,
+        // the accepted stream cadence remains queued and is applied next.
+        let pending = self
+            .pending_local
+            .take()
+            .or_else(|| self.pending_stream.take())?;
         let changed = self.effective_renderer_target_fps != pending.fps;
         self.effective_renderer_target_fps = pending.fps;
         self.applied_generation = pending.generation;
@@ -200,6 +206,32 @@ mod tests {
         assert!(!cadence.request_stream(Some(120), 1));
         assert_eq!(cadence.requested_fps(), Some(30));
         assert_eq!(cadence.apply_pending().unwrap().fps, Some(30));
+    }
+
+    #[test]
+    fn accepted_stream_fps_survives_a_same_frame_local_request() {
+        let mut cadence = RendererCadence::new(Some(60));
+
+        assert!(cadence.request_stream(Some(120), 2));
+        assert!(!cadence.request_local(Some(60), "presentation-1".to_owned()));
+
+        let applied = cadence
+            .apply_pending()
+            .expect("stream cadence must remain queued");
+        assert_eq!(applied.fps, Some(120));
+        assert_eq!(applied.request_id, None);
+        assert_eq!(cadence.effective_renderer_target_fps(), Some(120));
+    }
+
+    #[test]
+    fn local_fps_has_explicit_priority_but_does_not_discard_stream_fps() {
+        let mut cadence = RendererCadence::new(Some(60));
+
+        assert!(cadence.request_stream(Some(120), 2));
+        assert!(cadence.request_local(Some(30), "presentation-1".to_owned()));
+
+        assert_eq!(cadence.apply_pending().unwrap().fps, Some(30));
+        assert_eq!(cadence.apply_pending().unwrap().fps, Some(120));
     }
 
     #[test]

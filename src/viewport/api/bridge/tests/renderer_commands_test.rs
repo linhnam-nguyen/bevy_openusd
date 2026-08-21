@@ -248,4 +248,31 @@ mod tests {
             ViewportEvent::PresentationChanged { presentation } if !presentation.renderer.grid
         ));
     }
+
+    #[test]
+    fn pending_stream_fps_survives_a_same_frame_renderer_command() {
+        let mut app = command_test_app();
+        app.insert_resource(RendererCadence::new(Some(60)))
+            .add_systems(
+                Update,
+                apply_pending_renderer_cadence.after(apply_viewport_commands),
+            );
+        app.world_mut()
+            .resource_mut::<RendererCadence>()
+            .request_stream(Some(120), 2);
+        app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration {
+                configuration: RendererConfiguration::default(),
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<RendererCadence>()
+                .effective_renderer_target_fps(),
+            Some(120)
+        );
+    }
 }
