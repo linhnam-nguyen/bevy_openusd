@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use openusd::usd::Stage;
+use std::time::Duration;
 
 use crate::live::{
     LiveStage, LiveStagePlugin, PrimEntities, ProjectionPlan, ProjectionReadiness,
@@ -188,4 +189,144 @@ fn ready_queue_short_circuits_without_rebuilding_the_plan() {
         .resource::<crate::live::ProgressiveProjectionState>();
     assert_eq!(second.plan_builds(), first.plan_builds());
     assert_eq!(second.resident_short_circuits(), 1);
+}
+
+fn run_until_ready(app: &mut App) {
+    for _ in 0..32 {
+        if app
+            .world()
+            .resource::<crate::live::ProgressiveProjectionState>()
+            .readiness()
+            == ProjectionReadiness::Ready
+        {
+            return;
+        }
+        app.update();
+    }
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    panic!(
+        "progressive projection did not become ready: completed={} total={} readiness={:?}",
+        state.completed(),
+        state.total(),
+        state.readiness()
+    );
+}
+
+#[test]
+fn work_budget_projects_one_entry_per_update_and_reaches_final_equality() {
+    let stage = hierarchy_stage();
+    let expected = ProjectionPlan::from_stage(&stage).expect("expected plan builds");
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_resource(crate::live::ProjectionBudget::work_items(1));
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+
+    app.update();
+    let partial = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(partial.completed(), 1, "one root entry is projected first");
+    assert_eq!(partial.readiness(), ProjectionReadiness::Projecting);
+    assert_eq!(app.world().resource::<PrimEntities>().len(), 1);
+
+    run_until_ready(&mut app);
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(state.completed(), expected.len());
+    assert_eq!(state.progress(), 1.0);
+    assert_eq!(app.world().resource::<PrimEntities>().len(), expected.len());
+}
+
+#[test]
+fn explicit_time_budget_can_yield_without_consuming_work() {
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_resource(crate::live::ProjectionBudget::time(Duration::ZERO));
+    app.world_mut()
+        .insert_non_send(LiveStage::new(hierarchy_stage()));
+    app.update();
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(state.completed(), 0);
+    assert_eq!(state.readiness(), ProjectionReadiness::Projecting);
+}
+
+#[test]
+fn cancellation_discards_partial_generation_and_restarts() {
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_resource(crate::live::ProjectionBudget::work_items(1));
+    app.world_mut()
+        .insert_non_send(LiveStage::new(hierarchy_stage()));
+    app.update();
+    let old_generation = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>()
+        .generation();
+    app.world_mut()
+        .resource_mut::<crate::live::ProgressiveProjectionState>()
+        .cancel();
+    assert_eq!(
+        app.world()
+            .resource::<crate::live::ProgressiveProjectionState>()
+            .readiness(),
+        ProjectionReadiness::Cancelled
+    );
+
+    app.update();
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(state.generation(), old_generation + 1);
+    assert_eq!(state.cancelled_generations(), 1);
+    assert_eq!(state.completed(), 1);
+    run_until_ready(&mut app);
+}
+
+#[test]
+fn reload_midway_cancels_old_session_and_never_mixes_paths() {
+    let replacement = UsdSnippet::new(
+        r#"#usda 1.0
+def Xform "Reloaded"
+{
+    def Xform "Child"
+    {
+    }
+}
+"#,
+    )
+    .open_stage()
+    .expect("replacement stage opens");
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_resource(crate::live::ProjectionBudget::work_items(1));
+    app.world_mut()
+        .insert_non_send(LiveStage::new(hierarchy_stage()));
+    app.update();
+    let old_session = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>()
+        .session_id();
+
+    app.world_mut().insert_non_send(LiveStage::new(replacement));
+    app.update();
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_ne!(state.session_id(), old_session);
+    assert_eq!(state.completed(), 1);
+    assert_eq!(app.world().resource::<PrimEntities>().entity("/A"), None);
+    assert!(app.world().resource::<PrimEntities>().entity("/").is_some());
+
+    run_until_ready(&mut app);
+    let paths = sorted_paths(app.world().resource::<PrimEntities>());
+    assert_eq!(paths, vec!["/", "/Reloaded", "/Reloaded/Child"]);
 }

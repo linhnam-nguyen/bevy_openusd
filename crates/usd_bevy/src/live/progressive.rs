@@ -191,6 +191,19 @@ pub(super) fn project_on_load_system(world: &mut World) {
             .resident_short_circuits += 1;
         return;
     }
+    if state.session_id == Some(session_id)
+        && state.readiness == ProjectionReadiness::Projecting
+        && !has_changes
+    {
+        let Some(live) = world.remove_non_send::<LiveStage>() else {
+            return;
+        };
+        let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
+        drain_generation(world, &live, &mut map);
+        world.insert_resource(map);
+        world.insert_non_send(live);
+        return;
+    }
     let needs_start = state.session_id != Some(session_id)
         || state.restart_requested
         || (state.readiness == ProjectionReadiness::Idle && map_len == 0)
@@ -259,7 +272,7 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
             .is_some_and(|limit| processed >= limit)
             || budget
                 .max_duration
-                .is_some_and(|limit| processed > 0 && started.elapsed() >= limit)
+                .is_some_and(|limit| started.elapsed() >= limit)
         {
             break;
         }
