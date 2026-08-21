@@ -35,7 +35,10 @@ pub use route::geom::{UsdDisplayName, UsdKind, UsdLocalExtent, UsdPurpose};
 pub use route::physics::{
     UsdCollider, UsdDrives, UsdJoint, UsdLimits, UsdMass, UsdPhysicsJoint, UsdRigidBody,
 };
-pub use route::profile::{GeometryProfile, GeometryProfileRecord, GeometryProfileTotals};
+pub use route::profile::{
+    GeometryInterpolation, GeometryProfile, GeometryProfileRecord, GeometryProfileTotals,
+    GeometrySubdivisionClass, GeometryTopologyClass,
+};
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
 pub use snippet::UsdSnippet;

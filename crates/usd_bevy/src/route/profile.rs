@@ -7,6 +7,83 @@
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
+/// Compact, allocation-free interpolation classification for profile output.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum GeometryInterpolation {
+    #[default]
+    Absent,
+    Constant,
+    Uniform,
+    Varying,
+    Vertex,
+    FaceVarying,
+}
+
+/// Source topology classification before triangulation.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum GeometryTopologyClass {
+    #[default]
+    Empty,
+    Triangles,
+    Quads,
+    Ngons,
+    Mixed,
+}
+
+/// Authored subdivision scheme classification.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum GeometrySubdivisionClass {
+    #[default]
+    None,
+    CatmullClark,
+    Loop,
+    Bilinear,
+}
+
+impl From<crate::read::geom::Interpolation> for GeometryInterpolation {
+    fn from(value: crate::read::geom::Interpolation) -> Self {
+        match value {
+            crate::read::geom::Interpolation::Constant => Self::Constant,
+            crate::read::geom::Interpolation::Uniform => Self::Uniform,
+            crate::read::geom::Interpolation::Varying => Self::Varying,
+            crate::read::geom::Interpolation::Vertex => Self::Vertex,
+            crate::read::geom::Interpolation::FaceVarying => Self::FaceVarying,
+        }
+    }
+}
+
+impl From<crate::read::geom::SubdivScheme> for GeometrySubdivisionClass {
+    fn from(value: crate::read::geom::SubdivScheme) -> Self {
+        match value {
+            crate::read::geom::SubdivScheme::None => Self::None,
+            crate::read::geom::SubdivScheme::CatmullClark => Self::CatmullClark,
+            crate::read::geom::SubdivScheme::Loop => Self::Loop,
+            crate::read::geom::SubdivScheme::Bilinear => Self::Bilinear,
+        }
+    }
+}
+
+pub fn classify_topology(counts: &[i32]) -> GeometryTopologyClass {
+    let mut saw_triangles = false;
+    let mut saw_quads = false;
+    let mut saw_ngons = false;
+    for &count in counts {
+        match count {
+            3 => saw_triangles = true,
+            4 => saw_quads = true,
+            0..=2 => {}
+            _ => saw_ngons = true,
+        }
+    }
+    match (saw_triangles, saw_quads, saw_ngons) {
+        (false, false, false) => GeometryTopologyClass::Empty,
+        (true, false, false) => GeometryTopologyClass::Triangles,
+        (false, true, false) => GeometryTopologyClass::Quads,
+        (false, false, true) => GeometryTopologyClass::Ngons,
+        _ => GeometryTopologyClass::Mixed,
+    }
+}
+
 /// One profiled USD mesh conversion.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct GeometryProfileRecord {
@@ -28,6 +105,14 @@ pub struct GeometryProfileRecord {
     pub generated_normals: bool,
     pub expanded_vertices: bool,
     pub cache_hit: bool,
+    pub uv_interpolation: GeometryInterpolation,
+    pub indexed_primvars: usize,
+    pub expanded_primvars: usize,
+    pub display_color: bool,
+    pub display_opacity: bool,
+    pub topology_class: GeometryTopologyClass,
+    pub subdivision: GeometrySubdivisionClass,
+    pub vertex_source_ratio: f64,
 }
 
 impl GeometryProfileRecord {
@@ -57,6 +142,16 @@ pub struct GeometryProfileTotals {
     pub output_vertices: usize,
     pub output_indices: usize,
     pub output_triangles: usize,
+    pub authored_normal_meshes: usize,
+    pub generated_normal_meshes: usize,
+    pub indexed_primvars: usize,
+    pub expanded_primvars: usize,
+    pub display_color_meshes: usize,
+    pub display_opacity_meshes: usize,
+    pub vertex_source_ratio_sum: f64,
+    pub topology_counts: [usize; 5],
+    pub subdivision_counts: [usize; 4],
+    pub uv_interpolation_counts: [usize; 6],
 }
 
 /// Opt-in bounded geometry profiler.
@@ -92,6 +187,16 @@ impl GeometryProfile {
         totals.mesh_count += 1;
         totals.cache_hits += usize::from(sample.cache_hit);
         totals.cache_misses += usize::from(!sample.cache_hit);
+        totals.authored_normal_meshes += usize::from(sample.authored_normals);
+        totals.generated_normal_meshes += usize::from(sample.generated_normals);
+        totals.indexed_primvars += sample.indexed_primvars;
+        totals.expanded_primvars += sample.expanded_primvars;
+        totals.display_color_meshes += usize::from(sample.display_color);
+        totals.display_opacity_meshes += usize::from(sample.display_opacity);
+        totals.vertex_source_ratio_sum += sample.vertex_source_ratio;
+        totals.topology_counts[topology_index(sample.topology_class)] += 1;
+        totals.subdivision_counts[subdivision_index(sample.subdivision)] += 1;
+        totals.uv_interpolation_counts[interpolation_index(sample.uv_interpolation)] += 1;
         totals.read_mesh_ms += sample.read_mesh_ms;
         totals.mesh_from_usd_ms += sample.mesh_from_usd_ms;
         totals.topology_triangulation_ms += sample.topology_triangulation_ms;
@@ -118,6 +223,36 @@ impl GeometryProfile {
                 .then_with(|| right.output_vertices.cmp(&left.output_vertices))
         });
         self.records.truncate(self.top_n);
+    }
+}
+
+fn interpolation_index(value: GeometryInterpolation) -> usize {
+    match value {
+        GeometryInterpolation::Absent => 0,
+        GeometryInterpolation::Constant => 1,
+        GeometryInterpolation::Uniform => 2,
+        GeometryInterpolation::Varying => 3,
+        GeometryInterpolation::Vertex => 4,
+        GeometryInterpolation::FaceVarying => 5,
+    }
+}
+
+fn topology_index(value: GeometryTopologyClass) -> usize {
+    match value {
+        GeometryTopologyClass::Empty => 0,
+        GeometryTopologyClass::Triangles => 1,
+        GeometryTopologyClass::Quads => 2,
+        GeometryTopologyClass::Ngons => 3,
+        GeometryTopologyClass::Mixed => 4,
+    }
+}
+
+fn subdivision_index(value: GeometrySubdivisionClass) -> usize {
+    match value {
+        GeometrySubdivisionClass::None => 0,
+        GeometrySubdivisionClass::CatmullClark => 1,
+        GeometrySubdivisionClass::Loop => 2,
+        GeometrySubdivisionClass::Bilinear => 3,
     }
 }
 

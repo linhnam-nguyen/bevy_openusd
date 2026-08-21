@@ -6,6 +6,9 @@ use std::time::Instant;
 use super::normals::compute_point_smooth_normals;
 use super::primvar::{corner_color, corner_normal, corner_uv, expand_vertex_primvar};
 use super::triangulation::triangulate_polygon;
+use crate::route::profile::{
+    GeometryInterpolation, GeometrySubdivisionClass, GeometryTopologyClass, classify_topology,
+};
 
 /// Convert a `crate::read::geom::ReadMesh` into a Bevy mesh.
 ///
@@ -36,6 +39,14 @@ pub struct MeshBuildMetrics {
     pub authored_normals: bool,
     pub generated_normals: bool,
     pub expanded_vertices: bool,
+    pub uv_interpolation: GeometryInterpolation,
+    pub indexed_primvars: usize,
+    pub expanded_primvars: usize,
+    pub display_color: bool,
+    pub display_opacity: bool,
+    pub topology_class: GeometryTopologyClass,
+    pub subdivision: GeometrySubdivisionClass,
+    pub vertex_source_ratio: f64,
 }
 
 /// Profiled form of [`mesh_from_usd`].
@@ -66,6 +77,45 @@ fn build_mesh(
             .iter()
             .map(|count| (*count).max(0) as usize)
             .sum();
+        (**metrics).uv_interpolation = read
+            .uvs
+            .as_ref()
+            .map(|primvar| primvar.interpolation.into())
+            .unwrap_or_default();
+        (**metrics).indexed_primvars = [
+            read.normals.as_ref().map(|p| p.interpolation),
+            read.uvs.as_ref().map(|p| p.interpolation),
+            read.display_color.as_ref().map(|p| p.interpolation),
+            read.display_opacity.as_ref().map(|p| p.interpolation),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|interpolation| {
+            matches!(
+                interpolation,
+                Interpolation::Constant | Interpolation::Varying | Interpolation::Vertex
+            )
+        })
+        .count();
+        (**metrics).expanded_primvars = [
+            read.normals.as_ref().map(|p| p.interpolation),
+            read.uvs.as_ref().map(|p| p.interpolation),
+            read.display_color.as_ref().map(|p| p.interpolation),
+            read.display_opacity.as_ref().map(|p| p.interpolation),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|interpolation| {
+            matches!(
+                interpolation,
+                Interpolation::Uniform | Interpolation::FaceVarying
+            )
+        })
+        .count();
+        (**metrics).display_color = read.display_color.is_some();
+        (**metrics).display_opacity = read.display_opacity.is_some();
+        (**metrics).topology_class = classify_topology(&read.face_vertex_counts);
+        (**metrics).subdivision = read.subdivision_scheme.into();
     }
     // Face-Varying or Uniform (per-face) primvars break the indexed
     // point-sharing optimisation — vertex-indexed output can't represent
@@ -109,6 +159,11 @@ fn build_mesh(
         metrics.authored_normals = normals.is_some();
         metrics.generated_normals = normals.is_none();
         metrics.expanded_vertices = expand;
+        metrics.vertex_source_ratio = if metrics.source_points == 0 {
+            0.0
+        } else {
+            metrics.output_vertices as f64 / metrics.source_points as f64
+        };
     }
 
     let mut mesh = Mesh::new(

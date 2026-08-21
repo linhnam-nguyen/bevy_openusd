@@ -141,6 +141,14 @@ impl MeshRoute {
                     generated_normals: build_metrics.generated_normals,
                     expanded_vertices: build_metrics.expanded_vertices,
                     cache_hit: intern_metrics.cache_hit,
+                    uv_interpolation: build_metrics.uv_interpolation,
+                    indexed_primvars: build_metrics.indexed_primvars,
+                    expanded_primvars: build_metrics.expanded_primvars,
+                    display_color: build_metrics.display_color,
+                    display_opacity: build_metrics.display_opacity,
+                    topology_class: build_metrics.topology_class,
+                    subdivision: build_metrics.subdivision,
+                    vertex_source_ratio: build_metrics.vertex_source_ratio,
                 });
         }
         let material = world
