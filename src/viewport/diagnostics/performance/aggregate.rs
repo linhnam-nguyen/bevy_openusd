@@ -1,6 +1,7 @@
 //! Aggregation functions and structured benchmark report schema.
 
 use serde::{Deserialize, Serialize};
+use viewport_streaming::FrameTransportSnapshot;
 
 use super::sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, SCHEMA_VERSION};
 use super::scenario::SteadyStateExpectations;
@@ -51,6 +52,10 @@ pub struct WebRtcReportSummary {
     pub first_authoritative_event_published_frame: Option<u64>,
     pub captured_frames: u64,
     pub frame_queue_drops: u64,
+    /// Cross-thread render/readback/encode counters. Older reports may omit
+    /// this field while the legacy counters above remain available.
+    #[serde(default)]
+    pub frame_transport: FrameTransportSnapshot,
 }
 
 /// Renderer and encoder cadence are reported independently so a stream cap

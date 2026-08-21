@@ -259,7 +259,7 @@ fn nanos_to_ms(value: u64) -> Option<f64> {
 }
 
 /// Serializable snapshot used by benchmark reports and checkpoint artifacts.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct FrameTransportSnapshot {
     pub last_queued_sequence: u64,
     pub last_encoded_sequence: u64,
@@ -315,5 +315,29 @@ mod tests {
         assert_eq!(snapshot.captured_frames, 0);
         assert_eq!(snapshot.queued_frames, 0);
         assert_eq!(snapshot.encoder_pushed, 0);
+    }
+
+    #[test]
+    fn capture_queue_and_generation_drops_are_reported_separately() {
+        let metrics = FrameTransportMetrics::default();
+        let trace = metrics.next_trace();
+        metrics.record_readback_completion();
+        metrics.record_captured(128, true);
+        metrics.record_queued(trace);
+        metrics.record_queue_full_drop();
+        metrics.record_generation_drop();
+        metrics.record_encoder_queue_drop();
+        metrics.record_disconnected_drop();
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.readback_completions, 1);
+        assert_eq!(snapshot.captured_frames, 1);
+        assert_eq!(snapshot.queued_frames, 1);
+        assert_eq!(snapshot.queue_full_drops, 1);
+        assert_eq!(snapshot.readback_repacked_frames, 1);
+        assert_eq!(snapshot.generation_drops, 1);
+        assert_eq!(snapshot.encoder_queue_drops, 1);
+        assert_eq!(snapshot.disconnected_drops, 1);
+        assert_eq!(snapshot.readback_copy_bytes, 128);
     }
 }
