@@ -3,8 +3,7 @@ use openusd::usd::Stage;
 use std::time::Duration;
 
 use crate::live::{
-    LiveStage, LiveStagePlugin, PrimEntities, ProjectionPlan, ProjectionReadiness,
-    collect_stage_subtree_paths, project_stage,
+    LiveStage, LiveStagePlugin, PrimEntities, ProjectionPlan, ProjectionReadiness, project_stage,
 };
 use crate::prim_ref::UsdPrimRef;
 use crate::snippet::UsdSnippet;
@@ -32,79 +31,6 @@ def Xform "B"
     )
     .open_stage()
     .expect("hierarchy stage opens")
-}
-
-#[test]
-fn projection_plan_is_deterministic_and_parent_before_child() {
-    let stage = hierarchy_stage();
-    let first = ProjectionPlan::from_stage(&stage).expect("first plan builds");
-    let second = ProjectionPlan::from_stage(&stage).expect("second plan builds");
-    assert_eq!(first, second);
-    assert_eq!(
-        first.paths().collect::<Vec<_>>(),
-        vec!["/", "/A", "/B", "/Z", "/A/Leaf", "/Z/Child"]
-    );
-    for (index, entry) in first.entries().enumerate() {
-        if let Some(parent) = entry.parent_index() {
-            assert!(parent < index, "parent must precede {}", entry.path());
-            assert_eq!(
-                first.entry(parent).expect("parent entry").path(),
-                match entry.path() {
-                    "/A" | "/B" | "/Z" => "/",
-                    "/A/Leaf" => "/A",
-                    "/Z/Child" => "/Z",
-                    path => panic!("unexpected path {path}"),
-                }
-            );
-        }
-    }
-}
-
-#[test]
-fn projection_plan_matches_the_canonical_traversal_predicate() {
-    let stage = hierarchy_stage();
-    let plan = ProjectionPlan::from_stage(&stage).expect("plan builds");
-    let mut traversed = collect_stage_subtree_paths(&stage, "/").expect("paths collect");
-    traversed.sort();
-    let mut planned = plan.paths().skip(1).map(str::to_owned).collect::<Vec<_>>();
-    planned.sort();
-    assert_eq!(planned, traversed);
-}
-
-#[test]
-fn projection_plan_keeps_unloaded_payload_prim_as_placeholder_work() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "World"
-{
-    def "PayloadPrim" (
-        payload = @./sub.usda@</Sub>
-    )
-    {
-    }
-}
-"#,
-    )
-    .open_stage()
-    .expect("payload stage opens");
-    stage.unload(openusd::sdf::path("/World/PayloadPrim").expect("payload prim path"));
-    let plan = ProjectionPlan::from_stage(&stage).expect("payload plan builds");
-    assert!(plan.paths().any(|path| path == "/World/PayloadPrim"));
-    assert!(
-        !stage
-            .prim(openusd::sdf::path("/World/PayloadPrim").unwrap())
-            .is_loaded()
-            .expect("payload load state is readable")
-    );
-}
-
-#[test]
-fn subtree_plan_preserves_root_and_parent_relation() {
-    let stage = hierarchy_stage();
-    let plan = ProjectionPlan::from_subtree(&stage, "/A").expect("subtree plan builds");
-    assert_eq!(plan.paths().collect::<Vec<_>>(), vec!["/", "/A", "/A/Leaf"]);
-    assert_eq!(plan.entry(1).unwrap().parent_index(), Some(0));
-    assert_eq!(plan.entry(2).unwrap().parent_index(), Some(1));
 }
 
 fn animated_stage() -> Stage {
@@ -406,6 +332,9 @@ def Cube "Cube"
     app.world_mut()
         .resource_mut::<Assets<Mesh>>()
         .remove(mesh.id());
+    app.world_mut()
+        .resource_mut::<crate::live::ProgressiveProjectionState>()
+        .invalidate_resident_cache();
 
     app.update();
     let state = app

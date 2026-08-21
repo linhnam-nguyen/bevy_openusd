@@ -6,6 +6,8 @@ mod change;
 mod index;
 mod path;
 mod progressive;
+mod progressive_cleanup;
+mod progressive_resident;
 mod projection;
 mod projection_plan;
 mod reconcile;

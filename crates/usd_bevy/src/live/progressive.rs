@@ -1,15 +1,15 @@
 use bevy::mesh::Mesh3d;
-use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::progressive_cleanup::clear_projection;
+use super::progressive_resident::resident_projection;
 use super::projection::{ProjectionStats, project_plan_entry, registry_of};
 use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
-use crate::prim_ref::SemanticEntityIndex;
 
 /// A bounded amount of projection work for one Bevy update.
 #[derive(Resource, Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,6 +85,7 @@ pub struct ProgressiveProjectionState {
     cancelled_generations: u64,
     plan_builds: u64,
     resident_short_circuits: u64,
+    resident_validation_requested: bool,
 }
 
 impl ProgressiveProjectionState {
@@ -152,6 +153,12 @@ impl ProgressiveProjectionState {
         self.resident_short_circuits
     }
 
+    /// Request one validation of resident mesh/material handles on the next
+    /// ready-state update. The normal idle path remains constant-time.
+    pub fn invalidate_resident_cache(&mut self) {
+        self.resident_validation_requested = true;
+    }
+
     /// Last planning/projection error, if any.
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
@@ -176,26 +183,40 @@ pub(super) fn project_on_load_system(world: &mut World) {
     else {
         return;
     };
-    let state = world.resource::<ProgressiveProjectionState>().clone();
+    let (state_session, readiness, restart_requested, total, validate_resident) = {
+        let state = world.resource::<ProgressiveProjectionState>();
+        (
+            state.session_id,
+            state.readiness,
+            state.restart_requested,
+            state.total,
+            state.resident_validation_requested,
+        )
+    };
     let map_len = world.resource::<PrimEntities>().len();
-    if state.readiness == ProjectionReadiness::Projecting && has_changes {
+    if readiness == ProjectionReadiness::Projecting && has_changes {
         world
             .resource_mut::<ProgressiveProjectionState>()
             .restart_requested = true;
         return;
     }
-    let resident = state.session_id == Some(session_id)
-        && state.readiness == ProjectionReadiness::Ready
-        && state.total == map_len
-        && resident_projection(world, world.resource::<PrimEntities>(), &state);
+    let resident = state_session == Some(session_id)
+        && readiness == ProjectionReadiness::Ready
+        && total == map_len
+        && (!validate_resident
+            || resident_projection(
+                world,
+                world.resource::<PrimEntities>(),
+                world.resource::<ProgressiveProjectionState>(),
+            ));
     if resident {
-        world
-            .resource_mut::<ProgressiveProjectionState>()
-            .resident_short_circuits += 1;
+        let mut state = world.resource_mut::<ProgressiveProjectionState>();
+        state.resident_short_circuits += 1;
+        state.resident_validation_requested = false;
         return;
     }
-    if state.session_id == Some(session_id)
-        && state.readiness == ProjectionReadiness::Projecting
+    if state_session == Some(session_id)
+        && readiness == ProjectionReadiness::Projecting
         && !has_changes
     {
         let Some(live) = world.remove_non_send::<LiveStage>() else {
@@ -207,11 +228,11 @@ pub(super) fn project_on_load_system(world: &mut World) {
         world.insert_non_send(live);
         return;
     }
-    let needs_start = state.session_id != Some(session_id)
-        || state.restart_requested
-        || (state.readiness == ProjectionReadiness::Idle && map_len == 0)
-        || (state.readiness == ProjectionReadiness::Cancelled && !has_changes)
-        || (state.readiness == ProjectionReadiness::Ready && !resident);
+    let needs_start = state_session != Some(session_id)
+        || restart_requested
+        || (readiness == ProjectionReadiness::Idle && map_len == 0)
+        || (readiness == ProjectionReadiness::Cancelled && !has_changes)
+        || (readiness == ProjectionReadiness::Ready && !resident);
     if !needs_start || has_changes {
         return;
     }
@@ -262,6 +283,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     state.first_projected_prim_ms = None;
     state.first_mesh_ms = None;
     state.restart_requested = false;
+    state.resident_validation_requested = false;
     state.plan = Some(plan);
     world.insert_resource(ProjectionStats::default());
 }
@@ -270,6 +292,7 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
     let budget = *world.resource::<ProjectionBudget>();
     let started = Instant::now();
     let mut processed = 0usize;
+    let registry = registry_of(world);
     loop {
         if budget
             .max_work_items
@@ -295,7 +318,6 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                 .and_then(|parent| state.entities.get(parent).copied().flatten());
             (state.next_index, entry, parent)
         };
-        let registry = registry_of(world);
         let entity = project_plan_entry(world, &live.stage, &registry, map, &entry, parent);
         let is_mesh = world.get::<Mesh3d>(entity).is_some();
         if entry.path() != "/"
@@ -358,64 +380,4 @@ fn finish_if_ready(world: &mut World, live: &LiveStage) {
             "progressive USD stage projection ready"
         );
     }
-}
-
-fn clear_projection(world: &mut World, map: &mut PrimEntities) {
-    let mut entities: Vec<(String, Entity)> = map
-        .iter()
-        .map(|(path, entity)| (path.to_string(), entity))
-        .collect();
-    entities.sort_by(|(left, _), (right, _)| {
-        right
-            .matches('/')
-            .count()
-            .cmp(&left.matches('/').count())
-            .then_with(|| right.cmp(left))
-    });
-    for (path, entity) in entities {
-        if let Some(mut semantic) = world.get_resource_mut::<SemanticEntityIndex>() {
-            semantic.remove_entity(entity);
-        }
-        if let Some(mut materials) =
-            world.get_resource_mut::<crate::route::material::MaterialConsumerIndex>()
-        {
-            materials.remove_consumer(&path);
-        }
-        world.despawn(entity);
-        map.remove_path(&path);
-    }
-}
-
-fn resident_projection(
-    world: &World,
-    map: &PrimEntities,
-    state: &ProgressiveProjectionState,
-) -> bool {
-    let Some(plan) = state.plan.as_ref() else {
-        return false;
-    };
-    plan.entries().all(|entry| {
-        let Some(entity) = map.entity(entry.path()) else {
-            return false;
-        };
-        let Some(prim) = world.get::<crate::prim_ref::UsdPrimRef>(entity) else {
-            return false;
-        };
-        if prim.path != entry.path() {
-            return false;
-        }
-        if let Some(mesh) = world.get::<Mesh3d>(entity)
-            && let Some(assets) = world.get_resource::<Assets<Mesh>>()
-            && !assets.contains(&mesh.0)
-        {
-            return false;
-        }
-        if let Some(material) = world.get::<MeshMaterial3d<StandardMaterial>>(entity)
-            && let Some(assets) = world.get_resource::<Assets<StandardMaterial>>()
-            && !assets.contains(&material.0)
-        {
-            return false;
-        }
-        true
-    })
 }

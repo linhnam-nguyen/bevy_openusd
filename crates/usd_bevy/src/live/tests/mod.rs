@@ -7,5 +7,6 @@ mod mesh_patch;
 mod paths;
 mod payload;
 mod progressive;
+mod progressive_plan;
 mod reconcile;
 mod stage;
