@@ -92,7 +92,15 @@ def wait_for_signaling_server(host: str = "127.0.0.1", port: int = 8080, timeout
     return False
 
 
-def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
+def validate_client_evidence(
+    path: Path,
+    server_report_path: Path,
+    scenario_id: str,
+    run_id: str,
+    requested_width: int,
+    requested_height: int,
+    requested_fps: int,
+):
     if not path.exists():
         raise ValueError(
             f"client harness did not write the required evidence artifact: {path}"
@@ -168,6 +176,12 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
     if any(stream_configuration.get(field) is None for field in required_configuration_fields):
         raise ValueError("client evidence must report the complete stream configuration chain")
     if (
+        stream_configuration["requested_width"] != requested_width
+        or stream_configuration["requested_height"] != requested_height
+        or stream_configuration["requested_fps"] != requested_fps
+    ):
+        raise ValueError("client evidence request does not match the matrix case")
+    if (
         stream_configuration["requested_width"] != stream_configuration["accepted_width"]
         or stream_configuration["requested_height"] != stream_configuration["accepted_height"]
         or stream_configuration["requested_fps"] != stream_configuration["accepted_fps"]
@@ -206,6 +220,25 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
             raise ValueError("S15 requires separate orbit/pan and zoom/dolly input phases")
     elif evidence["command_sent"] is not False:
         raise ValueError(f"{scenario_id} must not claim an unconfigured client command")
+
+    if not server_report_path.exists():
+        raise ValueError(f"server report is missing for client evidence: {server_report_path}")
+    try:
+        server_report = json.loads(server_report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid server report {server_report_path}: {error}") from error
+    server_identity = server_report.get("identity", {})
+    server_cadence = server_report.get("renderer_cadence", {})
+    configured_encoder_fps = server_cadence.get("configured_encoder_fps")
+    if (
+        server_identity.get("width") != requested_width
+        or server_identity.get("height") != requested_height
+        or server_identity.get("requested_fps") != requested_fps
+        or configured_encoder_fps != requested_fps
+    ):
+        raise ValueError(
+            "server launch or encoder configuration does not match the client request"
+        )
 
 def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, label: str = "baseline", release: bool = True, force_headless: bool = False, fixture_override: str = None, client_command: str = None, stream_width: int = None, stream_height: int = None, stream_fps: int = None):
     info = SCENARIOS.get(scenario_id)
@@ -328,7 +361,15 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
                 print(f"Client harness failed for {scenario_id} with exit code {client_returncode}", file=sys.stderr)
                 return False
             try:
-                validate_client_evidence(client_evidence_path, scenario_id, run_id)
+                validate_client_evidence(
+                    client_evidence_path,
+                    Path(output_path),
+                    scenario_id,
+                    run_id,
+                    stream_width,
+                    stream_height,
+                    stream_fps,
+                )
             except ValueError as error:
                 print(str(error), file=sys.stderr)
                 return False
