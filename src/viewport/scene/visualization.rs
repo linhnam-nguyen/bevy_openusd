@@ -808,6 +808,111 @@ mod tests {
     }
 
     #[test]
+    fn full_renderer_configuration_matrix_preserves_each_independent_option() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_plugins(bevy::asset::AssetPlugin::default())
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            .insert_resource(DisplayToggles::default())
+            .insert_resource(GroundGrid {
+                visible: true,
+                ..default()
+            })
+            .init_resource::<EdgeOverlayCache>()
+            .init_resource::<EdgeOverlayStats>()
+            .insert_resource(bevy::pbr::wireframe::WireframeConfig::default())
+            .add_systems(
+                Update,
+                (
+                    sync_ground_grid_visibility,
+                    capture_original_shadow_settings,
+                    apply_shadow_toggle,
+                    apply_wireframe_toggle,
+                    sync_edge_overlays,
+                )
+                    .chain(),
+            );
+
+        let material = app
+            .world_mut()
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        app.insert_resource(EdgeOverlayMaterial(material));
+        let source_mesh = app
+            .world_mut()
+            .resource_mut::<Assets<Mesh>>()
+            .add(triangle_mesh());
+        let source = app
+            .world_mut()
+            .spawn((UsdPrimRef::new("/Triangle"), Mesh3d(source_mesh)))
+            .id();
+        let light = app
+            .world_mut()
+            .spawn(DirectionalLight {
+                shadow_maps_enabled: true,
+                ..default()
+            })
+            .id();
+
+        // Establish the authored shadow baseline and the initial edge cache.
+        app.update();
+
+        for grid in [false, true] {
+            for shadows in [false, true] {
+                for edges in [false, true] {
+                    for render_mode in [RenderMode::Shaded, RenderMode::Wireframe] {
+                        app.world_mut().resource_mut::<DisplayToggles>().renderer =
+                            RendererConfiguration {
+                                grid,
+                                shadows,
+                                edges,
+                                render_mode,
+                                preferred_fps: Some(60),
+                            };
+                        app.update();
+
+                        assert_eq!(
+                            app.world().resource::<GroundGrid>().visible,
+                            grid,
+                            "grid={grid} shadows={shadows} edges={edges} mode={render_mode:?}"
+                        );
+                        assert_eq!(
+                            app.world()
+                                .get::<DirectionalLight>(light)
+                                .unwrap()
+                                .shadow_maps_enabled,
+                            shadows,
+                            "grid={grid} shadows={shadows} edges={edges} mode={render_mode:?}"
+                        );
+                        assert_eq!(
+                            app.world()
+                                .resource::<bevy::pbr::wireframe::WireframeConfig>()
+                                .global,
+                            render_mode == RenderMode::Wireframe,
+                            "grid={grid} shadows={shadows} edges={edges} mode={render_mode:?}"
+                        );
+                        assert_eq!(
+                            app.world().resource::<EdgeOverlayStats>().enabled,
+                            edges,
+                            "grid={grid} shadows={shadows} edges={edges} mode={render_mode:?}"
+                        );
+
+                        if edges {
+                            let child = edge_child(app.world(), source)
+                                .expect("enabled edges must retain a cached overlay child");
+                            assert_eq!(
+                                app.world().get::<Visibility>(child),
+                                Some(&Visibility::Inherited)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn edge_overlay_is_independent_from_wireframe_for_all_four_combinations() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
