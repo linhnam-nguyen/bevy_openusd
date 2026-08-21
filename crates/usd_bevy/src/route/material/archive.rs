@@ -222,6 +222,7 @@ pub(super) fn read_texture_bytes(
         manifest_dir.join(texture_path),
         manifest_dir.join("assets").join(texture_path),
         manifest_dir.join("assets/external").join(texture_path),
+        manifest_dir.join("../..").join(texture_path),
         PathBuf::from(texture_path),
         PathBuf::from("assets").join(texture_path),
         PathBuf::from("assets/external").join(texture_path),

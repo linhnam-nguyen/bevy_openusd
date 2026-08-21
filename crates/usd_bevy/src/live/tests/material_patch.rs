@@ -21,6 +21,7 @@ const NETWORK_RED_BOX: &str = "/World/RedBox";
 const NETWORK_RED_BALL: &str = "/World/RedBall";
 const NETWORK_GREEN: &str = "/World/GreenCylinder";
 const NETWORK_RED_SURFACE: &str = "/World/SharedShaders/RedSurface";
+const NETWORK_RED_ALBEDO: &str = "/World/SharedShaders/RedAlbedo";
 
 fn build_app() -> App {
     build_app_for("materials.usda")
@@ -123,6 +124,16 @@ fn set_network_shader_roughness(app: &mut App, roughness: f32) {
     apply_pending(app);
 }
 
+fn set_network_texture_path(app: &mut App, path: &str) {
+    let live = app.world().get_non_send::<LiveStage>().expect("stage");
+    live.stage
+        .prim(openusd::sdf::path(NETWORK_RED_ALBEDO).unwrap())
+        .attribute("inputs:file")
+        .set(Value::AssetPath(path.into()))
+        .expect("texture path authoring succeeds");
+    apply_pending(app);
+}
+
 #[test]
 fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     let mut app = build_app();
@@ -206,6 +217,39 @@ fn external_shader_and_texture_edits_follow_real_network_dependencies() {
     assert_ne!(red_after_shader, red_before);
     assert_ne!(red_ball_after_shader, red_ball_before);
     assert_eq!(material_handle(&app, NETWORK_GREEN), green_before);
+
+    app.world_mut()
+        .resource_mut::<crate::route::material::UsdMaterialCache>()
+        .reset_stats();
+    app.world_mut()
+        .resource_mut::<crate::route::material::UsdTextureCache>()
+        .reset_stats();
+    set_network_texture_path(
+        &mut app,
+        "assets/external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png",
+    );
+
+    assert_ne!(material_handle(&app, NETWORK_RED_BOX), red_after_shader);
+    assert_ne!(
+        material_handle(&app, NETWORK_RED_BALL),
+        red_ball_after_shader
+    );
+    assert_eq!(material_handle(&app, NETWORK_GREEN), green_before);
+    let material_stats = app
+        .world()
+        .resource::<crate::route::material::UsdMaterialCache>()
+        .stats();
+    let texture_stats = app
+        .world()
+        .resource::<crate::route::material::UsdTextureCache>()
+        .stats();
+    assert_eq!(material_stats.lookups, 2);
+    assert_eq!(material_stats.misses, 1);
+    assert_eq!(material_stats.hits, 1);
+    assert_eq!(texture_stats.lookups, 1);
+    assert_eq!(texture_stats.misses, 1);
+    assert_eq!(texture_stats.hits, 0);
+    assert_eq!(texture_stats.decode_calls, 1);
 }
 
 #[test]
