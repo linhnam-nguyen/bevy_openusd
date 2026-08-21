@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{RenderMesh, allocator::allocate_and_free_meshes};
 use bevy::render::render_asset::{ExtractedAssets, RenderAsset, prepare_assets};
-use bevy::render::{MainWorld, Render, RenderApp};
+use bevy::render::{ExtractSchedule, MainWorld, Render, RenderApp};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -33,7 +33,9 @@ pub(super) fn install(app: &mut App) {
         return;
     };
     render_app
+        .init_resource::<GeometryRenderPreparation>()
         .init_resource::<GeometryRenderPreparationWindow>()
+        .add_systems(ExtractSchedule, extract_geometry_render_preparation)
         .add_systems(
             Render,
             begin_geometry_render_preparation.before(allocate_and_free_meshes),
@@ -66,7 +68,7 @@ fn begin_geometry_render_preparation(
 
 fn finish_geometry_render_preparation(
     mut window: ResMut<GeometryRenderPreparationWindow>,
-    mut main_world: ResMut<MainWorld>,
+    mut report: ResMut<GeometryRenderPreparation>,
 ) {
     let Some(started_at) = window.started_at.take() else {
         return;
@@ -77,11 +79,18 @@ fn finish_geometry_render_preparation(
     window.prepared_meshes = 0;
     window.prepared_bytes = 0;
 
-    let Some(mut report) = main_world.get_resource_mut::<GeometryRenderPreparation>() else {
-        return;
-    };
     report.render_mesh_prepare_upload_ms += elapsed_ms;
     report.render_prepared_meshes += prepared_meshes;
     report.render_prepared_bytes += prepared_bytes;
     report.render_prepare_windows += 1;
+}
+
+fn extract_geometry_render_preparation(
+    render_report: Res<GeometryRenderPreparation>,
+    mut main_world: ResMut<MainWorld>,
+) {
+    let Some(mut main_report) = main_world.get_resource_mut::<GeometryRenderPreparation>() else {
+        return;
+    };
+    *main_report = *render_report;
 }
