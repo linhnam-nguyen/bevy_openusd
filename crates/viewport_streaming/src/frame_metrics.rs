@@ -3,11 +3,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-/// Monotonic identity and capture timestamp carried with one raw frame.
+/// Monotonic identity and render/readback timestamps carried with one raw frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameTrace {
     pub sequence: u64,
+    /// Timestamp assigned before the frame enters the Bevy render schedule.
     pub timestamp_ns: u64,
+    /// Timestamp assigned when the corresponding GPU readback completes.
+    pub readback_timestamp_ns: Option<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -61,6 +64,7 @@ struct FrameTransportMetricsInner {
     queued_frames: AtomicU64,
     queue_full_drops: AtomicU64,
     invalid_readbacks: AtomicU64,
+    readback_identity_misses: AtomicU64,
     readback_copy_bytes: AtomicU64,
     readback_repacked_frames: AtomicU64,
     generation_drops: AtomicU64,
@@ -96,6 +100,7 @@ impl Default for FrameTransportMetrics {
                 queued_frames: AtomicU64::new(0),
                 queue_full_drops: AtomicU64::new(0),
                 invalid_readbacks: AtomicU64::new(0),
+                readback_identity_misses: AtomicU64::new(0),
                 readback_copy_bytes: AtomicU64::new(0),
                 readback_repacked_frames: AtomicU64::new(0),
                 generation_drops: AtomicU64::new(0),
@@ -112,10 +117,27 @@ impl Default for FrameTransportMetrics {
 }
 
 impl FrameTransportMetrics {
-    pub fn next_trace(&self) -> FrameTrace {
+    /// Allocates identity at the render boundary, before GPU work begins.
+    pub fn next_render_trace(&self) -> FrameTrace {
         FrameTrace {
             sequence: self.inner.next_sequence.fetch_add(1, Ordering::Relaxed) + 1,
             timestamp_ns: self.timestamp_ns(),
+            readback_timestamp_ns: None,
+        }
+    }
+
+    /// Compatibility alias for callers that do not own the render boundary.
+    /// Production readback uses [`Self::next_render_trace`] through the
+    /// `FrameReadbackCorrelation` resource instead.
+    pub fn next_trace(&self) -> FrameTrace {
+        self.next_render_trace()
+    }
+
+    /// Attaches the completion timestamp without allocating a new pixel buffer.
+    pub fn mark_readback_complete(&self, trace: FrameTrace) -> FrameTrace {
+        FrameTrace {
+            readback_timestamp_ns: Some(self.timestamp_ns()),
+            ..trace
         }
     }
 
@@ -136,6 +158,12 @@ impl FrameTransportMetrics {
 
     pub fn record_invalid_readback(&self) {
         self.inner.invalid_readbacks.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_readback_identity_miss(&self) {
+        self.inner
+            .readback_identity_misses
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_captured(&self, bytes: usize, repacked: bool) {
@@ -208,6 +236,7 @@ impl FrameTransportMetrics {
             &self.inner.queued_frames,
             &self.inner.queue_full_drops,
             &self.inner.invalid_readbacks,
+            &self.inner.readback_identity_misses,
             &self.inner.readback_copy_bytes,
             &self.inner.readback_repacked_frames,
             &self.inner.generation_drops,
@@ -234,6 +263,7 @@ impl FrameTransportMetrics {
             queued_frames: self.inner.queued_frames.load(Ordering::Relaxed),
             queue_full_drops: self.inner.queue_full_drops.load(Ordering::Relaxed),
             invalid_readbacks: self.inner.invalid_readbacks.load(Ordering::Relaxed),
+            readback_identity_misses: self.inner.readback_identity_misses.load(Ordering::Relaxed),
             readback_copy_bytes: self.inner.readback_copy_bytes.load(Ordering::Relaxed),
             readback_repacked_frames: self.inner.readback_repacked_frames.load(Ordering::Relaxed),
             generation_drops: self.inner.generation_drops.load(Ordering::Relaxed),
@@ -268,6 +298,8 @@ pub struct FrameTransportSnapshot {
     pub queued_frames: u64,
     pub queue_full_drops: u64,
     pub invalid_readbacks: u64,
+    #[serde(default)]
+    pub readback_identity_misses: u64,
     pub readback_copy_bytes: u64,
     pub readback_repacked_frames: u64,
     pub generation_drops: u64,

@@ -5,7 +5,9 @@ use viewport_protocol::CodecId;
 pub(crate) mod frame_capture;
 pub(crate) mod webrtc;
 
-pub(crate) use frame_capture::{FrameCapturePlugin, FrameTransportResource};
+pub(crate) use frame_capture::{
+    FrameCapturePlugin, FrameReadbackCorrelation, FrameTransportResource,
+};
 
 /// The delivered viewport transport enabled for this launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

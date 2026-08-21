@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use std::time::Instant;
 
 use crate::viewport::app::cadence::RendererCadence;
+use crate::viewport::transport::FrameReadbackCorrelation;
 
 /// Runtime counters for renderer frame pacing, incident diagnostics, WebRTC, and ECS health.
 #[derive(Resource, Debug, Clone)]
@@ -247,8 +248,14 @@ fn percentile(sorted: &[f64], pct: f64) -> f64 {
 }
 
 /// Marks frame start instant in the `First` schedule.
-pub fn start_frame_timing_system(mut counters: ResMut<RendererCounters>) {
+pub fn start_frame_timing_system(
+    mut counters: ResMut<RendererCounters>,
+    mut readback_correlation: Option<ResMut<FrameReadbackCorrelation>>,
+) {
     counters.frame_start_instant = Some(Instant::now());
+    if let Some(ref mut correlation) = readback_correlation {
+        correlation.push_render_trace();
+    }
 }
 
 /// Collects frame CPU duration and inter-frame wall-clock delta in the `Last` schedule.

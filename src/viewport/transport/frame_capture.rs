@@ -7,8 +7,9 @@ use crate::viewport::app::headless::OffscreenTarget;
 use bevy::prelude::*;
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::renderer::RenderDevice;
+use std::collections::VecDeque;
 use std::sync::{Arc, mpsc::SyncSender};
-use viewport_streaming::{FrameTransportMetrics, VideoFrame};
+use viewport_streaming::{FrameTrace, FrameTransportMetrics, VideoFrame};
 
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
 #[derive(Resource)]
@@ -18,6 +19,34 @@ pub struct FrameCaptureSink {
 
 #[derive(Resource, Clone)]
 pub(crate) struct FrameTransportResource(pub FrameTransportMetrics);
+
+/// FIFO correlation between a render-start identity and Bevy's asynchronous
+/// readback completion stream. Bevy submits one readback for this entity per
+/// render frame and drains completions in submission order.
+#[derive(Resource)]
+pub(crate) struct FrameReadbackCorrelation {
+    metrics: FrameTransportMetrics,
+    pending: VecDeque<FrameTrace>,
+}
+
+impl FrameReadbackCorrelation {
+    pub(crate) fn new(metrics: FrameTransportMetrics) -> Self {
+        Self {
+            metrics,
+            pending: VecDeque::with_capacity(8),
+        }
+    }
+
+    pub(crate) fn push_render_trace(&mut self) {
+        self.pending.push_back(self.metrics.next_render_trace());
+    }
+
+    pub(crate) fn take_readback_trace(&mut self) -> Option<FrameTrace> {
+        self.pending
+            .pop_front()
+            .map(|trace| self.metrics.mark_readback_complete(trace))
+    }
+}
 
 /// Frame capture plugin that registers the frame extraction system in the render schedule.
 pub struct FrameCapturePlugin {
@@ -31,6 +60,7 @@ impl Plugin for FrameCapturePlugin {
             sender: self.sender.clone(),
         })
         .insert_resource(FrameTransportResource(self.metrics.clone()))
+        .insert_resource(FrameReadbackCorrelation::new(self.metrics.clone()))
         .add_systems(Startup, setup_frame_readback);
     }
 }
@@ -43,7 +73,11 @@ fn setup_frame_readback(
     let metrics = metrics.0.clone();
     commands
         .spawn(Readback::texture(target.image_handle.clone()))
-        .observe(move |mut event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
+        .observe(move |mut event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut correlation: ResMut<FrameReadbackCorrelation>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
+            let Some(trace) = correlation.take_readback_trace() else {
+                metrics.record_readback_identity_miss();
+                return;
+            };
             metrics.record_readback_completion();
             if event.data.is_empty() {
                 metrics.record_invalid_readback();
@@ -66,7 +100,6 @@ fn setup_frame_readback(
                 return;
             };
 
-            let trace = metrics.next_trace();
             metrics.record_captured(readback_bytes, repacked);
             let frame = VideoFrame {
                 rgba: Arc::new(rgba),
@@ -122,8 +155,30 @@ fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(V
 
 #[cfg(test)]
 mod tests {
-    use super::unpack_rgba_readback;
+    use super::{FrameReadbackCorrelation, unpack_rgba_readback};
     use bevy::render::renderer::RenderDevice;
+    use viewport_streaming::FrameTransportMetrics;
+
+    #[test]
+    fn render_identity_survives_asynchronous_readback_completion() {
+        let metrics = FrameTransportMetrics::default();
+        let mut correlation = FrameReadbackCorrelation::new(metrics);
+
+        correlation.push_render_trace();
+        correlation.push_render_trace();
+
+        let first = correlation
+            .take_readback_trace()
+            .expect("first render trace must match first readback");
+        let second = correlation
+            .take_readback_trace()
+            .expect("second render trace must match second readback");
+
+        assert_eq!(first.sequence, 1);
+        assert_eq!(second.sequence, 2);
+        assert!(first.readback_timestamp_ns.is_some());
+        assert!(second.readback_timestamp_ns.is_some());
+    }
 
     #[test]
     fn strips_gpu_row_padding_from_rgba_readback() {
