@@ -21,12 +21,12 @@ candidate runtime. With five warmup and 30 measured frames:
 
 | Metric | M9 baseline | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| Median CPU frame ms | 2.746 | 2.781 | +1.27% |
-| P95 CPU frame ms | 3.514 | 3.342 | -4.90% |
-| Actual renderer FPS | 50.321 | 50.695 | +0.74% |
+| Median CPU frame ms | 3.199 | 3.290 | +2.84% |
+| P95 CPU frame ms | 3.510 | 3.891 | +10.87% |
+| Actual renderer FPS | 45.045 | 43.585 | -3.24% |
 | GPU median / p95 | null / null | null / null | unavailable on headless path |
 
-The comparison reports an observed maximum regression of 1.27%. An optional
+The comparison reports an observed maximum regression of 10.87%. An optional
 relative gate is available through `--max-regression-percent` or
 `USDHUB_M10_MAX_REGRESSION_PERCENT`; the universal absolute FPS floor remains
 disabled by default.

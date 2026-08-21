@@ -16,7 +16,6 @@ use bevy::render::render_resource::TextureFormat;
 use openusd::gf::Vec3f;
 use openusd::sdf::Value;
 use openusd::usd::Stage;
-use serde::Serialize;
 use usd_bevy::route::cache::ProjectionCache;
 use usd_bevy::route::material::{UsdMaterialCache, UsdTextureCache};
 use usd_bevy::{
@@ -24,54 +23,12 @@ use usd_bevy::{
     ProjectionReadiness, UsdPlugin, author_transform,
 };
 
+#[path = "m10_persistent_soak_support.rs"]
+mod support;
+
+use support::{BoundSummary, CycleSample, PersistentSoakArtifact};
+
 const DEFAULT_CYCLES: usize = 12;
-
-#[derive(Debug, Serialize)]
-struct CycleSample {
-    cycle: usize,
-    fixture: String,
-    session_id: u64,
-    resize_generation: u64,
-    resize_width: u32,
-    resize_height: u32,
-    projected_prims: usize,
-    mesh_assets: usize,
-    material_assets: usize,
-    image_assets: usize,
-    projection_cache_meshes: usize,
-    projection_cache_sources: usize,
-    material_cache_entries: usize,
-    texture_cache_entries: usize,
-    point_instancer_full_projects: u64,
-    point_instancer_sparse_transform_patches: u64,
-    point_instancer_spawns: u64,
-    point_instancer_despawns: u64,
-    projection_ms: Option<f64>,
-}
-
-#[derive(Debug, Serialize)]
-struct BoundSummary {
-    metric: &'static str,
-    all_cycles_min: usize,
-    all_cycles_max: usize,
-    steady_cycles_min: usize,
-    steady_cycles_max: usize,
-    bounded: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct PersistentSoakArtifact {
-    schema: &'static str,
-    checkpoint: &'static str,
-    build_profile: &'static str,
-    process_id: u32,
-    cycle_count: usize,
-    persistent_app: bool,
-    workload_sequence: Vec<&'static str>,
-    bounds: Vec<BoundSummary>,
-    samples: Vec<CycleSample>,
-    passed: bool,
-}
 
 fn root_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)

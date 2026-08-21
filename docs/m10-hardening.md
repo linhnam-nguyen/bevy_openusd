@@ -30,15 +30,15 @@ states and 3/3 cadence states on the same Apple M4 / Metal identity.
 
 | Metric | M9 baseline | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| Median CPU frame ms | 2.746 | 2.781 | +1.27% |
-| P95 CPU frame ms | 3.514 | 3.342 | -4.90% |
-| Actual renderer FPS | 50.321 | 50.695 | +0.74% |
+| Median CPU frame ms | 3.199 | 3.290 | +2.84% |
+| P95 CPU frame ms | 3.510 | 3.891 | +10.87% |
+| Actual renderer FPS | 45.045 | 43.585 | -3.24% |
 | GPU median / p95 | null / null | null / null | unavailable headless |
 
 The machine-readable comparison is
 `target/benchmark/m10-c2-kitchen-comparison.json`; it contains the exact
 baseline/candidate Git SHAs, fixture hash, matrix counts, effective state
-checks, and the configurable observed-regression value of 1.27%.
+checks, and the configurable observed-regression value of 10.87%.
 
 ## C3+ complete load/edit matrix
 
@@ -87,9 +87,12 @@ make bench-render-smoke
 
 `make harden` includes formatting, source-size, no-default checks/tests,
 strict Clippy, all-feature/all-target tests, and the corrected deterministic
-checker. `make bench-render-smoke` produces the fresh final S1 artifact at
-`target/benchmark/m10-c6-render-smoke.json`; its exact values are read from
-that machine-readable report in the final handoff.
+checker. The fresh smoke artifact at
+`target/benchmark/m10-c6-render-smoke.json` recorded committed-tip identity,
+1920×1080@60 requested/effective state, 49.579 actual renderer FPS, 2.593 ms
+median CPU frame time, 3.287 ms p95 CPU frame time, zero grid structural
+rebuilds, zero extent scans, zero semantic snapshot clones, and 20 semantic
+idle skips. GPU timestamps remain null on the headless path.
 
 GPU timestamps remain unavailable on the headless offscreen path, and RSS is
 reported for the cargo/test process tree. These are explicit evidence limits,
