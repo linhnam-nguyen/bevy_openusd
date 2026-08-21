@@ -1,156 +1,198 @@
-# M9 streaming latency and frame transport — correction packet
+# M9 streaming latency and frame transport — final correction packet
 
-M9 correction status: **COMPLETE / AWAITING REVIEW**.
+M9 status: **COMPLETE / AWAITING REVIEW**.
 
-This packet supersedes the earlier M9 freeze note. The earlier C6 packet was
-not sufficient because its connected run had server-side transport evidence
-but no decoded-browser completion artifact. This correction keeps the
-renderer, readback, queue, encoder, and client data planes separate and adds
-the missing production client proof.
+This packet supersedes the previously rejected M9 candidate. M10 remains
+blocked until the milestone review is complete.
 
-## Effective revisions
+## Pinned revisions
 
-Backend (`bevy_openusd`, `develop/optimisation-rendering`):
+```text
+bevy_openusd  caa26d773ad3bda5de40240d1d51bb9b59ab705b
+UsdHubUI      f6289b9083d81699bd25857ff5930484756480dc
+bevy_glacial  424c97b057fc9b9521b020fffa132ee3d022cf6b
+```
+
+The accepted inherited chain remains visible:
 
 ```text
 M9-C1+    332faca  correlate render identity with readback
 M9-C2+    44d9cfe  measure readback and encoder push stages
-M9-C3     8fecef3  retained from the accepted M9 chain; no new change
+M9-C3     8fecef3  no change recommended
 M9-C4+    96a2010  test production frame-router saturation
 M9-C5+    d39d674  require real browser video evidence
 M9-C5+++  f446bb6  report incomplete client diagnostics
-M9-C1++   c541517  keep media PTS on the readback clock; runtime check rejected
-M9-C1+++  38a02cf  restore the live appsrc media clock
+M9-C1++   c541517  readback-clock PTS trial; rejected by live evidence
+M9-C1+++  38a02cf  restore live appsrc media clock
 ```
 
-The effective backend revision for the final packet is:
+The final correction checkpoints are:
 
 ```text
-38a02cfc5b95192c28a72ba52d7705d29151b30b
+bevy_openusd
+M9-C1++++ 8fbcf44  bound readback correlation and fail closed on overflow
+M9-C2++   4eb4945  report aggregate measured renderer FPS
+M9-C4++   5872ba9  split oversized router and benchmark sources
+M9-C5++++ 9f6f94c  verify the production-client configuration matrix
+M9-C5+++++ caa26d7  cross-check client evidence against server encoder config
+
+UsdHubUI
+M9-C4++   2d307f2  split benchmark collector sources
+M9-C5++++ f6289b9  capture requested/accepted/applied/decoded stream evidence
 ```
 
-The final UI revision is:
+## C1 — bounded readback identity
+
+`FrameReadbackCorrelation` now has a bounded pending capacity of eight. It
+records correlation overflow and high-water telemetry. When the bound is
+exceeded it clears pending identities and fails closed until outstanding GPU
+readbacks drain; later completions never receive fabricated or mismatched
+identities. The live `appsrc` media clock from M9-C1+++ remains authoritative
+for media PTS.
+
+Focused coverage proves the overflow path is bounded and does not increment
+identity-miss telemetry until the production callback observes the dropped
+completion.
+
+## C2 — aggregate renderer cadence
+
+`RendererCadenceSummary.actual_rendered_fps` now uses the measured-window
+aggregate `timing.actual_renderer_fps`, not the last instantaneous counter.
+Renderer, readback, and encoder-push cadence remain separate values.
+
+The final S12 server report recorded:
 
 ```text
-4aac298446657877e4453a2960f985a7f3e03b2d
+requested/effective renderer target: 60 / 60 FPS
+actual rendered FPS:                 51.6407
+actual readback FPS:                 52.3346
+actual encoder-push FPS:             52.3346
+readbacks / queued / encoder pushes: 120 / 120 / 120
+queue, generation, encoder, and disconnect drops: 0
+readback identity misses / overflows: 0 / 0
+correlation high-water:              4
 ```
 
-The Glacial dependency remains pinned to:
+## C4 — bounded routing and source layout
+
+The production frame router still uses bounded, non-blocking video queues;
+reliable control traffic remains independent of video saturation. The router
+tests cover a slow encoder, saturation, stale generations, disconnect, and
+reconnect.
+
+The changed metrics, router, runner, and benchmark collector modules were
+split into focused files. The corrected source files are below 400 lines, and
+no visibility was widened to achieve the split.
+
+## C5 — real-client configuration chain
+
+The benchmark runner now executes every requested matrix case and records no
+case as supported by silently skipping it. The final matrix artifact is:
 
 ```text
-424c97b057fc9b9521b020fffa132ee3d022cf6b
+target/benchmark/m9-matrix-caa26d7-f6289b9/configuration-matrix.json
 ```
 
-## Correction results
-
-### C1 — identity and live media timing
-
-Render identity is assigned before readback completion and correlated through
-the bounded readback queue. Missing correlations are counted and do not create
-a replacement identity after readback. `FrameTrace` remains the source of
-sequence and latency metrics.
-
-The first correction attempted to use the readback timestamp as live media
-PTS. A real S12 client run still delivered only one video frame, so that
-revision was rejected by runtime evidence. `M9-C1+++` restores the live
-`appsrc` media clock while retaining the trace for correlation and metrics.
-This is the effective transport fix: the browser now receives a continuous
-decoded stream.
-
-### C2 — stage accounting
-
-The backend reports renderer cadence separately from readback and encoder
-push cadence, and records render→readback, readback→queue,
-readback→encoder-queue, readback→encoder-worker, and readback→encoder-push
-latencies. The final connected S12–S18 runs each completed 120 readbacks,
-120 queued frames, 120 encoder submissions, and 120 pushes. Every connected
-scenario reported zero queue-full drops, generation drops, encoder queue drops,
-encoder failures, disconnect drops, and readback identity misses.
-
-For S12–S18, renderer cadence was 41.30–55.40 FPS, while measured readback
-and encoder-push cadence was 45.68–48.34 FPS. In S12, the stage averages were:
+All nine cases passed through the actual Tauri/WebRTC client:
 
 ```text
-render→readback             44.9775 ms   max 50.4836 ms
-readback→queue               0.1842 ms   max  0.4573 ms
-readback→encoder queue       0.1955 ms   max  0.5155 ms
-readback→encoder worker      0.2001 ms   max  0.5288 ms
-readback→encoder push        0.3842 ms   max  0.7240 ms
+1280×720   @ 30, 60, 120 FPS
+1920×1080  @ 30, 60, 120 FPS
+2560×1440  @ 30, 60, 120 FPS
+unsupported cases: []
 ```
 
-### C4 — bounded production routing
-
-The production `FrameRouter` is exercised with a slow fake encoder. Saturation
-is non-blocking and bounded, stale generations are rejected, disconnect and
-reconnect are covered, and reliable control traffic remains independent of
-video overload. The focused `viewport_streaming` library suite passed all 53
-tests.
-
-### C5 — real client completion evidence
-
-The actual UsdHubUI/Tauri/WebRTC client harness now requires a received and
-decoded browser video frame with positive dimensions. It records decoded
-dimensions/FPS, decode and total delay, RTT/jitter where reported, dropped
-frames, and explicit completion blockers. Missing client data is persisted as a
-diagnostic sidecar instead of being inferred or silently treated as success.
-
-The effective C1+++ media-clock revision was required for the live client
-completion path. The seven S12–S18 client artifacts report:
+Each client artifact proves:
 
 ```text
-decoded dimensions       1440 × 960 in every scenario
-decoded FPS              46.91–48.00
-frames during measure    138–145
-dropped frames           0 in every scenario
-completion blockers      [] in every scenario
+frontend request
+  == accepted stream metrics
+  == applied Bevy/VideoFrame dimensions and FPS
+  == encoder configuration
+  == decoded browser dimensions
 ```
 
-### C6 — final release packet
+The browser’s measured decoded FPS is allowed to be below the requested FPS.
+For example, the 1280×720@120 matrix case decoded at approximately 104.90 FPS,
+while the accepted/applied configuration remained 1280×720@120.
 
-The exact release suite was rerun after the effective backend correction:
+The misleading client field `total_delay_ms` was renamed to
+`estimated_network_plus_decode_ms`. It represents decoder time plus half the
+observed WebRTC RTT; it is not an end-to-end capture-to-display measurement.
+
+## C6 — final release evidence
+
+The exact frozen suite was rerun after all final correction commits:
 
 ```text
-python3 scripts/render_bench.py --all --warmup 30 --frames 120 \
-  --output-dir target/benchmark/m9-final-c541517-4aac298 \
-  --label m9-final-correction \
-  --client-command <fresh Trunk + Tauri WebRTC client command>
+target/benchmark/m9-final-caa26d7-f6289b9
 ```
 
-All S1–S24 scenarios passed. The two Kitchen variants also passed:
+Contents:
 
 ```text
-target/benchmark/m9-final-c541517-4aac298/kitchen-grid-on.json
-target/benchmark/m9-final-c541517-4aac298/kitchen-grid-off.json
+24 server reports: S1–S24
+7 real client reports: S12–S18
+2 Kitchen reports: kitchen-grid-on.json and kitchen-grid-off.json
 ```
 
-The output directory contains 24 server reports, seven real client reports
-for S12–S18, and the two Kitchen reports. S1–S24 remain the authoritative
-release matrix; no unavailable client values are inferred for renderer-only or
-isolation scenarios.
+The final S12 client artifact contains:
 
-The final client artifacts are pinned to the backend/UI revisions above. The
-server reports include renderer FPS, readback FPS, encoder-push FPS, frame
-counts, drop counters, copy/repack counts, and all measured transport stages.
-The client reports include decoded browser dimensions/FPS, decode/total delay,
-RTT/jitter observations, dropped frames, lifecycle readiness, and blockers.
+```json
+{
+  "decoded": "1920x1080",
+  "decoded_fps": 51.94805,
+  "estimated_network_plus_decode_ms": 1.9369866,
+  "dropped_frames": 0,
+  "requested": "1920x1080@60",
+  "accepted": "1920x1080@60",
+  "applied": "1920x1080@60",
+  "completion_blockers": []
+}
+```
+
+The seven final connected scenarios all decoded 1920×1080 video with zero
+drops and empty completion blockers:
+
+| Scenario | Decoded FPS | Measured frames | Requested = accepted = applied |
+| --- | ---: | ---: | --- |
+| S12 | 51.95 | 104 | 1920×1080@60 |
+| S13 | 52.95 | 105 | 1920×1080@60 |
+| S14 | 52.00 | 104 | 1920×1080@60 |
+| S15 | 52.00 | 105 | 1920×1080@60 |
+| S16 | 48.95 | 151 | 1920×1080@60 |
+| S17 | 52.00 | 151 | 1920×1080@60 |
+| S18 | 53.00 | 105 | 1920×1080@60 |
+
+Both Kitchen variants passed with configuration and steady-state evidence:
+
+```text
+kitchen-grid-on:  actual renderer FPS 60.0191
+kitchen-grid-off: actual renderer FPS 60.0552
+```
 
 ## Self-gates
 
-Passed before this packet was committed:
+Passed after the final correction commits, including the paired server/client
+configuration cross-check:
 
 ```text
-cargo test -p viewport_streaming --lib                         53 passed
-cargo check -p usdview --tests                                 passed
-cargo test -p usd_hub_desktop                                  96 passed
+cargo test -p viewport_streaming                         53 passed
+cargo check -p usdview --tests                           passed
+cargo test -p usd_hub_desktop                            96 passed
 cargo check -p usd_hub_desktop --target wasm32-unknown-unknown passed
-cargo check --manifest-path UsdHubUI/src-tauri/Cargo.toml      passed
-python3 scripts/render_bench.py --all ...                      S1–S24 passed
-Kitchen grid-on/grid-off benchmark                            passed
-git diff --check                                               passed
+cargo check --manifest-path UsdHubUI/src-tauri/Cargo.toml passed
+env -u NO_COLOR pnpm frontend:build                      passed
+python benchmark syntax check                             passed
+real-client S12 configuration matrix                      9/9 passed
+real-client S1–S24 release suite                         24/24 passed
+Kitchen grid-on/grid-off                                 passed
+git diff --check                                          passed
 ```
 
-The existing GStreamer plugin-scanner warnings and inherited workspace lint
-debt remain visible; neither caused a gate failure. No `Instance2` directory
-was inspected or modified.
+Existing GStreamer plugin-scanner warnings, inherited workspace formatting
+differences, and inherited lint debt remain visible; none caused a gate
+failure. No frontend workaround or `Instance2` path was inspected or
+modified.
 
 **M9 status: COMPLETE / AWAITING REVIEW. M10 has not started.**
