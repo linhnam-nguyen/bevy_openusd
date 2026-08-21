@@ -5,7 +5,9 @@ mod author;
 mod change;
 mod index;
 mod path;
+mod progressive;
 mod projection;
+mod projection_plan;
 mod reconcile;
 mod stage;
 mod system;
@@ -18,7 +20,9 @@ pub use path::{
     is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
     validate_prim_path,
 };
+pub use progressive::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
+pub use projection_plan::{ProjectionPlan, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
 pub use stage::LiveStage;
@@ -29,7 +33,7 @@ use bevy::prelude::*;
 use crate::prim_ref::SemanticEntityIndex;
 use crate::route::{SchemaRegistry, StageTime};
 use animation::{SampledTime, resample_animation_system};
-use projection::project_on_load_system;
+use progressive::project_on_load_system;
 use system::{
     AppliedPurposes, apply_display_purposes_system, drain_stage_changes_system,
     reproject_from_batch_system,
@@ -42,6 +46,8 @@ pub struct LiveStagePlugin;
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PrimEntities>()
+            .init_resource::<ProjectionBudget>()
+            .init_resource::<ProgressiveProjectionState>()
             .init_resource::<SemanticEntityIndex>()
             .init_resource::<PendingStageChanges>()
             .init_resource::<ReconcileStats>()

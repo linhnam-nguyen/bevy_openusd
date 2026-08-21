@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
+use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
 use crate::prim_ref::UsdPrimRef;
 use crate::route::SchemaRegistry;
@@ -93,43 +94,33 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     let start = std::time::Instant::now();
     let stage = &live.stage;
     let registry = registry_of(world);
-    let root = world
-        .spawn((
-            UsdPrimRef {
-                path: "/".to_string(),
-            },
-            Transform::from_rotation(stage_up_axis(stage)),
-            Visibility::default(),
-        ))
-        .id();
-    map.insert("/", root);
-
-    let mut prim_count = 0usize;
+    let Ok(plan) = ProjectionPlan::from_stage(stage) else {
+        bevy::log::error!("[projection] failed to build deterministic projection plan");
+        return;
+    };
     let mut animated: HashSet<String> = HashSet::new();
     let traversal_start = std::time::Instant::now();
-    let _ = stage.traverse(traverse_predicate(), |path: &openusd::sdf::Path| {
-        let parent = map.entity(parent_path(path.as_str())).unwrap_or(root);
-        let entity = world
-            .spawn((
-                UsdPrimRef {
-                    path: path.as_str().to_string(),
-                },
-                ChildOf(parent),
-            ))
-            .id();
-        map.insert(path.as_str().to_string(), entity);
-        prim_count += 1;
-        if prim_is_animated(stage, path) {
-            animated.insert(path.as_str().to_string());
+    for entry in plan.entries() {
+        let parent = entry
+            .parent_index()
+            .and_then(|_| map.entity(parent_path(entry.path())))
+            .or_else(|| map.entity("/"));
+        let entity = project_plan_entry(world, stage, &registry, map, entry, parent);
+        if entry.path() != "/"
+            && openusd::sdf::path(entry.path())
+                .ok()
+                .is_some_and(|path| prim_is_animated(stage, &path))
+        {
+            animated.insert(entry.path().to_string());
         }
-        registry.project_prim(stage, path, world, entity);
-    });
+        let _ = entity;
+    }
     let traversal_duration = traversal_start.elapsed().as_secs_f64() * 1000.0;
     let duration = start.elapsed().as_secs_f64() * 1000.0;
 
     bevy::log::info!(
         session = live.session_id(),
-        prims = prim_count,
+        prims = plan.len().saturating_sub(1),
         animated = animated.len(),
         duration_ms = duration,
         "projected USD stage"
@@ -137,7 +128,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     world.insert_resource(AnimatedPrims(animated));
     world.insert_resource(ProjectionStats {
         initial_projection_ms: Some(duration),
-        initial_projection_prims: prim_count as u64,
+        initial_projection_prims: plan.len().saturating_sub(1) as u64,
         stage_traversal_ms: Some(traversal_duration),
         mesh_generation_ms: None,
         primvar_expansion_ms: None,
@@ -147,21 +138,40 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     let _ = live.drain_change_batch();
 }
 
-/// One-shot projection the first frame a `LiveStage` is present.
-pub(super) fn project_on_load_system(world: &mut World) {
-    if world.get_non_send::<LiveStage>().is_none() {
-        return;
-    }
-    if let Some(map) = world.get_resource::<PrimEntities>() {
-        if !map.is_empty() {
-            return;
-        }
-    }
-    let Some(live) = world.remove_non_send::<LiveStage>() else {
-        return;
+pub(super) fn project_plan_entry(
+    world: &mut World,
+    stage: &Stage,
+    registry: &SchemaRegistry,
+    map: &mut PrimEntities,
+    entry: &super::projection_plan::ProjectionPlanEntry,
+    parent: Option<Entity>,
+) -> Entity {
+    let entity = if entry.path() == "/" {
+        world
+            .spawn((
+                UsdPrimRef {
+                    path: "/".to_string(),
+                },
+                Transform::from_rotation(stage_up_axis(stage)),
+                Visibility::default(),
+            ))
+            .id()
+    } else {
+        let parent = parent.expect("parent-before-child projection plan has a parent");
+        world
+            .spawn((
+                UsdPrimRef {
+                    path: entry.path().to_string(),
+                },
+                ChildOf(parent),
+            ))
+            .id()
     };
-    let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
-    project_stage(world, &live, &mut map);
-    world.insert_resource(map);
-    world.insert_non_send(live);
+    map.insert(entry.path(), entity);
+    if entry.path() != "/"
+        && let Ok(path) = openusd::sdf::path(entry.path())
+    {
+        registry.project_prim(stage, &path, world, entity);
+    }
+    entity
 }

@@ -6,5 +6,6 @@ mod material_patch;
 mod mesh_patch;
 mod paths;
 mod payload;
+mod progressive;
 mod reconcile;
 mod stage;
