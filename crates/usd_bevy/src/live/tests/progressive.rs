@@ -1,4 +1,11 @@
-use crate::live::{ProjectionPlan, collect_stage_subtree_paths};
+use bevy::prelude::*;
+use openusd::usd::Stage;
+
+use crate::live::{
+    LiveStage, LiveStagePlugin, PrimEntities, ProjectionPlan, ProjectionReadiness,
+    collect_stage_subtree_paths, project_stage,
+};
+use crate::prim_ref::UsdPrimRef;
 use crate::snippet::UsdSnippet;
 
 fn hierarchy_stage() -> openusd::usd::Stage {
@@ -97,4 +104,88 @@ fn subtree_plan_preserves_root_and_parent_relation() {
     assert_eq!(plan.paths().collect::<Vec<_>>(), vec!["/", "/A", "/A/Leaf"]);
     assert_eq!(plan.entry(1).unwrap().parent_index(), Some(0));
     assert_eq!(plan.entry(2).unwrap().parent_index(), Some(1));
+}
+
+fn animated_stage() -> Stage {
+    Stage::open(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/stages/animated_translate.usda")
+            .to_str()
+            .expect("animated fixture path is valid"),
+    )
+    .expect("animated stage opens")
+}
+
+fn sorted_paths(map: &PrimEntities) -> Vec<String> {
+    let mut paths = map
+        .iter()
+        .map(|(path, _)| path.to_owned())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn unlimited_progressive_queue_matches_direct_projection() {
+    let direct_stage = animated_stage();
+    let queued_stage = animated_stage();
+    let direct_live = LiveStage::new(direct_stage);
+    let queued_live = LiveStage::new(queued_stage);
+
+    let mut direct_world = World::new();
+    let mut direct_map = PrimEntities::default();
+    project_stage(&mut direct_world, &direct_live, &mut direct_map);
+
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut().insert_non_send(queued_live);
+    app.update();
+
+    let queued_map = app.world().resource::<PrimEntities>();
+    assert_eq!(sorted_paths(queued_map), sorted_paths(&direct_map));
+    assert_eq!(
+        &app.world().resource::<crate::live::AnimatedPrims>().0,
+        &direct_world.resource::<crate::live::AnimatedPrims>().0
+    );
+    assert_eq!(
+        app.world()
+            .resource::<crate::live::ProgressiveProjectionState>()
+            .readiness(),
+        ProjectionReadiness::Ready
+    );
+    for path in sorted_paths(queued_map) {
+        let queued_entity = queued_map.entity(&path).unwrap();
+        let direct_entity = direct_map.entity(&path).unwrap();
+        assert_eq!(
+            app.world().get::<UsdPrimRef>(queued_entity),
+            direct_world.get::<UsdPrimRef>(direct_entity)
+        );
+        assert_eq!(
+            app.world().get::<Transform>(queued_entity),
+            direct_world.get::<Transform>(direct_entity)
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(queued_entity),
+            direct_world.get::<Visibility>(direct_entity)
+        );
+    }
+}
+
+#[test]
+fn ready_queue_short_circuits_without_rebuilding_the_plan() {
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut()
+        .insert_non_send(LiveStage::new(hierarchy_stage()));
+    app.update();
+    let first = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>()
+        .clone();
+    app.update();
+    let second = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(second.plan_builds(), first.plan_builds());
+    assert_eq!(second.resident_short_circuits(), 1);
 }

@@ -220,6 +220,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     }
 
     let plan_result = ProjectionPlan::from_stage(&live.stage);
+    world.insert_resource(AnimatedPrims::default());
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
     state.readiness = ProjectionReadiness::Planning;
     state.plan_builds += 1;
