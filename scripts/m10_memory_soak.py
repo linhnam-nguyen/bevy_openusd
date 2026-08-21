@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run the M10 load/edit/resize soak and record process high-water memory."""
+"""Run the M10-C4 persistent Bevy runtime/cache soak in one process."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -13,11 +14,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RENDER_BENCH = ROOT / "scripts" / "render_bench.py"
+RUNTIME_ARTIFACT = ROOT / "target/benchmark/m10-c4-persistent-runtime.json"
 
 
 def process_tree_rss_kb(root_pid: int) -> int:
-    """Return the RSS sum for a process and all descendants, in KiB."""
+    """Return RSS for the single cargo/test process tree owning the App."""
     try:
         listing = subprocess.check_output(
             ["ps", "-axo", "pid=,ppid=,rss="], text=True, stderr=subprocess.DEVNULL
@@ -52,73 +53,30 @@ def process_tree_rss_kb(root_pid: int) -> int:
     return total
 
 
-def workload_commands() -> list[tuple[str, list[str]]]:
-    python = sys.executable
-    return [
-        (
-            "cache-load-kitchen",
-            ["cargo", "test", "--release", "--test", "cache_profile", "--", "--nocapture"],
-        ),
-        (
-            "point-instancer-edit",
-            [
-                "cargo",
-                "test",
-                "--release",
-                "--test",
-                "m8_instancing_correctness",
-                "--test",
-                "m8_instancing_profile",
-                "--test",
-                "m8_instancing_freeze",
-                "--",
-                "--nocapture",
-            ],
-        ),
-        (
-            "progressive-reload",
-            [
-                "cargo",
-                "test",
-                "--release",
-                "--test",
-                "progressive_load_profile",
-                "--test",
-                "subtree_resync_profile",
-                "--",
-                "--nocapture",
-            ],
-        ),
-    ] + [
-        (
-            f"resize-{width}x{height}",
-            [
-                python,
-                str(RENDER_BENCH),
-                "--scenario",
-                "S1",
-                "--force-headless",
-                "--warmup",
-                "5",
-                "--frames",
-                "20",
-                "--output",
-                str(ROOT / "target" / "benchmark" / f"m10-c4-s1-{width}x{height}.json"),
-                "--label",
-                f"m10-c4-s1-{width}x{height}",
-                "--stream-width",
-                str(width),
-                "--stream-height",
-                str(height),
-                "--stream-fps",
-                "60",
-            ],
-        )
-        for width, height in ((1280, 720), (1920, 1080), (2560, 1440))
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        default=str(ROOT / "target/benchmark/m10-c4-memory-soak.json"),
+        help="JSON output path",
+    )
+    parser.add_argument("--cycles", type=int, default=12)
+    args = parser.parse_args()
+    if args.cycles < 12:
+        raise SystemExit("M10-C4 requires at least twelve persistent cycles")
+
+    command = [
+        "cargo",
+        "test",
+        "--release",
+        "--test",
+        "m10_persistent_soak",
+        "--",
+        "--nocapture",
+        "--test-threads=1",
     ]
-
-
-def run_workload(label: str, command: list[str]) -> dict[str, object]:
+    environment = os.environ.copy()
+    environment["USDHUB_M10_C4_CYCLES"] = str(args.cycles)
     started = time.monotonic()
     process = subprocess.Popen(
         command,
@@ -126,7 +84,7 @@ def run_workload(label: str, command: list[str]) -> dict[str, object]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        env=os.environ.copy(),
+        env=environment,
         start_new_session=True,
     )
     high_water = 0
@@ -137,51 +95,37 @@ def run_workload(label: str, command: list[str]) -> dict[str, object]:
         time.sleep(0.2)
     output = process.stdout.read() if process.stdout is not None else ""
     high_water = max(high_water, process_tree_rss_kb(process.pid))
+    if process.returncode != 0:
+        print(output[-8000:], file=sys.stderr)
+        raise SystemExit(f"M10-C4 persistent runtime failed with exit code {process.returncode}")
+    if not RUNTIME_ARTIFACT.exists():
+        raise SystemExit(f"M10-C4 runtime artifact is missing: {RUNTIME_ARTIFACT}")
+
+    runtime = json.loads(RUNTIME_ARTIFACT.read_text(encoding="utf-8"))
+    if runtime.get("passed") is not True or runtime.get("persistent_app") is not True:
+        raise SystemExit("M10-C4 runtime artifact did not prove a persistent App")
     result = {
-        "label": label,
+        "schema": "usdhub.m10.c4.memory-soak.v2",
+        "build_profile": "release",
+        "runtime_mode": "one persistent Bevy App in one release test process",
+        "rss_scope": "cargo/test process tree containing the persistent runtime",
         "command": command,
-        "exit_code": process.returncode,
+        "cycles": args.cycles,
         "duration_s": round(time.monotonic() - started, 3),
         "rss_high_water_kb": high_water,
         "rss_high_water_mb": round(high_water / 1024, 2),
         "rss_samples": samples,
+        "runtime_artifact": str(RUNTIME_ARTIFACT),
+        "runtime": runtime,
+        "exit_code": process.returncode,
     }
-    if process.returncode != 0:
-        print(output[-4000:], file=sys.stderr)
-        raise RuntimeError(f"M10-C4 workload failed: {label}")
-    return result
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        default=str(ROOT / "target" / "benchmark" / "m10-c4-memory-soak.json"),
-        help="JSON output path",
-    )
-    args = parser.parse_args()
-
-    reports = []
-    for label, command in workload_commands():
-        print(f"running {label}", flush=True)
-        reports.append(run_workload(label, command))
-
-    result = {
-        "schema": "usdhub.m10.c4.memory-soak.v1",
-        "build_profile": "release",
-        "workloads": reports,
-        "overall_rss_high_water_kb": max(
-            (int(report["rss_high_water_kb"]) for report in reports), default=0
-        ),
-        "overall_rss_high_water_mb": round(
-            max((int(report["rss_high_water_kb"]) for report in reports), default=0) / 1024,
-            2,
-        ),
-    }
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(f"M10-C4 artifact: {output}")
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    runtime_copy = output_path.with_name("m10-c4-persistent-runtime.json")
+    if runtime_copy.resolve() != RUNTIME_ARTIFACT.resolve():
+        shutil.copyfile(RUNTIME_ARTIFACT, output_path.with_name("m10-c4-persistent-runtime.json"))
+    print(f"M10-C4 persistent soak passed: {output_path}")
     return 0
 
 

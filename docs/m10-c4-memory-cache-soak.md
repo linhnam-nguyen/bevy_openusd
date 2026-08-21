@@ -1,33 +1,37 @@
-# M10-C4 memory and cache soak
+# M10-C4+ persistent memory/cache soak
 
-M10-C4 completed against backend commit `005cbae` with the warmed release
-soak runner:
+The correction replaces short independent subprocess checks with one release
+test process owning one persistent Bevy `App`:
 
 ```text
-python3 -B scripts/m10_memory_soak.py
+python3 -B scripts/m10_memory_soak.py --cycles 12
 ```
 
-The runner samples the RSS of each workload process and all descendants using
-`ps`, then writes `target/benchmark/m10-c4-memory-soak.json`. All six
-workloads exited successfully:
+The wrapper records process-tree RSS and embeds the runtime artifact at:
 
-| Workload | High-water RSS |
-| --- | ---: |
-| cache-load-kitchen | 484.58 MiB |
-| point-instancer-edit | 274.44 MiB |
-| progressive-reload | 348.12 MiB |
-| resize 1280×720 | 1412.31 MiB |
-| resize 1920×1080 | 1086.86 MiB |
-| resize 2560×1440 | 1420.45 MiB |
+```text
+target/benchmark/m10-c4-memory-soak.json
+target/benchmark/m10-c4-persistent-runtime.json
+```
 
-The overall warmed process-tree high-water was 1420.45 MiB. The first run was
-discarded because it included release compilation; the recorded artifact is
-the repeated warmed run. Render resizing uses separate short-lived benchmark
-processes, so the result is a peak-per-generation observation, not a claim
-that one long-lived process was retained across every resize.
+The run completed 12 cycles in one persistent application, covering load and
+reload, transform, visibility, material, geometry, subtree/full reconcile,
+PointInstancer reprojection, and 1280×720, 1920×1080, and 2560×1440 resize
+generations. RSS high-water was 384.81 MiB for the cargo/test process tree
+containing the persistent runtime.
 
-Cache and obsolete-asset bounds are covered by the same release run’s
-artifacts and tests: Kitchen cache counts are finite, the PointInstancer
-reproject keeps eight mesh assets before and after the edit, and the shared
-material edit retires and cleans one replaced asset while keeping three live
-material assets.
+Steady-state bounds were all passed:
+
+| Metric | All-cycle range | Steady-state range |
+| --- | ---: | ---: |
+| Mesh assets | 4–1464 | 1463–1464 |
+| Material assets | 3–4 | 4–4 |
+| Image assets | 2–2 | 2–2 |
+| Projection cache meshes | 4–1464 | 1463–1464 |
+| Projection cache sources | 0–1458 | 1458–1458 |
+| Material cache entries | 3–3 | 3–3 |
+| Texture cache entries | 1–1 | 1–1 |
+
+The runtime recorded PointInstancer reprojection on three cycles and twelve
+distinct resize generations. The RSS scope is stated explicitly: it includes
+the cargo/test process tree, not a fabricated allocation-only measurement.

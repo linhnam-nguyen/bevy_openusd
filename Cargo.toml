@@ -108,6 +108,10 @@ path = "tests/git_materialization.rs"
 name = "subtree_resync_profile"
 path = "tests/subtree_resync_profile.rs"
 
+[[test]]
+name = "m10_persistent_soak"
+path = "tests/m10_persistent_soak.rs"
+
 [[example]]
 name = "pack_usdz"
 path = "examples/pack_usdz.rs"

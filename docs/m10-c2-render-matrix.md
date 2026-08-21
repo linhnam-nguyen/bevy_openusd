@@ -1,36 +1,49 @@
-# M10-C2 render matrix
+# M10-C2+ representative render matrix
 
-M10-C2 completed on 2026-08-21 from backend commit `3a56990`.
-
-The release renderer matrix ran all 16 renderer-state combinations and all
-three cadence targets at each resolution. Every report passed with
-`cases=16`, `cadence_samples=3`, and matching requested/effective state.
-
-| Resolution | Matrix | Actual renderer FPS at 30/60/120 target | S1 median / p95 frame ms | Scene prims | Materials / textures |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 1280×720 | 16/16 | 26.88 / 51.71 / 103.42 | 2.745 / 3.002 | 85 | 14 / 15 |
-| 1920×1080 | 16/16 | 26.95 / 51.52 / 102.67 | 2.584 / 3.178 | 85 | 14 / 15 |
-| 2560×1440 | 16/16 | 26.80 / 52.26 / 104.86 | 2.601 / 3.027 | 85 | 14 / 15 |
-
-The runs used the Hummingbird USDZ fixture on Apple M4 / Metal, with five
-warmup frames and 30 measured frames. The headless offscreen path does not
-publish GPU timestamp timings, so `gpu_median_frame_ms` and
-`gpu_p95_frame_ms` are explicitly `null`; CPU/wall timing remains recorded.
-
-Representative idle invariants at all three resolutions were:
-
-- `grid.structural_rebuilds = 0` and `grid.compute_extent_calls = 0`;
-- `semantic.idle_skips = 30` and `semantic.snapshot_clones = 0`;
-- requested/effective renderer configuration matched;
-- steady-state expectation matched.
-
-Machine-readable artifacts:
+The correction reran the required 16-case renderer matrix on
+`assets/external/Kitchen_set.usdz` at 1920×1080. The machine-readable paired
+comparison is the source of truth; it records the exact baseline and candidate
+Git SHAs, scene hash, backend, adapter, requested/effective state, warmup, and
+sample settings.
 
 ```text
+python3 -B scripts/m10_c2_compare.py \
+  --baseline-matrix target/benchmark/m10-c2-kitchen-baseline-1920x1080.json \
+  --candidate-matrix target/benchmark/m10-c2-kitchen-candidate-1920x1080.json \
+  --baseline-s1 target/benchmark/m10-c2-kitchen-baseline-s1-1920x1080.json \
+  --candidate-s1 target/benchmark/m10-c2-kitchen-candidate-s1-1920x1080.json \
+  --output target/benchmark/m10-c2-kitchen-comparison.json
+```
+
+The matched Kitchen comparison passed 16/16 renderer states and 3/3 cadence
+states for both M9 baseline `6b99dfeea5b69e2241d2496b9c89c26b057734b9` and the
+candidate runtime. With five warmup and 30 measured frames:
+
+| Metric | M9 baseline | Candidate | Delta |
+| --- | ---: | ---: | ---: |
+| Median CPU frame ms | 2.746 | 2.781 | +1.27% |
+| P95 CPU frame ms | 3.514 | 3.342 | -4.90% |
+| Actual renderer FPS | 50.321 | 50.695 | +0.74% |
+| GPU median / p95 | null / null | null / null | unavailable on headless path |
+
+The comparison reports an observed maximum regression of 1.27%. An optional
+relative gate is available through `--max-regression-percent` or
+`USDHUB_M10_MAX_REGRESSION_PERCENT`; the universal absolute FPS floor remains
+disabled by default.
+
+The supplementary Hummingbird matrix remains available at 720p, 1080p, and
+1440p. It still validates requested/effective equality and the idle path, but
+the Kitchen comparison above is the representative baseline/candidate proof.
+
+Artifacts:
+
+```text
+target/benchmark/m10-c2-kitchen-baseline-1920x1080.json
+target/benchmark/m10-c2-kitchen-candidate-1920x1080.json
+target/benchmark/m10-c2-kitchen-baseline-s1-1920x1080.json
+target/benchmark/m10-c2-kitchen-candidate-s1-1920x1080.json
+target/benchmark/m10-c2-kitchen-comparison.json
 target/benchmark/m10-c2-1280x720.json
 target/benchmark/m10-c2-1920x1080.json
 target/benchmark/m10-c2-2560x1440.json
-target/benchmark/m10-c2-s1-1280x720.json
-target/benchmark/m10-c2-s1-1920x1080.json
-target/benchmark/m10-c2-s1-2560x1440.json
 ```

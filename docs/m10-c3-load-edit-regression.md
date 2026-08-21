@@ -1,39 +1,38 @@
-# M10-C3 load and edit regression
+# M10-C3+ load/edit regression matrix
 
-M10-C3 completed against backend commit `a8d3fd9` using release-profile tests.
-
-The release gates passed:
-
-```text
-cargo test --release --test cache_profile -- --nocapture
-cargo test --release --test m8_instancing_correctness --test m8_instancing_profile --test m8_instancing_freeze -- --nocapture
-cargo test --release --test progressive_load_profile --test subtree_resync_profile -- --nocapture
-```
-
-Coverage and observed evidence:
-
-- repeated mesh, shared material, embedded texture, and Kitchen cache profiles
-  passed; the Kitchen run recorded 1,788 lookups, 332 hits, and 1,456 misses;
-- material edit evidence kept three material assets bounded and recorded one
-  descriptor change plus one retired/cleaned asset;
-- PointInstancer coverage passed with 40,000 logical and visible instances,
-  eight unique mesh handles, and one material asset;
-- live transform reproject passed with one sparse transform patch, zero
-  instance spawns/despawns, 40,000 transform updates, and mesh assets bounded
-  at eight before and after reproject;
-- prototype edits, ancestor resync, selection identity, visibility, and
-  logical instance ordering all passed their correctness assertions;
-- progressive Kitchen loading passed with one plan build, 86 loading updates,
-  2,743 planned work items, and monotonic 25/50/75/100% progress;
-- subtree add/remove/material edit coverage passed for the scoped reconcile
-  path, with the empirical profile reporting affected-only Bevy and semantic
-  work for its synthetic, deep-overlap, and material fixtures.
-
-Current release artifacts include:
+The correction produces one machine-readable matrix rather than a collection
+of unrelated profile claims:
 
 ```text
-target/m6-c5-shared-material.json
-target/m7-progressive-load.json
-target/m8-c1-instancing-baseline.json
-target/m8-c6-instancing-freeze.json
+python3 -B scripts/m10_load_edit_matrix.py
 ```
+
+Artifact: `target/benchmark/m10-c3-load-edit-matrix.json`.
+
+The release run passed all eleven required rows. Initial projection latency was
+recorded for every initial fixture:
+
+| Initial row | Fixture | Projection ms | Evidence |
+| --- | --- | ---: | --- |
+| small | `teapot.usdz` | 160.690 | 16 live-stage prims |
+| representative | `Kitchen_set.usdz` | 1047.503 | 2,743 live-stage prims |
+| dense | `PointInstancedMedCity.usdz` | 20.921 | 22 live-stage prims |
+| repeated geometry | `instanceable.usda` | 0.789 | 8 live-stage prims |
+| PointInstancer | `m8_point_instancer.usda` | 25.869 | 40,000 logical instances, 8 unique mesh handles |
+
+The live rows record reconcile latency and work type:
+
+| Live row | Reconcile ms | Mesh conversions | Reconcile evidence |
+| --- | ---: | ---: | --- |
+| transform | 0.033 | 0 | one patched entity |
+| visibility | 0.023 | 0 | one patched entity |
+| material | 0.013 | 0 | one patched entity |
+| geometry | 0.073 | 2 | two patched entities, two source-cache misses |
+| subtree | 0.307 | 0 | one spawn, one despawn, one source-cache hit |
+| full fallback | n/a | n/a | 85 visited prims, one fallback extraction, one extent recompute, one snapshot clone |
+
+The matrix consumes the existing release profile/correctness artifacts for
+PointInstancer and live mesh patching, while the full fallback row is refreshed
+from a current S10 run. This keeps projection, reconcile, conversion, asset,
+and frame-impact fields in one schema without claiming frame timing where the
+underlying artifact cannot measure it.

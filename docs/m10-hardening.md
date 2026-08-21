@@ -1,103 +1,97 @@
-# M10 hardening milestone packet
+# M10 hardening correction packet
 
-M10 is complete and ready for review. No `Instance2` directory was touched.
+M10 is complete and awaiting milestone review. This packet contains the final
+corrections requested for C2 through C6. No `Instance2` directory was touched.
 
-## Pinned chain
-
-```text
-M10 base / M9 frozen tip  6b99dfeea5b69e2241d2496b9c89c26b057734b9
-M10-C1                    3a56990f0463079d0fe56d5340d875a639d65118
-M10-C2                    a8d3fd9213b9bd3269084756367fe0e7d693a153
-M10-C3                    005cbae1c9ff624210d3015339edafa8da393d12
-M10-C4                    eeef4510a5ac82108bdc1de41a996014f1a63ce4
-M10-C5                    013c99cfd05aea8a8ec91c014b6ce9345a605f0c
-M10-C6                    this packet's commit tip
-bevy_glacial              424c97b057fc9b9521b020fffa132ee3d022cf6b
-UsdHubUI                  f6289b9083d81699bd25857ff5930484756480dc
-```
-
-The C1 workspace hardening gate passed formatting, source-size, no-default
-feature check/tests, strict workspace Clippy, and all-feature/all-target
-tests. The all-feature suite included 159 `usdview` tests, 91 `usd_bevy`
-tests, 53 streaming tests, protocol compatibility tests, cache profiles,
-PointInstancer correctness, progressive loading, and subtree regression tests.
-The existing external `bevy_frost` path dependency still emits warnings; it is
-not part of this checkout's changes.
-
-## Runtime evidence
-
-The C2 release matrix passed 16/16 renderer-state cases and 3/3 cadence cases
-at each resolution on Apple M4 / Metal:
+## Frozen chain and correction scope
 
 ```text
-1280x720   actual renderer FPS at 30/60/120 target: 26.88 / 51.71 / 103.42
-1920x1080  actual renderer FPS at 30/60/120 target: 26.95 / 51.52 / 102.67
-2560x1440  actual renderer FPS at 30/60/120 target: 26.80 / 52.26 / 104.86
+M9 frozen baseline       6b99dfeea5b69e2241d2496b9c89c26b057734b9
+M10-C1                   3a56990f0463079d0fe56d5340d875a639d65118
+M10-C2                   a8d3fd9213b9bd3269084756367fe0e7d693a153
+M10-C3                   005cbae1c9ff624210d3015339edafa8da393d12
+M10-C4                   eeef4510a5ac82108bdc1de41a996014f1a63ce4
+M10-C5                   013c99cfd05aea8a8ec91c014b6ce9345a605f0c
+M10-C6                   4d75d7f73490187d75ed0a485426f43b18a99a51
+M10-C2+ through C6+     final correction commit recorded by the handoff
+bevy_glacial             424c97b057fc9b9521b020fffa132ee3d022cf6b
+UsdHubUI                 f6289b9083d81699bd25857ff5930484756480dc
 ```
 
-The matched S1 reports recorded 85 live-stage prims, 14 cached materials, and
-15 cached textures. At 1920x1080, median/p95 CPU frame timing was
-2.584/3.178 ms. GPU timestamps are explicitly unavailable on the headless
-offscreen path and remain `null`, rather than being inferred from CPU timing.
+The correction is evidence and gate hardening, plus the persistent runtime
+test. It does not change the established renderer, semantic authority, cache
+ownership, transport, or frontend architecture.
 
-C3 release profiles passed load/edit coverage for repeated geometry, shared
-materials and textures, dense geometry, subtree changes, progressive Kitchen
-loading, and PointInstancer reprojection. The PointInstancer artifact recorded
-40,000 logical instances, eight unique mesh handles, and one material asset;
-the live transform reprojection changed transforms without spawning or
-despawning instances and kept mesh assets at eight before and after the edit.
+## C2+ representative runtime comparison
 
-C4's warmed process-tree RSS soak passed cache load, PointInstancer edit,
-progressive reload, and 1280x720/1920x1080/2560x1440 resize generations. The
-overall observed high-water was 1420.45 MiB. Asset/cache bounds were also
-verified by the material and instancing artifacts; resize workloads are
-separate short-lived processes, so this does not overclaim one-process
-long-lived resize retention.
+The final comparison uses `Kitchen_set.usdz` at 1920×1080, release profile,
+five warmup frames, and 30 measured frames. Both sides passed 16/16 renderer
+states and 3/3 cadence states on the same Apple M4 / Metal identity.
 
-C5's deterministic checker passed all of the following:
+| Metric | M9 baseline | Candidate | Delta |
+| --- | ---: | ---: | ---: |
+| Median CPU frame ms | 2.746 | 2.781 | +1.27% |
+| P95 CPU frame ms | 3.514 | 3.342 | -4.90% |
+| Actual renderer FPS | 50.321 | 50.695 | +0.74% |
+| GPU median / p95 | null / null | null / null | unavailable headless |
 
-```text
-python3 -B scripts/check_performance_regressions.py
-```
+The machine-readable comparison is
+`target/benchmark/m10-c2-kitchen-comparison.json`; it contains the exact
+baseline/candidate Git SHAs, fixture hash, matrix counts, effective state
+checks, and the configurable observed-regression value of 1.27%.
 
-It verifies idle grid/semantic fast paths, positive geometry and grid
-transitions, extent/fallback behavior, scoped recovery, texture cleanup,
-requested/effective renderer equality, and successful memory soak workloads.
-Absolute FPS floors are environment-configurable through
-`USDHUB_M10_MIN_RENDERER_FPS`.
+## C3+ complete load/edit matrix
 
-## Final commands
+`python3 -B scripts/m10_load_edit_matrix.py` produced
+`target/benchmark/m10-c3-load-edit-matrix.json` with all eleven required rows:
+small, representative, dense, repeated geometry, PointInstancer, transform,
+visibility, material, geometry, subtree, and full fallback.
+
+The representative Kitchen projection recorded 2,742 projected prims and
+2,743 live-stage prims. The PointInstancer row recorded 40,000 logical
+instances and eight unique mesh handles. Transform, visibility, and material
+edits performed zero mesh conversions; geometry performed two; subtree
+reconciled one spawn and one despawn; full fallback recorded 85 visited prims,
+one fallback extraction, one extent recomputation, and one snapshot clone.
+
+## C4+ persistent memory/cache soak
+
+`python3 -B scripts/m10_memory_soak.py --cycles 12` ran one persistent Bevy
+`App` for all 12 cycles. The complete artifact is
+`target/benchmark/m10-c4-memory-soak.json`, with the runtime detail beside it
+at `target/benchmark/m10-c4-persistent-runtime.json`.
+
+The process-tree RSS high-water was 384.81 MiB. Every asset/cache metric was
+bounded in the steady half of the run: mesh assets 1463–1464, material assets
+4–4, image assets 2–2, projection-cache meshes 1463–1464,
+projection-cache sources 1458–1458, material-cache entries 3–3, and
+texture-cache entries 1–1. PointInstancer reprojection and twelve resize
+generations were recorded in the same process.
+
+## C5+ deterministic gates
+
+The checker now requires the C2 comparison and C3/C4 schemas, validates every
+required row and bound, and enforces the shared USDZ fixture's exact
+`expected_texture_decode_calls = 1` in both phases. The default universal FPS
+floor remains disabled; relative C2 regression limits and machine-specific FPS
+floors are opt-in environment/CLI gates.
+
+## C6+ final gates and remaining limits
+
+The required final commands are:
 
 ```text
 make harden
 make bench-render-smoke
 ```
 
-The smoke target runs a fresh release headless S1 report and validates the
-idle structural/semantic invariants. The checker is included in `make
-harden` so the final workflow cannot silently omit the structural regression
-gate. The final smoke report recorded 1920x1080 / 60 FPS requested and
-effective, 43.13 actual renderer FPS, 3.040 ms median CPU frame time, zero
-grid structural rebuilds, zero extent scans, zero semantic snapshot clones,
-and 20 semantic idle skips.
+`make harden` includes formatting, source-size, no-default checks/tests,
+strict Clippy, all-feature/all-target tests, and the corrected deterministic
+checker. `make bench-render-smoke` produces the fresh final S1 artifact at
+`target/benchmark/m10-c6-render-smoke.json`; its exact values are read from
+that machine-readable report in the final handoff.
 
-## Architecture and cleanup decisions
-
-- `LiveStage` remains the authoritative USD writer and retained change-batch
-  source; no renderer or transport callback was made authoritative.
-- Grid structural mesh state remains separate from runtime presentation state;
-  idle frames perform neither structural rebuilds nor extent scans.
-- Same-session semantic idle work returns before cloning the previous
-  snapshot; real edit, recovery, and fallback paths remain covered.
-- Mesh/material/texture caches remain distinct and content-addressed; obsolete
-  material assets are retired and cleaned after edits.
-- Progressive loading keeps one generation, parent-before-child planning,
-  cancellation, readiness, and bounded update work.
-- PointInstancer uses shared prototype mesh assets with logical instance
-  identity preserved; no per-instance mesh duplication was introduced.
-- No speculative concurrency redesign, GPU timestamp fabrication, transport
-  callback mutation, or frontend workaround was added.
-
-The existing GStreamer pipeline API usage was checked against the official
-Rust GStreamer `Element` reference for `link_many` and property-setting
-semantics before closing C6.
+GPU timestamps remain unavailable on the headless offscreen path, and RSS is
+reported for the cargo/test process tree. These are explicit evidence limits,
+not inferred values. No speculative concurrency redesign, frontend workaround,
+transport callback mutation, or semantic-authority change was introduced.
