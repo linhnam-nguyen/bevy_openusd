@@ -74,6 +74,7 @@ CLIENT_EVIDENCE_FIELDS = [
     "zoom_dolly_events_observed",
     "zoom_delta_observed",
     "video_observation",
+    "completion_blockers",
 ]
 
 EVENT_REQUIRED_SCENARIOS = {"S13", "S14", "S17", "S18"}
@@ -142,6 +143,11 @@ def validate_client_evidence(path: Path, scenario_id: str, run_id: str):
             raise ValueError(f"client evidence {field} must be a non-negative number or null")
     if type(video_observation.get("dropped_frames")) is not int or video_observation["dropped_frames"] < 0:
         raise ValueError("client evidence dropped_frames must be a non-negative integer")
+    if evidence["completion_blockers"] != []:
+        raise ValueError(
+            "client evidence reports incomplete benchmark state: "
+            + ", ".join(evidence["completion_blockers"])
+        )
     if type(evidence["measurement_idle_observed"]) is not bool:
         raise ValueError("client evidence measurement_idle_observed must be boolean")
     if type(evidence["input_events_observed"]) is not int or evidence["input_events_observed"] < 0:
@@ -199,6 +205,7 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     client_required = bool(info.get("client_required"))
     run_id = None
     client_evidence_path = None
+    client_diagnostic_path = None
     ready_file = None
     measurement_start_file = None
     measurement_idle_file = None
@@ -206,11 +213,18 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
     if client_required:
         run_id = uuid.uuid4().hex
         client_evidence_path = Path(f"{output_path}.client.json").absolute()
+        client_diagnostic_path = Path(f"{output_path}.client.json.diagnostic.json").absolute()
         ready_file = Path(f"{output_path}.client-ready").absolute()
         measurement_start_file = Path(f"{output_path}.measurement-start").absolute()
         measurement_idle_file = Path(f"{output_path}.measurement-idle").absolute()
         measurement_complete_file = Path(f"{output_path}.measurement-complete").absolute()
-        for marker in (ready_file, measurement_start_file, measurement_idle_file, measurement_complete_file):
+        for marker in (
+            ready_file,
+            measurement_start_file,
+            measurement_idle_file,
+            measurement_complete_file,
+            client_diagnostic_path,
+        ):
             marker.unlink(missing_ok=True)
 
     cmd.extend([
@@ -264,6 +278,12 @@ def run_scenario(scenario_id: str, warmup: int, frames: int, output_path: str, l
             except subprocess.TimeoutExpired:
                 client.terminate()
                 client.wait(timeout=5)
+                if client_diagnostic_path.exists():
+                    print(
+                        f"Client diagnostic for {scenario_id}: "
+                        f"{client_diagnostic_path.read_text(encoding='utf-8')}",
+                        file=sys.stderr,
+                    )
                 print(f"Client harness did not finish for {scenario_id}", file=sys.stderr)
                 return False
             if client_returncode != 0:
