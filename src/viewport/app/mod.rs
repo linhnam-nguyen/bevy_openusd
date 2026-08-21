@@ -21,7 +21,7 @@ use bevy_egui::EguiPlugin;
 use bevy_frost::prelude::AccentColor;
 use bevy_glacial::prelude::{AxisGizmoPlugin, GroundGrid, GroundGridPlugin};
 use headless::HeadlessRenderPlugin;
-use usd_bevy::{LiveStagePlugin, UsdPlugin};
+use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
@@ -342,7 +342,7 @@ pub(crate) fn run() {
             handle_usd_hot_reload,
             apply_load_request,
             apply_fly_to,
-            sync_selected_instance_identity,
+            sync_selected_instance_identity.before(LiveStageSet::Reconcile),
             draw_selected_prim_highlight,
             follow_mounted_camera,
             tick_stage_time,

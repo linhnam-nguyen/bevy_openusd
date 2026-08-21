@@ -20,10 +20,10 @@ pub mod sync;
 
 pub use authoring::*;
 pub use live::{
-    AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, PendingStageChanges, PrimEntities,
-    ProgressiveProjectionState, ProjectionBudget, ProjectionPlan, ProjectionPlanBuilder,
-    ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange, StageChangeBatch,
-    TransformHistory, apply_change_batch, apply_changes, author_transform,
+    AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, LiveStageSet, PendingStageChanges,
+    PrimEntities, ProgressiveProjectionState, ProjectionBudget, ProjectionPlan,
+    ProjectionPlanBuilder, ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange,
+    StageChangeBatch, TransformHistory, apply_change_batch, apply_changes, author_transform,
     collect_stage_subtree_paths, current_transform, is_descendant_or_self, minimize_resync_roots,
     normalize_prim_path, prim_of, project_stage, property_of, validate_prim_path,
 };

@@ -19,3 +19,8 @@ The final artifact is written to `target/m8-c6-instancing-freeze.json` and is
 provenance-pinned to the exact commit that ran the release test. Historical
 native renderer evidence remains separate from this PointInstancer projection
 packet.
+
+The final correction keeps the sparse transform path unchanged and adds only
+the C5 ordering/dependency safety required before freeze. Release and native
+provenance artifacts must be regenerated after the correction commit so their
+embedded SHA identifies the reviewed M8 revision.

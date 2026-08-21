@@ -296,6 +296,39 @@ fn live_prototype_edit_reprojects_only_registered_instancer_dependency() {
 }
 
 #[test]
+fn live_prototype_ancestor_resync_reprojects_registered_instancer_dependency() {
+    let (stage, _path) = open_fixture();
+    let mut app = live_app(stage);
+    let cube_before = mesh_handle_for_logical(app.world_mut(), 100);
+    *app.world_mut().resource_mut::<PointInstancerStats>() = PointInstancerStats::default();
+
+    let live = app
+        .world()
+        .get_non_send::<LiveStage>()
+        .expect("live stage exists");
+    live.stage
+        .prim(Path::new(CUBE_MESH).expect("mesh path is valid"))
+        .attribute("points")
+        .set(Value::Vec3fVec(vec![
+            Vec3f::from([-2.0, -0.5, 0.0]),
+            Vec3f::from([0.5, -0.5, 0.0]),
+            Vec3f::from([0.5, 0.5, 0.0]),
+            Vec3f::from([-2.0, 0.5, 0.0]),
+        ]))
+        .expect("prototype points edit succeeds");
+    live.enqueue_resync("/World/Prototypes");
+    app.update();
+
+    let stats = *app.world().resource::<PointInstancerStats>();
+    assert_eq!(
+        stats.full_projects, 1,
+        "ancestor resync reaches the consumer"
+    );
+    assert_eq!(stats.sparse_transform_patches, 0);
+    assert_ne!(mesh_handle_for_logical(app.world_mut(), 100), cube_before);
+}
+
+#[test]
 fn live_transform_patch_preserves_logical_selection_and_entity() {
     let (stage, path) = open_fixture();
     let mut app = live_app(stage);

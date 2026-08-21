@@ -49,11 +49,28 @@ impl PointInstancerDependencyIndex {
         }
     }
 
-    /// Return the distinct instancer paths affected by a changed prim path.
+    /// Return consumers whose registered prototype root contains a changed prim.
     pub(crate) fn dependents_for_path(&self, changed_path: &str) -> HashSet<String> {
         self.by_prototype
             .iter()
             .filter(|(root, _)| is_descendant_or_self(root, changed_path))
+            .flat_map(|(_, consumers)| consumers.iter().cloned())
+            .collect()
+    }
+
+    /// Return consumers whose registered prototype root is covered by a
+    /// resync boundary, in either direction.
+    ///
+    /// Resync notifications describe a composition boundary rather than
+    /// necessarily the exact prim that changed. Property changes use
+    /// [`Self::dependents_for_path`] instead so an instancer's own transform
+    /// edit cannot be mistaken for a prototype dependency.
+    pub(crate) fn dependents_for_resync_root(&self, resync_root: &str) -> HashSet<String> {
+        self.by_prototype
+            .iter()
+            .filter(|(root, _)| {
+                is_descendant_or_self(root, resync_root) || is_descendant_or_self(resync_root, root)
+            })
             .flat_map(|(_, consumers)| consumers.iter().cloned())
             .collect()
     }

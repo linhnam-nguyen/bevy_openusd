@@ -168,7 +168,7 @@ pub fn apply_change_batch(
                 .map(|index| {
                     resynced_paths
                         .iter()
-                        .flat_map(|path| index.dependents_for_path(path))
+                        .flat_map(|path| index.dependents_for_resync_root(path))
                         .collect::<HashSet<_>>()
                 })
                 .unwrap_or_default();

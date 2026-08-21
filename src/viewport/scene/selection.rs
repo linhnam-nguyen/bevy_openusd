@@ -60,3 +60,92 @@ pub(crate) fn resolve_selected_instance(
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    use bevy::asset::Assets;
+    use bevy::mesh::Mesh;
+    use bevy::pbr::StandardMaterial;
+    use openusd::usd::Stage;
+    use usd_bevy::{LiveStage, LiveStagePlugin, PointInstancerSelection, UsdPlugin};
+
+    const FIXTURE: &str = "tests/stages/m8_point_instancer.usda";
+    const INSTANCER: &str = "/World/Instances";
+
+    #[derive(Resource, Default)]
+    struct ResolvedSelection(Option<Entity>);
+
+    fn resolve_selection_for_test(
+        selection: Res<PointInstancerSelection>,
+        instancers: Query<(&UsdPrimRef, &Children)>,
+        instance_ids: Query<&UsdInstanceId>,
+        mut resolved: ResMut<ResolvedSelection>,
+    ) {
+        resolved.0 = resolve_selected_instance(&selection, &instancers, &instance_ids);
+    }
+
+    fn instance_entity(world: &mut World, logical_id: i64) -> Entity {
+        let mut query = world.query::<(Entity, &UsdInstanceId)>();
+        query
+            .iter(world)
+            .find_map(|(entity, id)| (id.logical_id == logical_id).then_some(entity))
+            .expect("logical instance is projected")
+    }
+
+    #[test]
+    fn selected_instance_bridge_captures_identity_before_reconcile() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE);
+        let stage =
+            Stage::open(fixture.to_str().expect("fixture path is valid")).expect("fixture opens");
+        let mut app = App::new();
+        app.add_plugins(UsdPlugin)
+            .add_plugins(LiveStagePlugin)
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<SelectedPrim>()
+            .init_resource::<ResolvedSelection>()
+            .add_systems(
+                Update,
+                sync_selected_instance_identity.before(usd_bevy::LiveStageSet::Reconcile),
+            )
+            .add_systems(
+                Update,
+                resolve_selection_for_test.after(usd_bevy::LiveStageSet::Reconcile),
+            );
+        app.world_mut().insert_non_send(LiveStage::new(stage));
+        app.update();
+
+        let old_entity = instance_entity(app.world_mut(), 103);
+        app.world_mut().resource_mut::<SelectedPrim>().0 = Some(old_entity);
+        app.world()
+            .get_non_send::<LiveStage>()
+            .expect("live stage exists")
+            .enqueue_resync(INSTANCER);
+
+        assert_eq!(
+            app.world().resource::<PointInstancerSelection>(),
+            &PointInstancerSelection::default(),
+            "the test must exercise the SelectedPrim bridge rather than pre-populate its output"
+        );
+
+        app.update();
+
+        let selection = app.world().resource::<PointInstancerSelection>().clone();
+        assert_eq!(selection.instancer_path.as_deref(), Some(INSTANCER));
+        assert_eq!(selection.logical_id, Some(103));
+        let new_entity = instance_entity(app.world_mut(), 103);
+        assert_ne!(
+            old_entity, new_entity,
+            "resync replaces the transient child"
+        );
+
+        assert_eq!(
+            app.world().resource::<ResolvedSelection>().0,
+            Some(new_entity),
+            "the stable selection resolves to the replacement child"
+        );
+    }
+}

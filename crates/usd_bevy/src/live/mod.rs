@@ -46,6 +46,20 @@ use system::{
 /// Insert a `LiveStage` non-send resource to begin a live session.
 pub struct LiveStagePlugin;
 
+/// Ordering boundary for systems that consume the live-stage projection.
+///
+/// Viewport systems that must capture transient entity identity before a
+/// destructive reconciliation should order themselves before
+/// [`LiveStageSet::Reconcile`].
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LiveStageSet {
+    Project,
+    Drain,
+    Reconcile,
+    Animation,
+    Presentation,
+}
+
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PrimEntities>()
@@ -59,16 +73,32 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<SampledTime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()
-            .add_systems(
+            .configure_sets(
                 Update,
                 (
-                    project_on_load_system,
-                    drain_stage_changes_system,
-                    reproject_from_batch_system,
-                    resample_animation_system,
-                    apply_display_purposes_system,
-                )
-                    .chain(),
+                    LiveStageSet::Project,
+                    LiveStageSet::Drain.after(LiveStageSet::Project),
+                    LiveStageSet::Reconcile.after(LiveStageSet::Drain),
+                    LiveStageSet::Animation.after(LiveStageSet::Reconcile),
+                    LiveStageSet::Presentation.after(LiveStageSet::Animation),
+                ),
+            )
+            .add_systems(Update, project_on_load_system.in_set(LiveStageSet::Project))
+            .add_systems(
+                Update,
+                drain_stage_changes_system.in_set(LiveStageSet::Drain),
+            )
+            .add_systems(
+                Update,
+                reproject_from_batch_system.in_set(LiveStageSet::Reconcile),
+            )
+            .add_systems(
+                Update,
+                resample_animation_system.in_set(LiveStageSet::Animation),
+            )
+            .add_systems(
+                Update,
+                apply_display_purposes_system.in_set(LiveStageSet::Presentation),
             );
         // Ensure the routing registry exists even if `UsdPlugin` wasn't added.
         if !app.world().contains_resource::<SchemaRegistry>() {
