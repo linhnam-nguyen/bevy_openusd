@@ -270,6 +270,58 @@ fn texture_cache_separates_color_space_variants() {
 }
 
 #[test]
+fn changed_texture_path_gets_a_distinct_decode() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Image>>();
+    world.insert_resource(UsdTextureCache::default());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures");
+    let first_path = root.join("normal.png").to_string_lossy().into_owned();
+    let changed_path = root
+        .join("Logo_Textures_Albedo.png")
+        .to_string_lossy()
+        .into_owned();
+
+    let first = resolve_texture(&mut world, &first_path, false).expect("first texture loads");
+    let changed = resolve_texture(&mut world, &changed_path, false).expect("changed texture loads");
+
+    assert_ne!(
+        first, changed,
+        "authored path changes must not alias handles"
+    );
+    let stats = world.resource::<UsdTextureCache>().stats();
+    assert_eq!(stats.lookups, 2);
+    assert_eq!(stats.misses, 2);
+    assert_eq!(stats.hits, 0);
+    assert_eq!(stats.decode_calls, 2);
+}
+
+#[test]
+fn reused_texture_lookup_does_not_decode_again() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Image>>();
+    world.insert_resource(UsdTextureCache::default());
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png")
+        .to_string_lossy()
+        .into_owned();
+
+    let first = resolve_texture(&mut world, &path, false).expect("texture loads");
+    world.resource_mut::<UsdTextureCache>().reset_stats();
+    let reused = resolve_texture(&mut world, &path, false).expect("texture remains cached");
+
+    assert_eq!(first, reused);
+    assert_eq!(
+        world.resource::<UsdTextureCache>().stats(),
+        TextureCacheStats {
+            lookups: 1,
+            hits: 1,
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
 fn material_binding_cache_reuses_and_invalidates_descriptors() {
     let mut world = World::new();
     world.init_resource::<Assets<StandardMaterial>>();
