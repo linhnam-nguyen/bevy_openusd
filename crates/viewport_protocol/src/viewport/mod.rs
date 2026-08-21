@@ -24,7 +24,7 @@ pub use editor::{
 pub use events::{ViewportEvent, ViewportEventEnvelope, ViewportWireMessage};
 pub use read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel,
-    SceneSearchMatch, SelectionReadModel, StageLoadState, StageReadModel, TimelineReadModel,
-    ViewportReadModel,
+    PrimNodeReadModel, RenderMode, RendererConfiguration, SceneAnchor, SceneChildrenPage,
+    ScenePageReference, SceneReadModel, SceneSearchMatch, SelectionReadModel, StageLoadState,
+    StageReadModel, TimelineReadModel, ViewportReadModel,
 };

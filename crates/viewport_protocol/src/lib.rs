@@ -63,8 +63,9 @@ pub use viewport::{
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
     GroundGridOrigin, MAX_EDITOR_TEXT_BYTES, MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES,
     MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, RuntimeMutation, RuntimeMutationBatch, SceneAnchor, SceneChildrenPage,
-    ScenePageReference, SceneReadModel, SceneSearchMatch, SelectionReadModel, StageLoadState,
-    StageReadModel, TimelineReadModel, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
-    ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage,
+    PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation, RuntimeMutationBatch,
+    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
+    SelectionReadModel, StageLoadState, StageReadModel, TimelineReadModel, ViewportCommand,
+    ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
+    ViewportWireMessage,
 };

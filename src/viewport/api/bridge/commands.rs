@@ -235,6 +235,14 @@ pub(super) fn apply_viewport_commands(
                 toggles.ground_grid_origin = origin;
                 emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
             }
+            ViewportCommand::SetRendererConfiguration { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "renderer configuration is not yet supported; M3-C2 must apply it to Bevy"
+                        .to_owned(),
+                );
+            }
             ViewportCommand::SetPrimMarkerBias { bias } => {
                 toggles.prim_marker_bias = bias.clamp(0.0, 5.0);
                 emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);

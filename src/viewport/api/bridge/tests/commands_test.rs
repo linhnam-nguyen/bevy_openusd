@@ -175,6 +175,30 @@ mod tests {
     }
 
     #[test]
+    fn renderer_configuration_rejection_preserves_command_correlation() {
+        let mut app = command_test_app();
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration {
+                configuration: RendererConfiguration::default(),
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("unsupported renderer configuration must publish a response");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            event.event,
+            ViewportEvent::CommandRejected { reason, .. }
+                if reason.contains("M3-C2")
+        ));
+    }
+
+    #[test]
     fn snapshot_contains_only_logical_viewport_state() {
         let mut app = command_test_app();
         let request_id = app
