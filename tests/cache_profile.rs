@@ -304,11 +304,17 @@ fn records_m6_shared_material_benchmark_artifact() {
         .resource::<usd_bevy::route::material::UsdTextureCache>()
         .stats();
     let material_assets_after_edit = app.world().resource::<Assets<StandardMaterial>>().len();
+    let git_sha = benchmark_git_sha();
+    assert_eq!(
+        git_sha.len(),
+        40,
+        "benchmark provenance must contain a full git SHA"
+    );
 
     let artifact = M6C5Artifact {
         schema: "usdhub.m6.c5.shared-material.v3",
         checkpoint: "M6-C5++",
-        git_sha: benchmark_git_sha(),
+        git_sha,
         build_profile,
         fixture: "tests/stages/materials_network.usda",
         unique_bindings,
