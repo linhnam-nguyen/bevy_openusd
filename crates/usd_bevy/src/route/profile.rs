@@ -30,6 +30,9 @@ pub fn record_mesh_sample(
     read_mesh_ms: f64,
     build: crate::mesh::MeshBuildMetrics,
     intern: crate::route::cache::MeshInternMetrics,
+    mesh_conversion: bool,
+    source_cache_lookup: bool,
+    source_cache_hit: bool,
 ) {
     let mut reason_flags = 0;
     if build.expansion_forcing_primvars > 0 {
@@ -47,7 +50,7 @@ pub fn record_mesh_sample(
     if build.display_opacity {
         reason_flags |= REASON_DISPLAY_OPACITY;
     }
-    if !intern.cache_hit {
+    if intern.cache_lookup && !intern.cache_hit {
         reason_flags |= REASON_CACHE_MISS;
     }
     if build.vertex_source_ratio > 1.0 {
@@ -69,10 +72,14 @@ pub fn record_mesh_sample(
         output_vertices: build.output_vertices,
         output_indices: build.output_indices,
         output_triangles: build.output_triangles,
+        mesh_conversion,
+        source_cache_lookup,
+        source_cache_hit,
+        cache_lookup: intern.cache_lookup,
+        cache_hit: intern.cache_hit,
         authored_normals: build.authored_normals,
         generated_normals: build.generated_normals,
         expanded_vertices: build.expanded_vertices,
-        cache_hit: intern.cache_hit,
         uv_interpolation: build.uv_interpolation,
         indexed_primvars: build.indexed_primvars,
         non_indexed_primvars: build.non_indexed_primvars,
@@ -181,6 +188,14 @@ pub struct GeometryProfileRecord {
     pub output_vertices: usize,
     pub output_indices: usize,
     pub output_triangles: usize,
+    /// True when `mesh_from_usd` actually converted the source read.
+    pub mesh_conversion: bool,
+    /// True when the pre-conversion source-content cache was consulted.
+    pub source_cache_lookup: bool,
+    /// True when the pre-conversion source-content cache supplied the mesh.
+    pub source_cache_hit: bool,
+    /// True when the final post-conversion interner was consulted.
+    pub cache_lookup: bool,
     pub authored_normals: bool,
     pub generated_normals: bool,
     pub expanded_vertices: bool,
@@ -207,7 +222,14 @@ impl GeometryProfileRecord {
 /// Deterministic aggregate counters for one profiling run.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct GeometryProfileTotals {
+    /// Number of route samples, including source-cache hits.
+    pub mesh_route_samples: usize,
+    /// Number of actual `mesh_from_usd` conversions.
     pub mesh_count: usize,
+    pub source_cache_lookups: usize,
+    pub source_cache_hits: usize,
+    pub source_cache_misses: usize,
+    /// Final post-conversion interner counters.
     pub cache_hits: usize,
     pub cache_misses: usize,
     pub read_mesh_ms: f64,
@@ -267,9 +289,14 @@ impl GeometryProfile {
 
     pub fn record(&mut self, sample: GeometryProfileRecord) {
         let totals = &mut self.totals;
-        totals.mesh_count += 1;
-        totals.cache_hits += usize::from(sample.cache_hit);
-        totals.cache_misses += usize::from(!sample.cache_hit);
+        totals.mesh_route_samples += 1;
+        totals.mesh_count += usize::from(sample.mesh_conversion);
+        totals.source_cache_lookups += usize::from(sample.source_cache_lookup);
+        totals.source_cache_hits += usize::from(sample.source_cache_hit);
+        totals.source_cache_misses +=
+            usize::from(sample.source_cache_lookup && !sample.source_cache_hit);
+        totals.cache_hits += usize::from(sample.cache_lookup && sample.cache_hit);
+        totals.cache_misses += usize::from(sample.cache_lookup && !sample.cache_hit);
         totals.authored_normal_meshes += usize::from(sample.authored_normals);
         totals.generated_normal_meshes += usize::from(sample.generated_normals);
         totals.indexed_primvars += sample.indexed_primvars;

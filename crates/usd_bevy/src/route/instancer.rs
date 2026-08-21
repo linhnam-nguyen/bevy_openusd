@@ -157,6 +157,9 @@ fn bake_prototype(
                 allocation_ms,
                 ..Default::default()
             },
+            true,
+            false,
+            false,
         );
     }
     let material = world

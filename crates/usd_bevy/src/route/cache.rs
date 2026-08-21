@@ -24,7 +24,7 @@ use bevy::prelude::*;
 /// would pin every past version alive. On overflow the map is cleared, which
 /// drops those strong refs so `Assets<Mesh>` can reclaim anything unreferenced;
 /// still-referenced meshes simply get re-interned on their next projection.
-const MAX_INTERNED: usize = 8192;
+pub(crate) const MAX_INTERNED: usize = 8192;
 
 /// Counters collected by [`ProjectionCache`] so cache policy changes can be
 /// based on observed scene behavior rather than assumptions.
@@ -43,6 +43,7 @@ pub struct MeshInternMetrics {
     pub total_ms: f64,
     pub signature_ms: f64,
     pub allocation_ms: f64,
+    pub cache_lookup: bool,
     pub cache_hit: bool,
 }
 
@@ -69,6 +70,11 @@ impl ProjectionCache {
     /// Whether the cache holds no interned meshes.
     pub fn is_empty(&self) -> bool {
         self.meshes.is_empty()
+    }
+
+    /// Number of source-read keys retained for pre-conversion reuse.
+    pub fn source_len(&self) -> usize {
+        self.source_meshes.len()
     }
 
     /// Snapshot hit/miss and eviction counters for diagnostics or profiling.
@@ -126,6 +132,7 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
                 MeshInternMetrics {
                     total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
                     signature_ms,
+                    cache_lookup: true,
                     cache_hit: true,
                     ..Default::default()
                 },
@@ -155,6 +162,7 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
             total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
             signature_ms,
             allocation_ms,
+            cache_lookup: true,
             cache_hit: false,
         },
     )

@@ -55,6 +55,7 @@ pub(super) fn apply_sparse_changed_info(
         }
     }
 
+    let mut patched_count = 0;
     for (prim, props) in per_prim {
         if suppressed.contains(&prim) {
             continue;
@@ -67,7 +68,13 @@ pub(super) fn apply_sparse_changed_info(
         };
         let prop_refs: Vec<&str> = props.iter().map(String::as_str).collect();
         registry.patch_prim(&live.stage, &p, world, entity, &prop_refs);
+        patched_count += 1;
     }
+    world.insert_resource(ReconcileStats {
+        visited_stage_prims: patched_count,
+        patched_entities: patched_count,
+        ..Default::default()
+    });
 }
 
 /// Reproject one already-drained batch without touching the live-stage queue.

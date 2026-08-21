@@ -79,6 +79,9 @@ impl PrimRoute for SkinRoute {
                     allocation_ms,
                     ..Default::default()
                 },
+                true,
+                false,
+                false,
             );
         }
         if let Some(mut m) = world.get_mut::<Mesh3d>(entity) {

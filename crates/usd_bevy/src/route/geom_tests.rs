@@ -1,7 +1,9 @@
-use bevy::asset::Assets;
+use bevy::asset::{Assets, RenderAssetUsages};
+use bevy::mesh::{Mesh, PrimitiveTopology};
 use bevy::prelude::*;
 
 use super::super::cache::ProjectionCache;
+use super::super::cache::{MAX_INTERNED, remember_source_mesh};
 use super::super::cache_key::source_mesh_key;
 use super::{MeshPatchAction, MeshRoute, UsdLocalExtent, mesh_patch_action};
 use crate::read::geom::{Interpolation, MeshPrimvar, read_mesh};
@@ -204,23 +206,31 @@ fn fallback_material_is_shared_across_meshes() {
     let mut world = World::new();
     world.init_resource::<Assets<Mesh>>();
     world.init_resource::<Assets<StandardMaterial>>();
-    let first_entity = world.spawn_empty().id();
-    let second_entity = world.spawn_empty().id();
+    let material_assets_before = world.resource::<Assets<StandardMaterial>>().len();
     let route = MeshRoute;
-
-    route.project(&ctx, &mut world, first_entity);
-    route.project(&ctx, &mut world, second_entity);
+    let mut first_handle = None;
+    let mut second_handle = None;
+    for index in 0..2_400 {
+        let entity = world.spawn_empty().id();
+        route.project(&ctx, &mut world, entity);
+        let handle = world
+            .get::<MeshMaterial3d<StandardMaterial>>(entity)
+            .expect("fallback material attached")
+            .0
+            .clone();
+        match index {
+            0 => first_handle = Some(handle),
+            1 => second_handle = Some(handle),
+            _ => {}
+        }
+    }
+    let material_assets_after = world.resource::<Assets<StandardMaterial>>().len();
+    let first_handle = first_handle.expect("first fallback material");
+    let second_handle = second_handle.expect("second fallback material");
 
     assert_eq!(
-        world
-            .get::<MeshMaterial3d<StandardMaterial>>(first_entity)
-            .expect("first fallback material")
-            .0,
-        world
-            .get::<MeshMaterial3d<StandardMaterial>>(second_entity)
-            .expect("second fallback material")
-            .0,
-        "identical fallback materials must share one handle"
+        first_handle, second_handle,
+        "fallback material handle is shared"
     );
     assert_eq!(
         world
@@ -228,4 +238,41 @@ fn fallback_material_is_shared_across_meshes() {
             .map(Assets::len),
         Some(1)
     );
+    assert_eq!(material_assets_before, 0);
+    assert_eq!(material_assets_after, 1);
+    let artifact = serde_json::json!({
+        "schema": "usdhub.m5.c3.fallback-material.v1",
+        "checkpoint": "M5-C3+",
+        "projected_mesh_prims": 2_400,
+        "standard_material_assets_before": material_assets_before,
+        "standard_material_assets_after": material_assets_after,
+        "shared_fallback_material": true,
+    });
+    let artifact_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m5-c3-fallback-material.json");
+    std::fs::write(
+        &artifact_path,
+        serde_json::to_vec_pretty(&artifact).expect("fallback artifact serializes"),
+    )
+    .expect("fallback artifact writes");
+}
+
+#[test]
+fn source_cache_is_bounded_for_deforming_geometry_versions() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.insert_resource(ProjectionCache::default());
+
+    for version in 0..=MAX_INTERNED {
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+        remember_source_mesh(&mut world, version as u64, handle);
+    }
+
+    let cache = world.resource::<ProjectionCache>();
+    assert!(cache.source_len() <= MAX_INTERNED);
+    assert!(cache.stats().evictions > 0);
 }

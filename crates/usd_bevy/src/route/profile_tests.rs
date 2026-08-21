@@ -12,6 +12,7 @@ fn aggregates_all_samples_and_keeps_bounded_expensive_records() {
             read_mesh_ms: total,
             source_points: 10,
             output_vertices: total as usize,
+            mesh_conversion: true,
             ..Default::default()
         });
     }

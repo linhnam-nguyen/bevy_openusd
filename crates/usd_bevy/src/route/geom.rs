@@ -226,15 +226,10 @@ impl MeshRoute {
             .get_resource::<ProjectionCache>()
             .map(|_| source_mesh_key(&read));
         let source_hit = source_key.and_then(|key| lookup_source_mesh(world, key));
+        let source_cache_lookup = source_key.is_some();
+        let source_cache_hit = source_hit.is_some();
         let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
-            (
-                mesh_handle,
-                Default::default(),
-                super::cache::MeshInternMetrics {
-                    cache_hit: true,
-                    ..Default::default()
-                },
-            )
+            (mesh_handle, Default::default(), Default::default())
         } else {
             let (mesh, build_metrics) = if profile_enabled {
                 crate::mesh::mesh_from_usd_profiled(&read)
@@ -259,6 +254,9 @@ impl MeshRoute {
                 read_mesh_ms,
                 build_metrics,
                 intern_metrics,
+                !source_cache_hit,
+                source_cache_lookup,
+                source_cache_hit,
             );
         }
         let material = fallback_material(world);
