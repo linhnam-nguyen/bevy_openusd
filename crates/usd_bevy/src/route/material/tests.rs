@@ -356,6 +356,8 @@ fn material_binding_cache_reuses_and_invalidates_descriptors() {
             descriptor_changes: 1,
             retired_assets: 1,
             cleaned_assets: 0,
+            cleanup_passes: 0,
+            cleanup_entities_scanned: 0,
         }
     );
 }

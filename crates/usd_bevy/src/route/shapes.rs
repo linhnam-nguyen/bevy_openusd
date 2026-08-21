@@ -12,10 +12,32 @@ use std::f32::consts::FRAC_PI_2;
 use openusd::schemas::geom::{Capsule, Cone, Cube, Cylinder, Plane, Sphere};
 use openusd::sdf::Value;
 
+use crate::read::shade::read_material_binding;
+
 use super::{PrimRoute, RouteCtx};
 
 /// Maps USD geometric shapes to Bevy primitive meshes.
 pub struct ShapesRoute;
+
+#[derive(Resource, Default)]
+struct ShapeMaterialFallback {
+    handle: Option<Handle<StandardMaterial>>,
+}
+
+fn shared_fallback_material(world: &mut World) -> Handle<StandardMaterial> {
+    if let Some(handle) = world
+        .get_resource::<ShapeMaterialFallback>()
+        .and_then(|fallback| fallback.handle.clone())
+    {
+        return handle;
+    }
+    let handle = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    world.init_resource::<ShapeMaterialFallback>();
+    world.resource_mut::<ShapeMaterialFallback>().handle = Some(handle.clone());
+    handle
+}
 
 fn f32_attr(attr: openusd::usd::Attribute, default: f32) -> f32 {
     match attr.get::<Value>() {
@@ -117,13 +139,18 @@ impl PrimRoute for ShapesRoute {
         let material = world
             .get::<MeshMaterial3d<StandardMaterial>>(entity)
             .map(|material| material.0.clone())
-            .unwrap_or_else(|| {
-                world
-                    .resource_mut::<Assets<StandardMaterial>>()
-                    .add(StandardMaterial::default())
+            .or_else(|| {
+                let has_binding = read_material_binding(ctx.stage, ctx.path)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                (!has_binding).then(|| shared_fallback_material(world))
             });
         if let Ok(mut e) = world.get_entity_mut(entity) {
-            e.insert((Mesh3d(mesh_handle), MeshMaterial3d(material)));
+            e.insert(Mesh3d(mesh_handle));
+            if let Some(material) = material {
+                e.insert(MeshMaterial3d(material));
+            }
         }
     }
 

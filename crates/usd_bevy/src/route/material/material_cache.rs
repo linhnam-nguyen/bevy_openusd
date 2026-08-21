@@ -17,6 +17,8 @@ pub struct MaterialCacheStats {
     pub descriptor_changes: u64,
     pub retired_assets: u64,
     pub cleaned_assets: u64,
+    pub cleanup_passes: u64,
+    pub cleanup_entities_scanned: u64,
 }
 
 #[derive(Clone)]
@@ -118,9 +120,15 @@ pub(super) fn cleanup_retired_materials(world: &mut World) {
         return;
     }
 
-    let referenced: HashSet<_> = {
+    let (referenced, scanned) = {
         let mut query = world.query::<&MeshMaterial3d<StandardMaterial>>();
-        query.iter(world).map(|material| material.0.id()).collect()
+        let mut referenced = HashSet::new();
+        let mut scanned = 0;
+        for material in query.iter(world) {
+            scanned += 1;
+            referenced.insert(material.0.id());
+        }
+        (referenced, scanned)
     };
     let mut retained = Vec::new();
     let mut cleaned = 0;
@@ -139,5 +147,7 @@ pub(super) fn cleanup_retired_materials(world: &mut World) {
     if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
         cache.retired_handles.extend(retained);
         cache.stats.cleaned_assets += cleaned;
+        cache.stats.cleanup_passes += 1;
+        cache.stats.cleanup_entities_scanned += scanned;
     }
 }

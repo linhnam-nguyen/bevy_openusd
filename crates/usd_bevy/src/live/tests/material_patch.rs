@@ -253,6 +253,35 @@ fn external_shader_and_texture_edits_follow_real_network_dependencies() {
 }
 
 #[test]
+fn shared_material_edit_cleans_retired_asset_once_after_fanout() {
+    let mut app = build_app_for("materials_network.usda");
+    assert_eq!(
+        app.world().resource::<Assets<StandardMaterial>>().len(),
+        3,
+        "bound shapes must not leave placeholder StandardMaterials behind"
+    );
+    app.world_mut()
+        .resource_mut::<crate::route::material::UsdMaterialCache>()
+        .reset_stats();
+
+    set_network_shader_roughness(&mut app, 0.2);
+
+    let stats = app
+        .world()
+        .resource::<crate::route::material::UsdMaterialCache>()
+        .stats();
+    assert_eq!(
+        stats.lookups, 2,
+        "both shared consumers should be projected"
+    );
+    assert_eq!(stats.retired_assets, 1);
+    assert_eq!(stats.cleaned_assets, 1);
+    assert_eq!(stats.cleanup_passes, 1);
+    assert_eq!(stats.cleanup_entities_scanned, 4);
+    assert_eq!(app.world().resource::<Assets<StandardMaterial>>().len(), 3);
+}
+
+#[test]
 fn repeated_material_edits_keep_standard_material_assets_bounded() {
     let mut app = build_app();
     let initial_assets = app.world().resource::<Assets<StandardMaterial>>().len();

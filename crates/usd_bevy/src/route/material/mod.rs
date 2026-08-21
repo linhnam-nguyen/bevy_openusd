@@ -16,6 +16,10 @@ pub(crate) use consumers::MaterialConsumerIndex;
 pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
 pub use texture_cache::{TextureCacheKey, TextureCacheStats, UsdTextureCache};
 
+pub(crate) fn cleanup_retired_materials(world: &mut bevy::ecs::world::World) {
+    material_cache::cleanup_retired_materials(world);
+}
+
 /// Route-level counters kept separate from cache counters so profiling can
 /// distinguish route dispatch from material/texture reuse.
 #[derive(bevy::ecs::resource::Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]

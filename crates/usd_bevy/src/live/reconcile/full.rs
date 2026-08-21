@@ -34,6 +34,11 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
             semantic_idx.remove_entity(entity);
         }
+        if let Some(mut material_idx) =
+            world.get_resource_mut::<crate::route::material::MaterialConsumerIndex>()
+        {
+            material_idx.remove_consumer(&path);
+        }
         world.despawn(entity);
         map.remove_path(&path);
     }

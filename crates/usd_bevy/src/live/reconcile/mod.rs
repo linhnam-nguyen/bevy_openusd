@@ -9,6 +9,7 @@ use super::index::PrimEntities;
 use super::path::{prim_of, property_of, validate_prim_path};
 use super::projection::registry_of;
 use super::stage::LiveStage;
+use crate::route::material::cleanup_retired_materials;
 use full::reconcile_full;
 use subtree::reconcile_subtrees;
 
@@ -127,6 +128,7 @@ pub fn apply_change_batch(
         }
         let unshaded = batch.unshaded_changed_info();
         apply_sparse_changed_info(world, live, map, &unshaded);
+        cleanup_retired_materials(world);
         return;
     }
 
@@ -137,4 +139,5 @@ pub fn apply_change_batch(
         .cloned()
         .collect();
     apply_sparse_changed_info(world, live, map, &all_changed_info);
+    cleanup_retired_materials(world);
 }
