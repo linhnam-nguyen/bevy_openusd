@@ -71,14 +71,14 @@ fn build_mesh(
 ) -> Mesh {
     let total_start = Instant::now();
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).source_points = read.points.len();
-        (**metrics).source_faces = read.face_vertex_counts.len();
-        (**metrics).source_face_corners = read
+        metrics.source_points = read.points.len();
+        metrics.source_faces = read.face_vertex_counts.len();
+        metrics.source_face_corners = read
             .face_vertex_counts
             .iter()
             .map(|count| (*count).max(0) as usize)
             .sum();
-        (**metrics).uv_interpolation = read
+        metrics.uv_interpolation = read
             .uvs
             .as_ref()
             .map(|primvar| primvar.interpolation.into())
@@ -136,15 +136,15 @@ fn build_mesh(
                 expansion_forcing_primvars += 1;
             }
         }
-        (**metrics).indexed_primvars = indexed_primvars;
-        (**metrics).non_indexed_primvars = non_indexed_primvars;
-        (**metrics).expansion_forcing_primvars = expansion_forcing_primvars;
-        (**metrics).authored_normals = read.normals.is_some();
-        (**metrics).generated_normals = read.normals.is_none();
-        (**metrics).display_color = read.display_color.is_some();
-        (**metrics).display_opacity = read.display_opacity.is_some();
-        (**metrics).topology_class = classify_topology(&read.face_vertex_counts);
-        (**metrics).subdivision = read.subdivision_scheme.into();
+        metrics.indexed_primvars = indexed_primvars;
+        metrics.non_indexed_primvars = non_indexed_primvars;
+        metrics.expansion_forcing_primvars = expansion_forcing_primvars;
+        metrics.authored_normals = read.normals.is_some();
+        metrics.generated_normals = read.normals.is_none();
+        metrics.display_color = read.display_color.is_some();
+        metrics.display_opacity = read.display_opacity.is_some();
+        metrics.topology_class = classify_topology(&read.face_vertex_counts);
+        metrics.subdivision = read.subdivision_scheme.into();
     }
     // Face-Varying or Uniform (per-face) primvars break the indexed
     // point-sharing optimisation — vertex-indexed output can't represent
@@ -285,7 +285,7 @@ fn build_indexed(
 
     let colors = build_vertex_colors_indexed(read, positions.len());
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
+        metrics.primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
     }
 
     let triangulation_start = Instant::now();
@@ -297,8 +297,7 @@ fn build_indexed(
         face_subset,
     );
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).topology_triangulation_ms +=
-            triangulation_start.elapsed().as_secs_f64() * 1000.0;
+        metrics.topology_triangulation_ms += triangulation_start.elapsed().as_secs_f64() * 1000.0;
     }
     (positions, normals, uvs, colors, indices)
 }

@@ -43,10 +43,10 @@ pub fn scenario_action_driver_system(
     let Some(id) = driver.scenario_id else { return };
 
     // Synchronize scenario action triggers strictly to the post-warmup measurement window
-    if let Some(ref rs) = run_state {
-        if !rs.scene_ready || rs.warmup_frames_remaining > 0 {
-            return;
-        }
+    if let Some(ref rs) = run_state
+        && (!rs.scene_ready || rs.warmup_frames_remaining > 0)
+    {
+        return;
     }
 
     driver.frame_counter += 1;
@@ -82,40 +82,40 @@ pub fn scenario_action_driver_system(
             }
         }
         BenchmarkScenarioId::S4NativeGridVisibilityToggle => {
-            if frame % 15 == 0 {
-                if let Some(ref mut t) = toggles {
-                    t.renderer.grid = !t.renderer.grid;
-                    driver.action_executions += 1;
-                }
+            if frame % 15 == 0
+                && let Some(ref mut t) = toggles
+            {
+                t.renderer.grid = !t.renderer.grid;
+                driver.action_executions += 1;
             }
         }
         BenchmarkScenarioId::S5NativeGroundOriginChange => {
-            if frame % 10 == 0 {
-                if let Some(ref mut t) = toggles {
-                    t.ground_grid_origin = if (frame / 10) % 2 == 0 {
-                        GroundGridOrigin::LoadedScene
-                    } else {
-                        GroundGridOrigin::WorldOrigin
-                    };
-                    driver.action_executions += 1;
-                }
+            if frame % 10 == 0
+                && let Some(ref mut t) = toggles
+            {
+                t.ground_grid_origin = if (frame / 10) % 2 == 0 {
+                    GroundGridOrigin::LoadedScene
+                } else {
+                    GroundGridOrigin::WorldOrigin
+                };
+                driver.action_executions += 1;
             }
         }
         BenchmarkScenarioId::S6NativeGridStyleColorChange => {
-            if frame % 10 == 0 {
-                if let Some(ref mut g) = grid {
-                    let r = ((frame as f32 * 0.2).sin() + 1.0) * 0.5;
-                    g.color = Color::srgba(r, 0.38, 0.50, 0.42);
-                    driver.action_executions += 1;
-                }
+            if frame % 10 == 0
+                && let Some(ref mut g) = grid
+            {
+                let r = ((frame as f32 * 0.2).sin() + 1.0) * 0.5;
+                g.color = Color::srgba(r, 0.38, 0.50, 0.42);
+                driver.action_executions += 1;
             }
         }
         BenchmarkScenarioId::S10NativeAuthoritativeUsdChange => {
-            if frame == 5 {
-                if let Some(ref mut live) = live_stage {
-                    let _ = live.stage.define_prim("/Root/BenchmarkMarker");
-                    driver.action_executions += 1;
-                }
+            if frame == 5
+                && let Some(ref mut live) = live_stage
+            {
+                let _ = live.stage.define_prim("/Root/BenchmarkMarker");
+                driver.action_executions += 1;
             }
         }
         BenchmarkScenarioId::S19IsolationQuerySaturation => {
@@ -277,10 +277,9 @@ pub fn scenario_action_driver_system(
                         && webrtc_state
                             .as_ref()
                             .is_some_and(|state| state.sessions.role(&controller).is_none())
+                        && let Some(ref mut c) = counters
                     {
-                        if let Some(ref mut c) = counters {
-                            c.auth_failures += 1;
-                        }
+                        c.auth_failures += 1;
                     }
                 }
             }

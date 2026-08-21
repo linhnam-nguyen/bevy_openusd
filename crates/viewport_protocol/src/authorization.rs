@@ -107,10 +107,10 @@ impl AuthorizationPolicy {
             return Err(AuthorizationValidationError::InvalidRuntimeBlobId);
         }
 
-        if let SemanticPropertyScope::AllowList(paths) = &self.semantic_property_scope {
-            if paths.iter().any(|path| path.trim().is_empty()) {
-                return Err(AuthorizationValidationError::EmptySemanticPropertyPath);
-            }
+        if let SemanticPropertyScope::AllowList(paths) = &self.semantic_property_scope
+            && paths.iter().any(|path| path.trim().is_empty())
+        {
+            return Err(AuthorizationValidationError::EmptySemanticPropertyPath);
         }
 
         match self.runtime_profile {

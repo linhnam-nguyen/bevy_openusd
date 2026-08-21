@@ -28,9 +28,9 @@ pub use matrix::RendererMatrixRun;
 pub use matrix_report::{
     RendererMatrixCadenceReport, RendererMatrixCaseReport, RendererMatrixReport,
 };
+pub use render_profile::GeometryRenderPreparation;
 pub use runner::{BenchmarkLaunchConfig, BenchmarkRunState};
 pub use runner_plugin::BenchmarkRunnerPlugin;
-pub use render_profile::GeometryRenderPreparation;
 pub use sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode, SCHEMA_VERSION};
 pub use scenario::{
     BenchmarkScenarioId, ScenarioCategory, ScenarioProbeDefinition, SteadyStateExpectations,

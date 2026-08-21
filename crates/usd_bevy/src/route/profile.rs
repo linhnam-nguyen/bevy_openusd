@@ -7,7 +7,7 @@
 use bevy::platform::hash::FixedHasher;
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::BuildHasher;
 
 pub const REASON_EXPANDED_PRIMVARS: u32 = 1 << 0;
 pub const REASON_GENERATED_NORMALS: u32 = 1 << 1;
@@ -19,11 +19,10 @@ pub const REASON_HIGH_VERTEX_EXPANSION: u32 = 1 << 6;
 
 /// Stable redaction-safe identity for a USD prim path.
 pub fn hash_prim_path(path: &str) -> u64 {
-    let mut hasher = FixedHasher.build_hasher();
-    path.hash(&mut hasher);
-    hasher.finish()
+    FixedHasher.hash_one(path)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn record_mesh_sample(
     profile: &mut GeometryProfile,
     prim_path_hash: u64,

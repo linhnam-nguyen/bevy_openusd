@@ -308,10 +308,12 @@ mod tests {
 
     #[test]
     fn reset_preserves_configuration_flags() {
-        let mut counters = RendererCounters::default();
-        counters.configuration_grid_enabled = false;
-        counters.grid_structural_rebuilds = 42;
-        counters.semantic_snapshot_clones = 15;
+        let mut counters = RendererCounters {
+            configuration_grid_enabled: false,
+            grid_structural_rebuilds: 42,
+            semantic_snapshot_clones: 15,
+            ..Default::default()
+        };
 
         counters.reset();
 

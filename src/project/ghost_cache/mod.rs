@@ -141,14 +141,12 @@ pub(crate) fn attach_render_blobs_for_entities(
     // Collect mesh handle ONLY for the affected entities using O(1) PrimEntities index lookup
     let mut mesh_handles = HashMap::new();
     for entity in entities.iter() {
-        if let Some(geometry) = entity.geometry.as_ref() {
-            if geometry.render_blob.is_none() {
-                if let Some(bevy_entity) = map.entity(&entity.prim_path) {
-                    if let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity) {
-                        mesh_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());
-                    }
-                }
-            }
+        if let Some(geometry) = entity.geometry.as_ref()
+            && geometry.render_blob.is_none()
+            && let Some(bevy_entity) = map.entity(&entity.prim_path)
+            && let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity)
+        {
+            mesh_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());
         }
     }
 

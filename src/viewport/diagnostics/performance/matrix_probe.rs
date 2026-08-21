@@ -58,13 +58,12 @@ fn effective_shadow_configuration(world: &mut World) -> Option<bool> {
         return point;
     }
 
-    let spot = {
+    {
         let mut lights = world.query::<(&SpotLight, &OriginalShadowEnabled)>();
         lights
             .iter(world)
             .find_map(|(light, authored)| authored.0.then_some(light.shadow_maps_enabled))
-    };
-    spot
+    }
 }
 
 pub(super) fn matrix_identity(world: &World, config: &BenchmarkLaunchConfig) -> BenchmarkIdentity {

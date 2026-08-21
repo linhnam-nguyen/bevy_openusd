@@ -194,7 +194,7 @@ fn validate_encoded_dimension(
     maximum: u32,
 ) -> Result<(), ProtocolValidationError> {
     validate_dimension(field, value, maximum)?;
-    if value % 2 != 0 {
+    if !value.is_multiple_of(2) {
         return Err(ProtocolValidationError::OddEncodedDimension { field, value });
     }
     Ok(())

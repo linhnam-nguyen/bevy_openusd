@@ -24,10 +24,10 @@ pub fn setup_scenario_driver_system(
             grid.visible = false;
         }
     }
-    if driver.scenario_id == Some(BenchmarkScenarioId::S23IsolationSlowFailingDataWorker) {
-        if let Some(store) = semantic_store {
-            store.configure_test_mode(Duration::from_millis(100), true);
-        }
+    if driver.scenario_id == Some(BenchmarkScenarioId::S23IsolationSlowFailingDataWorker)
+        && let Some(store) = semantic_store
+    {
+        store.configure_test_mode(Duration::from_millis(100), true);
     }
     if let Some(ref mut state) = webrtc_state {
         if matches!(

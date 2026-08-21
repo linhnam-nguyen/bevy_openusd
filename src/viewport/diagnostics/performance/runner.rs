@@ -128,7 +128,7 @@ pub fn benchmark_stepper_system(world: &mut World) {
             if !run_state.measurement_idle_signaled
                 && config.as_ref().is_some_and(|config| {
                     config.measurement_idle_file.is_some()
-                        && measured_frames >= config.target_frames.saturating_div(2).max(1).min(60)
+                        && measured_frames >= config.target_frames.saturating_div(2).clamp(1, 60)
                 })
             {
                 run_state.measurement_idle_signaled = true;

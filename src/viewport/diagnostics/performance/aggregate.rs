@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use viewport_streaming::FrameTransportSnapshot;
 
-use super::sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, SCHEMA_VERSION};
+use super::sample::{BenchmarkIdentity, FrameSample, RenderConfiguration};
 use super::scenario::SteadyStateExpectations;
 
 /// Summary metrics for Incident A (GroundGrid churn).

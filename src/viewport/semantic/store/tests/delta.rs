@@ -68,7 +68,7 @@ fn semantic_database_subtree_delta_updates_only_affected_rows_and_leaves_unaffec
         let root_path = openusd::sdf::path("/World/A").unwrap();
         upserts.push(extractor.extract_entity(&stage, &root_path).unwrap());
         for i in 0..9 {
-            let p = openusd::sdf::path(&format!("/World/A/A{i}")).unwrap();
+            let p = openusd::sdf::path(format!("/World/A/A{i}")).unwrap();
             upserts.push(extractor.extract_entity(&stage, &p).unwrap());
         }
         let new_p = openusd::sdf::path("/World/A/A_new").unwrap();

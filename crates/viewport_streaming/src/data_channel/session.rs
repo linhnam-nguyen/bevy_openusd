@@ -113,10 +113,10 @@ impl ApplicationSession {
     }
 
     pub(crate) fn clear_remote_input(&self) {
-        if let Ok(state) = self.state.lock() {
-            if state.role == Some(SessionRole::Controller) {
-                state.interface.clear_remote_input();
-            }
+        if let Ok(state) = self.state.lock()
+            && state.role == Some(SessionRole::Controller)
+        {
+            state.interface.clear_remote_input();
         }
     }
 

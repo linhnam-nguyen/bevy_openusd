@@ -1,15 +1,13 @@
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use viewport_protocol::{
-    SelectionReadModel, ViewportEvent, ViewportEventEnvelope,
-};
+use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
+use super::helpers::reject;
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::camera::{ArcballCamera, FlyTo};
 use crate::viewport::scene::SelectedPrim;
-use super::helpers::reject;
 
 /// Applies focus and visibility actions after scene anchors have been mapped
 /// to their private Bevy entities. Both selection and fly-to use the same

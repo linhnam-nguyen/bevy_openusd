@@ -68,6 +68,11 @@ impl ProjectionPlanBuilder {
         self.entries.len()
     }
 
+    /// Whether no projection entries have been discovered yet.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Whether every queued parent has been expanded.
     pub fn is_finished(&self) -> bool {
         self.pending.is_empty()

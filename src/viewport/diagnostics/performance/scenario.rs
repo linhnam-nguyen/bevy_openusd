@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+#[path = "scenario_definitions.rs"]
+mod scenario_definitions;
+
 /// Canonical Benchmark Scenario Identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BenchmarkScenarioId {
@@ -147,23 +150,12 @@ pub enum ScenarioCategory {
 }
 
 /// Invariant expectations for deterministic steady-state checks.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SteadyStateExpectations {
     pub grid_structural_rebuilds: u64,
     pub semantic_snapshot_clones: u64,
     pub recovery_checkpoints: u64,
     pub sync_db_auth_waits_in_bevy: u64,
-}
-
-impl Default for SteadyStateExpectations {
-    fn default() -> Self {
-        Self {
-            grid_structural_rebuilds: 0,
-            semantic_snapshot_clones: 0,
-            recovery_checkpoints: 0,
-            sync_db_auth_waits_in_bevy: 0,
-        }
-    }
 }
 
 /// Complete definition of a benchmark probe scenario.
@@ -188,7 +180,7 @@ impl ScenarioProbeDefinition {
             category: id.category(),
             fixture_path: fixture.map(str::to_string),
             fixture_label: fixture
-                .and_then(|p| p.split('/').last())
+                .and_then(|p| p.split('/').next_back())
                 .unwrap_or("no_stage")
                 .to_string(),
             grid_enabled: grid,
@@ -197,83 +189,7 @@ impl ScenarioProbeDefinition {
     }
 
     pub fn for_scenario(id: BenchmarkScenarioId) -> Self {
-        const HUMMINGBIRD: &str = "assets/external/hummingbird.usdz";
-        const EMPTY: &str = "tests/stages/empty.usda";
-
-        match id {
-            BenchmarkScenarioId::S1NativeHummingbirdGridOnPaused => {
-                Self::new(id, "Hummingbird steady-state with grid ON (paused)", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S2NativeHummingbirdGridOffPaused => {
-                Self::new(id, "Hummingbird steady-state with grid OFF (paused)", Some(HUMMINGBIRD), false)
-            }
-            BenchmarkScenarioId::S3NativeCameraOrbitPan => {
-                Self::new(id, "Native Camera Orbit and Pan navigation active", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S4NativeGridVisibilityToggle => {
-                Self::new(id, "Native Grid Visibility toggling every 15 frames", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S5NativeGroundOriginChange => {
-                Self::new(id, "Native Ground Origin mutating every 10 frames", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S6NativeGridStyleColorChange => {
-                Self::new(id, "Native Grid Style Color mutating every 10 frames", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S7NativeVisuallyEmptyLiveStageRetained => {
-                Self::new(id, "Visually empty stage with LiveStage retained", Some(EMPTY), true)
-            }
-            BenchmarkScenarioId::S8NativeNoLiveStage => {
-                Self::new(id, "Viewer startup without active LiveStage", None, true)
-            }
-            BenchmarkScenarioId::S9NativeRecoveryIdle => {
-                Self::new(id, "Native Recovery Idle without authoring edits", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S10NativeAuthoritativeUsdChange => {
-                Self::new(id, "Native Authoritative USD Change applied", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S11WebRtcIdleConnected => {
-                Self::new(id, "WebRTC Headless Server idle connected", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S12WebRtcIdleClientConnected => {
-                Self::new(id, "WebRTC Remote client connected stream idle", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S13WebRtcRemoteGridVisibilityCommand => {
-                Self::new(id, "WebRTC Remote Grid Visibility command stream", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S14WebRtcRemoteGroundOriginCommand => {
-                Self::new(id, "WebRTC Remote Ground Origin command stream", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S15WebRtcRemoteOrbitPan => {
-                Self::new(id, "WebRTC Remote Orbit/Pan client input stream", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S16WebRtcRemoteVisuallyEmpty => {
-                Self::new(id, "WebRTC Remote visually empty stage retained", Some(EMPTY), true)
-            }
-            BenchmarkScenarioId::S17WebRtcRemoteAuthoritativeUsdEdit => {
-                Self::new(id, "WebRTC Remote authoritative stage mutation edit", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S18WebRtcRemoteCommandAfterLongIdle => {
-                Self::new(id, "WebRTC Remote command after long idle duration", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S19IsolationQuerySaturation => {
-                Self::new(id, "Isolation: High-throughput semantic queries during render", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S20IsolationAuthValidationBurst => {
-                Self::new(id, "Isolation: Authentication validation burst load", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S21IsolationNavigationUnderAuth => {
-                Self::new(id, "Isolation: Viewport navigation under auth check pressure", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S22IsolationQueryCommandConcurrency => {
-                Self::new(id, "Isolation: Concurrent query and editor command batches", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S23IsolationSlowFailingDataWorker => {
-                Self::new(id, "Isolation: Slow or failing background semantic worker", Some(HUMMINGBIRD), true)
-            }
-            BenchmarkScenarioId::S24IsolationAuthRevocationPropagation => {
-                Self::new(id, "Isolation: Auth token revocation propagation", Some(HUMMINGBIRD), true)
-            }
-        }
+        scenario_definitions::for_scenario(id)
     }
 }
 

@@ -20,6 +20,7 @@ pub(crate) use query::{
 
 mod query;
 
+#[cfg(test)]
 pub(crate) use schema::SCHEMA_VERSION;
 pub(crate) use turso::TursoSemanticStore;
 

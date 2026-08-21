@@ -82,7 +82,7 @@ pub(super) fn build_expanded(
     let smooth_per_point: Option<Vec<[f32; 3]>> =
         (!want_normals).then(|| compute_point_smooth_normals(read));
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).normal_generation_ms += normal_start.elapsed().as_secs_f64() * 1000.0;
+        metrics.normal_generation_ms += normal_start.elapsed().as_secs_f64() * 1000.0;
     }
 
     let primvar_start = Instant::now();
@@ -119,7 +119,7 @@ pub(super) fn build_expanded(
         corner_ix += (*face_verts).max(0) as usize;
     }
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
+        metrics.primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
     }
 
     let mut sequential = Vec::with_capacity(corner_count);
@@ -139,8 +139,7 @@ pub(super) fn build_expanded(
         face_subset,
     );
     if let Some(metrics) = profile.as_mut() {
-        (**metrics).topology_triangulation_ms +=
-            triangulation_start.elapsed().as_secs_f64() * 1000.0;
+        metrics.topology_triangulation_ms += triangulation_start.elapsed().as_secs_f64() * 1000.0;
     }
 
     let emit_normals = want_normals || smooth_per_point.is_some();

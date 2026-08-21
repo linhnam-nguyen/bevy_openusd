@@ -103,7 +103,7 @@ impl EncodePipeline {
             .property("max-size-time", 1_000_000_000u64)
             .build()?;
         let rtp_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        rtp_caps_filter.set_property("caps", &rtp_video_caps(codec));
+        rtp_caps_filter.set_property("caps", rtp_video_caps(codec));
         let mut webrtc_builder = gstreamer::ElementFactory::make("webrtcbin").name("webrtcbin");
         webrtc_builder = webrtc_builder.property_from_str("bundle-policy", "max-bundle");
         if !config.stun_server.is_empty() {
@@ -112,25 +112,25 @@ impl EncodePipeline {
         let webrtc = webrtc_builder.build()?;
 
         if encoder_name.contains("nv") || encoder_name.contains("amf") {
-            let _ = encoder.set_property_from_str("preset", "low-latency-hq");
+            encoder.set_property_from_str("preset", "low-latency-hq");
         } else if encoder_name.contains("x264") {
-            let _ = encoder.set_property_from_str("tune", "zerolatency");
-            let _ = encoder.set_property_from_str("speed-preset", "ultrafast");
+            encoder.set_property_from_str("tune", "zerolatency");
+            encoder.set_property_from_str("speed-preset", "ultrafast");
         } else if encoder_name == "vtenc_h265" {
-            let _ = encoder.set_property("realtime", true);
-            let _ = encoder.set_property("allow-frame-reordering", false);
-            let _ = encoder.set_property("bitrate", config.h265_bitrate_kbps);
+            encoder.set_property("realtime", true);
+            encoder.set_property("allow-frame-reordering", false);
+            encoder.set_property("bitrate", config.h265_bitrate_kbps);
             let keyint = config.fps.saturating_mul(2).max(1);
-            let _ = encoder.set_property("max-keyframe-interval", keyint as i32);
-            let _ = encoder.set_property_from_str("rate-control", "cbr");
+            encoder.set_property("max-keyframe-interval", keyint as i32);
+            encoder.set_property_from_str("rate-control", "cbr");
         } else if encoder_name == "svtav1enc" {
-            let _ = encoder.set_property_from_str("preset", "13");
+            encoder.set_property_from_str("preset", "13");
             let keyint = config.fps.saturating_mul(2).max(1);
-            let _ = encoder.set_property("intra-period-length", keyint as i32);
-            let _ = encoder.set_property("target-bitrate", config.av1_bitrate_kbps);
+            encoder.set_property("intra-period-length", keyint as i32);
+            encoder.set_property("target-bitrate", config.av1_bitrate_kbps);
         }
 
-        pipeline.add_many(&[
+        pipeline.add_many([
             appsrc.upcast_ref(),
             &videoconvert,
             &encoder,
@@ -142,7 +142,7 @@ impl EncodePipeline {
             &webrtc,
         ])?;
 
-        gstreamer::Element::link_many(&[
+        gstreamer::Element::link_many([
             appsrc.upcast_ref(),
             &videoconvert,
             &encoder,
@@ -172,20 +172,19 @@ impl EncodePipeline {
 
         if let Err(err) = pipeline.set_state(gstreamer::State::Playing) {
             let mut err_detail = String::new();
-            if let Some(bus) = pipeline.bus() {
-                if let Some(msg) = bus.timed_pop_filtered(
+            if let Some(bus) = pipeline.bus()
+                && let Some(msg) = bus.timed_pop_filtered(
                     gstreamer::ClockTime::from_mseconds(100),
                     &[gstreamer::MessageType::Error],
-                ) {
-                    if let gstreamer::MessageView::Error(err_msg) = msg.view() {
-                        err_detail = format!(
-                            "{}: {} (debug: {:?})",
-                            err_msg.src().map(|s| s.path_string()).unwrap_or_default(),
-                            err_msg.error(),
-                            err_msg.debug()
-                        );
-                    }
-                }
+                )
+                && let gstreamer::MessageView::Error(err_msg) = msg.view()
+            {
+                err_detail = format!(
+                    "{}: {} (debug: {:?})",
+                    err_msg.src().map(|s| s.path_string()).unwrap_or_default(),
+                    err_msg.error(),
+                    err_msg.debug()
+                );
             }
             anyhow::bail!(
                 "Failed to set GStreamer pipeline state to Playing: {err:?}. Detail: {err_detail}"

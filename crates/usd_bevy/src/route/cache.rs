@@ -175,9 +175,7 @@ pub(crate) fn lookup_source_mesh(world: &mut World, key: u64) -> Option<Handle<M
         .source_meshes
         .get(&key)
         .cloned();
-    let Some(handle) = existing else {
-        return None;
-    };
+    let handle = existing?;
     let alive = world
         .get_resource::<Assets<Mesh>>()
         .is_some_and(|assets| assets.contains(&handle));

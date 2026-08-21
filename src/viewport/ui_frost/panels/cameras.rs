@@ -44,18 +44,18 @@ pub fn draw_cameras_panel(
         accent_col,
         |pane| {
             pane.section("cameras_bookmarks", "Bookmarks", true, |ui| {
-                if wide_button(ui, "💾  Save current view", accent_col).clicked() {
-                    if let Ok(cam) = cameras.single() {
-                        let seq = bookmarks.next_seq + 1;
-                        bookmarks.next_seq = seq;
-                        bookmarks.items.push(CameraBookmark {
-                            name: format!("View {seq}"),
-                            focus: cam.focus,
-                            distance: cam.distance,
-                            yaw: cam.yaw,
-                            elevation: cam.elevation,
-                        });
-                    }
+                if wide_button(ui, "💾  Save current view", accent_col).clicked()
+                    && let Ok(cam) = cameras.single()
+                {
+                    let seq = bookmarks.next_seq + 1;
+                    bookmarks.next_seq = seq;
+                    bookmarks.items.push(CameraBookmark {
+                        name: format!("View {seq}"),
+                        focus: cam.focus,
+                        distance: cam.distance,
+                        yaw: cam.yaw,
+                        elevation: cam.elevation,
+                    });
                 }
                 if bookmarks.items.is_empty() {
                     sub_caption(ui, "(no bookmarks yet)");

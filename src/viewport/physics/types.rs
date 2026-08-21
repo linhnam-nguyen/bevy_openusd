@@ -8,14 +8,8 @@ use usd_rapier::colliders::{ColliderOpinion, ShapeInput, build_collider};
 use usd_rapier::joints::JointKind;
 
 /// Whether the viewport advances its Rapier world.
-#[derive(Resource, Debug, Clone, Copy)]
+#[derive(Resource, Debug, Clone, Copy, Default)]
 pub(crate) struct PhysicsActive(pub(crate) bool);
-
-impl Default for PhysicsActive {
-    fn default() -> Self {
-        Self(false)
-    }
-}
 
 /// All Rapier state for the current live USD projection.
 #[derive(Resource)]
@@ -37,9 +31,11 @@ pub(crate) struct PhysicsWorld {
 
 impl Default for PhysicsWorld {
     fn default() -> Self {
-        let mut integration_parameters = IntegrationParameters::default();
-        integration_parameters.num_solver_iterations = 16;
-        integration_parameters.num_internal_pgs_iterations = 4;
+        let integration_parameters = IntegrationParameters {
+            num_solver_iterations: 16,
+            num_internal_pgs_iterations: 4,
+            ..Default::default()
+        };
 
         let mut world = Self {
             gravity: Vector::new(0.0, -9.81, 0.0),

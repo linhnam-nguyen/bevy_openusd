@@ -152,9 +152,7 @@ pub(super) fn editor_value_to_usd(
                 .map(number)
                 .collect::<Result<_, _>>()?,
         ),
-        "string[]" => {
-            Value::StringVec(values(value)?.iter().map(text).collect::<Result<_, _>>()?)
-        }
+        "string[]" => Value::StringVec(values(value)?.iter().map(text).collect::<Result<_, _>>()?),
         "token[]" => Value::TokenVec(
             values(value)?
                 .iter()

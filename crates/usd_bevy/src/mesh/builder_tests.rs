@@ -23,7 +23,11 @@ fn expanded_triangle(indexed_uv: bool) -> ReadMesh {
     mesh.uvs = Some(MeshPrimvar {
         values: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
         interpolation: Interpolation::FaceVarying,
-        indices: indexed_uv.then(|| vec![0, 1, 2]).unwrap_or_default(),
+        indices: if indexed_uv {
+            vec![0, 1, 2]
+        } else {
+            Vec::new()
+        },
     });
     mesh
 }

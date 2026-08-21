@@ -44,6 +44,11 @@ impl UsdMaterialCache {
         self.materials.len()
     }
 
+    /// Whether no composed material paths are interned.
+    pub fn is_empty(&self) -> bool {
+        self.materials.is_empty()
+    }
+
     /// Snapshot material-cache counters for diagnostics or profiling.
     pub fn stats(&self) -> MaterialCacheStats {
         self.stats
