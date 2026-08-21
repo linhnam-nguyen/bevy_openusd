@@ -36,6 +36,7 @@ use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
+    sync_selected_instance_identity,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -341,6 +342,7 @@ pub(crate) fn run() {
             handle_usd_hot_reload,
             apply_load_request,
             apply_fly_to,
+            sync_selected_instance_identity,
             draw_selected_prim_highlight,
             follow_mounted_camera,
             tick_stage_time,

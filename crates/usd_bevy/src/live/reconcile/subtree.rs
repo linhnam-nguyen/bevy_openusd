@@ -11,6 +11,7 @@ use super::super::stage::LiveStage;
 use super::ReconcileStats;
 use super::full::reconcile_full;
 use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
+use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 
 /// Reconcile specific subtrees against the stage's current prims.
 pub(super) fn reconcile_subtrees(
@@ -109,6 +110,9 @@ pub(super) fn reconcile_subtrees(
             world.get_resource_mut::<crate::route::material::MaterialConsumerIndex>()
         {
             material_idx.remove_consumer(&path);
+        }
+        if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
+            dependencies.remove_instancer(&path);
         }
         world.despawn(entity);
         map.remove_path(&path);

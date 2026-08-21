@@ -25,6 +25,8 @@ pub mod curves;
 pub mod dome;
 pub mod geom;
 pub mod instancer;
+mod instancer_state;
+pub mod instancer_dependency;
 pub mod light;
 pub mod material;
 pub mod payload;

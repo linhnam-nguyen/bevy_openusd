@@ -33,6 +33,8 @@ pub use route::camera::{Projection, UsdCamera};
 pub use route::coverage::UsdProcedural;
 pub use route::curves::CurvesRoute;
 pub use route::geom::{UsdDisplayName, UsdKind, UsdLocalExtent, UsdPurpose};
+pub use route::instancer::{PointInstancerSelection, PointInstancerStats, UsdInstanceId};
+pub use route::instancer_dependency::PointInstancerDependencyIndex;
 pub use route::physics::{
     UsdCollider, UsdDrives, UsdJoint, UsdLimits, UsdMass, UsdPhysicsJoint, UsdRigidBody,
 };
@@ -67,6 +69,9 @@ impl Plugin for UsdPlugin {
         }
         // Intern projected meshes so identical prims share one GPU asset (6d).
         app.init_resource::<route::cache::ProjectionCache>();
+        app.init_resource::<route::instancer::PointInstancerStats>();
+        app.init_resource::<route::instancer::PointInstancerSelection>();
+        app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();
         // Opt-in mesh/vertex pipeline profiler; disabled on the normal hot path.
         app.init_resource::<route::profile::GeometryProfile>();
         // Texture cache for filesystem and USDZ archives.

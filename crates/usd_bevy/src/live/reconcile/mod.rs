@@ -2,13 +2,14 @@ mod full;
 mod subtree;
 
 use bevy::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::change::StageChangeBatch;
 use super::index::PrimEntities;
 use super::path::{prim_of, property_of, validate_prim_path};
 use super::projection::registry_of;
 use super::stage::LiveStage;
+use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 use crate::route::material::cleanup_retired_materials;
 use full::reconcile_full;
 use subtree::reconcile_subtrees;
@@ -48,11 +49,15 @@ pub(super) fn apply_sparse_changed_info(
     let registry = registry_of(world);
     let suppressed = live.take_suppressed();
     let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
+    let mut dependent_instancers = HashSet::new();
     for prop_path in changed_info {
         let prim = prim_of(prop_path);
         let entry = per_prim.entry(prim.to_string()).or_default();
         if let Some(prop) = property_of(prop_path) {
             entry.push(prop.to_string());
+        }
+        if let Some(index) = world.get_resource::<PointInstancerDependencyIndex>() {
+            dependent_instancers.extend(index.dependents_for_path(prim));
         }
     }
 
@@ -71,11 +76,34 @@ pub(super) fn apply_sparse_changed_info(
         registry.patch_prim(&live.stage, &p, world, entity, &prop_refs);
         patched_count += 1;
     }
+    patched_count +=
+        apply_prototype_dependents(world, &live.stage, map, &registry, dependent_instancers);
     world.insert_resource(ReconcileStats {
         visited_stage_prims: patched_count,
         patched_entities: patched_count,
         ..Default::default()
     });
+}
+
+fn apply_prototype_dependents(
+    world: &mut World,
+    stage: &openusd::usd::Stage,
+    map: &PrimEntities,
+    registry: &crate::route::SchemaRegistry,
+    instancers: HashSet<String>,
+) -> usize {
+    let mut patched = 0;
+    for instancer in instancers {
+        let Some(entity) = map.entity(&instancer) else {
+            continue;
+        };
+        let Ok(path) = openusd::sdf::path(&instancer) else {
+            continue;
+        };
+        registry.patch_prim(stage, &path, world, entity, &["prototype_dependency"]);
+        patched += 1;
+    }
+    patched
 }
 
 /// Reproject one already-drained batch without touching the live-stage queue.
@@ -128,6 +156,25 @@ pub fn apply_change_batch(
         }
         let unshaded = batch.unshaded_changed_info();
         apply_sparse_changed_info(world, live, map, &unshaded);
+        let resynced_paths = batch
+            .changes
+            .iter()
+            .flat_map(|change| change.resynced.iter())
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        if !resynced_paths.is_empty() {
+            let dependencies = world
+                .get_resource::<PointInstancerDependencyIndex>()
+                .map(|index| {
+                    resynced_paths
+                        .iter()
+                        .flat_map(|path| index.dependents_for_path(path))
+                        .collect::<HashSet<_>>()
+                })
+                .unwrap_or_default();
+            let registry = registry_of(world);
+            apply_prototype_dependents(world, &live.stage, map, &registry, dependencies);
+        }
         cleanup_retired_materials(world);
         return;
     }
