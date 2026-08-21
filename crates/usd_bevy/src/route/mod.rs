@@ -29,6 +29,7 @@ pub mod material;
 pub mod payload;
 pub mod physics;
 pub mod points;
+pub mod profile;
 pub mod reflect;
 pub mod shapes;
 pub mod skel;

@@ -15,7 +15,7 @@ mod primitives;
 mod primvar;
 mod triangulation;
 
-pub use builder::{mesh_from_usd, mesh_from_usd_subset};
+pub use builder::{MeshBuildMetrics, mesh_from_usd, mesh_from_usd_profiled, mesh_from_usd_subset};
 pub use primitives::{
     mesh_capsule, mesh_cube, mesh_cylinder, mesh_plane, mesh_sphere, rotate_mesh,
 };

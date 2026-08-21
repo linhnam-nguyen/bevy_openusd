@@ -35,6 +35,7 @@ pub use route::geom::{UsdDisplayName, UsdKind, UsdLocalExtent, UsdPurpose};
 pub use route::physics::{
     UsdCollider, UsdDrives, UsdJoint, UsdLimits, UsdMass, UsdPhysicsJoint, UsdRigidBody,
 };
+pub use route::profile::{GeometryProfile, GeometryProfileRecord, GeometryProfileTotals};
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
 pub use snippet::UsdSnippet;
@@ -62,6 +63,8 @@ impl Plugin for UsdPlugin {
         }
         // Intern projected meshes so identical prims share one GPU asset (6d).
         app.init_resource::<route::cache::ProjectionCache>();
+        // Opt-in mesh/vertex pipeline profiler; disabled on the normal hot path.
+        app.init_resource::<route::profile::GeometryProfile>();
         // Texture cache for filesystem and USDZ archives.
         app.init_resource::<route::material::UsdTextureCache>();
         // Decoded StandardMaterial cache keyed by composed USD Material path.

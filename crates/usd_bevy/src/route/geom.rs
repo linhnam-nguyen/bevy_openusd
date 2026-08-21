@@ -3,7 +3,10 @@
 //! `read::shade`) layers on as its own route later (PLAN P4).
 
 use bevy::prelude::*;
+use std::time::Instant;
 
+use super::cache::{intern_mesh, intern_mesh_profiled};
+use super::profile::{GeometryProfile, GeometryProfileRecord};
 use super::{DisplayPurposes, PrimRoute, RouteCtx};
 use crate::read::geom::{VisibilityState, read_effective_purpose, read_mesh, read_visibility};
 
@@ -79,7 +82,15 @@ pub struct MeshRoute;
 impl MeshRoute {
     /// Bake + attach; returns whether a `Mesh3d` was inserted.
     fn attach(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) -> bool {
-        let Ok(Some(read)) = read_mesh(ctx.stage, ctx.path) else {
+        let profile_enabled = world
+            .get_resource::<GeometryProfile>()
+            .is_some_and(|profile| profile.enabled);
+        let read_start = profile_enabled.then(Instant::now);
+        let read_result = read_mesh(ctx.stage, ctx.path);
+        let read_mesh_ms = read_start
+            .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or_default();
+        let Ok(Some(read)) = read_result else {
             return false;
         };
         if world.get_resource::<Assets<Mesh>>().is_none()
@@ -98,8 +109,40 @@ impl MeshRoute {
             ctx.prim_str(),
             read.points.len()
         );
-        let mesh = crate::mesh::mesh_from_usd(&read);
-        let mesh_handle = super::cache::intern_mesh(world, mesh);
+        let (mesh, build_metrics) = if profile_enabled {
+            crate::mesh::mesh_from_usd_profiled(&read)
+        } else {
+            (crate::mesh::mesh_from_usd(&read), Default::default())
+        };
+        let (mesh_handle, intern_metrics) = if profile_enabled {
+            intern_mesh_profiled(world, mesh)
+        } else {
+            (intern_mesh(world, mesh), Default::default())
+        };
+        if profile_enabled {
+            world
+                .resource_mut::<GeometryProfile>()
+                .record(GeometryProfileRecord {
+                    read_mesh_ms,
+                    mesh_from_usd_ms: build_metrics.mesh_from_usd_ms,
+                    topology_triangulation_ms: build_metrics.topology_triangulation_ms,
+                    primvar_expansion_ms: build_metrics.primvar_expansion_ms,
+                    normal_generation_ms: build_metrics.normal_generation_ms,
+                    bevy_mesh_allocation_ms: intern_metrics.allocation_ms,
+                    mesh_signature_ms: intern_metrics.signature_ms,
+                    mesh_intern_ms: intern_metrics.total_ms,
+                    source_points: build_metrics.source_points,
+                    source_faces: build_metrics.source_faces,
+                    source_face_corners: build_metrics.source_face_corners,
+                    output_vertices: build_metrics.output_vertices,
+                    output_indices: build_metrics.output_indices,
+                    output_triangles: build_metrics.output_triangles,
+                    authored_normals: build_metrics.authored_normals,
+                    generated_normals: build_metrics.generated_normals,
+                    expanded_vertices: build_metrics.expanded_vertices,
+                    cache_hit: intern_metrics.cache_hit,
+                });
+        }
         let material = world
             .resource_mut::<Assets<StandardMaterial>>()
             .add(StandardMaterial::default());

@@ -1,6 +1,7 @@
 use crate::read::geom::{Interpolation, ReadMesh};
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
+use std::time::Instant;
 
 use super::normals::compute_point_smooth_normals;
 use super::primvar::{corner_color, corner_normal, corner_uv, expand_vertex_primvar};
@@ -19,10 +20,53 @@ pub fn mesh_from_usd(read: &ReadMesh) -> Mesh {
     mesh_from_usd_subset(read, None)
 }
 
+/// Timings and deterministic source/output counts for one mesh conversion.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MeshBuildMetrics {
+    pub mesh_from_usd_ms: f64,
+    pub topology_triangulation_ms: f64,
+    pub primvar_expansion_ms: f64,
+    pub normal_generation_ms: f64,
+    pub source_points: usize,
+    pub source_faces: usize,
+    pub source_face_corners: usize,
+    pub output_vertices: usize,
+    pub output_indices: usize,
+    pub output_triangles: usize,
+    pub authored_normals: bool,
+    pub generated_normals: bool,
+    pub expanded_vertices: bool,
+}
+
+/// Profiled form of [`mesh_from_usd`].
+pub fn mesh_from_usd_profiled(read: &ReadMesh) -> (Mesh, MeshBuildMetrics) {
+    let mut metrics = MeshBuildMetrics::default();
+    let mesh = build_mesh(read, None, Some(&mut metrics));
+    (mesh, metrics)
+}
+
 /// Same as [`mesh_from_usd`] but emits only the faces in `face_subset` when
 /// provided (`None` = every face). Used to split a `UsdGeom.Mesh` into one
 /// Bevy mesh per `GeomSubset` so each subset can carry its own material.
 pub fn mesh_from_usd_subset(read: &ReadMesh, face_subset: Option<&[i32]>) -> Mesh {
+    build_mesh(read, face_subset, None)
+}
+
+fn build_mesh(
+    read: &ReadMesh,
+    face_subset: Option<&[i32]>,
+    mut profile: Option<&mut MeshBuildMetrics>,
+) -> Mesh {
+    let total_start = Instant::now();
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).source_points = read.points.len();
+        (**metrics).source_faces = read.face_vertex_counts.len();
+        (**metrics).source_face_corners = read
+            .face_vertex_counts
+            .iter()
+            .map(|count| (*count).max(0) as usize)
+            .sum();
+    }
     // Face-Varying or Uniform (per-face) primvars break the indexed
     // point-sharing optimisation — vertex-indexed output can't represent
     // a per-face or per-corner value when a vertex is shared between
@@ -53,10 +97,19 @@ pub fn mesh_from_usd_subset(read: &ReadMesh, face_subset: Option<&[i32]>) -> Mes
             .unwrap_or(false);
 
     let (positions, normals, uvs, colors, indices) = if expand {
-        build_expanded(read, face_subset)
+        build_expanded(read, face_subset, &mut profile)
     } else {
-        build_indexed(read, face_subset)
+        build_indexed(read, face_subset, &mut profile)
     };
+
+    if let Some(metrics) = profile.as_mut() {
+        metrics.output_vertices = positions.len();
+        metrics.output_indices = indices.len();
+        metrics.output_triangles = indices.len() / 3;
+        metrics.authored_normals = normals.is_some();
+        metrics.generated_normals = normals.is_none();
+        metrics.expanded_vertices = expand;
+    }
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -84,7 +137,11 @@ pub fn mesh_from_usd_subset(read: &ReadMesh, face_subset: Option<&[i32]>) -> Mes
         // — correct but bloats the mesh. Smooth normals keep the original
         // topology and average adjacent face normals. For plain USD stages
         // without authored normals that's the intuitive default.
+        let normal_start = Instant::now();
         mesh.compute_smooth_normals();
+        if let Some(metrics) = profile.as_mut() {
+            metrics.normal_generation_ms += normal_start.elapsed().as_secs_f64() * 1000.0;
+        }
     }
     // MikkT vertex tangents — Bevy's PBR shader needs `ATTRIBUTE_TANGENT`
     // to evaluate normal maps correctly. Without them, normal-mapped
@@ -94,6 +151,9 @@ pub fn mesh_from_usd_subset(read: &ReadMesh, face_subset: Option<&[i32]>) -> Mes
     // present at this point; failures are fatal-but-rare and we just log.
     if let Err(e) = mesh.generate_tangents() {
         bevy::log::debug!("mesh: generate_tangents failed: {e}");
+    }
+    if let Some(metrics) = profile.as_mut() {
+        metrics.mesh_from_usd_ms = total_start.elapsed().as_secs_f64() * 1000.0;
     }
     mesh
 }
@@ -109,8 +169,13 @@ type BuiltMesh = (
 
 /// Build the common case: indexed triangle list, one vertex per USD point.
 /// Uses vertex-level or constant interpolation only.
-fn build_indexed(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
+fn build_indexed(
+    read: &ReadMesh,
+    face_subset: Option<&[i32]>,
+    profile: &mut Option<&mut MeshBuildMetrics>,
+) -> BuiltMesh {
     let positions = read.points.clone();
+    let primvar_start = Instant::now();
 
     // Normals: pick up vertex-indexed data if present; else None and let
     // `compute_smooth_normals` handle it. `Varying` is semantically
@@ -137,7 +202,11 @@ fn build_indexed(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
         .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
 
     let colors = build_vertex_colors_indexed(read, positions.len());
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
+    }
 
+    let triangulation_start = Instant::now();
     let indices = triangulate_polygon(
         &positions,
         &read.face_vertex_counts,
@@ -145,6 +214,10 @@ fn build_indexed(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
         read.orientation,
         face_subset,
     );
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).topology_triangulation_ms +=
+            triangulation_start.elapsed().as_secs_f64() * 1000.0;
+    }
     (positions, normals, uvs, colors, indices)
 }
 
@@ -205,7 +278,11 @@ fn build_vertex_colors_indexed(read: &ReadMesh, vertex_count: usize) -> Option<V
 
 /// Build the fully-expanded form: one vertex per face corner so `faceVarying`
 /// primvars (cube uvs, seams) can be represented.
-fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
+fn build_expanded(
+    read: &ReadMesh,
+    face_subset: Option<&[i32]>,
+    profile: &mut Option<&mut MeshBuildMetrics>,
+) -> BuiltMesh {
     let corner_count: usize = read
         .face_vertex_counts
         .iter()
@@ -227,9 +304,14 @@ fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
     // other primvar — usually FaceVarying UVs for texture seams — forced
     // expansion), so "smooth" normals collapse to face normals and you
     // see every polygon. Compute once, then index per corner.
+    let normal_start = Instant::now();
     let smooth_per_point: Option<Vec<[f32; 3]>> =
         (!want_normals).then(|| compute_point_smooth_normals(read));
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).normal_generation_ms += normal_start.elapsed().as_secs_f64() * 1000.0;
+    }
 
+    let primvar_start = Instant::now();
     let mut corner_ix: usize = 0;
     for (face_ix, face_verts) in read.face_vertex_counts.iter().enumerate() {
         for k in 0..((*face_verts).max(0) as usize) {
@@ -266,6 +348,9 @@ fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
         }
         corner_ix += (*face_verts).max(0) as usize;
     }
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).primvar_expansion_ms += primvar_start.elapsed().as_secs_f64() * 1000.0;
+    }
 
     // After expansion, indices become sequential 0..N per face, then
     // fan-triangulated. Re-derive a pseudo `faceVertexIndices` of the form
@@ -278,6 +363,7 @@ fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
             running += 1;
         }
     }
+    let triangulation_start = Instant::now();
     let indices = triangulate_polygon(
         &positions,
         &read.face_vertex_counts,
@@ -285,6 +371,10 @@ fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
         read.orientation,
         face_subset,
     );
+    if let Some(metrics) = profile.as_mut() {
+        (**metrics).topology_triangulation_ms +=
+            triangulation_start.elapsed().as_secs_f64() * 1000.0;
+    }
 
     // We emit normals whenever they were authored OR we synthesised
     // them from the point-smooth pass. The latter is the difference
@@ -298,3 +388,7 @@ fn build_expanded(read: &ReadMesh, face_subset: Option<&[i32]>) -> BuiltMesh {
         indices,
     )
 }
+
+#[cfg(test)]
+#[path = "builder_tests.rs"]
+mod tests;

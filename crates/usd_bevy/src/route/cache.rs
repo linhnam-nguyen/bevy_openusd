@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
+use std::time::Instant;
 
 use bevy::mesh::VertexAttributeValues;
 use bevy::platform::hash::FixedHasher;
@@ -34,6 +35,15 @@ pub struct ProjectionCacheStats {
     pub misses: u64,
     pub stale_handles: u64,
     pub evictions: u64,
+}
+
+/// Timings for one mesh interning operation.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MeshInternMetrics {
+    pub total_ms: f64,
+    pub signature_ms: f64,
+    pub allocation_ms: f64,
+    pub cache_hit: bool,
 }
 
 /// Interns projected meshes by geometry signature so identical prims share one
@@ -75,11 +85,28 @@ impl ProjectionCache {
 /// identical geometry was already interned this session. Falls back to a plain
 /// `add` when there is no [`ProjectionCache`] resource.
 pub fn intern_mesh(world: &mut World, mesh: Mesh) -> Handle<Mesh> {
+    intern_mesh_profiled(world, mesh).0
+}
+
+/// [`intern_mesh`] with timings for the optional geometry profiler.
+pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, MeshInternMetrics) {
+    let total_start = Instant::now();
     // No cache resource → behave exactly like `Assets::add`.
     if world.get_resource::<ProjectionCache>().is_none() {
-        return world.resource_mut::<Assets<Mesh>>().add(mesh);
+        let allocation_start = Instant::now();
+        let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+        return (
+            handle,
+            MeshInternMetrics {
+                total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+                allocation_ms: allocation_start.elapsed().as_secs_f64() * 1000.0,
+                ..Default::default()
+            },
+        );
     }
+    let signature_start = Instant::now();
     let sig = mesh_signature(&mesh);
+    let signature_ms = signature_start.elapsed().as_secs_f64() * 1000.0;
     let existing = world
         .resource::<ProjectionCache>()
         .meshes
@@ -93,14 +120,24 @@ pub fn intern_mesh(world: &mut World, mesh: Mesh) -> Handle<Mesh> {
         cache.stats.lookups += 1;
         if is_alive {
             cache.stats.hits += 1;
-            return existing.expect("alive cache entry must have a handle");
+            return (
+                existing.expect("alive cache entry must have a handle"),
+                MeshInternMetrics {
+                    total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+                    signature_ms,
+                    cache_hit: true,
+                    ..Default::default()
+                },
+            );
         }
         if existing.is_some() {
             cache.stats.stale_handles += 1;
         }
         cache.stats.misses += 1;
     }
+    let allocation_start = Instant::now();
     let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+    let allocation_ms = allocation_start.elapsed().as_secs_f64() * 1000.0;
     let mut cache = world.resource_mut::<ProjectionCache>();
     // Bound memory: clearing drops the strong handles so unreferenced meshes are
     // reclaimable. A stale (dead-handle) entry we passed over above also gets
@@ -110,7 +147,15 @@ pub fn intern_mesh(world: &mut World, mesh: Mesh) -> Handle<Mesh> {
         cache.stats.evictions += 1;
     }
     cache.meshes.insert(sig, handle.clone());
-    handle
+    (
+        handle,
+        MeshInternMetrics {
+            total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+            signature_ms,
+            allocation_ms,
+            cache_hit: false,
+        },
+    )
 }
 
 /// A 64-bit signature over the geometry that defines a mesh's appearance:
