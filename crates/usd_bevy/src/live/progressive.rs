@@ -1,3 +1,5 @@
+use bevy::mesh::Mesh3d;
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -184,7 +186,8 @@ pub(super) fn project_on_load_system(world: &mut World) {
     }
     let resident = state.session_id == Some(session_id)
         && state.readiness == ProjectionReadiness::Ready
-        && state.total == map_len;
+        && state.total == map_len
+        && resident_projection(world, world.resource::<PrimEntities>(), &state);
     if resident {
         world
             .resource_mut::<ProgressiveProjectionState>()
@@ -207,7 +210,8 @@ pub(super) fn project_on_load_system(world: &mut World) {
     let needs_start = state.session_id != Some(session_id)
         || state.restart_requested
         || (state.readiness == ProjectionReadiness::Idle && map_len == 0)
-        || (state.readiness == ProjectionReadiness::Cancelled && !has_changes);
+        || (state.readiness == ProjectionReadiness::Cancelled && !has_changes)
+        || (state.readiness == ProjectionReadiness::Ready && !resident);
     if !needs_start || has_changes {
         return;
     }
@@ -380,4 +384,38 @@ fn clear_projection(world: &mut World, map: &mut PrimEntities) {
         world.despawn(entity);
         map.remove_path(&path);
     }
+}
+
+fn resident_projection(
+    world: &World,
+    map: &PrimEntities,
+    state: &ProgressiveProjectionState,
+) -> bool {
+    let Some(plan) = state.plan.as_ref() else {
+        return false;
+    };
+    plan.entries().all(|entry| {
+        let Some(entity) = map.entity(entry.path()) else {
+            return false;
+        };
+        let Some(prim) = world.get::<crate::prim_ref::UsdPrimRef>(entity) else {
+            return false;
+        };
+        if prim.path != entry.path() {
+            return false;
+        }
+        if let Some(mesh) = world.get::<Mesh3d>(entity)
+            && let Some(assets) = world.get_resource::<Assets<Mesh>>()
+            && !assets.contains(&mesh.0)
+        {
+            return false;
+        }
+        if let Some(material) = world.get::<MeshMaterial3d<StandardMaterial>>(entity)
+            && let Some(assets) = world.get_resource::<Assets<StandardMaterial>>()
+            && !assets.contains(&material.0)
+        {
+            return false;
+        }
+        true
+    })
 }

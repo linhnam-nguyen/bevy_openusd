@@ -368,3 +368,61 @@ fn readiness_is_additive_and_progress_is_monotonic() {
     ready.cancel();
     assert_eq!(ready.readiness(), ProjectionReadiness::Ready);
 }
+
+#[test]
+fn cache_aware_gate_rebuilds_when_a_resident_mesh_asset_is_evicted() {
+    let stage = UsdSnippet::new(
+        r#"#usda 1.0
+def Cube "Cube"
+{
+}
+"#,
+    )
+    .open_stage()
+    .expect("cube stage opens");
+    let mut app = App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<bevy::image::Image>>()
+        .init_resource::<Assets<bevy::pbr::StandardMaterial>>();
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+    let cube = app
+        .world()
+        .resource::<PrimEntities>()
+        .entity("/Cube")
+        .unwrap();
+    let mesh = app
+        .world()
+        .get::<Mesh3d>(cube)
+        .expect("cube mesh")
+        .0
+        .clone();
+    let plan_builds = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>()
+        .plan_builds();
+    app.world_mut()
+        .resource_mut::<Assets<Mesh>>()
+        .remove(mesh.id());
+
+    app.update();
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(state.readiness(), ProjectionReadiness::Ready);
+    assert_eq!(state.plan_builds(), plan_builds + 1);
+    let rebuilt_entity = app
+        .world()
+        .resource::<PrimEntities>()
+        .entity("/Cube")
+        .expect("rebuilt cube entity");
+    let rebuilt = app
+        .world()
+        .get::<Mesh3d>(rebuilt_entity)
+        .expect("rebuilt cube mesh")
+        .0
+        .clone();
+    assert!(app.world().resource::<Assets<Mesh>>().contains(&rebuilt));
+}
