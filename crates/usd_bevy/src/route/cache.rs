@@ -56,6 +56,7 @@ pub struct MeshInternMetrics {
 #[derive(Resource, Default)]
 pub struct ProjectionCache {
     meshes: HashMap<u64, Handle<Mesh>>,
+    source_meshes: HashMap<u64, Handle<Mesh>>,
     stats: ProjectionCacheStats,
 }
 
@@ -144,6 +145,7 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
     // swept here rather than lingering.
     if cache.meshes.len() >= MAX_INTERNED {
         cache.meshes.clear();
+        cache.source_meshes.clear();
         cache.stats.evictions += 1;
     }
     cache.meshes.insert(sig, handle.clone());
@@ -156,6 +158,42 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
             cache_hit: false,
         },
     )
+}
+
+/// Look up a source-read mesh before candidate mesh construction.
+pub(crate) fn lookup_source_mesh(world: &mut World, key: u64) -> Option<Handle<Mesh>> {
+    let existing = world
+        .resource::<ProjectionCache>()
+        .source_meshes
+        .get(&key)
+        .cloned();
+    let Some(handle) = existing else {
+        return None;
+    };
+    let alive = world
+        .get_resource::<Assets<Mesh>>()
+        .is_some_and(|assets| assets.contains(&handle));
+    let mut cache = world.resource_mut::<ProjectionCache>();
+    if alive {
+        cache.stats.lookups += 1;
+        cache.stats.hits += 1;
+        return Some(handle);
+    }
+    cache.stats.stale_handles += 1;
+    cache.source_meshes.remove(&key);
+    None
+}
+
+/// Remember the source key after a mesh has been built or found by the final
+/// geometry interner. Both source and final caches share the same bound.
+pub(crate) fn remember_source_mesh(world: &mut World, key: u64, handle: Handle<Mesh>) {
+    let mut cache = world.resource_mut::<ProjectionCache>();
+    if cache.source_meshes.len() >= MAX_INTERNED {
+        cache.meshes.clear();
+        cache.source_meshes.clear();
+        cache.stats.evictions += 1;
+    }
+    cache.source_meshes.insert(key, handle);
 }
 
 /// A 64-bit signature over the geometry that defines a mesh's appearance:

@@ -5,7 +5,10 @@
 use bevy::prelude::*;
 use std::time::Instant;
 
-use super::cache::{intern_mesh, intern_mesh_profiled};
+use super::cache::{
+    ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,
+};
+use super::cache_key::source_mesh_key;
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{DisplayPurposes, PrimRoute, RouteCtx};
 use crate::read::geom::{
@@ -198,15 +201,34 @@ impl MeshRoute {
             ctx.prim_str(),
             read.points.len()
         );
-        let (mesh, build_metrics) = if profile_enabled {
-            crate::mesh::mesh_from_usd_profiled(&read)
+        let source_key = world
+            .get_resource::<ProjectionCache>()
+            .map(|_| source_mesh_key(&read));
+        let source_hit = source_key.and_then(|key| lookup_source_mesh(world, key));
+        let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
+            (
+                mesh_handle,
+                Default::default(),
+                super::cache::MeshInternMetrics {
+                    cache_hit: true,
+                    ..Default::default()
+                },
+            )
         } else {
-            (crate::mesh::mesh_from_usd(&read), Default::default())
-        };
-        let (mesh_handle, intern_metrics) = if profile_enabled {
-            intern_mesh_profiled(world, mesh)
-        } else {
-            (intern_mesh(world, mesh), Default::default())
+            let (mesh, build_metrics) = if profile_enabled {
+                crate::mesh::mesh_from_usd_profiled(&read)
+            } else {
+                (crate::mesh::mesh_from_usd(&read), Default::default())
+            };
+            let (mesh_handle, intern_metrics) = if profile_enabled {
+                intern_mesh_profiled(world, mesh)
+            } else {
+                (intern_mesh(world, mesh), Default::default())
+            };
+            if let Some(key) = source_key {
+                remember_source_mesh(world, key, mesh_handle.clone());
+            }
+            (mesh_handle, build_metrics, intern_metrics)
         };
         if profile_enabled {
             let mut profile = world.resource_mut::<GeometryProfile>();

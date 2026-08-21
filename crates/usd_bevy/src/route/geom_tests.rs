@@ -1,7 +1,10 @@
 use bevy::asset::Assets;
 use bevy::prelude::*;
 
+use super::super::cache::ProjectionCache;
+use super::super::cache_key::source_mesh_key;
 use super::{MeshPatchAction, MeshRoute, UsdLocalExtent, mesh_patch_action};
+use crate::read::geom::{Interpolation, MeshPrimvar, read_mesh};
 use crate::route::{PrimRoute, RouteCtx};
 use crate::snippet::UsdSnippet;
 
@@ -120,4 +123,76 @@ fn mesh_patch_rebuilds_geometry_owned_mesh() {
         world.get_resource::<Assets<Mesh>>().map(Assets::len),
         Some(2)
     );
+}
+
+#[test]
+fn repeated_source_content_reuses_mesh_before_conversion() {
+    let (stage, path) = mesh_stage();
+    let ctx = RouteCtx::new(&stage, &path);
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<ProjectionCache>();
+    let first_entity = world.spawn_empty().id();
+    let second_entity = world.spawn_empty().id();
+    let route = MeshRoute;
+
+    route.project(&ctx, &mut world, first_entity);
+    route.project(&ctx, &mut world, second_entity);
+
+    assert_eq!(
+        world.get::<Mesh3d>(first_entity).expect("first mesh").0,
+        world.get::<Mesh3d>(second_entity).expect("second mesh").0,
+        "identical source content must reuse one mesh handle"
+    );
+    assert_eq!(
+        world.get_resource::<Assets<Mesh>>().map(Assets::len),
+        Some(1)
+    );
+    assert_eq!(world.resource::<ProjectionCache>().stats().hits, 1);
+}
+
+#[test]
+fn source_mesh_key_changes_for_rendered_content_but_not_extent() {
+    let (stage, path) = mesh_stage();
+    let read = read_mesh(&stage, &path)
+        .expect("mesh read succeeds")
+        .expect("mesh exists");
+    let key = source_mesh_key(&read);
+
+    let mut points = read.clone();
+    points.points[0][0] = 2.0;
+    assert_ne!(source_mesh_key(&points), key);
+
+    let mut topology = read.clone();
+    topology.face_vertex_indices[0] = 2;
+    assert_ne!(source_mesh_key(&topology), key);
+
+    let mut uv = read.clone();
+    uv.uvs = Some(MeshPrimvar {
+        values: vec![[0.0, 0.0]; 3],
+        interpolation: Interpolation::Vertex,
+        indices: Vec::new(),
+    });
+    assert_ne!(source_mesh_key(&uv), key);
+
+    let mut normal = read.clone();
+    normal.normals = Some(MeshPrimvar {
+        values: vec![[0.0, 0.0, 1.0]; 3],
+        interpolation: Interpolation::Vertex,
+        indices: Vec::new(),
+    });
+    assert_ne!(source_mesh_key(&normal), key);
+
+    let mut color = read.clone();
+    color.display_color = Some(MeshPrimvar {
+        values: vec![[1.0, 0.0, 0.0]; 3],
+        interpolation: Interpolation::Vertex,
+        indices: Vec::new(),
+    });
+    assert_ne!(source_mesh_key(&color), key);
+
+    let mut extent = read;
+    extent.extent = Some([[-10.0, -10.0, -10.0], [10.0, 10.0, 10.0]]);
+    assert_eq!(source_mesh_key(&extent), key);
 }

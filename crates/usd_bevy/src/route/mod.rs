@@ -18,6 +18,7 @@
 
 pub mod audio;
 pub mod cache;
+mod cache_key;
 pub mod camera;
 pub mod coverage;
 pub mod curves;
