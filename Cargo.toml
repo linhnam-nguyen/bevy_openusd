@@ -97,6 +97,10 @@ name = "m8_instancing_correctness"
 path = "tests/m8_instancing_correctness.rs"
 
 [[test]]
+name = "m8_instancing_freeze"
+path = "tests/m8_instancing_freeze.rs"
+
+[[test]]
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
