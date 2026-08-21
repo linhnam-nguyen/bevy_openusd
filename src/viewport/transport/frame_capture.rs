@@ -11,6 +11,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, mpsc::SyncSender};
 use viewport_streaming::{FrameTrace, FrameTransportMetrics, VideoFrame};
 
+const MAX_PENDING_READBACK_TRACES: usize = 8;
+
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
 #[derive(Resource)]
 pub struct FrameCaptureSink {
@@ -27,21 +29,52 @@ pub(crate) struct FrameTransportResource(pub FrameTransportMetrics);
 pub(crate) struct FrameReadbackCorrelation {
     metrics: FrameTransportMetrics,
     pending: VecDeque<FrameTrace>,
+    in_flight_readbacks: usize,
+    unmatched_readbacks: usize,
 }
 
 impl FrameReadbackCorrelation {
     pub(crate) fn new(metrics: FrameTransportMetrics) -> Self {
         Self {
             metrics,
-            pending: VecDeque::with_capacity(8),
+            pending: VecDeque::with_capacity(MAX_PENDING_READBACK_TRACES),
+            in_flight_readbacks: 0,
+            unmatched_readbacks: 0,
         }
     }
 
     pub(crate) fn push_render_trace(&mut self) {
+        self.in_flight_readbacks = self.in_flight_readbacks.saturating_add(1);
+        if self.unmatched_readbacks > 0 {
+            self.unmatched_readbacks = self.unmatched_readbacks.saturating_add(1);
+            return;
+        }
+        if self.pending.len() >= MAX_PENDING_READBACK_TRACES {
+            self.metrics.record_readback_correlation_overflow();
+            self.metrics
+                .record_readback_correlation_high_water(self.pending.len());
+            // A bounded FIFO cannot safely identify any completion already in
+            // flight after overflow. Fail closed until the outstanding GPU
+            // submissions drain instead of pairing later pixels with a wrong
+            // render identity.
+            self.pending.clear();
+            self.unmatched_readbacks = self.in_flight_readbacks;
+            return;
+        }
         self.pending.push_back(self.metrics.next_render_trace());
+        self.metrics
+            .record_readback_correlation_high_water(self.pending.len());
     }
 
     pub(crate) fn take_readback_trace(&mut self) -> Option<FrameTrace> {
+        if self.in_flight_readbacks == 0 {
+            return None;
+        }
+        self.in_flight_readbacks -= 1;
+        if self.unmatched_readbacks > 0 {
+            self.unmatched_readbacks -= 1;
+            return None;
+        }
         self.pending
             .pop_front()
             .map(|trace| self.metrics.mark_readback_complete(trace))
@@ -155,7 +188,7 @@ fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(V
 
 #[cfg(test)]
 mod tests {
-    use super::{FrameReadbackCorrelation, unpack_rgba_readback};
+    use super::{FrameReadbackCorrelation, MAX_PENDING_READBACK_TRACES, unpack_rgba_readback};
     use bevy::render::renderer::RenderDevice;
     use viewport_streaming::FrameTransportMetrics;
 
@@ -178,6 +211,26 @@ mod tests {
         assert_eq!(second.sequence, 2);
         assert!(first.readback_timestamp_ns.is_some());
         assert!(second.readback_timestamp_ns.is_some());
+    }
+
+    #[test]
+    fn correlation_overflow_is_bounded_and_fails_closed() {
+        let metrics = FrameTransportMetrics::default();
+        let mut correlation = FrameReadbackCorrelation::new(metrics.clone());
+
+        for _ in 0..=MAX_PENDING_READBACK_TRACES {
+            correlation.push_render_trace();
+        }
+
+        assert!(correlation.pending.len() <= MAX_PENDING_READBACK_TRACES);
+        assert!(correlation.take_readback_trace().is_none());
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.readback_correlation_overflows, 1);
+        assert_eq!(
+            snapshot.readback_correlation_high_water as usize,
+            MAX_PENDING_READBACK_TRACES
+        );
+        assert_eq!(snapshot.readback_identity_misses, 0);
     }
 
     #[test]
