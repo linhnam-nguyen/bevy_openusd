@@ -3,3 +3,4 @@
 
 mod commands_test;
 mod mutations_test;
+mod renderer_commands_test;

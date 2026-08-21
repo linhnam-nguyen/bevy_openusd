@@ -4,6 +4,13 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::commands::apply_viewport_commands;
+    use crate::viewport::api::bridge::scene_query::{
+        dispatch_scene_query_commands, publish_semantic_query_results,
+    };
+    use crate::viewport::api::bridge::state::{
+        EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests,
+    };
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
@@ -13,15 +20,6 @@ mod tests {
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::semantic::SemanticWorkingStore;
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
-    use crate::viewport::api::bridge::commands::apply_pending_renderer_cadence;
-    use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::app::cadence::RendererCadence;
-    use crate::viewport::api::bridge::scene_query::{
-        dispatch_scene_query_commands, publish_semantic_query_results,
-    };
-    use crate::viewport::api::bridge::state::{
-        EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests,
-    };
 
     fn command_test_app() -> App {
         let mut app = App::new();
@@ -84,7 +82,10 @@ mod tests {
         app.update();
 
         assert_eq!(
-            app.world().resource::<DisplayToggles>().renderer.render_mode,
+            app.world()
+                .resource::<DisplayToggles>()
+                .renderer
+                .render_mode,
             RenderMode::Wireframe
         );
         assert!(app.world().resource::<UsdStageTime>().playing);
@@ -95,14 +96,38 @@ mod tests {
             std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
                 .collect();
         assert_eq!(events.len(), 4);
-        assert_eq!(events[0].request_id.as_deref(), Some(request_ids[0].as_str()));
-        assert!(matches!(events[0].event, ViewportEvent::PresentationChanged { .. }));
-        assert_eq!(events[1].request_id.as_deref(), Some(request_ids[1].as_str()));
-        assert!(matches!(events[1].event, ViewportEvent::TimelineChanged { .. }));
-        assert_eq!(events[2].request_id.as_deref(), Some(request_ids[2].as_str()));
-        assert!(matches!(events[2].event, ViewportEvent::TimelineChanged { .. }));
-        assert_eq!(events[3].request_id.as_deref(), Some(request_ids[3].as_str()));
-        assert!(matches!(events[3].event, ViewportEvent::PhysicsChanged { running: true }));
+        assert_eq!(
+            events[0].request_id.as_deref(),
+            Some(request_ids[0].as_str())
+        );
+        assert!(matches!(
+            events[0].event,
+            ViewportEvent::PresentationChanged { .. }
+        ));
+        assert_eq!(
+            events[1].request_id.as_deref(),
+            Some(request_ids[1].as_str())
+        );
+        assert!(matches!(
+            events[1].event,
+            ViewportEvent::TimelineChanged { .. }
+        ));
+        assert_eq!(
+            events[2].request_id.as_deref(),
+            Some(request_ids[2].as_str())
+        );
+        assert!(matches!(
+            events[2].event,
+            ViewportEvent::TimelineChanged { .. }
+        ));
+        assert_eq!(
+            events[3].request_id.as_deref(),
+            Some(request_ids[3].as_str())
+        );
+        assert!(matches!(
+            events[3].event,
+            ViewportEvent::PhysicsChanged { running: true }
+        ));
     }
 
     #[test]
@@ -135,8 +160,13 @@ mod tests {
             app.update();
             if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
                 assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-                let ViewportEvent::SearchResults { query, offset, total, matches, has_more } =
-                    event.event
+                let ViewportEvent::SearchResults {
+                    query,
+                    offset,
+                    total,
+                    matches,
+                    has_more,
+                } = event.event
                 else {
                     panic!("expected semantic search results")
                 };
@@ -176,143 +206,10 @@ mod tests {
         let ViewportEvent::PresentationChanged { presentation } = event.event else {
             panic!("expected presentation change");
         };
-        assert_eq!(presentation.ground_grid_origin, GroundGridOrigin::WorldOrigin);
-    }
-
-    #[test]
-    fn renderer_configuration_applies_and_preserves_command_correlation() {
-        let mut app = command_test_app();
-        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration {
-                configuration: RendererConfiguration::default(),
-            },
+        assert_eq!(
+            presentation.ground_grid_origin,
+            GroundGridOrigin::WorldOrigin
         );
-
-        app.update();
-
-        let event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("unsupported renderer configuration must publish a response");
-        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-        let ViewportEvent::PresentationChanged { presentation } = event.event else {
-            panic!("renderer configuration should publish an authoritative presentation event");
-        };
-        assert_eq!(presentation.renderer, RendererConfiguration::default());
-    }
-
-    #[test]
-    fn renderer_fps_event_is_published_only_after_cadence_application() {
-        let mut app = command_test_app();
-        app.insert_resource(RendererCadence::new(Some(60)))
-            .add_systems(
-                Update,
-                apply_pending_renderer_cadence.after(apply_viewport_commands),
-            );
-        let configuration = RendererConfiguration {
-            preferred_fps: Some(120),
-            ..Default::default()
-        };
-        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration { configuration },
-        );
-
-        app.update();
-
-        let cadence = app.world().resource::<RendererCadence>();
-        assert_eq!(cadence.effective_renderer_target_fps(), Some(120));
-        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
-        let event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("applied FPS must publish a presentation event");
-        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-        let ViewportEvent::PresentationChanged { presentation } = event.event else {
-            panic!("FPS application must publish a presentation event");
-        };
-        assert_eq!(presentation.renderer.preferred_fps, Some(120));
-    }
-
-    #[test]
-    fn renderer_configuration_keeps_edges_independent_from_render_mode() {
-        let mut app = command_test_app();
-        let shaded_edges = RendererConfiguration {
-            edges: true,
-            render_mode: RenderMode::Shaded,
-            ..Default::default()
-        };
-        let first_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration {
-                configuration: shaded_edges,
-            },
-        );
-        app.update();
-
-        let first_event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("shaded edge configuration should publish a response");
-        assert_eq!(first_event.request_id.as_deref(), Some(first_request.as_str()));
-        assert_eq!(app.world().resource::<DisplayToggles>().renderer, shaded_edges);
-
-        let wireframe_edges = RendererConfiguration {
-            render_mode: RenderMode::Wireframe,
-            ..shaded_edges
-        };
-        let second_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration {
-                configuration: wireframe_edges,
-            },
-        );
-        app.update();
-
-        let second_event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("wireframe configuration should publish a response");
-        assert_eq!(second_event.request_id.as_deref(), Some(second_request.as_str()));
-        assert_eq!(app.world().resource::<DisplayToggles>().renderer, wireframe_edges);
-        assert!(wireframe_edges.edges);
-    }
-
-    #[test]
-    fn repeated_renderer_configuration_is_idempotent() {
-        let mut app = command_test_app();
-        let configuration = RendererConfiguration {
-            grid: false,
-            shadows: false,
-            edges: true,
-            render_mode: RenderMode::Wireframe,
-            preferred_fps: Some(120),
-        };
-
-        let first_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration { configuration },
-        );
-        app.update();
-        let first_event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("first renderer configuration should publish a response");
-        assert_eq!(first_event.request_id.as_deref(), Some(first_request.as_str()));
-        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
-
-        let second_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetRendererConfiguration { configuration },
-        );
-        app.update();
-        let second_event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("repeated renderer configuration should publish a response");
-        assert_eq!(second_event.request_id.as_deref(), Some(second_request.as_str()));
-        assert_eq!(app.world().resource::<DisplayToggles>().renderer, configuration);
     }
 
     #[test]
@@ -345,8 +242,13 @@ mod tests {
         let stage = openusd::usd::Stage::builder()
             .in_memory("bridge_editor_test.usda")
             .unwrap();
-        stage.define_prim("/World").unwrap().set_type_name("Xform").unwrap();
-        app.world_mut().insert_non_send(usd_bevy::LiveStage::new(stage));
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
 
         let define_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::DefinePrim {
@@ -361,10 +263,16 @@ mod tests {
             .resource_mut::<ViewportEventOutbox>()
             .pop()
             .expect("define should publish an event");
-        assert_eq!(define_event.request_id.as_deref(), Some(define_request.as_str()));
+        assert_eq!(
+            define_event.request_id.as_deref(),
+            Some(define_request.as_str())
+        );
         assert!(matches!(
             define_event.event,
-            ViewportEvent::EditorCommandCompleted { operation: EditorOperation::DefinePrim, .. }
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::DefinePrim,
+                ..
+            }
         ));
 
         let attribute_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
@@ -381,59 +289,32 @@ mod tests {
             .resource_mut::<ViewportEventOutbox>()
             .pop()
             .expect("attribute should publish an event");
-        assert_eq!(attribute_event.request_id.as_deref(), Some(attribute_request.as_str()));
+        assert_eq!(
+            attribute_event.request_id.as_deref(),
+            Some(attribute_request.as_str())
+        );
         assert!(matches!(
             attribute_event.event,
-            ViewportEvent::EditorCommandCompleted { operation: EditorOperation::SetAttribute, .. }
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SetAttribute,
+                ..
+            }
         ));
 
-        let live = app.world().get_non_send::<usd_bevy::LiveStage>().expect("live stage");
+        let live = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage");
         assert!(usd_bevy::authoring::prim_exists(&live.stage, "/World/Box"));
-        let value = live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).attribute("size").get::<openusd::sdf::Value>().unwrap();
-        assert!(matches!(value, Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON));
-    }
-
-    #[test]
-    fn usdhub_ui_webrtc_gateway_round_trip_harness() {
-        let mut app = command_test_app();
-        let interface = crate::viewport::api::RenderServerInterface::default();
-        app.insert_resource(interface.clone());
-        app.add_systems(
-            PreUpdate,
-            crate::viewport::transport::webrtc::drain_remote_commands
-                .before(apply_viewport_commands),
-        );
-        app.add_systems(
-            PostUpdate,
-            crate::viewport::transport::webrtc::publish_authoritative_events
-                .after(apply_viewport_commands),
-        );
-
-        let command_envelope = ViewportCommandEnvelope::new(
-            "test-req-1",
-            ViewportCommand::SetOverlay {
-                overlay: OverlayKind::GroundGrid,
-                enabled: false,
-            },
-        );
-        interface
-            .submit_viewport_command(command_envelope)
-            .expect("must submit");
-
-        app.update();
-
-        let toggles = app.world().resource::<DisplayToggles>();
-        assert!(!toggles.renderer.grid);
-        assert_eq!(toggles.light_intensity_scale, 1.0);
-
-        // Pop authoritative event and verify request-ID reduction
-        let event = interface
-            .pop_viewport_event()
-            .expect("server must publish authoritative event back to interface");
-        assert_eq!(event.request_id.as_deref(), Some("test-req-1"));
+        let value = live
+            .stage
+            .prim(openusd::sdf::path("/World/Box").unwrap())
+            .attribute("size")
+            .get::<openusd::sdf::Value>()
+            .unwrap();
         assert!(matches!(
-            event.event,
-            ViewportEvent::PresentationChanged { presentation } if !presentation.ground_grid
+            value,
+            Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
         ));
     }
 }
