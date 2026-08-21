@@ -54,6 +54,19 @@ impl GroundGridDecisionHelper {
         (current - desired).abs() > tolerance
     }
 
+    /// Checks if an optional float field has changed beyond numerical noise.
+    pub fn optional_field_changed(
+        current: Option<f32>,
+        desired: Option<f32>,
+        tolerance: f32,
+    ) -> bool {
+        match (current, desired) {
+            (None, None) => false,
+            (Some(current), Some(desired)) => Self::field_changed(current, desired, tolerance),
+            _ => true,
+        }
+    }
+
     /// Determines if ground_y requires an in-place mutation.
     pub fn needs_y_update(current: f32, desired: f32, tolerance: f32) -> bool {
         Self::field_changed(current, desired, tolerance)
@@ -124,20 +137,65 @@ mod tests {
 
         // Identical values
         assert!(!GroundGridDecisionHelper::needs_y_update(0.0, 0.0, tol));
-        assert!(!GroundGridDecisionHelper::needs_radius_update(100.0, 100.0, tol));
-        assert!(!GroundGridDecisionHelper::needs_mutation(0.0, 0.0, 100.0, 100.0, tol));
+        assert!(!GroundGridDecisionHelper::needs_radius_update(
+            100.0, 100.0, tol
+        ));
+        assert!(!GroundGridDecisionHelper::needs_mutation(
+            0.0, 0.0, 100.0, 100.0, tol
+        ));
 
         // Sub-tolerance numerical jitter
         assert!(!GroundGridDecisionHelper::needs_y_update(0.0, 1e-6, tol));
-        assert!(!GroundGridDecisionHelper::needs_radius_update(100.0, 100.0 + 1e-6, tol));
-        assert!(!GroundGridDecisionHelper::needs_mutation(0.0, 1e-6, 100.0, 100.0 + 1e-6, tol));
+        assert!(!GroundGridDecisionHelper::needs_radius_update(
+            100.0,
+            100.0 + 1e-6,
+            tol
+        ));
+        assert!(!GroundGridDecisionHelper::needs_mutation(
+            0.0,
+            1e-6,
+            100.0,
+            100.0 + 1e-6,
+            tol
+        ));
 
         // Material change in ground_y
         assert!(GroundGridDecisionHelper::needs_y_update(0.0, 0.5, tol));
-        assert!(GroundGridDecisionHelper::needs_mutation(0.0, 0.5, 100.0, 100.0, tol));
+        assert!(GroundGridDecisionHelper::needs_mutation(
+            0.0, 0.5, 100.0, 100.0, tol
+        ));
 
         // Material change in coverage_radius
-        assert!(GroundGridDecisionHelper::needs_radius_update(100.0, 150.0, tol));
-        assert!(GroundGridDecisionHelper::needs_mutation(0.0, 0.0, 100.0, 150.0, tol));
+        assert!(GroundGridDecisionHelper::needs_radius_update(
+            100.0, 150.0, tol
+        ));
+        assert!(GroundGridDecisionHelper::needs_mutation(
+            0.0, 0.0, 100.0, 150.0, tol
+        ));
+
+        // Optional ground reference changes only when presence or value changes materially.
+        assert!(!GroundGridDecisionHelper::optional_field_changed(
+            None, None, tol
+        ));
+        assert!(GroundGridDecisionHelper::optional_field_changed(
+            None,
+            Some(0.0),
+            tol
+        ));
+        assert!(GroundGridDecisionHelper::optional_field_changed(
+            Some(0.0),
+            None,
+            tol
+        ));
+        assert!(!GroundGridDecisionHelper::optional_field_changed(
+            Some(0.0),
+            Some(1e-6),
+            tol
+        ));
+        assert!(GroundGridDecisionHelper::optional_field_changed(
+            Some(0.0),
+            Some(0.5),
+            tol
+        ));
     }
 }

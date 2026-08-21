@@ -23,6 +23,7 @@ use viewport_protocol::GroundGridOrigin;
 use super::HistoricalGhostState;
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
+use crate::viewport::diagnostics::performance::GroundGridDecisionHelper;
 
 pub struct OverlaysPlugin;
 
@@ -64,25 +65,43 @@ fn sync_ground_grid_to_scene(
     let prev_radius = grid.coverage_radius;
     let prev_vis = grid.visible;
 
-    // Mutate the resource (unconditionally in unoptimized baseline)
-    grid.ground_y = desired_ground_y;
-    grid.coverage_radius = desired_radius;
-    grid.visible = toggles.show_world_grid;
+    let ground_y_changed = GroundGridDecisionHelper::optional_field_changed(
+        prev_ground_y,
+        desired_ground_y,
+        GroundGridDecisionHelper::DEFAULT_TOLERANCE,
+    );
+    let coverage_radius_changed = GroundGridDecisionHelper::needs_radius_update(
+        prev_radius,
+        desired_radius,
+        GroundGridDecisionHelper::DEFAULT_TOLERANCE,
+    );
+    let visibility_changed = prev_vis != toggles.show_world_grid;
+
+    if ground_y_changed {
+        grid.ground_y = desired_ground_y;
+    }
+    if coverage_radius_changed {
+        grid.coverage_radius = desired_radius;
+    }
+    if visibility_changed {
+        grid.visible = toggles.show_world_grid;
+    }
 
     if let Some(ref mut c) = counters {
         c.grid_sync_calls += 1;
-        c.grid_host_writes += 3;
-        c.grid_visible_writes += 1;
-        c.grid_ground_y_writes += 1;
-        c.grid_coverage_radius_writes += 1;
-
-        if prev_ground_y != desired_ground_y {
+        if ground_y_changed {
+            c.grid_host_writes += 1;
+            c.grid_ground_y_writes += 1;
             c.grid_value_changes += 1;
         }
-        if (prev_radius - desired_radius).abs() > 1e-4 {
+        if coverage_radius_changed {
+            c.grid_host_writes += 1;
+            c.grid_coverage_radius_writes += 1;
             c.grid_value_changes += 1;
         }
-        if prev_vis != toggles.show_world_grid {
+        if visibility_changed {
+            c.grid_host_writes += 1;
+            c.grid_visible_writes += 1;
             c.grid_value_changes += 1;
         }
         if grid.is_changed() {
