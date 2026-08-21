@@ -135,6 +135,12 @@ pub fn read_mesh(stage: &Stage, prim: &Path) -> anyhow::Result<Option<ReadMesh>>
     }))
 }
 
+/// Read only the authored local extent without decoding mesh topology or
+/// primvars. Used by sparse geometry patches that update bounds in place.
+pub fn read_mesh_extent(stage: &Stage, prim: &Path) -> anyhow::Result<Option<[[f32; 3]; 2]>> {
+    read_extent(stage, prim)
+}
+
 fn read_material_subsets(stage: &Stage, mesh_prim: &Path) -> anyhow::Result<Vec<ReadSubset>> {
     let mut out = Vec::new();
     for child_name in stage.prim(mesh_prim.clone()).child_names()? {

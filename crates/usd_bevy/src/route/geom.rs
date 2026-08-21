@@ -8,7 +8,9 @@ use std::time::Instant;
 use super::cache::{intern_mesh, intern_mesh_profiled};
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{DisplayPurposes, PrimRoute, RouteCtx};
-use crate::read::geom::{VisibilityState, read_effective_purpose, read_mesh, read_visibility};
+use crate::read::geom::{
+    VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility,
+};
 
 /// The prim's effective (inherited) USD `purpose`: `"default"`, `"render"`,
 /// `"proxy"`, or `"guide"`. Carried so gameplay/UI can query or re-filter it.
@@ -78,6 +80,93 @@ impl PrimRoute for VisibilityRoute {
 /// render `Assets` are absent (headless) — the prim still projects, it just
 /// carries no renderable geometry.
 pub struct MeshRoute;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MeshPatchAction {
+    Ignore,
+    UpdateExtent,
+    Rebuild,
+}
+
+fn mesh_patch_action(changed: &[&str]) -> MeshPatchAction {
+    if changed.is_empty() {
+        return MeshPatchAction::Rebuild;
+    }
+
+    let mut extent_changed = false;
+    for property in changed {
+        if *property == "extent" {
+            extent_changed = true;
+        } else if is_geometry_property(property) || !is_known_non_geometry_property(property) {
+            return MeshPatchAction::Rebuild;
+        }
+    }
+    if extent_changed {
+        MeshPatchAction::UpdateExtent
+    } else {
+        MeshPatchAction::Ignore
+    }
+}
+
+fn is_geometry_property(property: &str) -> bool {
+    matches!(
+        property,
+        "points"
+            | "faceVertexCounts"
+            | "faceVertexIndices"
+            | "normals"
+            | "normals:indices"
+            | "normals:interpolation"
+            | "orientation"
+            | "subdivisionScheme"
+            | "primvars:st"
+            | "primvars:st:indices"
+            | "primvars:st:interpolation"
+            | "primvars:st0"
+            | "primvars:st0:indices"
+            | "primvars:st0:interpolation"
+            | "primvars:displayColor"
+            | "primvars:displayColor:indices"
+            | "primvars:displayColor:interpolation"
+            | "primvars:displayOpacity"
+            | "primvars:displayOpacity:indices"
+            | "primvars:displayOpacity:interpolation"
+    )
+}
+
+fn is_known_non_geometry_property(property: &str) -> bool {
+    property.starts_with("xformOp:")
+        || matches!(
+            property,
+            "resetXformStack"
+                | "xformOpOrder"
+                | "visibility"
+                | "purpose"
+                | "kind"
+                | "ui:displayName"
+                | "doubleSided"
+                | "documentation"
+                | "comment"
+                | "displayName"
+                | "assetInfo"
+                | "customData"
+        )
+        || property.starts_with("material:binding")
+        || property.starts_with("customData:")
+        || property.starts_with("bevy:")
+}
+
+fn update_extent(ctx: &RouteCtx, world: &mut World, entity: Entity) {
+    let extent = read_mesh_extent(ctx.stage, ctx.path).ok().flatten();
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    if let Some([min, max]) = extent {
+        entity.insert(UsdLocalExtent { min, max });
+    } else {
+        entity.remove::<UsdLocalExtent>();
+    }
+}
 
 impl MeshRoute {
     /// Bake + attach; returns whether a `Mesh3d` was inserted.
@@ -157,8 +246,15 @@ impl PrimRoute for MeshRoute {
         self.attach(ctx, world, entity);
     }
 
-    // patch falls back to project (rebuild the mesh). Mesh topology changes
-    // arrive via `resynced` in practice, so this is rarely hit on changed_info.
+    fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
+        match mesh_patch_action(changed) {
+            MeshPatchAction::Ignore => {}
+            MeshPatchAction::UpdateExtent => update_extent(ctx, world, entity),
+            MeshPatchAction::Rebuild => {
+                self.attach(ctx, world, entity);
+            }
+        }
+    }
 }
 
 /// Authored `UsdGeomBoundable.extent` — `[min, max]` corners in the prim's local space.
@@ -180,3 +276,7 @@ pub struct UsdKind {
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq, Eq)]
 #[reflect(Component, Default)]
 pub struct UsdDisplayName(pub String);
+
+#[cfg(test)]
+#[path = "geom_tests.rs"]
+mod tests;
