@@ -1,10 +1,13 @@
 use bevy::prelude::*;
 
-use crate::read::shade::{ReadPreviewMaterial, read_material_binding, read_preview_material};
+use crate::read::shade::{
+    ReadPreviewMaterial, material_network_dependencies, read_material_binding,
+    read_preview_material,
+};
 
 use super::super::{PrimRoute, RouteCtx};
 use super::consumers::MaterialConsumerIndex;
-use super::material_cache::{cleanup_retired_materials, intern_material};
+use super::material_cache::intern_material;
 use super::texture_cache::resolve_texture;
 
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
@@ -44,9 +47,17 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     if world.get_resource::<MaterialConsumerIndex>().is_none() {
         world.init_resource::<MaterialConsumerIndex>();
     }
+    let dependencies = binding.as_deref().map(|material| {
+        let Ok(material_path) = openusd::sdf::path(material) else {
+            return vec![material.to_owned()];
+        };
+        material_network_dependencies(ctx.stage, &material_path)
+            .unwrap_or_else(|_| vec![material.to_owned()])
+    });
     world.resource_mut::<MaterialConsumerIndex>().update(
         ctx.prim_str(),
         binding.as_deref(),
+        dependencies.as_deref().unwrap_or(&[]),
         entity,
     );
 
@@ -63,7 +74,6 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
             e.insert(MeshMaterial3d(handle));
         }
     }
-    cleanup_retired_materials(world);
 }
 
 fn reproject_consumers(ctx: &RouteCtx, world: &mut World) {
@@ -72,6 +82,12 @@ fn reproject_consumers(ctx: &RouteCtx, world: &mut World) {
         .map(|index| index.consumer_entities_for(ctx.prim_str()))
         .unwrap_or_default();
     for (path, entity) in entries {
+        if world.get_entity(entity).is_err() {
+            if let Some(mut index) = world.get_resource_mut::<MaterialConsumerIndex>() {
+                index.remove_consumer(&path);
+            }
+            continue;
+        }
         let Ok(path) = openusd::sdf::path(&path) else {
             continue;
         };

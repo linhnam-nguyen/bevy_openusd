@@ -1,4 +1,5 @@
 use bevy::asset::Assets;
+use bevy::image::Image;
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
@@ -16,16 +17,26 @@ use crate::route::material::MaterialRouteDiagnostics;
 const RED_BOX: &str = "/World/RedBox";
 const RED: &str = "/World/Materials/Red";
 const GREEN: &str = "/World/Materials/GreenMetal";
+const NETWORK_RED_BOX: &str = "/World/RedBox";
+const NETWORK_RED_BALL: &str = "/World/RedBall";
+const NETWORK_GREEN: &str = "/World/GreenCylinder";
+const NETWORK_RED_SURFACE: &str = "/World/SharedShaders/RedSurface";
 
 fn build_app() -> App {
+    build_app_for("materials.usda")
+}
+
+fn build_app_for(fixture: &str) -> App {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages/materials.usda");
+        .join("../../tests/stages")
+        .join(fixture);
     let stage = Stage::open(path.to_str().expect("fixture path is valid"))
         .expect("materials fixture opens");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
         .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<Image>>()
         .init_resource::<Assets<StandardMaterial>>();
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
@@ -102,6 +113,16 @@ fn set_material_color(app: &mut App, material: &str, color: [f32; 3]) {
     apply_pending(app);
 }
 
+fn set_network_shader_roughness(app: &mut App, roughness: f32) {
+    let live = app.world().get_non_send::<LiveStage>().expect("stage");
+    live.stage
+        .prim(openusd::sdf::path(NETWORK_RED_SURFACE).unwrap())
+        .attribute("inputs:roughness")
+        .set(Value::Float(roughness))
+        .expect("shader input authoring succeeds");
+    apply_pending(app);
+}
+
 #[test]
 fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     let mut app = build_app();
@@ -170,6 +191,21 @@ fn shader_input_patch_reaches_only_its_material_consumers() {
     assert_eq!(material_handle(&app, "/World/GreenBall"), green_before);
     let diagnostics = *app.world().resource::<MaterialRouteDiagnostics>();
     assert!(diagnostics.patches > 0);
+}
+
+#[test]
+fn external_shader_and_texture_edits_follow_real_network_dependencies() {
+    let mut app = build_app_for("materials_network.usda");
+    let red_before = material_handle(&app, NETWORK_RED_BOX);
+    let red_ball_before = material_handle(&app, NETWORK_RED_BALL);
+    let green_before = material_handle(&app, NETWORK_GREEN);
+
+    set_network_shader_roughness(&mut app, 0.15);
+    let red_after_shader = material_handle(&app, NETWORK_RED_BOX);
+    let red_ball_after_shader = material_handle(&app, NETWORK_RED_BALL);
+    assert_ne!(red_after_shader, red_before);
+    assert_ne!(red_ball_after_shader, red_ball_before);
+    assert_eq!(material_handle(&app, NETWORK_GREEN), green_before);
 }
 
 #[test]

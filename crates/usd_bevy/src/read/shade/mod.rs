@@ -7,5 +7,5 @@ mod channels;
 mod resolve;
 mod types;
 
-pub use resolve::read_preview_material;
+pub use resolve::{material_network_dependencies, read_preview_material};
 pub use types::{ReadPreviewMaterial, UvTransform, read_material_binding};
