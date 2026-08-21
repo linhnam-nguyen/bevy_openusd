@@ -17,8 +17,9 @@ target/benchmark/m10-c4-persistent-runtime.json
 The run completed 12 cycles in one persistent application, covering load and
 reload, transform, visibility, material, geometry, subtree/full reconcile,
 PointInstancer reprojection, and 1280×720, 1920×1080, and 2560×1440 resize
-generations. RSS high-water was 384.81 MiB for the cargo/test process tree
-containing the persistent runtime.
+generations. RSS high-water was 386.83 MiB for the cargo/test process tree
+containing the persistent runtime. This is the warmed repeat after the release
+test binary was built; compilation high-water is not treated as runtime RSS.
 
 Steady-state bounds were all passed:
 

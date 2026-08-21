@@ -30,15 +30,15 @@ states and 3/3 cadence states on the same Apple M4 / Metal identity.
 
 | Metric | M9 baseline | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| Median CPU frame ms | 3.199 | 3.290 | +2.84% |
-| P95 CPU frame ms | 3.510 | 3.891 | +10.87% |
-| Actual renderer FPS | 45.045 | 43.585 | -3.24% |
+| Median CPU frame ms | 3.199 | 3.249 | +1.54% |
+| P95 CPU frame ms | 3.510 | 3.635 | +3.57% |
+| Actual renderer FPS | 45.045 | 43.383 | -3.69% |
 | GPU median / p95 | null / null | null / null | unavailable headless |
 
 The machine-readable comparison is
 `target/benchmark/m10-c2-kitchen-comparison.json`; it contains the exact
 baseline/candidate Git SHAs, fixture hash, matrix counts, effective state
-checks, and the configurable observed-regression value of 10.87%.
+checks, and the configurable observed-regression value of 3.69%.
 
 ## C3+ complete load/edit matrix
 
@@ -61,7 +61,7 @@ one fallback extraction, one extent recomputation, and one snapshot clone.
 `target/benchmark/m10-c4-memory-soak.json`, with the runtime detail beside it
 at `target/benchmark/m10-c4-persistent-runtime.json`.
 
-The process-tree RSS high-water was 384.81 MiB. Every asset/cache metric was
+The warmed process-tree RSS high-water was 386.83 MiB. Every asset/cache metric was
 bounded in the steady half of the run: mesh assets 1463–1464, material assets
 4–4, image assets 2–2, projection-cache meshes 1463–1464,
 projection-cache sources 1458–1458, material-cache entries 3–3, and
