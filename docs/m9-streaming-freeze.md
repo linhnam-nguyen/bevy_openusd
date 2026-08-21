@@ -9,6 +9,7 @@ blocked until the milestone review is complete.
 
 ```text
 bevy_openusd  caa26d773ad3bda5de40240d1d51bb9b59ab705b
+milestone tip c491412  final handoff documentation commit
 UsdHubUI      f6289b9083d81699bd25857ff5930484756480dc
 bevy_glacial  424c97b057fc9b9521b020fffa132ee3d022cf6b
 ```
@@ -35,6 +36,7 @@ M9-C2++   4eb4945  report aggregate measured renderer FPS
 M9-C4++   5872ba9  split oversized router and benchmark sources
 M9-C5++++ 9f6f94c  verify the production-client configuration matrix
 M9-C5+++++ caa26d7  cross-check client evidence against server encoder config
+M9-C6++   c491412  record final M9 matrix and client handoff evidence
 
 UsdHubUI
 M9-C4++   2d307f2  split benchmark collector sources
