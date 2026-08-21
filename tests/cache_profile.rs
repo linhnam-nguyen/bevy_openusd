@@ -23,6 +23,7 @@ struct M6C5Artifact {
     checkpoint: &'static str,
     fixture: &'static str,
     unique_bindings: usize,
+    shared_material_consumers: usize,
     material_assets_before_edit: usize,
     material_assets_after_edit: usize,
     initial_projection_ms: f64,
@@ -38,8 +39,16 @@ struct M6C5Artifact {
     live_retired_assets: u64,
     live_cleaned_assets: u64,
     initial_texture_entries: usize,
+    initial_texture_lookups: u64,
+    initial_texture_hits: u64,
+    initial_texture_misses: u64,
     initial_texture_decode_calls: u64,
+    live_texture_lookups: u64,
+    live_texture_hits: u64,
+    live_texture_misses: u64,
     live_texture_decode_calls: u64,
+    live_cleanup_passes: u64,
+    live_cleanup_entities_scanned: u64,
 }
 
 fn build_test_app() -> App {
@@ -57,13 +66,15 @@ fn build_test_app() -> App {
 }
 
 fn build_live_material_app() -> App {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/stages/materials.usda");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/stages/materials_network.usda");
     let stage = Stage::open(path.to_str().expect("materials fixture path is valid"))
         .expect("materials fixture opens");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
         .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<Image>>()
         .init_resource::<Assets<StandardMaterial>>();
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
@@ -235,16 +246,22 @@ fn records_m6_shared_material_benchmark_artifact() {
         .world()
         .resource::<usd_bevy::route::material::UsdTextureCache>()
         .stats();
+    let initial_texture_entries = app
+        .world()
+        .resource::<usd_bevy::route::material::UsdTextureCache>()
+        .textures
+        .len();
 
     {
         let live = app.world().get_non_send::<LiveStage>().expect("stage");
         live.stage
-            .prim(openusd::sdf::path("/World/Materials/Red").unwrap())
-            .attribute("inputs:diffuseColor")
-            .set(openusd::sdf::Value::Vec3f(openusd::gf::Vec3f::from([
-                0.2, 0.3, 0.9,
-            ])))
-            .expect("material edit authors");
+            .prim(openusd::sdf::path("/World/SharedShaders/RedAlbedo").unwrap())
+            .attribute("inputs:file")
+            .set(openusd::sdf::Value::AssetPath(
+                "assets/external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png"
+                    .into(),
+            ))
+            .expect("texture edit authors");
     }
     app.world_mut()
         .resource_mut::<usd_bevy::route::material::UsdMaterialCache>()
@@ -264,10 +281,11 @@ fn records_m6_shared_material_benchmark_artifact() {
     let material_assets_after_edit = app.world().resource::<Assets<StandardMaterial>>().len();
 
     let artifact = M6C5Artifact {
-        schema: "usdhub.m6.c5.shared-material.v1",
+        schema: "usdhub.m6.c5.shared-material.v2",
         checkpoint: "M6-C5",
-        fixture: "tests/stages/materials.usda",
+        fixture: "tests/stages/materials_network.usda",
         unique_bindings,
+        shared_material_consumers: 2,
         material_assets_before_edit,
         material_assets_after_edit,
         initial_projection_ms,
@@ -282,13 +300,17 @@ fn records_m6_shared_material_benchmark_artifact() {
         live_descriptor_changes: live_material.descriptor_changes,
         live_retired_assets: live_material.retired_assets,
         live_cleaned_assets: live_material.cleaned_assets,
-        initial_texture_entries: app
-            .world()
-            .resource::<usd_bevy::route::material::UsdTextureCache>()
-            .textures
-            .len(),
+        initial_texture_entries,
+        initial_texture_lookups: initial_texture.lookups,
+        initial_texture_hits: initial_texture.hits,
+        initial_texture_misses: initial_texture.misses,
         initial_texture_decode_calls: initial_texture.decode_calls,
+        live_texture_lookups: live_texture.lookups,
+        live_texture_hits: live_texture.hits,
+        live_texture_misses: live_texture.misses,
         live_texture_decode_calls: live_texture.decode_calls,
+        live_cleanup_passes: live_material.cleanup_passes,
+        live_cleanup_entities_scanned: live_material.cleanup_entities_scanned,
     };
     let artifact_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/m6-c5-shared-material.json");
@@ -298,9 +320,24 @@ fn records_m6_shared_material_benchmark_artifact() {
     )
     .expect("M6 artifact writes");
     assert_eq!(unique_bindings, 3);
+    assert_eq!(material_assets_before_edit, 3);
     assert_eq!(material_assets_after_edit, material_assets_before_edit);
+    assert_eq!(initial_texture_entries, 1);
+    assert_eq!(initial_texture.lookups, 1);
+    assert_eq!(initial_texture.hits, 0);
+    assert_eq!(initial_texture.misses, 1);
+    assert_eq!(initial_texture.decode_calls, 1);
+    assert_eq!(live_material.lookups, 2);
+    assert_eq!(live_material.hits, 1);
+    assert_eq!(live_material.misses, 1);
+    assert_eq!(live_material.descriptor_changes, 1);
     assert_eq!(live_material.retired_assets, live_material.cleaned_assets);
-    assert_eq!(live_texture.decode_calls, 0);
+    assert_eq!(live_material.cleanup_passes, 1);
+    assert_eq!(live_material.cleanup_entities_scanned, 4);
+    assert_eq!(live_texture.lookups, 1);
+    assert_eq!(live_texture.hits, 0);
+    assert_eq!(live_texture.misses, 1);
+    assert_eq!(live_texture.decode_calls, 1);
     println!(
         "M6-C5 shared-material artifact: {}",
         artifact_path.display()
