@@ -89,6 +89,10 @@ name = "progressive_load_profile"
 path = "tests/progressive_load_profile.rs"
 
 [[test]]
+name = "m8_instancing_profile"
+path = "tests/m8_instancing_profile.rs"
+
+[[test]]
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
