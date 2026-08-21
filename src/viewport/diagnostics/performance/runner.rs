@@ -22,6 +22,7 @@ use crate::viewport::semantic::SemanticWorkingStore;
 pub struct BenchmarkLaunchConfig {
     pub scenario: Option<BenchmarkScenarioId>,
     pub renderer_matrix: bool,
+    pub mesh_profile: bool,
     pub warmup_frames: u64,
     pub target_frames: u64,
     pub output_path: Option<PathBuf>,
@@ -315,6 +316,15 @@ fn finalize_benchmark_report(world: &mut World) {
     };
 
     let phase_metrics = collect_phase_metrics_from_world(world);
+    let geometry_profile = config
+        .mesh_profile
+        .then(|| {
+            world
+                .get_resource::<usd_bevy::GeometryProfile>()
+                .filter(|profile| profile.enabled)
+                .cloned()
+        })
+        .flatten();
     let cache_snapshot = collect_cache_snapshot_from_world(world);
 
     let (gpu_adapter, backend) = if let Some(adapter_info) =
@@ -355,6 +365,7 @@ fn finalize_benchmark_report(world: &mut World) {
         renderer_cadence,
         isolation_metrics,
         phase_metrics,
+        geometry_profile,
         cache_snapshot,
         raw_samples: run_state.samples,
     };

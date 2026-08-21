@@ -10,7 +10,10 @@
 
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
+use std::time::Instant;
 
+use super::cache::MeshInternMetrics;
+use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{PrimRoute, RouteCtx};
 use crate::read::geom::{ReadPointInstancer, read_point_instancer};
 use openusd::schemas::geom::PointInstancer;
@@ -122,11 +125,40 @@ fn bake_prototype(
     proto_idx: usize,
 ) -> Option<ProtoHandles> {
     let proto_path = read.prototypes.get(proto_idx)?;
+    let profile_enabled = world
+        .get_resource::<GeometryProfile>()
+        .is_some_and(|profile| profile.enabled);
+    let read_start = profile_enabled.then(Instant::now);
     let mesh_read = crate::read::geom::read_mesh(ctx.stage, proto_path)
         .ok()
         .flatten()?;
-    let mesh = crate::mesh::mesh_from_usd(&mesh_read);
+    let read_mesh_ms = read_start
+        .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+        .unwrap_or_default();
+    let (mesh, build_metrics) = if profile_enabled {
+        crate::mesh::mesh_from_usd_profiled(&mesh_read)
+    } else {
+        (crate::mesh::mesh_from_usd(&mesh_read), Default::default())
+    };
+    let allocation_start = profile_enabled.then(Instant::now);
     let mesh_handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+    let allocation_ms = allocation_start
+        .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+        .unwrap_or_default();
+    if profile_enabled {
+        let mut profile = world.resource_mut::<GeometryProfile>();
+        record_mesh_sample(
+            &mut profile,
+            hash_prim_path(proto_path.as_str()),
+            read_mesh_ms,
+            build_metrics,
+            MeshInternMetrics {
+                total_ms: allocation_ms,
+                allocation_ms,
+                ..Default::default()
+            },
+        );
+    }
     let material = world
         .resource_mut::<Assets<StandardMaterial>>()
         .add(StandardMaterial::default());

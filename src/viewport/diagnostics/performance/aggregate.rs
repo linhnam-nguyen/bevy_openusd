@@ -143,6 +143,7 @@ pub struct PerformanceReport {
     pub renderer_cadence: RendererCadenceSummary,
     pub isolation_metrics: IsolationReportSummary,
     pub phase_metrics: PhaseMetrics,
+    pub geometry_profile: Option<usd_bevy::GeometryProfile>,
     pub cache_snapshot: CacheSnapshot,
     pub raw_samples: Vec<FrameSample>,
 }

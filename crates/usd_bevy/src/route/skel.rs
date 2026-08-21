@@ -8,7 +8,10 @@
 //! `StageTime` moves.
 
 use bevy::prelude::*;
+use std::time::Instant;
 
+use super::cache::MeshInternMetrics;
+use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{PrimRoute, RouteCtx};
 use crate::read::skel::{blend_shaped_points_at, has_blend_shapes, is_skinned, skinned_points_at};
 
@@ -36,18 +39,48 @@ impl PrimRoute for SkinRoute {
             return;
         };
         // Rebuild with the mesh's own topology/normals/uvs but deformed points.
-        let Ok(Some(mut read)) = crate::read::geom::read_mesh(ctx.stage, ctx.path) else {
+        let profile_enabled = world
+            .get_resource::<GeometryProfile>()
+            .is_some_and(|profile| profile.enabled);
+        let read_start = profile_enabled.then(Instant::now);
+        let read_result = crate::read::geom::read_mesh(ctx.stage, ctx.path);
+        let read_mesh_ms = read_start
+            .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or_default();
+        let Ok(Some(mut read)) = read_result else {
             return;
         };
         read.points = points;
         // Skinning invalidates authored normals; drop them so the mesh builder
         // recomputes flat normals from the deformed positions.
         read.normals = None;
-        let mesh = crate::mesh::mesh_from_usd(&read);
+        let (mesh, build_metrics) = if profile_enabled {
+            crate::mesh::mesh_from_usd_profiled(&read)
+        } else {
+            (crate::mesh::mesh_from_usd(&read), Default::default())
+        };
         // Skinned geometry re-deforms every time code, so each result is unique;
         // interning it would only bloat the cache and pin dead meshes alive. Add
         // it directly and let the old deformed mesh be reclaimed on replacement.
+        let allocation_start = profile_enabled.then(Instant::now);
         let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
+        let allocation_ms = allocation_start
+            .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or_default();
+        if profile_enabled {
+            let mut profile = world.resource_mut::<GeometryProfile>();
+            record_mesh_sample(
+                &mut profile,
+                hash_prim_path(ctx.path.as_str()),
+                read_mesh_ms,
+                build_metrics,
+                MeshInternMetrics {
+                    total_ms: allocation_ms,
+                    allocation_ms,
+                    ..Default::default()
+                },
+            );
+        }
         if let Some(mut m) = world.get_mut::<Mesh3d>(entity) {
             m.0 = handle;
         } else if let Ok(mut e) = world.get_entity_mut(entity) {

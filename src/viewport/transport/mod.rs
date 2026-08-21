@@ -26,6 +26,7 @@ pub(crate) struct LaunchOptions {
     pub(crate) codec: CodecId,
     pub(crate) benchmark: bool,
     pub(crate) benchmark_renderer_matrix: bool,
+    pub(crate) benchmark_mesh_profile: bool,
     pub(crate) benchmark_scenario: Option<String>,
     pub(crate) benchmark_warmup_frames: u64,
     pub(crate) benchmark_frames: u64,
@@ -49,6 +50,7 @@ impl Default for LaunchOptions {
             codec: CodecId::H264,
             benchmark: false,
             benchmark_renderer_matrix: false,
+            benchmark_mesh_profile: false,
             benchmark_scenario: None,
             benchmark_warmup_frames: 30,
             benchmark_frames: 120,
@@ -145,6 +147,12 @@ where
         if parse_options && argument == "--benchmark-renderer-matrix" {
             options.benchmark = true;
             options.benchmark_renderer_matrix = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-mesh-profile" {
+            options.benchmark = true;
+            options.benchmark_mesh_profile = true;
             continue;
         }
 
@@ -394,5 +402,13 @@ mod tests {
 
         assert!(options.benchmark);
         assert!(options.benchmark_renderer_matrix);
+    }
+
+    #[test]
+    fn mesh_profile_benchmark_flag_enables_profile_mode() {
+        let options = parse_launch_options(vec!["--benchmark-mesh-profile".to_owned()]).unwrap();
+
+        assert!(options.benchmark);
+        assert!(options.benchmark_mesh_profile);
     }
 }

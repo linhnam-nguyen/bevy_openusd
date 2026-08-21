@@ -105,8 +105,15 @@ pub(crate) fn run() {
 
     app.add_plugins(EguiPlugin::default())
         .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
-        .add_plugins(UsdPlugin)
-        .add_plugins(LiveStagePlugin)
+        .add_plugins(UsdPlugin);
+
+    if launch_options.benchmark_mesh_profile {
+        let mut profile = app.world_mut().resource_mut::<usd_bevy::GeometryProfile>();
+        profile.enabled = true;
+        profile.top_n = 128;
+    }
+
+    app.add_plugins(LiveStagePlugin)
         .add_plugins(RapierPhysicsPlugin)
         .add_plugins(ArcballCameraPlugin)
         .add_plugins(GroundGridPlugin)
@@ -253,6 +260,7 @@ pub(crate) fn run() {
                 config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
                     scenario: benchmark_scenario,
                     renderer_matrix: launch_options.benchmark_renderer_matrix,
+                    mesh_profile: launch_options.benchmark_mesh_profile,
                     warmup_frames: launch_options.benchmark_warmup_frames,
                     target_frames: launch_options.benchmark_frames,
                     output_path: launch_options
@@ -262,6 +270,11 @@ pub(crate) fn run() {
                             launch_options
                                 .benchmark_renderer_matrix
                                 .then(|| "target/m3-c6-renderer-matrix.json".into())
+                        })
+                        .or_else(|| {
+                            launch_options
+                                .benchmark_mesh_profile
+                                .then(|| "target/m4-geometry-profile.json".into())
                         }),
                     label: launch_options.benchmark_label.clone(),
                     width: launch_options.width,

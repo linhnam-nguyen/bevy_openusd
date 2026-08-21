@@ -24,6 +24,67 @@ pub fn hash_prim_path(path: &str) -> u64 {
     hasher.finish()
 }
 
+pub fn record_mesh_sample(
+    profile: &mut GeometryProfile,
+    prim_path_hash: u64,
+    read_mesh_ms: f64,
+    build: crate::mesh::MeshBuildMetrics,
+    intern: crate::route::cache::MeshInternMetrics,
+) {
+    let mut reason_flags = 0;
+    if build.expanded_primvars > 0 {
+        reason_flags |= REASON_EXPANDED_PRIMVARS;
+    }
+    if build.generated_normals {
+        reason_flags |= REASON_GENERATED_NORMALS;
+    }
+    if build.subdivision != GeometrySubdivisionClass::None {
+        reason_flags |= REASON_SUBDIVISION;
+    }
+    if build.display_color {
+        reason_flags |= REASON_DISPLAY_COLOR;
+    }
+    if build.display_opacity {
+        reason_flags |= REASON_DISPLAY_OPACITY;
+    }
+    if !intern.cache_hit {
+        reason_flags |= REASON_CACHE_MISS;
+    }
+    if build.vertex_source_ratio > 1.0 {
+        reason_flags |= REASON_HIGH_VERTEX_EXPANSION;
+    }
+    profile.record(GeometryProfileRecord {
+        prim_path_hash,
+        read_mesh_ms,
+        mesh_from_usd_ms: build.mesh_from_usd_ms,
+        topology_triangulation_ms: build.topology_triangulation_ms,
+        primvar_expansion_ms: build.primvar_expansion_ms,
+        normal_generation_ms: build.normal_generation_ms,
+        bevy_mesh_allocation_ms: intern.allocation_ms,
+        mesh_signature_ms: intern.signature_ms,
+        mesh_intern_ms: intern.total_ms,
+        source_points: build.source_points,
+        source_faces: build.source_faces,
+        source_face_corners: build.source_face_corners,
+        output_vertices: build.output_vertices,
+        output_indices: build.output_indices,
+        output_triangles: build.output_triangles,
+        authored_normals: build.authored_normals,
+        generated_normals: build.generated_normals,
+        expanded_vertices: build.expanded_vertices,
+        cache_hit: intern.cache_hit,
+        uv_interpolation: build.uv_interpolation,
+        indexed_primvars: build.indexed_primvars,
+        expanded_primvars: build.expanded_primvars,
+        display_color: build.display_color,
+        display_opacity: build.display_opacity,
+        topology_class: build.topology_class,
+        subdivision: build.subdivision,
+        vertex_source_ratio: build.vertex_source_ratio,
+        reason_flags,
+    });
+}
+
 /// Compact, allocation-free interpolation classification for profile output.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub enum GeometryInterpolation {
@@ -174,7 +235,7 @@ pub struct GeometryProfileTotals {
 }
 
 /// Opt-in bounded geometry profiler.
-#[derive(Resource, Debug, Clone, Deserialize, Serialize)]
+#[derive(Resource, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GeometryProfile {
     /// False by default so ordinary projection pays no timing or bookkeeping cost.
     pub enabled: bool,
