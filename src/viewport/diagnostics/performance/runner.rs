@@ -256,7 +256,9 @@ fn finalize_benchmark_report(world: &mut World) {
         actual_rendered_fps: counters
             .actual_rendered_fps
             .or((timing.actual_renderer_fps > 0.0).then_some(timing.actual_renderer_fps)),
-        encoded_fps: counters.encoded_fps,
+        configured_encoder_fps: counters.configured_encoder_fps,
+        actual_readback_fps: counters.actual_readback_fps,
+        actual_encoder_push_fps: counters.actual_encoder_push_fps,
     };
 
     let incident_grid = IncidentGridSummary {

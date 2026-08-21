@@ -65,7 +65,12 @@ pub struct RendererCadenceSummary {
     pub requested_fps: Option<u32>,
     pub effective_renderer_target_fps: Option<u32>,
     pub actual_rendered_fps: Option<f64>,
-    pub encoded_fps: Option<f64>,
+    #[serde(default)]
+    pub configured_encoder_fps: Option<f64>,
+    #[serde(default)]
+    pub actual_readback_fps: Option<f64>,
+    #[serde(default)]
+    pub actual_encoder_push_fps: Option<f64>,
 }
 
 /// Summary metrics for Render / Data-Plane Isolation invariants.

@@ -56,6 +56,7 @@ impl LatencyAccumulator {
 #[derive(Debug)]
 struct FrameTransportMetricsInner {
     started_at: Instant,
+    measurement_started_ns: AtomicU64,
     next_sequence: AtomicU64,
     last_queued_sequence: AtomicU64,
     last_encoded_sequence: AtomicU64,
@@ -73,8 +74,11 @@ struct FrameTransportMetricsInner {
     encoder_pushed: AtomicU64,
     encoder_failures: AtomicU64,
     disconnected_drops: AtomicU64,
-    capture_to_queue: LatencyAccumulator,
-    capture_to_encoder: LatencyAccumulator,
+    render_to_readback: LatencyAccumulator,
+    readback_to_queue: LatencyAccumulator,
+    readback_to_encoder_queue: LatencyAccumulator,
+    readback_to_encoder_worker: LatencyAccumulator,
+    readback_to_encoder_push: LatencyAccumulator,
 }
 
 /// Cross-thread metrics for the render/readback/encode data plane.
@@ -92,6 +96,7 @@ impl Default for FrameTransportMetrics {
         Self {
             inner: Arc::new(FrameTransportMetricsInner {
                 started_at: Instant::now(),
+                measurement_started_ns: AtomicU64::new(0),
                 next_sequence: AtomicU64::new(0),
                 last_queued_sequence: AtomicU64::new(0),
                 last_encoded_sequence: AtomicU64::new(0),
@@ -109,8 +114,11 @@ impl Default for FrameTransportMetrics {
                 encoder_pushed: AtomicU64::new(0),
                 encoder_failures: AtomicU64::new(0),
                 disconnected_drops: AtomicU64::new(0),
-                capture_to_queue: LatencyAccumulator::default(),
-                capture_to_encoder: LatencyAccumulator::default(),
+                render_to_readback: LatencyAccumulator::default(),
+                readback_to_queue: LatencyAccumulator::default(),
+                readback_to_encoder_queue: LatencyAccumulator::default(),
+                readback_to_encoder_worker: LatencyAccumulator::default(),
+                readback_to_encoder_push: LatencyAccumulator::default(),
             }),
         }
     }
@@ -135,8 +143,14 @@ impl FrameTransportMetrics {
 
     /// Attaches the completion timestamp without allocating a new pixel buffer.
     pub fn mark_readback_complete(&self, trace: FrameTrace) -> FrameTrace {
+        let timestamp_ns = self.timestamp_ns();
+        self.record_latency(
+            &self.inner.render_to_readback,
+            trace.timestamp_ns,
+            timestamp_ns,
+        );
         FrameTrace {
-            readback_timestamp_ns: Some(self.timestamp_ns()),
+            readback_timestamp_ns: Some(timestamp_ns),
             ..trace
         }
     }
@@ -183,9 +197,13 @@ impl FrameTransportMetrics {
         self.inner
             .last_queued_sequence
             .store(trace.sequence, Ordering::Relaxed);
-        self.inner
-            .capture_to_queue
-            .record(self.timestamp_ns().saturating_sub(trace.timestamp_ns));
+        if let Some(readback_timestamp_ns) = trace.readback_timestamp_ns {
+            self.record_latency(
+                &self.inner.readback_to_queue,
+                readback_timestamp_ns,
+                self.timestamp_ns(),
+            );
+        }
     }
 
     pub fn record_queue_full_drop(&self) {
@@ -196,11 +214,26 @@ impl FrameTransportMetrics {
         self.inner.generation_drops.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_encoder_submitted(&self, trace: FrameTrace) {
+    /// Records the non-blocking enqueue boundary, not encoder execution.
+    pub fn record_encoder_queued(&self, trace: FrameTrace) {
         self.inner.encoder_submitted.fetch_add(1, Ordering::Relaxed);
-        self.inner
-            .capture_to_encoder
-            .record(self.timestamp_ns().saturating_sub(trace.timestamp_ns));
+        if let Some(readback_timestamp_ns) = trace.readback_timestamp_ns {
+            self.record_latency(
+                &self.inner.readback_to_encoder_queue,
+                readback_timestamp_ns,
+                self.timestamp_ns(),
+            );
+        }
+    }
+
+    pub fn record_encoder_worker_started(&self, trace: FrameTrace) {
+        if let Some(readback_timestamp_ns) = trace.readback_timestamp_ns {
+            self.record_latency(
+                &self.inner.readback_to_encoder_worker,
+                readback_timestamp_ns,
+                self.timestamp_ns(),
+            );
+        }
     }
 
     pub fn record_encoder_queue_drop(&self) {
@@ -214,6 +247,13 @@ impl FrameTransportMetrics {
         self.inner
             .last_encoded_sequence
             .store(trace.sequence, Ordering::Relaxed);
+        if let Some(readback_timestamp_ns) = trace.readback_timestamp_ns {
+            self.record_latency(
+                &self.inner.readback_to_encoder_push,
+                readback_timestamp_ns,
+                self.timestamp_ns(),
+            );
+        }
     }
 
     pub fn record_encoder_failure(&self) {
@@ -228,6 +268,9 @@ impl FrameTransportMetrics {
 
     /// Resets the measured window without resetting the process-wide sequence.
     pub fn reset(&self) {
+        self.inner
+            .measurement_started_ns
+            .store(self.timestamp_ns(), Ordering::Relaxed);
         for counter in [
             &self.inner.last_queued_sequence,
             &self.inner.last_encoded_sequence,
@@ -248,13 +291,29 @@ impl FrameTransportMetrics {
         ] {
             counter.store(0, Ordering::Relaxed);
         }
-        self.inner.capture_to_queue.reset();
-        self.inner.capture_to_encoder.reset();
+        self.inner.render_to_readback.reset();
+        self.inner.readback_to_queue.reset();
+        self.inner.readback_to_encoder_queue.reset();
+        self.inner.readback_to_encoder_worker.reset();
+        self.inner.readback_to_encoder_push.reset();
     }
 
     pub fn snapshot(&self) -> FrameTransportSnapshot {
-        let (queue_count, queue_total, queue_max) = self.inner.capture_to_queue.snapshot();
-        let (encode_count, encode_total, encode_max) = self.inner.capture_to_encoder.snapshot();
+        let now_ns = self.timestamp_ns();
+        let measurement_elapsed_ns =
+            now_ns.saturating_sub(self.inner.measurement_started_ns.load(Ordering::Relaxed));
+        let (render_readback_count, render_readback_total, render_readback_max) =
+            self.inner.render_to_readback.snapshot();
+        let (readback_queue_count, readback_queue_total, readback_queue_max) =
+            self.inner.readback_to_queue.snapshot();
+        let (encoder_queue_count, encoder_queue_total, encoder_queue_max) =
+            self.inner.readback_to_encoder_queue.snapshot();
+        let (encoder_worker_count, encoder_worker_total, encoder_worker_max) =
+            self.inner.readback_to_encoder_worker.snapshot();
+        let (encoder_push_count, encoder_push_total, encoder_push_max) =
+            self.inner.readback_to_encoder_push.snapshot();
+        let readback_completions = self.inner.readback_completions.load(Ordering::Relaxed);
+        let encoder_pushed = self.inner.encoder_pushed.load(Ordering::Relaxed);
         FrameTransportSnapshot {
             last_queued_sequence: self.inner.last_queued_sequence.load(Ordering::Relaxed),
             last_encoded_sequence: self.inner.last_encoded_sequence.load(Ordering::Relaxed),
@@ -272,10 +331,29 @@ impl FrameTransportMetrics {
             encoder_pushed: self.inner.encoder_pushed.load(Ordering::Relaxed),
             encoder_failures: self.inner.encoder_failures.load(Ordering::Relaxed),
             disconnected_drops: self.inner.disconnected_drops.load(Ordering::Relaxed),
-            capture_to_queue_avg_ms: average_ms(queue_count, queue_total),
-            capture_to_queue_max_ms: nanos_to_ms(queue_max),
-            capture_to_encoder_avg_ms: average_ms(encode_count, encode_total),
-            capture_to_encoder_max_ms: nanos_to_ms(encode_max),
+            measurement_elapsed_ms: nanos_to_ms(measurement_elapsed_ns),
+            readback_fps: frames_per_second(readback_completions, measurement_elapsed_ns),
+            encoder_push_fps: frames_per_second(encoder_pushed, measurement_elapsed_ns),
+            render_to_readback_avg_ms: average_ms(render_readback_count, render_readback_total),
+            render_to_readback_max_ms: nanos_to_ms(render_readback_max),
+            readback_to_queue_avg_ms: average_ms(readback_queue_count, readback_queue_total),
+            readback_to_queue_max_ms: nanos_to_ms(readback_queue_max),
+            readback_to_encoder_queue_avg_ms: average_ms(encoder_queue_count, encoder_queue_total),
+            readback_to_encoder_queue_max_ms: nanos_to_ms(encoder_queue_max),
+            readback_to_encoder_worker_avg_ms: average_ms(
+                encoder_worker_count,
+                encoder_worker_total,
+            ),
+            readback_to_encoder_worker_max_ms: nanos_to_ms(encoder_worker_max),
+            readback_to_encoder_push_avg_ms: average_ms(encoder_push_count, encoder_push_total),
+            readback_to_encoder_push_max_ms: nanos_to_ms(encoder_push_max),
+        }
+    }
+
+    fn record_latency(&self, accumulator: &LatencyAccumulator, start_ns: u64, end_ns: u64) {
+        let measurement_start_ns = self.inner.measurement_started_ns.load(Ordering::Relaxed);
+        if start_ns >= measurement_start_ns && end_ns >= start_ns {
+            accumulator.record(end_ns - start_ns);
         }
     }
 }
@@ -286,6 +364,10 @@ fn average_ms(count: u64, total_ns: u64) -> Option<f64> {
 
 fn nanos_to_ms(value: u64) -> Option<f64> {
     (value > 0).then(|| value as f64 / 1_000_000.0)
+}
+
+fn frames_per_second(frames: u64, elapsed_ns: u64) -> Option<f64> {
+    (frames > 0 && elapsed_ns > 0).then(|| frames as f64 / (elapsed_ns as f64 / 1_000_000_000.0))
 }
 
 /// Serializable snapshot used by benchmark reports and checkpoint artifacts.
@@ -308,10 +390,19 @@ pub struct FrameTransportSnapshot {
     pub encoder_pushed: u64,
     pub encoder_failures: u64,
     pub disconnected_drops: u64,
-    pub capture_to_queue_avg_ms: Option<f64>,
-    pub capture_to_queue_max_ms: Option<f64>,
-    pub capture_to_encoder_avg_ms: Option<f64>,
-    pub capture_to_encoder_max_ms: Option<f64>,
+    pub measurement_elapsed_ms: Option<f64>,
+    pub readback_fps: Option<f64>,
+    pub encoder_push_fps: Option<f64>,
+    pub render_to_readback_avg_ms: Option<f64>,
+    pub render_to_readback_max_ms: Option<f64>,
+    pub readback_to_queue_avg_ms: Option<f64>,
+    pub readback_to_queue_max_ms: Option<f64>,
+    pub readback_to_encoder_queue_avg_ms: Option<f64>,
+    pub readback_to_encoder_queue_max_ms: Option<f64>,
+    pub readback_to_encoder_worker_avg_ms: Option<f64>,
+    pub readback_to_encoder_worker_max_ms: Option<f64>,
+    pub readback_to_encoder_push_avg_ms: Option<f64>,
+    pub readback_to_encoder_push_max_ms: Option<f64>,
 }
 
 #[cfg(test)]
@@ -330,6 +421,7 @@ mod tests {
         assert_eq!(first.sequence, 1);
         assert_eq!(second.sequence, 2);
         assert!(second.timestamp_ns >= first.timestamp_ns);
+        assert_eq!(first.readback_timestamp_ns, None);
     }
 
     #[test]
@@ -371,5 +463,25 @@ mod tests {
         assert_eq!(snapshot.encoder_queue_drops, 1);
         assert_eq!(snapshot.disconnected_drops, 1);
         assert_eq!(snapshot.readback_copy_bytes, 128);
+    }
+
+    #[test]
+    fn snapshot_reports_measured_fps_and_stage_semantics() {
+        let metrics = FrameTransportMetrics::default();
+        metrics.reset();
+        let trace = metrics.mark_readback_complete(metrics.next_render_trace());
+        metrics.record_queued(trace);
+        metrics.record_encoder_queued(trace);
+        metrics.record_encoder_worker_started(trace);
+        metrics.record_encoder_pushed(trace);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.encoder_submitted, 1);
+        assert_eq!(snapshot.encoder_pushed, 1);
+        assert!(snapshot.measurement_elapsed_ms.is_some());
+        assert!(snapshot.encoder_push_fps.is_some());
+        assert!(snapshot.readback_to_encoder_queue_avg_ms.is_some());
+        assert!(snapshot.readback_to_encoder_worker_avg_ms.is_some());
+        assert!(snapshot.readback_to_encoder_push_avg_ms.is_some());
     }
 }

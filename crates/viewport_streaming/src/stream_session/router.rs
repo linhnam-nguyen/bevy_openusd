@@ -240,7 +240,7 @@ impl FrameRouter {
         for (connection_id, sender, request, is_configuration) in pending {
             let trace = request.frame.trace;
             match sender.try_send(request) {
-                Ok(()) => self.metrics.record_encoder_submitted(trace),
+                Ok(()) => self.metrics.record_encoder_queued(trace),
                 Err(TrySendError::Full(_)) => {
                     self.metrics.record_encoder_queue_drop();
                     if is_configuration {
@@ -299,6 +299,8 @@ fn spawn_encoder_worker(
                     }
                     continue;
                 }
+
+                metrics.record_encoder_worker_started(request.frame.trace);
 
                 let result = if let Some(expected) = request.expected.as_ref() {
                     let fps = expected.preferred_fps.unwrap_or(60);

@@ -254,7 +254,9 @@ fn advance_matrix(world: &mut World, config: &BenchmarkLaunchConfig, run: &mut R
                         requested_fps: Some(requested_fps),
                         effective_renderer_target_fps: cadence.effective_renderer_target_fps(),
                         actual_rendered_fps: actual,
-                        encoded_fps: counters.encoded_fps,
+                        configured_encoder_fps: counters.configured_encoder_fps,
+                        actual_readback_fps: counters.actual_readback_fps,
+                        actual_encoder_push_fps: counters.actual_encoder_push_fps,
                     },
                 });
                 run.phase = if index + 1 < MATRIX_FPS_SAMPLES.len() {

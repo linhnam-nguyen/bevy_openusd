@@ -19,7 +19,9 @@ pub struct RendererCounters {
     pub requested_renderer_fps: Option<u32>,
     pub effective_renderer_target_fps: Option<u32>,
     pub actual_rendered_fps: Option<f64>,
-    pub encoded_fps: Option<f64>,
+    pub configured_encoder_fps: Option<f64>,
+    pub actual_readback_fps: Option<f64>,
+    pub actual_encoder_push_fps: Option<f64>,
 
     // Configuration flags observed
     pub configuration_grid_enabled: bool,
@@ -97,7 +99,9 @@ impl Default for RendererCounters {
             requested_renderer_fps: None,
             effective_renderer_target_fps: None,
             actual_rendered_fps: None,
-            encoded_fps: None,
+            configured_encoder_fps: None,
+            actual_readback_fps: None,
+            actual_encoder_push_fps: None,
 
             configuration_grid_enabled: true,
             configuration_shadows_enabled: true,
@@ -198,6 +202,9 @@ impl RendererCounters {
         self.captured_frames = 0;
         self.frame_queue_drops = 0;
         self.actual_rendered_fps = None;
+        self.configured_encoder_fps = None;
+        self.actual_readback_fps = None;
+        self.actual_encoder_push_fps = None;
 
         self.sync_db_auth_waits_in_bevy = 0;
         self.query_saturations = 0;
@@ -262,6 +269,7 @@ pub fn start_frame_timing_system(
 pub fn collect_renderer_counters_system(
     mut counters: ResMut<RendererCounters>,
     cadence: Option<Res<RendererCadence>>,
+    frame_transport: Option<Res<crate::viewport::transport::FrameTransportResource>>,
 ) {
     let now = Instant::now();
     counters.frame_count += 1;
@@ -285,7 +293,12 @@ pub fn collect_renderer_counters_system(
     if let Some(cadence) = cadence {
         counters.requested_renderer_fps = cadence.requested_fps();
         counters.effective_renderer_target_fps = cadence.effective_renderer_target_fps();
-        counters.encoded_fps = cadence.effective_encoded_fps().map(f64::from);
+        counters.configured_encoder_fps = cadence.effective_encoded_fps().map(f64::from);
+    }
+    if let Some(frame_transport) = frame_transport {
+        let snapshot = frame_transport.0.snapshot();
+        counters.actual_readback_fps = snapshot.readback_fps;
+        counters.actual_encoder_push_fps = snapshot.encoder_push_fps;
     }
 }
 
