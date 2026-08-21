@@ -84,27 +84,6 @@ impl PrimRoute for VisibilityRoute {
 /// carries no renderable geometry.
 pub struct MeshRoute;
 
-#[derive(Resource, Clone)]
-struct FallbackMaterial(Handle<StandardMaterial>);
-
-fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
-    let existing = world
-        .get_resource::<FallbackMaterial>()
-        .map(|material| material.0.clone());
-    if let Some(handle) = existing
-        && world
-            .resource::<Assets<StandardMaterial>>()
-            .contains(&handle)
-    {
-        return handle;
-    }
-    let handle = world
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
-    world.insert_resource(FallbackMaterial(handle.clone()));
-    handle
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MeshPatchAction {
     Ignore,
@@ -259,7 +238,7 @@ impl MeshRoute {
                 source_cache_hit,
             );
         }
-        let material = fallback_material(world);
+        let material = super::fallback_material(world);
         if let Ok(mut e) = world.get_entity_mut(entity) {
             if let Some([min, max]) = read.extent {
                 e.insert(UsdLocalExtent { min, max });

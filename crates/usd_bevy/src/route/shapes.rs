@@ -19,26 +19,6 @@ use super::{PrimRoute, RouteCtx};
 /// Maps USD geometric shapes to Bevy primitive meshes.
 pub struct ShapesRoute;
 
-#[derive(Resource, Default)]
-struct ShapeMaterialFallback {
-    handle: Option<Handle<StandardMaterial>>,
-}
-
-fn shared_fallback_material(world: &mut World) -> Handle<StandardMaterial> {
-    if let Some(handle) = world
-        .get_resource::<ShapeMaterialFallback>()
-        .and_then(|fallback| fallback.handle.clone())
-    {
-        return handle;
-    }
-    let handle = world
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
-    world.init_resource::<ShapeMaterialFallback>();
-    world.resource_mut::<ShapeMaterialFallback>().handle = Some(handle.clone());
-    handle
-}
-
 fn f32_attr(attr: openusd::usd::Attribute, default: f32) -> f32 {
     match attr.get::<Value>() {
         Ok(Some(Value::Double(d))) => d as f32,
@@ -144,7 +124,7 @@ impl PrimRoute for ShapesRoute {
                     .ok()
                     .flatten()
                     .is_some();
-                (!has_binding).then(|| shared_fallback_material(world))
+                (!has_binding).then(|| super::fallback_material(world))
             });
         if let Ok(mut e) = world.get_entity_mut(entity) {
             e.insert(Mesh3d(mesh_handle));

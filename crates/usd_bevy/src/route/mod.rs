@@ -38,11 +38,37 @@ pub mod xform;
 
 use std::sync::Arc;
 
+use bevy::asset::Assets;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
-use bevy::prelude::Entity;
+use bevy::pbr::StandardMaterial;
+use bevy::prelude::{Entity, Handle};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
+
+/// One shared material for renderable prims whose USD preview material is
+/// absent or cannot be decoded. Keeping it in the route layer means mesh,
+/// shape, and material routes never allocate route-local placeholders.
+#[derive(Resource, Clone)]
+pub(crate) struct FallbackMaterial(Handle<StandardMaterial>);
+
+pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
+    let existing = world
+        .get_resource::<FallbackMaterial>()
+        .map(|material| material.0.clone());
+    if let Some(handle) = existing
+        && world
+            .resource::<Assets<StandardMaterial>>()
+            .contains(&handle)
+    {
+        return handle;
+    }
+    let handle = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    world.insert_resource(FallbackMaterial(handle.clone()));
+    handle
+}
 
 /// The current time to resolve animated attributes at. A plain `Resource`;
 /// `current` is a USD time code. Set it (scrub / play) and the reprojection

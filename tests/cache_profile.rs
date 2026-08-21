@@ -5,6 +5,7 @@
 //! scene and an embedded-texture USDZ before any cache policy change is made.
 
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::Instant;
 
 use bevy::image::Image;
@@ -21,6 +22,8 @@ use usd_bevy::{
 struct M6C5Artifact {
     schema: &'static str,
     checkpoint: &'static str,
+    git_sha: String,
+    build_profile: &'static str,
     fixture: &'static str,
     unique_bindings: usize,
     shared_material_consumers: usize,
@@ -49,6 +52,19 @@ struct M6C5Artifact {
     live_texture_decode_calls: u64,
     live_cleanup_passes: u64,
     live_cleanup_entities_scanned: u64,
+}
+
+fn benchmark_git_sha() -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("git is available for benchmark provenance");
+    assert!(output.status.success(), "git rev-parse HEAD succeeds");
+    String::from_utf8(output.stdout)
+        .expect("git SHA is UTF-8")
+        .trim()
+        .to_owned()
 }
 
 fn build_test_app() -> App {
@@ -227,6 +243,15 @@ fn profiles_embedded_texture_usdz_fixture() {
 
 #[test]
 fn records_m6_shared_material_benchmark_artifact() {
+    let build_profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    assert_eq!(
+        build_profile, "release",
+        "M6-C5++ artifact must be captured from a release build"
+    );
     let mut app = build_live_material_app();
     let initial_projection_ms = app
         .world()
@@ -281,8 +306,10 @@ fn records_m6_shared_material_benchmark_artifact() {
     let material_assets_after_edit = app.world().resource::<Assets<StandardMaterial>>().len();
 
     let artifact = M6C5Artifact {
-        schema: "usdhub.m6.c5.shared-material.v2",
-        checkpoint: "M6-C5",
+        schema: "usdhub.m6.c5.shared-material.v3",
+        checkpoint: "M6-C5++",
+        git_sha: benchmark_git_sha(),
+        build_profile,
         fixture: "tests/stages/materials_network.usda",
         unique_bindings,
         shared_material_consumers: 2,

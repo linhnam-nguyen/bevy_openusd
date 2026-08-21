@@ -114,6 +114,23 @@ fn set_material_color(app: &mut App, material: &str, color: [f32; 3]) {
     apply_pending(app);
 }
 
+fn set_material_binding(app: &mut App, prim: &str, target: Option<&str>) {
+    let live = app.world().get_non_send::<LiveStage>().expect("stage");
+    let relationship = live
+        .stage
+        .prim(openusd::sdf::path(prim).expect("prim path"))
+        .relationship("material:binding");
+    match target {
+        Some(target) => relationship
+            .set_targets([openusd::sdf::path(target).expect("material path")])
+            .expect("binding authoring succeeds"),
+        None => relationship
+            .set_targets(Vec::<openusd::sdf::Path>::new())
+            .expect("binding removal succeeds"),
+    };
+    apply_pending(app);
+}
+
 fn set_network_shader_roughness(app: &mut App, roughness: f32) {
     let live = app.world().get_non_send::<LiveStage>().expect("stage");
     live.stage
@@ -188,6 +205,44 @@ fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     assert!(diagnostics.projects > 0);
     assert!(diagnostics.patches >= 4);
     assert!(diagnostics.descriptor_reads >= 7);
+}
+
+#[test]
+fn binding_removal_uses_shared_fallback_and_stops_old_material_fanout() {
+    let mut app = build_app();
+    let bound = material_handle(&app, RED_BOX);
+
+    set_material_binding(&mut app, RED_BOX, None);
+    let fallback = material_handle(&app, RED_BOX);
+    assert_ne!(
+        fallback, bound,
+        "removing a binding must replace stale material"
+    );
+
+    set_material_binding(&mut app, RED_BOX, Some("/World/Materials/Missing"));
+    assert_eq!(
+        material_handle(&app, RED_BOX),
+        fallback,
+        "an unresolved binding must preserve the shared fallback"
+    );
+
+    set_material_color(&mut app, RED, [0.9, 0.2, 0.8]);
+    assert_eq!(
+        material_handle(&app, RED_BOX),
+        fallback,
+        "the former material must not reproject an unbound consumer"
+    );
+
+    set_material_binding(&mut app, RED_BOX, Some(RED));
+    let rebound = material_handle(&app, RED_BOX);
+    assert_ne!(
+        rebound, fallback,
+        "a valid rebind must restore a real material"
+    );
+    assert_ne!(
+        rebound, bound,
+        "the edited material must use a new descriptor"
+    );
 }
 
 #[test]

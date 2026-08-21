@@ -13,14 +13,6 @@ use super::texture_cache::resolve_texture;
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
 pub struct MaterialRoute;
 
-/// The prim's decoded preview material, if it has a binding that resolves.
-fn material_of(ctx: &RouteCtx, world: &mut World) -> Option<(String, ReadPreviewMaterial)> {
-    let binding = read_material_binding(ctx.stage, ctx.path).ok().flatten()?;
-    super::record_descriptor_read(world);
-    let material = read_preview_material(ctx.stage, &binding).ok().flatten()?;
-    Some((binding.as_str().to_owned(), material))
-}
-
 fn is_material_network_prim(ctx: &RouteCtx) -> bool {
     matches!(ctx.type_name.as_deref(), Some("Material" | "Shader"))
 }
@@ -40,19 +32,14 @@ fn material_patch_relevant(ctx: &RouteCtx, changed: &[&str]) -> bool {
 }
 
 fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
-    let binding = read_material_binding(ctx.stage, ctx.path)
-        .ok()
-        .flatten()
-        .map(|path| path.as_str().to_owned());
+    let binding_path = read_material_binding(ctx.stage, ctx.path).ok().flatten();
+    let binding = binding_path.as_ref().map(|path| path.as_str().to_owned());
     if world.get_resource::<MaterialConsumerIndex>().is_none() {
         world.init_resource::<MaterialConsumerIndex>();
     }
-    let dependencies = binding.as_deref().map(|material| {
-        let Ok(material_path) = openusd::sdf::path(material) else {
-            return vec![material.to_owned()];
-        };
-        material_network_dependencies(ctx.stage, &material_path)
-            .unwrap_or_else(|_| vec![material.to_owned()])
+    let dependencies = binding_path.as_ref().map(|material_path| {
+        material_network_dependencies(ctx.stage, material_path)
+            .unwrap_or_else(|_| vec![material_path.as_str().to_owned()])
     });
     world.resource_mut::<MaterialConsumerIndex>().update(
         ctx.prim_str(),
@@ -61,10 +48,19 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
         entity,
     );
 
-    let Some((binding, descriptor)) = material_of(ctx, world) else {
-        return;
-    };
-    let Some(handle) = intern_material(world, &binding, &descriptor) else {
+    let material = binding_path.as_ref().and_then(|binding_path| {
+        super::record_descriptor_read(world);
+        let descriptor = read_preview_material(ctx.stage, binding_path)
+            .ok()
+            .flatten()?;
+        intern_material(world, binding_path.as_str(), &descriptor)
+    });
+    let Some(handle) = material.or_else(|| {
+        world
+            .get::<Mesh3d>(entity)
+            .is_some()
+            .then(|| crate::route::fallback_material(world))
+    }) else {
         return;
     };
     {
@@ -174,13 +170,7 @@ impl PrimRoute for MaterialRoute {
         if !material_patch_relevant(ctx, changed) {
             return;
         }
-        if read_material_binding(ctx.stage, ctx.path)
-            .ok()
-            .flatten()
-            .is_some()
-        {
-            apply_bound_material(ctx, world, entity);
-        }
+        apply_bound_material(ctx, world, entity);
         if is_material_network_prim(ctx) {
             reproject_consumers(ctx, world);
         }
