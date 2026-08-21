@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::router::FrameRouter;
 use crate::VideoFrame;
+use crate::frame_metrics::FrameTransportMetrics;
 
 /// Owns the blocking Bevy-frame receiver and forwards frames to all admitted
 /// sessions. Frames arriving while disconnected are intentionally dropped.
@@ -16,8 +17,8 @@ pub(crate) struct FramePump {
 }
 
 impl FramePump {
-    pub(crate) fn new(receiver: Receiver<VideoFrame>) -> Self {
-        let router = FrameRouter::default();
+    pub(crate) fn new(receiver: Receiver<VideoFrame>, metrics: FrameTransportMetrics) -> Self {
+        let router = FrameRouter::new(metrics);
         let worker_router = router.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);

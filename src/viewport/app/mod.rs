@@ -181,9 +181,11 @@ pub(crate) fn run() {
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
+        let frame_metrics = viewport_streaming::FrameTransportMetrics::default();
         if launch_options.headless {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
                 sender: stream_frame_tx,
+                metrics: frame_metrics.clone(),
             });
         }
         let stage_display_name = std::path::Path::new(&asset_path)
@@ -207,6 +209,7 @@ pub(crate) fn run() {
                     config.clone(),
                     stream_frame_rx,
                     application_interface,
+                    frame_metrics,
                 );
 
                 tokio::spawn(async move {

@@ -5,6 +5,7 @@ use viewport_protocol::{ActiveStreamConfiguration, CodecId, ViewportMetrics};
 
 use crate::VideoFrame;
 use crate::encode::EncodePipeline;
+use crate::frame_metrics::FrameTransportMetrics;
 
 pub(super) struct ActiveFrameTarget {
     connection_id: u64,
@@ -27,9 +28,17 @@ pub(super) struct FrameRouterState {
 #[derive(Clone, Default)]
 pub(crate) struct FrameRouter {
     state: Arc<Mutex<FrameRouterState>>,
+    metrics: FrameTransportMetrics,
 }
 
 impl FrameRouter {
+    pub(super) fn new(metrics: FrameTransportMetrics) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(FrameRouterState::default())),
+            metrics,
+        }
+    }
+
     pub(super) fn activate(
         &self,
         connection_id: u64,
@@ -140,12 +149,20 @@ impl FrameRouter {
             })
             .unwrap_or_default();
 
+        if targets.is_empty() {
+            self.metrics.record_disconnected_drop();
+            return;
+        }
+
         for (connection_id, encoder, codec, expected, current) in targets {
             if let Some(expected_metrics) = expected {
                 if frame.width != expected_metrics.requested_width
                     || frame.height != expected_metrics.requested_height
                     || frame.generation != expected_metrics.generation
                 {
+                    if frame.generation != expected_metrics.generation {
+                        self.metrics.record_generation_drop();
+                    }
                     continue;
                 }
 
@@ -160,10 +177,13 @@ impl FrameRouter {
                     );
                     continue;
                 }
-                if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
+                self.metrics.record_encoder_submitted(frame.trace);
+                if let Err(error) = encoder.push_frame(frame) {
+                    self.metrics.record_encoder_failure();
                     debug!("[viewport-frame-pump] frame push failed: {error:?}");
                     continue;
                 }
+                self.metrics.record_encoder_pushed(frame.trace);
 
                 let configuration = ActiveStreamConfiguration {
                     width: frame.width,
@@ -203,10 +223,17 @@ impl FrameRouter {
                 || frame.height != current.height
                 || frame.generation != current.generation
             {
+                if frame.generation != current.generation {
+                    self.metrics.record_generation_drop();
+                }
                 continue;
             }
-            if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
+            self.metrics.record_encoder_submitted(frame.trace);
+            if let Err(error) = encoder.push_frame(frame) {
+                self.metrics.record_encoder_failure();
                 debug!("[viewport-frame-pump] frame push failed: {error:?}");
+            } else {
+                self.metrics.record_encoder_pushed(frame.trace);
             }
         }
     }

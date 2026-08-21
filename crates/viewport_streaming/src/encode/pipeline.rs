@@ -5,6 +5,7 @@ use log::info;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::VideoFrame;
 use crate::config::StreamingConfig;
 
 use super::caps::{
@@ -265,6 +266,20 @@ impl EncodePipeline {
 
     /// Pushes a raw RGBA frame from Bevy offscreen render target into the GStreamer pipeline.
     pub fn push_rgba_frame(&self, rgba_data: &[u8]) -> Result<()> {
+        self.push_rgba_frame_with_trace(rgba_data, None)
+    }
+
+    /// Pushes a traced frame while preserving its monotonic capture timestamp
+    /// as the GStreamer presentation timestamp.
+    pub fn push_frame(&self, frame: &VideoFrame) -> Result<()> {
+        self.push_rgba_frame_with_trace(&frame.rgba, Some(frame.trace.timestamp_ns))
+    }
+
+    fn push_rgba_frame_with_trace(
+        &self,
+        rgba_data: &[u8],
+        timestamp_ns: Option<u64>,
+    ) -> Result<()> {
         let (width, height, _) = *self
             .active_caps
             .lock()
@@ -300,6 +315,9 @@ impl EncodePipeline {
                 buffer_ref.set_duration(gstreamer::ClockTime::from_nseconds(
                     1_000_000_000u64 / fps as u64,
                 ));
+            }
+            if let Some(timestamp_ns) = timestamp_ns {
+                buffer_ref.set_pts(gstreamer::ClockTime::from_nseconds(timestamp_ns));
             }
         }
 
