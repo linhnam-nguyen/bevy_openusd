@@ -10,6 +10,7 @@
 //! (`compute_smooth_normals`) are handled here.
 
 mod builder;
+mod expanded;
 mod normals;
 mod primitives;
 mod primvar;

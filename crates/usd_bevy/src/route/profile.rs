@@ -32,7 +32,7 @@ pub fn record_mesh_sample(
     intern: crate::route::cache::MeshInternMetrics,
 ) {
     let mut reason_flags = 0;
-    if build.expanded_primvars > 0 {
+    if build.expansion_forcing_primvars > 0 {
         reason_flags |= REASON_EXPANDED_PRIMVARS;
     }
     if build.generated_normals {
@@ -75,7 +75,8 @@ pub fn record_mesh_sample(
         cache_hit: intern.cache_hit,
         uv_interpolation: build.uv_interpolation,
         indexed_primvars: build.indexed_primvars,
-        expanded_primvars: build.expanded_primvars,
+        non_indexed_primvars: build.non_indexed_primvars,
+        expansion_forcing_primvars: build.expansion_forcing_primvars,
         display_color: build.display_color,
         display_opacity: build.display_opacity,
         topology_class: build.topology_class,
@@ -186,7 +187,8 @@ pub struct GeometryProfileRecord {
     pub cache_hit: bool,
     pub uv_interpolation: GeometryInterpolation,
     pub indexed_primvars: usize,
-    pub expanded_primvars: usize,
+    pub non_indexed_primvars: usize,
+    pub expansion_forcing_primvars: usize,
     pub display_color: bool,
     pub display_opacity: bool,
     pub topology_class: GeometryTopologyClass,
@@ -225,7 +227,8 @@ pub struct GeometryProfileTotals {
     pub authored_normal_meshes: usize,
     pub generated_normal_meshes: usize,
     pub indexed_primvars: usize,
-    pub expanded_primvars: usize,
+    pub non_indexed_primvars: usize,
+    pub expansion_forcing_primvars: usize,
     pub display_color_meshes: usize,
     pub display_opacity_meshes: usize,
     pub vertex_source_ratio_sum: f64,
@@ -270,7 +273,8 @@ impl GeometryProfile {
         totals.authored_normal_meshes += usize::from(sample.authored_normals);
         totals.generated_normal_meshes += usize::from(sample.generated_normals);
         totals.indexed_primvars += sample.indexed_primvars;
-        totals.expanded_primvars += sample.expanded_primvars;
+        totals.non_indexed_primvars += sample.non_indexed_primvars;
+        totals.expansion_forcing_primvars += sample.expansion_forcing_primvars;
         totals.display_color_meshes += usize::from(sample.display_color);
         totals.display_opacity_meshes += usize::from(sample.display_opacity);
         totals.vertex_source_ratio_sum += sample.vertex_source_ratio;

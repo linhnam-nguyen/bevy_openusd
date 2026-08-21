@@ -7,6 +7,7 @@ pub mod decision;
 pub mod matrix;
 mod matrix_probe;
 mod matrix_report;
+mod render_profile;
 pub mod runner;
 mod runner_plugin;
 pub mod sample;
@@ -29,6 +30,7 @@ pub use matrix_report::{
 };
 pub use runner::{BenchmarkLaunchConfig, BenchmarkRunState};
 pub use runner_plugin::BenchmarkRunnerPlugin;
+pub use render_profile::GeometryRenderPreparation;
 pub use sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode, SCHEMA_VERSION};
 pub use scenario::{
     BenchmarkScenarioId, ScenarioCategory, ScenarioProbeDefinition, SteadyStateExpectations,

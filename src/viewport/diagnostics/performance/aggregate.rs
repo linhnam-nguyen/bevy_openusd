@@ -144,6 +144,7 @@ pub struct PerformanceReport {
     pub isolation_metrics: IsolationReportSummary,
     pub phase_metrics: PhaseMetrics,
     pub geometry_profile: Option<usd_bevy::GeometryProfile>,
+    pub geometry_render_preparation: Option<super::render_profile::GeometryRenderPreparation>,
     pub cache_snapshot: CacheSnapshot,
     pub raw_samples: Vec<FrameSample>,
 }

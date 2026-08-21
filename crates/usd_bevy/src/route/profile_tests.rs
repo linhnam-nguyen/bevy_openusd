@@ -34,7 +34,8 @@ fn characterizes_topology_and_primvar_categories_without_allocating_labels() {
         authored_normals: true,
         uv_interpolation: GeometryInterpolation::FaceVarying,
         indexed_primvars: 1,
-        expanded_primvars: 2,
+        non_indexed_primvars: 2,
+        expansion_forcing_primvars: 2,
         display_color: true,
         topology_class: GeometryTopologyClass::Quads,
         subdivision: GeometrySubdivisionClass::CatmullClark,
@@ -44,7 +45,8 @@ fn characterizes_topology_and_primvar_categories_without_allocating_labels() {
 
     assert_eq!(profile.totals.authored_normal_meshes, 1);
     assert_eq!(profile.totals.indexed_primvars, 1);
-    assert_eq!(profile.totals.expanded_primvars, 2);
+    assert_eq!(profile.totals.non_indexed_primvars, 2);
+    assert_eq!(profile.totals.expansion_forcing_primvars, 2);
     assert_eq!(profile.totals.topology_counts[2], 1);
     assert_eq!(profile.totals.subdivision_counts[1], 1);
     assert_eq!(profile.totals.uv_interpolation_counts[5], 1);

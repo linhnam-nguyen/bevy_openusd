@@ -10,6 +10,9 @@ pub struct BenchmarkRunnerPlugin {
 impl Plugin for BenchmarkRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.config.clone());
+        if self.config.mesh_profile {
+            super::render_profile::install(app);
+        }
         if self.config.renderer_matrix {
             app.insert_resource(super::matrix::RendererMatrixRun::new())
                 .add_systems(Last, super::matrix::renderer_matrix_stepper_system);

@@ -325,8 +325,8 @@ fn finalize_benchmark_report(world: &mut World) {
                 .cloned()
         })
         .flatten();
+    let geometry_render_preparation = super::render_profile::snapshot(world, config.mesh_profile);
     let cache_snapshot = collect_cache_snapshot_from_world(world);
-
     let (gpu_adapter, backend) = if let Some(adapter_info) =
         world.get_resource::<bevy::render::renderer::RenderAdapterInfo>()
     {
@@ -366,6 +366,7 @@ fn finalize_benchmark_report(world: &mut World) {
         isolation_metrics,
         phase_metrics,
         geometry_profile,
+        geometry_render_preparation,
         cache_snapshot,
         raw_samples: run_state.samples,
     };
