@@ -43,7 +43,7 @@ pub struct IncidentSemanticSummary {
 }
 
 /// Summary metrics for WebRTC remote streaming path.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct WebRtcReportSummary {
     pub remote_commands_drained: u64,
     pub remote_inputs_applied: u64,

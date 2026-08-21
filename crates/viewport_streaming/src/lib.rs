@@ -32,7 +32,7 @@ pub use stream_session::StreamingSession;
 pub struct VideoFrame {
     /// Shared ownership lets multiple WebRTC sessions enqueue the same pixels
     /// without cloning the full RGBA allocation for every session.
-    pub rgba: std::sync::Arc<[u8]>,
+    pub rgba: std::sync::Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
     pub generation: u64,

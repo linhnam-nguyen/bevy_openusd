@@ -16,6 +16,9 @@ pub struct FrameCaptureSink {
     pub sender: SyncSender<VideoFrame>,
 }
 
+#[derive(Resource, Clone)]
+pub(crate) struct FrameTransportResource(pub FrameTransportMetrics);
+
 /// Frame capture plugin that registers the frame extraction system in the render schedule.
 pub struct FrameCapturePlugin {
     pub sender: SyncSender<VideoFrame>,
@@ -27,7 +30,7 @@ impl Plugin for FrameCapturePlugin {
         app.insert_resource(FrameCaptureSink {
             sender: self.sender.clone(),
         })
-        .insert_resource(self.metrics.clone())
+        .insert_resource(FrameTransportResource(self.metrics.clone()))
         .add_systems(Startup, setup_frame_readback);
     }
 }
@@ -35,12 +38,12 @@ impl Plugin for FrameCapturePlugin {
 fn setup_frame_readback(
     mut commands: Commands,
     target: Res<OffscreenTarget>,
-    metrics: Res<FrameTransportMetrics>,
+    metrics: Res<FrameTransportResource>,
 ) {
-    let metrics = metrics.clone();
+    let metrics = metrics.0.clone();
     commands
         .spawn(Readback::texture(target.image_handle.clone()))
-        .observe(move |event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
+        .observe(move |mut event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
             metrics.record_readback_completion();
             if event.data.is_empty() {
                 metrics.record_invalid_readback();
@@ -48,7 +51,8 @@ fn setup_frame_readback(
             }
 
             let readback_bytes = event.data.len();
-            let Some((rgba, repacked)) = unpack_rgba_readback(event.data, target.width, target.height) else {
+            let data = std::mem::take(&mut event.event_mut().data);
+            let Some((rgba, repacked)) = unpack_rgba_readback(data, target.width, target.height) else {
                 let row_bytes = (target.width as usize).saturating_mul(4);
                 let aligned_row_bytes = RenderDevice::align_copy_bytes_per_row(row_bytes);
                 metrics.record_invalid_readback();
@@ -65,7 +69,7 @@ fn setup_frame_readback(
             let trace = metrics.next_trace();
             metrics.record_captured(readback_bytes, repacked);
             let frame = VideoFrame {
-                rgba: Arc::from(rgba),
+                rgba: Arc::new(rgba),
                 width: target.width,
                 height: target.height,
                 generation: target.generation,
@@ -103,12 +107,17 @@ fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(V
         return Some((data, false));
     }
 
-    let mut rgba = Vec::with_capacity(row_bytes * height as usize);
-    for row in data.chunks_exact(aligned_row_bytes) {
-        rgba.extend_from_slice(&row[..row_bytes]);
+    // The GPU allocation already owns all bytes. Compact rows in place so a
+    // padded readback does not create a second full-frame allocation. The
+    // overlapping copy is safe because `copy_within` handles source/dest
+    // overlap and rows are moved from the front towards the back.
+    for row_index in 1..height as usize {
+        let source_start = row_index * aligned_row_bytes;
+        let destination_start = row_index * row_bytes;
+        data.copy_within(source_start..source_start + row_bytes, destination_start);
     }
-    data.clear();
-    Some((rgba, true))
+    data.truncate(row_bytes * height as usize);
+    Some((data, true))
 }
 
 #[cfg(test)]
@@ -133,6 +142,34 @@ mod tests {
         assert!(rgba[..row_bytes as usize].iter().all(|byte| *byte == 1));
         assert!(rgba[row_bytes as usize..].iter().all(|byte| *byte == 2));
         assert!(repacked);
+    }
+
+    #[test]
+    fn compacts_padded_rows_without_changing_the_frame_bytes() {
+        let width = 130;
+        let height = 3;
+        let row_bytes = width * 4;
+        let aligned_row_bytes = RenderDevice::align_copy_bytes_per_row(row_bytes as usize);
+        let mut data = vec![0u8; aligned_row_bytes * height as usize];
+        for row in 0..height as usize {
+            let start = row * aligned_row_bytes;
+            data[start..start + row_bytes as usize].fill((row + 3) as u8);
+        }
+        let original_capacity = data.capacity();
+
+        let (rgba, repacked) =
+            unpack_rgba_readback(data, width, height).expect("padded readback is valid");
+
+        assert!(repacked);
+        assert_eq!(rgba.capacity(), original_capacity);
+        for row in 0..height as usize {
+            let start = row * row_bytes as usize;
+            assert!(
+                rgba[start..start + row_bytes as usize]
+                    .iter()
+                    .all(|byte| *byte == (row + 3) as u8)
+            );
+        }
     }
 
     #[test]

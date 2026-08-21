@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy_glacial::prelude::GroundGrid;
-use viewport_streaming::FrameTransportMetrics;
 
 use super::aggregate::{
     IncidentGridSummary, IncidentSemanticSummary, IsolationReportSummary, PerformanceReport,
@@ -17,6 +16,7 @@ use super::counters::RendererCounters;
 use super::sample::{BenchmarkIdentity, FrameSample, RenderConfiguration, RenderMode};
 use super::scenario::{BenchmarkScenarioId, ScenarioProbeDefinition, SteadyStateExpectations};
 use crate::viewport::semantic::SemanticWorkingStore;
+use crate::viewport::transport::FrameTransportResource;
 
 /// Launch options configuring automated benchmark execution.
 #[derive(Resource, Debug, Clone)]
@@ -169,8 +169,8 @@ pub fn benchmark_stepper_system(world: &mut World) {
         {
             *gc = Default::default();
         }
-        if let Some(frame_metrics) = world.get_resource::<FrameTransportMetrics>() {
-            frame_metrics.reset();
+        if let Some(frame_metrics) = world.get_resource::<FrameTransportResource>() {
+            frame_metrics.0.reset();
         }
         if let Some(path) = config
             .as_ref()
@@ -301,8 +301,8 @@ fn finalize_benchmark_report(world: &mut World) {
         captured_frames: counters.captured_frames,
         frame_queue_drops: counters.frame_queue_drops,
         frame_transport: world
-            .get_resource::<FrameTransportMetrics>()
-            .map_or_else(Default::default, FrameTransportMetrics::snapshot),
+            .get_resource::<FrameTransportResource>()
+            .map_or_else(Default::default, |metrics| metrics.0.snapshot()),
     };
 
     let isolation_metrics = IsolationReportSummary {
