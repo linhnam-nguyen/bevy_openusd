@@ -6,7 +6,7 @@ use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::scene::visualization::DisplayToggles;
 
 #[test]
-fn environment_command_updates_only_supplementary_settings() {
+fn environment_command_rejects_before_b2_application() {
     let mut app = command_test_app();
     let environment = ViewerEnvironmentSettings {
         background_color: ColorRgb8::new(1, 2, 3),
@@ -21,8 +21,8 @@ fn environment_command_updates_only_supplementary_settings() {
     app.update();
 
     assert_eq!(
-        app.world().resource::<ViewerSettingsState>().0.environment,
-        environment
+        app.world().resource::<ViewerSettingsState>().0,
+        ViewerSettingsReadModel::default()
     );
     let presentation = &app.world().resource::<DisplayToggles>().renderer;
     assert_eq!(presentation.render_mode, RenderMode::Shaded);
@@ -30,12 +30,12 @@ fn environment_command_updates_only_supplementary_settings() {
         .world_mut()
         .resource_mut::<ViewportEventOutbox>()
         .pop()
-        .expect("settings command must publish an authoritative event");
+        .expect("unapplied settings command must publish a rejection");
     assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-    let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
-        panic!("settings command should publish a settings event");
+    let ViewportEvent::CommandRejected { reason, .. } = event.event else {
+        panic!("environment settings must be rejected before B2 application");
     };
-    assert_eq!(settings.environment, environment);
+    assert!(reason.contains("environment settings are not applied"));
 }
 
 #[test]

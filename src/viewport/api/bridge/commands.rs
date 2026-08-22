@@ -9,7 +9,6 @@ mod cadence;
 mod camera;
 mod presentation;
 mod selection;
-mod settings;
 mod state;
 mod timeline;
 
@@ -265,12 +264,11 @@ pub(super) fn apply_viewport_commands(
                     );
                 }
             }
-            ViewportCommand::SetEnvironmentSettings { settings } => {
-                settings::set_environment(
-                    request_id,
-                    settings,
+            ViewportCommand::SetEnvironmentSettings { .. } => {
+                reject(
                     &mut outbox,
-                    &mut state.viewer_settings,
+                    request_id,
+                    "environment settings are not applied in this milestone".to_owned(),
                 );
             }
             ViewportCommand::SetSamplingPreference { .. } => {
