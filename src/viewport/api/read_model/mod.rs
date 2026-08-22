@@ -191,6 +191,11 @@ impl ViewportReadModelState {
                     snapshot.presentation = presentation.clone();
                 }
             }
+            ViewportEvent::ViewerSettingsChanged { settings } => {
+                if let Some(snapshot) = &mut self.snapshot {
+                    snapshot.viewer_settings = settings.clone();
+                }
+            }
             ViewportEvent::PhysicsChanged { running } => {
                 if let Some(snapshot) = &mut self.snapshot {
                     snapshot.physics_running = *running;

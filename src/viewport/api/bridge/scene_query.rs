@@ -3,6 +3,7 @@ use std::time::Instant;
 use bevy::prelude::*;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
+use super::ViewerSettingsState;
 use super::helpers::{build_read_model, reject};
 use super::state::{SemanticSearchRequest, SemanticSearchRequests};
 use crate::viewport::animation::UsdStageTime;
@@ -184,6 +185,7 @@ pub(super) fn publish_stage_load_state(
     spawned: Res<Spawned>,
     stage_info: Res<StageInfo>,
     selection: Res<SelectedTargets>,
+    viewer_settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     camera_mount: Res<CameraMount>,
     clock: Res<UsdStageTime>,
@@ -220,7 +222,8 @@ pub(super) fn publish_stage_load_state(
         let snapshot = build_read_model(
             &stage_info,
             spawned.0 && matches!(state, StageLoadState::Ready),
-            &selection,
+            &selection.0,
+            &viewer_settings.0,
             &scene_index,
             &camera_mount,
             &clock,

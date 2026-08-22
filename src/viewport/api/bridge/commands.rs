@@ -5,10 +5,11 @@ use viewport_protocol::{
     ViewportEventEnvelope,
 };
 
+use super::ViewerSettingsState;
 use super::editor_commands::apply_editor_command;
 use super::helpers::{
-    emit_presentation_changed, emit_snapshot, presentation_read_model, reject, set_overlay,
-    timeline_read_model,
+    emit_presentation_changed, emit_snapshot, emit_viewer_settings_changed,
+    presentation_read_model, reject, set_overlay, timeline_read_model,
 };
 use super::state::{EditorHistories, RuntimeMutationCoordinator};
 use crate::viewport::animation::UsdStageTime;
@@ -31,7 +32,11 @@ pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut reload: ResMut<ReloadRequest>,
-    mut selection_state: ParamSet<(ResMut<SelectedPrim>, ResMut<SelectedTargets>)>,
+    mut selection_state: ParamSet<(
+        ResMut<SelectedPrim>,
+        ResMut<SelectedTargets>,
+        ResMut<ViewerSettingsState>,
+    )>,
     scene_index: Res<SceneAnchorIndex>,
     mut tree_commands: ResMut<ViewportTreeCommandInbox>,
     mut camera_mount: ResMut<CameraMount>,
@@ -46,6 +51,8 @@ pub(super) fn apply_viewport_commands(
     spawned: Res<Spawned>,
 ) {
     while let Some(envelope) = inbox.pop() {
+        let selection_model = selection_state.p1().0.clone();
+        let settings_model = selection_state.p2().0.clone();
         let request_id = envelope.request_id.clone();
         if envelope.protocol_version != PROTOCOL_VERSION {
             reject(
@@ -66,7 +73,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selection_state.p1(),
+                    &selection_model,
+                    &settings_model,
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -91,7 +99,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selection_state.p1(),
+                    &selection_model,
+                    &settings_model,
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -121,12 +130,21 @@ pub(super) fn apply_viewport_commands(
                     .p1()
                     .replace(next_selection.clone())
                     .expect("resolved selection must satisfy the protocol invariant");
+                let settings_changed = {
+                    let mut settings = selection_state.p2();
+                    settings
+                        .sync_section_box_selection(&next_selection)
+                        .then(|| settings.0.clone())
+                };
                 outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id),
+                    Some(request_id.clone()),
                     ViewportEvent::SelectionChanged {
                         selection: next_selection,
                     },
                 ));
+                if let Some(settings) = settings_changed {
+                    emit_viewer_settings_changed(&mut outbox, request_id, &settings);
+                }
             }
             ViewportCommand::ReplaceSelection { targets, primary } => {
                 let mut next_selection = SelectionReadModel { targets, primary };
@@ -157,12 +175,21 @@ pub(super) fn apply_viewport_commands(
                     .replace(next_selection.clone())
                     .expect("validated selection must satisfy the protocol invariant");
                 selection_state.p0().0 = resolved_primary;
+                let settings_changed = {
+                    let mut settings = selection_state.p2();
+                    settings
+                        .sync_section_box_selection(&next_selection)
+                        .then(|| settings.0.clone())
+                };
                 outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id),
+                    Some(request_id.clone()),
                     ViewportEvent::SelectionChanged {
                         selection: next_selection,
                     },
                 ));
+                if let Some(settings) = settings_changed {
+                    emit_viewer_settings_changed(&mut outbox, request_id, &settings);
+                }
             }
             ViewportCommand::AddSelectionTarget {
                 target,
@@ -188,12 +215,21 @@ pub(super) fn apply_viewport_commands(
                     .primary
                     .as_ref()
                     .and_then(|primary| scene_index.resolve(primary));
+                let settings_changed = {
+                    let mut settings = selection_state.p2();
+                    settings
+                        .sync_section_box_selection(&next_selection)
+                        .then(|| settings.0.clone())
+                };
                 outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id),
+                    Some(request_id.clone()),
                     ViewportEvent::SelectionChanged {
                         selection: next_selection,
                     },
                 ));
+                if let Some(settings) = settings_changed {
+                    emit_viewer_settings_changed(&mut outbox, request_id, &settings);
+                }
             }
             ViewportCommand::RemoveSelectionTarget { target } => {
                 if let Err(error) = selection_state.p1().remove(&target) {
@@ -205,12 +241,21 @@ pub(super) fn apply_viewport_commands(
                     .primary
                     .as_ref()
                     .and_then(|primary| scene_index.resolve(primary));
+                let settings_changed = {
+                    let mut settings = selection_state.p2();
+                    settings
+                        .sync_section_box_selection(&next_selection)
+                        .then(|| settings.0.clone())
+                };
                 outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id),
+                    Some(request_id.clone()),
                     ViewportEvent::SelectionChanged {
                         selection: next_selection,
                     },
                 ));
+                if let Some(settings) = settings_changed {
+                    emit_viewer_settings_changed(&mut outbox, request_id, &settings);
+                }
             }
             ViewportCommand::FocusTarget { target, mode } => {
                 tree_commands.push(ViewportTreeCommand::Focus {
@@ -252,7 +297,8 @@ pub(super) fn apply_viewport_commands(
                     request_id.clone(),
                     &configuration_state.p0(),
                     &spawned,
-                    &selection_state.p1(),
+                    &selection_model,
+                    &settings_model,
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -280,7 +326,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selection_state.p1(),
+                    &selection_model,
+                    &settings_model,
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -346,6 +393,39 @@ pub(super) fn apply_viewport_commands(
                 if !fps_change_pending {
                     emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
                 }
+            }
+            ViewportCommand::SetEnvironmentSettings { settings } => {
+                let next_settings = {
+                    let mut state = selection_state.p2();
+                    state.set_environment(settings);
+                    state.0.clone()
+                };
+                emit_viewer_settings_changed(&mut outbox, request_id, &next_settings);
+            }
+            ViewportCommand::SetSamplingPreference { preference } => {
+                let next_settings = {
+                    let mut state = selection_state.p2();
+                    state.set_sampling(preference);
+                    state.0.clone()
+                };
+                emit_viewer_settings_changed(&mut outbox, request_id, &next_settings);
+            }
+            ViewportCommand::SetSelectionPresentationSettings { settings } => {
+                let next_settings = {
+                    let mut state = selection_state.p2();
+                    state.set_selection(settings);
+                    state.0.clone()
+                };
+                emit_viewer_settings_changed(&mut outbox, request_id, &next_settings);
+            }
+            ViewportCommand::SetSectionBox { enabled } => {
+                let current_selection = selection_state.p1().0.clone();
+                let next_settings = {
+                    let mut state = selection_state.p2();
+                    state.set_section_box(enabled, &current_selection);
+                    state.0.clone()
+                };
+                emit_viewer_settings_changed(&mut outbox, request_id, &next_settings);
             }
             ViewportCommand::SetPrimMarkerBias { bias } => {
                 toggles.prim_marker_bias = bias.clamp(0.0, 5.0);

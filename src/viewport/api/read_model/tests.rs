@@ -40,11 +40,20 @@ fn snapshot_and_incremental_events_produce_the_authoritative_projection() {
             },
         },
     ));
+    let mut viewer_settings = viewport_protocol::ViewerSettingsReadModel::default();
+    viewer_settings.environment.grid_visible = false;
+    state.apply(&ViewportEventEnvelope::new(
+        Some("local-3".into()),
+        ViewportEvent::ViewerSettingsChanged {
+            settings: viewer_settings.clone(),
+        },
+    ));
 
     let current = state.snapshot().expect("snapshot is available");
     assert!(current.physics_running);
     assert!(current.presentation.ground_grid);
     assert!(current.presentation.wireframe);
+    assert_eq!(current.viewer_settings, viewer_settings);
 }
 
 #[test]

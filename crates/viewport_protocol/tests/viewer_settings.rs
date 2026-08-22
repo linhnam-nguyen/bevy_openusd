@@ -1,6 +1,8 @@
 use viewport_protocol::{
-    ColorRgb8, GroundGridOrigin, RenderMode, SamplingPreference, SamplingProvider, SceneAnchor,
-    SelectionPresentationSettings, SelectionReadModel, ViewerEnvironmentSettings,
+    ColorRgb8, GroundGridOrigin, RenderMode, SamplingPreference, SamplingProvider,
+    SamplingReadModel, SceneAnchor, SectionBoxReadModel, SelectionPresentationSettings,
+    SelectionReadModel, ViewerEnvironmentSettings, ViewerSettingsCapabilities,
+    ViewerSettingsReadModel,
 };
 
 #[test]
@@ -206,4 +208,34 @@ fn viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_int
         assert!(!json.contains("provider"));
         assert!(!json.contains("transform"));
     }
+}
+
+#[test]
+fn authoritative_viewer_settings_read_model_round_trips_capabilities_and_section_targets() {
+    let selected = SceneAnchor::active_session("/World/Selected");
+    let settings = ViewerSettingsReadModel {
+        environment: ViewerEnvironmentSettings::default(),
+        sampling: SamplingReadModel {
+            preference: SamplingPreference { enabled: true },
+            provider: SamplingProvider::None,
+        },
+        selection: SelectionPresentationSettings::default(),
+        section_box: SectionBoxReadModel {
+            enabled: true,
+            targets: vec![selected],
+        },
+        capabilities: ViewerSettingsCapabilities {
+            ray_traced_supported: false,
+            dlss_available: false,
+            fsr_available: false,
+        },
+    };
+
+    let json = serde_json::to_string(&settings).expect("viewer settings serialize");
+    let decoded: ViewerSettingsReadModel =
+        serde_json::from_str(&json).expect("viewer settings deserialize");
+
+    assert_eq!(decoded, settings);
+    assert!(json.contains("section_box"));
+    assert!(json.contains("capabilities"));
 }

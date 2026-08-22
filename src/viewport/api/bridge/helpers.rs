@@ -1,14 +1,14 @@
 use viewport_protocol::{
     CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, OverlayKind,
     PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch, SceneAnchor,
-    StageReadModel, TimelineReadModel, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
+    SelectionReadModel, StageReadModel, TimelineReadModel, ViewerSettingsReadModel, ViewportEvent,
+    ViewportEventEnvelope, ViewportReadModel,
 };
 
 use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::camera::CameraMount;
-use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
 
@@ -48,7 +48,8 @@ pub(super) fn emit_snapshot(
     request_id: String,
     stage_info: &StageInfo,
     spawned: &Spawned,
-    selection: &SelectedTargets,
+    selection: &SelectionReadModel,
+    settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
     clock: &UsdStageTime,
@@ -63,6 +64,7 @@ pub(super) fn emit_snapshot(
                 stage_info,
                 spawned.0,
                 selection,
+                settings,
                 scene_index,
                 camera_mount,
                 clock,
@@ -78,7 +80,8 @@ pub(super) fn emit_snapshot(
 pub(super) fn build_read_model(
     stage_info: &StageInfo,
     stage_loaded: bool,
-    selection: &SelectedTargets,
+    selection: &SelectionReadModel,
+    settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
     clock: &UsdStageTime,
@@ -93,7 +96,8 @@ pub(super) fn build_read_model(
             loaded: stage_loaded,
         },
         scene: scene_index.roots_read_model(),
-        selection: selection.0.clone(),
+        selection: selection.clone(),
+        viewer_settings: settings.clone(),
         camera_source: match camera_mount {
             CameraMount::Arcball => CameraSource::Arcball,
             CameraMount::Mounted { prim_path } => CameraSource::Authored {
@@ -150,6 +154,19 @@ pub(super) fn emit_presentation_changed(
         Some(request_id),
         ViewportEvent::PresentationChanged {
             presentation: presentation_read_model(toggles, tuning),
+        },
+    ));
+}
+
+pub(super) fn emit_viewer_settings_changed(
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+    settings: &ViewerSettingsReadModel,
+) {
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::ViewerSettingsChanged {
+            settings: settings.clone(),
         },
     ));
 }

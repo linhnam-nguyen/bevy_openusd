@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 
+use super::ViewerSettingsState;
 use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
 use super::scene_query::{
     dispatch_scene_query_commands, publish_semantic_query_results, publish_stage_load_state,
@@ -35,6 +36,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<RuntimeDeliveryRuntime>()
             .init_resource::<SemanticSyncState>()

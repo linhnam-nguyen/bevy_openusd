@@ -283,6 +283,7 @@ pub(super) fn queue_compact_snapshot(
     minimal.scene.root_page_size = snapshot.scene.root_page_size;
     minimal.timeline = snapshot.timeline;
     minimal.presentation = snapshot.presentation;
+    minimal.viewer_settings = snapshot.viewer_settings;
     minimal.physics_running = snapshot.physics_running;
 
     if !queue_bounded_event(state, None, snapshot_event(minimal, session_snapshot)) {

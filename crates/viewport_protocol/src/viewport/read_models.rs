@@ -129,6 +129,20 @@ pub struct ViewerEnvironmentSettings {
     pub default_surface_color: ColorRgb8,
 }
 
+impl Default for ViewerEnvironmentSettings {
+    fn default() -> Self {
+        Self {
+            render_mode: RenderMode::Shaded,
+            shadows_enabled: true,
+            grid_visible: true,
+            grid_color: ColorRgb8::new(0x6B, 0x72, 0x80),
+            grid_origin: GroundGridOrigin::LoadedScene,
+            background_color: ColorRgb8::new(0x11, 0x18, 0x27),
+            default_surface_color: ColorRgb8::new(0x9C, 0xA3, 0xAF),
+        }
+    }
+}
+
 /// Renderer-neutral selection presentation preferences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectionPresentationSettings {
@@ -138,6 +152,19 @@ pub struct SelectionPresentationSettings {
     pub selection_color: ColorRgb8,
     pub hover_color_change_enabled: bool,
     pub hover_color: ColorRgb8,
+}
+
+impl Default for SelectionPresentationSettings {
+    fn default() -> Self {
+        Self {
+            boundary_enabled: true,
+            boundary_color: ColorRgb8::new(0xFA, 0xCC, 0x15),
+            color_change_enabled: false,
+            selection_color: ColorRgb8::new(0x38, 0xBD, 0xF8),
+            hover_color_change_enabled: false,
+            hover_color: ColorRgb8::new(0x7D, 0xD3, 0xFC),
+        }
+    }
 }
 
 /// Vendor-neutral sampling intent. The active provider is authoritative
@@ -155,6 +182,42 @@ pub enum SamplingProvider {
     None,
     Dlss,
     Fsr,
+}
+
+/// Authoritative sampling state. The preference is user intent; the provider
+/// is selected by the server and is never supplied by a client command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SamplingReadModel {
+    pub preference: SamplingPreference,
+    pub provider: SamplingProvider,
+}
+
+/// The one aggregate Section Box follows the complete authoritative
+/// selection set. Plane transforms are intentionally deferred to B6.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SectionBoxReadModel {
+    pub enabled: bool,
+    #[serde(default)]
+    pub targets: Vec<SceneAnchor>,
+}
+
+/// Capability flags for settings that require renderer/device integrations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ViewerSettingsCapabilities {
+    pub ray_traced_supported: bool,
+    pub dlss_available: bool,
+    pub fsr_available: bool,
+}
+
+/// Applied settings exposed to reconnecting clients. This is protocol state,
+/// not a claim that every renderer integration has already been implemented.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ViewerSettingsReadModel {
+    pub environment: ViewerEnvironmentSettings,
+    pub sampling: SamplingReadModel,
+    pub selection: SelectionPresentationSettings,
+    pub section_box: SectionBoxReadModel,
+    pub capabilities: ViewerSettingsCapabilities,
 }
 
 /// Transport-neutral renderer options shared by commands and future
@@ -424,6 +487,8 @@ pub struct ViewportReadModel {
     pub stage: StageReadModel,
     pub scene: SceneReadModel,
     pub selection: SelectionReadModel,
+    #[serde(default)]
+    pub viewer_settings: ViewerSettingsReadModel,
     pub camera_source: CameraSource,
     pub timeline: TimelineReadModel,
     pub presentation: PresentationReadModel,
@@ -442,6 +507,7 @@ impl ViewportReadModel {
             },
             scene: SceneReadModel::default(),
             selection: SelectionReadModel::default(),
+            viewer_settings: ViewerSettingsReadModel::default(),
             camera_source: CameraSource::Arcball,
             timeline: TimelineReadModel {
                 seconds: 0.0,

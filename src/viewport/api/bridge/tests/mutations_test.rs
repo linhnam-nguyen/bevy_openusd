@@ -6,6 +6,7 @@ mod tests {
     use crate::project::recovery::{RecoverySettings, RecoveryStore};
     use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
     use crate::viewport::api::bridge::plugin::checkpoint_recovery;
     use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
@@ -32,6 +33,7 @@ mod tests {
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
@@ -59,6 +61,7 @@ mod tests {
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()

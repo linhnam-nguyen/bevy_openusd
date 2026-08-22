@@ -6,11 +6,16 @@ use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::read_models::{
     CameraSource, FocusMode, PresentationReadModel, SceneAnchor, SceneChildrenPage,
-    SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel, ViewportReadModel,
+    SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
+    ViewerSettingsReadModel, ViewportReadModel,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
+// Snapshot is intentionally an inline public protocol payload. Boxing it
+// would change the Rust API and complicate every transport/reducer call site;
+// the wire representation and ownership boundary are more important here.
+#[allow(clippy::large_enum_variant)]
 pub enum ViewportEvent {
     Ready {
         protocol_version: u16,
@@ -50,6 +55,9 @@ pub enum ViewportEvent {
     },
     PresentationChanged {
         presentation: PresentationReadModel,
+    },
+    ViewerSettingsChanged {
+        settings: ViewerSettingsReadModel,
     },
     PhysicsChanged {
         running: bool,
@@ -103,6 +111,7 @@ impl ViewportEventEnvelope {
 /// Legacy JSON Lines direction marker.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum ViewportWireMessage {
     Command(ViewportCommandEnvelope),
     Event(ViewportEventEnvelope),

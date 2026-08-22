@@ -4,6 +4,7 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::{
         apply_pending_renderer_cadence, apply_viewport_commands,
     };
@@ -27,6 +28,7 @@ mod tests {
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()

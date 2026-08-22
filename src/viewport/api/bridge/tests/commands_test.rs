@@ -4,6 +4,7 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
     use crate::viewport::api::bridge::scene_query::{
         dispatch_scene_query_commands, publish_semantic_query_results,
@@ -30,6 +31,7 @@ mod tests {
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
@@ -129,6 +131,44 @@ mod tests {
             events[3].event,
             ViewportEvent::PhysicsChanged { running: true }
         ));
+    }
+
+    #[test]
+    fn viewer_settings_commands_update_authoritative_state_without_presentation_events() {
+        let mut app = command_test_app();
+        let environment = ViewerEnvironmentSettings {
+            background_color: ColorRgb8::new(1, 2, 3),
+            ..ViewerEnvironmentSettings::default()
+        };
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetEnvironmentSettings {
+                settings: environment.clone(),
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ViewerSettingsState>().0.environment,
+            environment
+        );
+        assert_eq!(
+            app.world()
+                .resource::<DisplayToggles>()
+                .renderer
+                .render_mode,
+            RenderMode::Shaded
+        );
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("settings command must publish an authoritative event");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
+            panic!("settings command should not publish a renderer presentation event");
+        };
+        assert_eq!(settings.environment, environment);
     }
 
     #[test]
