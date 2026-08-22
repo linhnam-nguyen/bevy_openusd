@@ -160,7 +160,7 @@ impl RecoveryStore {
             stage_file
                 .sync_all()
                 .with_context(|| format!("syncing recovery stage {}", stage_temp.display()))?;
-            let stage_digest = blake3::hash(&stage_bytes).to_hex().to_string();
+            let stage_digest = blake3::hash(stage_bytes).to_hex().to_string();
 
             let metadata = RecoveryMetadata {
                 format_version: RECOVERY_FORMAT_VERSION,

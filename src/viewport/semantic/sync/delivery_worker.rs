@@ -71,12 +71,12 @@ impl DeliveryQueue {
         }
     }
 
-    fn submit(&self, work: DeliveryWork) -> Result<(), DeliveryWork> {
+    fn submit(&self, work: DeliveryWork) -> Result<(), Box<DeliveryWork>> {
         let Ok(mut state) = self.state.lock() else {
-            return Err(work);
+            return Err(Box::new(work));
         };
         if state.closed {
-            return Err(work);
+            return Err(Box::new(work));
         }
         if state.pending.len() >= DELIVERY_QUEUE_CAPACITY {
             // Complete deliveries are derived state. Discard only work that
@@ -168,6 +168,7 @@ impl RuntimeDeliveryRuntime {
         match self.queue.submit(work) {
             Ok(()) => true,
             Err(work) => {
+                let work = *work;
                 self.pending = Some(PendingRuntimeDelivery {
                     identity: work.identity,
                     snapshot: work.snapshot,

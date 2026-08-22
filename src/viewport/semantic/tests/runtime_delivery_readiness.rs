@@ -71,6 +71,6 @@ def Xform "World"
             .readiness(),
         ProjectionReadiness::Ready
     );
-    assert!(!manifest.meshes.is_empty() || manifest.hierarchy.blob_id != "");
+    assert!(!manifest.meshes.is_empty() || !manifest.hierarchy.blob_id.is_empty());
     Ok(())
 }

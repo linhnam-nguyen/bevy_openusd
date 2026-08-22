@@ -70,13 +70,12 @@ pub(crate) fn flush_pending_runtime_delivery(world: &mut World) {
     let Some(pending) = runtime.pending.as_mut() else {
         return;
     };
-    if let Some((session_id, live_revision)) = current_stage {
-        if pending.identity.session_id != session_id
-            || pending.identity.live_revision != live_revision
-        {
-            runtime.pending = None;
-            return;
-        }
+    if let Some((session_id, live_revision)) = current_stage
+        && (pending.identity.session_id != session_id
+            || pending.identity.live_revision != live_revision)
+    {
+        runtime.pending = None;
+        return;
     }
     if let Some((_, generation)) = projection {
         pending.identity.projection_generation = generation;
