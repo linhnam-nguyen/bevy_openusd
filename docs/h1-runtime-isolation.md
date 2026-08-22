@@ -13,6 +13,7 @@ H1-C4  isolate recovery serialization/filesystem work
 H1-C5  bound semantic state/query mailboxes
 H1-C6  couple delivery publication to projection readiness
 H1-C7  final regression matrix and freeze
+H1-C7++ correct bounded worker result-mailbox saturation
 ```
 
 ## Runtime invariants
@@ -36,8 +37,8 @@ H1-C2 captured the pre-change baseline with:
 python3 scripts/capture_h1_baseline.py
 ```
 
-H1-C7 repeats the same Kitchen S1 native and S11 headless-WebRTC cases and
-records before/after timing and telemetry in:
+H1-C7++ repeats the same Kitchen S1 native and S11 headless-WebRTC cases and
+records the final before/after timing and telemetry in:
 
 ```text
 target/benchmark/h1-c7-regression/regression.json
@@ -58,16 +59,16 @@ changes; the packet records that provenance explicitly.
 
 ## Final packet details
 
-The C2 baseline was captured at
-`dcdc6d2760fa7a67251c6f3a5f356bc1d00bd6d2`. The final C7 packet was captured
-at `0ea66ca16263e68cb4bbbc3f4cc322f39be1bb98`; both use the same fixture,
+The final H1 implementation tip and C7++ regression capture source are both
+`1df458d7fa3411818054cb5152065ae39e271522`. The C2 baseline was captured at
+`dcdc6d2760fa7a67251c6f3a5f356bc1d00bd6d2`. All captures use the same fixture,
 release build, 1920×1080, 60 requested FPS, 30 warmup frames, and 120 measured
 frames.
 
-| scenario | baseline median / p95 ms | C7 median / p95 ms | median / p95 delta |
+| scenario | baseline median / p95 ms | C7++ median / p95 ms | median / p95 delta |
 | --- | ---: | ---: | ---: |
-| S1 native | 2.698 / 3.717 | 2.959 / 3.468 | +9.67% / -6.71% |
-| S11 headless WebRTC | 2.816 / 3.343 | 2.858 / 3.307 | +1.47% / -1.10% |
+| S1 native | 2.698 / 3.717 | 3.189 / 3.601 | +18.20% / -3.11% |
+| S11 headless WebRTC | 2.816 / 3.343 | 2.950 / 3.474 | +4.74% / +3.91% |
 
 Production queue bounds are deliberately small and explicit: semantic state
 8, semantic query 8, semantic responses 32, runtime delivery work 4, runtime
@@ -111,3 +112,17 @@ H1 is accepted only when the checkpoint chain is compile/syntax-clean, source
 size is within budget, fresh C7 native/WebRTC artifacts pass their identity and
 steady-state checks, and the M10 hardening gates pass. Any inherited warnings
 or unavailable headless GPU timestamps remain visible as evidence limits.
+
+## Final status
+
+H1 is `PASSED / FROZEN` at
+`1df458d7fa3411818054cb5152065ae39e271522`. The final evidence records:
+
+```text
+make harden             PASS
+make bench-render-smoke PASS
+result saturation tests PASS
+```
+
+The machine-readable C7++ packet is intentionally ignored by Git; its source
+identity is pinned above and was validated by `scripts/capture_h1_c7.py`.
