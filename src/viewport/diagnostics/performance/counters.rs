@@ -62,11 +62,13 @@ pub struct RendererCounters {
     pub runtime_delivery_worker_ms: f64,
     pub runtime_delivery_blob_reads: u64,
     pub runtime_delivery_bytes: u64,
+    pub runtime_delivery_queue_high_water: u64,
     pub recovery_serialize_ms: f64,
     pub recovery_submit_ms: f64,
     pub recovery_worker_write_ms: f64,
     pub semantic_mailbox_pending: u64,
     pub semantic_mailbox_high_water: u64,
+    pub semantic_mailbox_recoveries: u64,
     pub recovery_mailbox_pending: u64,
     pub recovery_mailbox_high_water: u64,
     pub recovery_mailbox_coalesced: u64,
@@ -155,11 +157,13 @@ impl Default for RendererCounters {
             runtime_delivery_worker_ms: 0.0,
             runtime_delivery_blob_reads: 0,
             runtime_delivery_bytes: 0,
+            runtime_delivery_queue_high_water: 0,
             recovery_serialize_ms: 0.0,
             recovery_submit_ms: 0.0,
             recovery_worker_write_ms: 0.0,
             semantic_mailbox_pending: 0,
             semantic_mailbox_high_water: 0,
+            semantic_mailbox_recoveries: 0,
             recovery_mailbox_pending: 0,
             recovery_mailbox_high_water: 0,
             recovery_mailbox_coalesced: 0,
@@ -229,11 +233,13 @@ impl RendererCounters {
         self.runtime_delivery_worker_ms = 0.0;
         self.runtime_delivery_blob_reads = 0;
         self.runtime_delivery_bytes = 0;
+        self.runtime_delivery_queue_high_water = 0;
         self.recovery_serialize_ms = 0.0;
         self.recovery_submit_ms = 0.0;
         self.recovery_worker_write_ms = 0.0;
         self.semantic_mailbox_pending = 0;
         self.semantic_mailbox_high_water = 0;
+        self.semantic_mailbox_recoveries = 0;
         self.recovery_mailbox_pending = 0;
         self.recovery_mailbox_high_water = 0;
         self.recovery_mailbox_coalesced = 0;

@@ -6,6 +6,7 @@
 #![allow(unused_imports)]
 
 mod diff;
+mod mailbox;
 mod query;
 mod state;
 mod store;

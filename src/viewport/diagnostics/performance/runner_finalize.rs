@@ -34,6 +34,10 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         .expect("RendererCounters must exist");
     if let Some(semantic_store) = world.get_resource::<SemanticWorkingStore>() {
         counters.query_high_water = semantic_store.query_queue_high_water();
+        let (pending, high_water, recoveries, _, _, _) = semantic_store.mailbox_stats();
+        counters.semantic_mailbox_pending = pending;
+        counters.semantic_mailbox_high_water = high_water;
+        counters.semantic_mailbox_recoveries = recoveries;
     }
     counters.finalize_query_latency();
 
@@ -119,11 +123,13 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         runtime_delivery_worker_ms: counters.runtime_delivery_worker_ms,
         runtime_delivery_blob_reads: counters.runtime_delivery_blob_reads,
         runtime_delivery_bytes: counters.runtime_delivery_bytes,
+        runtime_delivery_queue_high_water: counters.runtime_delivery_queue_high_water,
         recovery_serialize_ms: counters.recovery_serialize_ms,
         recovery_submit_ms: counters.recovery_submit_ms,
         recovery_worker_write_ms: counters.recovery_worker_write_ms,
         semantic_mailbox_pending: counters.semantic_mailbox_pending,
         semantic_mailbox_high_water: counters.semantic_mailbox_high_water,
+        semantic_mailbox_recoveries: counters.semantic_mailbox_recoveries,
         recovery_mailbox_pending: counters.recovery_mailbox_pending,
         recovery_mailbox_high_water: counters.recovery_mailbox_high_water,
         recovery_mailbox_coalesced: counters.recovery_mailbox_coalesced,

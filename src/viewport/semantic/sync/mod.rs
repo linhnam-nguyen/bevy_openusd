@@ -340,7 +340,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
             let snapshot = update.snapshot.clone();
             let submitted = world
                 .resource::<SemanticWorkingStore>()
-                .submit_delta(request_id, update.request);
+                .submit_delta_with_snapshot(request_id, update.request, &snapshot);
             if submitted {
                 queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());

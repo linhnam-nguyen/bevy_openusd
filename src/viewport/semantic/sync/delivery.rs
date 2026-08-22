@@ -117,8 +117,9 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
             counters.runtime_delivery_worker_ms += result.worker_ms;
             counters.runtime_delivery_blob_reads += result.blob_reads;
             counters.runtime_delivery_bytes += result.bytes;
-            counters.semantic_mailbox_high_water =
-                counters.semantic_mailbox_high_water.max(queue_high_water);
+            counters.runtime_delivery_queue_high_water = counters
+                .runtime_delivery_queue_high_water
+                .max(queue_high_water);
         }
         let current_generation = projection.map_or(0, |(_, generation)| generation);
         let ready = projection.is_none_or(|(readiness, _)| readiness == ProjectionReadiness::Ready);
