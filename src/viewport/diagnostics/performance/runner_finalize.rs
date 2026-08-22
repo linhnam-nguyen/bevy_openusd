@@ -34,6 +34,10 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         .expect("RendererCounters must exist");
     if let Some(semantic_store) = world.get_resource::<SemanticWorkingStore>() {
         counters.query_high_water = semantic_store.query_queue_high_water();
+        let (pending, high_water, recoveries, _, _, _) = semantic_store.mailbox_stats();
+        counters.semantic_mailbox_pending = pending;
+        counters.semantic_mailbox_high_water = high_water;
+        counters.semantic_mailbox_recoveries = recoveries;
     }
     counters.finalize_query_latency();
 
@@ -109,8 +113,29 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         snapshot_clones: counters.semantic_snapshot_clones,
         initial_extractions: counters.semantic_initial_extractions,
         initial_extraction_failures: counters.semantic_initial_extraction_failures,
+        changed_info_updates: counters.semantic_changed_info_updates,
         fallback_extractions: counters.semantic_fallback_extractions,
         subtree_extractions: counters.semantic_subtree_extractions,
+        semantic_extract_ms: counters.semantic_extract_ms,
+        render_blob_prepare_ms: counters.render_blob_prepare_ms,
+        total_semantic_postupdate_ms: counters.total_semantic_postupdate_ms,
+        runtime_delivery_submit_ms: counters.runtime_delivery_submit_ms,
+        runtime_delivery_worker_ms: counters.runtime_delivery_worker_ms,
+        runtime_delivery_blob_reads: counters.runtime_delivery_blob_reads,
+        runtime_delivery_bytes: counters.runtime_delivery_bytes,
+        runtime_delivery_queue_high_water: counters.runtime_delivery_queue_high_water,
+        runtime_delivery_result_backpressure: counters.runtime_delivery_result_backpressure,
+        runtime_delivery_generation_retries: counters.runtime_delivery_generation_retries,
+        recovery_serialize_ms: counters.recovery_serialize_ms,
+        recovery_submit_ms: counters.recovery_submit_ms,
+        recovery_worker_write_ms: counters.recovery_worker_write_ms,
+        recovery_result_backpressure: counters.recovery_result_backpressure,
+        semantic_mailbox_pending: counters.semantic_mailbox_pending,
+        semantic_mailbox_high_water: counters.semantic_mailbox_high_water,
+        semantic_mailbox_recoveries: counters.semantic_mailbox_recoveries,
+        recovery_mailbox_pending: counters.recovery_mailbox_pending,
+        recovery_mailbox_high_water: counters.recovery_mailbox_high_water,
+        recovery_mailbox_coalesced: counters.recovery_mailbox_coalesced,
         worker_submissions: counters.semantic_worker_submissions,
         worker_submission_failures: counters.semantic_worker_submission_failures,
         recovery_checkpoints: counters.recovery_checkpoints,

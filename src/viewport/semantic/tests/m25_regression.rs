@@ -5,9 +5,10 @@ use usd_model::EntityKey;
 
 use super::super::{
     RenderServerInterface, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
-    synchronize_live_stage,
+    drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use super::fixtures::response;
+use super::runtime_delivery_support::wait_for_manifest;
 
 #[test]
 fn test_m25_o11_milestone_acceptance_unaffected_sibling_pipeline_invariance() -> Result<()> {
@@ -62,7 +63,15 @@ def Xform "World"
     app.insert_resource(server_interface.clone());
 
     app.world_mut().insert_non_send(live);
-    app.add_systems(PostUpdate, synchronize_live_stage);
+    app.add_systems(
+        PostUpdate,
+        (
+            drain_runtime_delivery_results,
+            synchronize_live_stage,
+            flush_pending_runtime_delivery,
+        )
+            .chain(),
+    );
 
     // ==========================================
     // Frame 1: Initial full load
@@ -105,9 +114,7 @@ def Xform "World"
         .clone();
 
     let shared_interface = server_interface.shared();
-    let _manifest_1 = shared_interface
-        .runtime_manifest()
-        .expect("manifest 1 published");
+    let manifest_1 = wait_for_manifest(&mut app, &shared_interface, None);
     let b_blob_bytes_before = shared_interface
         .runtime_blob(&b_blob_id_before)
         .expect("b_blob in runtime delivery 1");
@@ -209,9 +216,7 @@ def Xform "World"
         "Render blob ID for /World/B must remain identical"
     );
 
-    let manifest_2 = shared_interface
-        .runtime_manifest()
-        .expect("manifest 2 published");
+    let manifest_2 = wait_for_manifest(&mut app, &shared_interface, Some(&manifest_1.revision));
     let b_blob_bytes_after = shared_interface
         .runtime_blob(&b_blob_id_after)
         .expect("b_blob in runtime delivery 2");

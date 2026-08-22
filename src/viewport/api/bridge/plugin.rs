@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
@@ -13,13 +11,15 @@ use super::state::{
 };
 use super::tree::apply_tree_commands;
 use crate::project::ghost_cache::HistoricalGeometryCache;
-use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings};
+use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
+use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
     ViewportTreeCommandInbox,
 };
 use crate::viewport::semantic::{
-    SemanticDiffState, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
+    RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
+    drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use crate::viewport::session::StageInfo;
 
@@ -34,13 +34,14 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SemanticWorkingStore>()
+            .init_resource::<RuntimeDeliveryRuntime>()
             .init_resource::<SemanticSyncState>()
             .init_resource::<SemanticDiffState>()
             .init_resource::<SemanticSearchRequests>()
             .init_resource::<EditorHistories>()
             .init_resource::<RuntimeMutationCoordinator>()
             .init_resource::<RecoverySettings>()
-            .init_resource::<RecoveryRuntimeState>()
+            .init_resource::<RecoveryRuntime>()
             .init_resource::<HistoricalGeometryCache>()
             .add_systems(Startup, emit_viewport_ready)
             .configure_sets(
@@ -64,7 +65,14 @@ impl Plugin for ViewportBridgePlugin {
             // represent the completed current-frame revision.
             .add_systems(
                 PostUpdate,
-                (synchronize_live_stage, checkpoint_recovery).chain(),
+                (
+                    drain_runtime_delivery_results,
+                    synchronize_live_stage,
+                    flush_pending_runtime_delivery,
+                    drain_recovery_results,
+                    checkpoint_recovery,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
@@ -95,12 +103,12 @@ impl Plugin for ViewportBridgePlugin {
     }
 }
 
-/// Writes one scratch checkpoint after the authoritative change fan-out has
-/// completed for the frame. The retained batch makes this coarse-grained: no
-/// checkpoint is written on idle frames or for every animation tick.
+/// Exports one scratch checkpoint after the authoritative change fan-out has
+/// completed for the frame. Only CPU serialization and owned-data submission
+/// happen here; the recovery worker performs all filesystem operations.
 pub(super) fn checkpoint_recovery(
     settings: Res<RecoverySettings>,
-    mut runtime: ResMut<RecoveryRuntimeState>,
+    runtime: Res<RecoveryRuntime>,
     pending: Res<usd_bevy::PendingStageChanges>,
     stage: Option<NonSend<LiveStage>>,
     stage_info: Res<StageInfo>,
@@ -116,17 +124,41 @@ pub(super) fn checkpoint_recovery(
         return;
     }
 
-    let store = match runtime.store_for(&settings, stage.session_id()) {
-        Ok(store) => store,
+    let serialize_started = std::time::Instant::now();
+    let stage_bytes = match usd_bevy::authoring::export_stage_string(&stage.stage) {
+        Ok(stage) => stage.into_bytes(),
         Err(error) => {
-            bevy::log::error!("[recovery] cannot create checkpoint store: {error:#}");
+            bevy::log::error!("[recovery] cannot serialize checkpoint: {error:#}");
             return;
         }
     };
-    if let Err(error) = store.write_checkpoint(&stage, Path::new(&stage_info.path), None) {
-        bevy::log::error!("[recovery] checkpoint failed: {error:#}");
-    } else if let Some(ref mut c) = counters {
-        c.recovery_checkpoints += 1;
+    if let Some(ref mut counters) = counters {
+        counters.recovery_serialize_ms += serialize_started.elapsed().as_secs_f64() * 1000.0;
+    }
+    let work = RecoveryCheckpointWork {
+        project_root: settings.project_root.clone(),
+        session_id: stage.session_id(),
+        live_revision: pending
+            .batch()
+            .map(|batch| batch.revision.0)
+            .unwrap_or_else(|| stage.current_revision().0),
+        source_stage: stage_info.path.clone(),
+        base_revision: None,
+        stage_bytes,
+    };
+    let submit_started = std::time::Instant::now();
+    if runtime.submit(work) {
+        if let Some(ref mut counters) = counters {
+            counters.recovery_submit_ms += submit_started.elapsed().as_secs_f64() * 1000.0;
+            counters.recovery_checkpoints += 1;
+            let (pending, high_water, coalesced) = runtime.stats();
+            counters.recovery_mailbox_pending = pending;
+            counters.recovery_mailbox_high_water =
+                counters.recovery_mailbox_high_water.max(high_water);
+            counters.recovery_mailbox_coalesced = coalesced;
+        }
+    } else {
+        bevy::log::error!("[recovery] checkpoint worker queue is closed");
     }
 }
 

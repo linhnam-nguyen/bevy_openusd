@@ -1,83 +1,47 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    mpsc,
-};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use bevy::prelude::Resource;
 use usd_model::SemanticSnapshot;
 
+use super::mailbox::{
+    MailboxSubmitError, RESPONSE_MAILBOX_CAPACITY, SemanticMailbox, SemanticMailboxCommand,
+    SemanticQueryCommand, SemanticStateCommand,
+};
 use super::query::SemanticQuery;
 use super::store::SemanticDatabase;
 use super::types::{SemanticIncrementalUpdate, SemanticResponse};
 
-const BENCHMARK_QUERY_CAPACITY: u64 = 8;
-
-#[derive(Debug)]
-enum SemanticCommand {
-    ReplaceSnapshot {
-        request_id: String,
-        snapshot: SemanticSnapshot,
-    },
-    ApplyDelta {
-        request_id: String,
-        update: SemanticIncrementalUpdate,
-    },
-    Query {
-        request_id: String,
-        query: SemanticQuery,
-    },
-}
-
-/// The Bevy-facing channel endpoint for the dedicated semantic worker.
+/// The Bevy-facing endpoint for the dedicated semantic worker.
 #[derive(Resource, Debug)]
 pub(crate) struct SemanticWorkingStore {
-    commands: mpsc::Sender<SemanticCommand>,
-    benchmark_mode: AtomicBool,
+    mailbox: Arc<SemanticMailbox>,
     responses: Mutex<mpsc::Receiver<SemanticResponse>>,
     test_control: Arc<SemanticWorkerTestControl>,
-    query_pending: Arc<AtomicU64>,
-    query_high_water: Arc<AtomicU64>,
 }
 
-/// Controlled worker behavior used only by the isolation benchmark scenario.
-/// The delay and failure happen on the dedicated worker thread, never in a
-/// Bevy system, so the scenario can prove that rendering remains responsive
-/// while data-plane work is slow or failing.
+/// Controlled worker behavior used only by isolation benchmark scenarios.
 #[derive(Debug, Default)]
 pub(crate) struct SemanticWorkerTestControl {
-    query_delay_ms: AtomicU64,
-    fail_queries: AtomicBool,
+    query_delay_ms: std::sync::atomic::AtomicU64,
+    fail_queries: std::sync::atomic::AtomicBool,
 }
 
 impl Default for SemanticWorkingStore {
     fn default() -> Self {
-        let (commands, pending_commands) = mpsc::channel();
-        let (responses, pending_responses) = mpsc::channel();
+        let mailbox = Arc::new(SemanticMailbox::new());
+        let (response_sender, response_receiver) = mpsc::sync_channel(RESPONSE_MAILBOX_CAPACITY);
         let test_control = Arc::new(SemanticWorkerTestControl::default());
         let worker_control = Arc::clone(&test_control);
-        let query_pending = Arc::new(AtomicU64::new(0));
-        let query_high_water = Arc::new(AtomicU64::new(0));
-        let worker_query_pending = Arc::clone(&query_pending);
+        let worker_mailbox = Arc::clone(&mailbox);
         std::thread::Builder::new()
             .name("usdview-semantic-worker".to_owned())
-            .spawn(move || {
-                semantic_worker(
-                    pending_commands,
-                    responses,
-                    worker_control,
-                    worker_query_pending,
-                )
-            })
+            .spawn(move || semantic_worker(worker_mailbox, response_sender, worker_control))
             .expect("semantic worker should start");
         Self {
-            commands,
-            benchmark_mode: AtomicBool::new(false),
-            responses: Mutex::new(pending_responses),
+            mailbox,
+            responses: Mutex::new(response_receiver),
             test_control,
-            query_pending,
-            query_high_water,
         }
     }
 }
@@ -88,11 +52,8 @@ impl SemanticWorkingStore {
         request_id: impl Into<String>,
         snapshot: SemanticSnapshot,
     ) -> bool {
-        self.commands
-            .send(SemanticCommand::ReplaceSnapshot {
-                request_id: request_id.into(),
-                snapshot,
-            })
+        self.mailbox
+            .submit_snapshot(request_id.into(), snapshot)
             .is_ok()
     }
 
@@ -105,16 +66,9 @@ impl SemanticWorkingStore {
         request_id: impl Into<String>,
         query: SemanticQuery,
     ) -> Result<(), SemanticSubmitError> {
-        let command = SemanticCommand::Query {
-            request_id: request_id.into(),
-            query,
-        };
-        self.reserve_query_slot()?;
-        if let Err(error) = self.commands.send(command) {
-            self.query_pending.fetch_sub(1, Ordering::AcqRel);
-            return Err(SemanticSubmitError::from(error));
-        }
-        Ok(())
+        self.mailbox
+            .submit_query(request_id.into(), query)
+            .map_err(SemanticSubmitError::from)
     }
 
     pub(crate) fn submit_delta(
@@ -122,50 +76,38 @@ impl SemanticWorkingStore {
         request_id: impl Into<String>,
         update: SemanticIncrementalUpdate,
     ) -> bool {
-        self.commands
-            .send(SemanticCommand::ApplyDelta {
-                request_id: request_id.into(),
-                update,
-            })
+        self.mailbox.submit_delta(request_id.into(), update).is_ok()
+    }
+
+    /// Submit a delta with its complete post-delta snapshot as a saturation
+    /// recovery fallback. The snapshot is cloned only if the state mailbox is full.
+    pub(crate) fn submit_delta_with_snapshot(
+        &self,
+        request_id: impl Into<String>,
+        update: SemanticIncrementalUpdate,
+        snapshot: &SemanticSnapshot,
+    ) -> bool {
+        self.mailbox
+            .submit_delta_with_snapshot(request_id.into(), update, snapshot)
             .is_ok()
     }
 
     pub(crate) fn configure_test_mode(&self, query_delay: Duration, fail_queries: bool) {
-        self.benchmark_mode.store(true, Ordering::Release);
         self.test_control.query_delay_ms.store(
             query_delay.as_millis().min(u64::MAX as u128) as u64,
-            Ordering::Release,
+            std::sync::atomic::Ordering::Release,
         );
         self.test_control
             .fail_queries
-            .store(fail_queries, Ordering::Release);
+            .store(fail_queries, std::sync::atomic::Ordering::Release);
     }
 
     pub(crate) fn query_queue_high_water(&self) -> u64 {
-        self.query_high_water.load(Ordering::Acquire)
+        self.mailbox.stats().4
     }
 
-    fn reserve_query_slot(&self) -> Result<(), SemanticSubmitError> {
-        let pending = if self.benchmark_mode.load(Ordering::Acquire) {
-            loop {
-                let pending = self.query_pending.load(Ordering::Acquire);
-                if pending >= BENCHMARK_QUERY_CAPACITY {
-                    return Err(SemanticSubmitError::QueueFull);
-                }
-                if let Ok(previous) = self.query_pending.compare_exchange_weak(
-                    pending,
-                    pending + 1,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                ) {
-                    break previous + 1;
-                }
-            }
-        } else {
-            self.query_pending.fetch_add(1, Ordering::AcqRel) + 1
-        };
-        self.query_high_water.fetch_max(pending, Ordering::AcqRel);
-        Ok(())
+    pub(crate) fn mailbox_stats(&self) -> (u64, u64, u64, u64, u64, u64) {
+        self.mailbox.stats()
     }
 
     pub(crate) fn drain_responses(&self) -> Vec<SemanticResponse> {
@@ -176,74 +118,57 @@ impl SemanticWorkingStore {
     }
 }
 
+impl Drop for SemanticWorkingStore {
+    fn drop(&mut self) {
+        self.mailbox.close();
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SemanticSubmitError {
     QueueFull,
     WorkerClosed,
 }
 
-impl From<mpsc::SendError<SemanticCommand>> for SemanticSubmitError {
-    fn from(_: mpsc::SendError<SemanticCommand>) -> Self {
-        Self::WorkerClosed
+impl From<MailboxSubmitError> for SemanticSubmitError {
+    fn from(error: MailboxSubmitError) -> Self {
+        match error {
+            MailboxSubmitError::QueueFull => Self::QueueFull,
+            MailboxSubmitError::Closed => Self::WorkerClosed,
+        }
     }
 }
 
 fn semantic_worker(
-    pending_commands: mpsc::Receiver<SemanticCommand>,
-    responses: mpsc::Sender<SemanticResponse>,
+    mailbox: Arc<SemanticMailbox>,
+    responses: mpsc::SyncSender<SemanticResponse>,
     test_control: Arc<SemanticWorkerTestControl>,
-    query_pending: Arc<AtomicU64>,
 ) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("semantic worker runtime should build");
     let mut database = runtime.block_on(SemanticDatabase::open()).ok();
-    let mut buffered_command = None;
 
     loop {
-        let Some(command) = buffered_command
-            .take()
-            .or_else(|| pending_commands.recv().ok())
-        else {
+        let Some(command) = mailbox.recv() else {
             break;
         };
-
-        // Preserve the old search-worker behavior: a burst of consecutive
-        // query requests can be coalesced, while snapshot/delta commands stay
-        // ordered and act as barriers for the query stream.
         let command = match command {
-            SemanticCommand::Query {
-                mut request_id,
-                mut query,
-            } => {
-                query_pending.fetch_sub(1, Ordering::AcqRel);
-                while let Ok(next) = pending_commands.try_recv() {
-                    match next {
-                        SemanticCommand::Query {
-                            request_id: newer_request_id,
-                            query: newer_query,
-                        } => {
-                            query_pending.fetch_sub(1, Ordering::AcqRel);
-                            request_id = newer_request_id;
-                            query = newer_query;
-                        }
-                        other => {
-                            buffered_command = Some(other);
-                            break;
-                        }
-                    }
+            SemanticMailboxCommand::Query(mut query) => {
+                while let Some(newer) = mailbox.take_next_query() {
+                    query = newer;
                 }
-                SemanticCommand::Query { request_id, query }
+                SemanticMailboxCommand::Query(query)
             }
-            other => other,
+            command => command,
         };
 
         let (request_id, result, operation) = match command {
-            SemanticCommand::ReplaceSnapshot {
+            SemanticMailboxCommand::State(SemanticStateCommand::ReplaceSnapshot {
                 request_id,
                 snapshot,
-            } => {
+            }) => {
                 let result = database.as_mut().map_or_else(
                     || Err("semantic database is unavailable".to_owned()),
                     |database| {
@@ -261,7 +186,10 @@ fn semantic_worker(
                     "snapshot load",
                 )
             }
-            SemanticCommand::ApplyDelta { request_id, update } => {
+            SemanticMailboxCommand::State(SemanticStateCommand::ApplyDelta {
+                request_id,
+                update,
+            }) => {
                 let result = database.as_mut().map_or_else(
                     || Err("semantic database is unavailable".to_owned()),
                     |database| {
@@ -280,15 +208,20 @@ fn semantic_worker(
                     "semantic delta",
                 )
             }
-            SemanticCommand::Query { request_id, query } => {
-                let delay_ms = test_control.query_delay_ms.load(Ordering::Acquire);
+            SemanticMailboxCommand::Query(SemanticQueryCommand { request_id, query }) => {
+                let delay_ms = test_control
+                    .query_delay_ms
+                    .load(std::sync::atomic::Ordering::Acquire);
                 if delay_ms > 0 {
                     std::thread::sleep(Duration::from_millis(delay_ms));
                 }
                 let result = database.as_ref().map_or_else(
                     || Err("semantic database is unavailable".to_owned()),
                     |database| {
-                        if test_control.fail_queries.load(Ordering::Acquire) {
+                        if test_control
+                            .fail_queries
+                            .load(std::sync::atomic::Ordering::Acquire)
+                        {
                             Err("controlled benchmark query failure".to_owned())
                         } else {
                             runtime

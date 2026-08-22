@@ -52,8 +52,29 @@ pub struct RendererCounters {
     pub semantic_snapshot_clones: u64,
     pub semantic_initial_extractions: u64,
     pub semantic_initial_extraction_failures: u64,
+    pub semantic_changed_info_updates: u64,
     pub semantic_fallback_extractions: u64,
     pub semantic_subtree_extractions: u64,
+    pub semantic_extract_ms: f64,
+    pub render_blob_prepare_ms: f64,
+    pub total_semantic_postupdate_ms: f64,
+    pub runtime_delivery_submit_ms: f64,
+    pub runtime_delivery_worker_ms: f64,
+    pub runtime_delivery_blob_reads: u64,
+    pub runtime_delivery_bytes: u64,
+    pub runtime_delivery_queue_high_water: u64,
+    pub runtime_delivery_result_backpressure: u64,
+    pub runtime_delivery_generation_retries: u64,
+    pub recovery_serialize_ms: f64,
+    pub recovery_submit_ms: f64,
+    pub recovery_worker_write_ms: f64,
+    pub recovery_result_backpressure: u64,
+    pub semantic_mailbox_pending: u64,
+    pub semantic_mailbox_high_water: u64,
+    pub semantic_mailbox_recoveries: u64,
+    pub recovery_mailbox_pending: u64,
+    pub recovery_mailbox_high_water: u64,
+    pub recovery_mailbox_coalesced: u64,
     pub semantic_worker_submissions: u64,
     pub semantic_worker_submission_failures: u64,
     pub recovery_checkpoints: u64,
@@ -129,8 +150,29 @@ impl Default for RendererCounters {
             semantic_snapshot_clones: 0,
             semantic_initial_extractions: 0,
             semantic_initial_extraction_failures: 0,
+            semantic_changed_info_updates: 0,
             semantic_fallback_extractions: 0,
             semantic_subtree_extractions: 0,
+            semantic_extract_ms: 0.0,
+            render_blob_prepare_ms: 0.0,
+            total_semantic_postupdate_ms: 0.0,
+            runtime_delivery_submit_ms: 0.0,
+            runtime_delivery_worker_ms: 0.0,
+            runtime_delivery_blob_reads: 0,
+            runtime_delivery_bytes: 0,
+            runtime_delivery_queue_high_water: 0,
+            runtime_delivery_result_backpressure: 0,
+            runtime_delivery_generation_retries: 0,
+            recovery_serialize_ms: 0.0,
+            recovery_submit_ms: 0.0,
+            recovery_worker_write_ms: 0.0,
+            recovery_result_backpressure: 0,
+            semantic_mailbox_pending: 0,
+            semantic_mailbox_high_water: 0,
+            semantic_mailbox_recoveries: 0,
+            recovery_mailbox_pending: 0,
+            recovery_mailbox_high_water: 0,
+            recovery_mailbox_coalesced: 0,
             semantic_worker_submissions: 0,
             semantic_worker_submission_failures: 0,
             recovery_checkpoints: 0,
@@ -187,8 +229,29 @@ impl RendererCounters {
         self.semantic_snapshot_clones = 0;
         self.semantic_initial_extractions = 0;
         self.semantic_initial_extraction_failures = 0;
+        self.semantic_changed_info_updates = 0;
         self.semantic_fallback_extractions = 0;
         self.semantic_subtree_extractions = 0;
+        self.semantic_extract_ms = 0.0;
+        self.render_blob_prepare_ms = 0.0;
+        self.total_semantic_postupdate_ms = 0.0;
+        self.runtime_delivery_submit_ms = 0.0;
+        self.runtime_delivery_worker_ms = 0.0;
+        self.runtime_delivery_blob_reads = 0;
+        self.runtime_delivery_bytes = 0;
+        self.runtime_delivery_queue_high_water = 0;
+        self.runtime_delivery_result_backpressure = 0;
+        self.runtime_delivery_generation_retries = 0;
+        self.recovery_serialize_ms = 0.0;
+        self.recovery_submit_ms = 0.0;
+        self.recovery_worker_write_ms = 0.0;
+        self.recovery_result_backpressure = 0;
+        self.semantic_mailbox_pending = 0;
+        self.semantic_mailbox_high_water = 0;
+        self.semantic_mailbox_recoveries = 0;
+        self.recovery_mailbox_pending = 0;
+        self.recovery_mailbox_high_water = 0;
+        self.recovery_mailbox_coalesced = 0;
         self.semantic_worker_submissions = 0;
         self.semantic_worker_submission_failures = 0;
         self.recovery_checkpoints = 0;

@@ -8,5 +8,8 @@ mod m25_regression;
 mod payload;
 mod render_blob;
 mod runtime_delivery;
+mod runtime_delivery_overhead;
+mod runtime_delivery_readiness;
+mod runtime_delivery_support;
 mod subtree_delta;
 mod worker;
