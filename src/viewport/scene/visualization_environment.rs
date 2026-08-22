@@ -19,6 +19,28 @@ pub(crate) fn color_from_rgb8(color: ColorRgb8) -> Color {
     )
 }
 
+/// Applies the selected clear color without touching scene entities or
+/// authored USD material state.
+pub(crate) fn sync_background_color(
+    viewer_settings: Res<ViewerSettingsState>,
+    mut clear_color: ResMut<ClearColor>,
+) {
+    let desired = color_from_rgb8(viewer_settings.environment().background_color);
+    if clear_color.0 != desired {
+        clear_color.0 = desired;
+    }
+}
+
+/// Updates only USD's shared fallback material. Authored material handles are
+/// never queried or rewritten by this presentation-only operation.
+pub(crate) fn sync_fallback_surface_color(world: &mut World) {
+    let desired = {
+        let viewer_settings = world.resource::<ViewerSettingsState>();
+        color_from_rgb8(viewer_settings.environment().default_surface_color)
+    };
+    usd_bevy::set_fallback_material_color(world, desired);
+}
+
 /// Keeps Glacial's ground-grid visibility aligned with the renderer state.
 pub(crate) fn sync_ground_grid_visibility(
     toggles: Res<DisplayToggles>,

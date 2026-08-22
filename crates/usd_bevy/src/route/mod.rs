@@ -44,7 +44,7 @@ use bevy::asset::Assets;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
 use bevy::pbr::StandardMaterial;
-use bevy::prelude::{Entity, Handle};
+use bevy::prelude::{Color, Entity, Handle};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
 
@@ -53,6 +53,40 @@ use openusd::usd::Stage;
 /// shape, and material routes never allocate route-local placeholders.
 #[derive(Resource, Clone)]
 pub(crate) struct FallbackMaterial(Handle<StandardMaterial>);
+
+/// Presentation color used only when a USD prim has no usable authored
+/// material. It is intentionally separate from authored material assets.
+#[derive(Resource, Debug, Clone, Copy, PartialEq)]
+pub struct FallbackMaterialColor(pub Color);
+
+impl Default for FallbackMaterialColor {
+    fn default() -> Self {
+        Self(Color::WHITE)
+    }
+}
+
+/// Updates the shared fallback material in place, if it has already been
+/// created, while retaining the same asset handle and cache ownership.
+pub fn set_fallback_material_color(world: &mut World, color: Color) {
+    let changed = world
+        .get_resource::<FallbackMaterialColor>()
+        .is_none_or(|current| current.0 != color);
+    if !changed {
+        return;
+    }
+    world.insert_resource(FallbackMaterialColor(color));
+
+    let handle = world
+        .get_resource::<FallbackMaterial>()
+        .map(|fallback| fallback.0.clone());
+    if let Some(handle) = handle
+        && let Some(mut material) = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .get_mut(&handle)
+    {
+        material.base_color = color;
+    }
+}
 
 pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
     let existing = world
@@ -65,12 +99,22 @@ pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
     {
         return handle;
     }
+    let base_color = world
+        .get_resource::<FallbackMaterialColor>()
+        .map(|color| color.0)
+        .unwrap_or(Color::WHITE);
     let handle = world
         .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .add(StandardMaterial {
+            base_color,
+            ..Default::default()
+        });
     world.insert_resource(FallbackMaterial(handle.clone()));
     handle
 }
+
+#[cfg(test)]
+mod fallback_material_tests;
 
 /// The current time to resolve animated attributes at. A plain `Resource`;
 /// `current` is a USD time code. Set it (scrub / play) and the reprojection

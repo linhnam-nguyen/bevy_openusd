@@ -267,7 +267,7 @@ pub(super) fn apply_viewport_commands(
                 }
             }
             ViewportCommand::SetEnvironmentSettings { settings } => {
-                state.viewer_settings.0.environment.grid_color = settings.grid_color;
+                state.viewer_settings.0.environment = settings;
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSamplingPreference { .. } => {

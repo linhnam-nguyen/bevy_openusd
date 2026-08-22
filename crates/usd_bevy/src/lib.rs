@@ -44,6 +44,7 @@ pub use route::profile::{
 };
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
+pub use route::{FallbackMaterialColor, set_fallback_material_color};
 pub use snippet::UsdSnippet;
 /// The inline-USD macro (see [`snippet::UsdSnippet`]).
 pub use usd_macro::usd;
@@ -80,6 +81,7 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::material::UsdMaterialCache>();
         app.init_resource::<route::material::MaterialConsumerIndex>();
         app.init_resource::<route::material::MaterialRouteDiagnostics>();
+        app.init_resource::<route::FallbackMaterialColor>();
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

@@ -19,7 +19,10 @@ mod edge_mesh;
 mod environment;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
-pub(super) use environment::{sync_ground_grid_to_scene, sync_ground_grid_visibility};
+pub(super) use environment::{
+    sync_background_color, sync_fallback_surface_color, sync_ground_grid_to_scene,
+    sync_ground_grid_visibility,
+};
 
 pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
@@ -38,6 +41,8 @@ impl Plugin for OverlaysPlugin {
                 (
                     compute_extent,
                     sync_ground_grid_to_scene,
+                    sync_background_color,
+                    sync_fallback_surface_color,
                     sync_shadow_cascade_distance,
                     capture_original_light_levels,
                     capture_original_shadow_settings,
