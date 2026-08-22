@@ -60,6 +60,23 @@ fn unsupported_render_mode_is_an_explicit_decode_error() {
 }
 
 #[test]
+fn future_render_modes_are_rejected_by_the_legacy_renderer_command() {
+    for render_mode in [RenderMode::UniformColor, RenderMode::RayTraced] {
+        let configuration = RendererConfiguration {
+            render_mode,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            configuration.validate(),
+            Err(ProtocolValidationError::InvalidInput {
+                field: "renderer.render_mode"
+            })
+        ));
+    }
+}
+
+#[test]
 fn typed_renderer_command_preserves_request_correlation() {
     let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
         "renderer-42",

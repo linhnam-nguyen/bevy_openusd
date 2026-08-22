@@ -59,9 +59,74 @@ pub enum GroundGridOrigin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RenderMode {
+    /// Use one uniform material color for all rendered surfaces.
+    UniformColor,
     #[default]
     Shaded,
     Wireframe,
+    /// Use Bevy Solari when the negotiated renderer capabilities allow it.
+    RayTraced,
+}
+
+/// Compact RGB color value that is safe to carry across the wire.
+///
+/// Each channel is deliberately represented as `u8`; serde therefore rejects
+/// negative, fractional, and out-of-range channel values before they reach a
+/// renderer or presentation adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColorRgb8 {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl ColorRgb8 {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+/// Renderer-neutral environment settings requested by the viewer.
+///
+/// These values describe user intent only. Renderer capability negotiation and
+/// application remain server-owned concerns in later B milestones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewerEnvironmentSettings {
+    pub render_mode: RenderMode,
+    pub shadows_enabled: bool,
+    pub grid_visible: bool,
+    pub grid_color: ColorRgb8,
+    pub grid_origin: GroundGridOrigin,
+    pub background_color: ColorRgb8,
+    pub default_surface_color: ColorRgb8,
+}
+
+/// Renderer-neutral selection presentation preferences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectionPresentationSettings {
+    pub boundary_enabled: bool,
+    pub boundary_color: ColorRgb8,
+    pub color_change_enabled: bool,
+    pub selection_color: ColorRgb8,
+    pub hover_color_change_enabled: bool,
+    pub hover_color: ColorRgb8,
+}
+
+/// Vendor-neutral sampling intent. The active provider is authoritative
+/// read-only state and is represented separately by [`SamplingProvider`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SamplingPreference {
+    pub enabled: bool,
+}
+
+/// Renderer-selected sampling provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SamplingProvider {
+    #[default]
+    None,
+    Dlss,
+    Fsr,
 }
 
 /// Transport-neutral renderer options shared by commands and future
@@ -95,6 +160,14 @@ impl Default for RendererConfiguration {
 
 impl RendererConfiguration {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        if matches!(
+            self.render_mode,
+            RenderMode::UniformColor | RenderMode::RayTraced
+        ) {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "renderer.render_mode",
+            });
+        }
         if let Some(fps) = self.preferred_fps
             && !(MIN_FPS..=MAX_FPS).contains(&fps)
         {

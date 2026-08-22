@@ -23,8 +23,10 @@ pub use editor::{
 };
 pub use events::{ViewportEvent, ViewportEventEnvelope, ViewportWireMessage};
 pub use read_models::{
-    CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, RenderMode, RendererConfiguration, SceneAnchor, SceneChildrenPage,
-    ScenePageReference, SceneReadModel, SceneSearchMatch, SelectionReadModel, StageLoadState,
-    StageReadModel, TimelineReadModel, ViewportReadModel,
+    CameraSource, ColorRgb8, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration,
+    SamplingPreference, SamplingProvider, SceneAnchor, SceneChildrenPage, ScenePageReference,
+    SceneReadModel, SceneSearchMatch, SelectionPresentationSettings, SelectionReadModel,
+    StageLoadState, StageReadModel, TimelineReadModel, ViewerEnvironmentSettings,
+    ViewportReadModel,
 };
