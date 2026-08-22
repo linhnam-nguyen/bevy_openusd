@@ -5,7 +5,17 @@
 //! Viewer Settings that do not have another authoritative owner yet.
 
 use bevy::prelude::*;
-use viewport_protocol::ViewerSettingsReadModel;
+use viewport_protocol::{ViewerEnvironmentSettings, ViewerSettingsReadModel};
 
 #[derive(Resource, Debug, Clone, Default)]
-pub(super) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
+pub(crate) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
+
+impl ViewerSettingsState {
+    pub(crate) fn environment(&self) -> &ViewerEnvironmentSettings {
+        &self.0.environment
+    }
+
+    pub(crate) fn environment_mut(&mut self) -> &mut ViewerEnvironmentSettings {
+        &mut self.0.environment
+    }
+}

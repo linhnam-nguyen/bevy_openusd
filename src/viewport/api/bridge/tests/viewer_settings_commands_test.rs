@@ -6,7 +6,7 @@ use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::scene::visualization::DisplayToggles;
 
 #[test]
-fn environment_command_rejects_before_b2_application() {
+fn environment_command_applies_grid_color_for_b2_1() {
     let mut app = command_test_app();
     let environment = ViewerEnvironmentSettings {
         background_color: ColorRgb8::new(1, 2, 3),
@@ -22,7 +22,13 @@ fn environment_command_rejects_before_b2_application() {
 
     assert_eq!(
         app.world().resource::<ViewerSettingsState>().0,
-        ViewerSettingsReadModel::default()
+        ViewerSettingsReadModel {
+            environment: ViewerEnvironmentSettings {
+                grid_color: environment.grid_color,
+                ..ViewerEnvironmentSettings::default()
+            },
+            ..ViewerSettingsReadModel::default()
+        }
     );
     let presentation = &app.world().resource::<DisplayToggles>().renderer;
     assert_eq!(presentation.render_mode, RenderMode::Shaded);
@@ -30,12 +36,16 @@ fn environment_command_rejects_before_b2_application() {
         .world_mut()
         .resource_mut::<ViewportEventOutbox>()
         .pop()
-        .expect("unapplied settings command must publish a rejection");
+        .expect("grid environment command must publish an applied event");
     assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-    let ViewportEvent::CommandRejected { reason, .. } = event.event else {
-        panic!("environment settings must be rejected before B2 application");
+    let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
+        panic!("grid environment settings must publish an applied event");
     };
-    assert!(reason.contains("environment settings are not applied"));
+    assert_eq!(settings.environment.grid_color, environment.grid_color);
+    assert_eq!(
+        settings.environment.background_color,
+        ViewerEnvironmentSettings::default().background_color
+    );
 }
 
 #[test]

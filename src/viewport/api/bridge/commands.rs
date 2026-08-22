@@ -2,7 +2,9 @@ use bevy::prelude::*;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 
 use super::editor_commands::apply_editor_command;
-use super::helpers::{emit_presentation_changed, emit_snapshot, reject};
+use super::helpers::{
+    emit_presentation_changed, emit_snapshot, emit_viewer_settings_changed, reject,
+};
 use super::state::EditorHistories;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
 mod cadence;
@@ -264,12 +266,9 @@ pub(super) fn apply_viewport_commands(
                     );
                 }
             }
-            ViewportCommand::SetEnvironmentSettings { .. } => {
-                reject(
-                    &mut outbox,
-                    request_id,
-                    "environment settings are not applied in this milestone".to_owned(),
-                );
+            ViewportCommand::SetEnvironmentSettings { settings } => {
+                state.viewer_settings.0.environment.grid_color = settings.grid_color;
+                emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSamplingPreference { .. } => {
                 reject(

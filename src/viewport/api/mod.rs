@@ -11,7 +11,7 @@ mod scene_index;
 mod scene_query;
 mod session_registry;
 
-pub(crate) use bridge::{ViewportBridgePlugin, ViewportBridgeSet};
+pub(crate) use bridge::{ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet};
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
