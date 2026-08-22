@@ -26,6 +26,14 @@ pub(crate) trait BlobStore {
     fn contains(&self, id: &BlobId) -> Result<bool>;
 }
 
+/// Immutable mesh payload prepared on the Bevy owner thread and persisted by
+/// the runtime-delivery worker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedMeshBlob {
+    pub(crate) blob_id: BlobId,
+    pub(crate) bytes: Vec<u8>,
+}
+
 /// Local filesystem implementation of [`BlobStore`].
 ///
 /// The supplied path is the `objects` directory itself. An object with digest
@@ -272,8 +280,25 @@ fn validate_attribute_len<T>(name: &str, values: Option<&[T]>, expected: usize) 
 }
 
 pub(crate) fn put_mesh(store: &impl BlobStore, mesh: &Mesh) -> Result<BlobId> {
+    let prepared = prepare_mesh_payload(mesh)?;
+    let stored = store.put(&prepared.bytes)?;
+    if stored != prepared.blob_id {
+        bail!(
+            "BlobStore returned digest {} for prepared mesh {}, refusing mismatched payload",
+            stored.0,
+            prepared.blob_id.0
+        );
+    }
+    Ok(stored)
+}
+
+/// Encode a projected mesh without touching the filesystem or another
+/// blocking data-plane resource.
+pub(crate) fn prepare_mesh_payload(mesh: &Mesh) -> Result<PreparedMeshBlob> {
     let blob = MeshBlob::from_bevy_mesh(mesh)?;
-    store.put(&blob.encode()?)
+    let bytes = blob.encode()?;
+    let blob_id = BlobId(blake3::hash(&bytes).to_hex().to_string());
+    Ok(PreparedMeshBlob { blob_id, bytes })
 }
 
 pub(crate) fn get_mesh(store: &impl BlobStore, id: &BlobId) -> Result<Option<Mesh>> {

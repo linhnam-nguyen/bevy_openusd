@@ -1,6 +1,7 @@
 mod action;
 mod changed_info;
 mod delivery;
+mod delivery_worker;
 mod subtree;
 
 use std::time::Instant;
@@ -9,8 +10,10 @@ pub(crate) use action::SubtreeUpdateError;
 pub(in crate::viewport::semantic) use action::{SemanticExtractionOutcome, SemanticSyncAction};
 pub(in crate::viewport::semantic) use changed_info::changed_info_update;
 pub(in crate::viewport::semantic) use delivery::{
-    attach_render_blobs_to_action, publish_runtime_delivery,
+    attach_render_blobs_to_action, queue_runtime_delivery,
 };
+pub(crate) use delivery::{drain_runtime_delivery_results, flush_pending_runtime_delivery};
+pub(crate) use delivery_worker::RuntimeDeliveryRuntime;
 pub(in crate::viewport::semantic) use subtree::resync_subtree_update;
 
 use bevy::prelude::World;
@@ -310,7 +313,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
         return;
     };
     let render_blob_started = Instant::now();
-    attach_render_blobs_to_action(world, &mut update, live_revision, root_count);
+    let prepared_blobs =
+        attach_render_blobs_to_action(world, &mut update, live_revision, root_count);
     if let Some(mut counters) =
         world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
     {
@@ -320,11 +324,11 @@ fn synchronize_live_stage_inner(world: &mut World) {
     let request_id = format!("semantic-sync-{}", live_revision.0);
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
-            publish_runtime_delivery(world, &snapshot);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot(request_id, snapshot.clone());
             if submitted {
+                queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
@@ -334,11 +338,11 @@ fn synchronize_live_stage_inner(world: &mut World) {
         }
         SemanticSyncAction::Delta(update) => {
             let snapshot = update.snapshot.clone();
-            publish_runtime_delivery(world, &snapshot);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_delta(request_id, update.request);
             if submitted {
+                queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);

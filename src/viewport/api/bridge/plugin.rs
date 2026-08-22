@@ -19,7 +19,8 @@ use crate::viewport::api::{
     ViewportTreeCommandInbox,
 };
 use crate::viewport::semantic::{
-    SemanticDiffState, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
+    RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
+    drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use crate::viewport::session::StageInfo;
 
@@ -34,6 +35,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<SemanticWorkingStore>()
+            .init_resource::<RuntimeDeliveryRuntime>()
             .init_resource::<SemanticSyncState>()
             .init_resource::<SemanticDiffState>()
             .init_resource::<SemanticSearchRequests>()
@@ -64,7 +66,13 @@ impl Plugin for ViewportBridgePlugin {
             // represent the completed current-frame revision.
             .add_systems(
                 PostUpdate,
-                (synchronize_live_stage, checkpoint_recovery).chain(),
+                (
+                    drain_runtime_delivery_results,
+                    synchronize_live_stage,
+                    flush_pending_runtime_delivery,
+                    checkpoint_recovery,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
