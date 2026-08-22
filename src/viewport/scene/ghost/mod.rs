@@ -192,10 +192,12 @@ pub(crate) fn hydrate_historical_ghosts(
         };
 
         let Some(material) = material_handle.clone().or_else(|| {
-            let mut material = StandardMaterial::default();
-            material.base_color = GHOST_COLOR;
-            material.alpha_mode = AlphaMode::Blend;
-            material.unlit = true;
+            let material = StandardMaterial {
+                base_color: GHOST_COLOR,
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            };
             let handle = materials.add(material);
             material_handle = Some(handle.clone());
             state.material = Some(handle.clone());

@@ -11,6 +11,7 @@ use super::super::stage::LiveStage;
 use super::ReconcileStats;
 use super::full::reconcile_full;
 use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
+use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 
 /// Reconcile specific subtrees against the stage's current prims.
 pub(super) fn reconcile_subtrees(
@@ -69,7 +70,7 @@ pub(super) fn reconcile_subtrees(
         .filter(|path| !old_entities.contains_key(*path))
         .cloned()
         .collect();
-    added.sort_by(|a, b| a.matches('/').count().cmp(&b.matches('/').count()));
+    added.sort_by_key(|a| a.matches('/').count());
 
     for path in &added {
         let parent_str = parent_path(path);
@@ -98,12 +99,20 @@ pub(super) fn reconcile_subtrees(
         .filter(|(path, _)| !current_paths.contains(*path))
         .map(|(path, entity)| (path.clone(), *entity))
         .collect();
-    removed.sort_by(|(a, _), (b, _)| b.matches('/').count().cmp(&a.matches('/').count()));
+    removed.sort_by_key(|(path, _)| std::cmp::Reverse(path.matches('/').count()));
 
     let despawned_count = removed.len();
     for (path, entity) in removed {
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
             semantic_idx.remove_entity(entity);
+        }
+        if let Some(mut material_idx) =
+            world.get_resource_mut::<crate::route::material::MaterialConsumerIndex>()
+        {
+            material_idx.remove_consumer(&path);
+        }
+        if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
+            dependencies.remove_instancer(&path);
         }
         world.despawn(entity);
         map.remove_path(&path);
@@ -143,11 +152,11 @@ pub(super) fn reconcile_subtrees(
     // 4. Repatch existing prims (current_paths ∩ old_paths)
     let mut patched_count = 0usize;
     for path in &current_paths {
-        if let Some(&entity) = old_entities.get(path) {
-            if let Ok(p) = openusd::sdf::path(path) {
-                registry.patch_prim(stage, &p, world, entity, &[]);
-                patched_count += 1;
-            }
+        if let Some(&entity) = old_entities.get(path)
+            && let Ok(p) = openusd::sdf::path(path)
+        {
+            registry.patch_prim(stage, &p, world, entity, &[]);
+            patched_count += 1;
         }
     }
 
@@ -159,10 +168,10 @@ pub(super) fn reconcile_subtrees(
                 .any(|root| is_descendant_or_self(root, anim_path))
         });
         for path in &current_paths {
-            if let Ok(p) = openusd::sdf::path(path) {
-                if prim_is_animated(stage, &p) {
-                    animated_res.0.insert(path.clone());
-                }
+            if let Ok(p) = openusd::sdf::path(path)
+                && prim_is_animated(stage, &p)
+            {
+                animated_res.0.insert(path.clone());
             }
         }
     }

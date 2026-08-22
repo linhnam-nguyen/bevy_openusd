@@ -20,11 +20,12 @@ pub mod sync;
 
 pub use authoring::*;
 pub use live::{
-    AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, PendingStageChanges, PrimEntities,
-    StageChange, StageChangeBatch, TransformHistory, apply_change_batch, apply_changes,
-    author_transform, collect_stage_subtree_paths, current_transform, is_descendant_or_self,
-    minimize_resync_roots, normalize_prim_path, prim_of, project_stage, property_of,
-    validate_prim_path,
+    AnimatedPrims, LiveRevision, LiveStage, LiveStagePlugin, LiveStageSet, PendingStageChanges,
+    PrimEntities, ProgressiveProjectionState, ProjectionBudget, ProjectionPlan,
+    ProjectionPlanBuilder, ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange,
+    StageChangeBatch, TransformHistory, apply_change_batch, apply_changes, author_transform,
+    collect_stage_subtree_paths, current_transform, is_descendant_or_self, minimize_resync_roots,
+    normalize_prim_path, prim_of, project_stage, property_of, validate_prim_path,
 };
 pub use prim_ref::{SemanticEntityIndex, UsdEntityKey, UsdPrimRef};
 pub use route::audio::UsdSpatialAudio;
@@ -32,8 +33,14 @@ pub use route::camera::{Projection, UsdCamera};
 pub use route::coverage::UsdProcedural;
 pub use route::curves::CurvesRoute;
 pub use route::geom::{UsdDisplayName, UsdKind, UsdLocalExtent, UsdPurpose};
+pub use route::instancer::{PointInstancerSelection, PointInstancerStats, UsdInstanceId};
+pub use route::instancer_dependency::PointInstancerDependencyIndex;
 pub use route::physics::{
     UsdCollider, UsdDrives, UsdJoint, UsdLimits, UsdMass, UsdPhysicsJoint, UsdRigidBody,
+};
+pub use route::profile::{
+    GeometryInterpolation, GeometryProfile, GeometryProfileRecord, GeometryProfileTotals,
+    GeometrySubdivisionClass, GeometryTopologyClass,
 };
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
@@ -62,10 +69,17 @@ impl Plugin for UsdPlugin {
         }
         // Intern projected meshes so identical prims share one GPU asset (6d).
         app.init_resource::<route::cache::ProjectionCache>();
+        app.init_resource::<route::instancer::PointInstancerStats>();
+        app.init_resource::<route::instancer::PointInstancerSelection>();
+        app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();
+        // Opt-in mesh/vertex pipeline profiler; disabled on the normal hot path.
+        app.init_resource::<route::profile::GeometryProfile>();
         // Texture cache for filesystem and USDZ archives.
         app.init_resource::<route::material::UsdTextureCache>();
         // Decoded StandardMaterial cache keyed by composed USD Material path.
         app.init_resource::<route::material::UsdMaterialCache>();
+        app.init_resource::<route::material::MaterialConsumerIndex>();
+        app.init_resource::<route::material::MaterialRouteDiagnostics>();
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

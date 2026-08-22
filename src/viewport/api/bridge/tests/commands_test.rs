@@ -4,6 +4,13 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::commands::apply_viewport_commands;
+    use crate::viewport::api::bridge::scene_query::{
+        dispatch_scene_query_commands, publish_semantic_query_results,
+    };
+    use crate::viewport::api::bridge::state::{
+        EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests,
+    };
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
@@ -13,13 +20,6 @@ mod tests {
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::semantic::SemanticWorkingStore;
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
-    use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::scene_query::{
-        dispatch_scene_query_commands, publish_semantic_query_results,
-    };
-    use crate::viewport::api::bridge::state::{
-        EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests,
-    };
 
     fn command_test_app() -> App {
         let mut app = App::new();
@@ -81,7 +81,13 @@ mod tests {
 
         app.update();
 
-        assert!(app.world().resource::<DisplayToggles>().wireframe);
+        assert_eq!(
+            app.world()
+                .resource::<DisplayToggles>()
+                .renderer
+                .render_mode,
+            RenderMode::Wireframe
+        );
         assert!(app.world().resource::<UsdStageTime>().playing);
         assert_eq!(app.world().resource::<UsdStageTime>().seconds, 1.0 / 24.0);
         assert!(app.world().resource::<PhysicsActive>().0);
@@ -90,14 +96,38 @@ mod tests {
             std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
                 .collect();
         assert_eq!(events.len(), 4);
-        assert_eq!(events[0].request_id.as_deref(), Some(request_ids[0].as_str()));
-        assert!(matches!(events[0].event, ViewportEvent::PresentationChanged { .. }));
-        assert_eq!(events[1].request_id.as_deref(), Some(request_ids[1].as_str()));
-        assert!(matches!(events[1].event, ViewportEvent::TimelineChanged { .. }));
-        assert_eq!(events[2].request_id.as_deref(), Some(request_ids[2].as_str()));
-        assert!(matches!(events[2].event, ViewportEvent::TimelineChanged { .. }));
-        assert_eq!(events[3].request_id.as_deref(), Some(request_ids[3].as_str()));
-        assert!(matches!(events[3].event, ViewportEvent::PhysicsChanged { running: true }));
+        assert_eq!(
+            events[0].request_id.as_deref(),
+            Some(request_ids[0].as_str())
+        );
+        assert!(matches!(
+            events[0].event,
+            ViewportEvent::PresentationChanged { .. }
+        ));
+        assert_eq!(
+            events[1].request_id.as_deref(),
+            Some(request_ids[1].as_str())
+        );
+        assert!(matches!(
+            events[1].event,
+            ViewportEvent::TimelineChanged { .. }
+        ));
+        assert_eq!(
+            events[2].request_id.as_deref(),
+            Some(request_ids[2].as_str())
+        );
+        assert!(matches!(
+            events[2].event,
+            ViewportEvent::TimelineChanged { .. }
+        ));
+        assert_eq!(
+            events[3].request_id.as_deref(),
+            Some(request_ids[3].as_str())
+        );
+        assert!(matches!(
+            events[3].event,
+            ViewportEvent::PhysicsChanged { running: true }
+        ));
     }
 
     #[test]
@@ -130,8 +160,13 @@ mod tests {
             app.update();
             if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
                 assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-                let ViewportEvent::SearchResults { query, offset, total, matches, has_more } =
-                    event.event
+                let ViewportEvent::SearchResults {
+                    query,
+                    offset,
+                    total,
+                    matches,
+                    has_more,
+                } = event.event
                 else {
                     panic!("expected semantic search results")
                 };
@@ -171,7 +206,10 @@ mod tests {
         let ViewportEvent::PresentationChanged { presentation } = event.event else {
             panic!("expected presentation change");
         };
-        assert_eq!(presentation.ground_grid_origin, GroundGridOrigin::WorldOrigin);
+        assert_eq!(
+            presentation.ground_grid_origin,
+            GroundGridOrigin::WorldOrigin
+        );
     }
 
     #[test]
@@ -204,8 +242,13 @@ mod tests {
         let stage = openusd::usd::Stage::builder()
             .in_memory("bridge_editor_test.usda")
             .unwrap();
-        stage.define_prim("/World").unwrap().set_type_name("Xform").unwrap();
-        app.world_mut().insert_non_send(usd_bevy::LiveStage::new(stage));
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
 
         let define_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::DefinePrim {
@@ -220,10 +263,16 @@ mod tests {
             .resource_mut::<ViewportEventOutbox>()
             .pop()
             .expect("define should publish an event");
-        assert_eq!(define_event.request_id.as_deref(), Some(define_request.as_str()));
+        assert_eq!(
+            define_event.request_id.as_deref(),
+            Some(define_request.as_str())
+        );
         assert!(matches!(
             define_event.event,
-            ViewportEvent::EditorCommandCompleted { operation: EditorOperation::DefinePrim, .. }
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::DefinePrim,
+                ..
+            }
         ));
 
         let attribute_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
@@ -240,15 +289,32 @@ mod tests {
             .resource_mut::<ViewportEventOutbox>()
             .pop()
             .expect("attribute should publish an event");
-        assert_eq!(attribute_event.request_id.as_deref(), Some(attribute_request.as_str()));
+        assert_eq!(
+            attribute_event.request_id.as_deref(),
+            Some(attribute_request.as_str())
+        );
         assert!(matches!(
             attribute_event.event,
-            ViewportEvent::EditorCommandCompleted { operation: EditorOperation::SetAttribute, .. }
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SetAttribute,
+                ..
+            }
         ));
 
-        let live = app.world().get_non_send::<usd_bevy::LiveStage>().expect("live stage");
+        let live = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage");
         assert!(usd_bevy::authoring::prim_exists(&live.stage, "/World/Box"));
-        let value = live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).attribute("size").get::<openusd::sdf::Value>().unwrap();
-        assert!(matches!(value, Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON));
+        let value = live
+            .stage
+            .prim(openusd::sdf::path("/World/Box").unwrap())
+            .attribute("size")
+            .get::<openusd::sdf::Value>()
+            .unwrap();
+        assert!(matches!(
+            value,
+            Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
+        ));
     }
 }

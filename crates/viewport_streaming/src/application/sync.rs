@@ -74,13 +74,13 @@ impl RenderServerInterface {
             .semantic_sync_control_requests
             .get(&request.session_id)
         {
-            Some(existing) => match (&existing.kind, &request.kind) {
+            Some(existing) => !matches!(
+                (&existing.kind, &request.kind),
                 (
                     SemanticSyncRequestKind::Client(SemanticSyncOperation::Close),
                     SemanticSyncRequestKind::AuthorizationChanged,
-                ) => false,
-                _ => true,
-            },
+                )
+            ),
             None => true,
         };
 

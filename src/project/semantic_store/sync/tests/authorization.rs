@@ -53,7 +53,10 @@ fn coordinator_tracks_provisioning_and_revokes_once_on_policy_change() {
         coordinator.status(&session_id).unwrap().phase,
         SemanticSyncPhase::Stale
     );
-    assert_eq!(revoked.lock().unwrap().as_slice(), &[session_id.clone()]);
+    assert_eq!(
+        revoked.lock().unwrap().as_slice(),
+        std::slice::from_ref(&session_id)
+    );
 
     coordinator
         .close(&session_id)

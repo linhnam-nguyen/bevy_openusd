@@ -13,3 +13,9 @@ assets/external/agilebot/
 # OS-generated metadata files
 .DS_Store
 **/.DS_Store
+
+.usdhub/
+target/benchmark/
+target/render-bench/
+__pycache__/
+*.pyc

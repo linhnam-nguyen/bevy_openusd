@@ -256,9 +256,11 @@ where
         session.authorization = authorization;
         session.client = None;
         session.credentials = None;
-        let revoke_result = had_lease
-            .then(|| self.provisioner.revoke(session_id))
-            .unwrap_or(Ok(()));
+        let revoke_result = if had_lease {
+            self.provisioner.revoke(session_id)
+        } else {
+            Ok(())
+        };
         match revoke_result {
             Ok(()) => {
                 self.set_status(
@@ -292,9 +294,11 @@ where
         let had_lease = session.credentials.is_some() || session.client.is_some();
         drop(session.client);
         drop(session.credentials);
-        let revoke_result = had_lease
-            .then(|| self.provisioner.revoke(session_id))
-            .unwrap_or(Ok(()));
+        let revoke_result = if had_lease {
+            self.provisioner.revoke(session_id)
+        } else {
+            Ok(())
+        };
         match revoke_result {
             Ok(()) => {
                 self.enqueue_update(

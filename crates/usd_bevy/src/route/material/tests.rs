@@ -54,6 +54,7 @@ fn stats_distinguish_texture_hit_and_failed_miss() {
             misses: 1,
             stale_handles: 0,
             load_failures: 1,
+            decode_calls: 0,
             color_space_misses: 0,
             ..Default::default()
         }
@@ -80,6 +81,7 @@ fn stale_texture_handle_is_not_returned() {
     assert_eq!(stats.misses, 1);
     assert_eq!(stats.stale_handles, 1);
     assert_eq!(stats.load_failures, 1);
+    assert_eq!(stats.decode_calls, 0);
 }
 
 #[test]
@@ -104,6 +106,7 @@ fn repository_texture_decode_is_cached() {
             misses: 1,
             stale_handles: 0,
             load_failures: 0,
+            decode_calls: 1,
             color_space_misses: 0,
             ..Default::default()
         }
@@ -137,6 +140,7 @@ fn repository_usdz_texture_scan_is_cached() {
             misses: 1,
             stale_handles: 0,
             load_failures: 0,
+            decode_calls: 1,
             color_space_misses: 0,
             archive_scans: 1,
             archive_entries_scanned: 2,
@@ -180,6 +184,7 @@ fn repository_usdz_archive_index_is_reused_across_variants() {
     assert_eq!(stats.archive_index_builds, 1);
     assert_eq!(stats.archive_index_invalidations, 0);
     assert_eq!(stats.archive_entries_indexed, 2);
+    assert_eq!(stats.decode_calls, 2);
 }
 
 #[test]
@@ -206,6 +211,7 @@ fn archive_index_invalidates_when_archive_changes() {
     assert_eq!(stats.hits, 0);
     assert_eq!(stats.misses, 2);
     assert_eq!(stats.load_failures, 2);
+    assert_eq!(stats.decode_calls, 2);
     assert_eq!(stats.archive_scans, 2);
     assert_eq!(stats.archive_entries_scanned, 5);
     assert_eq!(stats.archive_hits, 2);
@@ -256,7 +262,60 @@ fn texture_cache_separates_color_space_variants() {
             misses: 2,
             stale_handles: 0,
             load_failures: 0,
+            decode_calls: 2,
             color_space_misses: 1,
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
+fn changed_texture_path_gets_a_distinct_decode() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Image>>();
+    world.insert_resource(UsdTextureCache::default());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures");
+    let first_path = root.join("normal.png").to_string_lossy().into_owned();
+    let changed_path = root
+        .join("Logo_Textures_Albedo.png")
+        .to_string_lossy()
+        .into_owned();
+
+    let first = resolve_texture(&mut world, &first_path, false).expect("first texture loads");
+    let changed = resolve_texture(&mut world, &changed_path, false).expect("changed texture loads");
+
+    assert_ne!(
+        first, changed,
+        "authored path changes must not alias handles"
+    );
+    let stats = world.resource::<UsdTextureCache>().stats();
+    assert_eq!(stats.lookups, 2);
+    assert_eq!(stats.misses, 2);
+    assert_eq!(stats.hits, 0);
+    assert_eq!(stats.decode_calls, 2);
+}
+
+#[test]
+fn reused_texture_lookup_does_not_decode_again() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Image>>();
+    world.insert_resource(UsdTextureCache::default());
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png")
+        .to_string_lossy()
+        .into_owned();
+
+    let first = resolve_texture(&mut world, &path, false).expect("texture loads");
+    world.resource_mut::<UsdTextureCache>().reset_stats();
+    let reused = resolve_texture(&mut world, &path, false).expect("texture remains cached");
+
+    assert_eq!(first, reused);
+    assert_eq!(
+        world.resource::<UsdTextureCache>().stats(),
+        TextureCacheStats {
+            lookups: 1,
+            hits: 1,
             ..Default::default()
         }
     );
@@ -295,6 +354,10 @@ fn material_binding_cache_reuses_and_invalidates_descriptors() {
             misses: 2,
             stale_handles: 0,
             descriptor_changes: 1,
+            retired_assets: 1,
+            cleaned_assets: 0,
+            cleanup_passes: 0,
+            cleanup_entities_scanned: 0,
         }
     );
 }

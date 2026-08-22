@@ -112,7 +112,8 @@ pub(super) fn find_first_encoder(candidates: &[&str]) -> Option<String> {
 }
 
 pub(super) fn raw_video_caps(width: u32, height: u32, fps: u32) -> Result<gstreamer::Caps> {
-    if width < 2 || height < 2 || width % 2 != 0 || height % 2 != 0 || fps == 0 {
+    if width < 2 || height < 2 || !width.is_multiple_of(2) || !height.is_multiple_of(2) || fps == 0
+    {
         anyhow::bail!("invalid raw video caps {width}x{height}@{fps}");
     }
     Ok(gstreamer_video::VideoCapsBuilder::new()

@@ -37,10 +37,36 @@ impl RenderServerInterface {
         self.0.take_stream_configuration()
     }
 
+    pub(crate) fn submit_viewport_command(
+        &self,
+        command: viewport_protocol::ViewportCommandEnvelope,
+    ) -> Result<(), viewport_streaming::RenderServerPortError> {
+        self.0.submit_viewport_command(command)
+    }
+
+    pub(crate) fn submit_input(
+        &self,
+        command: viewport_protocol::InputCommand,
+    ) -> Result<(), viewport_streaming::RenderServerPortError> {
+        self.0.submit_input(command)
+    }
+
+    pub(crate) fn submit_pointer_motion(
+        &self,
+        motion: viewport_protocol::PointerMotion,
+    ) -> Result<(), viewport_streaming::RenderServerPortError> {
+        self.0
+            .submit_input(viewport_protocol::InputCommand::PointerMotion(motion))
+    }
+
     pub(crate) fn publish_viewport_event(
         &self,
         event: viewport_protocol::ViewportEventEnvelope,
     ) -> Result<(), viewport_streaming::RenderServerPortError> {
         self.0.publish_viewport_event(event)
+    }
+
+    pub(crate) fn pop_viewport_event(&self) -> Option<viewport_protocol::ViewportEventEnvelope> {
+        self.0.pop_viewport_event()
     }
 }

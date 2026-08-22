@@ -215,7 +215,7 @@ pub(crate) fn scroll_dropdown_control(
     _accent: egui::Color32,
 ) -> egui::Response {
     let display = options.get(*selected).copied().unwrap_or("—");
-    let max_w = ui.available_width().max(60.0).min(200.0);
+    let max_w = ui.available_width().clamp(60.0, 200.0);
     let mut changed = false;
     let mut response = egui::ComboBox::from_id_salt(("usdview_scroll_dropdown", id_salt))
         .selected_text(display)

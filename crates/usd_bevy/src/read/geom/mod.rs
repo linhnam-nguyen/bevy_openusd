@@ -21,6 +21,7 @@ pub use custom::{
 };
 pub use mesh::{
     Interpolation, MeshPrimvar, Orientation, ReadMesh, ReadSubset, SubdivScheme, read_mesh,
+    read_mesh_extent,
 };
 pub use points::{
     ReadPointInstancer, ReadPoints, ReadTetMesh, read_point_instancer, read_points, read_tetmesh,

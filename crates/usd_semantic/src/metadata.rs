@@ -163,7 +163,7 @@ pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
                 .map(|value| f64::from(f32::from(value))),
         ),
         Value::Vec2f(value) => number_array([value.x, value.y].into_iter().map(f64::from)),
-        Value::Vec2d(value) => number_array([value.x, value.y].into_iter()),
+        Value::Vec2d(value) => number_array([value.x, value.y]),
         Value::Vec2i(value) => number_array([value.x, value.y].into_iter().map(f64::from)),
         Value::Vec3h(value) => number_array(
             [value.x, value.y, value.z]
@@ -171,7 +171,7 @@ pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
                 .map(|value| f64::from(f32::from(value))),
         ),
         Value::Vec3f(value) => number_array([value.x, value.y, value.z].into_iter().map(f64::from)),
-        Value::Vec3d(value) => number_array([value.x, value.y, value.z].into_iter()),
+        Value::Vec3d(value) => number_array([value.x, value.y, value.z]),
         Value::Vec3i(value) => number_array([value.x, value.y, value.z].into_iter().map(f64::from)),
         Value::Vec4h(value) => number_array(
             [value.x, value.y, value.z, value.w]
@@ -183,7 +183,7 @@ pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
                 .into_iter()
                 .map(f64::from),
         ),
-        Value::Vec4d(value) => number_array([value.x, value.y, value.z, value.w].into_iter()),
+        Value::Vec4d(value) => number_array([value.x, value.y, value.z, value.w]),
         Value::Vec4i(value) => number_array(
             [value.x, value.y, value.z, value.w]
                 .into_iter()
@@ -199,7 +199,7 @@ pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
                 .into_iter()
                 .map(f64::from),
         ),
-        Value::Quatd(value) => number_array([value.w, value.x, value.y, value.z].into_iter()),
+        Value::Quatd(value) => number_array([value.w, value.x, value.y, value.z]),
         Value::Matrix4d(value) => CanonicalValue::NumberArray(value.0.to_vec()),
         Value::Dictionary(value) => CanonicalValue::Json(stable_dictionary(&value)),
         other => CanonicalValue::Json(format!("{other:?}")),

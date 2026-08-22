@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PROTOCOL_VERSION, SessionId};
+use crate::stream::{MAX_FPS, MIN_FPS};
+use crate::{PROTOCOL_VERSION, ProtocolValidationError, SessionId};
 
 /// Stable, renderer-neutral identity for a logical USD target.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,6 +49,59 @@ pub enum GroundGridOrigin {
     LoadedScene,
     /// Stay on the Bevy world-origin plane (`y = 0`).
     WorldOrigin,
+}
+
+/// Selects the renderer's primary visual representation.
+///
+/// This deliberately contains only the modes that the renderer contract can
+/// represent. Edge display is a separate option and must not be encoded as a
+/// wireframe mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderMode {
+    #[default]
+    Shaded,
+    Wireframe,
+}
+
+/// Transport-neutral renderer options shared by commands and future
+/// authoritative presentation events.
+///
+/// `preferred_fps = None` intentionally means uncapped renderer cadence. The
+/// server remains responsible for applying the accepted value to Bevy and may
+/// reject a command before application; it must not silently substitute a
+/// different mode or frame rate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RendererConfiguration {
+    pub grid: bool,
+    pub shadows: bool,
+    pub edges: bool,
+    pub render_mode: RenderMode,
+    pub preferred_fps: Option<u32>,
+}
+
+impl Default for RendererConfiguration {
+    fn default() -> Self {
+        Self {
+            grid: true,
+            shadows: true,
+            edges: false,
+            render_mode: RenderMode::Shaded,
+            preferred_fps: Some(60),
+        }
+    }
+}
+
+impl RendererConfiguration {
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        if let Some(fps) = self.preferred_fps
+            && !(MIN_FPS..=MAX_FPS).contains(&fps)
+        {
+            return Err(ProtocolValidationError::InvalidFrameRate { value: fps });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,6 +199,8 @@ pub struct TimelineReadModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PresentationReadModel {
+    #[serde(default)]
+    pub renderer: RendererConfiguration,
     pub ground_grid: bool,
     #[serde(default)]
     pub ground_grid_origin: GroundGridOrigin,
@@ -192,6 +248,7 @@ impl ViewportReadModel {
                 time_codes_per_second: 24.0,
             },
             presentation: PresentationReadModel {
+                renderer: RendererConfiguration::default(),
                 ground_grid: false,
                 ground_grid_origin: GroundGridOrigin::LoadedScene,
                 world_axes: false,

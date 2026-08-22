@@ -27,6 +27,7 @@ pub struct StreamingSession {
 }
 
 impl StreamingSession {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         config: &StreamingConfig,
         connection_id: u64,
@@ -319,7 +320,7 @@ fn install_ice_forwarding(
         };
 
         let reply_tx = reply_tx.clone();
-        let _ = runtime_handle.spawn(async move {
+        std::mem::drop(runtime_handle.spawn(async move {
             if reply_tx
                 .send(SignalingMessage::Ice {
                     candidate,
@@ -331,7 +332,7 @@ fn install_ice_forwarding(
             {
                 warn!("[viewport-session] signaling peer closed before local ICE forwarding");
             }
-        });
+        }));
         None
     });
 }

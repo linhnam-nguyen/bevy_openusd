@@ -12,6 +12,8 @@ use std::f32::consts::FRAC_PI_2;
 use openusd::schemas::geom::{Capsule, Cone, Cube, Cylinder, Plane, Sphere};
 use openusd::sdf::Value;
 
+use crate::read::shade::read_material_binding;
+
 use super::{PrimRoute, RouteCtx};
 
 /// Maps USD geometric shapes to Bevy primitive meshes.
@@ -86,6 +88,16 @@ fn shape_mesh(ctx: &RouteCtx) -> Option<Mesh> {
     }
 }
 
+fn shape_patch_relevant(changed: &[&str]) -> bool {
+    changed.is_empty()
+        || changed.iter().any(|property| {
+            matches!(
+                *property,
+                "size" | "radius" | "height" | "width" | "length" | "axis"
+            )
+        })
+}
+
 impl PrimRoute for ShapesRoute {
     fn matches(&self, ctx: &RouteCtx) -> bool {
         matches!(
@@ -105,10 +117,26 @@ impl PrimRoute for ShapesRoute {
         };
         let mesh_handle = super::cache::intern_mesh(world, mesh);
         let material = world
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .get::<MeshMaterial3d<StandardMaterial>>(entity)
+            .map(|material| material.0.clone())
+            .or_else(|| {
+                let has_binding = read_material_binding(ctx.stage, ctx.path)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                (!has_binding).then(|| super::fallback_material(world))
+            });
         if let Ok(mut e) = world.get_entity_mut(entity) {
-            e.insert((Mesh3d(mesh_handle), MeshMaterial3d(material)));
+            e.insert(Mesh3d(mesh_handle));
+            if let Some(material) = material {
+                e.insert(MeshMaterial3d(material));
+            }
+        }
+    }
+
+    fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
+        if shape_patch_relevant(changed) {
+            self.project(ctx, world, entity);
         }
     }
 }

@@ -16,6 +16,7 @@ use viewport_protocol::{SessionId, SessionRole};
 use crate::RenderServerInterface;
 use crate::VideoFrame;
 use crate::config::StreamingConfig;
+use crate::frame_metrics::FrameTransportMetrics;
 use crate::signaling::{SessionCommand, SignalingMessage};
 use crate::stream_session::{FramePump, StreamingSession};
 
@@ -96,13 +97,14 @@ impl WebRtcSessionManager {
         config: StreamingConfig,
         frame_receiver: Receiver<VideoFrame>,
         interface: RenderServerInterface,
+        frame_metrics: FrameTransportMetrics,
     ) -> Self {
         if let Err(error) = interface.publish_authorization_policy(config.authorization.clone()) {
             error!("[viewport-session] invalid authorization policy: {error:?}");
         }
         Self {
             config,
-            frame_pump: FramePump::new(frame_receiver),
+            frame_pump: FramePump::new(frame_receiver, frame_metrics),
             interface,
         }
     }

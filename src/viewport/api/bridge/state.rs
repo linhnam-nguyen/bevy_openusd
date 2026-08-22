@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use bevy::prelude::*;
 use usd_bevy::LiveStage;
@@ -31,6 +32,7 @@ pub(super) struct SemanticSearchRequests {
 pub(super) struct SemanticSearchRequest {
     pub query: String,
     pub offset: u32,
+    pub submitted_at: Instant,
 }
 
 #[derive(Clone, Copy)]

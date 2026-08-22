@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{RuntimeMutation, RuntimeMutationBatch};
 
-use super::state::{EditorHistories, EditorHistoryDomain};
 use super::convert::editor_value_to_usd;
+use super::state::{EditorHistories, EditorHistoryDomain};
 
 /// Applies every mutation in a batch against the live stage.
 ///

@@ -339,8 +339,10 @@ mod tests {
     #[test]
     fn extraction_is_deterministic_and_contains_mesh_signatures() -> Result<()> {
         let stage = fixture()?;
-        let mut config = SemanticConfig::default();
-        config.family_property = Some("family".to_owned());
+        let config = SemanticConfig {
+            family_property: Some("family".to_owned()),
+            ..Default::default()
+        };
         let extractor = SemanticExtractor::new(config);
 
         let first = extractor.extract(&stage, source())?;
@@ -366,8 +368,10 @@ mod tests {
     #[test]
     fn changing_a_custom_property_changes_entity_and_metadata_hashes() -> Result<()> {
         let stage = fixture()?;
-        let mut config = SemanticConfig::default();
-        config.family_property = Some("family".to_owned());
+        let config = SemanticConfig {
+            family_property: Some("family".to_owned()),
+            ..Default::default()
+        };
         let extractor = SemanticExtractor::new(config);
 
         let before = extractor.extract(&stage, source())?;

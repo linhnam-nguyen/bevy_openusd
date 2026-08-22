@@ -87,7 +87,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                 entity
                     .geometry
                     .as_ref()
-                    .map_or(false, |g| g.render_blob.is_none())
+                    .is_some_and(|g| g.render_blob.is_none())
                     && map.entity(&entity.prim_path).is_none()
             });
 

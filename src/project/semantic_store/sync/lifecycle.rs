@@ -8,7 +8,7 @@ use viewport_protocol::{AuthorizationPolicy, SemanticSyncStatus, SessionId};
 
 use super::client_config::TursoCloudProvisioningConfig;
 use super::coordinator::TursoClientSyncCoordinator;
-use super::platform_api::{TursoCloudAdmin, TursoPlatformApi};
+use super::platform_api::TursoPlatformApi;
 use super::projection::AuthorizedSemanticSnapshot;
 use super::provisioning::{
     TursoClientSyncProvisionRequest, TursoClientSyncProvisioner, TursoCloudProvisioner,
@@ -216,16 +216,11 @@ impl RuntimeMailbox {
                 state.closed_sessions.insert(session_id.clone());
             }
 
-            let should_insert = match state.controls.get(&session_id) {
-                Some(existing) => match (existing, &command) {
-                    (
-                        TursoClientSyncRuntimeCommand::Close(_),
-                        TursoClientSyncRuntimeCommand::UpdateAuthorization { .. },
-                    ) => false,
-                    _ => true,
-                },
-                None => true,
-            };
+            let should_insert = !matches!(
+                state.controls.get(&session_id),
+                Some(TursoClientSyncRuntimeCommand::Close(_))
+                    if matches!(&command, TursoClientSyncRuntimeCommand::UpdateAuthorization { .. })
+            );
 
             if should_insert {
                 state.controls.insert(session_id.clone(), command);

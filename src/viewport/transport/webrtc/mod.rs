@@ -5,7 +5,9 @@
 
 use bevy::prelude::*;
 use std::path::Path;
-use viewport_protocol::{ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{
+    InputCommand, SessionId, SessionRole, ViewportEvent, ViewportEventEnvelope,
+};
 
 use crate::viewport::api::{
     RenderServerInterface, SessionRegistry, ViewportBridgeSet, ViewportCommandInbox,
@@ -31,6 +33,32 @@ pub struct WebRtcTransportState {
     pub sessions: SessionRegistry,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthenticatedInputError {
+    NotController,
+    QueueRejected,
+}
+
+impl WebRtcTransportState {
+    /// Applies the same in-memory admission snapshot used after a WebRTC
+    /// session handshake before allowing input onto the renderer bus. The
+    /// benchmark uses this adapter to exercise the production input consumer;
+    /// database/network authorization is intentionally not performed here.
+    pub(crate) fn submit_authenticated_input(
+        &self,
+        session_id: &SessionId,
+        interface: &RenderServerInterface,
+        command: InputCommand,
+    ) -> Result<(), AuthenticatedInputError> {
+        if self.sessions.role(session_id) != Some(SessionRole::Controller) {
+            return Err(AuthenticatedInputError::NotController);
+        }
+        interface
+            .submit_input(command)
+            .map_err(|_| AuthenticatedInputError::QueueRejected)
+    }
+}
+
 pub struct WebRtcTransportPlugin;
 
 impl Plugin for WebRtcTransportPlugin {
@@ -54,18 +82,26 @@ impl Plugin for WebRtcTransportPlugin {
     }
 }
 
-fn drain_remote_commands(
+pub(crate) fn drain_remote_commands(
     interface: Res<RenderServerInterface>,
     mut inbox: ResMut<ViewportCommandInbox>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     while let Some(command) = interface.pop_viewport_command() {
+        if let Some(ref mut c) = counters {
+            c.remote_commands_drained += 1;
+            if c.first_remote_command_received_frame.is_none() {
+                c.first_remote_command_received_frame = Some(c.frame_count);
+            }
+        }
         inbox.push(command);
     }
 }
 
-fn publish_authoritative_events(
+pub(crate) fn publish_authoritative_events(
     interface: Res<RenderServerInterface>,
     mut outbox: ResMut<ViewportEventOutbox>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     while let Some(event) = outbox.pop() {
         let event = sanitize_event(event);
@@ -75,6 +111,11 @@ fn publish_authoritative_events(
             );
             outbox.push_front(event);
             break;
+        } else if let Some(ref mut c) = counters {
+            c.authoritative_events_published += 1;
+            if c.first_authoritative_event_published_frame.is_none() {
+                c.first_authoritative_event_published_frame = Some(c.frame_count);
+            }
         }
     }
 }

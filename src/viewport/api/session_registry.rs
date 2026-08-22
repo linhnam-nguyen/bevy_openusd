@@ -5,13 +5,15 @@
 use std::collections::HashMap;
 use viewport_protocol::{SessionId, SessionRole};
 
+use bevy::prelude::Resource;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRegistryError {
     ControllerAlreadyAssigned,
     SessionAlreadyRegistered,
 }
 
-#[derive(Debug, Default)]
+#[derive(Resource, Debug, Default)]
 pub struct SessionRegistry {
     sessions: HashMap<SessionId, SessionRole>,
     controller: Option<SessionId>,

@@ -5,7 +5,9 @@ use viewport_protocol::CodecId;
 pub(crate) mod frame_capture;
 pub(crate) mod webrtc;
 
-pub(crate) use frame_capture::FrameCapturePlugin;
+pub(crate) use frame_capture::{
+    FrameCapturePlugin, FrameReadbackCorrelation, FrameTransportResource,
+};
 
 /// The delivered viewport transport enabled for this launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +26,18 @@ pub(crate) struct LaunchOptions {
     pub(crate) height: u32,
     pub(crate) fps: u32,
     pub(crate) codec: CodecId,
+    pub(crate) benchmark: bool,
+    pub(crate) benchmark_renderer_matrix: bool,
+    pub(crate) benchmark_mesh_profile: bool,
+    pub(crate) benchmark_scenario: Option<String>,
+    pub(crate) benchmark_warmup_frames: u64,
+    pub(crate) benchmark_frames: u64,
+    pub(crate) benchmark_output: Option<String>,
+    pub(crate) benchmark_label: String,
+    pub(crate) benchmark_client_ready_file: Option<String>,
+    pub(crate) benchmark_measurement_start_file: Option<String>,
+    pub(crate) benchmark_measurement_idle_file: Option<String>,
+    pub(crate) benchmark_measurement_complete_file: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -36,6 +50,18 @@ impl Default for LaunchOptions {
             height: 1080,
             fps: 60,
             codec: CodecId::H264,
+            benchmark: false,
+            benchmark_renderer_matrix: false,
+            benchmark_mesh_profile: false,
+            benchmark_scenario: None,
+            benchmark_warmup_frames: 30,
+            benchmark_frames: 120,
+            benchmark_output: None,
+            benchmark_label: "baseline".to_string(),
+            benchmark_client_ready_file: None,
+            benchmark_measurement_start_file: None,
+            benchmark_measurement_idle_file: None,
+            benchmark_measurement_complete_file: None,
         }
     }
 }
@@ -71,6 +97,33 @@ where
 
         if parse_options && argument == "--webrtc" {
             options.transport = Some(ViewportTransport::WebRtc);
+            continue;
+        }
+
+        if parse_options && argument == "--width" {
+            options.width = arguments
+                .next()
+                .ok_or_else(|| "--width requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid width: {error}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--height" {
+            options.height = arguments
+                .next()
+                .ok_or_else(|| "--height requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid height: {error}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--fps" {
+            options.fps = arguments
+                .next()
+                .ok_or_else(|| "--fps requires an integer".to_owned())?
+                .parse()
+                .map_err(|error| format!("invalid FPS: {error}"))?;
             continue;
         }
 
@@ -115,6 +168,97 @@ where
             continue;
         }
 
+        if parse_options && argument == "--benchmark" {
+            options.benchmark = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-renderer-matrix" {
+            options.benchmark = true;
+            options.benchmark_renderer_matrix = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-mesh-profile" {
+            options.benchmark = true;
+            options.benchmark_mesh_profile = true;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-scenario" {
+            let sc = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-scenario requires an identifier like S1".to_owned())?;
+            options.benchmark_scenario = Some(sc);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-warmup-frames" {
+            let warmup = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-warmup-frames requires an integer".to_owned())?;
+            options.benchmark_warmup_frames = warmup
+                .parse::<u64>()
+                .map_err(|e| format!("invalid warmup frames: {e}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-frames" {
+            let frames = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-frames requires an integer".to_owned())?;
+            options.benchmark_frames = frames
+                .parse::<u64>()
+                .map_err(|e| format!("invalid frames count: {e}"))?;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-output" {
+            let output = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-output requires a file path".to_owned())?;
+            options.benchmark_output = Some(output);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-label" {
+            let label = arguments
+                .next()
+                .ok_or_else(|| "--benchmark-label requires a label string".to_owned())?;
+            options.benchmark_label = label;
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-client-ready-file" {
+            options.benchmark_client_ready_file =
+                Some(arguments.next().ok_or_else(|| {
+                    "--benchmark-client-ready-file requires a file path".to_owned()
+                })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-start-file" {
+            options.benchmark_measurement_start_file = Some(arguments.next().ok_or_else(|| {
+                "--benchmark-measurement-start-file requires a file path".to_owned()
+            })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-idle-file" {
+            options.benchmark_measurement_idle_file = Some(arguments.next().ok_or_else(|| {
+                "--benchmark-measurement-idle-file requires a file path".to_owned()
+            })?);
+            continue;
+        }
+
+        if parse_options && argument == "--benchmark-measurement-complete-file" {
+            options.benchmark_measurement_complete_file =
+                Some(arguments.next().ok_or_else(|| {
+                    "--benchmark-measurement-complete-file requires a file path".to_owned()
+                })?);
+            continue;
+        }
+
         if parse_options {
             if let Some(transport) = argument.strip_prefix("--transport=") {
                 options.transport = Some(parse_transport(transport)?);
@@ -122,6 +266,34 @@ where
             }
             if let Some(codec) = argument.strip_prefix("--codec=") {
                 options.codec = parse_codec(codec)?;
+                continue;
+            }
+            if let Some(sc) = argument.strip_prefix("--benchmark-scenario=") {
+                options.benchmark_scenario = Some(sc.to_string());
+                continue;
+            }
+            if let Some(out) = argument.strip_prefix("--benchmark-output=") {
+                options.benchmark_output = Some(out.to_string());
+                continue;
+            }
+            if let Some(lbl) = argument.strip_prefix("--benchmark-label=") {
+                options.benchmark_label = lbl.to_string();
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-client-ready-file=") {
+                options.benchmark_client_ready_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-start-file=") {
+                options.benchmark_measurement_start_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-idle-file=") {
+                options.benchmark_measurement_idle_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--benchmark-measurement-complete-file=") {
+                options.benchmark_measurement_complete_file = Some(path.to_string());
                 continue;
             }
             if argument.starts_with('-') {
@@ -158,70 +330,5 @@ fn parse_codec(value: &str) -> Result<CodecId, String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_launch_preserves_the_optional_asset_argument() {
-        assert_eq!(
-            parse_launch_options(Vec::<String>::new()).unwrap(),
-            LaunchOptions::default()
-        );
-        assert_eq!(
-            parse_launch_options(vec!["fixtures/robot.usda".to_owned()]).unwrap(),
-            LaunchOptions {
-                asset_argument: Some("fixtures/robot.usda".to_owned()),
-                transport: None,
-                ..Default::default()
-            }
-        );
-    }
-
-    #[test]
-    fn legacy_stdio_flags_are_rejected() {
-        for arguments in [
-            vec!["--stdio".to_owned()],
-            vec!["--transport".to_owned(), "stdio".to_owned()],
-            vec!["--transport=stdio".to_owned()],
-        ] {
-            assert!(parse_launch_options(arguments).is_err());
-        }
-    }
-
-    #[test]
-    fn transport_and_asset_can_be_supplied_in_either_order() {
-        for arguments in [
-            vec!["--webrtc".to_owned(), "fixtures/robot.usda".to_owned()],
-            vec![
-                "fixtures/robot.usda".to_owned(),
-                "--transport".to_owned(),
-                "webrtc".to_owned(),
-            ],
-        ] {
-            assert_eq!(
-                parse_launch_options(arguments).unwrap(),
-                LaunchOptions {
-                    asset_argument: Some("fixtures/robot.usda".to_owned()),
-                    transport: Some(ViewportTransport::WebRtc),
-                    ..Default::default()
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn codec_selection_is_parsed_without_becoming_an_asset_path() {
-        assert_eq!(
-            parse_launch_options(vec!["--codec".to_owned(), "av1".to_owned()])
-                .unwrap()
-                .codec,
-            CodecId::Av1
-        );
-        assert_eq!(
-            parse_launch_options(vec!["--codec=h265".to_owned()])
-                .unwrap()
-                .codec,
-            CodecId::H265
-        );
-    }
-}
+#[path = "transport_tests.rs"]
+mod tests;

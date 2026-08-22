@@ -29,8 +29,10 @@ fn authorization_policy_is_validated_and_replaceable() {
         AuthorizationPolicy::default()
     );
 
-    let mut policy = AuthorizationPolicy::default();
-    policy.semantic_property_scope = viewport_protocol::SemanticPropertyScope::All;
+    let policy = AuthorizationPolicy {
+        semantic_property_scope: viewport_protocol::SemanticPropertyScope::All,
+        ..Default::default()
+    };
     interface
         .publish_authorization_policy(policy.clone())
         .unwrap();

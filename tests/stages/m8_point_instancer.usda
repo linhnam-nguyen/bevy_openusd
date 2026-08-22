@@ -1,0 +1,53 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    metersPerUnit = 1.0
+    doc = "M8 PointInstancer coverage: shared prototype geometry, ordering, and invisibleIds."
+)
+
+def Xform "World"
+{
+    def Xform "Prototypes"
+    {
+        def Xform "CubeProto"
+        {
+            def Mesh "Mesh"
+            {
+                point3f[] points = [
+                    (-0.5, -0.5, 0), (0.5, -0.5, 0), (0.5, 0.5, 0), (-0.5, 0.5, 0)
+                ]
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+            }
+        }
+
+        def Xform "PyramidProto"
+        {
+            def Mesh "Mesh"
+            {
+                point3f[] points = [
+                    (0, 0, 0.75), (-0.5, -0.5, 0), (0.5, -0.5, 0),
+                    (0.5, 0.5, 0), (-0.5, 0.5, 0)
+                ]
+                int[] faceVertexCounts = [3, 3, 3, 3]
+                int[] faceVertexIndices = [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1]
+            }
+        }
+    }
+
+    def PointInstancer "Instances"
+    {
+        rel prototypes = [
+            </World/Prototypes/CubeProto>,
+            </World/Prototypes/PyramidProto>
+        ]
+        int[] protoIndices = [0, 1, 0, 1, 0, 1]
+        point3f[] positions = [
+            (0, 0, 0), (2, 0, 0), (4, 0, 0),
+            (6, 0, 0), (8, 0, 0), (10, 0, 0)
+        ]
+        int64[] ids = [100, 101, 102, 103, 104, 105]
+        int64[] invisibleIds = [101]
+    }
+}

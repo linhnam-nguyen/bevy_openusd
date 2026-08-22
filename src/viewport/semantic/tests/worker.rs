@@ -2,9 +2,11 @@ use anyhow::Result;
 use usd_model::EntityKey;
 
 use super::super::{
-    GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore,
+    GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSubmitError,
+    SemanticWorkingStore,
 };
 use super::fixtures::{response, snapshot};
+use std::time::Duration;
 
 #[test]
 fn full_snapshot_bulk_load_supports_type_and_property_queries() -> Result<()> {
@@ -72,4 +74,39 @@ fn schema_query_supports_grouping_and_pagination() -> Result<()> {
     assert!(!result.groups.is_empty());
     assert!(result.has_more);
     Ok(())
+}
+
+#[test]
+fn benchmark_query_boundary_is_bounded_without_changing_normal_submission() {
+    let normal_store = SemanticWorkingStore::default();
+    assert!(
+        normal_store
+            .try_submit_query("normal-query", SemanticQuery::default())
+            .is_ok()
+    );
+
+    let benchmark_store = SemanticWorkingStore::default();
+    benchmark_store.configure_test_mode(Duration::from_secs(1), true);
+    let mut queue_full = false;
+    for index in 0..64 {
+        if matches!(
+            benchmark_store
+                .try_submit_query(format!("benchmark-query-{index}"), SemanticQuery::default()),
+            Err(SemanticSubmitError::QueueFull)
+        ) {
+            queue_full = true;
+            break;
+        }
+    }
+
+    assert!(
+        queue_full,
+        "benchmark query traffic must expose bounded backpressure"
+    );
+    let high_water = benchmark_store.query_queue_high_water();
+    assert!(high_water > 0);
+    assert!(
+        high_water <= 8,
+        "benchmark queue HWM exceeded its capacity: {high_water}"
+    );
 }
