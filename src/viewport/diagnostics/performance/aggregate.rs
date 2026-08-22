@@ -45,6 +45,7 @@ pub struct IncidentSemanticSummary {
     pub runtime_delivery_blob_reads: u64,
     pub runtime_delivery_bytes: u64,
     pub runtime_delivery_queue_high_water: u64,
+    pub runtime_delivery_generation_retries: u64,
     pub recovery_serialize_ms: f64,
     pub recovery_submit_ms: f64,
     pub recovery_worker_write_ms: f64,

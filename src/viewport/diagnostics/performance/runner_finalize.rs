@@ -124,6 +124,7 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         runtime_delivery_blob_reads: counters.runtime_delivery_blob_reads,
         runtime_delivery_bytes: counters.runtime_delivery_bytes,
         runtime_delivery_queue_high_water: counters.runtime_delivery_queue_high_water,
+        runtime_delivery_generation_retries: counters.runtime_delivery_generation_retries,
         recovery_serialize_ms: counters.recovery_serialize_ms,
         recovery_submit_ms: counters.recovery_submit_ms,
         recovery_worker_write_ms: counters.recovery_worker_write_ms,

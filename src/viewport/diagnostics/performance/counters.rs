@@ -63,6 +63,7 @@ pub struct RendererCounters {
     pub runtime_delivery_blob_reads: u64,
     pub runtime_delivery_bytes: u64,
     pub runtime_delivery_queue_high_water: u64,
+    pub runtime_delivery_generation_retries: u64,
     pub recovery_serialize_ms: f64,
     pub recovery_submit_ms: f64,
     pub recovery_worker_write_ms: f64,
@@ -158,6 +159,7 @@ impl Default for RendererCounters {
             runtime_delivery_blob_reads: 0,
             runtime_delivery_bytes: 0,
             runtime_delivery_queue_high_water: 0,
+            runtime_delivery_generation_retries: 0,
             recovery_serialize_ms: 0.0,
             recovery_submit_ms: 0.0,
             recovery_worker_write_ms: 0.0,
@@ -234,6 +236,7 @@ impl RendererCounters {
         self.runtime_delivery_blob_reads = 0;
         self.runtime_delivery_bytes = 0;
         self.runtime_delivery_queue_high_water = 0;
+        self.runtime_delivery_generation_retries = 0;
         self.recovery_serialize_ms = 0.0;
         self.recovery_submit_ms = 0.0;
         self.recovery_worker_write_ms = 0.0;

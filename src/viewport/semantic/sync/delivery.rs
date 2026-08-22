@@ -9,6 +9,7 @@ use crate::project::ghost_cache::{prepare_render_blobs, prepare_render_blobs_for
 use crate::project::recovery::RecoverySettings;
 use crate::viewport::api::RenderServerInterface;
 
+use super::super::state::SemanticSyncState;
 use super::action::SemanticSyncAction;
 use super::delivery_worker::{
     PendingRuntimeDelivery, RuntimeDeliveryIdentity, RuntimeDeliveryRuntime,
@@ -128,6 +129,35 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
         }) && ready
             && result.identity.projection_generation == current_generation;
         if !current_identity_matches {
+            let same_stage_revision = current_stage.is_some_and(|(session_id, revision)| {
+                result.identity.session_id == session_id
+                    && result.identity.live_revision == revision
+            });
+            if same_stage_revision
+                && result.identity.projection_generation != current_generation
+                && let Some(snapshot) = world
+                    .get_resource::<SemanticSyncState>()
+                    .and_then(|state| state.snapshot.clone())
+                && let Some(mut runtime) = world.get_resource_mut::<RuntimeDeliveryRuntime>()
+                && runtime.pending.is_none()
+            {
+                runtime.replace_pending(PendingRuntimeDelivery {
+                    identity: RuntimeDeliveryIdentity {
+                        session_id: result.identity.session_id,
+                        live_revision: result.identity.live_revision,
+                        projection_generation: current_generation,
+                    },
+                    snapshot,
+                    // The stale worker already persisted its prepared bytes.
+                    // The retry only rebuilds the complete manifest/hierarchy.
+                    prepared_blobs: Vec::new(),
+                });
+                if let Some(mut counters) = world
+                    .get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+                {
+                    counters.runtime_delivery_generation_retries += 1;
+                }
+            }
             bevy::log::debug!(
                 session_id = result.identity.session_id,
                 live_revision = result.identity.live_revision.0,
