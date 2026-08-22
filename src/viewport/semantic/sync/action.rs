@@ -49,6 +49,17 @@ pub(in crate::viewport::semantic) enum SemanticSyncAction {
     Delta(SemanticDelta),
 }
 
+/// Identifies the semantic extraction path independently of whether the
+/// resulting work is later accepted by the semantic worker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::viewport::semantic) enum SemanticExtractionOutcome {
+    Initial,
+    InitialFailure,
+    ChangedInfo,
+    Subtree,
+    Fallback,
+}
+
 pub(in crate::viewport::semantic) struct SemanticDelta {
     pub(in crate::viewport::semantic) request: SemanticIncrementalUpdate,
     pub(in crate::viewport::semantic) snapshot: SemanticSnapshot,

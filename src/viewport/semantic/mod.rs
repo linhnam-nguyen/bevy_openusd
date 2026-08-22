@@ -6,6 +6,7 @@
 #![allow(unused_imports)]
 
 mod diff;
+mod mailbox;
 mod query;
 mod state;
 mod store;
@@ -18,11 +19,15 @@ pub(in crate::viewport::semantic) use crate::viewport::api::RenderServerInterfac
 pub(crate) use diff::SemanticDiffState;
 pub(crate) use query::{GroupField, SemanticFilter, SemanticQuery, SemanticQueryResult};
 pub(crate) use state::SemanticSyncState;
+pub(crate) use sync::RuntimeDeliveryRuntime;
 #[cfg(test)]
 pub(in crate::viewport::semantic) use sync::{
     SemanticSyncAction, attach_render_blobs_to_action, changed_info_update, resync_subtree_update,
 };
-pub(crate) use sync::{SubtreeUpdateError, synchronize_live_stage};
+pub(crate) use sync::{
+    SubtreeUpdateError, drain_runtime_delivery_results, flush_pending_runtime_delivery,
+    synchronize_live_stage,
+};
 pub(crate) use types::{SemanticIncrementalUpdate, SemanticResponse};
 pub(crate) use worker::{SemanticSubmitError, SemanticWorkingStore};
 
