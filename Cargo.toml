@@ -85,12 +85,32 @@ name = "cache_profile"
 path = "tests/cache_profile.rs"
 
 [[test]]
+name = "progressive_load_profile"
+path = "tests/progressive_load_profile.rs"
+
+[[test]]
+name = "m8_instancing_profile"
+path = "tests/m8_instancing_profile.rs"
+
+[[test]]
+name = "m8_instancing_correctness"
+path = "tests/m8_instancing_correctness.rs"
+
+[[test]]
+name = "m8_instancing_freeze"
+path = "tests/m8_instancing_freeze.rs"
+
+[[test]]
 name = "git_materialization"
 path = "tests/git_materialization.rs"
 
 [[test]]
 name = "subtree_resync_profile"
 path = "tests/subtree_resync_profile.rs"
+
+[[test]]
+name = "m10_persistent_soak"
+path = "tests/m10_persistent_soak.rs"
 
 [[example]]
 name = "pack_usdz"

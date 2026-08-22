@@ -38,12 +38,9 @@ fn large_snapshots_are_chunked_into_bounded_ordered_events() {
     );
 
     assert!(state.pending_server_events.len() > 1);
-    let mut expected_sequence = 1;
-    let mut expected_index = 0;
     let mut expected_count = None;
-    for envelope in &state.pending_server_events {
-        assert_eq!(envelope.sequence, expected_sequence);
-        expected_sequence += 1;
+    for (sequence_index, envelope) in state.pending_server_events.iter().enumerate() {
+        assert_eq!(envelope.sequence, sequence_index as u64 + 1);
         let ServerEvent::Session(SessionEvent::SnapshotChunk {
             snapshot_id,
             chunk_index,
@@ -54,13 +51,15 @@ fn large_snapshots_are_chunked_into_bounded_ordered_events() {
             panic!("large snapshots must be sent as snapshot chunks");
         };
         assert_eq!(snapshot_id, "snapshot-request");
-        assert_eq!(*chunk_index, expected_index);
-        expected_index += 1;
+        assert_eq!(*chunk_index, sequence_index as u32);
         expected_count.get_or_insert(*chunk_count);
         assert_eq!(expected_count, Some(*chunk_count));
         assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
     }
-    assert_eq!(expected_count, Some(expected_index));
+    assert_eq!(
+        expected_count,
+        Some(state.pending_server_events.len() as u32)
+    );
 }
 
 #[test]
@@ -199,11 +198,9 @@ fn oversized_scene_child_pages_are_split_without_changing_page_identity() {
     );
 
     assert!(state.pending_server_events.len() > 1);
-    let mut expected_sequence = 1;
     let mut received_nodes = 0;
-    for envelope in &state.pending_server_events {
-        assert_eq!(envelope.sequence, expected_sequence);
-        expected_sequence += 1;
+    for (sequence_index, envelope) in state.pending_server_events.iter().enumerate() {
+        assert_eq!(envelope.sequence, sequence_index as u64 + 1);
         assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
         let ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) = &envelope.event else {
             panic!("oversized child pages must remain child-page events");
@@ -238,12 +235,9 @@ fn runtime_blob_chunks_are_bounded_and_keep_ordered_sequences() {
     );
 
     let mut reconstructed: Vec<u8> = Vec::new();
-    let mut expected_sequence = 1;
-    let mut expected_chunk_index = 0;
     let expected_chunk_count = state.pending_server_events.len() as u32;
-    for envelope in &state.pending_server_events {
-        assert_eq!(envelope.sequence, expected_sequence);
-        expected_sequence += 1;
+    for (sequence_index, envelope) in state.pending_server_events.iter().enumerate() {
+        assert_eq!(envelope.sequence, sequence_index as u64 + 1);
         assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
         let ServerEvent::Session(SessionEvent::RuntimeBlobChunk {
             blob_id: event_blob_id,
@@ -255,14 +249,16 @@ fn runtime_blob_chunks_are_bounded_and_keep_ordered_sequences() {
             panic!("runtime blob must be sent as blob chunks");
         };
         assert_eq!(event_blob_id, blob_id);
-        assert_eq!(*chunk_index, expected_chunk_index);
+        assert_eq!(*chunk_index, sequence_index as u32);
         assert_eq!(*chunk_count, expected_chunk_count);
-        expected_chunk_index += 1;
         reconstructed.extend(bytes);
     }
 
     assert_eq!(reconstructed, bytes);
-    assert_eq!(expected_chunk_index, expected_chunk_count);
+    assert_eq!(
+        expected_chunk_count,
+        state.pending_server_events.len() as u32
+    );
 }
 
 #[test]

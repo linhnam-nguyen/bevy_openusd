@@ -225,7 +225,7 @@ impl MeshBlob {
         if self.version != 1 {
             bail!("unsupported mesh blob version {}", self.version);
         }
-        if self.indices.len() % 3 != 0 {
+        if !self.indices.len().is_multiple_of(3) {
             bail!("triangle-list mesh index count must be divisible by three");
         }
         validate_attribute_len("normals", self.normals.as_deref(), self.positions.len())?;

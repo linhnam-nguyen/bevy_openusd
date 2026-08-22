@@ -94,6 +94,9 @@ impl SemanticEntityIndex {
     }
 }
 
+pub use crate::route::physics::UsdJoint;
+pub use crate::route::skel::{UsdBlendShapeBinding, UsdSkelAnimDriver};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +122,3 @@ mod tests {
         assert_eq!(index.key(second), Some(&new_key));
     }
 }
-
-pub use crate::route::physics::UsdJoint;
-pub use crate::route::skel::{UsdBlendShapeBinding, UsdSkelAnimDriver};

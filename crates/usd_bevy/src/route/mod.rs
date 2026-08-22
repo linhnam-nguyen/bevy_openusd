@@ -18,17 +18,21 @@
 
 pub mod audio;
 pub mod cache;
+mod cache_key;
 pub mod camera;
 pub mod coverage;
 pub mod curves;
 pub mod dome;
 pub mod geom;
 pub mod instancer;
+pub mod instancer_dependency;
+mod instancer_state;
 pub mod light;
 pub mod material;
 pub mod payload;
 pub mod physics;
 pub mod points;
+pub mod profile;
 pub mod reflect;
 pub mod shapes;
 pub mod skel;
@@ -36,11 +40,37 @@ pub mod xform;
 
 use std::sync::Arc;
 
+use bevy::asset::Assets;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
-use bevy::prelude::Entity;
+use bevy::pbr::StandardMaterial;
+use bevy::prelude::{Entity, Handle};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
+
+/// One shared material for renderable prims whose USD preview material is
+/// absent or cannot be decoded. Keeping it in the route layer means mesh,
+/// shape, and material routes never allocate route-local placeholders.
+#[derive(Resource, Clone)]
+pub(crate) struct FallbackMaterial(Handle<StandardMaterial>);
+
+pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
+    let existing = world
+        .get_resource::<FallbackMaterial>()
+        .map(|material| material.0.clone());
+    if let Some(handle) = existing
+        && world
+            .resource::<Assets<StandardMaterial>>()
+            .contains(&handle)
+    {
+        return handle;
+    }
+    let handle = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    world.insert_resource(FallbackMaterial(handle.clone()));
+    handle
+}
 
 /// The current time to resolve animated attributes at. A plain `Resource`;
 /// `current` is a USD time code. Set it (scrub / play) and the reprojection
@@ -144,6 +174,11 @@ impl<'a> RouteCtx<'a> {
 ///   `changed_info` with the set of property names that changed. Defaults to
 ///   [`project`](PrimRoute::project) for routes that can't refine.
 pub trait PrimRoute: Send + Sync + 'static {
+    /// Optional stable key used by narrow route diagnostics.
+    fn telemetry_key(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Does this route apply to the prim? Cheap check off [`RouteCtx`]
     /// (`typeName`, applied API schema, or attribute-namespace presence).
     fn matches(&self, ctx: &RouteCtx) -> bool;
@@ -236,7 +271,13 @@ impl SchemaRegistry {
     pub fn project_prim(&self, stage: &Stage, path: &Path, world: &mut World, entity: Entity) {
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
+            if route.telemetry_key() == Some("material") {
+                material::record_match(world);
+            }
             if route.matches(&ctx) {
+                if route.telemetry_key() == Some("material") {
+                    material::record_project(world);
+                }
                 route.project(&ctx, world, entity);
             }
         }
@@ -254,7 +295,13 @@ impl SchemaRegistry {
     ) {
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
+            if route.telemetry_key() == Some("material") {
+                material::record_match(world);
+            }
             if route.matches(&ctx) {
+                if route.telemetry_key() == Some("material") {
+                    material::record_patch(world);
+                }
                 route.patch(&ctx, world, entity, changed);
             }
         }

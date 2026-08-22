@@ -4,6 +4,14 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 
+use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
+use super::scene_query::{
+    dispatch_scene_query_commands, publish_semantic_query_results, publish_stage_load_state,
+};
+use super::state::{
+    EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests, ViewportBridgeSet,
+};
+use super::tree::apply_tree_commands;
 use crate::project::ghost_cache::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings};
 use crate::viewport::api::{
@@ -14,14 +22,6 @@ use crate::viewport::semantic::{
     SemanticDiffState, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
 };
 use crate::viewport::session::StageInfo;
-use super::commands::apply_viewport_commands;
-use super::scene_query::{
-    dispatch_scene_query_commands, publish_semantic_query_results, publish_stage_load_state,
-};
-use super::state::{
-    EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests, ViewportBridgeSet,
-};
-use super::tree::apply_tree_commands;
 
 /// Installs the in-process implementation of the public viewport contract.
 pub(crate) struct ViewportBridgePlugin;
@@ -78,6 +78,10 @@ impl Plugin for ViewportBridgePlugin {
             )
             .add_systems(
                 Update,
+                apply_pending_renderer_cadence.after(ViewportBridgeSet::ApplyCommands),
+            )
+            .add_systems(
+                Update,
                 apply_tree_commands.in_set(ViewportBridgeSet::ApplyTreeCommands),
             )
             .add_systems(
@@ -100,6 +104,7 @@ pub(super) fn checkpoint_recovery(
     pending: Res<usd_bevy::PendingStageChanges>,
     stage: Option<NonSend<LiveStage>>,
     stage_info: Res<StageInfo>,
+    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
 ) {
     if pending.batch().is_none() {
         return;
@@ -120,6 +125,8 @@ pub(super) fn checkpoint_recovery(
     };
     if let Err(error) = store.write_checkpoint(&stage, Path::new(&stage_info.path), None) {
         bevy::log::error!("[recovery] checkpoint failed: {error:#}");
+    } else if let Some(ref mut c) = counters {
+        c.recovery_checkpoints += 1;
     }
 }
 

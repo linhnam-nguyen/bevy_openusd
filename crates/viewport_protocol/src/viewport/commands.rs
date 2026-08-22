@@ -5,7 +5,8 @@ use crate::{PROTOCOL_VERSION, RequestId};
 use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::read_models::{
-    CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, SceneAnchor,
+    CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
+    SceneAnchor,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +59,9 @@ pub enum ViewportCommand {
     },
     SetGroundGridOrigin {
         origin: GroundGridOrigin,
+    },
+    SetRendererConfiguration {
+        configuration: RendererConfiguration,
     },
     SetPrimMarkerBias {
         bias: f32,
@@ -256,6 +260,7 @@ impl ViewportCommand {
                 finite("editor.scale", scale)?;
             }
             Self::ApplyRuntimeMutationBatch { batch } => batch.validate()?,
+            Self::SetRendererConfiguration { configuration } => configuration.validate()?,
             Self::SaveStageAs { filename } => text("editor.filename", filename)?,
             Self::SetVariantSelection { .. }
             | Self::ResetVariantSelection { .. }

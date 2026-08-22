@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-PROJECT_NAME := $(shell sed -n '/^[[:space:]]*[^#\[[:space:]]/p' PROJECT | head -1 | tr -d '[:space:]')
-PROJECT_VERSION := $(shell sed -n '/^[[:space:]]*[^#\[[:space:]]/p' PROJECT | sed -n '2p' | tr -d '[:space:]')
+PROJECT_NAME := $(shell sed -e 's/\#.*//' PROJECT | grep -v '^\s*$$' | head -1 | tr -d '[:space:]')
+PROJECT_VERSION := $(shell sed -e 's/\#.*//' PROJECT | grep -v '^\s*$$' | sed -n '2p' | tr -d '[:space:]')
 ifeq ($(PROJECT_NAME),)
     $(error Error: PROJECT file not found or invalid)
 endif
@@ -29,7 +29,7 @@ $(info Project: $(PROJECT_NAME) v$(PROJECT_VERSION))
 $(info Display: $(BACKEND) backend)
 $(info ------------------------------------------)
 
-.PHONY: build b compile c run r serve-web build-web test t test-all check check-all check-source-size harden bench clean docs release help h
+.PHONY: build b compile c run r serve-web build-web test t test-all check check-all check-source-size check-performance-regressions bench-render-smoke harden bench clean docs release help h
 
 build:
 	@$(CARGO) build $(APP_TARGET)
@@ -72,6 +72,12 @@ check:
 check-all:
 	@$(CARGO) check --workspace --all-targets
 
+check-performance-regressions:
+	@python3 -B scripts/check_performance_regressions.py
+
+bench-render-smoke:
+	@python3 -B scripts/bench_render_smoke.py
+
 harden:
 	@git diff --check
 	@$(CARGO) fmt --all -- --check
@@ -80,6 +86,7 @@ harden:
 	@$(CARGO) test --workspace --no-default-features
 	@$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
 	@$(CARGO) test --workspace --all-targets --all-features
+	@python3 -B scripts/check_performance_regressions.py
 
 bench:
 	@$(CARGO) bench
@@ -117,6 +124,8 @@ help:
 	@echo "  test-all     Run the full workspace all-target test suite"
 	@echo "  check        Check the same app target as build/run (usdview)"
 	@echo "  check-all    Check the full workspace all-target suite"
+	@echo "  check-performance-regressions  Validate deterministic M10 performance invariants"
+	@echo "  bench-render-smoke  Run one fresh headless release render smoke"
 	@echo "  harden       Run diff whitespace check + fmt/check + strict clippy + all-feature tests"
 	@echo "  bench        Run benchmarks"
 	@echo "  docs         Build documentation with mdbook"

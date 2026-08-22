@@ -3,15 +3,22 @@
 /// Draws a gizmo outline around the currently selected prim's bounds.
 use bevy::prelude::*;
 
-use super::SelectedPrim;
+use super::{SelectedPrim, resolve_selected_instance};
+use bevy::ecs::hierarchy::Children;
+use usd_bevy::{PointInstancerSelection, UsdInstanceId, UsdPrimRef};
 
 pub(crate) fn draw_selected_prim_highlight(
     selected: Res<SelectedPrim>,
+    instance_selection: Res<PointInstancerSelection>,
     xforms: Query<&GlobalTransform>,
     aabbs: Query<&bevy::camera::primitives::Aabb>,
+    instancers: Query<(&UsdPrimRef, &Children)>,
+    instance_ids: Query<&UsdInstanceId>,
     mut gizmos: Gizmos,
 ) {
-    let Some(entity) = selected.0 else {
+    let entity =
+        resolve_selected_instance(&instance_selection, &instancers, &instance_ids).or(selected.0);
+    let Some(entity) = entity else {
         return;
     };
     let Ok(gt) = xforms.get(entity) else {

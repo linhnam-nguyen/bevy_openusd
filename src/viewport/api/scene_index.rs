@@ -337,16 +337,18 @@ mod tests {
 
     #[test]
     fn semantic_path_resolution_preserves_runtime_reveal_pages() {
-        let mut index = SceneAnchorIndex::default();
-        index.nodes = vec![
-            node("/World", None, "World"),
-            node("/World/Environment", Some("/World"), "Environment"),
-            node(
-                "/World/Environment/Door",
-                Some("/World/Environment"),
-                "Door",
-            ),
-        ];
+        let index = SceneAnchorIndex {
+            nodes: vec![
+                node("/World", None, "World"),
+                node("/World/Environment", Some("/World"), "Environment"),
+                node(
+                    "/World/Environment/Door",
+                    Some("/World/Environment"),
+                    "Door",
+                ),
+            ],
+            ..Default::default()
+        };
 
         let result = index
             .search_match_for_path("/World/Environment/Door")

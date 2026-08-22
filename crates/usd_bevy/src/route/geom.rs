@@ -3,9 +3,17 @@
 //! `read::shade`) layers on as its own route later (PLAN P4).
 
 use bevy::prelude::*;
+use std::time::Instant;
 
+use super::cache::{
+    ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,
+};
+use super::cache_key::source_mesh_key;
+use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{DisplayPurposes, PrimRoute, RouteCtx};
-use crate::read::geom::{VisibilityState, read_effective_purpose, read_mesh, read_visibility};
+use crate::read::geom::{
+    VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility,
+};
 
 /// The prim's effective (inherited) USD `purpose`: `"default"`, `"render"`,
 /// `"proxy"`, or `"guide"`. Carried so gameplay/UI can query or re-filter it.
@@ -76,10 +84,105 @@ impl PrimRoute for VisibilityRoute {
 /// carries no renderable geometry.
 pub struct MeshRoute;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MeshPatchAction {
+    Ignore,
+    UpdateExtent,
+    Rebuild,
+}
+
+fn mesh_patch_action(changed: &[&str]) -> MeshPatchAction {
+    if changed.is_empty() {
+        return MeshPatchAction::Rebuild;
+    }
+
+    let mut extent_changed = false;
+    for property in changed {
+        if *property == "extent" {
+            extent_changed = true;
+        } else if is_geometry_property(property) || !is_known_non_geometry_property(property) {
+            return MeshPatchAction::Rebuild;
+        }
+    }
+    if extent_changed {
+        MeshPatchAction::UpdateExtent
+    } else {
+        MeshPatchAction::Ignore
+    }
+}
+
+fn is_geometry_property(property: &str) -> bool {
+    matches!(
+        property,
+        "points"
+            | "faceVertexCounts"
+            | "faceVertexIndices"
+            | "normals"
+            | "normals:indices"
+            | "normals:interpolation"
+            | "orientation"
+            | "subdivisionScheme"
+            | "primvars:st"
+            | "primvars:st:indices"
+            | "primvars:st:interpolation"
+            | "primvars:st0"
+            | "primvars:st0:indices"
+            | "primvars:st0:interpolation"
+            | "primvars:displayColor"
+            | "primvars:displayColor:indices"
+            | "primvars:displayColor:interpolation"
+            | "primvars:displayOpacity"
+            | "primvars:displayOpacity:indices"
+            | "primvars:displayOpacity:interpolation"
+    )
+}
+
+fn is_known_non_geometry_property(property: &str) -> bool {
+    property.starts_with("xformOp:")
+        || matches!(
+            property,
+            "resetXformStack"
+                | "xformOpOrder"
+                | "visibility"
+                | "purpose"
+                | "kind"
+                | "ui:displayName"
+                | "doubleSided"
+                | "documentation"
+                | "comment"
+                | "displayName"
+                | "assetInfo"
+                | "customData"
+        )
+        || property.starts_with("material:binding")
+        || property.starts_with("customData:")
+        || property.starts_with("bevy:")
+}
+
+fn update_extent(ctx: &RouteCtx, world: &mut World, entity: Entity) {
+    let extent = read_mesh_extent(ctx.stage, ctx.path).ok().flatten();
+    let Ok(mut entity) = world.get_entity_mut(entity) else {
+        return;
+    };
+    if let Some([min, max]) = extent {
+        entity.insert(UsdLocalExtent { min, max });
+    } else {
+        entity.remove::<UsdLocalExtent>();
+    }
+}
+
 impl MeshRoute {
     /// Bake + attach; returns whether a `Mesh3d` was inserted.
     fn attach(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) -> bool {
-        let Ok(Some(read)) = read_mesh(ctx.stage, ctx.path) else {
+        let profile_enabled = world
+            .get_resource::<GeometryProfile>()
+            .is_some_and(|profile| profile.enabled);
+        let read_start = profile_enabled.then(Instant::now);
+        let read_result = read_mesh(ctx.stage, ctx.path);
+        let read_mesh_ms = read_start
+            .map(|started| started.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or_default();
+        let Ok(Some(read)) = read_result else {
             return false;
         };
         if world.get_resource::<Assets<Mesh>>().is_none()
@@ -98,11 +201,44 @@ impl MeshRoute {
             ctx.prim_str(),
             read.points.len()
         );
-        let mesh = crate::mesh::mesh_from_usd(&read);
-        let mesh_handle = super::cache::intern_mesh(world, mesh);
-        let material = world
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+        let source_key = world
+            .get_resource::<ProjectionCache>()
+            .map(|_| source_mesh_key(&read));
+        let source_hit = source_key.and_then(|key| lookup_source_mesh(world, key));
+        let source_cache_lookup = source_key.is_some();
+        let source_cache_hit = source_hit.is_some();
+        let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
+            (mesh_handle, Default::default(), Default::default())
+        } else {
+            let (mesh, build_metrics) = if profile_enabled {
+                crate::mesh::mesh_from_usd_profiled(&read)
+            } else {
+                (crate::mesh::mesh_from_usd(&read), Default::default())
+            };
+            let (mesh_handle, intern_metrics) = if profile_enabled {
+                intern_mesh_profiled(world, mesh)
+            } else {
+                (intern_mesh(world, mesh), Default::default())
+            };
+            if let Some(key) = source_key {
+                remember_source_mesh(world, key, mesh_handle.clone());
+            }
+            (mesh_handle, build_metrics, intern_metrics)
+        };
+        if profile_enabled {
+            let mut profile = world.resource_mut::<GeometryProfile>();
+            record_mesh_sample(
+                &mut profile,
+                hash_prim_path(ctx.path.as_str()),
+                read_mesh_ms,
+                build_metrics,
+                intern_metrics,
+                !source_cache_hit,
+                source_cache_lookup,
+                source_cache_hit,
+            );
+        }
+        let material = super::fallback_material(world);
         if let Ok(mut e) = world.get_entity_mut(entity) {
             if let Some([min, max]) = read.extent {
                 e.insert(UsdLocalExtent { min, max });
@@ -128,8 +264,15 @@ impl PrimRoute for MeshRoute {
         self.attach(ctx, world, entity);
     }
 
-    // patch falls back to project (rebuild the mesh). Mesh topology changes
-    // arrive via `resynced` in practice, so this is rarely hit on changed_info.
+    fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
+        match mesh_patch_action(changed) {
+            MeshPatchAction::Ignore => {}
+            MeshPatchAction::UpdateExtent => update_extent(ctx, world, entity),
+            MeshPatchAction::Rebuild => {
+                self.attach(ctx, world, entity);
+            }
+        }
+    }
 }
 
 /// Authored `UsdGeomBoundable.extent` — `[min, max]` corners in the prim's local space.
@@ -151,3 +294,7 @@ pub struct UsdKind {
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq, Eq)]
 #[reflect(Component, Default)]
 pub struct UsdDisplayName(pub String);
+
+#[cfg(test)]
+#[path = "geom_tests.rs"]
+mod tests;

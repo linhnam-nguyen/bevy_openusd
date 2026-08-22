@@ -16,8 +16,32 @@ fn main() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let dest = workspace_root.join("assets/external/usdz_sample.usdz");
 
-    // Only regen when the build script itself changes.
+    // Only regen when the build script or git head changes.
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/logs/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/heads/");
+    println!("cargo:rerun-if-changed=.git/packed-refs");
+    println!("cargo:rerun-if-changed=../bevy_glacial/.git/HEAD");
+    println!("cargo:rerun-if-changed=../bevy_glacial/.git/logs/HEAD");
+
+    let git_sha = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=USDHUB_GIT_SHA={git_sha}");
+
+    let glacial_sha = std::process::Command::new("git")
+        .args(["-C", "../bevy_glacial", "rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=USDHUB_GLACIAL_SHA={glacial_sha}");
 
     let Ok(zip_bytes) = build_zip() else {
         eprintln!(

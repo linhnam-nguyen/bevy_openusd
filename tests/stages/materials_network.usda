@@ -1,0 +1,107 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    metersPerUnit = 1.0
+    doc = "Material network fixture with shader and texture prims outside Materials."
+)
+
+def Xform "World"
+{
+    def Scope "Materials"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/SharedShaders/RedSurface.outputs:surface>
+        }
+
+        def Material "GreenMetal"
+        {
+            token outputs:surface.connect = </World/SharedShaders/GreenSurface.outputs:surface>
+        }
+
+        def Material "Blue"
+        {
+            token outputs:surface.connect = </World/SharedShaders/BlueSurface.outputs:surface>
+        }
+    }
+
+    def Scope "SharedShaders"
+    {
+        def Shader "RedSurface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor.connect = </World/SharedShaders/RedAlbedo.outputs:rgb>
+            float inputs:roughness = 0.6
+            float inputs:metallic = 0.0
+            token outputs:surface
+        }
+
+        def Shader "RedAlbedo"
+        {
+            uniform token info:id = "UsdUVTexture"
+            asset inputs:file = @assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png@
+            token outputs:rgb
+        }
+
+        def Shader "GreenSurface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0.1, 0.7, 0.2)
+            float inputs:roughness = 0.3
+            float inputs:metallic = 0.95
+            token outputs:surface
+        }
+
+        def Shader "BlueSurface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0.05, 0.05, 0.2)
+            color3f inputs:emissiveColor = (0.1, 0.4, 1.2)
+            float inputs:roughness = 0.4
+            token outputs:surface
+        }
+    }
+
+    def Cube "RedBox" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 0.5
+        rel material:binding = </World/Materials/Red>
+        double3 xformOp:translate = (-1.5, 0.25, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "RedBall" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.3
+        rel material:binding = </World/Materials/Red>
+        double3 xformOp:translate = (-0.5, 0.3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "GreenCylinder" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.3
+        double height = 0.6
+        rel material:binding = </World/Materials/GreenMetal>
+        double3 xformOp:translate = (0.5, 0.3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cone "BlueCone" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.3
+        double height = 0.6
+        rel material:binding = </World/Materials/Blue>
+        double3 xformOp:translate = (1.5, 0.3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

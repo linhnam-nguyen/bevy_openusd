@@ -112,10 +112,16 @@ fn drive_arcball(
         && !input.modifiers.control
         && input.buttons.primary
         && input.buttons.secondary;
-    let pan_delta = pan_drag
-        .then_some(input.pointer_delta * input.pan_multiplier)
-        .unwrap_or(Vec2::ZERO);
-    let orbit_delta = both_lr.then_some(input.pointer_delta).unwrap_or(Vec2::ZERO);
+    let pan_delta = if pan_drag {
+        input.pointer_delta * input.pan_multiplier
+    } else {
+        Vec2::ZERO
+    };
+    let orbit_delta = if both_lr {
+        input.pointer_delta
+    } else {
+        Vec2::ZERO
+    };
     let window_height = input.viewport_size.y.max(1.0);
 
     for (mut tr, mut cam, projection) in cameras.iter_mut() {

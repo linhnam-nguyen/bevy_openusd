@@ -6,11 +6,12 @@ mod row;
 mod schema;
 mod snapshot;
 
-pub(crate) use schema::SCHEMA_VERSION;
-
 use anyhow::{Context, Result};
 
 use schema::SCHEMA_SQL;
+
+#[cfg(test)]
+pub(crate) use schema::SCHEMA_VERSION;
 
 pub(crate) struct SemanticDatabase {
     _database: turso::Database,

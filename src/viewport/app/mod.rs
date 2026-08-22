@@ -10,6 +10,7 @@
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
+pub(crate) mod cadence;
 pub(crate) mod headless;
 mod offscreen_resize;
 mod scene;
@@ -20,21 +21,22 @@ use bevy_egui::EguiPlugin;
 use bevy_frost::prelude::AccentColor;
 use bevy_glacial::prelude::{AxisGizmoPlugin, GroundGrid, GroundGridPlugin};
 use headless::HeadlessRenderPlugin;
-use usd_bevy::{LiveStagePlugin, UsdPlugin};
+use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
-use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin};
+use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
 use crate::viewport::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
     follow_mounted_camera, sync_chase_camera,
 };
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
-use crate::viewport::scene::visualization::OverlaysPlugin;
+use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
+    sync_selected_instance_identity,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -55,7 +57,7 @@ pub(crate) fn run() {
             std::process::exit(2);
         }
     };
-    let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument);
+    let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument.clone());
 
     let mut app = App::new();
 
@@ -77,10 +79,7 @@ pub(crate) fn run() {
                     custom_layer:
                         crate::viewport::diagnostics::log_capture::loader_log_custom_layer,
                     ..Default::default()
-                })
-                .add(bevy::app::ScheduleRunnerPlugin::run_loop(
-                    std::time::Duration::from_secs_f64(1.0 / launch_options.fps as f64),
-                )),
+                }),
         );
     } else {
         app.add_plugins(
@@ -107,8 +106,15 @@ pub(crate) fn run() {
 
     app.add_plugins(EguiPlugin::default())
         .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
-        .add_plugins(UsdPlugin)
-        .add_plugins(LiveStagePlugin)
+        .add_plugins(UsdPlugin);
+
+    if launch_options.benchmark_mesh_profile {
+        let mut profile = app.world_mut().resource_mut::<usd_bevy::GeometryProfile>();
+        profile.enabled = true;
+        profile.top_n = 128;
+    }
+
+    app.add_plugins(LiveStagePlugin)
         .add_plugins(RapierPhysicsPlugin)
         .add_plugins(ArcballCameraPlugin)
         .add_plugins(GroundGridPlugin)
@@ -125,14 +131,18 @@ pub(crate) fn run() {
         })
         .insert_resource(AccentColor(bevy_egui::egui::Color32::from_rgb(
             0x4A, 0x90, 0xE2,
-        )));
+        )))
+        .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
 
     if launch_options.headless {
         app.add_plugins(HeadlessRenderPlugin {
             width: launch_options.width,
             height: launch_options.height,
         })
-        .add_systems(Update, offscreen_resize::apply_stream_configuration)
+        .add_systems(
+            Update,
+            offscreen_resize::apply_stream_configuration.before(ViewportBridgeSet::ApplyCommands),
+        )
         .insert_resource(ViewportNavigationInput::with_viewport_size(
             launch_options.width,
             launch_options.height,
@@ -141,6 +151,10 @@ pub(crate) fn run() {
 
     app.add_plugins(ViewportBridgePlugin)
         .add_plugins(OverlaysPlugin);
+    app.world_mut()
+        .resource_mut::<DisplayToggles>()
+        .renderer
+        .preferred_fps = Some(launch_options.fps);
 
     if !launch_options.headless {
         app.add_plugins(ViewerKeyboardPlugin)
@@ -167,9 +181,11 @@ pub(crate) fn run() {
         let application_interface = app.world().resource::<RenderServerInterface>().shared();
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
+        let frame_metrics = viewport_streaming::FrameTransportMetrics::default();
         if launch_options.headless {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
                 sender: stream_frame_tx,
+                metrics: frame_metrics.clone(),
             });
         }
         let stage_display_name = std::path::Path::new(&asset_path)
@@ -193,6 +209,7 @@ pub(crate) fn run() {
                     config.clone(),
                     stream_frame_rx,
                     application_interface,
+                    frame_metrics,
                 );
 
                 tokio::spawn(async move {
@@ -215,6 +232,84 @@ pub(crate) fn run() {
         .unwrap_or(false);
     app.insert_resource(PhysicsActive(physics_initially_active));
 
+    // Performance and incident diagnostics
+    app.init_resource::<crate::viewport::diagnostics::performance::RendererCounters>()
+        .add_systems(
+            First,
+            crate::viewport::diagnostics::performance::start_frame_timing_system,
+        )
+        .add_systems(
+            Last,
+            crate::viewport::diagnostics::performance::collect_renderer_counters_system,
+        );
+
+    let benchmark_scenario = launch_options
+        .benchmark_scenario
+        .as_deref()
+        .and_then(crate::viewport::diagnostics::performance::BenchmarkScenarioId::from_code);
+
+    let is_s8 = benchmark_scenario
+        == Some(
+            crate::viewport::diagnostics::performance::BenchmarkScenarioId::S8NativeNoLiveStage,
+        );
+
+    if launch_options.benchmark {
+        app.add_plugins(
+            crate::viewport::diagnostics::performance::ScenarioDriverPlugin {
+                scenario_id: benchmark_scenario,
+            },
+        )
+        .add_plugins(
+            crate::viewport::diagnostics::performance::BenchmarkRunnerPlugin {
+                config: crate::viewport::diagnostics::performance::BenchmarkLaunchConfig {
+                    scenario: benchmark_scenario,
+                    renderer_matrix: launch_options.benchmark_renderer_matrix,
+                    mesh_profile: launch_options.benchmark_mesh_profile,
+                    warmup_frames: launch_options.benchmark_warmup_frames,
+                    target_frames: launch_options.benchmark_frames,
+                    output_path: launch_options
+                        .benchmark_output
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| {
+                            launch_options
+                                .benchmark_renderer_matrix
+                                .then(|| "target/m3-c6-renderer-matrix.json".into())
+                        })
+                        .or_else(|| {
+                            launch_options
+                                .benchmark_mesh_profile
+                                .then(|| "target/m4-geometry-profile.json".into())
+                        }),
+                    label: launch_options.benchmark_label.clone(),
+                    width: launch_options.width,
+                    height: launch_options.height,
+                    requested_fps: launch_options.fps as f64,
+                    asset_path: if is_s8 {
+                        None
+                    } else {
+                        launch_options.asset_argument.clone()
+                    },
+                    client_ready_file: launch_options
+                        .benchmark_client_ready_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_start_file: launch_options
+                        .benchmark_measurement_start_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_idle_file: launch_options
+                        .benchmark_measurement_idle_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                    measurement_complete_file: launch_options
+                        .benchmark_measurement_complete_file
+                        .clone()
+                        .map(std::path::PathBuf::from),
+                },
+            },
+        );
+    }
+
     app.init_resource::<Spawned>()
         .init_resource::<ReloadRequest>()
         .init_resource::<LoadRequest>()
@@ -225,32 +320,42 @@ pub(crate) fn run() {
         .init_resource::<UsdStageTime>()
         .init_resource::<CameraBookmarks>()
         .insert_resource(StageInfo {
-            path: asset_path.clone(),
+            path: if is_s8 {
+                String::new()
+            } else {
+                asset_path.clone()
+            },
             ..default()
         })
         .insert_resource(RequestedAsset {
-            name: asset_path,
+            name: if is_s8 { String::new() } else { asset_path },
             root: asset_root.clone(),
         })
-        .add_systems(Startup, (load_stage, spawn_camera_and_ground))
-        .add_systems(
-            Update,
-            (
-                spawn_when_ready,
-                fit_camera_once,
-                handle_usd_hot_reload,
-                apply_load_request,
-                apply_fly_to,
-                draw_selected_prim_highlight,
-                follow_mounted_camera,
-                tick_stage_time,
-                hide_meshes_on_startup,
-            ),
-        )
-        .add_systems(
-            Update,
-            sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
-        );
+        .add_systems(Startup, spawn_camera_and_ground);
+
+    if !is_s8 {
+        app.add_systems(Startup, load_stage);
+    }
+
+    app.add_systems(
+        Update,
+        (
+            spawn_when_ready,
+            fit_camera_once,
+            handle_usd_hot_reload,
+            apply_load_request,
+            apply_fly_to,
+            sync_selected_instance_identity.before(LiveStageSet::Reconcile),
+            draw_selected_prim_highlight,
+            follow_mounted_camera,
+            tick_stage_time,
+            hide_meshes_on_startup,
+        ),
+    )
+    .add_systems(
+        Update,
+        sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
+    );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()
         .map(|v| matches!(v.as_str(), "1" | "true" | "on"))
@@ -268,6 +373,10 @@ pub(crate) fn run() {
     // no way to verify the joint hierarchy is alive.
     app.init_gizmo_group::<SkeletonGizmos>()
         .add_systems(Startup, setup_skeleton_gizmos_on_top);
+
+    if launch_options.headless {
+        app.set_runner(cadence::run_headless);
+    }
 
     app.run();
 }

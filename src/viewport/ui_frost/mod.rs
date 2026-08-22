@@ -17,13 +17,11 @@ mod plugin;
 mod tree;
 
 pub use constants::{
-    RIB_CAMERAS, RIB_INFO, RIB_KEYS, RIB_LOG, RIB_MATERIALS, RIB_OVERLAYS, RIB_PLAY,
-    RIB_SELECTION, RIB_TIMELINE, RIB_TREE, RIB_VARIANTS, RIBBON_LEFT, TreeExpanded, TreeFilter,
-    ViewerCommandPalette,
+    RIB_INFO, RIB_KEYS, RIB_OVERLAYS, RIB_TREE, RIBBON_LEFT, TreeFilter, ViewerCommandPalette,
 };
 pub use plugin::ViewerUiPlugin;
 
 pub(in crate::viewport::ui_frost) use constants::{
-    PANEL_H, PANEL_W, RIBBON_ITEMS, RIBBONS, TREE_DEFAULT_OPEN_DEPTH,
+    PANEL_W, RIBBON_ITEMS, RIBBONS, TREE_DEFAULT_OPEN_DEPTH,
 };
 pub(in crate::viewport::ui_frost) use plugin::is_panel_open;

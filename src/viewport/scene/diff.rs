@@ -70,15 +70,15 @@ pub(crate) fn draw_semantic_diff(
         if plan.current_changed {
             draw_current_entity(&mut gizmos, entity, &prims, CHANGED_COLOR);
         }
-        if plan.historical_removed {
-            if let Some(old) = entity.old.as_ref() {
-                draw_historical_entity(&mut gizmos, stage_diff, old, root_matrix, HISTORICAL_COLOR);
-            }
+        if plan.historical_removed
+            && let Some(old) = entity.old.as_ref()
+        {
+            draw_historical_entity(&mut gizmos, stage_diff, old, root_matrix, HISTORICAL_COLOR);
         }
-        if plan.historical_moved {
-            if let Some(old) = entity.old.as_ref() {
-                draw_historical_entity(&mut gizmos, stage_diff, old, root_matrix, HISTORICAL_COLOR);
-            }
+        if plan.historical_moved
+            && let Some(old) = entity.old.as_ref()
+        {
+            draw_historical_entity(&mut gizmos, stage_diff, old, root_matrix, HISTORICAL_COLOR);
         }
     }
 }

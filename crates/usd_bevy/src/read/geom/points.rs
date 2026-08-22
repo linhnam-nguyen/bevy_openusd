@@ -14,6 +14,9 @@ pub struct ReadPointInstancer {
     pub orientations: Vec<[f32; 4]>,
     pub scales: Vec<[f32; 3]>,
     pub proto_indices: Vec<i32>,
+    /// Authored logical IDs. `None` means the schema did not author `ids`,
+    /// in which case the source row is the only available logical identity.
+    pub ids: Option<Vec<i64>>,
 }
 
 pub fn read_point_instancer(
@@ -33,12 +36,14 @@ pub fn read_point_instancer(
         .unwrap_or_default();
     let orientations = read_quat_array(stage, prim, "orientations")?.unwrap_or_default();
     let scales = read_vec3f_array(stage, prim, "scales")?.unwrap_or_default();
+    let ids = read_int64_array(stage, prim, "ids")?;
     Ok(Some(ReadPointInstancer {
         prototypes,
         positions,
         orientations,
         scales,
         proto_indices,
+        ids,
     }))
 }
 

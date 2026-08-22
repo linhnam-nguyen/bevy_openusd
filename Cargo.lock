@@ -8563,6 +8563,7 @@ dependencies = [
  "openusd",
  "rapier3d-f64",
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
  "usd_macro",
  "usd_model",

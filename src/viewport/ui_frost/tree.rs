@@ -306,22 +306,23 @@ fn draw_protocol_tree_row(
         }
     });
 
-    if has_children && open {
-        if let Some(children) = children_by_parent.get(&node.anchor) {
-            for child in children {
-                draw_protocol_tree_row(
-                    ui,
-                    child,
-                    children_by_parent,
-                    selection,
-                    expanded,
-                    accent,
-                    depth.saturating_add(1),
-                    false,
-                    scroll_selected_to_top,
-                    outcome,
-                );
-            }
+    if has_children
+        && open
+        && let Some(children) = children_by_parent.get(&node.anchor)
+    {
+        for child in children {
+            draw_protocol_tree_row(
+                ui,
+                child,
+                children_by_parent,
+                selection,
+                expanded,
+                accent,
+                depth.saturating_add(1),
+                false,
+                scroll_selected_to_top,
+                outcome,
+            );
         }
     }
 }

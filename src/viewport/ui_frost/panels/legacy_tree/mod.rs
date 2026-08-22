@@ -62,23 +62,22 @@ pub fn draw_legacy_tree_panel(
                 ui.add_space(style::space::TIGHT);
                 let (_, restore_selected_row) =
                     search_field_with_clear(ui, &mut filter.0, "Search prims…", accent_col);
-                if restore_selected_row {
-                    if let Some(selected_entity) = selected.0 {
-                        if let Ok((_, _, selected_ref, _)) = prims.get(selected_entity) {
-                            let segments: Vec<&str> = selected_ref
-                                .path
-                                .split('/')
-                                .filter(|segment| !segment.is_empty())
-                                .collect();
+                if restore_selected_row
+                    && let Some(selected_entity) = selected.0
+                    && let Ok((_, _, selected_ref, _)) = prims.get(selected_entity)
+                {
+                    let segments: Vec<&str> = selected_ref
+                        .path
+                        .split('/')
+                        .filter(|segment| !segment.is_empty())
+                        .collect();
 
-                            let mut ancestor_path = String::new();
+                    let mut ancestor_path = String::new();
 
-                            for segment in segments.iter().take(segments.len().saturating_sub(1)) {
-                                ancestor_path.push('/');
-                                ancestor_path.push_str(segment);
-                                expanded.0.insert(ancestor_path.clone(), true);
-                            }
-                        }
+                    for segment in segments.iter().take(segments.len().saturating_sub(1)) {
+                        ancestor_path.push('/');
+                        ancestor_path.push_str(segment);
+                        expanded.0.insert(ancestor_path.clone(), true);
                     }
                 }
 
@@ -182,11 +181,11 @@ pub fn draw_legacy_tree_panel(
                         }
                     });
 
-                if let Some((entity, visible)) = outcome.visibility_change {
-                    if let Some(target) = scene_index.anchor_for(entity) {
-                        viewport_commands
-                            .send(ViewportCommand::SetSubtreeVisibility { target, visible });
-                    }
+                if let Some((entity, visible)) = outcome.visibility_change
+                    && let Some(target) = scene_index.anchor_for(entity)
+                {
+                    viewport_commands
+                        .send(ViewportCommand::SetSubtreeVisibility { target, visible });
                 }
 
                 if let Some(action) = outcome.ctx_action {

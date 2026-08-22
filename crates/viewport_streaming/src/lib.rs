@@ -8,6 +8,7 @@ pub mod application;
 pub mod config;
 pub mod data_channel;
 pub mod encode;
+mod frame_metrics;
 pub mod session;
 pub mod signaling;
 pub mod stream_session;
@@ -20,6 +21,7 @@ pub use data_channel::{
     CONTROL_CHANNEL_LABEL, CONTROL_CHANNEL_PROTOCOL, INPUT_CHANNEL_LABEL, INPUT_CHANNEL_PROTOCOL,
 };
 pub use encode::{CodecCapabilities, EncodePipeline, VideoCodec};
+pub use frame_metrics::{FrameTrace, FrameTransportMetrics, FrameTransportSnapshot};
 pub use session::WebRtcSessionManager;
 pub use signaling::{SignalingMessage, run_signaling_server};
 pub use stream_session::StreamingSession;
@@ -28,8 +30,11 @@ pub use stream_session::StreamingSession;
 /// stream configuration.
 #[derive(Clone, Debug)]
 pub struct VideoFrame {
-    pub rgba: Vec<u8>,
+    /// Shared ownership lets multiple WebRTC sessions enqueue the same pixels
+    /// without cloning the full RGBA allocation for every session.
+    pub rgba: std::sync::Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
     pub generation: u64,
+    pub trace: FrameTrace,
 }

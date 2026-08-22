@@ -15,11 +15,12 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 pub(crate) use query::{
     GroupField, SemanticFilter, SemanticGroup, SemanticQuery, SemanticQueryResult,
-    SemanticQueryRow, SortField, SortRule,
+    SemanticQueryRow, SortField,
 };
 
 mod query;
 
+#[cfg(test)]
 pub(crate) use schema::SCHEMA_VERSION;
 pub(crate) use turso::TursoSemanticStore;
 

@@ -270,15 +270,14 @@ fn inverse_affine(matrix: Matrix4) -> Matrix4 {
         -rotation_value[2],
         -rotation_value[3],
     ]);
-    let inverse_translation = multiply(
+    multiply(
         multiply(scale(inverse_scale), inverse_rotation),
         translation([
             -translation_value[0],
             -translation_value[1],
             -translation_value[2],
         ]),
-    );
-    inverse_translation
+    )
 }
 
 fn decompose_matrix(matrix: Matrix4) -> ([f64; 3], [f64; 4], [f64; 3]) {

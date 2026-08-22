@@ -5,21 +5,23 @@ use viewport_protocol::{
     ViewportEventEnvelope,
 };
 
+use super::editor_commands::apply_editor_command;
+use super::helpers::{
+    emit_presentation_changed, emit_snapshot, presentation_read_model, reject, set_overlay,
+    timeline_read_model,
+};
+use super::state::{EditorHistories, RuntimeMutationCoordinator};
+use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand,
     ViewportTreeCommandInbox,
 };
-use crate::viewport::animation::UsdStageTime;
+use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::camera::CameraMount;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
-use super::editor_commands::apply_editor_command;
-use super::helpers::{
-    emit_presentation_changed, emit_snapshot, reject, set_overlay, timeline_read_model,
-};
-use super::state::{EditorHistories, RuntimeMutationCoordinator};
 
 /// Applies commands whose state does not require a tree traversal. Tree
 /// commands are forwarded to the next system after the scene index refreshes.
@@ -39,8 +41,8 @@ pub(super) fn apply_viewport_commands(
     mut physics: ResMut<PhysicsActive>,
     mut histories: ResMut<EditorHistories>,
     mut runtime_mutations: ResMut<RuntimeMutationCoordinator>,
+    mut configuration_state: ParamSet<(Res<StageInfo>, Option<ResMut<RendererCadence>>)>,
     stage: Option<NonSend<LiveStage>>,
-    stage_info: Res<StageInfo>,
     spawned: Res<Spawned>,
 ) {
     while let Some(envelope) = inbox.pop() {
@@ -58,19 +60,21 @@ pub(super) fn apply_viewport_commands(
         }
 
         match envelope.command {
-            ViewportCommand::RequestSnapshot => emit_snapshot(
-                &mut outbox,
-                request_id,
-                &stage_info,
-                &spawned,
-                &selected,
-                &scene_index,
-                &camera_mount,
-                &clock,
-                &toggles,
-                &tuning,
-                physics.0,
-            ),
+            ViewportCommand::RequestSnapshot => {
+                emit_snapshot(
+                    &mut outbox,
+                    request_id,
+                    &configuration_state.p0(),
+                    &spawned,
+                    &selected,
+                    &scene_index,
+                    &camera_mount,
+                    &clock,
+                    &toggles,
+                    &tuning,
+                    physics.0,
+                );
+            }
             ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. } => {
                 reject(
                     &mut outbox,
@@ -85,7 +89,7 @@ pub(super) fn apply_viewport_commands(
                 emit_snapshot(
                     &mut outbox,
                     request_id,
-                    &stage_info,
+                    &configuration_state.p0(),
                     &spawned,
                     &selected,
                     &scene_index,
@@ -158,7 +162,7 @@ pub(super) fn apply_viewport_commands(
                 emit_snapshot(
                     &mut outbox,
                     request_id.clone(),
-                    &stage_info,
+                    &configuration_state.p0(),
                     &spawned,
                     &selected,
                     &scene_index,
@@ -186,7 +190,7 @@ pub(super) fn apply_viewport_commands(
                 emit_snapshot(
                     &mut outbox,
                     request_id,
-                    &stage_info,
+                    &configuration_state.p0(),
                     &spawned,
                     &selected,
                     &scene_index,
@@ -235,6 +239,26 @@ pub(super) fn apply_viewport_commands(
                 toggles.ground_grid_origin = origin;
                 emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
             }
+            ViewportCommand::SetRendererConfiguration { configuration } => {
+                if let Err(error) = configuration.validate() {
+                    reject(&mut outbox, request_id, error.to_string());
+                    continue;
+                }
+                let fps_change_pending =
+                    if let Some(cadence) = configuration_state.p1().as_deref_mut() {
+                        let pending =
+                            cadence.request_local(configuration.preferred_fps, request_id.clone());
+                        toggles.renderer = configuration;
+                        toggles.renderer.preferred_fps = cadence.effective_renderer_target_fps();
+                        pending
+                    } else {
+                        toggles.renderer = configuration;
+                        false
+                    };
+                if !fps_change_pending {
+                    emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
+                }
+            }
             ViewportCommand::SetPrimMarkerBias { bias } => {
                 toggles.prim_marker_bias = bias.clamp(0.0, 5.0);
                 emit_presentation_changed(&mut outbox, request_id, &toggles, &tuning);
@@ -268,5 +292,31 @@ pub(super) fn apply_viewport_commands(
                 );
             }
         }
+    }
+}
+
+/// Publishes the correlated presentation event only after the requested FPS
+/// has become the effective target consumed by the headless runner.
+pub(super) fn apply_pending_renderer_cadence(
+    mut cadence: Option<ResMut<RendererCadence>>,
+    mut toggles: ResMut<DisplayToggles>,
+    mut outbox: ResMut<ViewportEventOutbox>,
+    tuning: Res<LoaderTuning>,
+) {
+    let Some(cadence) = cadence.as_deref_mut() else {
+        return;
+    };
+    let Some(applied) = cadence.apply_pending() else {
+        return;
+    };
+
+    toggles.renderer.preferred_fps = applied.fps;
+    if applied.changed || applied.request_id.is_some() {
+        outbox.push(ViewportEventEnvelope::new(
+            applied.request_id,
+            ViewportEvent::PresentationChanged {
+                presentation: presentation_read_model(&toggles, &tuning),
+            },
+        ));
     }
 }

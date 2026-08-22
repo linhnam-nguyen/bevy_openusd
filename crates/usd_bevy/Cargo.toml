@@ -52,3 +52,4 @@ bevy = { workspace = true, features = [
 
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }
+serde_json = { workspace = true }

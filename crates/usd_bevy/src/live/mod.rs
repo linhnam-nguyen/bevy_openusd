@@ -5,7 +5,12 @@ mod author;
 mod change;
 mod index;
 mod path;
+mod progressive;
+mod progressive_cleanup;
+mod progressive_resident;
+mod progressive_state;
 mod projection;
+mod projection_plan;
 mod reconcile;
 mod stage;
 mod system;
@@ -18,7 +23,9 @@ pub use path::{
     is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
     validate_prim_path,
 };
-pub use projection::{collect_stage_subtree_paths, project_stage};
+pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
+pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
+pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
 pub use stage::LiveStage;
@@ -29,7 +36,7 @@ use bevy::prelude::*;
 use crate::prim_ref::SemanticEntityIndex;
 use crate::route::{SchemaRegistry, StageTime};
 use animation::{SampledTime, resample_animation_system};
-use projection::project_on_load_system;
+use progressive::project_on_load_system;
 use system::{
     AppliedPurposes, apply_display_purposes_system, drain_stage_changes_system,
     reproject_from_batch_system,
@@ -39,9 +46,25 @@ use system::{
 /// Insert a `LiveStage` non-send resource to begin a live session.
 pub struct LiveStagePlugin;
 
+/// Ordering boundary for systems that consume the live-stage projection.
+///
+/// Viewport systems that must capture transient entity identity before a
+/// destructive reconciliation should order themselves before
+/// [`LiveStageSet::Reconcile`].
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LiveStageSet {
+    Project,
+    Drain,
+    Reconcile,
+    Animation,
+    Presentation,
+}
+
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PrimEntities>()
+            .init_resource::<ProjectionBudget>()
+            .init_resource::<ProgressiveProjectionState>()
             .init_resource::<SemanticEntityIndex>()
             .init_resource::<PendingStageChanges>()
             .init_resource::<ReconcileStats>()
@@ -50,16 +73,32 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<SampledTime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()
-            .add_systems(
+            .configure_sets(
                 Update,
                 (
-                    project_on_load_system,
-                    drain_stage_changes_system,
-                    reproject_from_batch_system,
-                    resample_animation_system,
-                    apply_display_purposes_system,
-                )
-                    .chain(),
+                    LiveStageSet::Project,
+                    LiveStageSet::Drain.after(LiveStageSet::Project),
+                    LiveStageSet::Reconcile.after(LiveStageSet::Drain),
+                    LiveStageSet::Animation.after(LiveStageSet::Reconcile),
+                    LiveStageSet::Presentation.after(LiveStageSet::Animation),
+                ),
+            )
+            .add_systems(Update, project_on_load_system.in_set(LiveStageSet::Project))
+            .add_systems(
+                Update,
+                drain_stage_changes_system.in_set(LiveStageSet::Drain),
+            )
+            .add_systems(
+                Update,
+                reproject_from_batch_system.in_set(LiveStageSet::Reconcile),
+            )
+            .add_systems(
+                Update,
+                resample_animation_system.in_set(LiveStageSet::Animation),
+            )
+            .add_systems(
+                Update,
+                apply_display_purposes_system.in_set(LiveStageSet::Presentation),
             );
         // Ensure the routing registry exists even if `UsdPlugin` wasn't added.
         if !app.world().contains_resource::<SchemaRegistry>() {

@@ -5,6 +5,9 @@ mod tests {
 
     use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings, RecoveryStore};
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::commands::apply_viewport_commands;
+    use crate::viewport::api::bridge::plugin::checkpoint_recovery;
+    use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
@@ -12,17 +15,12 @@ mod tests {
     use crate::viewport::physics::PhysicsActive;
     use crate::viewport::scene::SelectedPrim;
     use crate::viewport::scene::visualization::DisplayToggles;
+    use crate::viewport::semantic::synchronize_live_stage;
     use crate::viewport::semantic::{
         SemanticDiffState, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSyncState,
         SemanticWorkingStore,
     };
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
-    use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::plugin::checkpoint_recovery;
-    use crate::viewport::api::bridge::state::{
-        EditorHistories, RuntimeMutationCoordinator,
-    };
-    use crate::viewport::semantic::synchronize_live_stage;
 
     fn command_test_app() -> App {
         let mut app = App::new();
@@ -76,7 +74,10 @@ mod tests {
                 ..default()
             })
             .add_systems(Update, apply_viewport_commands)
-            .add_systems(PostUpdate, (synchronize_live_stage, checkpoint_recovery).chain());
+            .add_systems(
+                PostUpdate,
+                (synchronize_live_stage, checkpoint_recovery).chain(),
+            );
         app
     }
 
@@ -86,8 +87,13 @@ mod tests {
         let stage = openusd::usd::Stage::builder()
             .in_memory("bridge_runtime_batch_test.usda")
             .unwrap();
-        stage.define_prim("/World").unwrap().set_type_name("Xform").unwrap();
-        app.world_mut().insert_non_send(usd_bevy::LiveStage::new(stage));
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
 
         let batch = RuntimeMutationBatch {
             source_id: "connector-a".to_owned(),
@@ -107,7 +113,9 @@ mod tests {
             ],
         };
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::ApplyRuntimeMutationBatch { batch: batch.clone() },
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: batch.clone(),
+            },
         );
         app.update();
 
@@ -128,7 +136,10 @@ mod tests {
             } if source_id == "connector-a"
         ));
 
-        let live = app.world().get_non_send::<usd_bevy::LiveStage>().expect("live stage");
+        let live = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage");
         assert!(usd_bevy::authoring::prim_exists(&live.stage, "/World/Box"));
         assert!(matches!(
             live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).attribute("size").get::<openusd::sdf::Value>().unwrap(),
@@ -140,7 +151,9 @@ mod tests {
             .expect("live stage")
             .drain_change_batch();
         let stale_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::ApplyRuntimeMutationBatch { batch: batch.clone() },
+            ViewportCommand::ApplyRuntimeMutationBatch {
+                batch: batch.clone(),
+            },
         );
         app.update();
         let rejected = app
@@ -156,7 +169,10 @@ mod tests {
 
         let duplicate_request = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::ApplyRuntimeMutationBatch {
-                batch: RuntimeMutationBatch { base_revision: 1, ..batch },
+                batch: RuntimeMutationBatch {
+                    base_revision: 1,
+                    ..batch
+                },
             },
         );
         app.update();
@@ -165,7 +181,10 @@ mod tests {
             .resource_mut::<ViewportEventOutbox>()
             .pop()
             .expect("duplicate runtime batch should be rejected");
-        assert_eq!(duplicate.request_id.as_deref(), Some(duplicate_request.as_str()));
+        assert_eq!(
+            duplicate.request_id.as_deref(),
+            Some(duplicate_request.as_str())
+        );
         assert!(matches!(
             duplicate.event,
             ViewportEvent::CommandRejected { reason, .. } if reason.contains("not newer than the last accepted sequence")
@@ -179,22 +198,40 @@ mod tests {
         let stage = openusd::usd::Stage::builder()
             .in_memory("bridge_runtime_semantic_test.usda")
             .unwrap();
-        stage.define_prim("/World").unwrap().set_type_name("Xform").unwrap();
-        stage.define_prim("/World/Box").unwrap().set_type_name("Cube").unwrap();
-        app.world_mut().insert_non_send(usd_bevy::LiveStage::new(stage));
+        stage
+            .define_prim("/World")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        stage
+            .define_prim("/World/Box")
+            .unwrap()
+            .set_type_name("Cube")
+            .unwrap();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
 
         let mut initial_snapshot_loaded = false;
         for _ in 0..200 {
             app.update();
-            for response in app.world().resource::<SemanticWorkingStore>().drain_responses() {
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
                 if matches!(response, SemanticResponse::SnapshotLoaded { .. }) {
                     initial_snapshot_loaded = true;
                 }
             }
-            if initial_snapshot_loaded { break; }
+            if initial_snapshot_loaded {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert!(initial_snapshot_loaded, "initial semantic snapshot did not load");
+        assert!(
+            initial_snapshot_loaded,
+            "initial semantic snapshot did not load"
+        );
 
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::ApplyRuntimeMutationBatch {
@@ -212,25 +249,40 @@ mod tests {
             },
         );
         app.update();
-        let accepted = app.world_mut().resource_mut::<ViewportEventOutbox>().pop()
+        let accepted = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
             .expect("runtime batch should publish an acceptance event");
         assert_eq!(accepted.request_id.as_deref(), Some(request_id.as_str()));
-        assert!(matches!(accepted.event, ViewportEvent::RuntimeMutationBatchAccepted { .. }));
+        assert!(matches!(
+            accepted.event,
+            ViewportEvent::RuntimeMutationBatchAccepted { .. }
+        ));
 
         let mut semantic_delta_applied = false;
         for _ in 0..200 {
             app.update();
-            for response in app.world().resource::<SemanticWorkingStore>().drain_responses() {
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
                 if matches!(response, SemanticResponse::DeltaApplied { .. }) {
                     semantic_delta_applied = true;
                 }
             }
-            if semantic_delta_applied { break; }
+            if semantic_delta_applied {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(semantic_delta_applied, "semantic delta did not apply");
         assert!(
-            app.world().resource::<usd_bevy::PrimEntities>().entity("/World/Box").is_some(),
+            app.world()
+                .resource::<usd_bevy::PrimEntities>()
+                .entity("/World/Box")
+                .is_some(),
             "Bevy prim index should retain the externally edited prim"
         );
 
@@ -249,7 +301,11 @@ mod tests {
         let mut matched = false;
         for _ in 0..200 {
             app.update();
-            for response in app.world().resource::<SemanticWorkingStore>().drain_responses() {
+            for response in app
+                .world()
+                .resource::<SemanticWorkingStore>()
+                .drain_responses()
+            {
                 if let SemanticResponse::QueryResult { request_id, result } = response
                     && request_id == "runtime-query"
                 {
@@ -257,17 +313,26 @@ mod tests {
                         && result.rows.iter().any(|row| row.prim_path == "/World/Box");
                 }
             }
-            if matched { break; }
+            if matched {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(matched, "semantic query should see the external attribute");
 
-        let session_id = app.world().get_non_send::<usd_bevy::LiveStage>()
+        let session_id = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
             .expect("live stage should remain available")
             .session_id();
         let recovery = RecoveryStore::new(project_root.path(), session_id)?;
-        let recovered = recovery.restore()?.expect("runtime mutation should create a recovery checkpoint");
-        assert!(usd_bevy::authoring::prim_exists(&recovered.stage, "/World/Box"));
+        let recovered = recovery
+            .restore()?
+            .expect("runtime mutation should create a recovery checkpoint");
+        assert!(usd_bevy::authoring::prim_exists(
+            &recovered.stage,
+            "/World/Box"
+        ));
         Ok(())
     }
 }

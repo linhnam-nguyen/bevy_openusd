@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use bevy_frost::prelude::*;
-use std::path::PathBuf;
 use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
@@ -55,7 +54,7 @@ pub fn draw_selection_panel(
                         .add_filter("USD stages", &["usda", "usdc", "usd", "usdz"])
                         .pick_file()
                 {
-                    load_req.path = Some(PathBuf::from(picked));
+                    load_req.path = Some(picked);
                 }
                 if wide_button(ui, "🗂  Reveal in filesystem", accent_col).clicked() {
                     let full = requested.root.join(&stage_name);

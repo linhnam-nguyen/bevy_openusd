@@ -1,5 +1,6 @@
 use openusd::sdf::{Path, Value};
 use openusd::usd::Stage;
+use std::collections::{HashSet, VecDeque};
 
 use crate::read::util::{
     connections_at, default_at, read_asset_path, read_token_or_string, read_vec2f,
@@ -71,6 +72,43 @@ pub fn read_preview_material(
     }
     out.uv_transform = read_uv_transform(stage, material)?;
     Ok(Some(out))
+}
+
+/// Return the composed prim paths that participate in a material's shading
+/// network. The walk follows actual USD attribute connections from the
+/// resolved surface shader, so network nodes do not need to live below the
+/// Material prim in the namespace.
+pub fn material_network_dependencies(
+    stage: &Stage,
+    material: &Path,
+) -> anyhow::Result<Vec<String>> {
+    let mut dependencies = HashSet::new();
+    let mut pending = VecDeque::new();
+
+    let enqueue = |path: Path, dependencies: &mut HashSet<String>, pending: &mut VecDeque<Path>| {
+        if dependencies.insert(path.as_str().to_string()) {
+            pending.push_back(path);
+        }
+    };
+
+    enqueue(material.clone(), &mut dependencies, &mut pending);
+    if let Some((shader, _)) = resolve_surface_shader(stage, material)? {
+        enqueue(shader, &mut dependencies, &mut pending);
+    }
+
+    while let Some(prim_path) = pending.pop_front() {
+        let prim = stage.prim(prim_path.clone());
+        for property in prim.property_names()? {
+            let property_path = prim_path.append_property(property.as_str())?;
+            for target in connections_at(stage, &property_path)? {
+                enqueue(target.prim_path(), &mut dependencies, &mut pending);
+            }
+        }
+    }
+
+    let mut dependencies: Vec<_> = dependencies.into_iter().collect();
+    dependencies.sort_unstable();
+    Ok(dependencies)
 }
 
 /// Find a `UsdTransform2d` node in the material's shader network and read its

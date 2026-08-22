@@ -11,15 +11,13 @@ pub(crate) struct TursoSemanticStore {
 impl TursoSemanticStore {
     pub(crate) async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        if path != Path::new(":memory:") {
-            if let Some(parent) = path
+        if path != Path::new(":memory:")
+            && let Some(parent) = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                std::fs::create_dir_all(parent).with_context(|| {
-                    format!("creating Turso parent directory {}", parent.display())
-                })?;
-            }
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating Turso parent directory {}", parent.display()))?;
         }
         let path_string = path.to_string_lossy().into_owned();
         let database = turso::Builder::new_local(&path_string)

@@ -1,18 +1,55 @@
+use anyhow::Result;
 use log::{debug, warn};
 use std::collections::HashMap;
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 use viewport_protocol::{ActiveStreamConfiguration, CodecId, ViewportMetrics};
 
 use crate::VideoFrame;
 use crate::encode::EncodePipeline;
+use crate::frame_metrics::FrameTransportMetrics;
+
+const ENCODER_QUEUE_CAPACITY: usize = 2;
+
+pub(super) trait FrameEncoder: Send + Sync {
+    fn push_frame(&self, frame: &VideoFrame) -> Result<()>;
+    fn set_video_caps(&self, width: u32, height: u32, fps: u32) -> Result<()>;
+    fn request_sync_frame_after_caps_change(&self) -> Result<()>;
+}
+
+impl FrameEncoder for EncodePipeline {
+    fn push_frame(&self, frame: &VideoFrame) -> Result<()> {
+        EncodePipeline::push_frame(self, frame)
+    }
+
+    fn set_video_caps(&self, width: u32, height: u32, fps: u32) -> Result<()> {
+        EncodePipeline::set_video_caps(self, width, height, fps)
+    }
+
+    fn request_sync_frame_after_caps_change(&self) -> Result<()> {
+        EncodePipeline::request_sync_frame_after_caps_change(self)
+    }
+}
+
+fn generation_matches(frame_generation: u64, active_generation: u64) -> bool {
+    frame_generation == active_generation
+}
+
+struct EncodeRequest {
+    frame: VideoFrame,
+    expected: Option<ViewportMetrics>,
+}
 
 pub(super) struct ActiveFrameTarget {
     connection_id: u64,
-    encoder: Arc<EncodePipeline>,
+    sender: SyncSender<EncodeRequest>,
     codec: CodecId,
     expected: Option<ViewportMetrics>,
     current: Option<ActiveStreamConfiguration>,
     applied: Option<ActiveStreamConfiguration>,
+    configuration_in_flight: bool,
+    worker: Option<JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -24,41 +61,77 @@ pub(super) struct FrameRouterState {
 
 /// Routes each raw frame to every admitted encoder without exposing the
 /// encoders or GStreamer objects to Bevy.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct FrameRouter {
     state: Arc<Mutex<FrameRouterState>>,
+    metrics: FrameTransportMetrics,
 }
 
 impl FrameRouter {
-    pub(super) fn activate(
-        &self,
-        connection_id: u64,
-        encoder: Arc<EncodePipeline>,
-        codec: CodecId,
-    ) {
-        if let Ok(mut state) = self.state.lock() {
+    pub(super) fn new(metrics: FrameTransportMetrics) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(FrameRouterState::default())),
+            metrics,
+        }
+    }
+
+    pub(super) fn activate<E>(&self, connection_id: u64, encoder: Arc<E>, codec: CodecId)
+    where
+        E: FrameEncoder + 'static,
+    {
+        let (sender, receiver) = sync_channel(ENCODER_QUEUE_CAPACITY);
+        let encoder: Arc<dyn FrameEncoder> = encoder;
+        let worker = spawn_encoder_worker(
+            connection_id,
+            encoder,
+            receiver,
+            Arc::clone(&self.state),
+            self.metrics.clone(),
+        );
+        let previous = if let Ok(mut state) = self.state.lock() {
             let expected = state.expected.clone();
             let current = expected.is_none().then(|| state.current.clone()).flatten();
             state.targets.insert(
                 connection_id,
                 ActiveFrameTarget {
                     connection_id,
-                    encoder,
+                    sender: sender.clone(),
                     codec,
                     expected,
                     current,
                     applied: None,
+                    configuration_in_flight: false,
+                    worker: Some(worker),
                 },
-            );
+            )
+        } else {
+            drop(sender);
+            let _ = worker.join();
+            None
+        };
+        if let Some(mut previous) = previous {
+            drop(previous.sender);
+            if let Some(worker) = previous.worker.take() {
+                let _ = worker.join();
+            }
         }
     }
 
     pub(super) fn deactivate(&self, connection_id: u64) {
-        if let Ok(mut state) = self.state.lock() {
-            state.targets.remove(&connection_id);
+        let removed = if let Ok(mut state) = self.state.lock() {
+            let removed = state.targets.remove(&connection_id);
             if state.targets.is_empty() {
                 state.expected = None;
                 state.current = None;
+            }
+            removed
+        } else {
+            None
+        };
+        if let Some(mut target) = removed {
+            drop(target.sender);
+            if let Some(worker) = target.worker.take() {
+                let _ = worker.join();
             }
         }
     }
@@ -89,6 +162,7 @@ impl FrameRouter {
                 target.expected = Some(metrics.clone());
                 target.current = None;
                 target.applied = None;
+                target.configuration_in_flight = false;
             }
         }
     }
@@ -119,95 +193,207 @@ impl FrameRouter {
     }
 
     pub(super) fn push(&self, frame: &VideoFrame) {
-        let targets = self
+        let mut pending = Vec::new();
+        let target_count = self
             .state
             .lock()
             .ok()
-            .map(|state| {
-                state
-                    .targets
-                    .values()
-                    .map(|target| {
-                        (
+            .map(|mut state| {
+                for target in state.targets.values_mut() {
+                    if let Some(expected) = target.expected.clone() {
+                        if frame.width != expected.requested_width
+                            || frame.height != expected.requested_height
+                            || frame.generation != expected.generation
+                        {
+                            if frame.generation != expected.generation {
+                                self.metrics.record_generation_drop();
+                            }
+                            continue;
+                        }
+                        if target.configuration_in_flight {
+                            continue;
+                        }
+                        target.configuration_in_flight = true;
+                        pending.push((
                             target.connection_id,
-                            Arc::clone(&target.encoder),
-                            target.codec,
-                            target.expected.clone(),
-                            target.current.clone(),
-                        )
-                    })
-                    .collect::<Vec<_>>()
+                            target.sender.clone(),
+                            EncodeRequest {
+                                frame: frame.clone(),
+                                expected: Some(expected),
+                            },
+                            true,
+                        ));
+                        continue;
+                    }
+
+                    let Some(current) = target.current.as_ref() else {
+                        continue;
+                    };
+                    if frame.width != current.width
+                        || frame.height != current.height
+                        || frame.generation != current.generation
+                    {
+                        if frame.generation != current.generation {
+                            self.metrics.record_generation_drop();
+                        }
+                        continue;
+                    }
+                    pending.push((
+                        target.connection_id,
+                        target.sender.clone(),
+                        EncodeRequest {
+                            frame: frame.clone(),
+                            expected: None,
+                        },
+                        false,
+                    ));
+                }
+                state.targets.len()
             })
-            .unwrap_or_default();
+            .unwrap_or(0);
 
-        for (connection_id, encoder, codec, expected, current) in targets {
-            if let Some(expected_metrics) = expected {
-                if frame.width != expected_metrics.requested_width
-                    || frame.height != expected_metrics.requested_height
-                    || frame.generation != expected_metrics.generation
-                {
-                    continue;
-                }
+        if target_count == 0 {
+            self.metrics.record_disconnected_drop();
+            return;
+        }
 
-                let fps = expected_metrics.preferred_fps.unwrap_or(60);
-                if let Err(error) = encoder.set_video_caps(frame.width, frame.height, fps) {
-                    warn!("[viewport-frame-pump] stream caps update failed: {error:?}");
-                    continue;
-                }
-                if let Err(error) = encoder.request_sync_frame_after_caps_change() {
-                    warn!(
-                        "[viewport-frame-pump] sync-frame/configuration refresh failed: {error:?}"
-                    );
-                    continue;
-                }
-                if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
-                    debug!("[viewport-frame-pump] frame push failed: {error:?}");
-                    continue;
-                }
-
-                let configuration = ActiveStreamConfiguration {
-                    width: frame.width,
-                    height: frame.height,
-                    fps,
-                    codec,
-                    generation: frame.generation,
-                };
-                if let Ok(mut state) = self.state.lock()
-                    && let Some(target) = state.targets.get_mut(&connection_id)
-                    && target
-                        .expected
-                        .as_ref()
-                        .is_some_and(|current| current == &expected_metrics)
-                {
-                    target.expected = None;
-                    target.current = Some(configuration.clone());
-                    target.applied = Some(configuration.clone());
-                    let all_configured = state.targets.values().all(|target| {
-                        target
-                            .current
-                            .as_ref()
-                            .is_some_and(|current| current == &configuration)
-                    });
-                    if all_configured {
-                        state.current = Some(configuration);
-                        state.expected = None;
+        for (connection_id, sender, request, is_configuration) in pending {
+            let trace = request.frame.trace;
+            match sender.try_send(request) {
+                Ok(()) => self.metrics.record_encoder_queued(trace),
+                Err(TrySendError::Full(_)) => {
+                    self.metrics.record_encoder_queue_drop();
+                    if is_configuration {
+                        reset_configuration_in_flight(&self.state, connection_id);
                     }
                 }
-                continue;
-            }
-
-            let Some(current) = current else {
-                continue;
-            };
-            if frame.width != current.width
-                || frame.height != current.height
-                || frame.generation != current.generation
-            {
-                continue;
-            }
-            if let Err(error) = encoder.push_rgba_frame(&frame.rgba) {
-                debug!("[viewport-frame-pump] frame push failed: {error:?}");
+                Err(TrySendError::Disconnected(_)) => {
+                    self.metrics.record_disconnected_drop();
+                    if is_configuration {
+                        reset_configuration_in_flight(&self.state, connection_id);
+                    }
+                }
             }
         }
     }
 }
+
+fn reset_configuration_in_flight(state: &Arc<Mutex<FrameRouterState>>, connection_id: u64) {
+    if let Ok(mut state) = state.lock()
+        && let Some(target) = state.targets.get_mut(&connection_id)
+    {
+        target.configuration_in_flight = false;
+    }
+}
+
+fn spawn_encoder_worker(
+    connection_id: u64,
+    encoder: Arc<dyn FrameEncoder>,
+    receiver: Receiver<EncodeRequest>,
+    state: Arc<Mutex<FrameRouterState>>,
+    metrics: FrameTransportMetrics,
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name(format!("viewport-encoder-{connection_id}"))
+        .spawn(move || {
+            while let Ok(request) = receiver.recv() {
+                let active_generation = state.lock().ok().and_then(|state| {
+                    state.targets.get(&connection_id).and_then(|target| {
+                        target
+                            .expected
+                            .as_ref()
+                            .map(|metrics| metrics.generation)
+                            .or_else(|| target.current.as_ref().map(|current| current.generation))
+                    })
+                });
+                if !active_generation.is_some_and(|generation| {
+                    generation_matches(request.frame.generation, generation)
+                }) {
+                    if active_generation.is_none() {
+                        metrics.record_disconnected_drop();
+                    } else {
+                        metrics.record_generation_drop();
+                    }
+                    if request.expected.is_some() {
+                        reset_configuration_in_flight(&state, connection_id);
+                    }
+                    continue;
+                }
+
+                metrics.record_encoder_worker_started(request.frame.trace);
+
+                let result = if let Some(expected) = request.expected.as_ref() {
+                    let fps = expected.preferred_fps.unwrap_or(60);
+                    encoder
+                        .set_video_caps(request.frame.width, request.frame.height, fps)
+                        .and_then(|_| encoder.request_sync_frame_after_caps_change())
+                        .and_then(|_| encoder.push_frame(&request.frame))
+                } else {
+                    encoder.push_frame(&request.frame)
+                };
+
+                if let Err(error) = result {
+                    metrics.record_encoder_failure();
+                    debug!("[viewport-frame-pump] frame push failed: {error:?}");
+                    if request.expected.is_some() {
+                        reset_configuration_in_flight(&state, connection_id);
+                    }
+                    continue;
+                }
+                metrics.record_encoder_pushed(request.frame.trace);
+
+                let Some(expected) = request.expected else {
+                    continue;
+                };
+                let configuration = ActiveStreamConfiguration {
+                    width: request.frame.width,
+                    height: request.frame.height,
+                    fps: expected.preferred_fps.unwrap_or(60),
+                    codec: state
+                        .lock()
+                        .ok()
+                        .and_then(|state| {
+                            state.targets.get(&connection_id).map(|target| target.codec)
+                        })
+                        .unwrap_or(CodecId::H264),
+                    generation: request.frame.generation,
+                };
+                apply_configuration(&state, connection_id, expected, configuration);
+            }
+        })
+        .expect("viewport encoder worker should start")
+}
+
+fn apply_configuration(
+    state: &Arc<Mutex<FrameRouterState>>,
+    connection_id: u64,
+    expected_metrics: ViewportMetrics,
+    configuration: ActiveStreamConfiguration,
+) {
+    if let Ok(mut state) = state.lock()
+        && let Some(target) = state.targets.get_mut(&connection_id)
+        && target
+            .expected
+            .as_ref()
+            .is_some_and(|current| current == &expected_metrics)
+    {
+        target.configuration_in_flight = false;
+        target.expected = None;
+        target.current = Some(configuration.clone());
+        target.applied = Some(configuration.clone());
+        let all_configured = state.targets.values().all(|target| {
+            target
+                .current
+                .as_ref()
+                .is_some_and(|current| current == &configuration)
+        });
+        if all_configured {
+            state.current = Some(configuration);
+            state.expected = None;
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "router_tests.rs"]
+mod tests;

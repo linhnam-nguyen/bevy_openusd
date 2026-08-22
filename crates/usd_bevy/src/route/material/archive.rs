@@ -211,10 +211,11 @@ pub(super) fn read_texture_bytes(
 ) -> (Option<Vec<u8>>, ArchiveLookupStats) {
     let mut archive_stats = ArchiveLookupStats::default();
     let raw_path = Path::new(texture_path);
-    if raw_path.is_absolute() && raw_path.exists() {
-        if let Ok(bytes) = std::fs::read(raw_path) {
-            return (Some(bytes), archive_stats);
-        }
+    if raw_path.is_absolute()
+        && raw_path.exists()
+        && let Ok(bytes) = std::fs::read(raw_path)
+    {
+        return (Some(bytes), archive_stats);
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -222,15 +223,16 @@ pub(super) fn read_texture_bytes(
         manifest_dir.join(texture_path),
         manifest_dir.join("assets").join(texture_path),
         manifest_dir.join("assets/external").join(texture_path),
+        manifest_dir.join("../..").join(texture_path),
         PathBuf::from(texture_path),
         PathBuf::from("assets").join(texture_path),
         PathBuf::from("assets/external").join(texture_path),
     ];
     for candidate in &candidates {
-        if candidate.exists() {
-            if let Ok(bytes) = std::fs::read(candidate) {
-                return (Some(bytes), archive_stats);
-            }
+        if candidate.exists()
+            && let Ok(bytes) = std::fs::read(candidate)
+        {
+            return (Some(bytes), archive_stats);
         }
     }
 

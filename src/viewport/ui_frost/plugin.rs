@@ -3,9 +3,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use bevy_frost::prelude::*;
 use viewport_protocol::ViewportCommand;
 
-use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
 use super::constants::{
-    RIBBONS, RIBBON_ITEMS, RIBBON_LEFT, RIB_PLAY, TreeExpanded, TreeFilter, ViewerCommandPalette,
+    RIB_PLAY, RIBBON_ITEMS, RIBBON_LEFT, RIBBONS, TreeExpanded, TreeFilter, ViewerCommandPalette,
 };
 use super::panels::{
     cameras::draw_cameras_panel,
@@ -19,6 +18,7 @@ use super::panels::{
     variants::draw_variants_panel,
 };
 use super::tree;
+use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
 
 pub struct ViewerUiPlugin;
 
