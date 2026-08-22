@@ -1,6 +1,6 @@
 use viewport_protocol::{
-    ColorRgb8, GroundGridOrigin, RenderMode, SamplingPreference, SamplingProvider,
-    SelectionPresentationSettings, ViewerEnvironmentSettings,
+    ColorRgb8, GroundGridOrigin, RenderMode, SamplingPreference, SamplingProvider, SceneAnchor,
+    SelectionPresentationSettings, SelectionReadModel, ViewerEnvironmentSettings,
 };
 
 #[test]
@@ -71,4 +71,95 @@ fn protocol_v1_legacy_surface_remains_unchanged() {
     assert_eq!(viewport_protocol::PROTOCOL_VERSION, 1);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
+}
+
+#[test]
+fn selection_read_model_supports_empty_single_and_many_targets() {
+    let empty = SelectionReadModel::default();
+    assert!(empty.validate().is_ok());
+
+    let first = SceneAnchor::active_session("/World/First");
+    let second = SceneAnchor::active_session("/World/Second");
+    let single = SelectionReadModel {
+        targets: vec![first.clone()],
+        primary: Some(first.clone()),
+    };
+    assert!(single.validate().is_ok());
+
+    let many = SelectionReadModel {
+        targets: vec![second.clone(), first.clone()],
+        primary: Some(second),
+    };
+    assert!(many.validate().is_ok());
+    let json = serde_json::to_string(&many).expect("many-target selection serializes");
+    let decoded: SelectionReadModel = serde_json::from_str(&json).expect("selection decodes");
+    assert_eq!(
+        decoded.targets,
+        vec![first, SceneAnchor::active_session("/World/Second")]
+    );
+}
+
+#[test]
+fn selection_read_model_rejects_duplicates_and_non_member_primary() {
+    let target = SceneAnchor::active_session("/World/Selected");
+    assert!(
+        SelectionReadModel {
+            targets: vec![target.clone(), target.clone()],
+            primary: Some(target.clone()),
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        SelectionReadModel {
+            targets: vec![target],
+            primary: Some(SceneAnchor::active_session("/World/Other")),
+        }
+        .validate()
+        .is_err()
+    );
+}
+
+#[test]
+fn selection_read_model_accepts_legacy_single_target_and_serializes_canonically() {
+    let decoded: SelectionReadModel = serde_json::from_str(
+        r#"{"target":{"session_id":null,"prim_path":"/World/Legacy","instance_context":null}}"#,
+    )
+    .expect("legacy target decodes");
+    let target = SceneAnchor::active_session("/World/Legacy");
+    assert_eq!(decoded.targets, vec![target.clone()]);
+    assert_eq!(decoded.primary, Some(target));
+
+    let json = serde_json::to_string(&decoded).expect("selection serializes");
+    assert!(json.contains("\"targets\""));
+    assert!(!json.contains("\"target\""));
+}
+
+#[test]
+fn selection_commands_validate_membership_and_anchor_identity() {
+    let target = SceneAnchor::active_session("/World/Selected");
+    assert!(
+        viewport_protocol::ViewportCommand::ReplaceSelection {
+            targets: vec![target.clone()],
+            primary: Some(target),
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::ReplaceSelection {
+            targets: vec![SceneAnchor::active_session("/World/Selected")],
+            primary: Some(SceneAnchor::active_session("/World/Other")),
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::AddSelectionTarget {
+            target: SceneAnchor::active_session("not-a-usd-path"),
+            make_primary: true,
+        }
+        .validate()
+        .is_err()
+    );
 }

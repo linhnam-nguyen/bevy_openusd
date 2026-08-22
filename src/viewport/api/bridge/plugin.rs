@@ -17,6 +17,7 @@ use crate::viewport::api::{
     SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
     ViewportTreeCommandInbox,
 };
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{
     RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
     drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
@@ -33,6 +34,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<SelectedTargets>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<RuntimeDeliveryRuntime>()
             .init_resource::<SemanticSyncState>()

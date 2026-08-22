@@ -20,7 +20,7 @@ impl ViewportProtocolViewportSnapshot {
                     loaded: true,
                 },
                 scene: viewport_protocol::SceneReadModel::default(),
-                selection: viewport_protocol::SelectionReadModel { target: None },
+                selection: viewport_protocol::SelectionReadModel::default(),
                 camera_source: viewport_protocol::CameraSource::Arcball,
                 timeline: viewport_protocol::TimelineReadModel {
                     seconds: 0.0,

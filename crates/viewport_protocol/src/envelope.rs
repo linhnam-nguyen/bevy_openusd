@@ -15,7 +15,7 @@ pub type CausationId = String;
 pub type SequenceNumber = u64;
 
 /// Stable identity for a viewport session.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub String);
 
 impl SessionId {

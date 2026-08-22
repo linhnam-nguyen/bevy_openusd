@@ -6,7 +6,7 @@ use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
-    SceneAnchor,
+    SceneAnchor, SelectionReadModel,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,6 +26,23 @@ pub enum ViewportCommand {
     ReloadSession,
     SelectTarget {
         target: Option<SceneAnchor>,
+    },
+    /// Replaces the complete selection set. `primary`, when present, must be
+    /// one of the supplied targets.
+    ReplaceSelection {
+        targets: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+    },
+    /// Adds one target while preserving the existing set and optionally
+    /// making the new target primary.
+    AddSelectionTarget {
+        target: SceneAnchor,
+        make_primary: bool,
+    },
+    /// Removes one target. If it was primary, the server chooses the first
+    /// remaining canonical target as the new primary.
+    RemoveSelectionTarget {
+        target: SceneAnchor,
     },
     FocusTarget {
         target: SceneAnchor,
@@ -192,6 +209,21 @@ impl ViewportCommand {
         }
 
         match self {
+            Self::SelectTarget { target } => {
+                if let Some(target) = target {
+                    target.validate()?;
+                }
+            }
+            Self::ReplaceSelection { targets, primary } => {
+                SelectionReadModel {
+                    targets: targets.clone(),
+                    primary: primary.clone(),
+                }
+                .validate()?;
+            }
+            Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
+                target.validate()?
+            }
             Self::DefinePrim {
                 path: value,
                 type_name,
@@ -268,7 +300,6 @@ impl ViewportCommand {
             | Self::RequestSceneChildren { .. }
             | Self::SearchScene { .. }
             | Self::ReloadSession
-            | Self::SelectTarget { .. }
             | Self::FocusTarget { .. }
             | Self::SetSubtreeVisibility { .. }
             | Self::SetCameraSource { .. }

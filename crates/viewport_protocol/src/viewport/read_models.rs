@@ -1,10 +1,12 @@
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashSet;
 
 use crate::stream::{MAX_FPS, MIN_FPS};
 use crate::{PROTOCOL_VERSION, ProtocolValidationError, SessionId};
 
 /// Stable, renderer-neutral identity for a logical USD target.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SceneAnchor {
     pub session_id: Option<SessionId>,
     pub prim_path: String,
@@ -18,6 +20,32 @@ impl SceneAnchor {
             prim_path: prim_path.into(),
             instance_context: None,
         }
+    }
+
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        if self.prim_path.trim().is_empty() {
+            return Err(ProtocolValidationError::EmptyField {
+                field: "selection.target.prim_path",
+            });
+        }
+        if !self.prim_path.starts_with('/') || self.prim_path.contains('\0') {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.target.prim_path",
+            });
+        }
+        if self
+            .instance_context
+            .as_deref()
+            .is_some_and(|context| context.contains('\0'))
+        {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.target.instance_context",
+            });
+        }
+        if let Some(session_id) = &self.session_id {
+            session_id.validate()?;
+        }
+        Ok(())
     }
 }
 
@@ -256,9 +284,111 @@ pub enum StageLoadState {
     Failed { message: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectionReadModel {
-    pub target: Option<SceneAnchor>,
+    /// The complete authoritative selection set, in deterministic order.
+    pub targets: Vec<SceneAnchor>,
+    /// The active primary target, which must be a member of [`Self::targets`].
+    pub primary: Option<SceneAnchor>,
+}
+
+impl SelectionReadModel {
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        let mut seen = HashSet::with_capacity(self.targets.len());
+        for target in &self.targets {
+            target.validate()?;
+            if !seen.insert(target) {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.targets",
+                });
+            }
+        }
+
+        if let Some(primary) = &self.primary {
+            primary.validate()?;
+            if !self.targets.contains(primary) {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.primary",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub fn canonicalize(&mut self) -> Result<(), ProtocolValidationError> {
+        self.validate()?;
+        self.targets.sort();
+        Ok(())
+    }
+
+    pub fn from_legacy_target(target: Option<SceneAnchor>) -> Self {
+        let Some(target) = target else {
+            return Self::default();
+        };
+        Self {
+            targets: vec![target.clone()],
+            primary: Some(target),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SelectionReadModelWire<'a> {
+    targets: &'a [SceneAnchor],
+    primary: &'a Option<SceneAnchor>,
+}
+
+#[derive(Deserialize)]
+struct SelectionReadModelInput {
+    #[serde(default)]
+    targets: Vec<SceneAnchor>,
+    #[serde(default)]
+    primary: Option<SceneAnchor>,
+    #[serde(default)]
+    target: Option<SceneAnchor>,
+}
+
+impl Serialize for SelectionReadModel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut canonical = self.clone();
+        canonical
+            .canonicalize()
+            .map_err(serde::ser::Error::custom)?;
+        SelectionReadModelWire {
+            targets: &canonical.targets,
+            primary: &canonical.primary,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SelectionReadModel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = SelectionReadModelInput::deserialize(deserializer)?;
+        let has_new_fields = !input.targets.is_empty() || input.primary.is_some();
+        if input.target.is_some() && has_new_fields {
+            return Err(D::Error::custom(
+                "selection cannot contain both legacy target and multi-selection fields",
+            ));
+        }
+
+        let mut selection = if input.target.is_some() {
+            Self::from_legacy_target(input.target)
+        } else {
+            Self {
+                targets: input.targets,
+                primary: input.primary,
+            }
+        };
+        selection.canonicalize().map_err(D::Error::custom)?;
+        Ok(selection)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -311,7 +441,7 @@ impl ViewportReadModel {
                 loaded: false,
             },
             scene: SceneReadModel::default(),
-            selection: SelectionReadModel { target: None },
+            selection: SelectionReadModel::default(),
             camera_source: CameraSource::Arcball,
             timeline: TimelineReadModel {
                 seconds: 0.0,

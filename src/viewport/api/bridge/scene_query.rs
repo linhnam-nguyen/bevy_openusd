@@ -10,7 +10,7 @@ use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEvent
 use crate::viewport::camera::CameraMount;
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
-use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
@@ -183,7 +183,7 @@ pub(super) fn publish_stage_load_state(
     stage: Option<Res<StageHandle>>,
     spawned: Res<Spawned>,
     stage_info: Res<StageInfo>,
-    selected: Res<SelectedPrim>,
+    selection: Res<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     camera_mount: Res<CameraMount>,
     clock: Res<UsdStageTime>,
@@ -220,7 +220,7 @@ pub(super) fn publish_stage_load_state(
         let snapshot = build_read_model(
             &stage_info,
             spawned.0 && matches!(state, StageLoadState::Ready),
-            &selected,
+            &selection,
             &scene_index,
             &camera_mount,
             &clock,

@@ -3,11 +3,53 @@
 use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
 use usd_bevy::{PointInstancerSelection, UsdInstanceId, UsdPrimRef};
+use viewport_protocol::{ProtocolValidationError, SceneAnchor, SelectionReadModel};
 
 /// Selected Bevy entity. This remains an internal runtime detail; the future
 /// platform boundary will translate it to a stable USD scene anchor.
 #[derive(Resource, Default, Debug, Clone, Copy)]
 pub struct SelectedPrim(pub Option<Entity>);
+
+/// Authoritative logical selection state. The Bevy entity in [`SelectedPrim`]
+/// is only the resolved primary used by internal runtime systems.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct SelectedTargets(pub SelectionReadModel);
+
+impl SelectedTargets {
+    pub(crate) fn replace(
+        &mut self,
+        mut selection: SelectionReadModel,
+    ) -> Result<(), ProtocolValidationError> {
+        selection.canonicalize()?;
+        self.0 = selection;
+        Ok(())
+    }
+
+    pub(crate) fn add(
+        &mut self,
+        target: SceneAnchor,
+        make_primary: bool,
+    ) -> Result<(), ProtocolValidationError> {
+        target.validate()?;
+        if !self.0.targets.contains(&target) {
+            self.0.targets.push(target.clone());
+        }
+        if make_primary {
+            self.0.primary = Some(target);
+        }
+        self.0.canonicalize()
+    }
+
+    pub(crate) fn remove(&mut self, target: &SceneAnchor) -> Result<(), ProtocolValidationError> {
+        target.validate()?;
+        let removed_primary = self.0.primary.as_ref() == Some(target);
+        self.0.targets.retain(|candidate| candidate != target);
+        if removed_primary {
+            self.0.primary = self.0.targets.first().cloned();
+        }
+        self.0.canonicalize()
+    }
+}
 
 /// Copies a selected instance's stable USD identity before a route is allowed
 /// to replace its Bevy child entity.
@@ -65,6 +107,51 @@ pub(crate) fn resolve_selected_instance(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn logical_selection_is_canonical_and_primary_remains_a_member() {
+        let first = SceneAnchor::active_session("/World/First");
+        let second = SceneAnchor::active_session("/World/Second");
+        let third = SceneAnchor::active_session("/World/Third");
+        let mut selection = SelectedTargets::default();
+
+        selection
+            .replace(SelectionReadModel {
+                targets: vec![second.clone(), first.clone()],
+                primary: Some(second.clone()),
+            })
+            .expect("valid selection replaces atomically");
+        assert_eq!(selection.0.targets, vec![first.clone(), second.clone()]);
+        assert_eq!(selection.0.primary, Some(second.clone()));
+
+        selection
+            .add(third.clone(), false)
+            .expect("valid target adds to the set");
+        assert_eq!(selection.0.primary, Some(second));
+        selection
+            .remove(&selection.0.primary.clone().unwrap())
+            .expect("primary target removes");
+        assert_eq!(selection.0.targets, vec![first, third]);
+        assert_eq!(
+            selection.0.primary,
+            Some(SceneAnchor::active_session("/World/First"))
+        );
+    }
+
+    #[test]
+    fn logical_selection_rejects_duplicates_before_state_mutation() {
+        let target = SceneAnchor::active_session("/World/Selected");
+        let mut selection = SelectedTargets::default();
+        assert!(
+            selection
+                .replace(SelectionReadModel {
+                    targets: vec![target.clone(), target],
+                    primary: None,
+                })
+                .is_err()
+        );
+        assert_eq!(selection.0, SelectionReadModel::default());
+    }
 
     use bevy::asset::Assets;
     use bevy::mesh::Mesh;

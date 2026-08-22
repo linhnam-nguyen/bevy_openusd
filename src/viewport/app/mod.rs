@@ -34,7 +34,7 @@ use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPl
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
-    HideMeshesFlag, SelectedPrim, ShowJointGizmosFlag, SkeletonGizmos,
+    HideMeshesFlag, SelectedPrim, SelectedTargets, ShowJointGizmosFlag, SkeletonGizmos,
     draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
     sync_selected_instance_identity,
 };
@@ -314,6 +314,7 @@ pub(crate) fn run() {
         .init_resource::<ReloadRequest>()
         .init_resource::<LoadRequest>()
         .init_resource::<SelectedPrim>()
+        .init_resource::<SelectedTargets>()
         .init_resource::<FlyTo>()
         .init_resource::<CameraMount>()
         .init_resource::<LoaderTuning>()

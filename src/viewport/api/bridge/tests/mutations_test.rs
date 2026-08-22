@@ -14,8 +14,8 @@ mod tests {
     };
     use crate::viewport::camera::CameraMount;
     use crate::viewport::physics::PhysicsActive;
-    use crate::viewport::scene::SelectedPrim;
     use crate::viewport::scene::visualization::DisplayToggles;
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::semantic::synchronize_live_stage;
     use crate::viewport::semantic::{
         SemanticDiffState, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSyncState,
@@ -31,6 +31,7 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
@@ -57,6 +58,7 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()

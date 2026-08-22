@@ -1,15 +1,14 @@
 use viewport_protocol::{
     CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, OverlayKind,
     PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch, SceneAnchor,
-    SelectionReadModel, StageReadModel, TimelineReadModel, ViewportEvent, ViewportEventEnvelope,
-    ViewportReadModel,
+    StageReadModel, TimelineReadModel, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
 };
 
 use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::camera::CameraMount;
-use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
 
@@ -49,7 +48,7 @@ pub(super) fn emit_snapshot(
     request_id: String,
     stage_info: &StageInfo,
     spawned: &Spawned,
-    selected: &SelectedPrim,
+    selection: &SelectedTargets,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
     clock: &UsdStageTime,
@@ -63,7 +62,7 @@ pub(super) fn emit_snapshot(
             state: build_read_model(
                 stage_info,
                 spawned.0,
-                selected,
+                selection,
                 scene_index,
                 camera_mount,
                 clock,
@@ -79,7 +78,7 @@ pub(super) fn emit_snapshot(
 pub(super) fn build_read_model(
     stage_info: &StageInfo,
     stage_loaded: bool,
-    selected: &SelectedPrim,
+    selection: &SelectedTargets,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
     clock: &UsdStageTime,
@@ -94,9 +93,7 @@ pub(super) fn build_read_model(
             loaded: stage_loaded,
         },
         scene: scene_index.roots_read_model(),
-        selection: SelectionReadModel {
-            target: selected.0.and_then(|entity| scene_index.anchor_for(entity)),
-        },
+        selection: selection.0.clone(),
         camera_source: match camera_mount {
             CameraMount::Arcball => CameraSource::Arcball,
             CameraMount::Mounted { prim_path } => CameraSource::Authored {

@@ -10,7 +10,7 @@ pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
 pub(crate) use runtime::draw_selected_prim_highlight;
 pub(crate) use selection::{
-    SelectedPrim, resolve_selected_instance, sync_selected_instance_identity,
+    SelectedPrim, SelectedTargets, resolve_selected_instance, sync_selected_instance_identity,
 };
 pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,

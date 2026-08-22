@@ -14,8 +14,8 @@ mod tests {
     use crate::viewport::app::cadence::RendererCadence;
     use crate::viewport::camera::CameraMount;
     use crate::viewport::physics::PhysicsActive;
-    use crate::viewport::scene::SelectedPrim;
     use crate::viewport::scene::visualization::DisplayToggles;
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
@@ -26,6 +26,7 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()

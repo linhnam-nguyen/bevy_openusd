@@ -16,8 +16,8 @@ mod tests {
     };
     use crate::viewport::camera::CameraMount;
     use crate::viewport::physics::PhysicsActive;
-    use crate::viewport::scene::SelectedPrim;
     use crate::viewport::scene::visualization::DisplayToggles;
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::semantic::SemanticWorkingStore;
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
@@ -29,6 +29,7 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
@@ -233,7 +234,8 @@ mod tests {
         };
         assert_eq!(state.stage.display_name, "fixtures/spinner.usda");
         assert!(state.scene.prims.is_empty());
-        assert_eq!(state.selection.target, None);
+        assert!(state.selection.targets.is_empty());
+        assert!(state.selection.primary.is_none());
     }
 
     #[test]

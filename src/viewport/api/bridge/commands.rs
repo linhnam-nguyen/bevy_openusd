@@ -19,8 +19,8 @@ use crate::viewport::api::{
 use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::camera::CameraMount;
 use crate::viewport::physics::PhysicsActive;
-use crate::viewport::scene::SelectedPrim;
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
 /// Applies commands whose state does not require a tree traversal. Tree
@@ -31,7 +31,7 @@ pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut reload: ResMut<ReloadRequest>,
-    mut selected: ResMut<SelectedPrim>,
+    mut selection_state: ParamSet<(ResMut<SelectedPrim>, ResMut<SelectedTargets>)>,
     scene_index: Res<SceneAnchorIndex>,
     mut tree_commands: ResMut<ViewportTreeCommandInbox>,
     mut camera_mount: ResMut<CameraMount>,
@@ -66,7 +66,7 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selected,
+                    &selection_state.p1(),
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -91,7 +91,7 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selected,
+                    &selection_state.p1(),
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -101,17 +101,15 @@ pub(super) fn apply_viewport_commands(
                 );
             }
             ViewportCommand::SelectTarget { target } => {
-                let selection = match target {
+                let next_selection = match target {
                     None => {
-                        selected.0 = None;
-                        SelectionReadModel { target: None }
+                        selection_state.p0().0 = None;
+                        SelectionReadModel::default()
                     }
                     Some(anchor) => match super::helpers::resolve_anchor(&anchor, &scene_index) {
                         Ok(entity) => {
-                            selected.0 = Some(entity);
-                            SelectionReadModel {
-                                target: Some(anchor),
-                            }
+                            selection_state.p0().0 = Some(entity);
+                            SelectionReadModel::from_legacy_target(Some(anchor))
                         }
                         Err(reason) => {
                             reject(&mut outbox, request_id, reason);
@@ -119,9 +117,99 @@ pub(super) fn apply_viewport_commands(
                         }
                     },
                 };
+                selection_state
+                    .p1()
+                    .replace(next_selection.clone())
+                    .expect("resolved selection must satisfy the protocol invariant");
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
-                    ViewportEvent::SelectionChanged { selection },
+                    ViewportEvent::SelectionChanged {
+                        selection: next_selection,
+                    },
+                ));
+            }
+            ViewportCommand::ReplaceSelection { targets, primary } => {
+                let mut next_selection = SelectionReadModel { targets, primary };
+                if let Err(error) = next_selection.canonicalize() {
+                    reject(&mut outbox, request_id, error.to_string());
+                    continue;
+                }
+                let mut resolved_primary = None;
+                let mut resolution_failed = None;
+                for target in &next_selection.targets {
+                    let Ok(entity) = super::helpers::resolve_anchor(target, &scene_index) else {
+                        resolution_failed = Some(format!(
+                            "target {} is not present in the active scene",
+                            target.prim_path
+                        ));
+                        break;
+                    };
+                    if next_selection.primary.as_ref() == Some(target) {
+                        resolved_primary = Some(entity);
+                    }
+                }
+                if let Some(reason) = resolution_failed {
+                    reject(&mut outbox, request_id, reason);
+                    continue;
+                }
+                selection_state
+                    .p1()
+                    .replace(next_selection.clone())
+                    .expect("validated selection must satisfy the protocol invariant");
+                selection_state.p0().0 = resolved_primary;
+                outbox.push(ViewportEventEnvelope::new(
+                    Some(request_id),
+                    ViewportEvent::SelectionChanged {
+                        selection: next_selection,
+                    },
+                ));
+            }
+            ViewportCommand::AddSelectionTarget {
+                target,
+                make_primary,
+            } => {
+                if super::helpers::resolve_anchor(&target, &scene_index).is_err() {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!(
+                            "target {} is not present in the active scene",
+                            target.prim_path
+                        ),
+                    );
+                    continue;
+                }
+                if let Err(error) = selection_state.p1().add(target, make_primary) {
+                    reject(&mut outbox, request_id, error.to_string());
+                    continue;
+                }
+                let next_selection = selection_state.p1().0.clone();
+                selection_state.p0().0 = next_selection
+                    .primary
+                    .as_ref()
+                    .and_then(|primary| scene_index.resolve(primary));
+                outbox.push(ViewportEventEnvelope::new(
+                    Some(request_id),
+                    ViewportEvent::SelectionChanged {
+                        selection: next_selection,
+                    },
+                ));
+            }
+            ViewportCommand::RemoveSelectionTarget { target } => {
+                if let Err(error) = selection_state.p1().remove(&target) {
+                    reject(&mut outbox, request_id, error.to_string());
+                    continue;
+                }
+                let next_selection = selection_state.p1().0.clone();
+                selection_state.p0().0 = next_selection
+                    .primary
+                    .as_ref()
+                    .and_then(|primary| scene_index.resolve(primary));
+                outbox.push(ViewportEventEnvelope::new(
+                    Some(request_id),
+                    ViewportEvent::SelectionChanged {
+                        selection: next_selection,
+                    },
                 ));
             }
             ViewportCommand::FocusTarget { target, mode } => {
@@ -164,7 +252,7 @@ pub(super) fn apply_viewport_commands(
                     request_id.clone(),
                     &configuration_state.p0(),
                     &spawned,
-                    &selected,
+                    &selection_state.p1(),
                     &scene_index,
                     &camera_mount,
                     &clock,
@@ -192,7 +280,7 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &configuration_state.p0(),
                     &spawned,
-                    &selected,
+                    &selection_state.p1(),
                     &scene_index,
                     &camera_mount,
                     &clock,
