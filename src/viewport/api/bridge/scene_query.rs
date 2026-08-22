@@ -240,7 +240,9 @@ pub(super) fn publish_stage_load_state(
         );
         outbox.push(ViewportEventEnvelope::new(
             None,
-            ViewportEvent::Snapshot { state: snapshot },
+            ViewportEvent::Snapshot {
+                state: Box::new(snapshot),
+            },
         ));
         *last = Some((state, scene_index.revision()));
     }

@@ -40,7 +40,9 @@ fn snapshot_display_name_is_reduced_to_a_basename() {
         .publish_viewport_event(ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
-                state: ViewportReadModel::unloaded("/private/stages/Kitchen_set.usdz"),
+                state: Box::new(ViewportReadModel::unloaded(
+                    "/private/stages/Kitchen_set.usdz",
+                )),
             },
         ))
         .unwrap();
@@ -62,7 +64,7 @@ fn event_history_is_cleared_when_a_session_takes_a_snapshot() {
         .publish_viewport_event(ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
-                state: snapshot.clone(),
+                state: Box::new(snapshot.clone()),
             },
         ))
         .unwrap();

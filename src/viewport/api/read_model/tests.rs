@@ -23,7 +23,7 @@ fn snapshot_and_incremental_events_produce_the_authoritative_projection() {
     state.apply(&ViewportEventEnvelope::new(
         None,
         ViewportEvent::Snapshot {
-            state: snapshot.clone(),
+            state: Box::new(snapshot.clone()),
         },
     ));
 
@@ -41,7 +41,7 @@ fn snapshot_and_incremental_events_produce_the_authoritative_projection() {
         },
     ));
     let mut viewer_settings = viewport_protocol::ViewerSettingsReadModel::default();
-    viewer_settings.environment.grid_visible = false;
+    viewer_settings.environment.grid_color = viewport_protocol::ColorRgb8::new(1, 2, 3);
     state.apply(&ViewportEventEnvelope::new(
         Some("local-3".into()),
         ViewportEvent::ViewerSettingsChanged {
@@ -71,7 +71,9 @@ fn paged_tree_search_and_visibility_reduce_without_ecs_state() {
 
     state.apply(&ViewportEventEnvelope::new(
         None,
-        ViewportEvent::Snapshot { state: snapshot },
+        ViewportEvent::Snapshot {
+            state: Box::new(snapshot),
+        },
     ));
     assert_eq!(state.scene_nodes(), vec![root.clone()]);
 

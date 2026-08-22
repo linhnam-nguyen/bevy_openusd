@@ -134,44 +134,6 @@ mod tests {
     }
 
     #[test]
-    fn viewer_settings_commands_update_authoritative_state_without_presentation_events() {
-        let mut app = command_test_app();
-        let environment = ViewerEnvironmentSettings {
-            background_color: ColorRgb8::new(1, 2, 3),
-            ..ViewerEnvironmentSettings::default()
-        };
-        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SetEnvironmentSettings {
-                settings: environment.clone(),
-            },
-        );
-
-        app.update();
-
-        assert_eq!(
-            app.world().resource::<ViewerSettingsState>().0.environment,
-            environment
-        );
-        assert_eq!(
-            app.world()
-                .resource::<DisplayToggles>()
-                .renderer
-                .render_mode,
-            RenderMode::Shaded
-        );
-        let event = app
-            .world_mut()
-            .resource_mut::<ViewportEventOutbox>()
-            .pop()
-            .expect("settings command must publish an authoritative event");
-        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-        let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
-            panic!("settings command should not publish a renderer presentation event");
-        };
-        assert_eq!(settings.environment, environment);
-    }
-
-    #[test]
     fn search_scene_routes_through_the_semantic_worker() -> anyhow::Result<()> {
         let mut app = semantic_search_test_app();
         let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;

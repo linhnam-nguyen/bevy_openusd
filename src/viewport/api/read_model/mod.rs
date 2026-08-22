@@ -144,7 +144,7 @@ impl ViewportReadModelState {
     /// Applies an event exactly as a frontend event reducer would.
     pub(crate) fn apply(&mut self, envelope: &ViewportEventEnvelope) {
         match &envelope.event {
-            ViewportEvent::Snapshot { state } => self.apply_snapshot(state.clone()),
+            ViewportEvent::Snapshot { state } => self.apply_snapshot(state.as_ref().clone()),
             ViewportEvent::SceneChildren { page } => self.apply_scene_children(page),
             ViewportEvent::SearchResults {
                 query,

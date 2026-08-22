@@ -1,17 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use super::identity::{ColorRgb8, GroundGridOrigin, RenderMode};
+use super::identity::{ColorRgb8, RenderMode};
 use crate::ProtocolValidationError;
 use crate::stream::{MAX_FPS, MIN_FPS};
 
-/// Renderer-neutral environment settings requested by the viewer.
+/// Viewer environment fields not already owned by the renderer presentation
+/// read model. Renderer mode, shadows, grid visibility, and grid origin remain
+/// authoritative in [`RendererConfiguration`] and [`PresentationReadModel`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewerEnvironmentSettings {
-    pub render_mode: RenderMode,
-    pub shadows_enabled: bool,
-    pub grid_visible: bool,
     pub grid_color: ColorRgb8,
-    pub grid_origin: GroundGridOrigin,
     pub background_color: ColorRgb8,
     pub default_surface_color: ColorRgb8,
 }
@@ -19,11 +17,7 @@ pub struct ViewerEnvironmentSettings {
 impl Default for ViewerEnvironmentSettings {
     fn default() -> Self {
         Self {
-            render_mode: RenderMode::Shaded,
-            shadows_enabled: true,
-            grid_visible: true,
             grid_color: ColorRgb8::new(0x6B, 0x72, 0x80),
-            grid_origin: GroundGridOrigin::LoadedScene,
             background_color: ColorRgb8::new(0x11, 0x18, 0x27),
             default_surface_color: ColorRgb8::new(0x9C, 0xA3, 0xAF),
         }
@@ -79,13 +73,12 @@ pub struct SamplingReadModel {
     pub provider: SamplingProvider,
 }
 
-/// The one aggregate Section Box follows the complete authoritative
-/// selection set. Plane transforms are intentionally deferred to B6.
+/// The one aggregate Section Box follows the complete authoritative selection
+/// set. Plane transforms and applied clipping are intentionally deferred to
+/// B6; the selection read model remains the target-set authority.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SectionBoxReadModel {
     pub enabled: bool,
-    #[serde(default)]
-    pub targets: Vec<super::identity::SceneAnchor>,
 }
 
 /// Capability flags for settings that require renderer/device integrations.

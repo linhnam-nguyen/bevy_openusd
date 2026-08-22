@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 
 use super::identity::SceneAnchor;
-use crate::ProtocolValidationError;
+use crate::{MAX_SELECTION_TARGETS, ProtocolValidationError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectionReadModel {
@@ -15,8 +15,21 @@ pub struct SelectionReadModel {
 
 impl SelectionReadModel {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
-        let mut seen = HashSet::with_capacity(self.targets.len());
-        for target in &self.targets {
+        Self::validate_parts(&self.targets, self.primary.as_ref())
+    }
+
+    pub fn validate_parts(
+        targets: &[SceneAnchor],
+        primary: Option<&SceneAnchor>,
+    ) -> Result<(), ProtocolValidationError> {
+        if targets.len() > MAX_SELECTION_TARGETS {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.targets",
+            });
+        }
+
+        let mut seen = HashSet::with_capacity(targets.len());
+        for target in targets {
             target.validate()?;
             if !seen.insert(target) {
                 return Err(ProtocolValidationError::InvalidInput {
@@ -25,9 +38,9 @@ impl SelectionReadModel {
             }
         }
 
-        if let Some(primary) = &self.primary {
+        if let Some(primary) = primary {
             primary.validate()?;
-            if !self.targets.contains(primary) {
+            if !targets.contains(primary) {
                 return Err(ProtocolValidationError::InvalidInput {
                     field: "selection.primary",
                 });
@@ -38,7 +51,7 @@ impl SelectionReadModel {
 
     pub fn canonicalize(&mut self) -> Result<(), ProtocolValidationError> {
         self.validate()?;
-        self.targets.sort();
+        self.targets.sort_unstable();
         Ok(())
     }
 
@@ -74,13 +87,10 @@ impl Serialize for SelectionReadModel {
     where
         S: Serializer,
     {
-        let mut canonical = self.clone();
-        canonical
-            .canonicalize()
-            .map_err(serde::ser::Error::custom)?;
+        self.validate().map_err(serde::ser::Error::custom)?;
         SelectionReadModelWire {
-            targets: &canonical.targets,
-            primary: &canonical.primary,
+            targets: &self.targets,
+            primary: &self.primary,
         }
         .serialize(serializer)
     }

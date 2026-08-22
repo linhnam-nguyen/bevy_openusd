@@ -4,7 +4,7 @@ use viewport_protocol::{
 };
 
 #[test]
-fn legacy_command_fixture_keeps_the_version_one_json_shape() {
+fn viewport_command_fixture_uses_the_version_two_json_shape() {
     let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
         "fixture-command",
         ViewportCommand::RequestSnapshot,
@@ -13,13 +13,13 @@ fn legacy_command_fixture_keeps_the_version_one_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"command\",\"payload\":{\"protocol_version\":1,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
+        "{\"type\":\"command\",\"payload\":{\"protocol_version\":2,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
 
 #[test]
-fn legacy_event_fixture_keeps_the_version_one_json_shape() {
+fn viewport_event_fixture_uses_the_version_two_json_shape() {
     let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
         None,
         ViewportEvent::Ready {
@@ -30,7 +30,7 @@ fn legacy_event_fixture_keeps_the_version_one_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"event\",\"payload\":{\"protocol_version\":1,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":1}}}}\n"
+        "{\"type\":\"event\",\"payload\":{\"protocol_version\":2,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":2}}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }

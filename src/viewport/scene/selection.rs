@@ -3,7 +3,9 @@
 use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
 use usd_bevy::{PointInstancerSelection, UsdInstanceId, UsdPrimRef};
-use viewport_protocol::{ProtocolValidationError, SceneAnchor, SelectionReadModel};
+use viewport_protocol::{
+    MAX_SELECTION_TARGETS, ProtocolValidationError, SceneAnchor, SelectionReadModel,
+};
 
 /// Selected Bevy entity. This remains an internal runtime detail; the future
 /// platform boundary will translate it to a stable USD scene anchor.
@@ -32,6 +34,11 @@ impl SelectedTargets {
     ) -> Result<(), ProtocolValidationError> {
         target.validate()?;
         if !self.0.targets.contains(&target) {
+            if self.0.targets.len() >= MAX_SELECTION_TARGETS {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.targets",
+                });
+            }
             self.0.targets.push(target.clone());
         }
         if make_primary {

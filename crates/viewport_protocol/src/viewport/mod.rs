@@ -1,9 +1,7 @@
 //! Existing semantic viewport commands, events, and read models.
 //!
-//! These definitions are intentionally moved without changing their serde
-//! representation. The legacy stdio adapter and the current UI therefore keep
-//! their protocol-version-1 wire shape while the new session contract grows
-//! around them.
+//! These definitions carry the versioned viewport wire contract. The richer
+//! session contract grows around them without coupling transport to Bevy.
 
 mod commands;
 mod constants;
@@ -15,7 +13,7 @@ pub use commands::{ViewportCommand, ViewportCommandEnvelope};
 pub use constants::{
     DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, MAX_EDITOR_TEXT_BYTES,
     MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE,
-    MAX_SCENE_SEARCH_RESULTS,
+    MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS,
 };
 pub use editor::{
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, RuntimeMutation,

@@ -60,7 +60,7 @@ pub(super) fn emit_snapshot(
     outbox.push(ViewportEventEnvelope::new(
         Some(request_id),
         ViewportEvent::Snapshot {
-            state: build_read_model(
+            state: Box::new(build_read_model(
                 stage_info,
                 spawned.0,
                 selection,
@@ -71,7 +71,7 @@ pub(super) fn emit_snapshot(
                 toggles,
                 tuning,
                 physics_running,
-            ),
+            )),
         },
     ));
 }

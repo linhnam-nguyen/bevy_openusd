@@ -16,7 +16,7 @@ pub(super) fn queue_server_event_for_request(
             queue_snapshot(state, request_id, snapshot, true);
         }
         ServerEvent::Viewport(ViewportEvent::Snapshot { state: snapshot }) => {
-            queue_snapshot(state, request_id, snapshot, false);
+            queue_snapshot(state, request_id, *snapshot, false);
         }
         ServerEvent::Viewport(ViewportEvent::SearchResults {
             query,
@@ -179,6 +179,8 @@ pub(super) fn snapshot_event(snapshot: ViewportReadModel, session_snapshot: bool
     if session_snapshot {
         ServerEvent::Session(SessionEvent::Snapshot { state: snapshot })
     } else {
-        ServerEvent::Viewport(ViewportEvent::Snapshot { state: snapshot })
+        ServerEvent::Viewport(ViewportEvent::Snapshot {
+            state: Box::new(snapshot),
+        })
     }
 }

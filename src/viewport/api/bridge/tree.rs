@@ -2,8 +2,7 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
-use super::ViewerSettingsState;
-use super::helpers::{emit_viewer_settings_changed, reject};
+use super::helpers::reject;
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
@@ -20,7 +19,6 @@ pub(super) fn apply_tree_commands(
     mut outbox: ResMut<ViewportEventOutbox>,
     mut selected: ResMut<SelectedPrim>,
     mut selection: ResMut<SelectedTargets>,
-    mut viewer_settings: ResMut<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     cameras: Query<&ArcballCamera>,
     transforms: Query<&Transform>,
@@ -85,9 +83,6 @@ pub(super) fn apply_tree_commands(
                 selection
                     .replace(SelectionReadModel::from_legacy_target(Some(target.clone())))
                     .expect("focused target must satisfy the protocol invariant");
-                let settings_changed = viewer_settings
-                    .sync_section_box_selection(&selection.0)
-                    .then(|| viewer_settings.0.clone());
                 fly_to.start_focus = camera.focus;
                 fly_to.start_distance = camera.distance;
                 fly_to.target_focus = target_focus;
@@ -105,9 +100,6 @@ pub(super) fn apply_tree_commands(
                         selection: selection.0.clone(),
                     },
                 ));
-                if let Some(settings) = settings_changed {
-                    emit_viewer_settings_changed(&mut outbox, request_id.clone(), &settings);
-                }
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
                     ViewportEvent::CameraTransitionStarted { target, mode },

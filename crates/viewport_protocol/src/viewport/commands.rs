@@ -81,9 +81,8 @@ pub enum ViewportCommand {
     SetRendererConfiguration {
         configuration: RendererConfiguration,
     },
-    /// Sets renderer-neutral environment intent. Application remains a
-    /// server-owned concern and is reported through the authoritative read
-    /// model in a later checkpoint.
+    /// Sets supplementary environment values not owned by presentation state.
+    /// Renderer configuration and grid origin use their existing authorities.
     SetEnvironmentSettings {
         settings: ViewerEnvironmentSettings,
     },
@@ -167,7 +166,7 @@ pub enum ViewportCommand {
     },
 }
 
-/// Legacy command envelope retained byte/schema compatible with version 1.
+/// Versioned viewport command envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewportCommandEnvelope {
     pub protocol_version: u16,
@@ -235,11 +234,7 @@ impl ViewportCommand {
                 }
             }
             Self::ReplaceSelection { targets, primary } => {
-                SelectionReadModel {
-                    targets: targets.clone(),
-                    primary: primary.clone(),
-                }
-                .validate()?;
+                SelectionReadModel::validate_parts(targets, primary.as_ref())?;
             }
             Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
                 target.validate()?

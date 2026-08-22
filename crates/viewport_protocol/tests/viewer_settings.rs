@@ -1,18 +1,13 @@
 use viewport_protocol::{
-    ColorRgb8, GroundGridOrigin, RenderMode, SamplingPreference, SamplingProvider,
-    SamplingReadModel, SceneAnchor, SectionBoxReadModel, SelectionPresentationSettings,
-    SelectionReadModel, ViewerEnvironmentSettings, ViewerSettingsCapabilities,
-    ViewerSettingsReadModel,
+    ColorRgb8, SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor,
+    SectionBoxReadModel, SelectionPresentationSettings, SelectionReadModel,
+    ViewerEnvironmentSettings, ViewerSettingsCapabilities, ViewerSettingsReadModel,
 };
 
 #[test]
 fn environment_settings_round_trip_with_explicit_wire_values() {
     let settings = ViewerEnvironmentSettings {
-        render_mode: RenderMode::RayTraced,
-        shadows_enabled: true,
-        grid_visible: false,
         grid_color: ColorRgb8::new(0x12, 0x34, 0x56),
-        grid_origin: GroundGridOrigin::WorldOrigin,
         background_color: ColorRgb8::new(0x20, 0x30, 0x40),
         default_surface_color: ColorRgb8::new(0xA0, 0xB0, 0xC0),
     };
@@ -22,8 +17,9 @@ fn environment_settings_round_trip_with_explicit_wire_values() {
         serde_json::from_str(&json).expect("environment settings deserialize");
 
     assert_eq!(decoded, settings);
-    assert!(json.contains("ray_traced"));
-    assert!(json.contains("world_origin"));
+    assert!(json.contains("grid_color"));
+    assert!(!json.contains("render_mode"));
+    assert!(!json.contains("grid_origin"));
 }
 
 #[test]
@@ -69,8 +65,8 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v1_legacy_surface_remains_unchanged() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 1);
+fn protocol_v2_selection_wire_migration_is_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 2);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
 }
@@ -89,7 +85,7 @@ fn selection_read_model_supports_empty_single_and_many_targets() {
     assert!(single.validate().is_ok());
 
     let many = SelectionReadModel {
-        targets: vec![second.clone(), first.clone()],
+        targets: vec![first.clone(), second.clone()],
         primary: Some(second),
     };
     assert!(many.validate().is_ok());
@@ -123,7 +119,28 @@ fn selection_read_model_rejects_duplicates_and_non_member_primary() {
 }
 
 #[test]
-fn selection_read_model_accepts_legacy_single_target_and_serializes_canonically() {
+fn selection_read_model_rejects_more_than_the_wire_cardinality_limit() {
+    let targets: Vec<_> = (0..viewport_protocol::MAX_SELECTION_TARGETS + 1)
+        .map(|index| SceneAnchor::active_session(format!("/World/Target{index}")))
+        .collect();
+    let selection = SelectionReadModel {
+        targets: targets.clone(),
+        primary: None,
+    };
+
+    assert!(selection.validate().is_err());
+    assert!(
+        viewport_protocol::ViewportCommand::ReplaceSelection {
+            targets,
+            primary: None,
+        }
+        .validate()
+        .is_err()
+    );
+}
+
+#[test]
+fn selection_read_model_accepts_single_target_compatibility_input() {
     let decoded: SelectionReadModel = serde_json::from_str(
         r#"{"target":{"session_id":null,"prim_path":"/World/Legacy","instance_context":null}}"#,
     )
@@ -169,11 +186,7 @@ fn selection_commands_validate_membership_and_anchor_identity() {
 #[test]
 fn viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_internals() {
     let environment = ViewerEnvironmentSettings {
-        render_mode: RenderMode::UniformColor,
-        shadows_enabled: false,
-        grid_visible: true,
         grid_color: ColorRgb8::new(0x6B, 0x72, 0x80),
-        grid_origin: GroundGridOrigin::LoadedScene,
         background_color: ColorRgb8::new(0x11, 0x18, 0x27),
         default_surface_color: ColorRgb8::new(0x9C, 0xA3, 0xAF),
     };
@@ -211,8 +224,7 @@ fn viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_int
 }
 
 #[test]
-fn authoritative_viewer_settings_read_model_round_trips_capabilities_and_section_targets() {
-    let selected = SceneAnchor::active_session("/World/Selected");
+fn authoritative_viewer_settings_read_model_round_trips_capabilities_and_section_state() {
     let settings = ViewerSettingsReadModel {
         environment: ViewerEnvironmentSettings::default(),
         sampling: SamplingReadModel {
@@ -220,10 +232,7 @@ fn authoritative_viewer_settings_read_model_round_trips_capabilities_and_section
             provider: SamplingProvider::None,
         },
         selection: SelectionPresentationSettings::default(),
-        section_box: SectionBoxReadModel {
-            enabled: true,
-            targets: vec![selected],
-        },
+        section_box: SectionBoxReadModel { enabled: true },
         capabilities: ViewerSettingsCapabilities {
             ray_traced_supported: false,
             dlss_available: false,

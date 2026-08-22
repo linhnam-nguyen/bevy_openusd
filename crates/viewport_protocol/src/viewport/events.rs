@@ -12,16 +12,12 @@ use super::read_models::{
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
-// Snapshot is intentionally an inline public protocol payload. Boxing it
-// would change the Rust API and complicate every transport/reducer call site;
-// the wire representation and ownership boundary are more important here.
-#[allow(clippy::large_enum_variant)]
 pub enum ViewportEvent {
     Ready {
         protocol_version: u16,
     },
     Snapshot {
-        state: ViewportReadModel,
+        state: Box<ViewportReadModel>,
     },
     SceneChildren {
         page: SceneChildrenPage,
@@ -90,7 +86,7 @@ pub enum ViewportEvent {
     },
 }
 
-/// Legacy event envelope retained byte/schema compatible with version 1.
+/// Versioned viewport event envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewportEventEnvelope {
     pub protocol_version: u16,
@@ -108,10 +104,9 @@ impl ViewportEventEnvelope {
     }
 }
 
-/// Legacy JSON Lines direction marker.
+/// JSON Lines direction marker.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
 pub enum ViewportWireMessage {
     Command(ViewportCommandEnvelope),
     Event(ViewportEventEnvelope),

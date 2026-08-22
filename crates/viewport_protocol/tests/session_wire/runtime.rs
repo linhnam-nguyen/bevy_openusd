@@ -13,7 +13,7 @@ pub(super) struct ViewportProtocolViewportSnapshot;
 impl ViewportProtocolViewportSnapshot {
     pub(super) fn event() -> viewport_protocol::ViewportEvent {
         viewport_protocol::ViewportEvent::Snapshot {
-            state: ViewportReadModel {
+            state: Box::new(ViewportReadModel {
                 protocol_version: viewport_protocol::PROTOCOL_VERSION,
                 stage: viewport_protocol::StageReadModel {
                     display_name: "fixture".to_owned(),
@@ -49,7 +49,7 @@ impl ViewportProtocolViewportSnapshot {
                     },
                 },
                 physics_running: false,
-            },
+            }),
         }
     }
 }

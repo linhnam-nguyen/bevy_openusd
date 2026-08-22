@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 
-use super::ViewerSettingsState;
 use super::editor_commands::apply_editor_command;
 use super::helpers::{emit_presentation_changed, emit_snapshot, reject};
 use super::state::EditorHistories;
@@ -17,18 +16,6 @@ mod timeline;
 pub(super) use cadence::apply_pending_renderer_cadence;
 use state::ApplyViewportCommandState;
 
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-
-pub(super) type SelectionState<'w, 's> = ParamSet<
-    'w,
-    's,
-    (
-        ResMut<'w, SelectedPrim>,
-        ResMut<'w, SelectedTargets>,
-        ResMut<'w, ViewerSettingsState>,
-    ),
->;
-
 /// Applies commands whose state does not require a tree traversal. Tree
 /// commands are forwarded to the next system after the scene index refreshes.
 /// Stage-authoring commands are delegated to [`apply_editor_command`].
@@ -38,8 +25,6 @@ pub(super) fn apply_viewport_commands(
     mut state: ApplyViewportCommandState<'_, '_>,
 ) {
     while let Some(envelope) = inbox.pop() {
-        let selection_model = state.selection.p1().0.clone();
-        let settings_model = state.selection.p2().0.clone();
         let request_id = envelope.request_id.clone();
         if envelope.protocol_version != PROTOCOL_VERSION {
             reject(
@@ -60,8 +45,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &state.configuration.p0(),
                     &state.spawned,
-                    &selection_model,
-                    &settings_model,
+                    &state.selected_targets.0,
+                    &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
                     &state.clock,
@@ -86,8 +71,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &state.configuration.p0(),
                     &state.spawned,
-                    &selection_model,
-                    &settings_model,
+                    &state.selected_targets.0,
+                    &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
                     &state.clock,
@@ -101,7 +86,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     target,
                     &mut outbox,
-                    &mut state.selection,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
                     &state.scene_index,
                 );
             }
@@ -111,7 +97,8 @@ pub(super) fn apply_viewport_commands(
                     targets,
                     primary,
                     &mut outbox,
-                    &mut state.selection,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
                     &state.scene_index,
                 );
             }
@@ -124,7 +111,8 @@ pub(super) fn apply_viewport_commands(
                     target,
                     make_primary,
                     &mut outbox,
-                    &mut state.selection,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
                     &state.scene_index,
                 );
             }
@@ -133,7 +121,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     target,
                     &mut outbox,
-                    &mut state.selection,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
                     &state.scene_index,
                 );
             }
@@ -182,8 +171,8 @@ pub(super) fn apply_viewport_commands(
                     request_id.clone(),
                     &state.configuration.p0(),
                     &state.spawned,
-                    &selection_model,
-                    &settings_model,
+                    &state.selected_targets.0,
+                    &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
                     &state.clock,
@@ -212,8 +201,8 @@ pub(super) fn apply_viewport_commands(
                     request_id,
                     &state.configuration.p0(),
                     &state.spawned,
-                    &selection_model,
-                    &settings_model,
+                    &state.selected_targets.0,
+                    &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
                     &state.clock,
@@ -277,16 +266,33 @@ pub(super) fn apply_viewport_commands(
                 }
             }
             ViewportCommand::SetEnvironmentSettings { settings } => {
-                settings::set_environment(request_id, settings, &mut outbox, &mut state.selection);
+                settings::set_environment(
+                    request_id,
+                    settings,
+                    &mut outbox,
+                    &mut state.viewer_settings,
+                );
             }
-            ViewportCommand::SetSamplingPreference { preference } => {
-                settings::set_sampling(request_id, preference, &mut outbox, &mut state.selection);
+            ViewportCommand::SetSamplingPreference { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "sampling preference is not applied in this milestone".to_owned(),
+                );
             }
-            ViewportCommand::SetSelectionPresentationSettings { settings } => {
-                settings::set_selection(request_id, settings, &mut outbox, &mut state.selection);
+            ViewportCommand::SetSelectionPresentationSettings { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "selection presentation settings are not applied in this milestone".to_owned(),
+                );
             }
-            ViewportCommand::SetSectionBox { enabled } => {
-                settings::set_section_box(request_id, enabled, &mut outbox, &mut state.selection);
+            ViewportCommand::SetSectionBox { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "section box is not applied in this milestone".to_owned(),
+                );
             }
             ViewportCommand::SetPrimMarkerBias { bias } => {
                 presentation::set_prim_marker_bias(
