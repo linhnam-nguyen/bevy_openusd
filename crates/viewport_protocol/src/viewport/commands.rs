@@ -6,7 +6,8 @@ use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
-    SceneAnchor, SelectionReadModel,
+    SamplingPreference, SceneAnchor, SelectionPresentationSettings, SelectionReadModel,
+    ViewerEnvironmentSettings,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,6 +80,25 @@ pub enum ViewportCommand {
     },
     SetRendererConfiguration {
         configuration: RendererConfiguration,
+    },
+    /// Sets renderer-neutral environment intent. Application remains a
+    /// server-owned concern and is reported through the authoritative read
+    /// model in a later checkpoint.
+    SetEnvironmentSettings {
+        settings: ViewerEnvironmentSettings,
+    },
+    /// Sets only the user's vendor-neutral sampling intent. The active
+    /// provider is selected and reported by the server.
+    SetSamplingPreference {
+        preference: SamplingPreference,
+    },
+    SetSelectionPresentationSettings {
+        settings: SelectionPresentationSettings,
+    },
+    /// Enables or disables the one aggregate Section Box for the current
+    /// authoritative selection set. Transform details are deferred.
+    SetSectionBox {
+        enabled: bool,
     },
     SetPrimMarkerBias {
         bias: f32,
@@ -224,6 +244,10 @@ impl ViewportCommand {
             Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
                 target.validate()?
             }
+            Self::SetEnvironmentSettings { .. }
+            | Self::SetSamplingPreference { .. }
+            | Self::SetSelectionPresentationSettings { .. }
+            | Self::SetSectionBox { .. } => {}
             Self::DefinePrim {
                 path: value,
                 type_name,

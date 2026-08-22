@@ -163,3 +163,47 @@ fn selection_commands_validate_membership_and_anchor_identity() {
         .is_err()
     );
 }
+
+#[test]
+fn viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_internals() {
+    let environment = ViewerEnvironmentSettings {
+        render_mode: RenderMode::UniformColor,
+        shadows_enabled: false,
+        grid_visible: true,
+        grid_color: ColorRgb8::new(0x6B, 0x72, 0x80),
+        grid_origin: GroundGridOrigin::LoadedScene,
+        background_color: ColorRgb8::new(0x11, 0x18, 0x27),
+        default_surface_color: ColorRgb8::new(0x9C, 0xA3, 0xAF),
+    };
+    let selection = SelectionPresentationSettings {
+        boundary_enabled: true,
+        boundary_color: ColorRgb8::new(0xFA, 0xCC, 0x15),
+        color_change_enabled: false,
+        selection_color: ColorRgb8::new(0x38, 0xBD, 0xF8),
+        hover_color_change_enabled: false,
+        hover_color: ColorRgb8::new(0x7D, 0xD3, 0xFC),
+    };
+    let commands = [
+        viewport_protocol::ViewportCommand::SetEnvironmentSettings {
+            settings: environment,
+        },
+        viewport_protocol::ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+        viewport_protocol::ViewportCommand::SetSelectionPresentationSettings {
+            settings: selection,
+        },
+        viewport_protocol::ViewportCommand::SetSectionBox { enabled: true },
+    ];
+
+    for command in commands {
+        assert!(command.validate().is_ok());
+        let json = serde_json::to_string(&command).expect("typed settings command serializes");
+        let decoded: viewport_protocol::ViewportCommand =
+            serde_json::from_str(&json).expect("typed settings command decodes");
+        assert_eq!(decoded, command);
+        assert!(!json.contains("json"));
+        assert!(!json.contains("provider"));
+        assert!(!json.contains("transform"));
+    }
+}
