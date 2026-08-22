@@ -110,6 +110,12 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
         return;
     };
     let (results, queue_high_water) = (runtime.drain_results(), runtime.queue_stats().1);
+    let result_backpressure = runtime.take_result_backpressure();
+    if let Some(mut counters) =
+        world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+    {
+        counters.runtime_delivery_result_backpressure += result_backpressure;
+    }
     for result in results {
         if let Some(mut counters) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()

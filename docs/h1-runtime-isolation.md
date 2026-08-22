@@ -90,6 +90,21 @@ The final packet records fresh native/WebRTC regression evidence and inherited
 M10 real-client S12–S18 evidence separately. It does not claim fresh browser
 proof for H1.
 
+## H1-C7++ result-mailbox correction
+
+Worker result channels distinguish the two `try_send` outcomes. A disconnected
+consumer terminates its worker; a temporarily full bounded result channel
+increments the corresponding backpressure counter and hands the result to a
+blocking worker-side `send`. This keeps Bevy unblocked, preserves the newest
+runtime-delivery completion, and prevents recovery from silently dying while
+its result consumer catches up.
+
+The correction is covered by focused saturation tests in
+`src/project/recovery_worker.rs` and
+`src/viewport/semantic/sync/delivery_worker.rs`. The counters are
+`recovery_result_backpressure` and
+`runtime_delivery_result_backpressure` in the performance report.
+
 ## Acceptance
 
 H1 is accepted only when the checkpoint chain is compile/syntax-clean, source

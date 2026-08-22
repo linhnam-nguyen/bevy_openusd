@@ -23,6 +23,8 @@ REQUIRED_SEMANTIC_FIELDS = {
     "recovery_worker_write_ms",
     "semantic_mailbox_pending",
     "semantic_mailbox_high_water",
+    "runtime_delivery_result_backpressure",
+    "recovery_result_backpressure",
 }
 
 

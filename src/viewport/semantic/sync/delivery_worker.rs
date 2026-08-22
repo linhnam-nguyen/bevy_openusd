@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
 use std::time::Instant;
@@ -129,6 +130,7 @@ impl Drop for DeliveryQueue {
 pub(crate) struct RuntimeDeliveryRuntime {
     queue: Arc<DeliveryQueue>,
     results: Mutex<mpsc::Receiver<DeliveryResult>>,
+    result_backpressure: Arc<AtomicU64>,
     pub(crate) pending: Option<PendingRuntimeDelivery>,
 }
 
@@ -137,13 +139,16 @@ impl Default for RuntimeDeliveryRuntime {
         let queue = Arc::new(DeliveryQueue::new());
         let (result_sender, result_receiver) = mpsc::sync_channel(DELIVERY_RESULT_CAPACITY);
         let worker_queue = Arc::clone(&queue);
+        let result_backpressure = Arc::new(AtomicU64::new(0));
+        let worker_result_backpressure = Arc::clone(&result_backpressure);
         thread::Builder::new()
             .name("usdview-runtime-delivery-worker".to_owned())
-            .spawn(move || delivery_worker(worker_queue, result_sender))
+            .spawn(move || delivery_worker(worker_queue, result_sender, worker_result_backpressure))
             .expect("runtime delivery worker should start");
         Self {
             queue,
             results: Mutex::new(result_receiver),
+            result_backpressure,
             pending: None,
         }
     }
@@ -186,12 +191,20 @@ impl RuntimeDeliveryRuntime {
         results.try_iter().collect()
     }
 
+    pub(crate) fn take_result_backpressure(&self) -> u64 {
+        self.result_backpressure.swap(0, Ordering::AcqRel)
+    }
+
     pub(crate) fn queue_stats(&self) -> (u64, u64, u64) {
         self.queue.stats()
     }
 }
 
-fn delivery_worker(queue: Arc<DeliveryQueue>, results: mpsc::SyncSender<DeliveryResult>) {
+fn delivery_worker(
+    queue: Arc<DeliveryQueue>,
+    results: mpsc::SyncSender<DeliveryResult>,
+    result_backpressure: Arc<AtomicU64>,
+) {
     while let Some(work) = queue.pop() {
         let started = Instant::now();
         let outcome = build_delivery(&work);
@@ -212,7 +225,24 @@ fn delivery_worker(queue: Arc<DeliveryQueue>, results: mpsc::SyncSender<Delivery
             blob_reads,
             bytes,
         };
-        let _ = results.try_send(result);
+        if !send_delivery_result(&results, result, &result_backpressure) {
+            break;
+        }
+    }
+}
+
+fn send_delivery_result(
+    results: &mpsc::SyncSender<DeliveryResult>,
+    result: DeliveryResult,
+    result_backpressure: &AtomicU64,
+) -> bool {
+    match results.try_send(result) {
+        Ok(()) => true,
+        Err(mpsc::TrySendError::Full(result)) => {
+            result_backpressure.fetch_add(1, Ordering::Relaxed);
+            results.send(result).is_ok()
+        }
+        Err(mpsc::TrySendError::Disconnected(_)) => false,
     }
 }
 
@@ -287,5 +317,80 @@ mod tests {
             );
         }
         assert_eq!(revisions, vec![2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn delivery_result_backpressure_preserves_latest_completion() {
+        let (sender, receiver) = mpsc::sync_channel(DELIVERY_RESULT_CAPACITY);
+        let result_backpressure = Arc::new(AtomicU64::new(0));
+        let completed = Arc::new(AtomicU64::new(0));
+        let worker_backpressure = Arc::clone(&result_backpressure);
+        let worker_completed = Arc::clone(&completed);
+        let worker = std::thread::spawn(move || {
+            for revision in 1..=(DELIVERY_RESULT_CAPACITY as u64 + 1) {
+                assert!(send_delivery_result(
+                    &sender,
+                    DeliveryResult {
+                        identity: RuntimeDeliveryIdentity {
+                            session_id: 7,
+                            live_revision: LiveRevision(revision),
+                            projection_generation: 3,
+                        },
+                        bundle: Err(format!("test-{revision}")),
+                        worker_ms: 0.0,
+                        blob_reads: 0,
+                        bytes: 0,
+                    },
+                    &worker_backpressure,
+                ));
+                worker_completed.fetch_add(1, Ordering::Release);
+            }
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while completed.load(Ordering::Acquire) < DELIVERY_RESULT_CAPACITY as u64
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            completed.load(Ordering::Acquire),
+            DELIVERY_RESULT_CAPACITY as u64,
+            "worker must block on a full result queue, not drop the completion"
+        );
+
+        for revision in 1..=DELIVERY_RESULT_CAPACITY as u64 {
+            assert_eq!(
+                receiver
+                    .recv()
+                    .expect("runtime delivery result")
+                    .identity
+                    .live_revision
+                    .0,
+                revision
+            );
+        }
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while completed.load(Ordering::Acquire) < DELIVERY_RESULT_CAPACITY as u64 + 1
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            completed.load(Ordering::Acquire),
+            DELIVERY_RESULT_CAPACITY as u64 + 1
+        );
+        assert_eq!(result_backpressure.load(Ordering::Acquire), 1);
+        assert_eq!(
+            receiver
+                .recv()
+                .expect("latest runtime delivery result")
+                .identity
+                .live_revision
+                .0,
+            DELIVERY_RESULT_CAPACITY as u64 + 1
+        );
+        worker.join().expect("delivery result sender remains alive");
     }
 }
