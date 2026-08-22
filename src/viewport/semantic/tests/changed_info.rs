@@ -1,14 +1,78 @@
 use anyhow::Result;
+use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{LiveRevision, StageChange, StageChangeBatch};
 use usd_model::{CanonicalValue, EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::super::{
-    SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse,
-    SemanticWorkingStore, SubtreeUpdateError, changed_info_update,
+    SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse, SemanticSyncState,
+    SemanticWorkingStore, SubtreeUpdateError, changed_info_update, synchronize_live_stage,
 };
 use super::fixtures::{response, snapshot};
+
+#[test]
+fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()> {
+    let project = tempfile::tempdir()?;
+    let live = usd_bevy::LiveStage::new(Stage::open("tests/stages/custom_attrs_extensive.usda")?);
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_plugins(usd_bevy::LiveStagePlugin);
+    app.insert_resource(crate::project::recovery::RecoverySettings {
+        project_root: project.path().to_path_buf(),
+    });
+    app.insert_resource(crate::viewport::diagnostics::performance::RendererCounters::default());
+    app.insert_resource(SemanticWorkingStore::default());
+    app.insert_resource(SemanticSyncState::default());
+    app.world_mut().insert_non_send(live);
+    app.add_systems(PostUpdate, synchronize_live_stage);
+
+    app.update();
+    let _ = response(app.world().resource::<SemanticWorkingStore>());
+    let before = app
+        .world()
+        .resource::<crate::viewport::diagnostics::performance::RendererCounters>()
+        .clone();
+
+    usd_bevy::authoring::set_attribute(
+        &app.world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .unwrap()
+            .stage,
+        "/World/Robot",
+        "userProperties:name",
+        "string",
+        openusd::sdf::Value::String("cart_telemetry".to_owned()),
+    )?;
+    app.update();
+    let _ = response(app.world().resource::<SemanticWorkingStore>());
+    let after_changed_info = app
+        .world()
+        .resource::<crate::viewport::diagnostics::performance::RendererCounters>();
+    assert_eq!(
+        after_changed_info.semantic_changed_info_updates,
+        before.semantic_changed_info_updates + 1
+    );
+    assert_eq!(
+        after_changed_info.semantic_subtree_extractions,
+        before.semantic_subtree_extractions
+    );
+
+    app.world()
+        .get_non_send::<usd_bevy::LiveStage>()
+        .unwrap()
+        .load_payload("/World/Robot");
+    app.update();
+    let _ = response(app.world().resource::<SemanticWorkingStore>());
+    let after_subtree = app
+        .world()
+        .resource::<crate::viewport::diagnostics::performance::RendererCounters>();
+    assert_eq!(
+        after_subtree.semantic_subtree_extractions,
+        before.semantic_subtree_extractions + 1
+    );
+    Ok(())
+}
 
 #[test]
 fn changed_info_delta_updates_only_the_affected_semantic_entity() -> Result<()> {

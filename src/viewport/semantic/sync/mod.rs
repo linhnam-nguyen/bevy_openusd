@@ -3,8 +3,10 @@ mod changed_info;
 mod delivery;
 mod subtree;
 
-pub(in crate::viewport::semantic) use action::SemanticSyncAction;
+use std::time::Instant;
+
 pub(crate) use action::SubtreeUpdateError;
+pub(in crate::viewport::semantic) use action::{SemanticExtractionOutcome, SemanticSyncAction};
 pub(in crate::viewport::semantic) use changed_info::changed_info_update;
 pub(in crate::viewport::semantic) use delivery::{
     attach_render_blobs_to_action, publish_runtime_delivery,
@@ -26,6 +28,16 @@ use super::worker::SemanticWorkingStore;
 /// extraction must borrow its OpenUSD stage while the resulting ECS resource
 /// state is updated. It runs after `LiveStagePlugin` has drained the batch.
 pub(crate) fn synchronize_live_stage(world: &mut World) {
+    let started = Instant::now();
+    synchronize_live_stage_inner(world);
+    if let Some(mut counters) =
+        world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+    {
+        counters.total_semantic_postupdate_ms += started.elapsed().as_secs_f64() * 1000.0;
+    }
+}
+
+fn synchronize_live_stage_inner(world: &mut World) {
     if world.get_non_send::<LiveStage>().is_some()
         && let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
@@ -122,16 +134,20 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
         live_revision: live_revision.0,
     };
 
+    let extraction_started = Instant::now();
     let (update, outcome) = {
         let live = world
             .get_non_send::<LiveStage>()
             .expect("live stage exists");
         match previous_snapshot {
             None => match extractor.extract(&live.stage, source) {
-                Ok(snapshot) => (Some(SemanticSyncAction::Replace(snapshot)), "initial_ok"),
+                Ok(snapshot) => (
+                    Some(SemanticSyncAction::Replace(snapshot)),
+                    SemanticExtractionOutcome::Initial,
+                ),
                 Err(error) => {
                     bevy::log::error!("[semantic-sync] initial snapshot failed: {error:#}");
-                    (None, "initial_err")
+                    (None, SemanticExtractionOutcome::InitialFailure)
                 }
             },
             Some(previous_snapshot) => {
@@ -165,14 +181,15 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
 
                     if unnormalizable {
                         match extractor.extract(&live.stage, source) {
-                            Ok(snapshot) => {
-                                (Some(SemanticSyncAction::Replace(snapshot)), "fallback_ok")
-                            }
+                            Ok(snapshot) => (
+                                Some(SemanticSyncAction::Replace(snapshot)),
+                                SemanticExtractionOutcome::Fallback,
+                            ),
                             Err(err) => {
                                 bevy::log::error!(
                                     "[semantic-sync] full snapshot fallback failed: {err:#}"
                                 );
-                                (None, "fallback_err")
+                                (None, SemanticExtractionOutcome::Fallback)
                             }
                         }
                     } else {
@@ -186,14 +203,15 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                                 "[semantic-sync] stage root '/' or empty roots in batch; falling back to full snapshot rebuild"
                             );
                             match extractor.extract(&live.stage, source) {
-                                Ok(snapshot) => {
-                                    (Some(SemanticSyncAction::Replace(snapshot)), "fallback_ok")
-                                }
+                                Ok(snapshot) => (
+                                    Some(SemanticSyncAction::Replace(snapshot)),
+                                    SemanticExtractionOutcome::Fallback,
+                                ),
                                 Err(error) => {
                                     bevy::log::error!(
                                         "[semantic-sync] resync full rebuild failed: {error:#}"
                                     );
-                                    (None, "fallback_err")
+                                    (None, SemanticExtractionOutcome::Fallback)
                                 }
                             }
                         } else {
@@ -204,9 +222,10 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                                 &batch,
                                 source.clone(),
                             ) {
-                                Ok(update) => {
-                                    (Some(SemanticSyncAction::Delta(update)), "subtree_ok")
-                                }
+                                Ok(update) => (
+                                    Some(SemanticSyncAction::Delta(update)),
+                                    SemanticExtractionOutcome::Subtree,
+                                ),
                                 Err(err) => {
                                     let reason = err.fallback_reason();
                                     bevy::log::warn!(
@@ -219,13 +238,13 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                                     match extractor.extract(&live.stage, source) {
                                         Ok(snapshot) => (
                                             Some(SemanticSyncAction::Replace(snapshot)),
-                                            "fallback_ok",
+                                            SemanticExtractionOutcome::Fallback,
                                         ),
                                         Err(fallback_err) => {
                                             bevy::log::error!(
                                                 "[semantic-sync] full snapshot fallback failed: {fallback_err:#}"
                                             );
-                                            (None, "fallback_err")
+                                            (None, SemanticExtractionOutcome::Fallback)
                                         }
                                     }
                                 }
@@ -240,7 +259,10 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                         &batch,
                         source.clone(),
                     ) {
-                        Ok(update) => (Some(SemanticSyncAction::Delta(update)), "subtree_ok"),
+                        Ok(update) => (
+                            Some(SemanticSyncAction::Delta(update)),
+                            SemanticExtractionOutcome::ChangedInfo,
+                        ),
                         Err(err) => {
                             let reason = err.fallback_reason();
                             bevy::log::warn!(
@@ -251,14 +273,15 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
                                 "[semantic-sync] changed-info update failed: {err:#}; falling back to full snapshot rebuild"
                             );
                             match extractor.extract(&live.stage, source) {
-                                Ok(snapshot) => {
-                                    (Some(SemanticSyncAction::Replace(snapshot)), "fallback_ok")
-                                }
+                                Ok(snapshot) => (
+                                    Some(SemanticSyncAction::Replace(snapshot)),
+                                    SemanticExtractionOutcome::Fallback,
+                                ),
                                 Err(fallback_err) => {
                                     bevy::log::error!(
                                         "[semantic-sync] full snapshot fallback failed: {fallback_err:#}"
                                     );
-                                    (None, "fallback_err")
+                                    (None, SemanticExtractionOutcome::Fallback)
                                 }
                             }
                         }
@@ -271,18 +294,28 @@ pub(crate) fn synchronize_live_stage(world: &mut World) {
     if let Some(mut c) =
         world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
     {
+        c.semantic_extract_ms += extraction_started.elapsed().as_secs_f64() * 1000.0;
         match outcome {
-            "initial_err" => c.semantic_initial_extraction_failures += 1,
-            "fallback_ok" | "fallback_err" => c.semantic_fallback_extractions += 1,
-            "subtree_ok" => c.semantic_subtree_extractions += 1,
-            _ => {}
+            SemanticExtractionOutcome::InitialFailure => {
+                c.semantic_initial_extraction_failures += 1;
+            }
+            SemanticExtractionOutcome::Fallback => c.semantic_fallback_extractions += 1,
+            SemanticExtractionOutcome::Subtree => c.semantic_subtree_extractions += 1,
+            SemanticExtractionOutcome::ChangedInfo => c.semantic_changed_info_updates += 1,
+            SemanticExtractionOutcome::Initial => {}
         }
     }
 
     let Some(mut update) = update else {
         return;
     };
+    let render_blob_started = Instant::now();
     attach_render_blobs_to_action(world, &mut update, live_revision, root_count);
+    if let Some(mut counters) =
+        world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
+    {
+        counters.render_blob_prepare_ms += render_blob_started.elapsed().as_secs_f64() * 1000.0;
+    }
 
     let request_id = format!("semantic-sync-{}", live_revision.0);
     let submitted = match update {

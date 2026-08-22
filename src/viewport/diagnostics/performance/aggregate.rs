@@ -27,15 +27,28 @@ pub struct IncidentGridSummary {
 }
 
 /// Summary metrics for Incident B (Semantic stage snapshot cloning).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct IncidentSemanticSummary {
     pub sync_calls: u64,
     pub idle_skips: u64,
     pub snapshot_clones: u64,
     pub initial_extractions: u64,
     pub initial_extraction_failures: u64,
+    pub changed_info_updates: u64,
     pub fallback_extractions: u64,
     pub subtree_extractions: u64,
+    pub semantic_extract_ms: f64,
+    pub render_blob_prepare_ms: f64,
+    pub total_semantic_postupdate_ms: f64,
+    pub runtime_delivery_submit_ms: f64,
+    pub runtime_delivery_worker_ms: f64,
+    pub runtime_delivery_blob_reads: u64,
+    pub runtime_delivery_bytes: u64,
+    pub recovery_serialize_ms: f64,
+    pub recovery_submit_ms: f64,
+    pub recovery_worker_write_ms: f64,
+    pub semantic_mailbox_pending: u64,
+    pub semantic_mailbox_high_water: u64,
     pub worker_submissions: u64,
     pub worker_submission_failures: u64,
     pub recovery_checkpoints: u64,
