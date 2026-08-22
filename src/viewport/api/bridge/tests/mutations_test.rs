@@ -3,7 +3,8 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::project::recovery::{RecoveryRuntimeState, RecoverySettings, RecoveryStore};
+    use crate::project::recovery::{RecoverySettings, RecoveryStore};
+    use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
     use crate::viewport::animation::UsdStageTime;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
     use crate::viewport::api::bridge::plugin::checkpoint_recovery;
@@ -67,7 +68,7 @@ mod tests {
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<SemanticSyncState>()
             .init_resource::<SemanticDiffState>()
-            .init_resource::<RecoveryRuntimeState>()
+            .init_resource::<RecoveryRuntime>()
             .insert_resource(RecoverySettings { project_root })
             .insert_resource(StageInfo {
                 path: "runtime-semantic-test.usda".to_owned(),
@@ -76,7 +77,12 @@ mod tests {
             .add_systems(Update, apply_viewport_commands)
             .add_systems(
                 PostUpdate,
-                (synchronize_live_stage, checkpoint_recovery).chain(),
+                (
+                    synchronize_live_stage,
+                    drain_recovery_results,
+                    checkpoint_recovery,
+                )
+                    .chain(),
             );
         app
     }

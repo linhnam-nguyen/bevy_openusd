@@ -67,6 +67,9 @@ pub struct RendererCounters {
     pub recovery_worker_write_ms: f64,
     pub semantic_mailbox_pending: u64,
     pub semantic_mailbox_high_water: u64,
+    pub recovery_mailbox_pending: u64,
+    pub recovery_mailbox_high_water: u64,
+    pub recovery_mailbox_coalesced: u64,
     pub semantic_worker_submissions: u64,
     pub semantic_worker_submission_failures: u64,
     pub recovery_checkpoints: u64,
@@ -157,6 +160,9 @@ impl Default for RendererCounters {
             recovery_worker_write_ms: 0.0,
             semantic_mailbox_pending: 0,
             semantic_mailbox_high_water: 0,
+            recovery_mailbox_pending: 0,
+            recovery_mailbox_high_water: 0,
+            recovery_mailbox_coalesced: 0,
             semantic_worker_submissions: 0,
             semantic_worker_submission_failures: 0,
             recovery_checkpoints: 0,
@@ -228,6 +234,9 @@ impl RendererCounters {
         self.recovery_worker_write_ms = 0.0;
         self.semantic_mailbox_pending = 0;
         self.semantic_mailbox_high_water = 0;
+        self.recovery_mailbox_pending = 0;
+        self.recovery_mailbox_high_water = 0;
+        self.recovery_mailbox_coalesced = 0;
         self.semantic_worker_submissions = 0;
         self.semantic_worker_submission_failures = 0;
         self.recovery_checkpoints = 0;

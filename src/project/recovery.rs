@@ -33,6 +33,17 @@ pub(crate) struct RecoveryMetadata {
     pub(crate) created_at_unix_ms: u64,
 }
 
+/// Owned recovery input prepared on the LiveStage owner thread.
+#[derive(Debug)]
+pub(crate) struct RecoveryCheckpointWork {
+    pub(crate) project_root: PathBuf,
+    pub(crate) session_id: u64,
+    pub(crate) live_revision: u64,
+    pub(crate) source_stage: String,
+    pub(crate) base_revision: Option<String>,
+    pub(crate) stage_bytes: Vec<u8>,
+}
+
 /// A validated checkpoint ready to become a new `LiveStage`.
 pub(crate) struct RecoveredCheckpoint {
     pub(crate) metadata: RecoveryMetadata,
@@ -59,27 +70,6 @@ impl Default for RecoverySettings {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
         Self { project_root }
-    }
-}
-
-/// Per-process session state used by the post-update checkpoint system.
-#[derive(Resource, Default)]
-pub(crate) struct RecoveryRuntimeState {
-    session_id: Option<u64>,
-    store: Option<RecoveryStore>,
-}
-
-impl RecoveryRuntimeState {
-    pub(crate) fn store_for(
-        &mut self,
-        settings: &RecoverySettings,
-        session_id: u64,
-    ) -> Result<&RecoveryStore> {
-        if self.session_id != Some(session_id) {
-            self.store = Some(RecoveryStore::new(&settings.project_root, session_id)?);
-            self.session_id = Some(session_id);
-        }
-        Ok(self.store.as_ref().expect("recovery store was initialized"))
     }
 }
 
@@ -130,6 +120,29 @@ impl RecoveryStore {
             bail!("recovery source stage path must not be empty")
         }
 
+        let stage_bytes = usd_bevy::authoring::export_stage_string(&live_stage.stage)
+            .context("serializing recovery stage")?
+            .into_bytes();
+        self.write_checkpoint_bytes(
+            &stage_bytes,
+            live_stage.current_revision().0,
+            source_stage,
+            base_revision,
+        )
+    }
+
+    /// Persist an already-exported stage without touching the owner-thread USD stage.
+    pub(crate) fn write_checkpoint_bytes(
+        &self,
+        stage_bytes: &[u8],
+        live_revision: u64,
+        source_stage: &Path,
+        base_revision: Option<&str>,
+    ) -> Result<RecoveryMetadata> {
+        if source_stage.as_os_str().is_empty() {
+            bail!("recovery source stage path must not be empty")
+        }
+
         fs::create_dir_all(&self.directory)
             .with_context(|| format!("creating recovery directory {}", self.directory.display()))?;
 
@@ -139,23 +152,20 @@ impl RecoveryStore {
         let metadata_temp = temporary_path(&metadata_path);
 
         let result = (|| {
-            let stage_temp_string = stage_temp.to_string_lossy().into_owned();
-            live_stage
-                .stage
-                .root_layer()
-                .export(&stage_temp_string)
-                .with_context(|| format!("exporting recovery stage to {}", stage_temp.display()))?;
-
-            sync_file(&stage_temp)?;
-            let stage_bytes = fs::read(&stage_temp).with_context(|| {
-                format!("reading exported recovery stage {}", stage_temp.display())
-            })?;
+            let mut stage_file = File::create(&stage_temp)
+                .with_context(|| format!("creating recovery stage {}", stage_temp.display()))?;
+            stage_file
+                .write_all(stage_bytes)
+                .with_context(|| format!("writing recovery stage {}", stage_temp.display()))?;
+            stage_file
+                .sync_all()
+                .with_context(|| format!("syncing recovery stage {}", stage_temp.display()))?;
             let stage_digest = blake3::hash(&stage_bytes).to_hex().to_string();
 
             let metadata = RecoveryMetadata {
                 format_version: RECOVERY_FORMAT_VERSION,
                 session_id: self.session_id,
-                live_revision: live_stage.current_revision().0,
+                live_revision,
                 source_stage: source_stage.to_string_lossy().into_owned(),
                 base_revision: base_revision.map(str::to_owned),
                 stage_digest,
@@ -273,13 +283,6 @@ fn temporary_path(path: &Path) -> PathBuf {
         nonce,
         extension
     ))
-}
-
-fn sync_file(path: &Path) -> Result<()> {
-    File::open(path)
-        .with_context(|| format!("opening recovery temp file {}", path.display()))?
-        .sync_all()
-        .with_context(|| format!("syncing recovery temp file {}", path.display()))
 }
 
 fn write_atomic_file(temp_path: &Path, final_path: &Path, bytes: &[u8]) -> Result<()> {
