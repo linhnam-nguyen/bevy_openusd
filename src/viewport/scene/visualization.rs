@@ -5,7 +5,7 @@
 //! size gate and can be tested without a monolithic overlay implementation.
 
 use bevy::prelude::*;
-use viewport_protocol::{GroundGridOrigin, RenderMode, RendererConfiguration};
+use viewport_protocol::{GroundGridOrigin, RendererConfiguration};
 
 use super::HistoricalGhostState;
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
@@ -17,12 +17,15 @@ mod edge;
 mod edge_mesh;
 #[path = "visualization_environment.rs"]
 mod environment;
+#[path = "visualization_render_mode.rs"]
+mod render_mode;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
 pub(super) use environment::{
     sync_background_color, sync_fallback_surface_color, sync_ground_grid_to_scene,
     sync_ground_grid_visibility,
 };
+use render_mode::{apply_render_mode, apply_wireframe_toggle, init_uniform_render_material};
 
 pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
@@ -35,7 +38,10 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
-            .add_systems(Startup, init_edge_overlay_material)
+            .add_systems(
+                Startup,
+                (init_edge_overlay_material, init_uniform_render_material).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -48,6 +54,7 @@ impl Plugin for OverlaysPlugin {
                     capture_original_shadow_settings,
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
+                    apply_render_mode,
                     apply_wireframe_toggle,
                     sync_edge_overlays,
                     sync_ground_grid_visibility,
@@ -149,13 +156,6 @@ fn apply_light_intensity_scale(
     for (mut light, authored) in &mut sp {
         light.intensity = authored.0 * scale;
     }
-}
-
-fn apply_wireframe_toggle(
-    toggles: Res<DisplayToggles>,
-    mut config: ResMut<bevy::pbr::wireframe::WireframeConfig>,
-) {
-    config.global = toggles.renderer.render_mode == RenderMode::Wireframe;
 }
 
 #[derive(Resource, Debug, Clone)]

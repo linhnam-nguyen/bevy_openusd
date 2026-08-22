@@ -60,20 +60,28 @@ fn unsupported_render_mode_is_an_explicit_decode_error() {
 }
 
 #[test]
-fn future_render_modes_are_rejected_by_the_legacy_renderer_command() {
-    for render_mode in [RenderMode::UniformColor, RenderMode::RayTraced] {
-        let configuration = RendererConfiguration {
-            render_mode,
-            ..Default::default()
-        };
+fn uniform_color_is_valid_for_b2_renderer_presentation() {
+    let configuration = RendererConfiguration {
+        render_mode: RenderMode::UniformColor,
+        ..Default::default()
+    };
 
-        assert!(matches!(
-            configuration.validate(),
-            Err(ProtocolValidationError::InvalidInput {
-                field: "renderer.render_mode"
-            })
-        ));
-    }
+    configuration.validate().unwrap();
+}
+
+#[test]
+fn ray_traced_remains_rejected_until_b3() {
+    let configuration = RendererConfiguration {
+        render_mode: RenderMode::RayTraced,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        configuration.validate(),
+        Err(ProtocolValidationError::InvalidInput {
+            field: "renderer.render_mode"
+        })
+    ));
 }
 
 #[test]

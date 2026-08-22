@@ -4,6 +4,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
 use bevy_glacial::prelude::GroundGrid;
 use usd_bevy::UsdPrimRef;
+use viewport_protocol::RenderMode;
 
 fn triangle_mesh() -> Mesh {
     let mut mesh = Mesh::new(

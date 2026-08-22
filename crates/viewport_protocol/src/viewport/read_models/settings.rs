@@ -126,10 +126,7 @@ impl Default for RendererConfiguration {
 
 impl RendererConfiguration {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
-        if matches!(
-            self.render_mode,
-            RenderMode::UniformColor | RenderMode::RayTraced
-        ) {
+        if self.render_mode == RenderMode::RayTraced {
             return Err(ProtocolValidationError::InvalidInput {
                 field: "renderer.render_mode",
             });

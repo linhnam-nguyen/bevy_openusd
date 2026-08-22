@@ -69,6 +69,36 @@ mod tests {
     }
 
     #[test]
+    fn uniform_color_renderer_configuration_is_accepted_for_b2() {
+        let mut app = command_test_app();
+        let configuration = RendererConfiguration {
+            render_mode: RenderMode::UniformColor,
+            ..Default::default()
+        };
+        let request_id = app
+            .world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SetRendererConfiguration { configuration });
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<DisplayToggles>().renderer,
+            configuration
+        );
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("uniform renderer configuration must publish a response");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        let ViewportEvent::PresentationChanged { presentation } = event.event else {
+            panic!("uniform renderer configuration should publish a presentation event");
+        };
+        assert_eq!(presentation.renderer.render_mode, RenderMode::UniformColor);
+    }
+
+    #[test]
     fn renderer_fps_event_is_published_only_after_cadence_application() {
         let mut app = command_test_app();
         app.insert_resource(RendererCadence::new(Some(60)))
