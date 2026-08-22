@@ -19,6 +19,8 @@ mod edge_mesh;
 mod environment;
 #[path = "visualization_render_mode.rs"]
 mod render_mode;
+#[path = "visualization_shadows.rs"]
+mod shadows;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
 pub(super) use environment::{
@@ -26,6 +28,7 @@ pub(super) use environment::{
     sync_ground_grid_visibility,
 };
 use render_mode::{apply_render_mode, apply_wireframe_toggle, init_uniform_render_material};
+use shadows::{apply_shadow_toggle, capture_original_shadow_settings};
 
 pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
@@ -97,46 +100,6 @@ fn capture_original_light_levels(
     for (entity, light) in &sp {
         cmds.entity(entity)
             .insert(OriginalLightIntensity(light.intensity));
-    }
-}
-
-fn capture_original_shadow_settings(
-    mut cmds: Commands,
-    dir: Query<
-        (Entity, &DirectionalLight),
-        (Added<DirectionalLight>, Without<OriginalShadowEnabled>),
-    >,
-    pt: Query<(Entity, &PointLight), (Added<PointLight>, Without<OriginalShadowEnabled>)>,
-    sp: Query<(Entity, &SpotLight), (Added<SpotLight>, Without<OriginalShadowEnabled>)>,
-) {
-    for (entity, light) in &dir {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-    for (entity, light) in &pt {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-    for (entity, light) in &sp {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-}
-
-fn apply_shadow_toggle(
-    toggles: Res<DisplayToggles>,
-    mut dir: Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
-    mut pt: Query<(&mut PointLight, &OriginalShadowEnabled)>,
-    mut sp: Query<(&mut SpotLight, &OriginalShadowEnabled)>,
-) {
-    for (mut light, authored) in &mut dir {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
-    }
-    for (mut light, authored) in &mut pt {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
-    }
-    for (mut light, authored) in &mut sp {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
     }
 }
 
