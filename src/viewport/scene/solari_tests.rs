@@ -1,4 +1,18 @@
 use super::*;
+#[cfg(feature = "solari")]
+use crate::viewport::scene::visualization::DisplayToggles;
+
+#[derive(Resource, Default)]
+struct ViewerSettingsChangeCount(u32);
+
+fn count_viewer_settings_changes(
+    mut count: ResMut<ViewerSettingsChangeCount>,
+    settings: Res<ViewerSettingsState>,
+) {
+    if settings.is_changed() {
+        count.0 += 1;
+    }
+}
 
 #[test]
 fn solari_capability_requires_compile_device_and_scene_support() {
@@ -37,6 +51,31 @@ fn supported_capability_is_published_as_renderer_neutral_viewer_state() {
             .resource::<ViewerSettingsState>()
             .ray_traced_supported()
     );
+}
+
+#[test]
+fn stable_capability_publication_does_not_dirty_viewer_settings() {
+    let mut app = App::new();
+    app.insert_resource(SolariCapability {
+        compiled: true,
+        device_supported: true,
+        scene_eligible: true,
+    })
+    .init_resource::<ViewerSettingsState>()
+    .init_resource::<ViewerSettingsChangeCount>()
+    .add_systems(
+        Update,
+        (publish_capability, count_viewer_settings_changes).chain(),
+    );
+
+    app.update();
+    app.update();
+    app.world_mut()
+        .resource_mut::<ViewerSettingsChangeCount>()
+        .0 = 0;
+    app.update();
+
+    assert_eq!(app.world().resource::<ViewerSettingsChangeCount>().0, 0);
 }
 
 #[cfg(feature = "solari")]

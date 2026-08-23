@@ -21,7 +21,9 @@ impl ViewerSettingsState {
     }
 
     pub(in crate::viewport) fn set_ray_traced_supported(&mut self, supported: bool) {
-        self.0.capabilities.ray_traced_supported = supported;
+        if self.0.capabilities.ray_traced_supported != supported {
+            self.0.capabilities.ray_traced_supported = supported;
+        }
     }
 
     pub(in crate::viewport) fn ray_traced_supported(&self) -> bool {
