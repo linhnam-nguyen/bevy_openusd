@@ -71,6 +71,11 @@ autoexamples = false
 [features]
 default = []
 solari = ["bevy/bevy_solari"]
+dlss = [
+    "bevy/bevy_anti_alias",
+    "bevy/dlss",
+    "bevy/raw_vulkan_init",
+]
 
 [[bin]]
 name = "usdview"
