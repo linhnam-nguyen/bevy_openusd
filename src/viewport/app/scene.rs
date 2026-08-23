@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use bevy::camera::{Hdr, PerspectiveProjection, Projection};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
+#[cfg(feature = "solari")]
+use bevy::{camera::CameraMainTextureUsages, render::render_resource::TextureUsages};
 use bevy_glacial::prelude::{AxisGizmo, ChaseCamera};
 
 use crate::viewport::camera::ArcballCamera;
@@ -74,6 +76,10 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
             near: 0.0001,
             ..default()
         }),
+        #[cfg(feature = "solari")]
+        CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
+        #[cfg(feature = "solari")]
+        Msaa::Off,
         Hdr,
         // AgX is the modern filmic curve Blender / Krita default to.
         // ACES is more contrasty + clips highlights harder; with a
