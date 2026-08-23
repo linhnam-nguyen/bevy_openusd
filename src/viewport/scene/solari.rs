@@ -26,6 +26,14 @@ struct SolariProofActivation {
     activated: bool,
 }
 
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SolariProjectionDiagnostics {
+    pub(crate) candidate_meshes: u32,
+    pub(crate) eligible_meshes: u32,
+    pub(crate) unsupported_meshes: u32,
+    pub(crate) missing_materials: u32,
+}
+
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SolariCapability {
     pub(crate) compiled: bool,
@@ -54,15 +62,18 @@ pub(crate) struct SolariCapabilityPlugin;
 impl Plugin for SolariCapabilityPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SolariCapability>()
+            .init_resource::<SolariProjectionDiagnostics>()
             .init_resource::<SolariProofActivation>()
             .add_systems(
                 Update,
                 (
                     refresh_scene_eligibility,
+                    report_projection_diagnostics,
                     publish_capability,
                     activate_proof_mode,
                     sync_solari_camera,
                     sync_solari_proof_meshes,
+                    sync_solari_usd_meshes,
                 )
                     .chain()
                     .before(ViewportBridgeSet::ApplyCommands),
@@ -84,6 +95,7 @@ fn refresh_scene_eligibility(
         Query<(&Mesh3d, Option<&MeshMaterial3d<StandardMaterial>>), With<SolariProofMesh>>,
     )>,
     mut capability: ResMut<SolariCapability>,
+    mut diagnostics: ResMut<SolariProjectionDiagnostics>,
 ) {
     let Some(meshes) = meshes else {
         capability.scene_eligible = false;
@@ -92,21 +104,41 @@ fn refresh_scene_eligibility(
 
     let mut mesh_count = 0;
     let mut eligible = true;
+    let mut next_diagnostics = SolariProjectionDiagnostics::default();
     for (mesh_handle, material) in &mut queries.p0() {
         mesh_count += 1;
-        eligible &= material.is_some()
-            && meshes
-                .get(&mesh_handle.0)
-                .is_some_and(mesh_is_solari_compatible);
+        eligible &= assess_mesh(mesh_handle, material, &meshes, &mut next_diagnostics);
     }
     for (mesh_handle, material) in &mut queries.p1() {
         mesh_count += 1;
-        eligible &= material.is_some()
-            && meshes
-                .get(&mesh_handle.0)
-                .is_some_and(mesh_is_solari_compatible);
+        eligible &= assess_mesh(mesh_handle, material, &meshes, &mut next_diagnostics);
+    }
+    next_diagnostics.candidate_meshes = mesh_count;
+    if *diagnostics != next_diagnostics {
+        *diagnostics = next_diagnostics;
     }
     capability.scene_eligible = mesh_count > 0 && eligible;
+}
+
+fn assess_mesh(
+    mesh_handle: &Mesh3d,
+    material: Option<&MeshMaterial3d<StandardMaterial>>,
+    meshes: &Assets<Mesh>,
+    diagnostics: &mut SolariProjectionDiagnostics,
+) -> bool {
+    if material.is_none() {
+        diagnostics.missing_materials += 1;
+    }
+    let compatible = meshes
+        .get(&mesh_handle.0)
+        .is_some_and(mesh_is_solari_compatible);
+    if material.is_some() && compatible {
+        diagnostics.eligible_meshes += 1;
+        true
+    } else {
+        diagnostics.unsupported_meshes += 1;
+        false
+    }
 }
 
 fn mesh_is_solari_compatible(mesh: &Mesh) -> bool {
@@ -126,6 +158,19 @@ fn publish_capability(
         return;
     };
     settings.set_ray_traced_supported(capability.supported());
+}
+
+fn report_projection_diagnostics(diagnostics: Res<SolariProjectionDiagnostics>) {
+    if !diagnostics.is_changed() || diagnostics.unsupported_meshes == 0 {
+        return;
+    }
+    warn!(
+        candidate_meshes = diagnostics.candidate_meshes,
+        eligible_meshes = diagnostics.eligible_meshes,
+        unsupported_meshes = diagnostics.unsupported_meshes,
+        missing_materials = diagnostics.missing_materials,
+        "[solari] USD projection contains meshes outside the supported Solari subset; Ray Traced remains unavailable"
+    );
 }
 
 fn activate_proof_mode(
@@ -213,6 +258,44 @@ fn sync_solari_proof_meshes(
 fn sync_solari_proof_meshes() {}
 
 #[cfg(feature = "solari")]
+fn sync_solari_usd_meshes(
+    capability: Res<SolariCapability>,
+    toggles: Res<DisplayToggles>,
+    meshes: Option<Res<Assets<Mesh>>>,
+    mut commands: Commands,
+    projected: Query<
+        (
+            Entity,
+            &Mesh3d,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&bevy::solari::prelude::RaytracingMesh3d>,
+        ),
+        With<UsdPrimRef>,
+    >,
+) {
+    let Some(meshes) = meshes else {
+        return;
+    };
+    let enabled = capability.supported() && toggles.renderer.render_mode == RenderMode::RayTraced;
+    for (entity, mesh, material, raytracing_mesh) in &projected {
+        let eligible =
+            material.is_some() && meshes.get(&mesh.0).is_some_and(mesh_is_solari_compatible);
+        if enabled && eligible && raytracing_mesh.is_none() {
+            commands
+                .entity(entity)
+                .insert(bevy::solari::prelude::RaytracingMesh3d(mesh.0.clone()));
+        } else if (!enabled || !eligible) && raytracing_mesh.is_some() {
+            commands
+                .entity(entity)
+                .remove::<bevy::solari::prelude::RaytracingMesh3d>();
+        }
+    }
+}
+
+#[cfg(not(feature = "solari"))]
+fn sync_solari_usd_meshes() {}
+
+#[cfg(feature = "solari")]
 fn spawn_solari_proof_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -272,3 +355,7 @@ fn required_wgpu_features() -> WgpuFeatures {
 #[cfg(test)]
 #[path = "solari_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "solari_projection_tests.rs"]
+mod projection_tests;
