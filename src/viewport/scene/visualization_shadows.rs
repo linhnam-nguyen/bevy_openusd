@@ -24,29 +24,41 @@ impl Default for ShadowProjectionState {
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ShadowProjectionStats {
     full_light_visits: u32,
-    incremental_light_visits: u32,
 }
 
 pub(super) fn capture_original_shadow_settings(
+    toggles: Res<DisplayToggles>,
     mut cmds: Commands,
-    dir: Query<
-        (Entity, &DirectionalLight),
+    mut dir: Query<
+        (Entity, &mut DirectionalLight),
         (Added<DirectionalLight>, Without<OriginalShadowEnabled>),
     >,
-    pt: Query<(Entity, &PointLight), (Added<PointLight>, Without<OriginalShadowEnabled>)>,
-    sp: Query<(Entity, &SpotLight), (Added<SpotLight>, Without<OriginalShadowEnabled>)>,
+    mut pt: Query<(Entity, &mut PointLight), (Added<PointLight>, Without<OriginalShadowEnabled>)>,
+    mut sp: Query<(Entity, &mut SpotLight), (Added<SpotLight>, Without<OriginalShadowEnabled>)>,
 ) {
-    for (entity, light) in &dir {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    for (entity, mut light) in &mut dir {
+        let authored = light.shadow_maps_enabled;
+        set_shadow_enabled(
+            &mut light.shadow_maps_enabled,
+            toggles.renderer.shadows && authored,
+        );
+        cmds.entity(entity).insert(OriginalShadowEnabled(authored));
     }
-    for (entity, light) in &pt {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    for (entity, mut light) in &mut pt {
+        let authored = light.shadow_maps_enabled;
+        set_shadow_enabled(
+            &mut light.shadow_maps_enabled,
+            toggles.renderer.shadows && authored,
+        );
+        cmds.entity(entity).insert(OriginalShadowEnabled(authored));
     }
-    for (entity, light) in &sp {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
+    for (entity, mut light) in &mut sp {
+        let authored = light.shadow_maps_enabled;
+        set_shadow_enabled(
+            &mut light.shadow_maps_enabled,
+            toggles.renderer.shadows && authored,
+        );
+        cmds.entity(entity).insert(OriginalShadowEnabled(authored));
     }
 }
 
@@ -57,9 +69,6 @@ pub(super) fn apply_shadow_toggle(
         Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
         Query<(&mut PointLight, &OriginalShadowEnabled)>,
         Query<(&mut SpotLight, &OriginalShadowEnabled)>,
-        Query<(&mut DirectionalLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
-        Query<(&mut PointLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
-        Query<(&mut SpotLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
     )>,
     #[cfg(test)] mut stats: Option<ResMut<ShadowProjectionStats>>,
 ) {
@@ -86,28 +95,6 @@ pub(super) fn apply_shadow_toggle(
             #[cfg(test)]
             if let Some(stats) = stats.as_mut() {
                 stats.full_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
-    } else {
-        for (mut light, authored) in &mut lights.p3() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.incremental_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
-        for (mut light, authored) in &mut lights.p4() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.incremental_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
-        for (mut light, authored) in &mut lights.p5() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.incremental_light_visits += 1;
             }
             set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
         }

@@ -42,8 +42,8 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
     assert_eq!(
         app.world()
             .resource::<ShadowProjectionStats>()
-            .incremental_light_visits,
-        2
+            .full_light_visits,
+        0
     );
 
     app.world_mut()
@@ -78,23 +78,23 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
         })
         .id();
     app.update();
-    app.update();
     assert!(
         !app.world()
             .get::<DirectionalLight>(newly_added)
             .unwrap()
             .shadow_maps_enabled
     );
-    let incremental_after_new_light = app
+    let full_visits_after_new_light = app
         .world()
         .resource::<ShadowProjectionStats>()
-        .incremental_light_visits;
+        .full_light_visits;
+    assert_eq!(full_visits_after_new_light, 2);
     app.update();
     assert_eq!(
         app.world()
             .resource::<ShadowProjectionStats>()
-            .incremental_light_visits,
-        incremental_after_new_light
+            .full_light_visits,
+        full_visits_after_new_light
     );
 
     app.world_mut()
