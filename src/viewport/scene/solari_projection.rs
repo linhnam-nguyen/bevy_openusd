@@ -2,6 +2,11 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "solari")]
+use std::collections::HashSet;
+
+#[cfg(feature = "solari")]
+use bevy::asset::AssetEvent;
 use bevy::mesh::Mesh;
 #[cfg(feature = "solari")]
 use bevy::mesh::Mesh3d;
@@ -9,7 +14,7 @@ use bevy::mesh::Mesh3d;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 #[cfg(feature = "solari")]
-use usd_bevy::UsdPrimRef;
+use usd_bevy::{MeshProjectionConsumers, RenderProjectionDirtySet, UsdPrimRef};
 
 #[cfg(feature = "solari")]
 use super::SolariCapability;
@@ -55,8 +60,16 @@ pub(crate) struct SolariProjectionStats {
     pub(crate) incremental_entities: u32,
 }
 
-#[cfg(feature = "solari")]
-use bevy::asset::prelude::AssetChanged;
+#[cfg(test)]
+impl SolariProjectionState {
+    pub(crate) fn initialized_for_test() -> Self {
+        Self {
+            initialized: true,
+            device_supported: true,
+            ..Default::default()
+        }
+    }
+}
 
 #[cfg(feature = "solari")]
 pub(super) fn sync_solari_usd_projection(
@@ -66,45 +79,15 @@ pub(super) fn sync_solari_usd_projection(
     mut state: ResMut<SolariProjectionState>,
     mut diagnostics: ResMut<SolariProjectionDiagnostics>,
     mut commands: Commands,
-    mut queries: ParamSet<(
-        Query<
-            (
-                Entity,
-                &Mesh3d,
-                Option<&MeshMaterial3d<StandardMaterial>>,
-                Option<&bevy::solari::prelude::RaytracingMesh3d>,
-            ),
-            With<UsdPrimRef>,
-        >,
-        Query<
-            (
-                Entity,
-                &Mesh3d,
-                Option<&MeshMaterial3d<StandardMaterial>>,
-                Option<&bevy::solari::prelude::RaytracingMesh3d>,
-            ),
-            (
-                With<UsdPrimRef>,
-                Or<(
-                    Added<UsdPrimRef>,
-                    Added<Mesh3d>,
-                    Changed<Mesh3d>,
-                    Added<MeshMaterial3d<StandardMaterial>>,
-                    Changed<MeshMaterial3d<StandardMaterial>>,
-                    AssetChanged<Mesh3d>,
-                )>,
-            ),
-        >,
-        Query<
-            (
-                Entity,
-                &Mesh3d,
-                Option<&MeshMaterial3d<StandardMaterial>>,
-                Option<&bevy::solari::prelude::RaytracingMesh3d>,
-            ),
-            With<UsdPrimRef>,
-        >,
-    )>,
+    mut projection_query: Query<
+        (
+            Entity,
+            &Mesh3d,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&bevy::solari::prelude::RaytracingMesh3d>,
+        ),
+        With<UsdPrimRef>,
+    >,
     mut marked_entities: Query<
         Entity,
         (
@@ -115,6 +98,9 @@ pub(super) fn sync_solari_usd_projection(
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut removed_meshes: RemovedComponents<Mesh3d>,
     mut removed_materials: RemovedComponents<MeshMaterial3d<StandardMaterial>>,
+    mut mesh_asset_events: Option<MessageReader<AssetEvent<Mesh>>>,
+    mut dirty_set: Option<ResMut<RenderProjectionDirtySet>>,
+    mesh_consumers: Option<Res<MeshProjectionConsumers>>,
     #[cfg(test)] mut stats: Option<ResMut<SolariProjectionStats>>,
 ) {
     let Some(meshes) = meshes else {
@@ -132,6 +118,32 @@ pub(super) fn sync_solari_usd_projection(
         return;
     }
 
+    if let Some(mesh_asset_events) = mesh_asset_events.as_mut() {
+        if let (Some(dirty_set), Some(mesh_consumers)) =
+            (dirty_set.as_deref_mut(), mesh_consumers.as_deref())
+        {
+            for event in mesh_asset_events.read() {
+                let id = match event {
+                    AssetEvent::Added { id }
+                    | AssetEvent::LoadedWithDependencies { id }
+                    | AssetEvent::Modified { id }
+                    | AssetEvent::Removed { id }
+                    | AssetEvent::Unused { id } => *id,
+                };
+                for entity in mesh_consumers.consumers_for(id) {
+                    dirty_set.mark(entity);
+                }
+            }
+        } else {
+            mesh_asset_events.read().for_each(|_| {});
+        }
+    }
+
+    let dirty_entities = dirty_set
+        .as_deref_mut()
+        .map(RenderProjectionDirtySet::take)
+        .unwrap_or_default();
+
     let requested_ray_traced =
         toggles.renderer.render_mode == viewport_protocol::RenderMode::RayTraced;
     if !state.device_supported {
@@ -148,19 +160,19 @@ pub(super) fn sync_solari_usd_projection(
             &mut state,
             &mut diagnostics,
             &mut commands,
-            &mut queries.p0(),
+            &mut projection_query,
             #[cfg(test)]
             stats.as_deref_mut(),
         );
         return;
     }
 
-    let mut affected = std::collections::HashSet::new();
+    let mut affected = HashSet::new();
     for entity in removed_prims.read().chain(removed_meshes.read()) {
         remove_entry(entity, &mut state, &mut diagnostics, &mut commands);
     }
     for entity in removed_materials.read() {
-        if let Ok((entity, mesh, material, marker)) = queries.p2().get(entity) {
+        if let Ok((entity, mesh, material, marker)) = projection_query.get(entity) {
             update_entry(
                 entity,
                 mesh,
@@ -174,21 +186,23 @@ pub(super) fn sync_solari_usd_projection(
             affected.insert(entity);
         }
     }
-    for (entity, mesh, material, marker) in &mut queries.p1() {
-        update_entry(
-            entity,
-            mesh,
-            material,
-            marker,
-            &meshes,
-            &mut state,
-            &mut diagnostics,
-            &mut commands,
-        );
-        affected.insert(entity);
-        #[cfg(test)]
-        if let Some(stats) = stats.as_deref_mut() {
-            stats.incremental_entities += 1;
+    for entity in dirty_entities {
+        if let Ok((entity, mesh, material, marker)) = projection_query.get(entity) {
+            update_entry(
+                entity,
+                mesh,
+                material,
+                marker,
+                &meshes,
+                &mut state,
+                &mut diagnostics,
+                &mut commands,
+            );
+            affected.insert(entity);
+            #[cfg(test)]
+            if let Some(stats) = stats.as_deref_mut() {
+                stats.incremental_entities += 1;
+            }
         }
     }
 

@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::WgpuFeatures;
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{ExtractSchedule, MainWorld, RenderApp};
+use usd_bevy::LiveStageSet;
 
 use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::api::ViewportBridgeSet;
@@ -72,6 +73,7 @@ impl Plugin for SolariCapabilityPlugin {
                     sync_solari_proof_meshes,
                 )
                     .chain()
+                    .after(LiveStageSet::Presentation)
                     .before(ViewportBridgeSet::ApplyCommands),
             );
 
@@ -119,7 +121,9 @@ fn probe_render_device(mut main_world: ResMut<MainWorld>, render_device: Res<Ren
     let Some(mut capability) = main_world.get_resource_mut::<SolariCapability>() else {
         return;
     };
-    capability.device_supported = device_supported;
+    if capability.device_supported != device_supported {
+        capability.device_supported = device_supported;
+    }
 }
 
 fn required_wgpu_features() -> WgpuFeatures {
@@ -140,3 +144,7 @@ mod tests;
 #[cfg(test)]
 #[path = "solari_projection_tests.rs"]
 mod projection_tests;
+
+#[cfg(test)]
+#[path = "solari_projection_asset_tests.rs"]
+mod projection_asset_tests;

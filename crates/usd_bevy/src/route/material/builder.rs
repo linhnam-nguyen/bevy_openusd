@@ -5,7 +5,7 @@ use crate::read::shade::{
     read_preview_material,
 };
 
-use super::super::{PrimRoute, RouteCtx};
+use super::super::{PrimRoute, RouteCtx, mark_render_projection_dirty};
 use super::consumers::MaterialConsumerIndex;
 use super::material_cache::intern_material;
 use super::texture_cache::resolve_texture;
@@ -63,12 +63,21 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     }) else {
         return;
     };
-    {
-        if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
+    let changed = if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
+        if mat.0 == handle {
+            false
+        } else {
             mat.0 = handle;
-        } else if let Ok(mut e) = world.get_entity_mut(entity) {
-            e.insert(MeshMaterial3d(handle));
+            true
         }
+    } else if let Ok(mut e) = world.get_entity_mut(entity) {
+        e.insert(MeshMaterial3d(handle));
+        true
+    } else {
+        false
+    };
+    if changed {
+        mark_render_projection_dirty(world, entity);
     }
 }
 

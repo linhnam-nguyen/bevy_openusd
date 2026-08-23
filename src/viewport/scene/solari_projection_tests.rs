@@ -5,12 +5,13 @@ use crate::viewport::scene::visualization::DisplayToggles;
 #[cfg(feature = "solari")]
 use bevy::mesh::PrimitiveTopology;
 #[cfg(feature = "solari")]
-use usd_bevy::UsdPrimRef;
+use usd_bevy::{MeshProjectionConsumers, RenderProjectionDirtySet, UsdPrimRef};
 
 #[cfg(feature = "solari")]
 #[test]
 fn supported_usd_meshes_get_raytracing_markers_without_material_mutation() {
     let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
     app.init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
     let mesh = app.world_mut().resource_mut::<Assets<Mesh>>().add(
@@ -71,6 +72,7 @@ fn supported_usd_meshes_get_raytracing_markers_without_material_mutation() {
 #[test]
 fn unsupported_usd_projection_is_diagnosed_and_never_marked_for_raytracing() {
     let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
     app.init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
     let mesh = app
@@ -120,6 +122,7 @@ fn unsupported_usd_projection_is_diagnosed_and_never_marked_for_raytracing() {
 #[test]
 fn shaded_idle_does_not_repeat_full_projection_scan() {
     let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
     app.init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
     let mesh = app.world_mut().resource_mut::<Assets<Mesh>>().add(
@@ -165,6 +168,7 @@ fn shaded_idle_does_not_repeat_full_projection_scan() {
 #[test]
 fn stable_ray_traced_does_not_repeat_full_projection_scan() {
     let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
     app.init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
     let mesh = app.world_mut().resource_mut::<Assets<Mesh>>().add(
@@ -214,4 +218,110 @@ fn stable_ray_traced_does_not_repeat_full_projection_scan() {
     let stats = app.world().resource::<SolariProjectionStats>();
     assert_eq!(stats.full_scans, 1);
     assert_eq!(stats.incremental_entities, 0);
+}
+
+#[cfg(feature = "solari")]
+#[test]
+fn explicit_dirty_entity_is_processed_incrementally() {
+    let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
+    app.init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    let first_mesh = app
+        .world_mut()
+        .resource_mut::<Assets<Mesh>>()
+        .add(Sphere::new(0.5).mesh().build());
+    let first_material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    let entity = app
+        .world_mut()
+        .spawn((
+            UsdPrimRef::new("/World/Dirty"),
+            Mesh3d(first_mesh),
+            MeshMaterial3d(first_material),
+        ))
+        .id();
+    app.insert_resource(SolariCapability {
+        compiled: true,
+        device_supported: true,
+        scene_eligible: false,
+    })
+    .insert_resource(DisplayToggles::default())
+    .init_resource::<SolariProjectionDiagnostics>()
+    .init_resource::<SolariProjectionState>()
+    .init_resource::<SolariProjectionStats>()
+    .init_resource::<RenderProjectionDirtySet>()
+    .init_resource::<MeshProjectionConsumers>()
+    .add_systems(Update, sync_solari_usd_projection);
+
+    app.update();
+    let replacement = app
+        .world_mut()
+        .resource_mut::<Assets<Mesh>>()
+        .add(Sphere::new(0.75).mesh().build());
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(Mesh3d(replacement.clone()));
+    app.world_mut()
+        .resource_mut::<MeshProjectionConsumers>()
+        .track(entity, replacement.id());
+    app.world_mut()
+        .resource_mut::<RenderProjectionDirtySet>()
+        .mark(entity);
+    app.update();
+
+    let stats = app.world().resource::<SolariProjectionStats>();
+    assert_eq!(stats.full_scans, 1);
+    assert_eq!(stats.incremental_entities, 1);
+}
+
+#[cfg(feature = "solari")]
+#[test]
+fn unchanged_large_scene_processes_zero_projection_entities_on_idle() {
+    let mut app = App::new();
+    app.add_message::<bevy::asset::AssetEvent<Mesh>>();
+    app.init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    let mesh = app
+        .world_mut()
+        .resource_mut::<Assets<Mesh>>()
+        .add(Sphere::new(0.5).mesh().build());
+    let material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    for index in 0..100_000 {
+        app.world_mut().spawn((
+            UsdPrimRef::new(format!("/World/Idle{index}")),
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material.clone()),
+        ));
+    }
+    app.insert_resource(SolariCapability {
+        compiled: true,
+        device_supported: true,
+        scene_eligible: false,
+    })
+    .insert_resource(DisplayToggles::default())
+    .insert_resource(SolariProjectionState::initialized_for_test())
+    .init_resource::<SolariProjectionDiagnostics>()
+    .init_resource::<SolariProjectionStats>()
+    .init_resource::<RenderProjectionDirtySet>()
+    .init_resource::<MeshProjectionConsumers>()
+    .add_systems(Update, sync_solari_usd_projection);
+
+    app.update();
+
+    let stats = app.world().resource::<SolariProjectionStats>();
+    assert_eq!(stats.full_scans, 0);
+    assert_eq!(stats.incremental_entities, 0);
+    assert_eq!(
+        app.world_mut()
+            .resource_mut::<RenderProjectionDirtySet>()
+            .take()
+            .len(),
+        0
+    );
 }

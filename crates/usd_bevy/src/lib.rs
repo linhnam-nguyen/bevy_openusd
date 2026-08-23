@@ -45,6 +45,7 @@ pub use route::profile::{
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
 pub use route::{FallbackMaterialColor, set_fallback_material_color};
+pub use route::{MeshProjectionConsumers, RenderProjectionDirtySet};
 pub use snippet::UsdSnippet;
 /// The inline-USD macro (see [`snippet::UsdSnippet`]).
 pub use usd_macro::usd;
@@ -75,6 +76,8 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();
         // Opt-in mesh/vertex pipeline profiler; disabled on the normal hot path.
         app.init_resource::<route::profile::GeometryProfile>();
+        app.init_resource::<route::RenderProjectionDirtySet>();
+        app.init_resource::<route::MeshProjectionConsumers>();
         // Texture cache for filesystem and USDZ archives.
         app.init_resource::<route::material::UsdTextureCache>();
         // Decoded StandardMaterial cache keyed by composed USD Material path.

@@ -14,7 +14,7 @@ use openusd::sdf::Value;
 
 use crate::read::shade::read_material_binding;
 
-use super::{PrimRoute, RouteCtx};
+use super::{PrimRoute, RouteCtx, track_mesh_projection};
 
 /// Maps USD geometric shapes to Bevy primitive meshes.
 pub struct ShapesRoute;
@@ -126,10 +126,19 @@ impl PrimRoute for ShapesRoute {
                     .is_some();
                 (!has_binding).then(|| super::fallback_material(world))
             });
-        if let Ok(mut e) = world.get_entity_mut(entity) {
+        let projected = if let Ok(mut e) = world.get_entity_mut(entity) {
             e.insert(Mesh3d(mesh_handle));
             if let Some(material) = material {
                 e.insert(MeshMaterial3d(material));
+            }
+            true
+        } else {
+            false
+        };
+        if projected {
+            let mesh = world.get::<Mesh3d>(entity).map(|mesh| mesh.0.clone());
+            if let Some(mesh) = mesh {
+                track_mesh_projection(world, entity, &mesh);
             }
         }
     }

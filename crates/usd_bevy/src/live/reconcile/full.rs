@@ -10,6 +10,7 @@ use super::super::stage::LiveStage;
 use super::ReconcileStats;
 use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 use crate::route::instancer_dependency::PointInstancerDependencyIndex;
+use crate::route::remove_mesh_projection_consumer;
 
 /// Reconcile the projected entities against the stage's current prims (full stage).
 pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
@@ -43,6 +44,7 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
             dependencies.remove_instancer(&path);
         }
+        remove_mesh_projection_consumer(world, entity);
         world.despawn(entity);
         map.remove_path(&path);
     }

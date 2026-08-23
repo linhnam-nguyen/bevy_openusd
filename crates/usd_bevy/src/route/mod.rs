@@ -34,16 +34,20 @@ pub mod payload;
 pub mod physics;
 pub mod points;
 pub mod profile;
+mod projection_dirty;
 pub mod reflect;
 pub mod shapes;
 pub mod skel;
 pub mod xform;
 
+pub use projection_dirty::{MeshProjectionConsumers, RenderProjectionDirtySet};
+
 use std::sync::Arc;
 
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
-use bevy::prelude::Entity;
+use bevy::mesh::Mesh;
+use bevy::prelude::{Entity, Handle};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
 
@@ -289,4 +293,35 @@ impl SchemaRegistry {
 /// The current [`StageTime`] in `world`, if the resource is present.
 fn time_of(world: &World) -> Option<f64> {
     world.get_resource::<StageTime>().map(|t| t.current)
+}
+
+/// Record a render-entity change at the USD projection boundary.
+pub(crate) fn mark_render_projection_dirty(world: &mut World, entity: Entity) {
+    if let Some(mut dirty) = world.get_resource_mut::<projection_dirty::RenderProjectionDirtySet>()
+    {
+        dirty.mark(entity);
+    }
+}
+
+/// Track a projected mesh handle and dirty the entity when its handle changes.
+pub(crate) fn track_mesh_projection(world: &mut World, entity: Entity, mesh: &Handle<Mesh>) {
+    let changed = world
+        .get_resource_mut::<projection_dirty::MeshProjectionConsumers>()
+        .is_none_or(|mut consumers| consumers.track(entity, mesh.id()));
+    if changed {
+        mark_render_projection_dirty(world, entity);
+    }
+}
+
+/// Remove an entity from the projection dirty state and mesh consumer index.
+pub(crate) fn remove_mesh_projection_consumer(world: &mut World, entity: Entity) {
+    if let Some(mut dirty) = world.get_resource_mut::<projection_dirty::RenderProjectionDirtySet>()
+    {
+        dirty.remove(entity);
+    }
+    if let Some(mut consumers) =
+        world.get_resource_mut::<projection_dirty::MeshProjectionConsumers>()
+    {
+        consumers.remove(entity);
+    }
 }

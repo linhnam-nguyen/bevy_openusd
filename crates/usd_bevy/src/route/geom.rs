@@ -10,7 +10,7 @@ use super::cache::{
 };
 use super::cache_key::source_mesh_key;
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
-use super::{DisplayPurposes, PrimRoute, RouteCtx};
+use super::{DisplayPurposes, PrimRoute, RouteCtx, track_mesh_projection};
 use crate::read::geom::{
     VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility,
 };
@@ -239,16 +239,22 @@ impl MeshRoute {
             );
         }
         let material = super::fallback_material(world);
-        if let Ok(mut e) = world.get_entity_mut(entity) {
+        let mesh_handle = mesh_handle;
+        let attached = if let Ok(mut e) = world.get_entity_mut(entity) {
             if let Some([min, max]) = read.extent {
                 e.insert(UsdLocalExtent { min, max });
             } else {
                 e.remove::<UsdLocalExtent>();
             }
-            e.insert((Mesh3d(mesh_handle), MeshMaterial3d(material)));
-            return true;
+            e.insert((Mesh3d(mesh_handle.clone()), MeshMaterial3d(material)));
+            true
+        } else {
+            false
+        };
+        if attached {
+            track_mesh_projection(world, entity, &mesh_handle);
         }
-        false
+        attached
     }
 }
 
