@@ -35,8 +35,8 @@ use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, SelectedTargets, ShowJointGizmosFlag, SkeletonGizmos,
-    draw_selected_prim_highlight, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
-    sync_selected_instance_identity,
+    SolariCapabilityPlugin, draw_selected_prim_highlight, hide_meshes_on_startup,
+    setup_skeleton_gizmos_on_top, sync_selected_instance_identity,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -108,6 +108,9 @@ pub(crate) fn run() {
         .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
         .add_plugins(UsdPlugin);
 
+    #[cfg(feature = "solari")]
+    app.add_plugins(bevy::solari::prelude::SolariPlugins);
+
     if launch_options.benchmark_mesh_profile {
         let mut profile = app.world_mut().resource_mut::<usd_bevy::GeometryProfile>();
         profile.enabled = true;
@@ -150,6 +153,7 @@ pub(crate) fn run() {
     }
 
     app.add_plugins(ViewportBridgePlugin)
+        .add_plugins(SolariCapabilityPlugin)
         .add_plugins(OverlaysPlugin);
     app.world_mut()
         .resource_mut::<DisplayToggles>()

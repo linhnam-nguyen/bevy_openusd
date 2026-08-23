@@ -126,11 +126,6 @@ impl Default for RendererConfiguration {
 
 impl RendererConfiguration {
     pub fn validate(&self) -> Result<(), ProtocolValidationError> {
-        if self.render_mode == RenderMode::RayTraced {
-            return Err(ProtocolValidationError::InvalidInput {
-                field: "renderer.render_mode",
-            });
-        }
         if let Some(fps) = self.preferred_fps
             && !(MIN_FPS..=MAX_FPS).contains(&fps)
         {

@@ -5,6 +5,7 @@ mod ghost;
 mod runtime;
 mod selection;
 mod skeleton;
+mod solari;
 
 pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
@@ -16,6 +17,7 @@ pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
     setup_skeleton_gizmos_on_top,
 };
+pub(crate) use solari::{SolariCapability, SolariCapabilityPlugin};
 pub(crate) mod extent;
 pub(crate) mod visualization;
 pub use extent::SceneExtent;

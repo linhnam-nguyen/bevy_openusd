@@ -70,18 +70,13 @@ fn uniform_color_is_valid_for_b2_renderer_presentation() {
 }
 
 #[test]
-fn ray_traced_remains_rejected_until_b3() {
+fn ray_traced_is_protocol_valid_and_runtime_capability_gated() {
     let configuration = RendererConfiguration {
         render_mode: RenderMode::RayTraced,
         ..Default::default()
     };
 
-    assert!(matches!(
-        configuration.validate(),
-        Err(ProtocolValidationError::InvalidInput {
-            field: "renderer.render_mode"
-        })
-    ));
+    configuration.validate().unwrap();
 }
 
 #[test]

@@ -9,7 +9,7 @@ use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::camera::CameraMount;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
+use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
 /// Groups the command system's independently-owned resources into one
@@ -26,6 +26,7 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub camera_mount: ResMut<'w, CameraMount>,
     pub clock: ResMut<'w, UsdStageTime>,
     pub toggles: ResMut<'w, DisplayToggles>,
+    pub solari: Option<Res<'w, SolariCapability>>,
     pub tuning: ResMut<'w, LoaderTuning>,
     pub physics: ResMut<'w, PhysicsActive>,
     pub histories: ResMut<'w, EditorHistories>,

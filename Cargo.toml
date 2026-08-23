@@ -68,6 +68,10 @@ default-run = "usdview"
 autotests = false
 autoexamples = false
 
+[features]
+default = []
+solari = ["bevy/bevy_solari"]
+
 [[bin]]
 name = "usdview"
 path = "src/main.rs"

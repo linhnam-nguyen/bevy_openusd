@@ -16,7 +16,7 @@ mod tests {
     use crate::viewport::camera::CameraMount;
     use crate::viewport::physics::PhysicsActive;
     use crate::viewport::scene::visualization::DisplayToggles;
-    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
@@ -96,6 +96,36 @@ mod tests {
             panic!("uniform renderer configuration should publish a presentation event");
         };
         assert_eq!(presentation.renderer.render_mode, RenderMode::UniformColor);
+    }
+
+    #[test]
+    fn ray_traced_renderer_configuration_rejects_without_supported_solari() {
+        let mut app = command_test_app();
+        app.init_resource::<SolariCapability>();
+        let before = app.world().resource::<DisplayToggles>().renderer;
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetRendererConfiguration {
+                configuration: RendererConfiguration {
+                    render_mode: RenderMode::RayTraced,
+                    ..Default::default()
+                },
+            },
+        );
+
+        app.update();
+
+        assert_eq!(app.world().resource::<DisplayToggles>().renderer, before);
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("unsupported ray traced configuration must publish a rejection");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            event.event,
+            ViewportEvent::CommandRejected { reason, .. }
+                if reason.contains("unsupported")
+        ));
     }
 
     #[test]

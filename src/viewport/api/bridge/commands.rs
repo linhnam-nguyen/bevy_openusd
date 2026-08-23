@@ -245,6 +245,20 @@ pub(super) fn apply_viewport_commands(
                     reject(&mut outbox, request_id, error.to_string());
                     continue;
                 }
+                if configuration.render_mode == viewport_protocol::RenderMode::RayTraced
+                    && !state
+                        .solari
+                        .as_ref()
+                        .is_some_and(|capability| capability.supported())
+                {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "ray traced rendering is unsupported by the active Solari capability"
+                            .to_owned(),
+                    );
+                    continue;
+                }
                 let fps_change_pending = if let Some(cadence) =
                     state.configuration.p1().as_deref_mut()
                 {
