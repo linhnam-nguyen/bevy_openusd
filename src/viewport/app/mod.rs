@@ -32,7 +32,9 @@ use crate::viewport::camera::{
 };
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
-use crate::viewport::rendering::sampling::{DlssProviderPlugin, configure_dlss};
+use crate::viewport::rendering::sampling::{
+    DlssProviderPlugin, FsrVulkanProviderPlugin, configure_dlss,
+};
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SelectedPrim, SelectedTargets, ShowJointGizmosFlag, SkeletonGizmos,
@@ -156,6 +158,7 @@ pub(crate) fn run() {
 
     app.add_plugins(ViewportBridgePlugin)
         .add_plugins(DlssProviderPlugin)
+        .add_plugins(FsrVulkanProviderPlugin)
         .add_plugins(SolariCapabilityPlugin)
         .add_plugins(OverlaysPlugin);
     app.world_mut()
