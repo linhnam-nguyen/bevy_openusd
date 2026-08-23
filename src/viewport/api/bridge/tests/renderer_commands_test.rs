@@ -15,6 +15,9 @@ mod tests {
     use crate::viewport::app::cadence::RendererCadence;
     use crate::viewport::camera::CameraMount;
     use crate::viewport::physics::PhysicsActive;
+    use crate::viewport::rendering::sampling::{
+        DlssCameraActivation, DlssCapability, FsrVulkanCapability, SamplingCoordinatorState,
+    };
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
@@ -29,6 +32,10 @@ mod tests {
             .init_resource::<SelectedPrim>()
             .init_resource::<SelectedTargets>()
             .init_resource::<ViewerSettingsState>()
+            .init_resource::<SamplingCoordinatorState>()
+            .init_resource::<DlssCapability>()
+            .init_resource::<FsrVulkanCapability>()
+            .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()

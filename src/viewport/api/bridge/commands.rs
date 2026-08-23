@@ -7,6 +7,9 @@ use super::helpers::{
 };
 use super::state::EditorHistories;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
+use crate::viewport::rendering::sampling::{
+    ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
+};
 mod cadence;
 mod camera;
 mod presentation;
@@ -286,12 +289,26 @@ pub(super) fn apply_viewport_commands(
                 }
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
-            ViewportCommand::SetSamplingPreference { .. } => {
-                reject(
-                    &mut outbox,
-                    request_id,
-                    "sampling preference is not applied in this milestone".to_owned(),
-                );
+            ViewportCommand::SetSamplingPreference { preference } => {
+                let capabilities =
+                    SamplingCapabilities::new(state.dlss.supported(), state.fsr.supported());
+                let active = match choose_upscaler(preference.enabled, capabilities) {
+                    Ok(active) => active,
+                    Err(SamplingSelectionError::NoProviderAvailable) => {
+                        reject(
+                            &mut outbox,
+                            request_id,
+                            "sampling is unsupported by the active renderer providers".to_owned(),
+                        );
+                        continue;
+                    }
+                };
+                state.sampling.apply(preference.enabled, active);
+                state.dlss_camera.enabled = active == ActiveUpscaler::Dlss;
+                state
+                    .viewer_settings
+                    .set_sampling(preference.enabled, active.provider());
+                emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSelectionPresentationSettings { .. } => {
                 reject(

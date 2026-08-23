@@ -7,6 +7,10 @@ use super::super::ViewerSettingsState;
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::rendering::sampling::{
+    ActiveUpscaler, DlssCameraActivation, DlssCapability, FsrVulkanCapability,
+    SamplingCoordinatorState,
+};
 use crate::viewport::scene::visualization::DisplayToggles;
 
 #[derive(Resource, Default)]
@@ -123,4 +127,186 @@ fn unsupported_settings_commands_reject_without_mutating_applied_state() {
         assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
         assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
     }
+}
+
+#[test]
+fn sampling_command_selects_dlss_and_publishes_authoritative_state() {
+    let mut app = command_test_app();
+    app.world_mut().resource_mut::<DlssCapability>().compiled = true;
+    app.world_mut()
+        .resource_mut::<DlssCapability>()
+        .runtime_supported = true;
+    let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+    );
+
+    app.update();
+
+    let settings = &app.world().resource::<ViewerSettingsState>().0;
+    assert!(settings.sampling.preference.enabled);
+    assert_eq!(settings.sampling.provider, SamplingProvider::Dlss);
+    let coordinator = app.world().resource::<SamplingCoordinatorState>();
+    assert_eq!(coordinator.active, ActiveUpscaler::Dlss);
+    assert!(coordinator.preference_enabled);
+    assert!(app.world().resource::<DlssCameraActivation>().enabled);
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("sampling selection must publish an authoritative event");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
+        panic!("sampling selection must publish a viewer-settings event");
+    };
+    assert_eq!(settings.sampling.provider, SamplingProvider::Dlss);
+
+    let snapshot_request = app
+        .world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::RequestSnapshot);
+    app.update();
+    let snapshot = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("reconnect snapshot must be available after sampling selection");
+    assert_eq!(
+        snapshot.request_id.as_deref(),
+        Some(snapshot_request.as_str())
+    );
+    let ViewportEvent::Snapshot { state } = snapshot.event else {
+        panic!("sampling selection must be present in the reconnect snapshot");
+    };
+    assert_eq!(
+        state.viewer_settings.sampling.provider,
+        SamplingProvider::Dlss
+    );
+}
+
+#[test]
+fn sampling_command_falls_back_to_fsr_when_dlss_is_unavailable() {
+    let mut app = command_test_app();
+    app.world_mut()
+        .insert_resource(FsrVulkanCapability::from_probe(true, true, true));
+    let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+    );
+
+    app.update();
+
+    assert_eq!(
+        app.world()
+            .resource::<ViewerSettingsState>()
+            .0
+            .sampling
+            .provider,
+        SamplingProvider::Fsr
+    );
+    assert_eq!(
+        app.world().resource::<SamplingCoordinatorState>().active,
+        ActiveUpscaler::Fsr
+    );
+    assert!(!app.world().resource::<DlssCameraActivation>().enabled);
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("FSR fallback must publish an authoritative event");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    assert!(matches!(
+        event.event,
+        ViewportEvent::ViewerSettingsChanged { .. }
+    ));
+}
+
+#[test]
+fn sampling_command_disables_the_current_provider() {
+    let mut app = command_test_app();
+    app.world_mut()
+        .insert_resource(DlssCapability::from_probe(true, true));
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+    );
+    app.update();
+    app.world_mut().resource_mut::<ViewportEventOutbox>().pop();
+
+    let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: false },
+        },
+    );
+    app.update();
+
+    let settings = &app.world().resource::<ViewerSettingsState>().0;
+    assert!(!settings.sampling.preference.enabled);
+    assert_eq!(settings.sampling.provider, SamplingProvider::None);
+    let coordinator = app.world().resource::<SamplingCoordinatorState>();
+    assert_eq!(coordinator.active, ActiveUpscaler::None);
+    assert!(!coordinator.preference_enabled);
+    assert!(!app.world().resource::<DlssCameraActivation>().enabled);
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("disabling sampling must publish an authoritative event");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    assert!(matches!(
+        event.event,
+        ViewportEvent::ViewerSettingsChanged { .. }
+    ));
+}
+
+#[test]
+fn unsupported_sampling_request_preserves_last_valid_state() {
+    let mut app = command_test_app();
+    app.world_mut()
+        .insert_resource(DlssCapability::from_probe(true, true));
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+    );
+    app.update();
+    app.world_mut().resource_mut::<ViewportEventOutbox>().pop();
+
+    let before_settings = app.world().resource::<ViewerSettingsState>().0.clone();
+    let before_coordinator = *app.world().resource::<SamplingCoordinatorState>();
+    let before_activation = *app.world().resource::<DlssCameraActivation>();
+    app.world_mut()
+        .insert_resource(DlssCapability::from_probe(true, false));
+    app.world_mut()
+        .insert_resource(FsrVulkanCapability::default());
+    let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        },
+    );
+
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<ViewerSettingsState>().0,
+        before_settings
+    );
+    assert_eq!(
+        *app.world().resource::<SamplingCoordinatorState>(),
+        before_coordinator
+    );
+    assert_eq!(
+        *app.world().resource::<DlssCameraActivation>(),
+        before_activation
+    );
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("unsupported sampling must publish a rejection");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
 }

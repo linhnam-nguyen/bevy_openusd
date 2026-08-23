@@ -35,8 +35,8 @@ impl DlssCapability {
 
 /// Renderer-local request consumed by the DLSS camera adapter.
 ///
-/// B4.2 owns the provider operation. B4.4 will become the only writer after
-/// the authoritative sampling selection is wired through the bridge.
+/// B4.4's bridge command is the authoritative writer; this adapter only
+/// applies the selected request when the runtime capability is present.
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DlssCameraActivation {
     pub(crate) enabled: bool,
@@ -64,7 +64,12 @@ impl Plugin for DlssProviderPlugin {
             .init_resource::<DlssCameraActivation>()
             .add_systems(
                 Update,
-                (refresh_capability, apply_camera_activation).chain(),
+                refresh_capability.before(super::publish_sampling_capabilities),
+            )
+            .add_systems(
+                Update,
+                apply_camera_activation
+                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands),
             );
     }
 }

@@ -5,7 +5,7 @@
 //! Viewer Settings that do not have another authoritative owner yet.
 
 use bevy::prelude::*;
-use viewport_protocol::{ViewerEnvironmentSettings, ViewerSettingsReadModel};
+use viewport_protocol::{SamplingProvider, ViewerEnvironmentSettings, ViewerSettingsReadModel};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub(in crate::viewport) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
@@ -28,5 +28,30 @@ impl ViewerSettingsState {
 
     pub(in crate::viewport) fn ray_traced_supported(&self) -> bool {
         self.0.capabilities.ray_traced_supported
+    }
+
+    pub(in crate::viewport) fn sampling_capabilities(&self) -> (bool, bool) {
+        (
+            self.0.capabilities.dlss_available,
+            self.0.capabilities.fsr_available,
+        )
+    }
+
+    pub(in crate::viewport) fn set_sampling_capabilities(
+        &mut self,
+        dlss_available: bool,
+        fsr_available: bool,
+    ) {
+        self.0.capabilities.dlss_available = dlss_available;
+        self.0.capabilities.fsr_available = fsr_available;
+    }
+
+    pub(in crate::viewport) fn set_sampling(
+        &mut self,
+        preference_enabled: bool,
+        provider: SamplingProvider,
+    ) {
+        self.0.sampling.preference.enabled = preference_enabled;
+        self.0.sampling.provider = provider;
     }
 }
