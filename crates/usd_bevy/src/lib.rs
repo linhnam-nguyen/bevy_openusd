@@ -49,7 +49,7 @@ pub use snippet::UsdSnippet;
 /// The inline-USD macro (see [`snippet::UsdSnippet`]).
 pub use usd_macro::usd;
 
-use bevy::app::{App, Plugin};
+use bevy::app::{App, Plugin, Update};
 
 /// Registers the [`UsdPrimRef`] reflect type and installs the built-in
 /// [`SchemaRegistry`] (transform / visibility / mesh / reflect routes). Pair
@@ -82,6 +82,7 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::material::MaterialConsumerIndex>();
         app.init_resource::<route::material::MaterialRouteDiagnostics>();
         app.init_resource::<route::FallbackMaterialColor>();
+        app.add_systems(Update, route::sync_fallback_material_color);
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

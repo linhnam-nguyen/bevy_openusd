@@ -33,12 +33,17 @@ pub(crate) fn sync_background_color(
 
 /// Updates only USD's shared fallback material. Authored material handles are
 /// never queried or rewritten by this presentation-only operation.
-pub(crate) fn sync_fallback_surface_color(world: &mut World) {
-    let desired = {
-        let viewer_settings = world.resource::<ViewerSettingsState>();
-        color_from_rgb8(viewer_settings.environment().default_surface_color)
-    };
-    usd_bevy::set_fallback_material_color(world, desired);
+pub(crate) fn sync_fallback_surface_color(
+    viewer_settings: Res<ViewerSettingsState>,
+    mut fallback_color: ResMut<usd_bevy::FallbackMaterialColor>,
+) {
+    if !viewer_settings.is_changed() {
+        return;
+    }
+    let desired = color_from_rgb8(viewer_settings.environment().default_surface_color);
+    if fallback_color.0 != desired {
+        fallback_color.0 = desired;
+    }
 }
 
 /// Keeps Glacial's ground-grid visibility aligned with the renderer state.

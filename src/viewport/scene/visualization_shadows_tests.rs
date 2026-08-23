@@ -17,10 +17,13 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
             ..default()
         })
         .id();
-    app.insert_resource(DisplayToggles::default()).add_systems(
-        Update,
-        (capture_original_shadow_settings, apply_shadow_toggle).chain(),
-    );
+    app.insert_resource(DisplayToggles::default())
+        .insert_resource(ShadowProjectionState::default())
+        .insert_resource(ShadowProjectionStats::default())
+        .add_systems(
+            Update,
+            (capture_original_shadow_settings, apply_shadow_toggle).chain(),
+        );
 
     app.update();
     app.update();
@@ -35,6 +38,12 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
             .get::<DirectionalLight>(authored_off)
             .unwrap()
             .shadow_maps_enabled
+    );
+    assert_eq!(
+        app.world()
+            .resource::<ShadowProjectionStats>()
+            .incremental_light_visits,
+        2
     );
 
     app.world_mut()
@@ -53,6 +62,39 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
             .get::<DirectionalLight>(authored_off)
             .unwrap()
             .shadow_maps_enabled
+    );
+    assert_eq!(
+        app.world()
+            .resource::<ShadowProjectionStats>()
+            .full_light_visits,
+        2
+    );
+
+    let newly_added = app
+        .world_mut()
+        .spawn(DirectionalLight {
+            shadow_maps_enabled: true,
+            ..default()
+        })
+        .id();
+    app.update();
+    app.update();
+    assert!(
+        !app.world()
+            .get::<DirectionalLight>(newly_added)
+            .unwrap()
+            .shadow_maps_enabled
+    );
+    let incremental_after_new_light = app
+        .world()
+        .resource::<ShadowProjectionStats>()
+        .incremental_light_visits;
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<ShadowProjectionStats>()
+            .incremental_light_visits,
+        incremental_after_new_light
     );
 
     app.world_mut()

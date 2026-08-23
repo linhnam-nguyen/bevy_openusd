@@ -100,6 +100,7 @@ fn full_renderer_configuration_matrix_preserves_each_independent_option() {
         })
         .init_resource::<EdgeOverlayCache>()
         .init_resource::<EdgeOverlayStats>()
+        .init_resource::<ShadowProjectionState>()
         .insert_resource(bevy::pbr::wireframe::WireframeConfig::default())
         .add_systems(
             Update,

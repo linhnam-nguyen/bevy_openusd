@@ -28,7 +28,7 @@ pub(super) use environment::{
     sync_ground_grid_visibility,
 };
 use render_mode::{apply_render_mode, apply_wireframe_toggle, init_uniform_render_material};
-use shadows::{apply_shadow_toggle, capture_original_shadow_settings};
+use shadows::{ShadowProjectionState, apply_shadow_toggle, capture_original_shadow_settings};
 
 pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
@@ -41,6 +41,8 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
+            .init_resource::<render_mode::RenderModeProjectionState>()
+            .init_resource::<ShadowProjectionState>()
             .add_systems(
                 Startup,
                 (init_edge_overlay_material, init_uniform_render_material).chain(),

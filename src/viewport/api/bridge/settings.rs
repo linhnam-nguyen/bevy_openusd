@@ -8,14 +8,15 @@ use bevy::prelude::*;
 use viewport_protocol::{ViewerEnvironmentSettings, ViewerSettingsReadModel};
 
 #[derive(Resource, Debug, Clone, Default)]
-pub(crate) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
+pub(in crate::viewport) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
 
 impl ViewerSettingsState {
-    pub(crate) fn environment(&self) -> &ViewerEnvironmentSettings {
+    pub(in crate::viewport) fn environment(&self) -> &ViewerEnvironmentSettings {
         &self.0.environment
     }
 
-    pub(crate) fn environment_mut(&mut self) -> &mut ViewerEnvironmentSettings {
+    #[cfg(test)]
+    pub(in crate::viewport) fn environment_mut(&mut self) -> &mut ViewerEnvironmentSettings {
         &mut self.0.environment
     }
 }

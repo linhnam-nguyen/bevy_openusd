@@ -7,6 +7,26 @@ use bevy::prelude::*;
 
 use super::{DisplayToggles, OriginalShadowEnabled};
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub(super) struct ShadowProjectionState {
+    applied_shadows: bool,
+}
+
+impl Default for ShadowProjectionState {
+    fn default() -> Self {
+        Self {
+            applied_shadows: true,
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ShadowProjectionStats {
+    full_light_visits: u32,
+    incremental_light_visits: u32,
+}
+
 pub(super) fn capture_original_shadow_settings(
     mut cmds: Commands,
     dir: Query<
@@ -32,27 +52,65 @@ pub(super) fn capture_original_shadow_settings(
 
 pub(super) fn apply_shadow_toggle(
     toggles: Res<DisplayToggles>,
-    mut dir: Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
-    mut pt: Query<(&mut PointLight, &OriginalShadowEnabled)>,
-    mut sp: Query<(&mut SpotLight, &OriginalShadowEnabled)>,
+    mut projection: ResMut<ShadowProjectionState>,
+    mut lights: ParamSet<(
+        Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
+        Query<(&mut PointLight, &OriginalShadowEnabled)>,
+        Query<(&mut SpotLight, &OriginalShadowEnabled)>,
+        Query<(&mut DirectionalLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
+        Query<(&mut PointLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
+        Query<(&mut SpotLight, &OriginalShadowEnabled), Added<OriginalShadowEnabled>>,
+    )>,
+    #[cfg(test)] mut stats: Option<ResMut<ShadowProjectionStats>>,
 ) {
-    for (mut light, authored) in &mut dir {
-        set_shadow_enabled(
-            &mut light.shadow_maps_enabled,
-            toggles.renderer.shadows && authored.0,
-        );
-    }
-    for (mut light, authored) in &mut pt {
-        set_shadow_enabled(
-            &mut light.shadow_maps_enabled,
-            toggles.renderer.shadows && authored.0,
-        );
-    }
-    for (mut light, authored) in &mut sp {
-        set_shadow_enabled(
-            &mut light.shadow_maps_enabled,
-            toggles.renderer.shadows && authored.0,
-        );
+    let desired = toggles.renderer.shadows;
+    let toggle_changed = projection.applied_shadows != desired;
+    projection.applied_shadows = desired;
+
+    if toggle_changed {
+        for (mut light, authored) in &mut lights.p0() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.full_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
+        for (mut light, authored) in &mut lights.p1() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.full_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
+        for (mut light, authored) in &mut lights.p2() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.full_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
+    } else {
+        for (mut light, authored) in &mut lights.p3() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.incremental_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
+        for (mut light, authored) in &mut lights.p4() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.incremental_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
+        for (mut light, authored) in &mut lights.p5() {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_mut() {
+                stats.incremental_light_visits += 1;
+            }
+            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+        }
     }
 }
 

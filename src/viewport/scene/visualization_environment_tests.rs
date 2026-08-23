@@ -98,6 +98,7 @@ fn background_projection_updates_clear_color_only() {
 fn fallback_surface_projection_updates_fallback_state_without_authored_materials() {
     let mut app = App::new();
     app.insert_resource(ViewerSettingsState::default())
+        .init_resource::<usd_bevy::FallbackMaterialColor>()
         .add_systems(Update, sync_fallback_surface_color);
     app.world_mut()
         .resource_mut::<ViewerSettingsState>()

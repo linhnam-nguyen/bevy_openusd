@@ -26,5 +26,5 @@ mod tree;
 mod tests;
 
 pub(crate) use plugin::ViewportBridgePlugin;
-pub(crate) use settings::ViewerSettingsState;
+pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;
