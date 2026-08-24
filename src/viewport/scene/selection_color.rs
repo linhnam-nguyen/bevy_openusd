@@ -18,14 +18,18 @@ use super::selection_outline::collect_mesh_descendants;
 
 /// Marks a mesh whose material is currently owned by selection presentation.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SelectionColorOverride;
+pub(in crate::viewport) struct SelectionColorOverride;
 
 /// Material route underneath [`SelectionColorOverride`].
 #[derive(Component, Debug, Clone)]
-pub(super) struct SelectionBaseMaterial(pub(super) Handle<StandardMaterial>);
+pub(in crate::viewport) struct SelectionBaseMaterial(
+    pub(in crate::viewport) Handle<StandardMaterial>,
+);
 
 #[derive(Resource, Debug, Clone)]
-pub(super) struct SelectionColorMaterial(pub(super) Handle<StandardMaterial>);
+pub(in crate::viewport) struct SelectionColorMaterial(
+    pub(in crate::viewport) Handle<StandardMaterial>,
+);
 
 #[derive(Resource, Debug, Default, Clone)]
 pub(super) struct SelectionColorOverrideState {
@@ -37,7 +41,7 @@ pub(super) struct SelectionColorOverrideState {
 }
 
 #[derive(Resource, Debug, Clone)]
-pub(super) struct HoverColorMaterial(pub(super) Handle<StandardMaterial>);
+pub(in crate::viewport) struct HoverColorMaterial(pub(in crate::viewport) Handle<StandardMaterial>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PresentationOwner {

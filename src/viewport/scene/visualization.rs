@@ -35,6 +35,7 @@ pub(super) use environment::{
     sync_background_color, sync_fallback_surface_color, sync_ground_grid_to_scene,
     sync_ground_grid_visibility,
 };
+pub(in crate::viewport) use render_mode::{OriginalRenderMaterial, UniformRenderMaterial};
 use render_mode::{apply_render_mode, apply_wireframe_toggle, init_uniform_render_material};
 use shadows::{ShadowProjectionState, apply_shadow_toggle, capture_original_shadow_settings};
 
@@ -54,6 +55,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
             .init_resource::<super::section_box_clipping::SectionClipProjectionState>()
+            .init_resource::<super::section_box_clipping::SectionClipDiagnostics>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(

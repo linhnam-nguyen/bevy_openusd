@@ -15,10 +15,14 @@ use super::DisplayToggles;
 const UNIFORM_COLOR: Color = Color::srgb(0.72, 0.72, 0.72);
 
 #[derive(Resource, Debug, Clone)]
-pub(super) struct UniformRenderMaterial(Handle<StandardMaterial>);
+pub(in crate::viewport) struct UniformRenderMaterial(
+    pub(in crate::viewport) Handle<StandardMaterial>,
+);
 
 #[derive(Component, Debug, Clone)]
-pub(super) struct OriginalRenderMaterial(Handle<StandardMaterial>);
+pub(in crate::viewport) struct OriginalRenderMaterial(
+    pub(in crate::viewport) Handle<StandardMaterial>,
+);
 
 #[derive(Resource, Debug, Clone, Copy)]
 pub(super) struct RenderModeProjectionState {

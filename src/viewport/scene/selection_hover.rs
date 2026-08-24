@@ -17,7 +17,7 @@ use crate::viewport::input::ViewportNavigationInput;
 /// the presentation system, and raw pointer coordinates never cross the
 /// viewport protocol a second time.
 #[derive(Resource, Debug, Default, Clone)]
-pub(super) struct HoveredTarget {
+pub(in crate::viewport) struct HoveredTarget {
     pub(super) anchor: Option<SceneAnchor>,
     last_pointer_position: Option<Vec2>,
     last_viewport_size: Option<Vec2>,
