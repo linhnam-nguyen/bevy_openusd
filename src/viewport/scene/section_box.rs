@@ -14,6 +14,13 @@ use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 
+#[path = "section_box_tracking.rs"]
+mod section_box_tracking;
+
+use section_box_tracking::{
+    reconcile_tracked_renderables, selected_renderable_entities, should_reconcile_section_box,
+};
+
 const MIN_BOX_SIZE: f32 = 0.0001;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,6 +48,11 @@ pub(crate) struct SectionBoxClipPlanes {
     pub(crate) planes: [Vec4; 6],
 }
 
+/// Marks only the currently selected renderable descendants whose bound
+/// changes can invalidate the aggregate Section Box.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewport) struct SectionBoxTrackedRenderable;
+
 impl Default for SectionBoxClipPlanes {
     fn default() -> Self {
         Self {
@@ -61,6 +73,8 @@ pub(crate) struct SectionBoxState {
     pub(crate) bounds: Option<SectionBoxBounds>,
     pub(crate) clip_planes: SectionBoxClipPlanes,
     pub(crate) revision: u64,
+    tracked_renderables: HashSet<Entity>,
+    resolved_targets: Vec<Option<Entity>>,
     scene_revision: u64,
 }
 
@@ -74,6 +88,8 @@ impl Default for SectionBoxState {
             bounds: None,
             clip_planes: SectionBoxClipPlanes::default(),
             revision: 0,
+            tracked_renderables: HashSet::new(),
+            resolved_targets: Vec::new(),
             scene_revision: 0,
         }
     }
@@ -98,10 +114,10 @@ pub(in crate::viewport) fn sync_section_box_state(
     selection: Res<super::SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     mut state: ResMut<SectionBoxState>,
-    changed_renderables: Query<
+    changed_tracked_renderables: Query<
         Entity,
         (
-            With<Mesh3d>,
+            With<SectionBoxTrackedRenderable>,
             Or<(
                 Added<Mesh3d>,
                 Changed<Mesh3d>,
@@ -111,12 +127,14 @@ pub(in crate::viewport) fn sync_section_box_state(
                 Changed<Aabb>,
                 Added<UsdLocalExtent>,
                 Changed<UsdLocalExtent>,
+                Added<MeshMaterial3d<StandardMaterial>>,
+                Changed<MeshMaterial3d<StandardMaterial>>,
             )>,
         ),
     >,
-    mut removed_meshes: RemovedComponents<Mesh3d>,
-    mut removed_aabbs: RemovedComponents<Aabb>,
-    mut removed_extents: RemovedComponents<UsdLocalExtent>,
+    mut removed_tracked_renderables: RemovedComponents<SectionBoxTrackedRenderable>,
+    tracked_entities: Query<Entity, With<SectionBoxTrackedRenderable>>,
+    mut commands: Commands,
     renderables: Query<(
         Option<&GlobalTransform>,
         Option<&Children>,
@@ -126,14 +144,49 @@ pub(in crate::viewport) fn sync_section_box_state(
     )>,
 ) {
     let targets = selection.0.targets.clone();
+    let resolved_targets = targets
+        .iter()
+        .map(|target| scene_index.resolve(target))
+        .collect::<Vec<_>>();
     let selection_changed = state.targets != targets;
-    let scene_changed = state.scene_revision != scene_index.revision();
-    let bounds_changed = !changed_renderables.is_empty()
-        || removed_meshes.read().next().is_some()
-        || removed_aabbs.read().next().is_some()
-        || removed_extents.read().next().is_some();
+    let resolution_changed = state.resolved_targets != resolved_targets;
+    let scene_revision_changed = state.scene_revision != scene_index.revision();
+    let relevant_bounds_changed = !changed_tracked_renderables.is_empty()
+        || removed_tracked_renderables.read().next().is_some();
+    let actual_tracked_renderables = tracked_entities.iter().collect::<HashSet<_>>();
+    let tracking_changed = actual_tracked_renderables != state.tracked_renderables;
     let enabled = settings.section_box_enabled();
-    if !selection_changed && !scene_changed && !bounds_changed && !settings.is_changed() {
+    let enabled_changed = state.enabled != enabled;
+    if !should_reconcile_section_box(
+        selection_changed,
+        resolution_changed,
+        scene_revision_changed,
+        relevant_bounds_changed,
+        tracking_changed,
+        enabled_changed,
+    ) {
+        return;
+    }
+
+    let next_tracked_renderables = if enabled {
+        selected_renderable_entities(&targets, &scene_index, &renderables)
+    } else {
+        HashSet::new()
+    };
+    let tracked_set_changed = state.tracked_renderables != next_tracked_renderables;
+    if !selection_changed
+        && !resolution_changed
+        && !relevant_bounds_changed
+        && !tracked_set_changed
+        && !enabled_changed
+    {
+        state.resolved_targets = resolved_targets;
+        state.scene_revision = scene_index.revision();
+        reconcile_tracked_renderables(
+            &mut commands,
+            &actual_tracked_renderables,
+            &next_tracked_renderables,
+        );
         return;
     }
 
@@ -153,7 +206,9 @@ pub(in crate::viewport) fn sync_section_box_state(
         || state.targets != targets
         || state.bounds != next_bounds
         || state.transform != next_transform
-        || state.clip_planes != next_planes;
+        || state.clip_planes != next_planes
+        || tracked_set_changed
+        || state.resolved_targets != resolved_targets;
     if changed {
         state.revision = state.revision.saturating_add(1);
     }
@@ -163,7 +218,14 @@ pub(in crate::viewport) fn sync_section_box_state(
     state.transform = next_transform;
     state.bounds = next_bounds;
     state.clip_planes = next_planes;
+    state.tracked_renderables = next_tracked_renderables.clone();
+    state.resolved_targets = resolved_targets;
     state.scene_revision = scene_index.revision();
+    reconcile_tracked_renderables(
+        &mut commands,
+        &actual_tracked_renderables,
+        &next_tracked_renderables,
+    );
 }
 
 fn aggregate_selection_bounds(
@@ -315,71 +377,5 @@ impl SectionBoxClipPlanes {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn bounds(min: Vec3, max: Vec3) -> SectionBoxBounds {
-        SectionBoxBounds { min, max }
-    }
-
-    #[test]
-    fn aggregate_bounds_contain_every_selected_renderable() {
-        let mut aggregate = bounds(Vec3::splat(1.0), Vec3::splat(2.0));
-        aggregate.include(bounds(Vec3::splat(-4.0), Vec3::splat(-3.0)));
-        aggregate.include(bounds(Vec3::splat(5.0), Vec3::splat(9.0)));
-
-        assert!(aggregate.contains(bounds(Vec3::splat(1.0), Vec3::splat(2.0))));
-        assert!(aggregate.contains(bounds(Vec3::splat(-4.0), Vec3::splat(-3.0))));
-        assert!(aggregate.contains(bounds(Vec3::splat(5.0), Vec3::splat(9.0))));
-        assert_eq!(aggregate.min, Vec3::splat(-4.0));
-        assert_eq!(aggregate.max, Vec3::splat(9.0));
-    }
-
-    #[test]
-    fn fit_produces_one_box_transform_and_six_planes() {
-        let fitted = bounds(Vec3::new(-2.0, -1.0, 3.0), Vec3::new(0.0, 0.0, 6.0));
-        let transform = fit_transform(fitted);
-        let planes = SectionBoxClipPlanes::from_bounds(fitted);
-
-        assert_eq!(transform.translation, Vec3::new(-1.0, -0.5, 4.5));
-        assert_eq!(transform.scale, Vec3::new(2.0, 1.0, 3.0));
-        assert_eq!(planes.planes.len(), 6);
-    }
-
-    #[test]
-    fn oriented_transform_produces_six_inside_facing_planes() {
-        let transform = Transform {
-            translation: Vec3::new(3.0, 4.0, 5.0),
-            rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
-            scale: Vec3::new(2.0, 4.0, 6.0),
-        };
-        let planes = SectionBoxClipPlanes::from_transform(transform);
-        let center = transform.translation.extend(1.0);
-
-        assert_eq!(planes.planes.len(), 6);
-        assert!(
-            planes
-                .planes
-                .iter()
-                .all(|plane| plane.dot(center) >= -f32::EPSILON)
-        );
-    }
-
-    #[test]
-    fn empty_geometry_resets_derived_state_without_authored_geometry() {
-        let mut state = SectionBoxState {
-            enabled: true,
-            visible: true,
-            targets: vec![SceneAnchor::active_session("/World/Box")],
-            transform: Transform::from_xyz(1.0, 2.0, 3.0),
-            bounds: Some(bounds(Vec3::ZERO, Vec3::ONE)),
-            clip_planes: SectionBoxClipPlanes::from_bounds(bounds(Vec3::ZERO, Vec3::ONE)),
-            ..default()
-        };
-        state.reset_geometry();
-
-        assert!(!state.visible);
-        assert_eq!(state.bounds, None);
-        assert_eq!(state.transform, Transform::IDENTITY);
-    }
-}
+#[path = "section_box_tests.rs"]
+mod tests;
