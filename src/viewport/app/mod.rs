@@ -19,7 +19,10 @@ mod sync;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use bevy_frost::prelude::AccentColor;
-use bevy_glacial::prelude::{AxisGizmoPlugin, GroundGrid, GroundGridPlugin};
+use bevy_glacial::prelude::{
+    AxisGizmoPlugin, GizmoAutoScale, GroundGrid, GroundGridPlugin, TransformGizmoPlugin,
+    auto_scale_gizmo_to_target,
+};
 use bevy_mod_outline::OutlinePlugin;
 use headless::HeadlessRenderPlugin;
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
@@ -128,6 +131,9 @@ pub(crate) fn run() {
         .add_plugins(ArcballCameraPlugin)
         .add_plugins(GroundGridPlugin)
         .add_plugins(AxisGizmoPlugin)
+        .add_plugins(TransformGizmoPlugin)
+        .init_resource::<GizmoAutoScale>()
+        .add_systems(Update, auto_scale_gizmo_to_target)
         .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))
         .insert_resource(GroundGrid {
             visible: true,

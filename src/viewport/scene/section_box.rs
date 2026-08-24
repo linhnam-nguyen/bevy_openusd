@@ -286,14 +286,29 @@ fn fit_transform(bounds: SectionBoxBounds) -> Transform {
 
 impl SectionBoxClipPlanes {
     fn from_bounds(bounds: SectionBoxBounds) -> Self {
+        Self::from_transform(fit_transform(bounds))
+    }
+
+    pub(crate) fn from_transform(transform: Transform) -> Self {
+        let half_extents = transform.scale.abs() * 0.5;
+        let axes = [
+            transform.rotation * Vec3::X,
+            transform.rotation * Vec3::Y,
+            transform.rotation * Vec3::Z,
+        ];
+        let center = transform.translation;
+
+        let plane =
+            |normal: Vec3, point: Vec3| Vec4::new(normal.x, normal.y, normal.z, -normal.dot(point));
+
         Self {
             planes: [
-                Vec4::new(1.0, 0.0, 0.0, -bounds.min.x),
-                Vec4::new(-1.0, 0.0, 0.0, bounds.max.x),
-                Vec4::new(0.0, 1.0, 0.0, -bounds.min.y),
-                Vec4::new(0.0, -1.0, 0.0, bounds.max.y),
-                Vec4::new(0.0, 0.0, 1.0, -bounds.min.z),
-                Vec4::new(0.0, 0.0, -1.0, bounds.max.z),
+                plane(axes[0], center - axes[0] * half_extents.x),
+                plane(-axes[0], center + axes[0] * half_extents.x),
+                plane(axes[1], center - axes[1] * half_extents.y),
+                plane(-axes[1], center + axes[1] * half_extents.y),
+                plane(axes[2], center - axes[2] * half_extents.z),
+                plane(-axes[2], center + axes[2] * half_extents.z),
             ],
         }
     }
@@ -329,6 +344,25 @@ mod tests {
         assert_eq!(transform.translation, Vec3::new(-1.0, -0.5, 4.5));
         assert_eq!(transform.scale, Vec3::new(2.0, 1.0, 3.0));
         assert_eq!(planes.planes.len(), 6);
+    }
+
+    #[test]
+    fn oriented_transform_produces_six_inside_facing_planes() {
+        let transform = Transform {
+            translation: Vec3::new(3.0, 4.0, 5.0),
+            rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            scale: Vec3::new(2.0, 4.0, 6.0),
+        };
+        let planes = SectionBoxClipPlanes::from_transform(transform);
+        let center = transform.translation.extend(1.0);
+
+        assert_eq!(planes.planes.len(), 6);
+        assert!(
+            planes
+                .planes
+                .iter()
+                .all(|plane| plane.dot(center) >= -f32::EPSILON)
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
 #[cfg(feature = "solari")]
 use bevy::{camera::CameraMainTextureUsages, render::render_resource::TextureUsages};
-use bevy_glacial::prelude::{AxisGizmo, ChaseCamera};
+use bevy_glacial::prelude::{AxisGizmo, ChaseCamera, GizmoCamera};
 
 use crate::viewport::camera::ArcballCamera;
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT};
@@ -106,6 +106,7 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
         // controls). `sync_chase_camera` mirrors focus/distance/yaw
         // every frame.
         ChaseCamera::default(),
+        GizmoCamera,
     ));
     // World-origin axis triad — replaces our hand-rolled
     // `draw_axes` overlay system.

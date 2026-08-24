@@ -12,7 +12,10 @@ use super::selection_color::{
     SelectionColorOverrideState, init_selection_color_material, sync_selection_color_overrides,
 };
 use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
-use super::{SectionBoxState, draw_section_box, sync_section_box_state};
+use super::{
+    SectionBoxState, capture_section_box_gizmo_transform, draw_section_box,
+    sync_section_box_gizmo_target, sync_section_box_state,
+};
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
 
@@ -64,9 +67,21 @@ impl Plugin for OverlaysPlugin {
             .add_systems(
                 Update,
                 (
+                    capture_section_box_gizmo_transform,
                     compute_extent,
                     sync_section_box_state,
+                    sync_section_box_gizmo_target,
                     draw_section_box,
+                )
+                    .chain()
+                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                    .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
+                    .before(sync_ground_grid_to_scene)
+                    .before(bevy_glacial::prelude::build_grid_meshes),
+            )
+            .add_systems(
+                Update,
+                (
                     sync_ground_grid_to_scene,
                     sync_background_color,
                     sync_fallback_surface_color,
