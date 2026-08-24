@@ -18,7 +18,7 @@ use viewport_protocol::{
 #[path = "scenario_driver_setup.rs"]
 mod setup;
 pub use setup::setup_scenario_driver_system;
-pub(crate) use setup::setup_section_box_smoke_system;
+pub(in crate::viewport) use setup::setup_section_box_smoke_system;
 
 /// Resource configuring the active scenario action driver.
 #[derive(Resource, Debug, Clone, Default)]

@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::asset::AssetEvent;
+use bevy::asset::AssetPath;
 use bevy::ecs::system::SystemParam;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
@@ -30,8 +31,16 @@ use support::{
     selected_meshes,
 };
 
-const SHADER_ASSET_PATH: &str = "shaders/section_box_clipping.wgsl";
-const PREPASS_SHADER_ASSET_PATH: &str = "shaders/section_box_clipping_prepass.wgsl";
+const SHADER_ASSET_PATH: &str = "../../../assets/shaders/section_box_clipping.wgsl";
+const PREPASS_SHADER_ASSET_PATH: &str = "../../../assets/shaders/section_box_clipping_prepass.wgsl";
+
+pub(in crate::viewport) fn register_embedded_shaders(app: &mut App) {
+    bevy::asset::embedded_asset!(app, "../../../assets/shaders/section_box_clipping.wgsl");
+    bevy::asset::embedded_asset!(
+        app,
+        "../../../assets/shaders/section_box_clipping_prepass.wgsl"
+    );
+}
 
 #[derive(Clone, Copy, Debug, Default, Reflect, ShaderType)]
 struct SectionClipUniform {
@@ -51,15 +60,24 @@ pub(in crate::viewport) type SectionClipMaterial =
 
 impl MaterialExtension for SectionClipExtension {
     fn fragment_shader() -> ShaderRef {
-        SHADER_ASSET_PATH.into()
+        ShaderRef::Path(
+            AssetPath::from_path_buf(bevy::asset::embedded_path!(SHADER_ASSET_PATH))
+                .with_source("embedded"),
+        )
     }
 
     fn prepass_fragment_shader() -> ShaderRef {
-        PREPASS_SHADER_ASSET_PATH.into()
+        ShaderRef::Path(
+            AssetPath::from_path_buf(bevy::asset::embedded_path!(PREPASS_SHADER_ASSET_PATH))
+                .with_source("embedded"),
+        )
     }
 
     fn deferred_fragment_shader() -> ShaderRef {
-        SHADER_ASSET_PATH.into()
+        ShaderRef::Path(
+            AssetPath::from_path_buf(bevy::asset::embedded_path!(SHADER_ASSET_PATH))
+                .with_source("embedded"),
+        )
     }
 }
 

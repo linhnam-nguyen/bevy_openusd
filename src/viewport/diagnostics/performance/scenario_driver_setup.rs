@@ -53,11 +53,11 @@ pub fn setup_scenario_driver_system(
 /// Enables a deliberately opt-in renderer smoke that exercises the Section
 /// Box material and prepass route on a loaded benchmark scene. Normal
 /// launches never select or enable Section Box through this harness.
-pub(crate) fn setup_section_box_smoke_system(
+pub(in crate::viewport) fn setup_section_box_smoke_system(
     driver: Option<Res<ActiveScenarioDriver>>,
     scene_index: Option<Res<SceneAnchorIndex>>,
-    mut selection: Option<ResMut<SelectedTargets>>,
-    mut settings: Option<ResMut<ViewerSettingsState>>,
+    selection: Option<ResMut<SelectedTargets>>,
+    settings: Option<ResMut<ViewerSettingsState>>,
 ) {
     if std::env::var_os("USDHUB_SECTION_BOX_SMOKE").is_none()
         || driver

@@ -45,6 +45,7 @@ pub struct OverlaysPlugin;
 
 impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
+        super::section_box_clipping::register_embedded_shaders(app);
         app.init_resource::<DisplayToggles>()
             .init_resource::<SceneExtent>()
             .init_resource::<HistoricalGhostState>()
