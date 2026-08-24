@@ -79,7 +79,10 @@ fn refresh_capability(
     mut capability: ResMut<DlssCapability>,
     supported: Option<Res<bevy::anti_alias::dlss::DlssSuperResolutionSupported>>,
 ) {
-    capability.runtime_supported = supported.is_some();
+    let runtime_supported = supported.is_some();
+    if capability.runtime_supported != runtime_supported {
+        capability.runtime_supported = runtime_supported;
+    }
 }
 
 #[cfg(not(feature = "dlss"))]
