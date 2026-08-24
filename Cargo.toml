@@ -76,7 +76,6 @@ dlss = [
     "bevy/dlss",
     "bevy/raw_vulkan_init",
 ]
-fsr_vulkan = ["dep:ash", "dep:fsr", "dep:wgpu"]
 
 [[bin]]
 name = "usdview"
@@ -201,16 +200,6 @@ bevy_egui = { version = "0.41", default-features = false, features = [
 bevy_frost = { path = "../bevy_frost/crates/bevy_frost" }
 # Reusable 3D-scene gizmos (axis triads + joint primitives).
 bevy_glacial = { path = "../bevy_glacial" }
-# The archived Embark bindings are the only reviewed Rust wrapper in this
-# checkout that exposes the FidelityFX FSR2 Vulkan dispatch API. Keep it
-# optional and target-gated; unsupported targets must remain fail-closed.
-ash = { version = "0.38", optional = true }
-fsr = { version = "0.1.11", optional = true, features = ["vulkan"] }
-wgpu = { version = "29.0.4", optional = true, default-features = false, features = [
-    "std",
-    "vulkan",
-] }
-
 # `build.rs` bakes a sample USDZ (USDA + procedural PNG) into
 # `assets/external/` so `cargo run -- usdz_sample.usdz` always has
 # something real to show.

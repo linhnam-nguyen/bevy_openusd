@@ -8,8 +8,7 @@ use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::rendering::sampling::{
-    ActiveUpscaler, DlssCameraActivation, DlssCapability, FsrVulkanCapability,
-    SamplingCoordinatorState,
+    ActiveUpscaler, DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
 use crate::viewport::scene::visualization::DisplayToggles;
 
@@ -186,10 +185,8 @@ fn sampling_command_selects_dlss_and_publishes_authoritative_state() {
 }
 
 #[test]
-fn sampling_command_falls_back_to_fsr_when_dlss_is_unavailable() {
+fn sampling_command_rejects_when_dlss_is_unavailable_and_fsr_is_pending() {
     let mut app = command_test_app();
-    app.world_mut()
-        .insert_resource(FsrVulkanCapability::from_probe(true, true, true));
     let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::SetSamplingPreference {
             preference: SamplingPreference { enabled: true },
@@ -204,23 +201,20 @@ fn sampling_command_falls_back_to_fsr_when_dlss_is_unavailable() {
             .0
             .sampling
             .provider,
-        SamplingProvider::Fsr
+        SamplingProvider::None
     );
     assert_eq!(
         app.world().resource::<SamplingCoordinatorState>().active,
-        ActiveUpscaler::Fsr
+        ActiveUpscaler::None
     );
     assert!(!app.world().resource::<DlssCameraActivation>().enabled);
     let event = app
         .world_mut()
         .resource_mut::<ViewportEventOutbox>()
         .pop()
-        .expect("FSR fallback must publish an authoritative event");
+        .expect("unsupported sampling must publish a rejection");
     assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-    assert!(matches!(
-        event.event,
-        ViewportEvent::ViewerSettingsChanged { .. }
-    ));
+    assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
 }
 
 #[test]
@@ -280,8 +274,6 @@ fn unsupported_sampling_request_preserves_last_valid_state() {
     let before_activation = *app.world().resource::<DlssCameraActivation>();
     app.world_mut()
         .insert_resource(DlssCapability::from_probe(true, false));
-    app.world_mut()
-        .insert_resource(FsrVulkanCapability::default());
     let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::SetSamplingPreference {
             preference: SamplingPreference { enabled: true },

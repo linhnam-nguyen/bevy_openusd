@@ -33,7 +33,7 @@ use crate::viewport::camera::{
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::rendering::sampling::{
-    DlssProviderPlugin, FsrVulkanProviderPlugin, SamplingCoordinatorPlugin, configure_dlss,
+    DlssProviderPlugin, SamplingCoordinatorPlugin, configure_dlss,
 };
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
@@ -159,7 +159,6 @@ pub(crate) fn run() {
     app.add_plugins(ViewportBridgePlugin)
         .add_plugins(SamplingCoordinatorPlugin)
         .add_plugins(DlssProviderPlugin)
-        .add_plugins(FsrVulkanProviderPlugin)
         .add_plugins(SolariCapabilityPlugin)
         .add_plugins(OverlaysPlugin);
     app.world_mut()

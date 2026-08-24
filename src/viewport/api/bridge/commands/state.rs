@@ -9,7 +9,7 @@ use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::camera::CameraMount;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
-    DlssCameraActivation, DlssCapability, FsrVulkanCapability, SamplingCoordinatorState,
+    DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
@@ -26,7 +26,6 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub viewer_settings: ResMut<'w, super::super::ViewerSettingsState>,
     pub sampling: ResMut<'w, SamplingCoordinatorState>,
     pub dlss: Res<'w, DlssCapability>,
-    pub fsr: Res<'w, FsrVulkanCapability>,
     pub dlss_camera: ResMut<'w, DlssCameraActivation>,
     pub scene_index: Res<'w, SceneAnchorIndex>,
     pub tree_commands: ResMut<'w, ViewportTreeCommandInbox>,

@@ -1,33 +1,35 @@
-# Viewer Settings FSR provider boundary
+# Viewer Settings FSR provider status
 
-Bevy 0.19 does not provide a native FSR super-resolution implementation. The
-USDHub sampling module therefore owns a renderer-local `FsrVulkanProvider`
-adapter rather than inventing a `bevy::fsr` API or exposing FidelityFX/Vulkan
-objects through `viewport_protocol`.
+FSR is a pending feature and is intentionally not implemented or advertised
+in B4. The current renderer publishes `fsr_available = false` and keeps
+`SamplingProvider::Fsr` and `ActiveUpscaler::Fsr` only as forward-compatible
+renderer-neutral vocabulary.
 
-On Linux and Windows, the opt-in `fsr_vulkan` feature integrates the pinned
-`fsr` 0.1.11 Rust bindings with Bevy's Vulkan HAL. The provider is registered
-in `Core3dSystems::EarlyPostProcess`, creates an FSR2 context from Bevy's live
-Vulkan instance/adapter/device, and dispatches the GPU workload from the
-current render command encoder. The `fsr` project is archived, so the version
-is pinned deliberately and remains an isolated adapter dependency pending a
-maintained replacement.
+The active B4 sampling policy is:
 
-The camera binding supplies the real provider inputs: a 0.667 render-scale
-`MainPassResolutionOverride`, Bevy depth and motion-vector prepasses, and
-storage-capable main textures. FidelityFX writes the upscaled result into the
-post-process destination before Bevy tone mapping. The output remains the
-existing `OffscreenTarget`, so frame capture still reads the final image. The
-failure path copies the source to the destination and marks the provider
-unavailable; it never inserts a CPU readback.
+```text
+Sampling Off
+    -> None
 
-`FsrVulkanCapability` remains fail-closed on unsupported targets and is updated
-from the render-world provider after a real context/dispatch attempt. Physical
-GPU/runtime proof is still deferred to a supported Vulkan host.
+Sampling On
+    -> DLSS when the runtime capability is supported
+    -> explicit unsupported result otherwise
+```
 
-The adapter contract rejects frames unless the input extent is lower than the
-output extent, motion vectors/depth/exposure are present, and no CPU readback
-is inserted between rendering and the provider. A supported-host verification
-packet must record input/output resolutions, the GPU dispatch time, capture
-dimensions, and encoded frame dimensions. The provider must not change the
-frontend or wire protocol.
+The experimental FSR2 Vulkan adapter, its `fsr_vulkan` feature, and the
+`fsr` 0.1.11 dependency were removed from the production path. No FSR camera
+binding, render-world backend, GPU dispatch, or CPU readback path remains in
+the current renderer.
+
+FSR remains deferred because the accepted official AMD source paths do not
+provide the required combination for this milestone:
+
+- FidelityFX SDK `v1.1.4` includes an open-source Vulkan backend, but its FSR3
+  upscaler is version 3.1.4.
+- FidelityFX SDK `v2.0.0` contains FSR3 upscaler 3.1.5, but only the DX12
+  backend/runtime is shipped for that upscaler.
+
+USDHub will not create a custom or unofficial Vulkan port to bridge that gap.
+When AMD provides a reviewed official Vulkan-capable implementation, it can
+be added behind the existing provider boundary without changing the frontend
+or `viewport_protocol` vocabulary.

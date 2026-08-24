@@ -7,14 +7,12 @@ use crate::viewport::api::{ViewerSettingsState, ViewportEventOutbox};
 
 pub(crate) mod coordinator;
 pub(crate) mod dlss;
-pub(crate) mod fsr_vulkan;
 
 pub(crate) use coordinator::{
     ActiveUpscaler, SamplingCapabilities, SamplingCoordinatorState, SamplingSelectionError,
     choose_upscaler,
 };
 pub(crate) use dlss::{DlssCameraActivation, DlssCapability, DlssProviderPlugin, configure_dlss};
-pub(crate) use fsr_vulkan::{FsrVulkanCapability, FsrVulkanProviderPlugin};
 
 /// Publishes provider availability into the renderer-neutral read model.
 pub(crate) struct SamplingCoordinatorPlugin;
@@ -31,7 +29,6 @@ impl Plugin for SamplingCoordinatorPlugin {
 
 fn publish_sampling_capabilities(
     dlss: Res<DlssCapability>,
-    fsr: Res<FsrVulkanCapability>,
     settings: Option<ResMut<ViewerSettingsState>>,
     mut sampling: ResMut<SamplingCoordinatorState>,
     mut dlss_camera: ResMut<DlssCameraActivation>,
@@ -41,7 +38,9 @@ fn publish_sampling_capabilities(
         return;
     };
 
-    let capabilities = SamplingCapabilities::new(dlss.supported(), fsr.supported());
+    // FSR remains forward-compatible vocabulary only. B4 has no reviewed
+    // Vulkan implementation, so it must never be advertised or selected.
+    let capabilities = SamplingCapabilities::new(dlss.supported(), false);
     let capabilities_changed = settings.sampling_capabilities()
         != (capabilities.dlss_available(), capabilities.fsr_available());
     if capabilities_changed {

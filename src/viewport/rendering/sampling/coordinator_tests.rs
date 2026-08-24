@@ -7,8 +7,7 @@ use super::coordinator::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
 };
 use super::{
-    DlssCameraActivation, DlssCapability, FsrVulkanCapability, SamplingCoordinatorState,
-    publish_sampling_capabilities,
+    DlssCameraActivation, DlssCapability, SamplingCoordinatorState, publish_sampling_capabilities,
 };
 
 const NO_PROVIDERS: SamplingCapabilities = SamplingCapabilities::new(false, false);
@@ -74,10 +73,9 @@ fn provider_choice_is_deterministic() {
     }
 }
 
-fn reconciliation_app(dlss: bool, fsr: bool, active: ActiveUpscaler) -> App {
+fn reconciliation_app(dlss: bool, active: ActiveUpscaler) -> App {
     let mut app = App::new();
     app.insert_resource(DlssCapability::from_probe(dlss, dlss))
-        .insert_resource(FsrVulkanCapability::from_probe(fsr, fsr, fsr))
         .insert_resource(SamplingCoordinatorState {
             preference_enabled: true,
             active,
@@ -92,19 +90,19 @@ fn reconciliation_app(dlss: bool, fsr: bool, active: ActiveUpscaler) -> App {
 }
 
 #[test]
-fn dlss_loss_falls_back_to_fsr_and_publishes_authoritative_settings() {
-    let mut app = reconciliation_app(false, true, ActiveUpscaler::Dlss);
+fn dlss_loss_with_fsr_pending_selects_none_and_publishes_unsupported_state() {
+    let mut app = reconciliation_app(false, ActiveUpscaler::Dlss);
 
     app.update();
 
     let coordinator = app.world().resource::<SamplingCoordinatorState>();
-    assert_eq!(coordinator.active, ActiveUpscaler::Fsr);
+    assert_eq!(coordinator.active, ActiveUpscaler::None);
     assert!(!app.world().resource::<DlssCameraActivation>().enabled);
 
     let settings = app.world().resource::<ViewerSettingsState>().read_model();
     assert_eq!(settings.capabilities.dlss_available, false);
-    assert_eq!(settings.capabilities.fsr_available, true);
-    assert_eq!(settings.sampling.provider, SamplingProvider::Fsr);
+    assert_eq!(settings.capabilities.fsr_available, false);
+    assert_eq!(settings.sampling.provider, SamplingProvider::None);
 
     let events = app
         .world_mut()
@@ -115,14 +113,14 @@ fn dlss_loss_falls_back_to_fsr_and_publishes_authoritative_settings() {
         settings: event_settings,
     } = &events[0].event
     else {
-        panic!("capability loss must publish viewer settings");
+        panic!("capability loss must publish unsupported viewer settings");
     };
-    assert_eq!(event_settings.sampling.provider, SamplingProvider::Fsr);
+    assert_eq!(event_settings.sampling.provider, SamplingProvider::None);
 }
 
 #[test]
-fn provider_loss_without_fallback_selects_none_and_publishes_unavailable_state() {
-    let mut app = reconciliation_app(false, false, ActiveUpscaler::Dlss);
+fn pending_fsr_state_is_reconciled_to_none() {
+    let mut app = reconciliation_app(false, ActiveUpscaler::Fsr);
 
     app.update();
 
@@ -144,11 +142,11 @@ fn provider_loss_without_fallback_selects_none_and_publishes_unavailable_state()
 }
 
 #[test]
-fn newly_available_provider_does_not_replace_the_applied_provider() {
-    let mut app = reconciliation_app(true, true, ActiveUpscaler::Fsr);
+fn pending_fsr_state_is_reconciled_to_dlss_when_available() {
+    let mut app = reconciliation_app(true, ActiveUpscaler::Fsr);
     {
         let mut settings = app.world_mut().resource_mut::<ViewerSettingsState>();
-        settings.set_sampling_capabilities(false, true);
+        settings.set_sampling_capabilities(false, false);
         settings.set_sampling(true, SamplingProvider::Fsr);
     }
     app.world_mut()
@@ -159,12 +157,12 @@ fn newly_available_provider_does_not_replace_the_applied_provider() {
 
     assert_eq!(
         app.world().resource::<SamplingCoordinatorState>().active,
-        ActiveUpscaler::Fsr
+        ActiveUpscaler::Dlss
     );
     let settings = app.world().resource::<ViewerSettingsState>().read_model();
-    assert_eq!(settings.sampling.provider, SamplingProvider::Fsr);
+    assert_eq!(settings.sampling.provider, SamplingProvider::Dlss);
     assert_eq!(settings.capabilities.dlss_available, true);
-    assert_eq!(settings.capabilities.fsr_available, true);
+    assert_eq!(settings.capabilities.fsr_available, false);
 
     let events = app
         .world_mut()

@@ -290,8 +290,10 @@ pub(super) fn apply_viewport_commands(
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSamplingPreference { preference } => {
-                let capabilities =
-                    SamplingCapabilities::new(state.dlss.supported(), state.fsr.supported());
+                // FSR is a forward-compatible provider vocabulary only. No
+                // reviewed implementation is active in B4, so sampling On
+                // may select DLSS or reject explicitly.
+                let capabilities = SamplingCapabilities::new(state.dlss.supported(), false);
                 let active = match choose_upscaler(preference.enabled, capabilities) {
                     Ok(active) => active,
                     Err(SamplingSelectionError::NoProviderAvailable) => {
