@@ -24,6 +24,7 @@ pub(super) struct HoveredTarget {
     last_camera_local: Option<Transform>,
     last_camera_global: Option<Transform>,
     last_clip_from_view: Option<Mat4>,
+    last_camera_viewport_size: Option<Vec2>,
     last_focused: Option<bool>,
     last_scene_revision: Option<u64>,
 }
@@ -57,11 +58,15 @@ pub(super) fn update_hover_target(
     let camera_local = *camera_local;
     let camera_global_transform = camera_global.compute_transform();
     let clip_from_view = camera.clip_from_view();
+    let Some(camera_viewport_size) = camera.logical_viewport_size() else {
+        return;
+    };
     let pointer_changed = hovered.last_pointer_position != input.pointer_position;
     let viewport_changed = hovered.last_viewport_size != Some(input.viewport_size);
     let camera_changed = hovered.last_camera_local != Some(camera_local)
         || hovered.last_camera_global != Some(camera_global_transform)
-        || hovered.last_clip_from_view != Some(clip_from_view);
+        || hovered.last_clip_from_view != Some(clip_from_view)
+        || hovered.last_camera_viewport_size != Some(camera_viewport_size);
     let focus_changed = hovered.last_focused != Some(input.focused);
     let scene_changed = hovered.last_scene_revision != Some(scene_index.revision());
 
@@ -76,6 +81,7 @@ pub(super) fn update_hover_target(
     hovered.last_camera_local = Some(camera_local);
     hovered.last_camera_global = Some(camera_global_transform);
     hovered.last_clip_from_view = Some(clip_from_view);
+    hovered.last_camera_viewport_size = Some(camera_viewport_size);
     hovered.last_focused = Some(input.focused);
     hovered.last_scene_revision = Some(scene_index.revision());
     stats.raycasts = stats.raycasts.saturating_add(1);
@@ -83,6 +89,8 @@ pub(super) fn update_hover_target(
     let next = if !input.focused {
         None
     } else if let Some(pointer) = input.pointer_position {
+        let pointer =
+            map_pointer_to_camera_viewport(pointer, input.viewport_size, camera_viewport_size);
         camera
             .viewport_to_world(camera_global, pointer)
             .ok()
@@ -101,6 +109,19 @@ pub(super) fn update_hover_target(
     if hovered.anchor != next {
         hovered.anchor = next;
     }
+}
+
+/// Maps the browser's CSS-pixel cursor into the actual logical Bevy camera
+/// viewport. Remote streams may render at a device-pixel or capped size that
+/// differs from the CSS video size, while native input normally has a 1:1
+/// mapping.
+fn map_pointer_to_camera_viewport(
+    pointer: Vec2,
+    input_viewport_size: Vec2,
+    camera_viewport_size: Vec2,
+) -> Vec2 {
+    let input_viewport_size = input_viewport_size.max(Vec2::splat(f32::EPSILON));
+    (pointer / input_viewport_size * camera_viewport_size).clamp(Vec2::ZERO, camera_viewport_size)
 }
 
 /// Resolves a mesh hit on a projected child entity to its owning prim.
@@ -151,5 +172,25 @@ mod tests {
     fn hover_pick_stats_start_without_raycasts() {
         assert_eq!(HoverPickStats::default().raycasts, 0);
         assert_eq!(HoverPickStats::default().skipped_idle_frames, 0);
+    }
+
+    #[test]
+    fn remote_css_pointer_maps_to_actual_camera_viewport() {
+        let mapped = map_pointer_to_camera_viewport(
+            Vec2::new(480.0, 270.0),
+            Vec2::new(960.0, 540.0),
+            Vec2::new(1920.0, 1080.0),
+        );
+        assert!(mapped.abs_diff_eq(Vec2::new(960.0, 540.0), 1e-5));
+    }
+
+    #[test]
+    fn remote_css_pointer_maps_non_two_x_camera_viewport() {
+        let mapped = map_pointer_to_camera_viewport(
+            Vec2::new(375.0, 225.0),
+            Vec2::new(1000.0, 600.0),
+            Vec2::new(1500.0, 900.0),
+        );
+        assert!(mapped.abs_diff_eq(Vec2::new(562.5, 337.5), 1e-5));
     }
 }
