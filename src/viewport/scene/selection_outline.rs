@@ -86,7 +86,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
     state.last_boundary = Some(boundary);
 }
 
-fn collect_mesh_descendants(
+pub(super) fn collect_mesh_descendants(
     root: Entity,
     meshes: &Query<(Option<&Mesh3d>, Option<&Children>)>,
     output: &mut HashSet<Entity>,

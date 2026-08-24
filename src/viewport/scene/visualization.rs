@@ -8,6 +8,9 @@ use bevy::prelude::*;
 use viewport_protocol::{GroundGridOrigin, RendererConfiguration};
 
 use super::HistoricalGhostState;
+use super::selection_color::{
+    SelectionColorOverrideState, init_selection_color_material, sync_selection_color_overrides,
+};
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
 
@@ -41,11 +44,17 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
+            .init_resource::<SelectionColorOverrideState>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(
                 Startup,
-                (init_edge_overlay_material, init_uniform_render_material).chain(),
+                (
+                    init_edge_overlay_material,
+                    init_uniform_render_material,
+                    init_selection_color_material,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
@@ -60,6 +69,7 @@ impl Plugin for OverlaysPlugin {
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_render_mode,
+                    sync_selection_color_overrides,
                     apply_wireframe_toggle,
                     sync_edge_overlays,
                     sync_ground_grid_visibility,

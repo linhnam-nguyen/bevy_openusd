@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::RenderMode;
 
+use super::super::selection_color::SelectionBaseMaterial;
 use super::DisplayToggles;
 
 const UNIFORM_COLOR: Color = Color::srgb(0.72, 0.72, 0.72);
@@ -68,6 +69,7 @@ pub(super) fn apply_render_mode(
                 Entity,
                 &mut MeshMaterial3d<StandardMaterial>,
                 Option<&mut OriginalRenderMaterial>,
+                Option<&mut SelectionBaseMaterial>,
             ),
             With<UsdPrimRef>,
         >,
@@ -76,6 +78,7 @@ pub(super) fn apply_render_mode(
                 Entity,
                 &mut MeshMaterial3d<StandardMaterial>,
                 Option<&mut OriginalRenderMaterial>,
+                Option<&mut SelectionBaseMaterial>,
             ),
             (
                 With<UsdPrimRef>,
@@ -87,6 +90,7 @@ pub(super) fn apply_render_mode(
                 Entity,
                 &mut MeshMaterial3d<StandardMaterial>,
                 &OriginalRenderMaterial,
+                Option<&mut SelectionBaseMaterial>,
             ),
             With<OriginalRenderMaterial>,
         >,
@@ -103,12 +107,22 @@ pub(super) fn apply_render_mode(
             };
             projection.last_mode = desired;
             let mut prims = prims.p0();
-            for (entity, mut material, original) in &mut prims {
+            for (entity, mut material, original, selection_base) in &mut prims {
                 #[cfg(test)]
                 if let Some(stats) = stats.as_mut() {
                     stats.full_transition_scans += 1;
                 }
                 if material.0 == uniform.0 {
+                    continue;
+                }
+
+                if let Some(mut selection_base) = selection_base {
+                    if original.is_none() {
+                        commands
+                            .entity(entity)
+                            .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                    }
+                    selection_base.0 = uniform.0.clone();
                     continue;
                 }
 
@@ -127,12 +141,16 @@ pub(super) fn apply_render_mode(
             // Ray Traced is rejected by the B2 protocol validator and remains
             // a B3 capability. If an internal caller places it in this state,
             // restore the authored material without claiming ray tracing.
-            for (entity, mut material, original) in &mut prims {
+            for (entity, mut material, original, selection_base) in &mut prims {
                 #[cfg(test)]
                 if let Some(stats) = stats.as_mut() {
                     stats.restore_scans += 1;
                 }
-                material.0 = original.0.clone();
+                if let Some(mut selection_base) = selection_base {
+                    selection_base.0 = original.0.clone();
+                } else {
+                    material.0 = original.0.clone();
+                }
                 commands.entity(entity).remove::<OriginalRenderMaterial>();
             }
         }
@@ -144,12 +162,25 @@ pub(super) fn apply_render_mode(
             return;
         };
         let mut prims = prims.p1();
-        for (entity, mut material, original) in &mut prims {
+        for (entity, mut material, original, selection_base) in &mut prims {
             #[cfg(test)]
             if let Some(stats) = stats.as_mut() {
                 stats.incremental_scans += 1;
             }
             if material.0 == uniform.0 {
+                if let Some(mut selection_base) = selection_base {
+                    selection_base.0 = uniform.0.clone();
+                }
+                continue;
+            }
+
+            if let Some(mut selection_base) = selection_base {
+                if original.is_none() {
+                    commands
+                        .entity(entity)
+                        .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                }
+                selection_base.0 = uniform.0.clone();
                 continue;
             }
 
