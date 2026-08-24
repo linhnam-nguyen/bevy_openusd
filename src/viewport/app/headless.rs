@@ -19,6 +19,11 @@ pub struct OffscreenTarget {
     pub generation: u64,
 }
 
+/// Marker for the synthetic window used only to feed remote gizmo hover and
+/// cursor coordinates. Native camera input must ignore this entity.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeadlessInputWindow;
+
 /// Headless rendering plugin for offscreen Bevy App setup.
 pub struct HeadlessRenderPlugin {
     pub width: u32,
@@ -71,7 +76,18 @@ impl Plugin for HeadlessRenderPlugin {
             height: self.height,
             generation: 0,
         })
-        .add_systems(Update, setup_offscreen_camera_target);
+        .world_mut()
+        .spawn((
+            Window {
+                resolution: (self.width, self.height).into(),
+                focused: false,
+                ..default()
+            },
+            bevy::window::PrimaryWindow,
+            HeadlessInputWindow,
+        ));
+
+        app.add_systems(Update, setup_offscreen_camera_target);
     }
 }
 

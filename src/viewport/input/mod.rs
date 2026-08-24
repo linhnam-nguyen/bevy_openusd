@@ -5,5 +5,5 @@ pub(crate) mod navigation;
 
 pub(crate) use navigation::{
     ViewportNavigationInput, apply_local_navigation_input, apply_remote_navigation_input,
-    reset_navigation_frame,
+    reset_navigation_frame, sync_headless_gizmo_input,
 };
