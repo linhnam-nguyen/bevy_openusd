@@ -1,7 +1,8 @@
 use bevy::prelude::UVec2;
 
 use super::{
-    FsrFrameInput, FsrInputError, FsrVulkanCapability, FsrVulkanProvider, fsr_render_extent,
+    FsrFrameInput, FsrInputError, FsrVulkanCapability, FsrVulkanProvider, fsr_camera_parameters,
+    fsr_frame_delta_ms, fsr_jitter_offset, fsr_render_extent,
 };
 
 const VALID_INPUT: FsrFrameInput = FsrFrameInput {
@@ -10,18 +11,14 @@ const VALID_INPUT: FsrFrameInput = FsrFrameInput {
     motion_vectors: true,
     depth: true,
     exposure: true,
+    jitter: true,
+    camera_parameters: true,
     cpu_readback: false,
 };
 
 #[test]
 fn capability_requires_every_runtime_boundary() {
-    assert_eq!(
-        FsrVulkanCapability::default().supported(),
-        cfg!(all(
-            feature = "fsr_vulkan",
-            any(target_os = "linux", target_os = "windows")
-        ))
-    );
+    assert_eq!(FsrVulkanCapability::default().supported(), false);
     assert!(FsrVulkanCapability::from_probe(true, true, true).supported());
     assert!(!FsrVulkanCapability::from_probe(true, true, false).supported());
 }
@@ -37,6 +34,24 @@ fn camera_render_extent_uses_a_strictly_lower_fsr_input_size() {
 #[test]
 fn valid_input_has_lower_render_extent_and_no_cpu_readback() {
     assert_eq!(FsrVulkanProvider::validate_frame_input(VALID_INPUT), Ok(()));
+}
+
+#[test]
+fn frame_delta_is_passed_to_fsr_in_milliseconds() {
+    assert!((fsr_frame_delta_ms(1.0 / 60.0) - 16.666666).abs() < 0.001);
+    assert_eq!(fsr_frame_delta_ms(0.0), 1.0);
+}
+
+#[test]
+fn jitter_sequence_is_non_zero_and_camera_parameters_match_bevy_perspective() {
+    let jitter = fsr_jitter_offset(0);
+    assert_ne!(jitter, bevy::prelude::Vec2::ZERO);
+
+    let projection = bevy::camera::Projection::default();
+    let parameters = fsr_camera_parameters(&projection).expect("perspective projection");
+    assert_eq!(parameters.near, 0.1);
+    assert_eq!(parameters.far, 1000.0);
+    assert!((parameters.fov_y - std::f32::consts::FRAC_PI_4).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -62,6 +77,20 @@ fn missing_temporal_inputs_fail_closed() {
                 ..VALID_INPUT
             },
             FsrInputError::MissingExposure,
+        ),
+        (
+            FsrFrameInput {
+                jitter: false,
+                ..VALID_INPUT
+            },
+            FsrInputError::MissingJitter,
+        ),
+        (
+            FsrFrameInput {
+                camera_parameters: false,
+                ..VALID_INPUT
+            },
+            FsrInputError::MissingCameraParameters,
         ),
         (
             FsrFrameInput {

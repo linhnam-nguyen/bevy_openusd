@@ -6,7 +6,10 @@ use bevy::render::extract_resource::ExtractResourcePlugin;
 use bevy::render::{ExtractSchedule, RenderApp, RenderStartup};
 
 use super::coordinator::{ActiveUpscaler, SamplingCoordinatorState};
-use super::{FsrFrameInput, FsrVulkanCapability, FsrVulkanProvider};
+use super::{
+    FsrFrameInput, FsrVulkanCapability, FsrVulkanProvider, fsr_camera_parameters,
+    fsr_frame_delta_ms, fsr_render_extent,
+};
 
 pub(super) fn build_vulkan_provider(app: &mut App) {
     app.add_plugins(ExtractResourcePlugin::<SamplingCoordinatorState>::default());
@@ -32,10 +35,13 @@ struct FsrVulkanRenderBackend {
     max_render_size: [u32; 2],
     attempted: bool,
     ready: bool,
+    reset_history: bool,
 }
 
 fn initialize_vulkan_backend(mut backend: NonSendMut<FsrVulkanRenderBackend>) {
     backend.attempted = false;
+    backend.ready = false;
+    backend.reset_history = true;
 }
 
 fn publish_backend_capability(
@@ -60,46 +66,26 @@ fn dispatch_fsr_vulkan(
     adapter: Res<bevy::render::renderer::RenderAdapter>,
     render_device: Res<bevy::render::renderer::RenderDevice>,
     sampling: Res<SamplingCoordinatorState>,
+    time: Res<bevy::time::Time>,
     view: bevy::render::renderer::ViewQuery<(
         &bevy::render::view::ViewTarget,
         Option<&bevy::core_pipeline::prepass::ViewPrepassTextures>,
+        Option<&bevy::render::camera::TemporalJitter>,
+        &bevy::camera::Projection,
     )>,
     mut render_context: bevy::render::renderer::RenderContext,
 ) {
-    if sampling.active != ActiveUpscaler::Fsr {
-        return;
-    }
-
-    let (target, prepass) = view.into_inner();
-    let Some(prepass) = prepass else {
-        return;
-    };
-    let Some(depth) = prepass.depth.as_ref() else {
-        return;
-    };
-    let Some(motion_vectors) = prepass.motion_vectors.as_ref() else {
-        return;
-    };
-
-    let input_extent = UVec2::new(prepass.size.width, prepass.size.height);
+    let (target, prepass, temporal_jitter, projection) = view.into_inner();
     let output_extent = UVec2::new(
         target.main_texture().width(),
         target.main_texture().height(),
     );
-    let input = FsrFrameInput {
-        input_extent,
-        output_extent,
-        motion_vectors: true,
-        depth: true,
-        // The FSR context uses the SDK's auto-exposure path. This keeps the
-        // exposure input on the GPU and avoids a CPU readback or staging image.
-        exposure: true,
-        cpu_readback: false,
-    };
-    if FsrVulkanProvider::validate_frame_input(input).is_err() {
+    let Some(camera) = fsr_camera_parameters(projection) else {
         return;
-    }
-
+    };
+    let input_extent = prepass
+        .map(|prepass| UVec2::new(prepass.size.width, prepass.size.height))
+        .unwrap_or_else(|| fsr_render_extent(output_extent));
     if backend
         .ensure_context(
             &instance,
@@ -112,6 +98,39 @@ fn dispatch_fsr_vulkan(
     {
         return;
     }
+    if sampling.active != ActiveUpscaler::Fsr {
+        backend.reset_history = true;
+        return;
+    }
+    let Some(prepass) = prepass else {
+        return;
+    };
+    let Some(depth) = prepass.depth.as_ref() else {
+        return;
+    };
+    let Some(motion_vectors) = prepass.motion_vectors.as_ref() else {
+        return;
+    };
+
+    let Some(temporal_jitter) = temporal_jitter else {
+        return;
+    };
+    let input = FsrFrameInput {
+        input_extent,
+        output_extent,
+        motion_vectors: true,
+        depth: true,
+        // The FSR context uses the SDK's auto-exposure path. This keeps the
+        // exposure input on the GPU and avoids a CPU readback or staging image.
+        exposure: true,
+        jitter: true,
+        camera_parameters: true,
+        cpu_readback: false,
+    };
+    if FsrVulkanProvider::validate_frame_input(input).is_err() {
+        return;
+    }
+
     let Some(context) = backend.context.as_mut() else {
         return;
     };
@@ -192,10 +211,13 @@ fn dispatch_fsr_vulkan(
         depth,
         motion_vectors,
         output,
-        1.0 / 60.0,
+        fsr_frame_delta_ms(time.delta_secs()),
         [input_extent.x, input_extent.y],
     )
-    .reset(false);
+    .camera(camera.near, camera.far, camera.fov_y)
+    .motion_vector_scale([input_extent.x as f32, input_extent.y as f32])
+    .jitter_offset([temporal_jitter.offset.x, temporal_jitter.offset.y])
+    .reset(std::mem::replace(&mut backend.reset_history, false));
 
     // SAFETY: the dispatch resources and command buffer all belong to the
     // same live Vulkan device and remain valid for the encoded operation.
@@ -206,6 +228,7 @@ fn dispatch_fsr_vulkan(
             post_process.source_texture.size(),
         );
         backend.ready = false;
+        backend.reset_history = true;
     } else {
         backend.ready = true;
     }
@@ -226,8 +249,10 @@ impl FsrVulkanRenderBackend {
             && (self.display_size != display_size || self.max_render_size != max_render_size)
         {
             if let Some(mut context) = self.context.take() {
+                let _ = render_device.wgpu_device().poll(wgpu::PollType::Wait);
                 // SAFETY: the context is retired on the render thread before
-                // the next context is created for the same Vulkan device.
+                // the next context is created for the same Vulkan device and
+                // the logical device is idle before the SDK is destroyed.
                 let _ = unsafe { context.destroy() };
             }
         }
@@ -278,7 +303,9 @@ impl FsrVulkanRenderBackend {
             fsr::Context::new(fsr::ContextDescription {
                 interface,
                 flags: fsr::InitializationFlagBits::ENABLE_HIGH_DYNAMIC_RANGE
-                    | fsr::InitializationFlagBits::ENABLE_AUTO_EXPOSURE,
+                    | fsr::InitializationFlagBits::ENABLE_AUTO_EXPOSURE
+                    | fsr::InitializationFlagBits::ENABLE_DEPTH_INFINITE
+                    | fsr::InitializationFlagBits::ENABLE_DEPTH_INVERTED,
                 max_render_size,
                 display_size,
                 device: &fsr_device,
@@ -291,6 +318,7 @@ impl FsrVulkanRenderBackend {
         self.display_size = display_size;
         self.max_render_size = max_render_size;
         self.ready = true;
+        self.reset_history = true;
         Ok(())
     }
 }
