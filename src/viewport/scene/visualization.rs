@@ -14,7 +14,7 @@ use super::selection_color::{
 use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
 use super::{
     SectionBoxState, capture_section_box_gizmo_transform, draw_section_box,
-    sync_section_box_gizmo_target, sync_section_box_state,
+    sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
 };
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
@@ -53,6 +53,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HoveredTarget>()
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
+            .init_resource::<super::section_box_clipping::SectionClipProjectionState>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(
@@ -93,6 +94,7 @@ impl Plugin for OverlaysPlugin {
                     apply_render_mode,
                     update_hover_target,
                     sync_selection_color_overrides,
+                    sync_section_box_clipping,
                     apply_wireframe_toggle,
                     sync_edge_overlays,
                     sync_ground_grid_visibility,

@@ -16,6 +16,7 @@ mod offscreen_resize;
 mod scene;
 mod sync;
 
+use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use bevy_frost::prelude::AccentColor;
@@ -41,9 +42,9 @@ use crate::viewport::rendering::sampling::{
 };
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
-    HideMeshesFlag, SelectedPrim, SelectedTargets, SelectionOutlineState, ShowJointGizmosFlag,
-    SkeletonGizmos, SolariCapabilityPlugin, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
-    sync_selected_instance_identity, sync_selection_outlines,
+    HideMeshesFlag, SectionClipMaterial, SelectedPrim, SelectedTargets, SelectionOutlineState,
+    ShowJointGizmosFlag, SkeletonGizmos, SolariCapabilityPlugin, hide_meshes_on_startup,
+    setup_skeleton_gizmos_on_top, sync_selected_instance_identity, sync_selection_outlines,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -132,6 +133,7 @@ pub(crate) fn run() {
         .add_plugins(GroundGridPlugin)
         .add_plugins(AxisGizmoPlugin)
         .add_plugins(TransformGizmoPlugin)
+        .add_plugins(MaterialPlugin::<SectionClipMaterial>::default())
         .init_resource::<GizmoAutoScale>()
         .add_systems(Update, auto_scale_gizmo_to_target)
         .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))

@@ -3,6 +3,7 @@
 mod diff;
 mod ghost;
 mod section_box;
+mod section_box_clipping;
 mod section_box_gizmo;
 mod section_box_visualization;
 mod selection;
@@ -15,6 +16,9 @@ mod solari;
 pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
 pub(in crate::viewport) use section_box::{SectionBoxState, sync_section_box_state};
+pub(in crate::viewport) use section_box_clipping::{
+    SectionClipMaterial, sync_section_box_clipping,
+};
 pub(in crate::viewport) use section_box_gizmo::{
     capture_section_box_gizmo_transform, sync_section_box_gizmo_target,
 };
