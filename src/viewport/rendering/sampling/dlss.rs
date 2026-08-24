@@ -69,7 +69,8 @@ impl Plugin for DlssProviderPlugin {
             .add_systems(
                 Update,
                 apply_camera_activation
-                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands),
+                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                    .before(crate::viewport::api::ViewportBridgeSet::ReduceEvents),
             );
     }
 }

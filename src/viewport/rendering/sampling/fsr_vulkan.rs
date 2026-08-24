@@ -102,7 +102,9 @@ impl Plugin for FsrVulkanProviderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FsrVulkanCapability>().add_systems(
             Update,
-            configure_fsr_camera.after(crate::viewport::api::ViewportBridgeSet::ApplyCommands),
+            configure_fsr_camera
+                .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                .before(crate::viewport::api::ViewportBridgeSet::ReduceEvents),
         );
 
         #[cfg(all(

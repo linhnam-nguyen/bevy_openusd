@@ -11,6 +11,10 @@ use viewport_protocol::{SamplingProvider, ViewerEnvironmentSettings, ViewerSetti
 pub(in crate::viewport) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
 
 impl ViewerSettingsState {
+    pub(in crate::viewport) fn read_model(&self) -> ViewerSettingsReadModel {
+        self.0.clone()
+    }
+
     pub(in crate::viewport) fn environment(&self) -> &ViewerEnvironmentSettings {
         &self.0.environment
     }

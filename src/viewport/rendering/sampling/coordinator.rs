@@ -26,6 +26,14 @@ impl SamplingCapabilities {
     pub(crate) const fn new(dlss: bool, fsr: bool) -> Self {
         Self { dlss, fsr }
     }
+
+    pub(crate) const fn dlss_available(self) -> bool {
+        self.dlss
+    }
+
+    pub(crate) const fn fsr_available(self) -> bool {
+        self.fsr
+    }
 }
 
 /// Authoritative renderer-local sampling selection.
