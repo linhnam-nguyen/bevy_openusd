@@ -91,18 +91,15 @@ fn identical_environment_command_does_not_mark_settings_changed() {
 }
 
 #[test]
-fn unsupported_settings_commands_reject_without_mutating_applied_state() {
+fn unsupported_sampling_command_rejects_without_mutating_applied_state() {
     let mut app = command_test_app();
     let before_settings = app.world().resource::<ViewerSettingsState>().0.clone();
     let before_renderer = app.world().resource::<DisplayToggles>().renderer;
     let request_ids = {
         let mut inbox = app.world_mut().resource_mut::<ViewportCommandInbox>();
-        vec![
-            inbox.send(ViewportCommand::SetSamplingPreference {
-                preference: SamplingPreference { enabled: true },
-            }),
-            inbox.send(ViewportCommand::SetSectionBox { enabled: true }),
-        ]
+        vec![inbox.send(ViewportCommand::SetSamplingPreference {
+            preference: SamplingPreference { enabled: true },
+        })]
     };
 
     app.update();
@@ -123,6 +120,52 @@ fn unsupported_settings_commands_reject_without_mutating_applied_state() {
         assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
         assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
     }
+}
+
+#[test]
+fn section_box_command_updates_authoritative_settings() {
+    let mut app = command_test_app();
+    let request_id = app
+        .world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::SetSectionBox { enabled: true });
+
+    app.update();
+
+    assert!(
+        app.world()
+            .resource::<ViewerSettingsState>()
+            .section_box_enabled()
+    );
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("section-box command must publish an applied event");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    let ViewportEvent::ViewerSettingsChanged { settings } = event.event else {
+        panic!("section-box command must publish viewer settings");
+    };
+    assert!(settings.section_box.enabled);
+
+    let snapshot_request = app
+        .world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::RequestSnapshot);
+    app.update();
+    let snapshot = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("reconnect snapshot must be available");
+    assert_eq!(
+        snapshot.request_id.as_deref(),
+        Some(snapshot_request.as_str())
+    );
+    let ViewportEvent::Snapshot { state } = snapshot.event else {
+        panic!("reconnect must receive a snapshot");
+    };
+    assert!(state.viewer_settings.section_box.enabled);
 }
 
 #[test]

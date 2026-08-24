@@ -316,12 +316,9 @@ pub(super) fn apply_viewport_commands(
                 state.viewer_settings.0.selection = settings;
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
-            ViewportCommand::SetSectionBox { .. } => {
-                reject(
-                    &mut outbox,
-                    request_id,
-                    "section box is not applied in this milestone".to_owned(),
-                );
+            ViewportCommand::SetSectionBox { enabled } => {
+                state.viewer_settings.set_section_box_enabled(enabled);
+                emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetPrimMarkerBias { bias } => {
                 presentation::set_prim_marker_bias(
