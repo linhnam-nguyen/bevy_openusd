@@ -11,6 +11,7 @@ use super::HistoricalGhostState;
 use super::selection_color::{
     SelectionColorOverrideState, init_selection_color_material, sync_selection_color_overrides,
 };
+use super::selection_hover::{HoveredTarget, update_hover_target};
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
 
@@ -45,6 +46,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
             .init_resource::<SelectionColorOverrideState>()
+            .init_resource::<HoveredTarget>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(
@@ -69,6 +71,7 @@ impl Plugin for OverlaysPlugin {
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_render_mode,
+                    update_hover_target,
                     sync_selection_color_overrides,
                     apply_wireframe_toggle,
                     sync_edge_overlays,

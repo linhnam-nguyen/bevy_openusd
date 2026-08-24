@@ -4,6 +4,7 @@ mod diff;
 mod ghost;
 mod selection;
 mod selection_color;
+mod selection_hover;
 mod selection_outline;
 mod skeleton;
 mod solari;

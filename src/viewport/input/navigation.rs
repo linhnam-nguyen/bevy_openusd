@@ -21,6 +21,7 @@ pub(crate) struct ViewportNavigationInput {
     pub(crate) buttons: PointerButtons,
     pub(crate) modifiers: InputModifiers,
     pub(crate) viewport_size: Vec2,
+    pub(crate) pointer_position: Option<Vec2>,
     pub(crate) focused: bool,
     pub(crate) generation: u64,
     /// Remote video surfaces use a larger pan response because CSS pixels
@@ -40,6 +41,7 @@ impl Default for ViewportNavigationInput {
             buttons: PointerButtons::default(),
             modifiers: InputModifiers::default(),
             viewport_size: Vec2::new(1400.0, 900.0),
+            pointer_position: None,
             focused: true,
             generation: 0,
             pan_multiplier: 1.0,
@@ -73,6 +75,7 @@ impl ViewportNavigationInput {
         }
         self.pointer_delta = Vec2::ZERO;
         self.wheel_delta = Vec2::ZERO;
+        self.pointer_position = None;
         self.buttons = PointerButtons::default();
         self.modifiers = InputModifiers::default();
         self.focused = false;
@@ -152,6 +155,10 @@ impl ViewportNavigationInput {
             motion.viewport_css_width.max(1.0),
             motion.viewport_css_height.max(1.0),
         );
+        let viewport_max = self.viewport_size;
+        let pointer = self.pointer_position.unwrap_or(viewport_max * 0.5)
+            + Vec2::new(motion.dx_css_pixels, motion.dy_css_pixels);
+        self.pointer_position = Some(pointer.clamp(Vec2::ZERO, viewport_max));
         self.focused = true;
         self.note_remote_activity();
     }
@@ -161,6 +168,7 @@ impl ViewportNavigationInput {
         self.wheel_delta = Vec2::ZERO;
         self.buttons = PointerButtons::default();
         self.modifiers = InputModifiers::default();
+        self.pointer_position = None;
         self.focused = false;
         self.generation = 0;
         self.pan_multiplier = 1.0;
@@ -255,6 +263,7 @@ pub(crate) fn apply_local_navigation_input(
         window.resolution.width().max(1.0),
         window.resolution.height().max(1.0),
     );
+    input.pointer_position = window.cursor_position();
     input.buttons = PointerButtons {
         primary: mouse_buttons.pressed(MouseButton::Left),
         secondary: mouse_buttons.pressed(MouseButton::Right),
@@ -334,5 +343,21 @@ mod tests {
             stream_generation: 4,
         });
         assert_eq!(input.pointer_delta, Vec2::new(12.0, 8.0));
+    }
+
+    #[test]
+    fn remote_motion_updates_local_hover_cursor_without_publishing_state() {
+        let mut input = ViewportNavigationInput::with_viewport_size(100, 80);
+        input.apply_pointer_motion(PointerMotion {
+            sequence: 1,
+            dx_css_pixels: 10.0,
+            dy_css_pixels: -5.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 100.0,
+            viewport_css_height: 80.0,
+            stream_generation: 1,
+        });
+        assert_eq!(input.pointer_position, Some(Vec2::new(60.0, 35.0)));
     }
 }
