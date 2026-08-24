@@ -312,12 +312,9 @@ pub(super) fn apply_viewport_commands(
                     .set_sampling(preference.enabled, active.provider());
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
-            ViewportCommand::SetSelectionPresentationSettings { .. } => {
-                reject(
-                    &mut outbox,
-                    request_id,
-                    "selection presentation settings are not applied in this milestone".to_owned(),
-                );
+            ViewportCommand::SetSelectionPresentationSettings { settings } => {
+                state.viewer_settings.0.selection = settings;
+                emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSectionBox { .. } => {
                 reject(

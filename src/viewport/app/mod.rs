@@ -20,6 +20,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use bevy_frost::prelude::AccentColor;
 use bevy_glacial::prelude::{AxisGizmoPlugin, GroundGrid, GroundGridPlugin};
+use bevy_mod_outline::OutlinePlugin;
 use headless::HeadlessRenderPlugin;
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 
@@ -37,9 +38,9 @@ use crate::viewport::rendering::sampling::{
 };
 use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
-    HideMeshesFlag, SelectedPrim, SelectedTargets, ShowJointGizmosFlag, SkeletonGizmos,
-    SolariCapabilityPlugin, draw_selected_prim_highlight, hide_meshes_on_startup,
-    setup_skeleton_gizmos_on_top, sync_selected_instance_identity,
+    HideMeshesFlag, SelectedPrim, SelectedTargets, SelectionOutlineState, ShowJointGizmosFlag,
+    SkeletonGizmos, SolariCapabilityPlugin, hide_meshes_on_startup, setup_skeleton_gizmos_on_top,
+    sync_selected_instance_identity, sync_selection_outlines,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -110,7 +111,8 @@ pub(crate) fn run() {
 
     app.add_plugins(EguiPlugin::default())
         .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
-        .add_plugins(UsdPlugin);
+        .add_plugins(UsdPlugin)
+        .add_plugins(OutlinePlugin::JUMP_FLOOD);
 
     #[cfg(feature = "solari")]
     app.add_plugins(bevy::solari::prelude::SolariPlugins);
@@ -325,6 +327,7 @@ pub(crate) fn run() {
         .init_resource::<LoadRequest>()
         .init_resource::<SelectedPrim>()
         .init_resource::<SelectedTargets>()
+        .init_resource::<SelectionOutlineState>()
         .init_resource::<FlyTo>()
         .init_resource::<CameraMount>()
         .init_resource::<LoaderTuning>()
@@ -357,7 +360,6 @@ pub(crate) fn run() {
             apply_load_request,
             apply_fly_to,
             sync_selected_instance_identity.before(LiveStageSet::Reconcile),
-            draw_selected_prim_highlight,
             follow_mounted_camera,
             tick_stage_time,
             hide_meshes_on_startup,
@@ -366,6 +368,10 @@ pub(crate) fn run() {
     .add_systems(
         Update,
         sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
+    )
+    .add_systems(
+        Update,
+        sync_selection_outlines.after(ViewportBridgeSet::ApplyCommands),
     );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()

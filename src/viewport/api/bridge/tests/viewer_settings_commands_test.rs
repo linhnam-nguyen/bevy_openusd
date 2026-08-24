@@ -101,9 +101,6 @@ fn unsupported_settings_commands_reject_without_mutating_applied_state() {
             inbox.send(ViewportCommand::SetSamplingPreference {
                 preference: SamplingPreference { enabled: true },
             }),
-            inbox.send(ViewportCommand::SetSelectionPresentationSettings {
-                settings: SelectionPresentationSettings::default(),
-            }),
             inbox.send(ViewportCommand::SetSectionBox { enabled: true }),
         ]
     };
@@ -126,6 +123,38 @@ fn unsupported_settings_commands_reject_without_mutating_applied_state() {
         assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
         assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
     }
+}
+
+#[test]
+fn selection_boundary_command_applies_renderer_owned_settings() {
+    let mut app = command_test_app();
+    let settings = SelectionPresentationSettings {
+        boundary_enabled: false,
+        boundary_color: ColorRgb8::new(0x10, 0x20, 0x30),
+        ..SelectionPresentationSettings::default()
+    };
+    let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::SetSelectionPresentationSettings {
+            settings: settings.clone(),
+        },
+    );
+
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<ViewerSettingsState>().0.selection,
+        settings
+    );
+    let event = app
+        .world_mut()
+        .resource_mut::<ViewportEventOutbox>()
+        .pop()
+        .expect("selection presentation must publish an applied event");
+    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+    let ViewportEvent::ViewerSettingsChanged { settings: applied } = event.event else {
+        panic!("selection presentation must publish a viewer-settings event");
+    };
+    assert_eq!(applied.selection, settings);
 }
 
 #[test]

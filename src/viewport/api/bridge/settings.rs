@@ -5,7 +5,10 @@
 //! Viewer Settings that do not have another authoritative owner yet.
 
 use bevy::prelude::*;
-use viewport_protocol::{SamplingProvider, ViewerEnvironmentSettings, ViewerSettingsReadModel};
+use viewport_protocol::{
+    SamplingProvider, SelectionPresentationSettings, ViewerEnvironmentSettings,
+    ViewerSettingsReadModel,
+};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub(in crate::viewport) struct ViewerSettingsState(pub(super) ViewerSettingsReadModel);
@@ -17,6 +20,10 @@ impl ViewerSettingsState {
 
     pub(in crate::viewport) fn environment(&self) -> &ViewerEnvironmentSettings {
         &self.0.environment
+    }
+
+    pub(in crate::viewport) fn selection(&self) -> &SelectionPresentationSettings {
+        &self.0.selection
     }
 
     #[cfg(test)]

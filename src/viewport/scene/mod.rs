@@ -2,17 +2,15 @@
 
 mod diff;
 mod ghost;
-mod runtime;
 mod selection;
+mod selection_outline;
 mod skeleton;
 mod solari;
 
 pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
-pub(crate) use runtime::draw_selected_prim_highlight;
-pub(crate) use selection::{
-    SelectedPrim, SelectedTargets, resolve_selected_instance, sync_selected_instance_identity,
-};
+pub(crate) use selection::{SelectedPrim, SelectedTargets, sync_selected_instance_identity};
+pub(in crate::viewport) use selection_outline::{SelectionOutlineState, sync_selection_outlines};
 pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
     setup_skeleton_gizmos_on_top,
