@@ -18,6 +18,14 @@ pub(crate) struct HeadlessPointerState {
     generation: u64,
 }
 
+/// Maps a remote browser CSS-pixel coordinate into the physical pixels of the
+/// offscreen image that owns picking and gizmo hit testing.
+fn normalize_pointer_position(position: Vec2, source_size: Vec2, target_size: UVec2) -> Vec2 {
+    let source_size = source_size.max(Vec2::ONE);
+    let target_size = Vec2::new(target_size.x.max(1) as f32, target_size.y.max(1) as f32);
+    (position / source_size * target_size).clamp(Vec2::ZERO, target_size)
+}
+
 /// Bridges the remote viewport input resource into Bevy's existing pointer
 /// and Glacial drag protocols. The synthetic window is only a cursor/window
 /// compatibility surface; picking and gizmo hit testing remain authoritative.
@@ -44,13 +52,17 @@ pub(crate) fn sync_headless_gizmo_input(
         pointer.buttons = PointerButtons::default();
     }
 
-    let width = input.viewport_size.x.max(1.0).round() as u32;
-    let height = input.viewport_size.y.max(1.0).round() as u32;
-    if window.resolution.physical_size() != UVec2::new(width, height) {
-        window.resolution.set_physical_resolution(width, height);
+    let target_size = UVec2::new(target.width.max(1), target.height.max(1));
+    if window.resolution.physical_size() != target_size {
+        window
+            .resolution
+            .set_physical_resolution(target_size.x, target_size.y);
     }
     window.focused = input.focused;
-    window.set_cursor_position(input.pointer_position);
+    let normalized_position = input
+        .pointer_position
+        .map(|position| normalize_pointer_position(position, input.viewport_size, target_size));
+    window.set_cursor_position(normalized_position);
 
     let current_buttons = if input.focused {
         input.buttons
@@ -59,6 +71,7 @@ pub(crate) fn sync_headless_gizmo_input(
     };
     let current_position = input
         .pointer_position
+        .map(|position| normalize_pointer_position(position, input.viewport_size, target_size))
         .or(pointer.position)
         .unwrap_or(Vec2::ZERO);
     let location = || Location {
@@ -176,5 +189,38 @@ mod tests {
             pointer_button_transition(previous.auxiliary, current.auxiliary),
             Some(PointerTransition::Release)
         );
+    }
+
+    #[test]
+    fn remote_css_pointer_maps_to_two_x_offscreen_target() {
+        let mapped = normalize_pointer_position(
+            Vec2::new(480.0, 270.0),
+            Vec2::new(960.0, 540.0),
+            UVec2::new(1920, 1080),
+        );
+
+        assert!(mapped.abs_diff_eq(Vec2::new(960.0, 540.0), 1e-5));
+    }
+
+    #[test]
+    fn remote_css_pointer_maps_to_non_two_x_offscreen_target() {
+        let mapped = normalize_pointer_position(
+            Vec2::new(320.0, 180.0),
+            Vec2::new(1280.0, 720.0),
+            UVec2::new(1920, 1080),
+        );
+
+        assert!(mapped.abs_diff_eq(Vec2::new(480.0, 270.0), 1e-5));
+    }
+
+    #[test]
+    fn remote_css_pointer_is_clamped_to_offscreen_target() {
+        let mapped = normalize_pointer_position(
+            Vec2::new(1400.0, -20.0),
+            Vec2::new(1280.0, 720.0),
+            UVec2::new(1920, 1080),
+        );
+
+        assert_eq!(mapped, Vec2::new(1920.0, 0.0));
     }
 }
