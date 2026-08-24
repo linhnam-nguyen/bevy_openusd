@@ -127,8 +127,6 @@ pub(in crate::viewport) fn sync_section_box_state(
                 Changed<Aabb>,
                 Added<UsdLocalExtent>,
                 Changed<UsdLocalExtent>,
-                Added<MeshMaterial3d<StandardMaterial>>,
-                Changed<MeshMaterial3d<StandardMaterial>>,
             )>,
         ),
     >,

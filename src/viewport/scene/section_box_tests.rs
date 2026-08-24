@@ -67,6 +67,8 @@ fn empty_geometry_resets_derived_state_without_authored_geometry() {
 
 #[test]
 fn unrelated_changes_do_not_require_section_box_reconciliation() {
+    // Material-only changes do not affect renderable bounds and never enter
+    // the relevant_bounds_changed signal consumed by this coordinator.
     assert!(!should_reconcile_section_box(
         false, false, false, false, false, false
     ));
