@@ -11,7 +11,7 @@ use super::HistoricalGhostState;
 use super::selection_color::{
     SelectionColorOverrideState, init_selection_color_material, sync_selection_color_overrides,
 };
-use super::selection_hover::{HoveredTarget, update_hover_target};
+use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::camera::ArcballCamera;
 
@@ -47,6 +47,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<EdgeOverlayStats>()
             .init_resource::<SelectionColorOverrideState>()
             .init_resource::<HoveredTarget>()
+            .init_resource::<HoverPickStats>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(
@@ -81,6 +82,7 @@ impl Plugin for OverlaysPlugin {
                 )
                     .chain()
                     .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                    .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
     }

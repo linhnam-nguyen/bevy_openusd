@@ -155,10 +155,10 @@ impl ViewportNavigationInput {
             motion.viewport_css_width.max(1.0),
             motion.viewport_css_height.max(1.0),
         );
-        let viewport_max = self.viewport_size;
-        let pointer = self.pointer_position.unwrap_or(viewport_max * 0.5)
-            + Vec2::new(motion.dx_css_pixels, motion.dy_css_pixels);
-        self.pointer_position = Some(pointer.clamp(Vec2::ZERO, viewport_max));
+        self.pointer_position = Some(
+            Vec2::new(motion.x_css_pixels, motion.y_css_pixels)
+                .clamp(Vec2::ZERO, self.viewport_size),
+        );
         self.focused = true;
         self.note_remote_activity();
     }
@@ -322,6 +322,8 @@ mod tests {
         input.begin_stream_generation(4);
         input.apply_pointer_motion(PointerMotion {
             sequence: 1,
+            x_css_pixels: 40.0,
+            y_css_pixels: 30.0,
             dx_css_pixels: 12.0,
             dy_css_pixels: 8.0,
             wheel_x: 0.0,
@@ -334,6 +336,8 @@ mod tests {
 
         input.apply_pointer_motion(PointerMotion {
             sequence: 2,
+            x_css_pixels: 48.0,
+            y_css_pixels: 36.0,
             dx_css_pixels: 12.0,
             dy_css_pixels: 8.0,
             wheel_x: 0.0,
@@ -346,10 +350,12 @@ mod tests {
     }
 
     #[test]
-    fn remote_motion_updates_local_hover_cursor_without_publishing_state() {
+    fn remote_motion_uses_authoritative_viewport_cursor_without_publishing_state() {
         let mut input = ViewportNavigationInput::with_viewport_size(100, 80);
         input.apply_pointer_motion(PointerMotion {
             sequence: 1,
+            x_css_pixels: 17.0,
+            y_css_pixels: 63.0,
             dx_css_pixels: 10.0,
             dy_css_pixels: -5.0,
             wheel_x: 0.0,
@@ -358,6 +364,6 @@ mod tests {
             viewport_css_height: 80.0,
             stream_generation: 1,
         });
-        assert_eq!(input.pointer_position, Some(Vec2::new(60.0, 35.0)));
+        assert_eq!(input.pointer_position, Some(Vec2::new(17.0, 63.0)));
     }
 }

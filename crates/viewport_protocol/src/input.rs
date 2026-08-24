@@ -19,10 +19,14 @@ pub struct InputModifiers {
     pub meta: bool,
 }
 
-/// Coalesced low-latency motion packet. Deltas are CSS pixels, not screen pixels.
+/// Coalesced low-latency motion packet. Coordinates and deltas are CSS pixels,
+/// not screen pixels. The absolute position is carried on this existing
+/// coalesced route so hover does not need a second high-frequency command.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PointerMotion {
     pub sequence: u64,
+    pub x_css_pixels: f32,
+    pub y_css_pixels: f32,
     pub dx_css_pixels: f32,
     pub dy_css_pixels: f32,
     pub wheel_x: f32,

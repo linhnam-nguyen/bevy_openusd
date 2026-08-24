@@ -93,6 +93,16 @@ impl InputCommand {
             Self::PointerMotion(motion) => {
                 validate_sequence(motion.sequence)?;
                 validate_bounded_finite(
+                    "pointer.x_css_pixels",
+                    motion.x_css_pixels,
+                    MAX_INPUT_VIEWPORT_CSS_PIXELS,
+                )?;
+                validate_bounded_finite(
+                    "pointer.y_css_pixels",
+                    motion.y_css_pixels,
+                    MAX_INPUT_VIEWPORT_CSS_PIXELS,
+                )?;
+                validate_bounded_finite(
                     "pointer.dx_css_pixels",
                     motion.dx_css_pixels,
                     MAX_INPUT_DELTA_CSS_PIXELS,
@@ -121,6 +131,15 @@ impl InputCommand {
                 {
                     return Err(ProtocolValidationError::InvalidInput {
                         field: "pointer.viewport_css_size",
+                    });
+                }
+                if motion.x_css_pixels < 0.0
+                    || motion.y_css_pixels < 0.0
+                    || motion.x_css_pixels > motion.viewport_css_width
+                    || motion.y_css_pixels > motion.viewport_css_height
+                {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "pointer.position",
                     });
                 }
             }

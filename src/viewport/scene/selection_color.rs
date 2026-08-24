@@ -4,9 +4,11 @@
 //! entities. The authoritative USD material is retained in
 //! [`SelectionBaseMaterial`] and restored when no presentation owns the mesh.
 
+use std::collections::HashSet;
+
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
-use viewport_protocol::{ColorRgb8, SceneAnchor};
+use viewport_protocol::{ColorRgb8, SceneAnchor, SelectionReadModel};
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 use crate::viewport::scene::SelectedTargets;
@@ -28,6 +30,10 @@ pub(super) struct SelectionColorMaterial(pub(super) Handle<StandardMaterial>);
 #[derive(Resource, Debug, Default, Clone)]
 pub(super) struct SelectionColorOverrideState {
     last_presentation: Option<(bool, ColorRgb8, bool, ColorRgb8, Option<SceneAnchor>)>,
+    last_selection: Option<SelectionReadModel>,
+    last_scene_revision: Option<u64>,
+    selected_meshes: HashSet<Entity>,
+    hovered_meshes: HashSet<Entity>,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -93,7 +99,7 @@ pub(super) fn sync_selection_color_overrides(
             Option<&SelectionColorOverride>,
         )>,
         Query<
-            (),
+            Entity,
             (
                 With<SelectionColorOverride>,
                 Changed<MeshMaterial3d<StandardMaterial>>,
@@ -112,45 +118,92 @@ pub(super) fn sync_selection_color_overrides(
         presentation.hover_color,
         hovered_target.anchor.clone(),
     );
-    let material_changed = meshes.p1().iter().next().is_some();
-    if !selection.is_changed()
-        && !scene_index.is_changed()
-        && !hovered_target.is_changed()
+    let changed_owned_entities: Vec<Entity> = meshes.p1().iter().collect();
+    let material_changed = !changed_owned_entities.is_empty();
+    let selection_changed = state.last_selection.as_ref() != Some(&selection.0);
+    let scene_changed = state.last_scene_revision != Some(scene_index.revision());
+    if !selection_changed
+        && !scene_changed
         && state.last_presentation.as_ref() == Some(&presentation_key)
         && !material_changed
     {
         return;
     }
 
-    if let Some(mut material) = material_assets.get_mut(&color_material.0) {
+    let selection_color_changed = state
+        .last_presentation
+        .as_ref()
+        .is_none_or(|last| last.1 != presentation.selection_color);
+    let hover_color_changed = state
+        .last_presentation
+        .as_ref()
+        .is_none_or(|last| last.3 != presentation.hover_color);
+    if selection_color_changed
+        && let Some(mut material) = material_assets.get_mut(&color_material.0)
+    {
         material.base_color = color_from_rgb8(presentation.selection_color);
     }
-    if let Some(mut material) = material_assets.get_mut(&hover_material.0) {
+    if hover_color_changed && let Some(mut material) = material_assets.get_mut(&hover_material.0) {
         material.base_color = color_from_rgb8(presentation.hover_color);
     }
 
-    let mut selected_meshes = std::collections::HashSet::new();
-    if presentation.color_change_enabled {
-        for target in &selection.0.targets {
-            let Some(entity) = scene_index.resolve(target) else {
-                continue;
-            };
-            collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected_meshes);
+    let sets_changed = selection_changed
+        || scene_changed
+        || state.last_presentation.as_ref().is_none_or(|last| {
+            last.0 != presentation.color_change_enabled
+                || last.2 != presentation.hover_color_change_enabled
+                || last.4.as_ref() != hovered_target.anchor.as_ref()
+        });
+    let previous_selected_meshes = std::mem::take(&mut state.selected_meshes);
+    let previous_hovered_meshes = std::mem::take(&mut state.hovered_meshes);
+    let (selected_meshes, hovered_meshes) = if sets_changed {
+        let mut selected_meshes = HashSet::new();
+        if presentation.color_change_enabled {
+            for target in &selection.0.targets {
+                let Some(entity) = scene_index.resolve(target) else {
+                    continue;
+                };
+                collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected_meshes);
+            }
         }
-    }
 
-    let mut hovered_meshes = std::collections::HashSet::new();
-    if presentation.hover_color_change_enabled
-        && let Some(target) = hovered_target.anchor.as_ref()
-        && let Some(entity) = scene_index.resolve(target)
-    {
-        collect_mesh_descendants(entity, &mesh_hierarchy, &mut hovered_meshes);
+        let mut hovered_meshes = HashSet::new();
+        if presentation.hover_color_change_enabled
+            && let Some(target) = hovered_target.anchor.as_ref()
+            && let Some(entity) = scene_index.resolve(target)
+        {
+            collect_mesh_descendants(entity, &mesh_hierarchy, &mut hovered_meshes);
+        }
+        (selected_meshes, hovered_meshes)
+    } else {
+        (
+            previous_selected_meshes.clone(),
+            previous_hovered_meshes.clone(),
+        )
+    };
+
+    let mut affected = HashSet::new();
+    if sets_changed {
+        affected.extend(previous_selected_meshes.iter().copied());
+        affected.extend(previous_hovered_meshes.iter().copied());
+        affected.extend(selected_meshes.iter().copied());
+        affected.extend(hovered_meshes.iter().copied());
     }
+    if selection_color_changed {
+        affected.extend(selected_meshes.iter().copied());
+    }
+    if hover_color_changed {
+        affected.extend(hovered_meshes.iter().copied());
+    }
+    affected.extend(changed_owned_entities);
 
     let selection_handle = &color_material.0;
     let hover_handle = &hover_material.0;
     let mut meshes = meshes.p0();
-    for (entity, mut material, base, marker) in &mut meshes {
+    for entity in affected {
+        let Ok((_, mut material, base, marker)) = meshes.get_mut(entity) else {
+            continue;
+        };
         let desired_handle = match presentation_owner(
             selected_meshes.contains(&entity),
             hovered_meshes.contains(&entity),
@@ -190,6 +243,10 @@ pub(super) fn sync_selection_color_overrides(
         }
     }
 
+    state.selected_meshes = selected_meshes;
+    state.hovered_meshes = hovered_meshes;
+    state.last_selection = Some(selection.0.clone());
+    state.last_scene_revision = Some(scene_index.revision());
     state.last_presentation = Some(presentation_key);
 }
 

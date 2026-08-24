@@ -165,6 +165,7 @@ bevy = { workspace = true, features = [
     "bevy_light",
     "bevy_mesh",
     "bevy_camera",
+    "mesh_picking",
     "bevy_image",
     "bevy_scene",
     "bevy_gizmos",

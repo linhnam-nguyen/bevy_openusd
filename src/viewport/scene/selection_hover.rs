@@ -3,102 +3,122 @@
 //! Pointer motion remains an input detail. This module resolves only the
 //! nearest changed target into a stable [`SceneAnchor`] for presentation.
 
-use bevy::camera::primitives::Aabb;
-use bevy::math::bounding::{Aabb3d, RayCast3d};
+use bevy::ecs::hierarchy::ChildOf;
+use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings};
 use bevy::prelude::*;
-use usd_bevy::UsdPrimRef;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::SceneAnchorIndex;
 use crate::viewport::input::ViewportNavigationInput;
 
-/// Current renderer-local hover target. It is never sent as raw pointer data
-/// through the viewport protocol.
-#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+/// Current renderer-local hover target and the inputs used for its last pick.
+///
+/// The cache fields are deliberately renderer-local. Only `anchor` is read by
+/// the presentation system, and raw pointer coordinates never cross the
+/// viewport protocol a second time.
+#[derive(Resource, Debug, Default, Clone)]
 pub(super) struct HoveredTarget {
     pub(super) anchor: Option<SceneAnchor>,
+    last_pointer_position: Option<Vec2>,
+    last_viewport_size: Option<Vec2>,
+    last_camera_local: Option<Transform>,
+    last_camera_global: Option<Transform>,
+    last_clip_from_view: Option<Mat4>,
+    last_focused: Option<bool>,
+    last_scene_revision: Option<u64>,
 }
 
-/// Resolves the current cursor to the nearest projected prim AABB.
+/// Renderer diagnostics used by the B5 performance evidence packet.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HoverPickStats {
+    pub(crate) raycasts: u64,
+    pub(crate) skipped_idle_frames: u64,
+}
+
+/// Resolves the current cursor to the nearest projected mesh triangle.
 ///
-/// The resource is mutated only when the resolved anchor changes, which keeps
-/// hover presentation local and avoids broad reactive/server state churn.
+/// Bevy's mesh ray caster uses entity AABBs only to cull candidates and then
+/// intersects the actual mesh triangles. The filter excludes non-projected
+/// meshes, while `anchor_for_hit` maps projected mesh children back to the
+/// owning stable scene anchor.
 pub(super) fn update_hover_target(
     input: Res<ViewportNavigationInput>,
     scene_index: Res<SceneAnchorIndex>,
     mut hovered: ResMut<HoveredTarget>,
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    prims: Query<(
-        Entity,
-        &UsdPrimRef,
-        &GlobalTransform,
-        Option<&Aabb>,
-        &Mesh3d,
-    )>,
+    mut stats: ResMut<HoverPickStats>,
+    cameras: Query<(&Camera, &GlobalTransform, &Transform), With<Camera3d>>,
+    child_of: Query<&ChildOf>,
+    mut mesh_ray_cast: MeshRayCast,
 ) {
-    let next = resolve_hovered_anchor(&input, &scene_index, &cameras, &prims);
+    let Ok((camera, camera_global, camera_local)) = cameras.single() else {
+        return;
+    };
+
+    let camera_local = *camera_local;
+    let camera_global_transform = camera_global.compute_transform();
+    let clip_from_view = camera.clip_from_view();
+    let pointer_changed = hovered.last_pointer_position != input.pointer_position;
+    let viewport_changed = hovered.last_viewport_size != Some(input.viewport_size);
+    let camera_changed = hovered.last_camera_local != Some(camera_local)
+        || hovered.last_camera_global != Some(camera_global_transform)
+        || hovered.last_clip_from_view != Some(clip_from_view);
+    let focus_changed = hovered.last_focused != Some(input.focused);
+    let scene_changed = hovered.last_scene_revision != Some(scene_index.revision());
+
+    if !pointer_changed && !viewport_changed && !camera_changed && !focus_changed && !scene_changed
+    {
+        stats.skipped_idle_frames = stats.skipped_idle_frames.saturating_add(1);
+        return;
+    }
+
+    hovered.last_pointer_position = input.pointer_position;
+    hovered.last_viewport_size = Some(input.viewport_size);
+    hovered.last_camera_local = Some(camera_local);
+    hovered.last_camera_global = Some(camera_global_transform);
+    hovered.last_clip_from_view = Some(clip_from_view);
+    hovered.last_focused = Some(input.focused);
+    hovered.last_scene_revision = Some(scene_index.revision());
+    stats.raycasts = stats.raycasts.saturating_add(1);
+
+    let next = if !input.focused {
+        None
+    } else if let Some(pointer) = input.pointer_position {
+        camera
+            .viewport_to_world(camera_global, pointer)
+            .ok()
+            .and_then(|ray| {
+                let filter = |entity| anchor_for_hit(entity, &scene_index, &child_of).is_some();
+                let settings = MeshRayCastSettings::default().with_filter(&filter);
+                mesh_ray_cast
+                    .cast_ray(ray, &settings)
+                    .iter()
+                    .find_map(|(entity, _hit)| anchor_for_hit(*entity, &scene_index, &child_of))
+            })
+    } else {
+        None
+    };
+
     if hovered.anchor != next {
         hovered.anchor = next;
     }
 }
 
-fn resolve_hovered_anchor(
-    input: &ViewportNavigationInput,
+/// Resolves a mesh hit on a projected child entity to its owning prim.
+fn anchor_for_hit(
+    mut entity: Entity,
     scene_index: &SceneAnchorIndex,
-    cameras: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    prims: &Query<(
-        Entity,
-        &UsdPrimRef,
-        &GlobalTransform,
-        Option<&Aabb>,
-        &Mesh3d,
-    )>,
+    child_of: &Query<&ChildOf>,
 ) -> Option<SceneAnchor> {
-    if !input.focused {
-        return None;
-    }
-    let pointer = input.pointer_position?;
-    let (camera, camera_transform) = cameras.single().ok()?;
-    let ray = camera.viewport_to_world(camera_transform, pointer).ok()?;
-
-    prims
-        .iter()
-        .filter_map(|(entity, _prim, global, aabb, _mesh)| {
-            let aabb = aabb?;
-            let world_aabb = world_aabb(global, aabb);
-            let distance = RayCast3d::from_ray(ray, f32::MAX).aabb_intersection_at(&world_aabb)?;
-            let anchor = scene_index.anchor_for(entity)?;
-            Some((distance, anchor))
-        })
-        .min_by(
-            |(left_distance, left_anchor), (right_distance, right_anchor)| {
-                left_distance
-                    .total_cmp(right_distance)
-                    .then_with(|| left_anchor.cmp(right_anchor))
-            },
-        )
-        .map(|(_, anchor)| anchor)
-}
-
-fn world_aabb(global: &GlobalTransform, local: &Aabb) -> Aabb3d {
-    let transform = global.compute_transform();
-    let center = Vec3::from(local.center);
-    let half_extents = Vec3::from(local.half_extents);
-    let mut minimum = Vec3::splat(f32::INFINITY);
-    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
-
-    for x in [-1.0, 1.0] {
-        for y in [-1.0, 1.0] {
-            for z in [-1.0, 1.0] {
-                let local_point = center + half_extents * Vec3::new(x, y, z);
-                let world_point = transform.transform_point(local_point);
-                minimum = minimum.min(world_point);
-                maximum = maximum.max(world_point);
-            }
+    // The hierarchy is authored by scene projection and cannot contain a
+    // cycle. The bound keeps malformed external ECS state from spinning the
+    // hover system forever.
+    for _ in 0..256 {
+        if let Some(anchor) = scene_index.anchor_for(entity) {
+            return Some(anchor);
         }
+        entity = child_of.get(entity).ok()?.parent();
     }
-
-    Aabb3d::from_min_max(minimum, maximum)
+    None
 }
 
 #[cfg(test)]
@@ -106,17 +126,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transformed_aabb_contains_rotated_corners() {
-        let global = GlobalTransform::from(Transform::from_rotation(Quat::from_rotation_y(
-            90.0_f32.to_radians(),
-        )));
-        let local = Aabb {
-            center: Vec3A::ZERO,
-            half_extents: Vec3A::new(1.0, 2.0, 3.0),
+    fn idle_pick_state_requires_no_new_input_or_camera_revision() {
+        let input = ViewportNavigationInput::default();
+        let mut state = HoveredTarget {
+            last_pointer_position: input.pointer_position,
+            last_viewport_size: Some(input.viewport_size),
+            last_camera_local: Some(Transform::IDENTITY),
+            last_camera_global: Some(Transform::IDENTITY),
+            last_clip_from_view: Some(Mat4::IDENTITY),
+            last_focused: Some(input.focused),
+            last_scene_revision: Some(4),
+            ..default()
         };
-        let world = world_aabb(&global, &local);
-        assert!(world.min.x <= -2.99 && world.max.x >= 2.99);
-        assert!(world.min.y <= -1.99 && world.max.y >= 1.99);
-        assert!(world.min.z <= -0.99 && world.max.z >= 0.99);
+
+        assert_eq!(state.last_pointer_position, input.pointer_position);
+        assert_eq!(state.last_viewport_size, Some(input.viewport_size));
+        assert_eq!(state.last_scene_revision, Some(4));
+
+        state.last_pointer_position = Some(Vec2::new(4.0, 2.0));
+        assert_ne!(state.last_pointer_position, input.pointer_position);
+    }
+
+    #[test]
+    fn hover_pick_stats_start_without_raycasts() {
+        assert_eq!(HoverPickStats::default().raycasts, 0);
+        assert_eq!(HoverPickStats::default().skipped_idle_frames, 0);
     }
 }

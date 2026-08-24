@@ -159,6 +159,8 @@ pub fn scenario_action_driver_system(
                     let sequence = frame.saturating_mul(40).saturating_add(i * 2 + 1);
                     let motion = PointerMotion {
                         sequence,
+                        x_css_pixels: 960.0,
+                        y_css_pixels: 540.0,
                         dx_css_pixels: 2.0,
                         dy_css_pixels: 1.0,
                         wheel_x: 0.0,
