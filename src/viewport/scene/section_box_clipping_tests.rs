@@ -96,3 +96,31 @@ fn composition_restores_authored_route_after_shaded_selection_release() {
     assert_eq!(composed.selection_base, None);
     assert!(!composed.selection_override);
 }
+
+#[test]
+fn stale_uniform_route_is_reconciled_before_shaded_clip_removal() {
+    let mut materials = Assets::<StandardMaterial>::default();
+    let authored = materials.add(StandardMaterial::default());
+    let stale_uniform = materials.add(StandardMaterial::default());
+    let original = OriginalRenderMaterial(authored.clone());
+
+    let composed = support::compose_clipped_route(
+        stale_uniform,
+        Some(&original),
+        None,
+        false,
+        false,
+        None,
+        false,
+        false,
+        None,
+        false,
+        RenderMode::Shaded,
+        None,
+    );
+
+    assert_eq!(composed.route, authored);
+    assert_eq!(composed.original, None);
+    assert_eq!(composed.selection_base, None);
+    assert!(!composed.selection_override);
+}

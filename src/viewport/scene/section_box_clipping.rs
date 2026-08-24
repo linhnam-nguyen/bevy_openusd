@@ -247,26 +247,6 @@ pub(in crate::viewport) fn sync_section_box_clipping(
         .missing_material_entities
         .retain(|entity| desired.contains(entity));
 
-    let mut deferred_clip_ids = HashSet::new();
-    let stale_entities = projection
-        .active_entities
-        .difference(&desired)
-        .copied()
-        .collect::<Vec<_>>();
-    for entity in stale_entities {
-        if let Ok((_, _, clip, Some(underlying), ..)) = renderables.get(entity)
-            && let Some(clip) = clip
-        {
-            deferred_clip_ids.insert(clip.0.id());
-            commands
-                .entity(entity)
-                .remove::<MeshMaterial3d<SectionClipMaterial>>()
-                .insert(MeshMaterial3d(underlying.0.clone()))
-                .remove::<SectionClipUnderlyingMaterial>();
-        }
-        projection.active_entities.remove(&entity);
-    }
-
     let uniform = SectionClipUniform {
         world_to_box: state.transform.to_matrix().inverse(),
         enabled: 1,
@@ -275,6 +255,55 @@ pub(in crate::viewport) fn sync_section_box_clipping(
     let selection_handle = selection_material.as_ref().map(|material| &material.0);
     let hover_handle = hover_material.as_ref().map(|material| &material.0);
     let uniform_handle = uniform_material.as_ref().map(|material| &material.0);
+    let mut deferred_clip_ids = HashSet::new();
+    let stale_entities = projection
+        .active_entities
+        .difference(&desired)
+        .copied()
+        .collect::<Vec<_>>();
+    for entity in stale_entities {
+        if let Ok((
+            _,
+            _,
+            Some(clip),
+            Some(underlying),
+            original,
+            selection_base,
+            selection_override,
+        )) = renderables.get(entity)
+        {
+            deferred_clip_ids.insert(clip.0.id());
+            let composed = compose_clipped_route(
+                underlying.0.clone(),
+                original,
+                selection_base,
+                selection_override.is_some(),
+                selection.color_change_enabled,
+                selection_handle,
+                projection.selected_meshes.contains(&entity),
+                selection.hover_color_change_enabled,
+                hover_handle,
+                projection.hovered_meshes.contains(&entity),
+                toggles.renderer.render_mode,
+                uniform_handle,
+            );
+            commands
+                .entity(entity)
+                .remove::<MeshMaterial3d<SectionClipMaterial>>()
+                .insert(MeshMaterial3d(composed.route.clone()))
+                .remove::<SectionClipUnderlyingMaterial>();
+            apply_composed_route(
+                &mut commands,
+                entity,
+                &composed,
+                original,
+                selection_base,
+                selection_override.is_some(),
+            );
+        }
+        projection.active_entities.remove(&entity);
+    }
+
     let mut next_active = HashSet::new();
     let mut used_base_ids = HashSet::new();
 
