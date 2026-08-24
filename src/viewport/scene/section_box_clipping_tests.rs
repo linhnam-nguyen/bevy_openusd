@@ -1,4 +1,27 @@
+use bevy::asset::AssetPlugin;
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
+
 use super::*;
+
+fn clipping_test_app() -> App {
+    let mut app = App::new();
+    let mut section_box = SectionBoxState::default();
+    section_box.enabled = true;
+    section_box.visible = true;
+    app.add_plugins(MinimalPlugins)
+        .add_plugins(AssetPlugin::default())
+        .init_asset::<StandardMaterial>()
+        .init_asset::<SectionClipMaterial>()
+        .insert_resource(section_box)
+        .insert_resource(ViewerSettingsState::default())
+        .insert_resource(DisplayToggles::default())
+        .insert_resource(HoveredTarget::default())
+        .insert_resource(SceneAnchorIndex::default())
+        .insert_resource(SectionClipProjectionState::default())
+        .insert_resource(SectionClipDiagnostics::default())
+        .add_systems(Update, sync_section_box_clipping);
+    app
+}
 
 #[test]
 fn clip_uniform_uses_one_shared_box_space_transform() {
@@ -123,4 +146,89 @@ fn stale_uniform_route_is_reconciled_before_shaded_clip_removal() {
     assert_eq!(composed.original, None);
     assert_eq!(composed.selection_base, None);
     assert!(!composed.selection_override);
+}
+
+#[test]
+fn successful_clip_clears_recovered_unsupported_diagnostic() {
+    let mut app = clipping_test_app();
+    let entity = app.world_mut().spawn(Mesh3d(Handle::default())).id();
+    app.world_mut()
+        .resource_mut::<SectionClipProjectionState>()
+        .selected_meshes
+        .insert(entity);
+    let mut projection = app.world_mut().resource_mut::<SectionClipProjectionState>();
+    projection.last_targets = Some(Vec::new());
+    projection.last_scene_revision = Some(0);
+
+    app.update();
+    assert!(
+        app.world()
+            .resource::<SectionClipDiagnostics>()
+            .unsupported_entities
+            .contains(&entity)
+    );
+
+    let material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(MeshMaterial3d(material));
+    app.world_mut().resource_mut::<SectionBoxState>().revision = 1;
+    app.update();
+
+    let diagnostics = app.world().resource::<SectionClipDiagnostics>();
+    assert!(!diagnostics.unsupported_entities.contains(&entity));
+    assert!(
+        app.world()
+            .get::<MeshMaterial3d<SectionClipMaterial>>(entity)
+            .is_some()
+    );
+}
+
+#[test]
+fn successful_clip_clears_recovered_missing_material_diagnostic() {
+    let mut app = clipping_test_app();
+    let missing_material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .reserve_handle();
+    let entity = app
+        .world_mut()
+        .spawn((
+            Mesh3d(Handle::default()),
+            MeshMaterial3d(missing_material.clone()),
+        ))
+        .id();
+    app.world_mut()
+        .resource_mut::<SectionClipProjectionState>()
+        .selected_meshes
+        .insert(entity);
+    let mut projection = app.world_mut().resource_mut::<SectionClipProjectionState>();
+    projection.last_targets = Some(Vec::new());
+    projection.last_scene_revision = Some(0);
+
+    app.update();
+    assert!(
+        app.world()
+            .resource::<SectionClipDiagnostics>()
+            .missing_material_entities
+            .contains(&entity)
+    );
+
+    app.world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .insert(missing_material.id(), StandardMaterial::default())
+        .expect("reserved material handle must accept its first asset");
+    app.world_mut().resource_mut::<SectionBoxState>().revision = 1;
+    app.update();
+
+    let diagnostics = app.world().resource::<SectionClipDiagnostics>();
+    assert!(!diagnostics.missing_material_entities.contains(&entity));
+    assert!(
+        app.world()
+            .get::<MeshMaterial3d<SectionClipMaterial>>(entity)
+            .is_some()
+    );
 }

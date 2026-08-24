@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::viewport::scene::SelectedTargets;
+
 fn bounds(min: Vec3, max: Vec3) -> SectionBoxBounds {
     SectionBoxBounds { min, max }
 }
@@ -78,4 +80,45 @@ fn unrelated_changes_do_not_require_section_box_reconciliation() {
     assert!(should_reconcile_section_box(
         false, false, false, false, false, true
     ));
+}
+
+#[test]
+fn material_only_component_change_does_not_reconcile_section_box() {
+    let mut app = App::new();
+    app.init_resource::<Assets<StandardMaterial>>();
+    let material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    let entity = app
+        .world_mut()
+        .spawn((SectionBoxTrackedRenderable, MeshMaterial3d(material)))
+        .id();
+
+    let mut state = SectionBoxState::default();
+    state.tracked_renderables.insert(entity);
+    app.insert_resource(ViewerSettingsState::default())
+        .insert_resource(SelectedTargets::default())
+        .insert_resource(SceneAnchorIndex::default())
+        .insert_resource(state)
+        .add_systems(Update, sync_section_box_state);
+    app.update();
+
+    let replacement = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(MeshMaterial3d(replacement));
+    app.update();
+
+    let state = app.world().resource::<SectionBoxState>();
+    assert_eq!(state.revision, 0);
+    assert!(state.tracked_renderables.contains(&entity));
+    assert!(
+        app.world()
+            .get::<SectionBoxTrackedRenderable>(entity)
+            .is_some()
+    );
 }

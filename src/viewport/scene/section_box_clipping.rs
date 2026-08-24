@@ -27,8 +27,8 @@ mod support;
 mod tests;
 
 use support::{
-    apply_composed_route, compose_clipped_route, ensure_clip_material, prune_material_cache,
-    selected_meshes,
+    apply_composed_route, clear_recovered_clip_diagnostics, compose_clipped_route,
+    ensure_clip_material, prune_material_cache, selected_meshes,
 };
 
 const SHADER_ASSET_PATH: &str = "../../../assets/shaders/section_box_clipping.wgsl";
@@ -356,6 +356,7 @@ pub(in crate::viewport) fn sync_section_box_clipping(
             continue;
         };
 
+        clear_recovered_clip_diagnostics(&mut diagnostics, *entity);
         used_base_ids.insert(composed.route.id());
         commands
             .entity(*entity)

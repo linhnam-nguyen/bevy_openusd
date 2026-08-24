@@ -12,7 +12,17 @@ use super::super::selection_outline::collect_mesh_descendants;
 use super::super::visualization::OriginalRenderMaterial;
 use crate::viewport::api::SceneAnchorIndex;
 
-use super::{SectionClipExtension, SectionClipMaterial, SectionClipUniform};
+use super::{
+    SectionClipDiagnostics, SectionClipExtension, SectionClipMaterial, SectionClipUniform,
+};
+
+pub(super) fn clear_recovered_clip_diagnostics(
+    diagnostics: &mut SectionClipDiagnostics,
+    entity: Entity,
+) {
+    diagnostics.unsupported_entities.remove(&entity);
+    diagnostics.missing_material_entities.remove(&entity);
+}
 
 pub(super) fn selected_meshes(
     targets: &[SceneAnchor],
