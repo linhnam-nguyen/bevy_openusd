@@ -3081,6 +3081,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "fsr"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a022a701f59daa742dd6acad0c915968d57a75a7ab55ab842aff236369360de6"
+dependencies = [
+ "ash",
+ "bitflags 2.13.1",
+ "fsr-sys",
+ "thiserror 1.0.69",
+ "widestring",
+]
+
+[[package]]
+name = "fsr-sys"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d311e166b0409451241530ee1b653523286d97b9906f6718d3c36831316dc89"
+dependencies = [
+ "cc",
+ "glob",
+ "widestring",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8697,11 +8721,13 @@ name = "usdview"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "ash",
  "bevy",
  "bevy_egui",
  "bevy_frost",
  "bevy_glacial",
  "blake3",
+ "fsr",
  "image",
  "log",
  "openusd",
@@ -8721,6 +8747,7 @@ dependencies = [
  "usd_semantic",
  "viewport_protocol",
  "viewport_streaming",
+ "wgpu",
  "zip",
 ]
 
@@ -9102,6 +9129,7 @@ dependencies = [
  "cfg_aliases",
  "document-features",
  "hashbrown 0.16.1",
+ "js-sys",
  "log",
  "naga",
  "portable-atomic",
@@ -9109,6 +9137,9 @@ dependencies = [
  "raw-window-handle",
  "smallvec",
  "static_assertions",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wgpu-core",
  "wgpu-hal",
  "wgpu-types",
@@ -9255,6 +9286,12 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

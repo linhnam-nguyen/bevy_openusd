@@ -35,6 +35,14 @@ pub(crate) struct SamplingCoordinatorState {
     pub(crate) active: ActiveUpscaler,
 }
 
+impl bevy::render::extract_resource::ExtractResource for SamplingCoordinatorState {
+    type Source = Self;
+
+    fn extract_resource(source: &Self) -> Self {
+        *source
+    }
+}
+
 impl Default for SamplingCoordinatorState {
     fn default() -> Self {
         Self {

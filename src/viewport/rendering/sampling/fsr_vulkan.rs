@@ -1,18 +1,29 @@
-//! Renderer-local FSR Vulkan adapter contract.
+//! Renderer-local FidelityFX FSR2 provider contract and camera binding.
 //!
-//! Bevy 0.19 has no native FSR provider and this checkout does not contain a
-//! reviewed FidelityFX backend. The adapter therefore stays fail-closed until
-//! a backend supplies all required runtime capabilities. No Vulkan or SDK
-//! handle is represented in this module's public-in-crate contract.
+//! The provider is deliberately target-gated. Bevy 0.19 does not ship a native
+//! FSR provider, so Linux and Windows use the isolated Vulkan backend in
+//! `fsr_vulkan_backend.rs`; other targets remain fail-closed.
 
 use bevy::prelude::*;
 
+use super::coordinator::{ActiveUpscaler, SamplingCoordinatorState};
+
 /// Runtime facts required before the coordinator may select FSR.
-#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FsrVulkanCapability {
     pub(crate) vulkan_backend: bool,
     pub(crate) fidelityfx_backend: bool,
     pub(crate) input_contract_ready: bool,
+}
+
+impl Default for FsrVulkanCapability {
+    fn default() -> Self {
+        let configured = cfg!(all(
+            feature = "fsr_vulkan",
+            any(target_os = "linux", target_os = "windows")
+        ));
+        Self::from_probe(configured, configured, configured)
+    }
 }
 
 impl FsrVulkanCapability {
@@ -84,14 +95,130 @@ impl FsrVulkanProvider {
     }
 }
 
-/// Registers the fail-closed capability resource for the sampling coordinator.
+/// Registers the FSR capability and the camera input contract.
 pub(crate) struct FsrVulkanProviderPlugin;
 
 impl Plugin for FsrVulkanProviderPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<FsrVulkanCapability>();
+        app.init_resource::<FsrVulkanCapability>().add_systems(
+            Update,
+            configure_fsr_camera.after(crate::viewport::api::ViewportBridgeSet::ApplyCommands),
+        );
+
+        #[cfg(all(
+            feature = "fsr_vulkan",
+            any(target_os = "linux", target_os = "windows")
+        ))]
+        backend::build_vulkan_provider(app);
     }
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+struct FsrCameraBinding {
+    added_depth: bool,
+    added_motion_vectors: bool,
+    added_texture_usages: bool,
+    previous_texture_usages: Option<bevy::render::render_resource::TextureUsages>,
+}
+
+fn configure_fsr_camera(
+    coordinator: Res<SamplingCoordinatorState>,
+    target: Option<Res<crate::viewport::app::headless::OffscreenTarget>>,
+    mut commands: Commands,
+    cameras: Query<
+        (
+            Entity,
+            Option<&bevy::camera::MainPassResolutionOverride>,
+            Has<bevy::core_pipeline::prepass::DepthPrepass>,
+            Has<bevy::core_pipeline::prepass::MotionVectorPrepass>,
+            Option<&bevy::camera::CameraMainTextureUsages>,
+            Option<&FsrCameraBinding>,
+        ),
+        With<Camera3d>,
+    >,
+) {
+    let Some(target) = target else {
+        return;
+    };
+
+    let output_extent = UVec2::new(target.width, target.height);
+    let fsr_active = coordinator.active == ActiveUpscaler::Fsr;
+    let input_extent = fsr_render_extent(output_extent);
+
+    for (entity, resolution_override, has_depth, has_motion, texture_usages, binding) in &cameras {
+        if fsr_active && input_extent != output_extent {
+            if resolution_override.is_none_or(|current| current.0 != input_extent) {
+                commands
+                    .entity(entity)
+                    .insert(bevy::camera::MainPassResolutionOverride(input_extent));
+            }
+            if !has_depth || !has_motion {
+                commands.entity(entity).insert((
+                    bevy::core_pipeline::prepass::DepthPrepass,
+                    bevy::core_pipeline::prepass::MotionVectorPrepass,
+                ));
+            }
+            let required_usages = bevy::render::render_resource::TextureUsages::STORAGE_BINDING
+                | bevy::render::render_resource::TextureUsages::COPY_DST;
+            if !texture_usages.is_some_and(|usages| usages.0.contains(required_usages)) {
+                let usages = texture_usages.map_or(
+                    bevy::render::render_resource::TextureUsages::RENDER_ATTACHMENT
+                        | bevy::render::render_resource::TextureUsages::TEXTURE_BINDING
+                        | bevy::render::render_resource::TextureUsages::COPY_SRC,
+                    |usages| usages.0,
+                );
+                commands
+                    .entity(entity)
+                    .insert(bevy::camera::CameraMainTextureUsages(
+                        usages | required_usages,
+                    ));
+            }
+            if binding.is_none() {
+                commands.entity(entity).insert(FsrCameraBinding {
+                    added_depth: !has_depth,
+                    added_motion_vectors: !has_motion,
+                    added_texture_usages: !texture_usages
+                        .is_some_and(|usages| usages.0.contains(required_usages)),
+                    previous_texture_usages: texture_usages.map(|usages| usages.0),
+                });
+            }
+        } else if let Some(binding) = binding {
+            let mut entity_commands = commands.entity(entity);
+            entity_commands.remove::<bevy::camera::MainPassResolutionOverride>();
+            if binding.added_depth {
+                entity_commands.remove::<bevy::core_pipeline::prepass::DepthPrepass>();
+            }
+            if binding.added_motion_vectors {
+                entity_commands.remove::<bevy::core_pipeline::prepass::MotionVectorPrepass>();
+            }
+            if binding.added_texture_usages {
+                if let Some(previous) = binding.previous_texture_usages {
+                    entity_commands.insert(bevy::camera::CameraMainTextureUsages(previous));
+                } else {
+                    entity_commands.remove::<bevy::camera::CameraMainTextureUsages>();
+                }
+            }
+            entity_commands.remove::<FsrCameraBinding>();
+        }
+    }
+}
+
+fn fsr_render_extent(output_extent: UVec2) -> UVec2 {
+    UVec2::new(
+        ((output_extent.x as f32 * 0.667).floor() as u32)
+            .max(1)
+            .min(output_extent.x.saturating_sub(1).max(1)),
+        ((output_extent.y as f32 * 0.667).floor() as u32)
+            .max(1)
+            .min(output_extent.y.saturating_sub(1).max(1)),
+    )
+}
+
+#[cfg(all(
+    feature = "fsr_vulkan",
+    any(target_os = "linux", target_os = "windows")
+))]
+mod backend;
 
 #[cfg(test)]
 #[path = "fsr_vulkan_tests.rs"]

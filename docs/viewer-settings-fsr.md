@@ -2,23 +2,32 @@
 
 Bevy 0.19 does not provide a native FSR super-resolution implementation. The
 USDHub sampling module therefore owns a renderer-local `FsrVulkanProvider`
-contract rather than inventing a `bevy::fsr` API or exposing FidelityFX/Vulkan
+adapter rather than inventing a `bevy::fsr` API or exposing FidelityFX/Vulkan
 objects through `viewport_protocol`.
 
-The provider is fail-closed in this checkout because no reviewed FidelityFX
-Vulkan backend or SDK is present. `FsrVulkanCapability` remains unavailable
-until an integration supplies all of these runtime facts:
+On Linux and Windows, the opt-in `fsr_vulkan` feature integrates the pinned
+`fsr` 0.1.11 Rust bindings with Bevy's Vulkan HAL. The provider is registered
+in `Core3dSystems::EarlyPostProcess`, creates an FSR2 context from Bevy's live
+Vulkan instance/adapter/device, and dispatches the GPU workload from the
+current render command encoder. The `fsr` project is archived, so the version
+is pinned deliberately and remains an isolated adapter dependency pending a
+maintained replacement.
 
-- a Vulkan backend;
-- a FidelityFX backend;
-- the render-graph input contract.
+The camera binding supplies the real provider inputs: a 0.667 render-scale
+`MainPassResolutionOverride`, Bevy depth and motion-vector prepasses, and
+storage-capable main textures. FidelityFX writes the upscaled result into the
+post-process destination before Bevy tone mapping. The output remains the
+existing `OffscreenTarget`, so frame capture still reads the final image. The
+failure path copies the source to the destination and marks the provider
+unavailable; it never inserts a CPU readback.
 
-The adapter contract also rejects frames unless the input extent is lower than
-the output extent, motion vectors/depth/exposure are present, and no CPU
-readback is inserted between rendering and the provider. These checks prove
-the ownership and failure boundary only; they do not claim a live FSR dispatch.
+`FsrVulkanCapability` remains fail-closed on unsupported targets and is updated
+from the render-world provider after a real context/dispatch attempt. Physical
+GPU/runtime proof is still deferred to a supported Vulkan host.
 
-A future backend must implement the dispatch at the reviewed render-graph
-post-process point and provide a Vulkan runtime packet containing input/output
-resolutions, input resource identities, GPU time, capture dimensions, and
-encoded frame dimensions. It must not change the frontend or wire protocol.
+The adapter contract rejects frames unless the input extent is lower than the
+output extent, motion vectors/depth/exposure are present, and no CPU readback
+is inserted between rendering and the provider. A supported-host verification
+packet must record input/output resolutions, the GPU dispatch time, capture
+dimensions, and encoded frame dimensions. The provider must not change the
+frontend or wire protocol.
