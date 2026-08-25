@@ -136,6 +136,12 @@ pub(super) fn build_where(query: &SemanticQuery, snapshot_id: &str) -> (String, 
     }
     for filter in &query.filters {
         match filter {
+            SemanticFilter::DisplayNameContains(value) => {
+                clauses.push(
+                    "LOWER(COALESCE(e.display_name, '')) LIKE LOWER('%' || ? || '%')".to_owned(),
+                );
+                params.push(turso::Value::Text(value.clone()));
+            }
             SemanticFilter::CategoryEquals(value) => {
                 clauses.push("e.category = ?".to_owned());
                 params.push(turso::Value::Text(value.clone()));

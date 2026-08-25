@@ -192,6 +192,56 @@ mod tests {
     }
 
     #[test]
+    fn hierarchy_search_routes_display_name_only() -> anyhow::Result<()> {
+        let mut app = semantic_search_test_app();
+        let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+        let extractor =
+            usd_semantic::SemanticExtractor::new(usd_semantic::SemanticConfig::default());
+        let mut snapshot = extractor.extract(
+            &stage,
+            usd_model::SnapshotSource::Working {
+                session: "bridge-display-name-search-test".to_owned(),
+                live_revision: 1,
+            },
+        )?;
+        let robot = snapshot
+            .entities
+            .values_mut()
+            .find(|entity| entity.prim_path == "/World/Robot")
+            .expect("Robot entity exists");
+        robot.prim_path = "/Architecture/Level01/Wall_0042".to_owned();
+        robot.semantic.display_name = Some("Exterior Wall".to_owned());
+        assert!(
+            app.world()
+                .resource::<SemanticWorkingStore>()
+                .submit_snapshot("bridge-display-name-load", snapshot)
+        );
+
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SearchScene {
+                query: "Wall_0042".to_owned(),
+                offset: 0,
+                limit: 10,
+            },
+        );
+
+        for _ in 0..200 {
+            app.update();
+            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
+                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+                let ViewportEvent::SearchResults { total, matches, .. } = event.event else {
+                    panic!("expected semantic search results")
+                };
+                assert_eq!(total, 0);
+                assert!(matches.is_empty());
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("display-name-only search result did not arrive")
+    }
+
+    #[test]
     fn grid_origin_command_updates_presentation_state_and_event() {
         let mut app = command_test_app();
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(

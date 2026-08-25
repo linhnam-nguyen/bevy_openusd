@@ -13,7 +13,7 @@ use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
+use crate::viewport::semantic::{SemanticFilter, SemanticQuery, SemanticWorkingStore};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Drains semantic-worker responses and publishes search results.
@@ -125,7 +125,8 @@ pub(super) fn dispatch_scene_query_commands(
                 match semantic_store.try_submit_query(
                     request_id.clone(),
                     SemanticQuery {
-                        text: Some(query),
+                        text: None,
+                        filters: vec![SemanticFilter::DisplayNameContains(query)],
                         offset,
                         limit,
                         ..Default::default()

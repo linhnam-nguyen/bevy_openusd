@@ -127,3 +127,121 @@ def Xform "World"
         assert!(result_child.rows.is_empty());
     });
 }
+
+#[test]
+fn display_name_filter_is_case_insensitive_path_exclusive_and_paginated() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime should build");
+    runtime.block_on(async {
+        let usda = r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "Wall"
+    {
+    }
+    def Xform "Door"
+    {
+    }
+}
+"#;
+        let stage = usd_bevy::UsdSnippet::new(usda)
+            .open_stage()
+            .expect("stage opens");
+        let extractor = SemanticExtractor::new(SemanticConfig::default());
+        let mut snapshot = extractor
+            .extract(
+                &stage,
+                SnapshotSource::Working {
+                    session: "display-name-filter-test".to_owned(),
+                    live_revision: 1,
+                },
+            )
+            .expect("extract snapshot");
+
+        let mut entities = snapshot.entities.values_mut();
+        let wall = entities.next().expect("wall entity exists");
+        wall.prim_path = "/Architecture/Level01/Wall_0042".to_owned();
+        wall.semantic.display_name = Some("Exterior Wall".to_owned());
+        let door = entities.next().expect("door entity exists");
+        door.prim_path = "/Architecture/Level02/Door_0001".to_owned();
+        door.semantic.display_name = Some("Exterior Door".to_owned());
+
+        let mut database = SemanticDatabase::open().await.expect("database opens");
+        database
+            .replace_snapshot(&snapshot)
+            .await
+            .expect("replace snapshot");
+
+        let wall_query = SemanticQuery {
+            filters: vec![SemanticFilter::DisplayNameContains(
+                "Exterior Wall".to_owned(),
+            )],
+            ..Default::default()
+        };
+        let wall_result = database.query(&wall_query).await.expect("query wall");
+        assert_eq!(wall_result.total, 1);
+        assert_eq!(wall_result.rows.len(), 1);
+        assert_eq!(
+            wall_result.rows[0].prim_path,
+            "/Architecture/Level01/Wall_0042"
+        );
+        assert_eq!(
+            wall_result.rows[0].display_name.as_deref(),
+            Some("Exterior Wall")
+        );
+        assert!(!wall_result.has_more);
+
+        let first_page = database
+            .query(&SemanticQuery {
+                filters: vec![SemanticFilter::DisplayNameContains("EXTERIOR".to_owned())],
+                limit: 1,
+                ..Default::default()
+            })
+            .await
+            .expect("query first page");
+        assert_eq!(first_page.total, 2);
+        assert_eq!(first_page.rows.len(), 1);
+        assert!(first_page.has_more);
+
+        let second_page = database
+            .query(&SemanticQuery {
+                filters: vec![SemanticFilter::DisplayNameContains("exterior".to_owned())],
+                offset: 1,
+                limit: 1,
+                ..Default::default()
+            })
+            .await
+            .expect("query second page");
+        assert_eq!(second_page.total, 2);
+        assert_eq!(second_page.rows.len(), 1);
+        assert!(!second_page.has_more);
+        assert_ne!(first_page.rows[0].prim_path, second_page.rows[0].prim_path);
+
+        for term in ["Wall_0042", "Level01", "Architecture"] {
+            let result = database
+                .query(&SemanticQuery {
+                    filters: vec![SemanticFilter::DisplayNameContains(term.to_owned())],
+                    ..Default::default()
+                })
+                .await
+                .expect("query path-only term");
+            assert_eq!(result.total, 0, "path term should not match: {term}");
+            assert!(result.rows.is_empty());
+        }
+
+        let generic_result = database
+            .query(&SemanticQuery {
+                text: Some("Wall_0042".to_owned()),
+                ..Default::default()
+            })
+            .await
+            .expect("query generic text");
+        assert_eq!(generic_result.total, 1);
+        assert_eq!(
+            generic_result.rows[0].prim_path,
+            "/Architecture/Level01/Wall_0042"
+        );
+    });
+}
