@@ -2,6 +2,7 @@
 // Split by concern to stay within the 400-line per-file budget.
 
 mod commands_test;
+mod hierarchy_search_test;
 mod mutations_test;
 mod renderer_commands_test;
 mod selection_commands_test;
