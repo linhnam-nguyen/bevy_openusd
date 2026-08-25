@@ -53,6 +53,7 @@ pub(super) fn apply_viewport_commands(
                     &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
+                    &state.camera_orientation.latest,
                     &state.clock,
                     &state.toggles,
                     &state.tuning,
@@ -79,6 +80,7 @@ pub(super) fn apply_viewport_commands(
                     &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
+                    &state.camera_orientation.latest,
                     &state.clock,
                     &state.toggles,
                     &state.tuning,
@@ -179,6 +181,7 @@ pub(super) fn apply_viewport_commands(
                     &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
+                    &state.camera_orientation.latest,
                     &state.clock,
                     &state.toggles,
                     &state.tuning,
@@ -209,6 +212,7 @@ pub(super) fn apply_viewport_commands(
                     &state.viewer_settings.0,
                     &state.scene_index,
                     &state.camera_mount,
+                    &state.camera_orientation.latest,
                     &state.clock,
                     &state.toggles,
                     &state.tuning,
@@ -217,6 +221,16 @@ pub(super) fn apply_viewport_commands(
             }
             ViewportCommand::SetCameraSource { source } => {
                 camera::set_camera_source(request_id, source, &mut outbox, &mut state.camera_mount);
+            }
+            ViewportCommand::SetStandardView { view } => {
+                camera::set_standard_view(
+                    request_id,
+                    view,
+                    &mut outbox,
+                    &mut state.camera_mount,
+                    &mut state.fly_to,
+                    &state.cameras,
+                );
             }
             ViewportCommand::SetPlayback { playing } => {
                 timeline::set_playback(request_id, playing, &mut outbox, &mut state.clock);

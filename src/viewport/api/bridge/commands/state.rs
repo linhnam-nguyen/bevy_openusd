@@ -6,7 +6,7 @@ use super::super::state::{EditorHistories, RuntimeMutationCoordinator};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
-use crate::viewport::camera::CameraMount;
+use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
@@ -30,6 +30,9 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub scene_index: Res<'w, SceneAnchorIndex>,
     pub tree_commands: ResMut<'w, ViewportTreeCommandInbox>,
     pub camera_mount: ResMut<'w, CameraMount>,
+    pub camera_orientation: Res<'w, CameraOrientationState>,
+    pub fly_to: ResMut<'w, FlyTo>,
+    pub cameras: Query<'w, 's, &'static ArcballCamera>,
     pub clock: ResMut<'w, UsdStageTime>,
     pub toggles: ResMut<'w, DisplayToggles>,
     pub solari: Option<Res<'w, SolariCapability>>,

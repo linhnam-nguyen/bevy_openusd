@@ -6,7 +6,7 @@
 //! and `Server*` types reserve the richer session contract used by the remote
 //! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 
 pub mod authorization;
 pub mod capabilities;
@@ -59,15 +59,16 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    CameraSource, ColorRgb8, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
-    EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
-    GroundGridOrigin, MAX_EDITOR_TEXT_BYTES, MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES,
-    MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS, OverlayKind,
-    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation,
-    RuntimeMutationBatch, SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor,
-    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
-    SelectionPresentationSettings, SelectionReadModel, StageLoadState, StageReadModel,
-    TimelineReadModel, ViewerEnvironmentSettings, ViewerSettingsCapabilities,
-    ViewerSettingsReadModel, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
-    ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage,
+    CameraOrientationReadModel, CameraSource, ColorRgb8, CurveTuning, DEFAULT_SCENE_PAGE_SIZE,
+    DEFAULT_SCENE_SEARCH_PAGE_SIZE, EditorOperation, EditorPrimReadModel, EditorStateReadModel,
+    EditorValue, FocusMode, GroundGridOrigin, MAX_EDITOR_TEXT_BYTES, MAX_RUNTIME_MUTATIONS,
+    MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS,
+    MAX_SELECTION_TARGETS, OverlayKind, PresentationReadModel, PrimNodeReadModel, RenderMode,
+    RendererConfiguration, RuntimeMutation, RuntimeMutationBatch, SamplingPreference,
+    SamplingProvider, SamplingReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference,
+    SceneReadModel, SceneSearchMatch, SectionBoxReadModel, SelectionPresentationSettings,
+    SelectionReadModel, StageLoadState, StageReadModel, StandardView, TimelineReadModel,
+    ViewerEnvironmentSettings, ViewerSettingsCapabilities, ViewerSettingsReadModel,
+    ViewportCommand, ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope,
+    ViewportReadModel, ViewportWireMessage,
 };

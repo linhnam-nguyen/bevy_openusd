@@ -1,8 +1,8 @@
 use viewport_protocol::{
-    CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, OverlayKind,
-    PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch, SceneAnchor,
-    SelectionReadModel, StageReadModel, TimelineReadModel, ViewerSettingsReadModel, ViewportEvent,
-    ViewportEventEnvelope, ViewportReadModel,
+    CameraOrientationReadModel, CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation,
+    OverlayKind, PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch,
+    SceneAnchor, SelectionReadModel, StageReadModel, TimelineReadModel, ViewerSettingsReadModel,
+    ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
 };
 
 use super::state::EditorHistories;
@@ -52,6 +52,7 @@ pub(super) fn emit_snapshot(
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
+    camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
     toggles: &DisplayToggles,
     tuning: &LoaderTuning,
@@ -67,6 +68,7 @@ pub(super) fn emit_snapshot(
                 settings,
                 scene_index,
                 camera_mount,
+                camera_orientation,
                 clock,
                 toggles,
                 tuning,
@@ -84,6 +86,7 @@ pub(super) fn build_read_model(
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
+    camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
     toggles: &DisplayToggles,
     tuning: &LoaderTuning,
@@ -104,6 +107,7 @@ pub(super) fn build_read_model(
                 prim_path: prim_path.clone(),
             },
         },
+        camera_orientation: *camera_orientation,
         timeline: timeline_read_model(clock),
         presentation: presentation_read_model(toggles, tuning),
         physics_running,

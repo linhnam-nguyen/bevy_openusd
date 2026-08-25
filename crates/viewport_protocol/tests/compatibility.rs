@@ -4,7 +4,7 @@ use viewport_protocol::{
 };
 
 #[test]
-fn viewport_command_fixture_uses_the_version_two_json_shape() {
+fn viewport_command_fixture_uses_the_version_three_json_shape() {
     let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
         "fixture-command",
         ViewportCommand::RequestSnapshot,
@@ -13,13 +13,13 @@ fn viewport_command_fixture_uses_the_version_two_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"command\",\"payload\":{\"protocol_version\":2,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
+        "{\"type\":\"command\",\"payload\":{\"protocol_version\":3,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
 
 #[test]
-fn viewport_event_fixture_uses_the_version_two_json_shape() {
+fn viewport_event_fixture_uses_the_version_three_json_shape() {
     let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
         None,
         ViewportEvent::Ready {
@@ -30,7 +30,7 @@ fn viewport_event_fixture_uses_the_version_two_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"event\",\"payload\":{\"protocol_version\":2,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":2}}}}\n"
+        "{\"type\":\"event\",\"payload\":{\"protocol_version\":3,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":3}}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
@@ -48,4 +48,53 @@ fn ground_grid_origin_command_round_trips_through_json() {
     assert!(line.contains("set_ground_grid_origin"));
     assert!(line.contains("world_origin"));
     assert_eq!(decode_json_line(&line).unwrap(), message);
+}
+
+#[test]
+fn standard_views_use_the_complete_snake_case_wire_vocabulary() {
+    for (view, expected) in [
+        (viewport_protocol::StandardView::Front, "front"),
+        (viewport_protocol::StandardView::Back, "back"),
+        (viewport_protocol::StandardView::Left, "left"),
+        (viewport_protocol::StandardView::Right, "right"),
+        (viewport_protocol::StandardView::Top, "top"),
+        (viewport_protocol::StandardView::Bottom, "bottom"),
+    ] {
+        assert_eq!(
+            serde_json::to_string(&view).unwrap(),
+            format!("\"{expected}\"")
+        );
+        let command = ViewportCommand::SetStandardView { view };
+        let decoded: ViewportCommand =
+            serde_json::from_value(serde_json::to_value(command).unwrap()).unwrap();
+        assert_eq!(decoded, ViewportCommand::SetStandardView { view });
+    }
+}
+
+#[test]
+fn a_version_two_command_envelope_is_rejected_by_the_version_three_contract() {
+    let mut envelope = ViewportCommandEnvelope::new("legacy", ViewportCommand::RequestSnapshot);
+    envelope.protocol_version = 2;
+    assert!(matches!(
+        envelope.validate(),
+        Err(
+            viewport_protocol::ProtocolValidationError::UnsupportedProtocolVersion {
+                received: 2,
+                expected: 3,
+            }
+        )
+    ));
+}
+
+#[test]
+fn nonfinite_camera_orientation_is_not_constructible_for_public_projection() {
+    assert!(
+        viewport_protocol::CameraOrientationReadModel::from_rotation_xyzw([
+            f32::NAN,
+            0.0,
+            0.0,
+            1.0,
+        ])
+        .is_none()
+    );
 }

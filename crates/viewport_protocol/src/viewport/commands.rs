@@ -7,7 +7,7 @@ use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
     SamplingPreference, SceneAnchor, SelectionPresentationSettings, SelectionReadModel,
-    ViewerEnvironmentSettings,
+    StandardView, ViewerEnvironmentSettings,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +64,9 @@ pub enum ViewportCommand {
     },
     SetCameraSource {
         source: CameraSource,
+    },
+    SetStandardView {
+        view: StandardView,
     },
     SetPlayback {
         playing: bool,
@@ -322,6 +325,7 @@ impl ViewportCommand {
             | Self::FocusTarget { .. }
             | Self::SetSubtreeVisibility { .. }
             | Self::SetCameraSource { .. }
+            | Self::SetStandardView { .. }
             | Self::SetPlayback { .. }
             | Self::Seek { .. }
             | Self::SetOverlay { .. }

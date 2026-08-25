@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use super::camera::CameraOrientationReadModel;
 use super::identity::{CameraSource, GroundGridOrigin};
 use super::scene::{CurveTuning, SceneReadModel, StageReadModel};
 use super::selection::SelectionReadModel;
@@ -42,6 +43,7 @@ pub struct ViewportReadModel {
     #[serde(default)]
     pub viewer_settings: ViewerSettingsReadModel,
     pub camera_source: CameraSource,
+    pub camera_orientation: CameraOrientationReadModel,
     pub timeline: TimelineReadModel,
     pub presentation: PresentationReadModel,
     pub physics_running: bool,
@@ -61,6 +63,7 @@ impl ViewportReadModel {
             selection: SelectionReadModel::default(),
             viewer_settings: ViewerSettingsReadModel::default(),
             camera_source: CameraSource::Arcball,
+            camera_orientation: CameraOrientationReadModel::default(),
             timeline: TimelineReadModel {
                 seconds: 0.0,
                 playing: false,

@@ -23,6 +23,7 @@ impl ViewportProtocolViewportSnapshot {
                 selection: viewport_protocol::SelectionReadModel::default(),
                 viewer_settings: viewport_protocol::ViewerSettingsReadModel::default(),
                 camera_source: viewport_protocol::CameraSource::Arcball,
+                camera_orientation: viewport_protocol::CameraOrientationReadModel::default(),
                 timeline: viewport_protocol::TimelineReadModel {
                     seconds: 0.0,
                     playing: false,

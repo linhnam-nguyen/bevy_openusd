@@ -65,8 +65,8 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v2_selection_wire_migration_is_explicit() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 2);
+fn protocol_v3_selection_wire_migration_is_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 3);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
 }

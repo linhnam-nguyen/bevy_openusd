@@ -181,6 +181,12 @@ impl ViewportReadModelState {
                     snapshot.camera_source = source.clone();
                 }
             }
+            ViewportEvent::CameraOrientationChanged { orientation } => {
+                if let Some(snapshot) = &mut self.snapshot {
+                    snapshot.camera_orientation = *orientation;
+                }
+            }
+            ViewportEvent::CameraStandardViewStarted { .. } => {}
             ViewportEvent::TimelineChanged { timeline } => {
                 if let Some(snapshot) = &mut self.snapshot {
                     snapshot.timeline = timeline.clone();

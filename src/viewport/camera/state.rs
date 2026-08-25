@@ -1,6 +1,7 @@
 //! Camera-owned viewport state.
 
-use bevy::prelude::{Resource, Vec3};
+use bevy::prelude::{Quat, Resource, Vec3};
+use viewport_protocol::CameraOrientationReadModel;
 
 /// An in-flight camera tween. `remaining` counts down by `delta_time` every
 /// frame until zero, at which point the camera settles at the target.
@@ -16,6 +17,26 @@ pub struct FlyTo {
     pub target_yaw: Option<f32>,
     pub start_elevation: Option<f32>,
     pub target_elevation: Option<f32>,
+}
+
+/// Latest validated orientation sampled from the live viewport camera.
+#[derive(Resource, Debug, Clone)]
+pub(crate) struct CameraOrientationState {
+    pub latest: CameraOrientationReadModel,
+    pub(super) last_rotation: Option<Quat>,
+    pub(super) last_published_at: f64,
+    pub(super) has_published: bool,
+}
+
+impl Default for CameraOrientationState {
+    fn default() -> Self {
+        Self {
+            latest: CameraOrientationReadModel::default(),
+            last_rotation: None,
+            last_published_at: 0.0,
+            has_published: false,
+        }
+    }
 }
 
 /// Saved camera viewpoints. They are session-only until the future review

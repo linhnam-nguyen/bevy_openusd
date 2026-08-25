@@ -1,11 +1,13 @@
 //! Public viewport read models split by responsibility.
 
+mod camera;
 mod identity;
 mod scene;
 mod selection;
 mod settings;
 mod viewport;
 
+pub use camera::{CameraOrientationReadModel, StandardView};
 pub use identity::{
     CameraSource, ColorRgb8, GroundGridOrigin, OverlayKind, RenderMode, SceneAnchor,
 };

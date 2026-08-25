@@ -8,7 +8,7 @@ use super::helpers::{build_read_model, reject};
 use super::state::{SemanticSearchRequest, SemanticSearchRequests};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
-use crate::viewport::camera::CameraMount;
+use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::SelectedTargets;
@@ -189,6 +189,7 @@ pub(super) fn publish_stage_load_state(
     viewer_settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     camera_mount: Res<CameraMount>,
+    camera_orientation: Res<CameraOrientationState>,
     clock: Res<UsdStageTime>,
     toggles: Res<DisplayToggles>,
     tuning: Res<LoaderTuning>,
@@ -227,6 +228,7 @@ pub(super) fn publish_stage_load_state(
             &viewer_settings.0,
             &scene_index,
             &camera_mount,
+            &camera_orientation.latest,
             &clock,
             &toggles,
             &tuning,

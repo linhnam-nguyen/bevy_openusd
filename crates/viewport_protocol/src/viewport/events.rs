@@ -5,8 +5,8 @@ use crate::{PROTOCOL_VERSION, RequestId};
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::read_models::{
-    CameraSource, FocusMode, PresentationReadModel, SceneAnchor, SceneChildrenPage,
-    SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
+    CameraOrientationReadModel, CameraSource, FocusMode, PresentationReadModel, SceneAnchor,
+    SceneChildrenPage, SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
     ViewerSettingsReadModel, ViewportReadModel,
 };
 
@@ -45,6 +45,12 @@ pub enum ViewportEvent {
     },
     CameraSourceChanged {
         source: CameraSource,
+    },
+    CameraOrientationChanged {
+        orientation: CameraOrientationReadModel,
+    },
+    CameraStandardViewStarted {
+        view: super::read_models::StandardView,
     },
     TimelineChanged {
         timeline: TimelineReadModel,

@@ -13,7 +13,7 @@ mod tests {
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::CameraMount;
+    use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
     use crate::viewport::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
@@ -41,6 +41,8 @@ mod tests {
             .init_resource::<DlssCapability>()
             .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()
@@ -72,6 +74,8 @@ mod tests {
             .init_resource::<DlssCapability>()
             .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()

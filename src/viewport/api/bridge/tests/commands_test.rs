@@ -10,7 +10,7 @@ mod tests {
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::CameraMount;
+    use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
     use crate::viewport::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
@@ -33,6 +33,8 @@ mod tests {
             .init_resource::<DlssCapability>()
             .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()
@@ -112,6 +114,58 @@ mod tests {
         assert!(matches!(
             events[3].event,
             ViewportEvent::PhysicsChanged { running: true }
+        ));
+    }
+
+    #[test]
+    fn standard_view_switches_mounted_camera_to_arcball_without_losing_rig_state() {
+        let mut app = command_test_app();
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Transform::default(),
+            ArcballCamera {
+                focus: Vec3::new(1.0, 2.0, 3.0),
+                distance: 7.5,
+                zoom_target: 7.5,
+                ..Default::default()
+            },
+        ));
+        *app.world_mut().resource_mut::<CameraMount>() = CameraMount::Mounted {
+            prim_path: "/World/Camera".to_owned(),
+        };
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetStandardView {
+                view: StandardView::Top,
+            },
+        );
+
+        app.update();
+
+        assert!(matches!(
+            app.world().resource::<CameraMount>(),
+            CameraMount::Arcball
+        ));
+        let fly_to = app.world().resource::<FlyTo>();
+        assert_eq!(fly_to.target_focus, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(fly_to.target_distance, 7.5);
+        assert_eq!(fly_to.target_elevation, Some(core::f32::consts::FRAC_PI_2));
+        let events: Vec<_> =
+            std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
+                .collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            events[0].event,
+            ViewportEvent::CameraSourceChanged {
+                source: CameraSource::Arcball
+            }
+        ));
+        assert_eq!(events[1].request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            events[1].event,
+            ViewportEvent::CameraStandardViewStarted {
+                view: StandardView::Top
+            }
         ));
     }
 
