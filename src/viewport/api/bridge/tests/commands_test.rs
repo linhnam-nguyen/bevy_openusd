@@ -143,6 +143,9 @@ mod tests {
     fn search_scene_routes_through_the_semantic_worker() -> anyhow::Result<()> {
         let mut app = semantic_search_test_app();
         let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+        let ui = openusd::schemas::ui::SceneGraphPrimAPI::apply(&stage, "/World/Robot")?;
+        ui.create_display_name_attr()?
+            .set(openusd::sdf::Value::token("Robot"))?;
         let snapshot =
             usd_semantic::SemanticExtractor::new(usd_semantic::SemanticConfig::default()).extract(
                 &stage,
@@ -194,51 +197,89 @@ mod tests {
     #[test]
     fn hierarchy_search_routes_display_name_only() -> anyhow::Result<()> {
         let mut app = semantic_search_test_app();
-        let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+        let stage = openusd::usd::Stage::builder().in_memory("bridge-display-name.usda")?;
+        stage.define_prim("/Architecture")?.set_type_name("Xform")?;
+        stage
+            .define_prim("/Architecture/Level01")?
+            .set_type_name("Xform")?;
+        stage
+            .define_prim("/Architecture/Level01/Wall_0042")?
+            .set_type_name("Xform")?;
         let extractor =
             usd_semantic::SemanticExtractor::new(usd_semantic::SemanticConfig::default());
-        let mut snapshot = extractor.extract(
+        let snapshot = extractor.extract(
             &stage,
             usd_model::SnapshotSource::Working {
                 session: "bridge-display-name-search-test".to_owned(),
                 live_revision: 1,
             },
         )?;
-        let robot = snapshot
+        let wall = snapshot
             .entities
-            .values_mut()
-            .find(|entity| entity.prim_path == "/World/Robot")
-            .expect("Robot entity exists");
-        robot.prim_path = "/Architecture/Level01/Wall_0042".to_owned();
-        robot.semantic.display_name = Some("Exterior Wall".to_owned());
+            .get(&usd_model::EntityKey::from(
+                "/Architecture/Level01/Wall_0042",
+            ))
+            .expect("wall entity exists");
+        assert_eq!(wall.semantic.display_name, None);
         assert!(
             app.world()
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot("bridge-display-name-load", snapshot)
         );
 
-        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SearchScene {
-                query: "Wall_0042".to_owned(),
-                offset: 0,
-                limit: 10,
+        let run_search = |app: &mut App, query: &str| -> anyhow::Result<u32> {
+            let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+                ViewportCommand::SearchScene {
+                    query: query.to_owned(),
+                    offset: 0,
+                    limit: 10,
+                },
+            );
+            for _ in 0..200 {
+                app.update();
+                if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
+                    assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+                    let ViewportEvent::SearchResults { total, .. } = event.event else {
+                        panic!("expected semantic search results")
+                    };
+                    return Ok(total);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            anyhow::bail!("search result did not arrive for {query}")
+        };
+
+        assert_eq!(run_search(&mut app, "Wall_0042")?, 0);
+
+        let ui = openusd::schemas::ui::SceneGraphPrimAPI::apply(
+            &stage,
+            "/Architecture/Level01/Wall_0042",
+        )?;
+        ui.create_display_name_attr()?
+            .set(openusd::sdf::Value::token("Exterior Wall"))?;
+        let updated_snapshot = extractor.extract(
+            &stage,
+            usd_model::SnapshotSource::Working {
+                session: "bridge-display-name-search-test".to_owned(),
+                live_revision: 2,
             },
+        )?;
+        let wall = updated_snapshot
+            .entities
+            .get(&usd_model::EntityKey::from(
+                "/Architecture/Level01/Wall_0042",
+            ))
+            .expect("updated wall entity exists");
+        assert_eq!(wall.semantic.display_name.as_deref(), Some("Exterior Wall"));
+        assert!(
+            app.world()
+                .resource::<SemanticWorkingStore>()
+                .submit_snapshot("bridge-display-name-update", updated_snapshot)
         );
 
-        for _ in 0..200 {
-            app.update();
-            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
-                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-                let ViewportEvent::SearchResults { total, matches, .. } = event.event else {
-                    panic!("expected semantic search results")
-                };
-                assert_eq!(total, 0);
-                assert!(matches.is_empty());
-                return Ok(());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        panic!("display-name-only search result did not arrive")
+        assert_eq!(run_search(&mut app, "Exterior")?, 1);
+        assert_eq!(run_search(&mut app, "Wall_0042")?, 0);
+        Ok(())
     }
 
     #[test]

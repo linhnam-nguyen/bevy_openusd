@@ -295,6 +295,7 @@ fn digest(bytes: &[u8]) -> HashDigest {
 mod tests {
     use super::*;
     use openusd::gf::{Vec3d, Vec3f};
+    use openusd::schemas::ui::SceneGraphPrimAPI;
     use openusd::sdf::Value;
 
     fn fixture() -> Result<Stage> {
@@ -325,6 +326,9 @@ mod tests {
             .set(Value::TokenVec(vec!["xformOp:translate".into()]))?;
         mesh.create_attribute("family", "string")?
             .set(Value::String("Furniture".to_owned()))?;
+        let ui = SceneGraphPrimAPI::apply(&stage, "/World/Triangle")?;
+        ui.create_display_name_attr()?
+            .set(Value::token("Triangle"))?;
 
         Ok(stage)
     }
@@ -362,6 +366,26 @@ mod tests {
         assert_eq!(geometry.index_count, 3);
         assert_eq!(geometry.local_centroid.0, [333333, 333333, 0]);
         assert_ne!(geometry.topology_hash, geometry.shape_hash);
+        Ok(())
+    }
+
+    #[test]
+    fn absent_display_name_does_not_fall_back_to_prim_basename() -> Result<()> {
+        let stage = Stage::builder().in_memory("display-name-authority.usda")?;
+        stage.define_prim("/Architecture")?.set_type_name("Xform")?;
+        stage
+            .define_prim("/Architecture/Level01")?
+            .set_type_name("Xform")?;
+        stage
+            .define_prim("/Architecture/Level01/Wall_0042")?
+            .set_type_name("Xform")?;
+
+        let snapshot = SemanticExtractor::default().extract(&stage, source())?;
+        let wall = snapshot
+            .entities
+            .get(&EntityKey::from("/Architecture/Level01/Wall_0042"))
+            .expect("wall entity");
+        assert_eq!(wall.semantic.display_name, None);
         Ok(())
     }
 
