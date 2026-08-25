@@ -14,6 +14,8 @@ pub struct PrimNodeReadModel {
     pub anchor: SceneAnchor,
     pub parent: Option<SceneAnchor>,
     pub label: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
     pub visible: bool,
     pub has_children: bool,
 }

@@ -138,6 +138,7 @@ fn lazy_scene_queries_round_trip_with_request_correlation() {
         anchor: SceneAnchor::active_session("/World/Door"),
         parent: Some(world.clone()),
         label: "Door".to_owned(),
+        display_name: Some("Door".to_owned()),
         visible: true,
         has_children: false,
     };

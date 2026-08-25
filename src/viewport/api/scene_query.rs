@@ -137,12 +137,15 @@ fn search_nodes(
     let mut ranked: Vec<(&PrimNodeReadModel, u8)> = nodes
         .iter()
         .filter_map(|node| {
-            let label = node.label.to_lowercase();
-            let score = if label == query {
+            let Some(display_name) = node.display_name.as_deref() else {
+                return None;
+            };
+            let display_name = display_name.to_lowercase();
+            let score = if display_name == query {
                 Some(0)
-            } else if label.starts_with(&query) {
+            } else if display_name.starts_with(&query) {
                 Some(1)
-            } else if label.contains(&query) {
+            } else if display_name.contains(&query) {
                 Some(2)
             } else {
                 None
@@ -216,6 +219,7 @@ mod tests {
             anchor: SceneAnchor::active_session(path),
             parent: parent.map(SceneAnchor::active_session),
             label: label.to_owned(),
+            display_name: Some(label.to_owned()),
             visible: true,
             has_children: false,
         }

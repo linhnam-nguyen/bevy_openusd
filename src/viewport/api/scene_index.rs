@@ -155,6 +155,7 @@ impl SceneAnchorIndex {
             entity: Entity,
             path: String,
             label: String,
+            display_name: Option<String>,
             visible: bool,
             children: Vec<Entity>,
         }
@@ -167,19 +168,19 @@ impl SceneAnchorIndex {
         let mut candidates: Vec<Candidate> = prims
             .iter()
             .filter(|(_, prim, ..)| prim.path != "/")
-            .map(
-                |(entity, prim, display_name, visibility, children)| Candidate {
+            .map(|(entity, prim, display_name, visibility, children)| {
+                let display_name = display_name.map(|display_name| display_name.0.clone());
+                Candidate {
                     entity,
                     path: prim.path.clone(),
-                    label: display_name
-                        .map(|display_name| display_name.0.clone())
-                        .unwrap_or_else(|| {
-                            prim.path
-                                .rsplit('/')
-                                .find(|segment| !segment.is_empty())
-                                .unwrap_or("/")
-                                .to_owned()
-                        }),
+                    label: display_name.clone().unwrap_or_else(|| {
+                        prim.path
+                            .rsplit('/')
+                            .find(|segment| !segment.is_empty())
+                            .unwrap_or("/")
+                            .to_owned()
+                    }),
+                    display_name,
                     visible: !matches!(visibility, Some(Visibility::Hidden)),
                     children: children
                         .map(|children| {
@@ -189,8 +190,8 @@ impl SceneAnchorIndex {
                                 .collect()
                         })
                         .unwrap_or_default(),
-                },
-            )
+                }
+            })
             .collect();
 
         let mut parent_by_child = HashMap::new();
@@ -244,6 +245,7 @@ impl SceneAnchorIndex {
                     anchor,
                     parent,
                     label: candidate.label,
+                    display_name: candidate.display_name,
                     visible: candidate.visible,
                     has_children: !candidate.children.is_empty(),
                 })
@@ -330,6 +332,7 @@ mod tests {
             anchor: SceneAnchor::active_session(path),
             parent: parent.map(SceneAnchor::active_session),
             label: label.to_owned(),
+            display_name: Some(label.to_owned()),
             visible: true,
             has_children: false,
         }

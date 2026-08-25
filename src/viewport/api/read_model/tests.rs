@@ -10,6 +10,7 @@ fn node(
         anchor: SceneAnchor::active_session(path),
         parent,
         label: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        display_name: Some(path.rsplit('/').next().unwrap_or(path).to_owned()),
         visible,
         has_children,
     }

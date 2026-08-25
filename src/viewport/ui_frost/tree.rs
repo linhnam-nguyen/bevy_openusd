@@ -128,6 +128,7 @@ pub(crate) fn draw_tree_panel(
                                     anchor: search.anchor.clone(),
                                     parent: search.parent.clone(),
                                     label: search.label.clone(),
+                                    display_name: None,
                                     visible: search.visible,
                                     has_children: search.has_children,
                                 };
