@@ -41,12 +41,16 @@ pub(in crate::viewport) fn capture_section_box_gizmo_transform(
     }
 
     state.face_drag = None;
-    if state.transform == *transform {
+    apply_section_box_gizmo_transform(&mut state, *transform);
+}
+
+fn apply_section_box_gizmo_transform(state: &mut SectionBoxState, transform: Transform) {
+    if state.transform == transform {
         return;
     }
 
-    state.transform = *transform;
-    state.clip_planes = SectionBoxClipPlanes::from_transform(*transform);
+    state.transform = transform;
+    state.clip_planes = SectionBoxClipPlanes::from_transform(transform);
     state.pose_authority = SectionBoxPoseAuthority::UserAdjusted;
     state.revision = state.revision.saturating_add(1);
 }
@@ -139,6 +143,31 @@ mod tests {
         state.reset_geometry();
         assert_eq!(state.pose_authority, SectionBoxPoseAuthority::AutoFit);
         assert!(state.face_drag.is_none());
+    }
+
+    #[test]
+    fn face_adjusted_box_preserves_dimensions_through_translation_and_rotation() {
+        let mut state = SectionBoxState::default();
+        state.transform = Transform::from_scale(Vec3::splat(10.0));
+
+        apply_section_box_face_drag(&mut state, SectionBoxFace::PositiveX, -3.0);
+        let resized_scale = state.transform.scale;
+
+        let translated = Transform {
+            translation: Vec3::new(4.0, 5.0, 6.0),
+            ..state.transform
+        };
+        apply_section_box_gizmo_transform(&mut state, translated);
+        assert_eq!(state.transform.translation, translated.translation);
+        assert_eq!(state.transform.scale, resized_scale);
+
+        let rotated = Transform {
+            rotation: Quat::from_rotation_y(0.5),
+            ..state.transform
+        };
+        apply_section_box_gizmo_transform(&mut state, rotated);
+        assert_eq!(state.transform.rotation, rotated.rotation);
+        assert_eq!(state.transform.scale, resized_scale);
     }
 
     #[test]
