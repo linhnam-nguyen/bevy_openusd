@@ -1,8 +1,8 @@
 //! One renderer-owned Section Box state for the authoritative selection set.
 //!
-//! B6.1 owns only the selection correlation, aggregate bounds, and derived
+//! I1.6 owns the selection correlation, aggregate bounds, and renderer-only
 //! clipping representation. Visualization, gizmo interaction, and material
-//! clipping remain later checkpoints.
+//! clipping consume this state without authoring scene data.
 
 use std::collections::HashSet;
 
@@ -14,14 +14,16 @@ use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 
+#[path = "section_box_pose.rs"]
+mod section_box_pose;
 #[path = "section_box_tracking.rs"]
 mod section_box_tracking;
 
+pub(crate) use section_box_pose::SectionBoxPoseAuthority;
+use section_box_pose::{fit_transform, next_section_box_pose};
 use section_box_tracking::{
     reconcile_tracked_renderables, selected_renderable_entities, should_reconcile_section_box,
 };
-
-const MIN_BOX_SIZE: f32 = 0.0001;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SectionBoxBounds {
@@ -43,8 +45,8 @@ impl SectionBoxBounds {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SectionBoxClipPlanes {
     /// Planes use `dot(normal, world_position) + offset >= 0` as the kept side.
-    /// B6.1 fits an axis-aligned box; later rotation updates will derive the
-    /// same six planes from the aggregate box transform.
+    /// I1.6 derives the six planes from the aggregate box transform, including
+    /// the user-adjusted rotation captured from the renderer gizmo.
     pub(crate) planes: [Vec4; 6],
 }
 
@@ -72,6 +74,7 @@ pub(crate) struct SectionBoxState {
     pub(crate) transform: Transform,
     pub(crate) bounds: Option<SectionBoxBounds>,
     pub(crate) clip_planes: SectionBoxClipPlanes,
+    pub(crate) pose_authority: SectionBoxPoseAuthority,
     pub(crate) revision: u64,
     tracked_renderables: HashSet<Entity>,
     resolved_targets: Vec<Option<Entity>>,
@@ -87,6 +90,7 @@ impl Default for SectionBoxState {
             transform: Transform::IDENTITY,
             bounds: None,
             clip_planes: SectionBoxClipPlanes::default(),
+            pose_authority: SectionBoxPoseAuthority::AutoFit,
             revision: 0,
             tracked_renderables: HashSet::new(),
             resolved_targets: Vec::new(),
@@ -103,6 +107,7 @@ impl SectionBoxState {
         self.transform = Transform::IDENTITY;
         self.bounds = None;
         self.clip_planes = SectionBoxClipPlanes::default();
+        self.pose_authority = SectionBoxPoseAuthority::AutoFit;
     }
 }
 
@@ -192,30 +197,35 @@ pub(in crate::viewport) fn sync_section_box_state(
         .then(|| aggregate_selection_bounds(&targets, &scene_index, &renderables))
         .flatten();
     let next_visible = enabled && !targets.is_empty() && next_bounds.is_some();
-    let next_transform = next_bounds
-        .map(fit_transform)
-        .unwrap_or(Transform::IDENTITY);
-    let next_planes = next_bounds
-        .map(SectionBoxClipPlanes::from_bounds)
-        .unwrap_or_default();
+    let force_auto_fit =
+        selection_changed || resolution_changed || scene_revision_changed || enabled_changed;
+    let next_pose = next_section_box_pose(
+        state.transform,
+        state.clip_planes,
+        state.pose_authority,
+        next_visible,
+        next_bounds,
+        force_auto_fit,
+    );
 
-    let changed = state.enabled != enabled
+    let clipping_changed = state.enabled != enabled
         || state.visible != next_visible
         || state.targets != targets
-        || state.bounds != next_bounds
-        || state.transform != next_transform
-        || state.clip_planes != next_planes
+        || state.transform != next_pose.transform
+        || state.clip_planes != next_pose.clip_planes
+        || state.pose_authority != next_pose.authority
         || tracked_set_changed
         || state.resolved_targets != resolved_targets;
-    if changed {
+    if clipping_changed {
         state.revision = state.revision.saturating_add(1);
     }
     state.enabled = enabled;
     state.visible = next_visible;
     state.targets = targets;
-    state.transform = next_transform;
+    state.transform = next_pose.transform;
     state.bounds = next_bounds;
-    state.clip_planes = next_planes;
+    state.clip_planes = next_pose.clip_planes;
+    state.pose_authority = next_pose.authority;
     state.tracked_renderables = next_tracked_renderables.clone();
     state.resolved_targets = resolved_targets;
     state.scene_revision = scene_index.revision();
@@ -336,16 +346,8 @@ fn transform_bounds(bounds: SectionBoxBounds, matrix: Mat4) -> SectionBoxBounds 
     transformed
 }
 
-fn fit_transform(bounds: SectionBoxBounds) -> Transform {
-    Transform {
-        translation: (bounds.min + bounds.max) * 0.5,
-        scale: (bounds.max - bounds.min).max(Vec3::splat(MIN_BOX_SIZE)),
-        ..Transform::IDENTITY
-    }
-}
-
 impl SectionBoxClipPlanes {
-    fn from_bounds(bounds: SectionBoxBounds) -> Self {
+    pub(super) fn from_bounds(bounds: SectionBoxBounds) -> Self {
         Self::from_transform(fit_transform(bounds))
     }
 

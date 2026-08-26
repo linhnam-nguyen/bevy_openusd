@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy_glacial::prelude::GizmoTarget;
 
-use super::section_box::{SectionBoxClipPlanes, SectionBoxState};
+use super::section_box::{SectionBoxClipPlanes, SectionBoxPoseAuthority, SectionBoxState};
 
 #[derive(Component, Debug, Copy, Clone)]
 pub(in crate::viewport) struct SectionBoxGizmoTarget;
@@ -27,6 +27,7 @@ pub(in crate::viewport) fn capture_section_box_gizmo_transform(
 
     state.transform = *transform;
     state.clip_planes = SectionBoxClipPlanes::from_transform(*transform);
+    state.pose_authority = SectionBoxPoseAuthority::UserAdjusted;
     state.revision = state.revision.saturating_add(1);
 }
 

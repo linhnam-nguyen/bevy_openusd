@@ -31,6 +31,43 @@ fn fit_produces_one_box_transform_and_six_planes() {
 }
 
 #[test]
+fn user_adjusted_pose_survives_reference_bounds_update() {
+    let adjusted_transform = Transform::from_xyz(8.0, 9.0, 10.0)
+        .with_rotation(Quat::from_rotation_y(0.5))
+        .with_scale(Vec3::splat(2.0));
+    let adjusted_planes = SectionBoxClipPlanes::from_transform(adjusted_transform);
+    let next = next_section_box_pose(
+        adjusted_transform,
+        adjusted_planes,
+        SectionBoxPoseAuthority::UserAdjusted,
+        true,
+        Some(bounds(Vec3::splat(-5.0), Vec3::splat(5.0))),
+        false,
+    );
+
+    assert_eq!(next.authority, SectionBoxPoseAuthority::UserAdjusted);
+    assert_eq!(next.transform, adjusted_transform);
+    assert_eq!(next.clip_planes, adjusted_planes);
+}
+
+#[test]
+fn selection_change_refits_user_adjusted_pose() {
+    let adjusted_transform = Transform::from_xyz(8.0, 9.0, 10.0).with_scale(Vec3::splat(2.0));
+    let next = next_section_box_pose(
+        adjusted_transform,
+        SectionBoxClipPlanes::from_transform(adjusted_transform),
+        SectionBoxPoseAuthority::UserAdjusted,
+        true,
+        Some(bounds(Vec3::ZERO, Vec3::splat(4.0))),
+        true,
+    );
+
+    assert_eq!(next.authority, SectionBoxPoseAuthority::AutoFit);
+    assert_eq!(next.transform.translation, Vec3::splat(2.0));
+    assert_eq!(next.transform.scale, Vec3::splat(4.0));
+}
+
+#[test]
 fn oriented_transform_produces_six_inside_facing_planes() {
     let transform = Transform {
         translation: Vec3::new(3.0, 4.0, 5.0),
@@ -65,6 +102,39 @@ fn empty_geometry_resets_derived_state_without_authored_geometry() {
     assert!(!state.visible);
     assert_eq!(state.bounds, None);
     assert_eq!(state.transform, Transform::IDENTITY);
+    assert_eq!(state.pose_authority, SectionBoxPoseAuthority::AutoFit);
+}
+
+#[test]
+fn disabling_resets_user_adjustment_and_reenable_refits() {
+    let adjusted_transform = Transform::from_xyz(8.0, 9.0, 10.0)
+        .with_rotation(Quat::from_rotation_y(0.5))
+        .with_scale(Vec3::splat(2.0));
+    let adjusted_planes = SectionBoxClipPlanes::from_transform(adjusted_transform);
+    let disabled = next_section_box_pose(
+        adjusted_transform,
+        adjusted_planes,
+        SectionBoxPoseAuthority::UserAdjusted,
+        false,
+        Some(bounds(Vec3::splat(-5.0), Vec3::splat(5.0))),
+        false,
+    );
+
+    assert_eq!(disabled.authority, SectionBoxPoseAuthority::AutoFit);
+    assert_eq!(disabled.transform, Transform::IDENTITY);
+    assert_eq!(disabled.clip_planes, SectionBoxClipPlanes::default());
+
+    let reenabled = next_section_box_pose(
+        disabled.transform,
+        disabled.clip_planes,
+        disabled.authority,
+        true,
+        Some(bounds(Vec3::ZERO, Vec3::splat(4.0))),
+        true,
+    );
+    assert_eq!(reenabled.authority, SectionBoxPoseAuthority::AutoFit);
+    assert_eq!(reenabled.transform.translation, Vec3::splat(2.0));
+    assert_eq!(reenabled.transform.scale, Vec3::splat(4.0));
 }
 
 #[test]
