@@ -74,8 +74,8 @@ fn standard_view_angles(view: StandardView) -> (f32, f32) {
         // Camera offset directions: Front -Z, Back +Z, Right -X, Left +X.
         StandardView::Front => (0.0, 0.0),
         StandardView::Back => (core::f32::consts::PI, 0.0),
-        StandardView::Right => (-core::f32::consts::FRAC_PI_2, 0.0),
-        StandardView::Left => (core::f32::consts::FRAC_PI_2, 0.0),
+        StandardView::Right => (core::f32::consts::FRAC_PI_2, 0.0),
+        StandardView::Left => (-core::f32::consts::FRAC_PI_2, 0.0),
         // At the poles apply_rig selects a stable alternate up axis.
         StandardView::Top => (0.0, core::f32::consts::FRAC_PI_2),
         StandardView::Bottom => (0.0, -core::f32::consts::FRAC_PI_2),
@@ -84,6 +84,8 @@ fn standard_view_angles(view: StandardView) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests {
+    use bevy::prelude::{Transform, Vec3};
+
     use super::*;
 
     #[test]
@@ -95,11 +97,11 @@ mod tests {
         );
         assert_eq!(
             standard_view_angles(StandardView::Right),
-            (-core::f32::consts::FRAC_PI_2, 0.0)
+            (core::f32::consts::FRAC_PI_2, 0.0)
         );
         assert_eq!(
             standard_view_angles(StandardView::Left),
-            (core::f32::consts::FRAC_PI_2, 0.0)
+            (-core::f32::consts::FRAC_PI_2, 0.0)
         );
         assert_eq!(
             standard_view_angles(StandardView::Top),
@@ -109,5 +111,34 @@ mod tests {
             standard_view_angles(StandardView::Bottom),
             (0.0, -core::f32::consts::FRAC_PI_2)
         );
+    }
+
+    #[test]
+    fn standard_view_rig_points_toward_each_frozen_world_axis() {
+        let cases = [
+            (StandardView::Front, Vec3::NEG_Z),
+            (StandardView::Back, Vec3::Z),
+            (StandardView::Right, Vec3::NEG_X),
+            (StandardView::Left, Vec3::X),
+            (StandardView::Top, Vec3::NEG_Y),
+            (StandardView::Bottom, Vec3::Y),
+        ];
+
+        for (view, expected_forward) in cases {
+            let (yaw, elevation) = standard_view_angles(view);
+            let camera = ArcballCamera {
+                yaw,
+                elevation,
+                ..Default::default()
+            };
+            let mut transform = Transform::default();
+            crate::viewport::camera::apply_rig(&camera, &mut transform);
+            let actual_forward = transform.rotation * Vec3::NEG_Z;
+
+            assert!(
+                actual_forward.distance(expected_forward) < 1e-4,
+                "{view:?} produced {actual_forward:?}, expected {expected_forward:?}"
+            );
+        }
     }
 }
