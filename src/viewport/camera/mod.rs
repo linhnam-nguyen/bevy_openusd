@@ -215,10 +215,14 @@ pub(crate) fn apply_rig(cam: &ArcballCamera, tr: &mut Transform) {
     );
     let cam_world = cam.focus + offset;
     let up = if horizontal.abs() <= 1e-5 {
-        // At the Top/Bottom poles the world-Y up vector is parallel to the
-        // view direction and produces an unstable basis. World-Z is a stable
-        // fallback for those two canonical views.
-        Vec3::Z
+        // At the poles the world-Y up vector is parallel to the view
+        // direction. Preserve the canonical CAD roll instead of sharing one
+        // fallback: Top looks down with -Z up, Bottom looks up with +Z up.
+        if vertical >= 0.0 {
+            Vec3::NEG_Z
+        } else {
+            Vec3::Z
+        }
     } else {
         Vec3::Y
     };
