@@ -4,6 +4,7 @@
 //! ECS entity. It never leaves the viewport process.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
@@ -29,6 +30,7 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
+    hierarchy: Arc<HierarchyReadModel>,
     initialized: bool,
     revision: u64,
 }
@@ -89,17 +91,19 @@ impl SceneAnchorIndex {
         }
     }
 
-    /// Snapshots the exact hierarchy projection currently presented by the
-    /// scene index. Search consumes this projection rather than inspecting USD
-    /// paths or semantic storage itself.
-    pub(crate) fn hierarchy_snapshot(&self) -> HierarchyReadModel {
-        HierarchyReadModel::from_prim_nodes(&self.nodes)
+    /// Returns the immutable hierarchy projection built with the scene index.
+    /// Search consumes this projection rather than inspecting USD paths or
+    /// semantic storage itself. Cloning the `Arc` is constant-time.
+    pub(crate) fn hierarchy_snapshot(&self) -> Arc<HierarchyReadModel> {
+        Arc::clone(&self.hierarchy)
     }
 
     #[cfg(test)]
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
+        let hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&nodes));
         Self {
             nodes,
+            hierarchy,
             initialized: true,
             revision: 1,
             ..Default::default()
@@ -284,6 +288,7 @@ impl SceneAnchorIndex {
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.nodes = nodes;
+        self.hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&self.nodes));
         self.initialized = true;
         self.revision = self.revision.saturating_add(1);
     }

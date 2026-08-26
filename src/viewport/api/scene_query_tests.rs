@@ -159,3 +159,16 @@ fn search_paginates_exact_projected_names_without_path_matching() {
     assert_eq!(search_hierarchy(&hierarchy, "doorpanel", 0, 10).0, 1);
     assert_eq!(search_hierarchy(&hierarchy, "World", 0, 10).0, 0);
 }
+
+#[test]
+fn latest_mailbox_replaces_pending_values_without_backlog() {
+    let mailbox = LatestMailbox::new();
+    for value in 0..10_000 {
+        assert!(mailbox.replace(value).is_ok());
+    }
+
+    assert_eq!(mailbox.take(), Some(9_999));
+    assert_eq!(mailbox.take(), None);
+    mailbox.close();
+    assert_eq!(mailbox.replace(10), Err(10));
+}

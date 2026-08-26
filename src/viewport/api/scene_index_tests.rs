@@ -53,3 +53,13 @@ fn prim_name_projection_uses_only_the_final_path_segment() {
     assert_eq!(prim_name("/root/name1/name2/name3"), "name3");
     assert_eq!(prim_name("/Architecture/Level01/Wall_0042"), "Wall_0042");
 }
+
+#[test]
+fn hierarchy_snapshot_reuses_cached_projection() {
+    let index = SceneAnchorIndex::from_test_nodes(vec![node("/World", None, "World")]);
+
+    let first = index.hierarchy_snapshot();
+    let second = index.hierarchy_snapshot();
+
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+}

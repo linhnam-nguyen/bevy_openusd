@@ -2,13 +2,10 @@
 //!
 //! Scene paging is cheap and stays on the ECS thread. Hierarchy search is moved
 //! to one worker so bursts of keystrokes cannot make the render schedule wait
-//! on a full-projection scan. The worker coalesces queued jobs and keeps only
-//! the most recent query before starting a scan.
+//! on a full-projection scan. A one-slot mailbox keeps only the most recent
+//! pending query and result.
 
-use std::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
+use std::sync::{Arc, Condvar, Mutex};
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
@@ -19,12 +16,79 @@ use viewport_protocol::{
 use super::hierarchy::{HierarchyNode, HierarchyNodeId, HierarchyReadModel};
 
 #[derive(Debug)]
+struct LatestMailboxState<T> {
+    pending: Option<T>,
+    closed: bool,
+}
+
+impl<T> Default for LatestMailboxState<T> {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            closed: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LatestMailbox<T> {
+    state: Mutex<LatestMailboxState<T>>,
+    wake: Condvar,
+}
+
+impl<T> LatestMailbox<T> {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(LatestMailboxState::default()),
+            wake: Condvar::new(),
+        }
+    }
+
+    fn replace(&self, value: T) -> Result<(), T> {
+        let Ok(mut state) = self.state.lock() else {
+            return Err(value);
+        };
+        if state.closed {
+            return Err(value);
+        }
+        state.pending = Some(value);
+        self.wake.notify_one();
+        Ok(())
+    }
+
+    fn pop(&self) -> Option<T> {
+        let mut state = self.state.lock().ok()?;
+        loop {
+            if let Some(value) = state.pending.take() {
+                return Some(value);
+            }
+            if state.closed {
+                return None;
+            }
+            state = self.wake.wait(state).ok()?;
+        }
+    }
+
+    fn take(&self) -> Option<T> {
+        self.state.lock().ok()?.pending.take()
+    }
+
+    fn close(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.pending = None;
+            state.closed = true;
+            self.wake.notify_all();
+        }
+    }
+}
+
+#[derive(Debug)]
 struct SearchJob {
     request_id: String,
     query: String,
     offset: u32,
     limit: u32,
-    hierarchy: HierarchyReadModel,
+    hierarchy: Arc<HierarchyReadModel>,
 }
 
 #[derive(Debug)]
@@ -69,24 +133,23 @@ pub(crate) struct SearchResult {
 
 #[derive(Resource, Debug)]
 pub(crate) struct SceneQueryService {
-    jobs: Sender<SearchJob>,
-    results: Mutex<Receiver<SearchResult>>,
+    jobs: Arc<LatestMailbox<SearchJob>>,
+    results: Arc<LatestMailbox<SearchResult>>,
 }
 
 impl Default for SceneQueryService {
     fn default() -> Self {
-        let (jobs, pending_jobs) = mpsc::channel();
-        let (results, pending_results) = mpsc::channel();
+        let jobs = Arc::new(LatestMailbox::new());
+        let results = Arc::new(LatestMailbox::new());
+        let worker_jobs = Arc::clone(&jobs);
+        let worker_results = Arc::clone(&results);
 
         std::thread::Builder::new()
             .name("usdview-scene-search".to_owned())
-            .spawn(move || search_worker(pending_jobs, results))
+            .spawn(move || search_worker(worker_jobs, worker_results))
             .expect("scene search worker should start");
 
-        Self {
-            jobs,
-            results: Mutex::new(pending_results),
-        }
+        Self { jobs, results }
     }
 }
 
@@ -97,10 +160,10 @@ impl SceneQueryService {
         query: String,
         offset: u32,
         limit: u32,
-        hierarchy: HierarchyReadModel,
+        hierarchy: Arc<HierarchyReadModel>,
     ) -> bool {
         self.jobs
-            .send(SearchJob {
+            .replace(SearchJob {
                 request_id,
                 query,
                 offset,
@@ -111,26 +174,26 @@ impl SceneQueryService {
     }
 
     pub(crate) fn drain_results(&self) -> Vec<SearchResult> {
-        let Ok(results) = self.results.lock() else {
-            return Vec::new();
-        };
-        results.try_iter().collect()
+        self.results.take().into_iter().collect()
     }
 }
 
-fn search_worker(pending_jobs: Receiver<SearchJob>, results: Sender<SearchResult>) {
-    while let Ok(mut job) = pending_jobs.recv() {
-        // A fast typist can enqueue several searches before this worker gets
-        // scheduled. The UI already uses request IDs, so intermediate jobs
-        // can be discarded safely and only the newest query is evaluated.
-        while let Ok(newer) = pending_jobs.try_recv() {
-            job = newer;
-        }
+impl Drop for SceneQueryService {
+    fn drop(&mut self) {
+        self.jobs.close();
+        self.results.close();
+    }
+}
 
+fn search_worker(
+    pending_jobs: Arc<LatestMailbox<SearchJob>>,
+    results: Arc<LatestMailbox<SearchResult>>,
+) {
+    while let Some(job) = pending_jobs.pop() {
         let (total, matches) = search_hierarchy(&job.hierarchy, &job.query, job.offset, job.limit);
         let has_more = job.offset.saturating_add(matches.len() as u32) < total;
         if results
-            .send(SearchResult {
+            .replace(SearchResult {
                 request_id: job.request_id,
                 query: job.query,
                 offset: job.offset,
