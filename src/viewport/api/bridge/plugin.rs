@@ -5,10 +5,10 @@ use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 use super::ViewerSettingsState;
 use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
 use super::scene_query::{
-    dispatch_scene_query_commands, publish_semantic_query_results, publish_stage_load_state,
+    dispatch_scene_query_commands, publish_scene_query_results, publish_stage_load_state,
 };
 use super::state::{
-    EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests, ViewportBridgeSet,
+    EditorHistories, RuntimeMutationCoordinator, SceneSearchRequests, ViewportBridgeSet,
 };
 use super::tree::apply_tree_commands;
 use crate::project::ghost_cache::HistoricalGeometryCache;
@@ -35,13 +35,14 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
             .init_resource::<SelectedTargets>()
             .init_resource::<ViewerSettingsState>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<RuntimeDeliveryRuntime>()
             .init_resource::<SemanticSyncState>()
             .init_resource::<SemanticDiffState>()
-            .init_resource::<SemanticSearchRequests>()
+            .init_resource::<SceneSearchRequests>()
             .init_resource::<EditorHistories>()
             .init_resource::<RuntimeMutationCoordinator>()
             .init_resource::<RecoverySettings>()
@@ -81,7 +82,7 @@ impl Plugin for ViewportBridgePlugin {
             .add_systems(
                 Update,
                 (
-                    publish_semantic_query_results,
+                    publish_scene_query_results,
                     dispatch_scene_query_commands,
                     apply_viewport_commands,
                 )

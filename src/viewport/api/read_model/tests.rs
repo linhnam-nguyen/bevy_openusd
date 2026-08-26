@@ -132,6 +132,7 @@ fn paged_tree_search_and_visibility_reduce_without_ecs_state() {
                 anchor: door.anchor.clone(),
                 parent: Some(root.anchor.clone()),
                 label: door.label.clone(),
+                breadcrumb: door.anchor.prim_path.clone(),
                 visible: false,
                 has_children: false,
                 reveal_pages: vec![],

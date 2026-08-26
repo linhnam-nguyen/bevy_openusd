@@ -48,14 +48,17 @@ pub struct ScenePageReference {
     pub page: u32,
 }
 
-/// A compact server-side search match with enough information to reveal it in
-/// a partially-loaded tree. The stable anchor is never reconstructed from the
-/// display label, which may be truncated by the frontend.
+/// A compact server-side hierarchy search match with enough information to
+/// reveal it in a partially-loaded tree. `label` is the matched hierarchy node
+/// name; `breadcrumb` is the current hierarchy presentation path, while the
+/// anchor keeps the authoritative prim identity separate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneSearchMatch {
     pub anchor: SceneAnchor,
     pub parent: Option<SceneAnchor>,
     pub label: String,
+    #[serde(default)]
+    pub breadcrumb: String,
     pub visible: bool,
     pub has_children: bool,
     pub reveal_pages: Vec<ScenePageReference>,

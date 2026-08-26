@@ -4,6 +4,7 @@
 //! owns in-process queues and will translate them into private ECS state.
 
 mod bridge;
+mod hierarchy;
 mod interface;
 mod queues;
 mod read_model;

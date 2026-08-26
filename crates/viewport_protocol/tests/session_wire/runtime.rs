@@ -155,6 +155,7 @@ fn lazy_scene_queries_round_trip_with_request_correlation() {
                 anchor: node.anchor.clone(),
                 parent: node.parent.clone(),
                 label: node.label.clone(),
+                breadcrumb: node.anchor.prim_path.clone(),
                 visible: node.visible,
                 has_children: node.has_children,
                 reveal_pages: vec![ScenePageReference {

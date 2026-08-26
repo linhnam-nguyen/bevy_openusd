@@ -1,9 +1,9 @@
-//! Asynchronous queries over the authoritative scene-anchor index.
+//! Asynchronous queries over the current in-memory hierarchy projection.
 //!
-//! Scene paging is cheap and stays on the ECS thread. Text search is moved to
-//! one worker so bursts of keystrokes cannot make the render schedule wait on
-//! a full-scene scan. The worker coalesces queued jobs and keeps only the most
-//! recent query before starting a scan.
+//! Scene paging is cheap and stays on the ECS thread. Hierarchy search is moved
+//! to one worker so bursts of keystrokes cannot make the render schedule wait
+//! on a full-projection scan. The worker coalesces queued jobs and keeps only
+//! the most recent query before starting a scan.
 
 use std::sync::{
     Mutex,
@@ -12,9 +12,11 @@ use std::sync::{
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, PrimNodeReadModel, SceneAnchor,
-    ScenePageReference, SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference,
+    SceneSearchMatch,
 };
+
+use super::hierarchy::{HierarchyNode, HierarchyNodeId, HierarchyReadModel};
 
 #[derive(Debug)]
 struct SearchJob {
@@ -22,7 +24,37 @@ struct SearchJob {
     query: String,
     offset: u32,
     limit: u32,
-    nodes: Vec<PrimNodeReadModel>,
+    hierarchy: HierarchyReadModel,
+}
+
+#[derive(Debug)]
+pub(crate) struct HierarchySearchMatch {
+    pub(crate) node_id: HierarchyNodeId,
+    pub(crate) name: String,
+    pub(crate) breadcrumb: String,
+    pub(crate) prim_path: Option<String>,
+    pub(crate) anchor: Option<SceneAnchor>,
+    pub(crate) parent: Option<SceneAnchor>,
+    pub(crate) visible: bool,
+    pub(crate) has_children: bool,
+    pub(crate) reveal_pages: Vec<ScenePageReference>,
+}
+
+impl HierarchySearchMatch {
+    pub(crate) fn into_scene_search_match(self) -> Option<SceneSearchMatch> {
+        let anchor = self.anchor?;
+        let prim_path = self.prim_path?;
+        debug_assert_eq!(anchor.prim_path, prim_path);
+        Some(SceneSearchMatch {
+            anchor,
+            parent: self.parent,
+            label: self.name,
+            breadcrumb: self.breadcrumb,
+            visible: self.visible,
+            has_children: self.has_children,
+            reveal_pages: self.reveal_pages,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -31,7 +63,7 @@ pub(crate) struct SearchResult {
     pub(crate) query: String,
     pub(crate) offset: u32,
     pub(crate) total: u32,
-    pub(crate) matches: Vec<SceneSearchMatch>,
+    pub(crate) matches: Vec<HierarchySearchMatch>,
     pub(crate) has_more: bool,
 }
 
@@ -65,7 +97,7 @@ impl SceneQueryService {
         query: String,
         offset: u32,
         limit: u32,
-        nodes: Vec<PrimNodeReadModel>,
+        hierarchy: HierarchyReadModel,
     ) -> bool {
         self.jobs
             .send(SearchJob {
@@ -73,7 +105,7 @@ impl SceneQueryService {
                 query,
                 offset,
                 limit,
-                nodes,
+                hierarchy,
             })
             .is_ok()
     }
@@ -95,7 +127,7 @@ fn search_worker(pending_jobs: Receiver<SearchJob>, results: Sender<SearchResult
             job = newer;
         }
 
-        let (total, matches) = search_nodes(&job.nodes, &job.query, job.offset, job.limit);
+        let (total, matches) = search_hierarchy(&job.hierarchy, &job.query, job.offset, job.limit);
         let has_more = job.offset.saturating_add(matches.len() as u32) < total;
         if results
             .send(SearchResult {
@@ -113,12 +145,17 @@ fn search_worker(pending_jobs: Receiver<SearchJob>, results: Sender<SearchResult
     }
 }
 
-fn search_nodes(
-    nodes: &[PrimNodeReadModel],
+/// Searches only the names in the supplied hierarchy projection.
+///
+/// The projection adapter owns the relationship between a node name and its
+/// source data. This function never derives a name from `prim_path`, searches
+/// an ancestor breadcrumb, or reads authored USD display metadata.
+pub(crate) fn search_hierarchy(
+    hierarchy: &HierarchyReadModel,
     query: &str,
     offset: u32,
     limit: u32,
-) -> (u32, Vec<SceneSearchMatch>) {
+) -> (u32, Vec<HierarchySearchMatch>) {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
         return (0, Vec::new());
@@ -129,48 +166,38 @@ fn search_nodes(
     } else {
         limit.min(MAX_SCENE_SEARCH_RESULTS)
     } as usize;
-    let by_anchor = nodes
+    let by_id = hierarchy
+        .nodes
         .iter()
-        .map(|node| (node.anchor.clone(), node))
+        .map(|node| (&node.id, node))
         .collect::<std::collections::HashMap<_, _>>();
 
-    let mut ranked: Vec<(&PrimNodeReadModel, u8)> = nodes
+    let mut matches: Vec<&HierarchyNode> = hierarchy
+        .nodes
         .iter()
-        .filter_map(|node| {
-            let Some(display_name) = node.display_name.as_deref() else {
-                return None;
-            };
-            let display_name = display_name.to_lowercase();
-            let score = if display_name == query {
-                Some(0)
-            } else if display_name.starts_with(&query) {
-                Some(1)
-            } else if display_name.contains(&query) {
-                Some(2)
-            } else {
-                None
-            }?;
-            Some((node, score))
-        })
+        .filter(|node| node.name.to_lowercase() == query)
         .collect();
-    ranked.sort_by(|(left, left_score), (right, right_score)| {
-        left_score
-            .cmp(right_score)
-            .then_with(|| left.anchor.prim_path.cmp(&right.anchor.prim_path))
+    matches.sort_by(|left, right| {
+        left.breadcrumb
+            .cmp(&right.breadcrumb)
+            .then_with(|| left.id.0.cmp(&right.id.0))
     });
 
-    let total = ranked.len() as u32;
-    let matches = ranked
+    let total = matches.len() as u32;
+    let matches = matches
         .into_iter()
         .skip(offset as usize)
         .take(limit)
-        .map(|(node, _)| SceneSearchMatch {
+        .map(|node| HierarchySearchMatch {
+            node_id: node.id.clone(),
+            name: node.name.clone(),
+            breadcrumb: node.breadcrumb.clone(),
+            prim_path: node.prim_path.clone(),
             anchor: node.anchor.clone(),
-            parent: node.parent.clone(),
-            label: node.label.clone(),
+            parent: node.parent_anchor.clone(),
             visible: node.visible,
             has_children: node.has_children,
-            reveal_pages: reveal_pages(node, nodes, &by_anchor),
+            reveal_pages: reveal_pages(node, hierarchy, &by_id),
         })
         .collect();
 
@@ -178,103 +205,39 @@ fn search_nodes(
 }
 
 fn reveal_pages(
-    target: &PrimNodeReadModel,
-    nodes: &[PrimNodeReadModel],
-    by_anchor: &std::collections::HashMap<SceneAnchor, &PrimNodeReadModel>,
+    target: &HierarchyNode,
+    hierarchy: &HierarchyReadModel,
+    by_id: &std::collections::HashMap<&HierarchyNodeId, &HierarchyNode>,
 ) -> Vec<ScenePageReference> {
     let mut path = Vec::new();
     let mut current = Some(target);
     while let Some(node) = current {
         path.push(node);
         current = node
-            .parent
+            .parent_id
             .as_ref()
-            .and_then(|parent| by_anchor.get(parent).copied());
+            .and_then(|parent| by_id.get(parent).copied());
     }
 
     path.into_iter()
         .rev()
         .map(|node| ScenePageReference {
-            parent: node.parent.clone(),
-            page: sibling_page(node, nodes),
+            parent: node.parent_anchor.clone(),
+            page: sibling_page(node, hierarchy),
         })
         .collect()
 }
 
-fn sibling_page(node: &PrimNodeReadModel, nodes: &[PrimNodeReadModel]) -> u32 {
-    let index = nodes
+fn sibling_page(node: &HierarchyNode, hierarchy: &HierarchyReadModel) -> u32 {
+    let index = hierarchy
+        .nodes
         .iter()
-        .filter(|candidate| candidate.parent.as_ref() == node.parent.as_ref())
-        .position(|candidate| candidate.anchor == node.anchor)
+        .filter(|candidate| candidate.parent_id == node.parent_id)
+        .position(|candidate| candidate.id == node.id)
         .unwrap_or_default();
     (index as u32) / DEFAULT_SCENE_PAGE_SIZE
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
-        PrimNodeReadModel {
-            anchor: SceneAnchor::active_session(path),
-            parent: parent.map(SceneAnchor::active_session),
-            label: label.to_owned(),
-            display_name: Some(label.to_owned()),
-            visible: true,
-            has_children: false,
-        }
-    }
-
-    #[test]
-    fn search_returns_ancestor_pages_for_reveal() {
-        let nodes = vec![
-            node("/World", None, "World"),
-            node("/World/Environment", Some("/World"), "Environment"),
-            node(
-                "/World/Environment/Door",
-                Some("/World/Environment"),
-                "Door",
-            ),
-        ];
-
-        let (total, matches) = search_nodes(&nodes, "door", 0, 10);
-
-        assert_eq!(total, 1);
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].anchor.prim_path, "/World/Environment/Door");
-        assert_eq!(
-            matches[0]
-                .reveal_pages
-                .iter()
-                .map(|page| page.parent.as_ref().map(|parent| parent.prim_path.as_str()))
-                .collect::<Vec<_>>(),
-            vec![None, Some("/World"), Some("/World/Environment")]
-        );
-    }
-
-    #[test]
-    fn search_ranks_exact_and_paginates_without_changing_total() {
-        let nodes = vec![
-            node("/World/DoorPanel", None, "DoorPanel"),
-            node("/World/Door", None, "Door"),
-            node("/World/DoorFrame", None, "Frame"),
-        ];
-
-        let (total, first) = search_nodes(&nodes, "door", 0, 2);
-        assert_eq!(total, 2);
-        assert_eq!(
-            first
-                .iter()
-                .map(|result| result.anchor.prim_path.as_str())
-                .collect::<Vec<_>>(),
-            vec!["/World/Door", "/World/DoorPanel"]
-        );
-
-        let (_, second) = search_nodes(&nodes, "door", 2, 2);
-        assert!(second.is_empty());
-
-        let (path_only_total, path_only_matches) = search_nodes(&nodes, "doorframe", 0, 10);
-        assert_eq!(path_only_total, 0);
-        assert!(path_only_matches.is_empty());
-    }
-}
+#[path = "scene_query_tests.rs"]
+mod tests;
