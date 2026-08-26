@@ -95,8 +95,11 @@ pub(crate) fn run() {
         );
     }
 
-    app.add_plugins(EguiPlugin::default())
-        .add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
+    app.add_plugins(EguiPlugin::default());
+    if launch_options.headless {
+        headless::configure_headless_egui(&mut app);
+    }
+    app.add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
         .add_plugins(UsdPlugin)
         .add_plugins(OutlinePlugin::JUMP_FLOOD);
 
