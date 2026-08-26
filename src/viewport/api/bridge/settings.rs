@@ -34,6 +34,10 @@ impl ViewerSettingsState {
         self.0.section_box.enabled = enabled;
     }
 
+    pub(in crate::viewport) fn set_gizmo_size_level(&mut self, level: u8) {
+        self.0.selection.gizmo_size_level = level;
+    }
+
     #[cfg(test)]
     pub(in crate::viewport) fn environment_mut(&mut self) -> &mut ViewerEnvironmentSettings {
         &mut self.0.environment

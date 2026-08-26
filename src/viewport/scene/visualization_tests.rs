@@ -2,9 +2,37 @@ use super::edge::{EdgeOverlay, EdgeOverlayMaterial};
 use super::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
-use bevy_glacial::prelude::GroundGrid;
+use bevy_glacial::prelude::{GizmoOptions, GroundGrid};
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::RenderMode;
+
+#[test]
+fn gizmo_size_level_uses_log_scale_for_both_gizmo_paths() {
+    let mut app = App::new();
+    app.init_resource::<ViewerSettingsState>()
+        .init_resource::<GizmoOptions>()
+        .add_systems(Update, sync_gizmo_size);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(2);
+    app.update();
+    assert_eq!(app.world().resource::<GizmoOptions>().gizmo_size_scale, 1.0);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(10);
+    app.update();
+    assert!((app.world().resource::<GizmoOptions>().gizmo_size_scale - 10.0).abs() < 1e-5);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(6);
+    app.update();
+    assert!(
+        (app.world().resource::<GizmoOptions>().gizmo_size_scale - 10.0_f32.sqrt()).abs() < 1e-5
+    );
+}
 
 fn triangle_mesh() -> Mesh {
     let mut mesh = Mesh::new(

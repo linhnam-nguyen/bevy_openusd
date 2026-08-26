@@ -24,6 +24,11 @@ impl Default for ViewerEnvironmentSettings {
     }
 }
 
+/// Integer log-scale bounds for interactive gizmos and Section Box face handles.
+pub const MIN_GIZMO_SIZE_LEVEL: u8 = 2;
+pub const MAX_GIZMO_SIZE_LEVEL: u8 = 10;
+pub const DEFAULT_GIZMO_SIZE_LEVEL: u8 = MIN_GIZMO_SIZE_LEVEL;
+
 /// Renderer-neutral selection presentation preferences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectionPresentationSettings {
@@ -33,6 +38,10 @@ pub struct SelectionPresentationSettings {
     pub selection_color: ColorRgb8,
     pub hover_color_change_enabled: bool,
     pub hover_color: ColorRgb8,
+    /// Integer log-scale level for the interactive gizmo and face handles.
+    /// Level 2 preserves the current size.
+    #[serde(default = "default_gizmo_size_level")]
+    pub gizmo_size_level: u8,
 }
 
 impl Default for SelectionPresentationSettings {
@@ -44,8 +53,25 @@ impl Default for SelectionPresentationSettings {
             selection_color: ColorRgb8::new(0x38, 0xBD, 0xF8),
             hover_color_change_enabled: false,
             hover_color: ColorRgb8::new(0x7D, 0xD3, 0xFC),
+            gizmo_size_level: DEFAULT_GIZMO_SIZE_LEVEL,
         }
     }
+}
+
+impl SelectionPresentationSettings {
+    pub fn validate(&self) -> Result<(), ProtocolValidationError> {
+        if (MIN_GIZMO_SIZE_LEVEL..=MAX_GIZMO_SIZE_LEVEL).contains(&self.gizmo_size_level) {
+            Ok(())
+        } else {
+            Err(ProtocolValidationError::InvalidInput {
+                field: "selection.gizmo_size_level",
+            })
+        }
+    }
+}
+
+fn default_gizmo_size_level() -> u8 {
+    DEFAULT_GIZMO_SIZE_LEVEL
 }
 
 /// Vendor-neutral sampling intent. The active provider is authoritative

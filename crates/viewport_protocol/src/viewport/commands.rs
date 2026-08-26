@@ -244,8 +244,8 @@ impl ViewportCommand {
             }
             Self::SetEnvironmentSettings { .. }
             | Self::SetSamplingPreference { .. }
-            | Self::SetSelectionPresentationSettings { .. }
             | Self::SetSectionBox { .. } => {}
+            Self::SetSelectionPresentationSettings { settings } => settings.validate()?,
             Self::DefinePrim {
                 path: value,
                 type_name,

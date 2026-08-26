@@ -5,7 +5,9 @@
 //! size gate and can be tested without a monolithic overlay implementation.
 
 use bevy::prelude::*;
-use viewport_protocol::{GroundGridOrigin, RendererConfiguration};
+use viewport_protocol::{
+    GroundGridOrigin, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, RendererConfiguration,
+};
 
 use super::HistoricalGhostState;
 use super::selection_color::{
@@ -17,6 +19,7 @@ use super::{
     sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
 };
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
+use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::camera::ArcballCamera;
 
 #[path = "visualization_edge.rs"]
@@ -71,6 +74,7 @@ impl Plugin for OverlaysPlugin {
             .add_systems(
                 Update,
                 (
+                    sync_gizmo_size,
                     capture_section_box_gizmo_transform,
                     compute_extent,
                     sync_section_box_state,
@@ -109,6 +113,26 @@ impl Plugin for OverlaysPlugin {
                     .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
+    }
+}
+
+/// Applies the user's Selection-panel gizmo size level to both ordinary gizmo
+/// primitives and the Section Box face draggers. The level is log-spaced from
+/// 2 (the current size) through 10 (ten times the current size).
+fn sync_gizmo_size(
+    settings: Res<ViewerSettingsState>,
+    mut gizmo_options: ResMut<bevy_glacial::prelude::GizmoOptions>,
+) {
+    let level = settings
+        .selection()
+        .gizmo_size_level
+        .clamp(MIN_GIZMO_SIZE_LEVEL, MAX_GIZMO_SIZE_LEVEL);
+    let exponent = (level - MIN_GIZMO_SIZE_LEVEL) as f32
+        / (MAX_GIZMO_SIZE_LEVEL - MIN_GIZMO_SIZE_LEVEL) as f32;
+    let scale = 10.0_f32.powf(exponent);
+
+    if (gizmo_options.gizmo_size_scale - scale).abs() > f32::EPSILON {
+        gizmo_options.gizmo_size_scale = scale;
     }
 }
 

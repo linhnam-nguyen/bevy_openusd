@@ -30,6 +30,7 @@ fn supported_viewer_settings_round_trip_through_bridge_and_snapshot() {
         selection_color: ColorRgb8::new(0x11, 0x22, 0x33),
         hover_color_change_enabled: true,
         hover_color: ColorRgb8::new(0x44, 0x55, 0x66),
+        gizmo_size_level: 8,
     };
     let commands = [
         ViewportCommand::SetRendererConfiguration {

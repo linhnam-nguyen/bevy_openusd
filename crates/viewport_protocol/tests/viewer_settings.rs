@@ -42,6 +42,7 @@ fn selection_presentation_settings_round_trip_without_renderer_types() {
         selection_color: ColorRgb8::new(0, 255, 0),
         hover_color_change_enabled: true,
         hover_color: ColorRgb8::new(0, 0, 255),
+        gizmo_size_level: 6,
     };
 
     let encoded = serde_json::to_string(&settings).expect("selection settings serialize");
@@ -49,6 +50,45 @@ fn selection_presentation_settings_round_trip_without_renderer_types() {
         serde_json::from_str(&encoded).expect("selection settings deserialize");
 
     assert_eq!(decoded, settings);
+}
+
+#[test]
+fn selection_presentation_settings_default_missing_gizmo_level_to_current_size() {
+    let decoded: SelectionPresentationSettings = serde_json::from_str(
+        r##"{"boundary_enabled":true,"boundary_color":{"r":1,"g":2,"b":3},"color_change_enabled":false,"selection_color":{"r":4,"g":5,"b":6},"hover_color_change_enabled":false,"hover_color":{"r":7,"g":8,"b":9}}"##,
+    )
+    .expect("legacy selection settings deserialize");
+
+    assert_eq!(
+        decoded.gizmo_size_level,
+        viewport_protocol::DEFAULT_GIZMO_SIZE_LEVEL
+    );
+}
+
+#[test]
+fn selection_presentation_settings_reject_gizmo_levels_outside_the_integer_range() {
+    for level in [1, 11] {
+        let settings = SelectionPresentationSettings {
+            gizmo_size_level: level,
+            ..SelectionPresentationSettings::default()
+        };
+        assert!(
+            settings.validate().is_err(),
+            "level {level} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn selection_presentation_command_rejects_an_invalid_gizmo_level() {
+    let command = viewport_protocol::ViewportCommand::SetSelectionPresentationSettings {
+        settings: SelectionPresentationSettings {
+            gizmo_size_level: 11,
+            ..SelectionPresentationSettings::default()
+        },
+    };
+
+    assert!(command.validate().is_err());
 }
 
 #[test]
@@ -197,6 +237,7 @@ fn viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_int
         selection_color: ColorRgb8::new(0x38, 0xBD, 0xF8),
         hover_color_change_enabled: false,
         hover_color: ColorRgb8::new(0x7D, 0xD3, 0xFC),
+        gizmo_size_level: viewport_protocol::DEFAULT_GIZMO_SIZE_LEVEL,
     };
     let commands = [
         viewport_protocol::ViewportCommand::SetEnvironmentSettings {

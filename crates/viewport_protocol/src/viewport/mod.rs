@@ -21,8 +21,9 @@ pub use editor::{
 };
 pub use events::{ViewportEvent, ViewportEventEnvelope, ViewportWireMessage};
 pub use read_models::{
-    CameraOrientationReadModel, CameraSource, ColorRgb8, CurveTuning, FocusMode, GroundGridOrigin,
-    OverlayKind, PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration,
+    CameraOrientationReadModel, CameraSource, ColorRgb8, CurveTuning, DEFAULT_GIZMO_SIZE_LEVEL,
+    FocusMode, GroundGridOrigin, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration,
     SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor, SceneChildrenPage,
     ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
     SelectionPresentationSettings, SelectionReadModel, StageLoadState, StageReadModel,

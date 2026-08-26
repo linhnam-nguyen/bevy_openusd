@@ -17,8 +17,9 @@ pub use scene::{
 };
 pub use selection::SelectionReadModel;
 pub use settings::{
-    RendererConfiguration, SamplingPreference, SamplingProvider, SamplingReadModel,
-    SectionBoxReadModel, SelectionPresentationSettings, ViewerEnvironmentSettings,
-    ViewerSettingsCapabilities, ViewerSettingsReadModel,
+    DEFAULT_GIZMO_SIZE_LEVEL, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, RendererConfiguration,
+    SamplingPreference, SamplingProvider, SamplingReadModel, SectionBoxReadModel,
+    SelectionPresentationSettings, ViewerEnvironmentSettings, ViewerSettingsCapabilities,
+    ViewerSettingsReadModel,
 };
 pub use viewport::{PresentationReadModel, TimelineReadModel, ViewportReadModel};
