@@ -14,11 +14,14 @@ use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 
+#[path = "section_box_face.rs"]
+mod section_box_face;
 #[path = "section_box_pose.rs"]
 mod section_box_pose;
 #[path = "section_box_tracking.rs"]
 mod section_box_tracking;
 
+pub(crate) use section_box_face::{SectionBoxFace, SectionBoxFaceDrag, resize_section_box_face};
 pub(crate) use section_box_pose::SectionBoxPoseAuthority;
 use section_box_pose::{fit_transform, next_section_box_pose};
 use section_box_tracking::{
@@ -76,6 +79,7 @@ pub(crate) struct SectionBoxState {
     pub(crate) clip_planes: SectionBoxClipPlanes,
     pub(crate) pose_authority: SectionBoxPoseAuthority,
     pub(crate) revision: u64,
+    pub(crate) face_drag: Option<SectionBoxFaceDrag>,
     tracked_renderables: HashSet<Entity>,
     resolved_targets: Vec<Option<Entity>>,
     scene_revision: u64,
@@ -92,6 +96,7 @@ impl Default for SectionBoxState {
             clip_planes: SectionBoxClipPlanes::default(),
             pose_authority: SectionBoxPoseAuthority::AutoFit,
             revision: 0,
+            face_drag: None,
             tracked_renderables: HashSet::new(),
             resolved_targets: Vec::new(),
             scene_revision: 0,
@@ -108,6 +113,7 @@ impl SectionBoxState {
         self.bounds = None;
         self.clip_planes = SectionBoxClipPlanes::default();
         self.pose_authority = SectionBoxPoseAuthority::AutoFit;
+        self.face_drag = None;
     }
 }
 

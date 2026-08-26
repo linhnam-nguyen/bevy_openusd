@@ -1,9 +1,15 @@
 //! Glacial interaction for the single aggregate Section Box transform.
 
 use bevy::prelude::*;
-use bevy_glacial::prelude::GizmoTarget;
+use bevy_glacial::{
+    gizmo::GizmoResult,
+    prelude::{BoundsGizmoTarget, GizmoTarget},
+};
 
-use super::section_box::{SectionBoxClipPlanes, SectionBoxPoseAuthority, SectionBoxState};
+use super::section_box::{
+    SectionBoxClipPlanes, SectionBoxFace, SectionBoxPoseAuthority, SectionBoxState,
+    resize_section_box_face,
+};
 
 #[derive(Component, Debug, Copy, Clone)]
 pub(in crate::viewport) struct SectionBoxGizmoTarget;
@@ -19,8 +25,22 @@ pub(in crate::viewport) fn capture_section_box_gizmo_transform(
         return;
     };
     if target.latest_result().is_none() && !target.is_active() {
+        state.face_drag = None;
         return;
     }
+
+    if target.is_active()
+        && let Some(GizmoResult::ResizeFace { face, delta }) = target.latest_result()
+    {
+        apply_section_box_face_drag(
+            &mut state,
+            SectionBoxFace::from_bounds_face(face),
+            delta as f32,
+        );
+        return;
+    }
+
+    state.face_drag = None;
     if state.transform == *transform {
         return;
     }
@@ -29,6 +49,24 @@ pub(in crate::viewport) fn capture_section_box_gizmo_transform(
     state.clip_planes = SectionBoxClipPlanes::from_transform(*transform);
     state.pose_authority = SectionBoxPoseAuthority::UserAdjusted;
     state.revision = state.revision.saturating_add(1);
+}
+
+fn apply_section_box_face_drag(state: &mut SectionBoxState, face: SectionBoxFace, delta: f32) {
+    let start_transform = state
+        .face_drag
+        .filter(|drag| drag.face == face)
+        .map_or(state.transform, |drag| drag.start_transform);
+    let next_transform = resize_section_box_face(start_transform, face, delta);
+    state.face_drag = Some(super::section_box::SectionBoxFaceDrag {
+        face,
+        start_transform,
+    });
+    if state.transform != next_transform {
+        state.transform = next_transform;
+        state.clip_planes = SectionBoxClipPlanes::from_transform(next_transform);
+        state.pose_authority = SectionBoxPoseAuthority::UserAdjusted;
+        state.revision = state.revision.saturating_add(1);
+    }
 }
 
 /// Ensures that the effective Section Box has exactly one transient Glacial
@@ -62,6 +100,7 @@ pub(in crate::viewport) fn sync_section_box_gizmo_target(
             Name::new("AggregateSectionBoxGizmo"),
             state.transform,
             GizmoTarget::default(),
+            BoundsGizmoTarget,
             SectionBoxGizmoTarget,
         ));
     }
@@ -71,6 +110,36 @@ pub(in crate::viewport) fn sync_section_box_gizmo_target(
 mod tests {
     use super::*;
     use viewport_protocol::SceneAnchor;
+
+    #[test]
+    fn face_drag_promotes_autofit_to_user_adjusted_and_preserves_drag_baseline() {
+        let mut state = SectionBoxState::default();
+        state.enabled = true;
+        state.visible = true;
+        state.targets = vec![SceneAnchor::active_session("/World/Box")];
+        state.transform = Transform::from_scale(Vec3::splat(10.0));
+        let original_revision = state.revision;
+
+        apply_section_box_face_drag(&mut state, SectionBoxFace::PositiveX, -3.0);
+        let first = state.transform;
+        assert_eq!(state.pose_authority, SectionBoxPoseAuthority::UserAdjusted);
+        assert_eq!(
+            state.face_drag.unwrap().start_transform.scale,
+            Vec3::splat(10.0)
+        );
+        assert_eq!(state.transform.scale.x, 7.0);
+        assert_eq!(state.transform.translation.x, -1.5);
+        assert_eq!(state.revision, original_revision + 1);
+
+        apply_section_box_face_drag(&mut state, SectionBoxFace::PositiveX, -4.0);
+        assert_eq!(state.transform.scale.x, 6.0);
+        assert_eq!(state.transform.translation.x, -2.0);
+        assert_ne!(state.transform, first);
+
+        state.reset_geometry();
+        assert_eq!(state.pose_authority, SectionBoxPoseAuthority::AutoFit);
+        assert!(state.face_drag.is_none());
+    }
 
     #[test]
     fn visible_state_spawns_exactly_one_aggregate_gizmo_target() {
