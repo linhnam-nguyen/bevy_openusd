@@ -78,21 +78,32 @@ fn apply_section_box_face_drag(state: &mut SectionBoxState, face: SectionBoxFace
 pub(in crate::viewport) fn sync_section_box_gizmo_target(
     mut commands: Commands,
     state: Res<SectionBoxState>,
-    mut targets: Query<(Entity, &mut Transform), With<SectionBoxGizmoTarget>>,
+    mut targets: Query<
+        (Entity, &mut Transform, Option<&BoundsGizmoTarget>),
+        With<SectionBoxGizmoTarget>,
+    >,
 ) {
     if !state.enabled || !state.visible {
-        for (entity, _) in &mut targets {
+        for (entity, ..) in &mut targets {
             commands.entity(entity).despawn();
         }
         return;
     }
 
     let mut retained = false;
-    for (entity, mut transform) in &mut targets {
+    for (entity, mut transform, bounds_target) in &mut targets {
         if !retained {
             retained = true;
             if *transform != state.transform {
                 *transform = state.transform;
+            }
+            let generation_matches = bounds_target.is_some_and(|target| {
+                target.baseline_generation() == state.bounds_context_generation
+            });
+            if !generation_matches {
+                commands
+                    .entity(entity)
+                    .insert(BoundsGizmoTarget::new(state.bounds_context_generation));
             }
         } else {
             commands.entity(entity).despawn();
@@ -104,7 +115,7 @@ pub(in crate::viewport) fn sync_section_box_gizmo_target(
             Name::new("AggregateSectionBoxGizmo"),
             state.transform,
             GizmoTarget::default(),
-            BoundsGizmoTarget,
+            BoundsGizmoTarget::new(state.bounds_context_generation),
             SectionBoxGizmoTarget,
         ));
     }
@@ -191,6 +202,23 @@ mod tests {
             .count();
         assert_eq!(count, 1);
 
+        let first_entity = app
+            .world_mut()
+            .query_filtered::<Entity, With<SectionBoxGizmoTarget>>()
+            .single(app.world())
+            .expect("aggregate gizmo target exists");
+        assert_eq!(
+            app.world()
+                .get::<BoundsGizmoTarget>(first_entity)
+                .expect("bounds marker exists")
+                .baseline_generation(),
+            0
+        );
+
+        app.world_mut()
+            .resource_mut::<SectionBoxState>()
+            .bounds_context_generation = 1;
+
         app.update();
         let count = app
             .world_mut()
@@ -198,5 +226,19 @@ mod tests {
             .iter(app.world())
             .count();
         assert_eq!(count, 1);
+
+        let second_entity = app
+            .world_mut()
+            .query_filtered::<Entity, With<SectionBoxGizmoTarget>>()
+            .single(app.world())
+            .expect("aggregate gizmo target remains");
+        assert_eq!(second_entity, first_entity);
+        assert_eq!(
+            app.world()
+                .get::<BoundsGizmoTarget>(second_entity)
+                .expect("bounds marker remains")
+                .baseline_generation(),
+            1
+        );
     }
 }

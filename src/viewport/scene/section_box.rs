@@ -23,7 +23,7 @@ mod section_box_tracking;
 
 pub(crate) use section_box_face::{SectionBoxFace, SectionBoxFaceDrag, resize_section_box_face};
 pub(crate) use section_box_pose::SectionBoxPoseAuthority;
-use section_box_pose::{fit_transform, next_section_box_pose};
+use section_box_pose::{fit_transform, next_bounds_context_generation, next_section_box_pose};
 use section_box_tracking::{
     reconcile_tracked_renderables, selected_renderable_entities, should_reconcile_section_box,
 };
@@ -79,6 +79,9 @@ pub(crate) struct SectionBoxState {
     pub(crate) clip_planes: SectionBoxClipPlanes,
     pub(crate) pose_authority: SectionBoxPoseAuthority,
     pub(crate) revision: u64,
+    /// Generation of the authoritative fitted-bounds context represented by
+    /// the current aggregate box. User manipulation does not change it.
+    pub(crate) bounds_context_generation: u64,
     pub(crate) face_drag: Option<SectionBoxFaceDrag>,
     tracked_renderables: HashSet<Entity>,
     resolved_targets: Vec<Option<Entity>>,
@@ -96,6 +99,7 @@ impl Default for SectionBoxState {
             clip_planes: SectionBoxClipPlanes::default(),
             pose_authority: SectionBoxPoseAuthority::AutoFit,
             revision: 0,
+            bounds_context_generation: 0,
             face_drag: None,
             tracked_renderables: HashSet::new(),
             resolved_targets: Vec::new(),
@@ -212,6 +216,14 @@ pub(in crate::viewport) fn sync_section_box_state(
         next_visible,
         next_bounds,
         force_auto_fit,
+    );
+    state.bounds_context_generation = next_bounds_context_generation(
+        state.bounds_context_generation,
+        state.pose_authority,
+        state.bounds,
+        next_visible,
+        force_auto_fit,
+        next_bounds,
     );
 
     let clipping_changed = state.enabled != enabled

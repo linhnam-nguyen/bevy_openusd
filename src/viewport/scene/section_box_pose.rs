@@ -18,6 +18,25 @@ pub(super) struct SectionBoxPose {
     pub(super) authority: SectionBoxPoseAuthority,
 }
 
+pub(super) fn next_bounds_context_generation(
+    current_generation: u64,
+    current_authority: SectionBoxPoseAuthority,
+    current_bounds: Option<SectionBoxBounds>,
+    next_visible: bool,
+    force_auto_fit: bool,
+    next_bounds: Option<SectionBoxBounds>,
+) -> u64 {
+    let new_auto_fit_context = next_visible
+        && (force_auto_fit
+            || (current_authority == SectionBoxPoseAuthority::AutoFit
+                && current_bounds != next_bounds));
+    if new_auto_fit_context {
+        current_generation.saturating_add(1)
+    } else {
+        current_generation
+    }
+}
+
 pub(super) fn next_section_box_pose(
     current_transform: Transform,
     current_clip_planes: SectionBoxClipPlanes,

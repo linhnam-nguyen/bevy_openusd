@@ -68,6 +68,59 @@ fn selection_change_refits_user_adjusted_pose() {
 }
 
 #[test]
+fn direct_selection_changes_advance_bounds_generation_without_disabling_section_box() {
+    let large_bounds = bounds(Vec3::splat(-50.0), Vec3::splat(50.0));
+    let small_bounds = bounds(Vec3::splat(-2.5), Vec3::splat(2.5));
+
+    let large_generation = next_bounds_context_generation(
+        0,
+        SectionBoxPoseAuthority::AutoFit,
+        None,
+        true,
+        true,
+        Some(large_bounds),
+    );
+    assert_eq!(large_generation, 1);
+
+    let small_generation = next_bounds_context_generation(
+        large_generation,
+        SectionBoxPoseAuthority::AutoFit,
+        Some(large_bounds),
+        true,
+        true,
+        Some(small_bounds),
+    );
+    assert_eq!(small_generation, 2);
+
+    let large_generation_again = next_bounds_context_generation(
+        small_generation,
+        SectionBoxPoseAuthority::AutoFit,
+        Some(small_bounds),
+        true,
+        true,
+        Some(large_bounds),
+    );
+    assert_eq!(large_generation_again, 3);
+}
+
+#[test]
+fn user_manipulation_preserves_bounds_generation() {
+    let small_bounds = bounds(Vec3::splat(-2.5), Vec3::splat(2.5));
+    let large_bounds = bounds(Vec3::splat(-50.0), Vec3::splat(50.0));
+
+    let generation = next_bounds_context_generation(
+        4,
+        SectionBoxPoseAuthority::UserAdjusted,
+        Some(small_bounds),
+        true,
+        false,
+        Some(large_bounds),
+    );
+
+    assert_eq!(generation, 4);
+}
+
+#[test]
 fn oriented_transform_produces_six_inside_facing_planes() {
     let transform = Transform {
         translation: Vec3::new(3.0, 4.0, 5.0),
