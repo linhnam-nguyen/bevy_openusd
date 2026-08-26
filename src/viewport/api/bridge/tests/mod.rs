@@ -9,3 +9,4 @@ mod selection_commands_test;
 mod support;
 mod viewer_settings_acceptance_test;
 mod viewer_settings_commands_test;
+mod viewer_settings_gizmo_size_test;
