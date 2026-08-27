@@ -6,6 +6,9 @@ mod id;
 mod read_model;
 mod root;
 
+#[cfg(test)]
+mod validation;
+
 pub use capability::ProjectCapabilities;
 pub use error::ProjectDomainError;
 pub use id::{ModelId, ProjectId, SceneId, SceneMemberId};
