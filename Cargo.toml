@@ -44,6 +44,7 @@ quote = "1"
 syn = { version = "2", features = ["full"] }
 bitflags = "2"
 blake3 = "1"
+regex = "1"
 
 bevy = { version = "0.19", default-features = false }
 rapier3d-f64 = "0.34"
@@ -143,6 +144,7 @@ serde = { workspace = true }
 viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }
+regex = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",

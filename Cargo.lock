@@ -8763,6 +8763,7 @@ dependencies = [
  "log",
  "openusd",
  "rapier3d-f64",
+ "regex",
  "reqwest",
  "rfd",
  "serde",
@@ -8875,6 +8876,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "usd_model",
 ]
 
 [[package]]

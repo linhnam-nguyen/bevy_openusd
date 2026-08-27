@@ -63,6 +63,18 @@ impl UnitRegistry {
         self.definitions.get(unit.as_str()).copied()
     }
 
+    /// Returns the stable unit identifiers accepted for one physical quantity.
+    pub fn units_for_quantity(&self, quantity: &QuantitySpecId) -> Vec<UnitId> {
+        let mut units: Vec<_> = self
+            .definitions
+            .iter()
+            .filter(|(_, definition)| definition.quantity == quantity.as_str())
+            .map(|(unit, _)| *unit)
+            .collect();
+        units.sort_unstable();
+        units.into_iter().map(UnitId::new).collect()
+    }
+
     pub fn metadata_for(
         &self,
         quantity: &QuantitySpecId,

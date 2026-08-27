@@ -1,0 +1,11 @@
+//! Bounds shared by the typed BIM query/read-model contract.
+
+pub const MAX_BIM_FIELD_KEY_BYTES: usize = 256;
+pub const MAX_BIM_CLASSIFICATION_LEVELS: usize = 16;
+pub const MAX_BIM_CLASSIFICATION_PAGE_SIZE: u32 = 1_000;
+pub const MAX_BIM_REGEX_BYTES: usize = 512;
+pub const MAX_BIM_REPLACEMENT_BYTES: usize = 1_024;
+pub const MAX_BIM_SEARCH_PAGE_SIZE: u32 = 1_000;
+pub const MAX_BIM_SELECTION_TARGETS: usize = 256;
+pub const MAX_BIM_BATCH_EDITS: usize = 256;
+pub const UNCLASSIFIED_LABEL: &str = "<Unclassified>";

@@ -3,11 +3,14 @@
 //! These definitions carry the versioned viewport wire contract. The richer
 //! session contract grows around them without coupling transport to Bevy.
 
+pub mod bim;
 mod commands;
 mod constants;
 mod editor;
 mod events;
 mod read_models;
+
+pub use bim::*;
 
 pub use commands::{ViewportCommand, ViewportCommandEnvelope};
 pub use constants::{

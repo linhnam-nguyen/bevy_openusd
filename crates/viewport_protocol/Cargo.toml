@@ -8,3 +8,4 @@ description = "UI-neutral command, event, and read-model contract for the USDHub
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+usd_model = { workspace = true }

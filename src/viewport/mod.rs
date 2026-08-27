@@ -8,6 +8,7 @@ mod app;
 
 pub(crate) mod animation;
 pub(crate) mod api;
+pub(crate) mod bim;
 pub(crate) mod camera;
 pub(crate) mod diagnostics;
 pub(crate) mod input;
