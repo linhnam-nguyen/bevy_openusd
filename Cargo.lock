@@ -8728,6 +8728,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "usd_project"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "uuid",
+]
+
+[[package]]
 name = "usd_rapier"
 version = "0.0.1"
 dependencies = [
