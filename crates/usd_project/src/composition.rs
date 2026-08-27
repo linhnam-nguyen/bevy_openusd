@@ -74,14 +74,13 @@ fn reaches_target(
     }
     colors.insert(current, VisitState::Visiting);
 
-    if let Some(descendants) = children.get(&current) {
-        if descendants
+    if let Some(descendants) = children.get(&current)
+        && descendants
             .iter()
             .copied()
             .any(|child| reaches_target(child, target, children, colors))
-        {
-            return true;
-        }
+    {
+        return true;
     }
 
     colors.insert(current, VisitState::Done);
