@@ -1,7 +1,7 @@
 use std::{fs, fs::File, fs::OpenOptions, io::Write, path::Path};
 
 use anyhow::{Context, Result};
-use usd_project::ProjectManifestV1;
+use usd_project::{ProjectManifestV1, ValidatedProjectManifest};
 use uuid::Uuid;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
@@ -21,9 +21,26 @@ impl ManifestStore {
         fs::create_dir_all(&directory).context("create Project metadata directory")?;
 
         let temporary_path = directory.join(format!(".project.{}.tmp", Uuid::new_v4()));
-        let final_path = directory.join(PROJECT_MANIFEST_FILE);
+        let final_path = manifest_path(project_root);
         write_bytes_atomic(&temporary_path, &final_path, &bytes)
     }
+
+    pub(crate) fn read_validated(project_root: &Path) -> Result<ValidatedProjectManifest> {
+        let path = manifest_path(project_root);
+        let bytes =
+            fs::read(&path).with_context(|| format!("read Project manifest {}", path.display()))?;
+        let manifest: ProjectManifestV1 = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decode Project manifest {}", path.display()))?;
+        manifest
+            .validate_and_index()
+            .context("validate Project manifest")
+    }
+}
+
+pub(crate) fn manifest_path(project_root: &Path) -> std::path::PathBuf {
+    project_root
+        .join(PROJECT_METADATA_DIRECTORY)
+        .join(PROJECT_MANIFEST_FILE)
 }
 
 pub(crate) fn write_bytes_atomic(
@@ -108,11 +125,6 @@ mod tests {
         )
     }
 
-    fn manifest_path(root: &Path) -> std::path::PathBuf {
-        root.join(PROJECT_METADATA_DIRECTORY)
-            .join(PROJECT_MANIFEST_FILE)
-    }
-
     #[test]
     fn writes_canonical_manifest_to_same_metadata_directory() {
         let directory = tempdir().unwrap();
@@ -120,7 +132,7 @@ mod tests {
 
         ManifestStore::write_manifest_atomic(directory.path(), &manifest).unwrap();
 
-        let path = manifest_path(directory.path());
+        let path = super::manifest_path(directory.path());
         let bytes = fs::read(&path).unwrap();
         let decoded: ProjectManifestV1 = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded, manifest.canonicalized());
@@ -137,7 +149,7 @@ mod tests {
         let directory = tempdir().unwrap();
         let valid = manifest();
         ManifestStore::write_manifest_atomic(directory.path(), &valid).unwrap();
-        let path = manifest_path(directory.path());
+        let path = super::manifest_path(directory.path());
         let before = fs::read(&path).unwrap();
 
         let mut invalid = valid;
