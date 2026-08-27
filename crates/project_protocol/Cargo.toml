@@ -1,0 +1,15 @@
+[package]
+name = "project_protocol"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Shared USDHub Project read commands and DTO responses"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+usd_project.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

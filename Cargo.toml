@@ -9,6 +9,7 @@ members = [
     "crates/usd_diff",
     "crates/usd_git",
     "crates/usd_project",
+    "crates/project_protocol",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
 ]
@@ -37,6 +38,7 @@ usd_semantic = { path = "crates/usd_semantic" }
 usd_diff = { path = "crates/usd_diff" }
 usd_git = { path = "crates/usd_git" }
 usd_project = { path = "crates/usd_project" }
+project_protocol = { path = "crates/project_protocol" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
 turso = { version = "0.7.1", default-features = false, features = ["sync"] }
