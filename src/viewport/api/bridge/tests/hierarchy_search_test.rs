@@ -110,16 +110,18 @@ mod tests {
             run_search(&mut app, "Wall_0042")?[0].breadcrumb,
             "/Building/Level01/Wall_0042"
         );
-        assert_eq!(
-            run_search(&mut app, "chair")?
-                .iter()
-                .map(|result| result.anchor.prim_path.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_1",
-                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_2",
-            ]
-        );
+        for query in ["chair", "cha", "hair"] {
+            assert_eq!(
+                run_search(&mut app, query)?
+                    .iter()
+                    .map(|result| result.anchor.prim_path.as_str())
+                    .collect::<Vec<_>>(),
+                vec![
+                    "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_1",
+                    "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_2",
+                ]
+            );
+        }
         Ok(())
     }
 

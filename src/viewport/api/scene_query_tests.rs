@@ -92,7 +92,7 @@ fn search_matches_projected_names_only_and_preserves_context() {
 }
 
 #[test]
-fn search_matches_name_boundaries_without_numeric_prefix_or_ancestor_false_positives() {
+fn search_matches_name_fragments_without_numeric_prefix_or_ancestor_false_positives() {
     let nodes = vec![
         node("/root/name1/name2", Some("/root/name1"), "name2", None),
         node(
@@ -129,6 +129,18 @@ fn search_matches_name_boundaries_without_numeric_prefix_or_ancestor_false_posit
 
     assert_eq!(
         matching_paths("chair"),
+        vec!["/World/ChairB_1", "/World/ChairB_2"]
+    );
+    assert_eq!(
+        matching_paths("cha"),
+        vec![
+            "/World/ChairB_1",
+            "/World/ChairB_2",
+            "/World/Pump-Mechanical-02",
+        ]
+    );
+    assert_eq!(
+        matching_paths("hair"),
         vec!["/World/ChairB_1", "/World/ChairB_2"]
     );
     assert_eq!(

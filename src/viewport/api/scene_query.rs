@@ -239,7 +239,7 @@ pub(crate) fn search_hierarchy(
     let mut matches: Vec<&HierarchyNode> = hierarchy
         .nodes
         .iter()
-        .filter(|node| boundary_aware_name_matches(&node.name, &query_chars))
+        .filter(|node| substring_name_matches(&node.name, &query_chars))
         .collect();
     matches.sort_by(|left, right| {
         left.breadcrumb
@@ -268,7 +268,7 @@ pub(crate) fn search_hierarchy(
     (total, matches)
 }
 
-fn boundary_aware_name_matches(name: &str, query: &[char]) -> bool {
+fn substring_name_matches(name: &str, query: &[char]) -> bool {
     let name_chars = name.chars().collect::<Vec<_>>();
     if query.is_empty() || query.len() > name_chars.len() {
         return false;
@@ -279,32 +279,16 @@ fn boundary_aware_name_matches(name: &str, query: &[char]) -> bool {
         .enumerate()
         .any(|(start, window)| {
             let end = start + query.len();
-            is_name_boundary_before(&name_chars, start)
-                && is_name_boundary_after(&name_chars, end)
+            !matches_numeric_fragment_boundary(&name_chars, start, end)
                 && window.iter().zip(query).all(|(name_char, query_char)| {
                     name_char.to_lowercase().eq(query_char.to_lowercase())
                 })
         })
 }
 
-fn is_name_boundary_before(name: &[char], index: usize) -> bool {
-    index == 0 || is_name_boundary_between(name[index - 1], name[index])
-}
-
-fn is_name_boundary_after(name: &[char], index: usize) -> bool {
-    index == name.len() || is_name_boundary_between(name[index - 1], name[index])
-}
-
-fn is_name_boundary_between(left: char, right: char) -> bool {
-    is_name_separator(left)
-        || is_name_separator(right)
-        || (left.is_lowercase() && right.is_uppercase())
-        || (left.is_alphabetic() && right.is_numeric())
-        || (left.is_numeric() && right.is_alphabetic())
-}
-
-fn is_name_separator(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '_' | '-' | '.')
+fn matches_numeric_fragment_boundary(name: &[char], start: usize, end: usize) -> bool {
+    (start > 0 && name[start - 1].is_numeric() && name[start].is_numeric())
+        || (end < name.len() && name[end - 1].is_numeric() && name[end].is_numeric())
 }
 
 fn reveal_pages(
