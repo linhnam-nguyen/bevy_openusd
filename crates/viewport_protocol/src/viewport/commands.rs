@@ -1,15 +1,13 @@
-use std::collections::HashSet;
-
 use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
-use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::editor::{EditorValue, RuntimeMutationBatch};
+use super::hierarchy::{HierarchyNodeId, HierarchySource};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
-    SamplingPreference, SceneAnchor, SelectionPresentationSettings, SelectionReadModel,
-    StandardView, ViewerEnvironmentSettings,
+    SamplingPreference, SceneAnchor, SelectionPresentationSettings, StandardView,
+    ViewerEnvironmentSettings,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +20,18 @@ pub enum ViewportCommand {
         page_size: u32,
     },
     SearchScene {
+        query: String,
+        offset: u32,
+        limit: u32,
+    },
+    RequestHierarchyChildren {
+        source: HierarchySource,
+        parent_id: Option<HierarchyNodeId>,
+        page: u32,
+        page_size: u32,
+    },
+    SearchHierarchy {
+        source: HierarchySource,
         query: String,
         offset: u32,
         limit: u32,
@@ -210,185 +220,4 @@ impl ViewportCommandEnvelope {
         self.command.validate()?;
         Ok(())
     }
-}
-
-impl ViewportCommand {
-    pub fn validate(&self) -> Result<(), crate::ProtocolValidationError> {
-        use crate::ProtocolValidationError;
-
-        fn path(field: &'static str, value: &str) -> Result<(), ProtocolValidationError> {
-            if value.trim().is_empty() {
-                return Err(ProtocolValidationError::EmptyField { field });
-            }
-            if !value.starts_with('/') || value.contains('\0') {
-                return Err(ProtocolValidationError::InvalidInput { field });
-            }
-            Ok(())
-        }
-
-        fn text(field: &'static str, value: &str) -> Result<(), ProtocolValidationError> {
-            if value.trim().is_empty() {
-                return Err(ProtocolValidationError::EmptyField { field });
-            }
-            if value.len() > MAX_EDITOR_TEXT_BYTES {
-                return Err(ProtocolValidationError::InvalidInput { field });
-            }
-            Ok(())
-        }
-
-        fn finite(field: &'static str, values: &[f32]) -> Result<(), ProtocolValidationError> {
-            if values.iter().all(|value| value.is_finite()) {
-                Ok(())
-            } else {
-                Err(ProtocolValidationError::InvalidInput { field })
-            }
-        }
-
-        match self {
-            Self::SelectTarget { target } => {
-                if let Some(target) = target {
-                    target.validate()?;
-                }
-            }
-            Self::ReplaceSelection { targets, primary } => {
-                SelectionReadModel::validate_parts(targets, primary.as_ref())?;
-            }
-            Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
-                target.validate()?
-            }
-            Self::AddSelectionTargets { targets, primary } => {
-                validate_selection_delta(targets, "selection.targets")?;
-                if let Some(primary) = primary {
-                    primary.validate()?;
-                    if !targets.contains(primary) {
-                        return Err(ProtocolValidationError::InvalidInput {
-                            field: "selection.primary",
-                        });
-                    }
-                }
-            }
-            Self::RemoveSelectionTargets { targets } => {
-                validate_selection_delta(targets, "selection.targets")?;
-            }
-            Self::ClearSelection => {}
-            Self::SetEnvironmentSettings { .. }
-            | Self::SetSamplingPreference { .. }
-            | Self::SetSectionBox { .. } => {}
-            Self::SetSelectionPresentationSettings { settings } => settings.validate()?,
-            Self::DefinePrim {
-                path: value,
-                type_name,
-            } => {
-                path("editor.path", value)?;
-                text("editor.type_name", type_name)?;
-            }
-            Self::RemovePrim { path: value }
-            | Self::LoadPayload { prim_path: value }
-            | Self::UnloadPayload { prim_path: value }
-            | Self::QueryPrim { prim_path: value } => path("editor.prim_path", value)?,
-            Self::RenamePrim {
-                path: value,
-                new_name,
-            } => {
-                path("editor.path", value)?;
-                text("editor.new_name", new_name)?;
-                if new_name.contains('/') {
-                    return Err(ProtocolValidationError::InvalidInput {
-                        field: "editor.new_name",
-                    });
-                }
-            }
-            Self::ReparentPrim {
-                path: value,
-                new_parent,
-            } => {
-                path("editor.path", value)?;
-                path("editor.new_parent", new_parent)?;
-            }
-            Self::MovePrim { old_path, new_path } => {
-                path("editor.old_path", old_path)?;
-                path("editor.new_path", new_path)?;
-            }
-            Self::SetAttribute {
-                prim_path,
-                name,
-                type_name,
-                value,
-            } => {
-                path("editor.prim_path", prim_path)?;
-                text("editor.name", name)?;
-                text("editor.type_name", type_name)?;
-                if serde_json::to_vec(value)
-                    .map(|bytes| bytes.len() > MAX_EDITOR_TEXT_BYTES)
-                    .unwrap_or(true)
-                {
-                    return Err(ProtocolValidationError::InvalidInput {
-                        field: "editor.value",
-                    });
-                }
-            }
-            Self::ClearAttribute { prim_path, name } => {
-                path("editor.prim_path", prim_path)?;
-                text("editor.name", name)?;
-            }
-            Self::SetTransform {
-                prim_path,
-                translation,
-                rotation,
-                scale,
-            } => {
-                path("editor.prim_path", prim_path)?;
-                finite("editor.translation", translation)?;
-                finite("editor.rotation", rotation)?;
-                finite("editor.scale", scale)?;
-            }
-            Self::ApplyRuntimeMutationBatch { batch } => batch.validate()?,
-            Self::SetRendererConfiguration { configuration } => configuration.validate()?,
-            Self::SaveStageAs { filename } => text("editor.filename", filename)?,
-            Self::SetVariantSelection { .. }
-            | Self::ResetVariantSelection { .. }
-            | Self::RequestSnapshot
-            | Self::RequestSceneChildren { .. }
-            | Self::SearchScene { .. }
-            | Self::ReloadSession
-            | Self::FocusTarget { .. }
-            | Self::SetSubtreeVisibility { .. }
-            | Self::SetCameraSource { .. }
-            | Self::SetStandardView { .. }
-            | Self::SetPlayback { .. }
-            | Self::Seek { .. }
-            | Self::SetOverlay { .. }
-            | Self::SetGroundGridOrigin { .. }
-            | Self::SetPrimMarkerBias { .. }
-            | Self::SetLightIntensity { .. }
-            | Self::SetCurveTuning { .. }
-            | Self::SetPhysicsRunning { .. }
-            | Self::UndoEditor
-            | Self::RedoEditor
-            | Self::ExportStage => {}
-        }
-        Ok(())
-    }
-}
-
-fn validate_selection_delta(
-    targets: &[SceneAnchor],
-    field: &'static str,
-) -> Result<(), crate::ProtocolValidationError> {
-    use crate::ProtocolValidationError;
-
-    if targets.is_empty() {
-        return Err(ProtocolValidationError::EmptyField { field });
-    }
-    if targets.len() > crate::MAX_SELECTION_TARGETS {
-        return Err(ProtocolValidationError::InvalidInput { field });
-    }
-    let mut seen = HashSet::with_capacity(targets.len());
-    for target in targets {
-        target.validate()?;
-        if !seen.insert(target) {
-            return Err(ProtocolValidationError::InvalidInput { field });
-        }
-    }
-    Ok(())
 }

@@ -10,8 +10,9 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, HierarchyReadModel, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel,
-    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel,
+    MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference,
+    SceneReadModel, SceneSearchMatch,
 };
 
 use super::hierarchy::CurrentHierarchyProjection;
@@ -96,6 +97,15 @@ impl SceneAnchorIndex {
     /// semantic storage itself. Cloning the `Arc` is constant-time.
     pub(crate) fn hierarchy_snapshot(&self) -> Arc<HierarchyReadModel> {
         self.hierarchy.snapshot()
+    }
+
+    pub(crate) fn hierarchy_children_page(
+        &self,
+        parent_id: Option<&HierarchyNodeId>,
+        page: u32,
+        page_size: u32,
+    ) -> Result<HierarchyChildrenPage, String> {
+        self.hierarchy.children_page(parent_id, page, page_size)
     }
 
     #[cfg(test)]

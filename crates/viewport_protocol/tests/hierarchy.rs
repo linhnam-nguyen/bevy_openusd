@@ -1,5 +1,5 @@
 use viewport_protocol::{
-    HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel, HierarchySource,
+    HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel, HierarchySource, ViewportCommand,
 };
 
 #[test]
@@ -48,4 +48,25 @@ fn generic_hierarchy_read_model_round_trips_provider_and_revision() {
         serde_json::from_str(&encoded).expect("hierarchy model deserializes");
 
     assert_eq!(decoded, model);
+}
+
+#[test]
+fn generic_hierarchy_commands_validate_provider_ids_and_bounds() {
+    let command = ViewportCommand::RequestHierarchyChildren {
+        source: HierarchySource::Prim,
+        parent_id: Some(HierarchyNodeId::new("prim:/World:single")),
+        page: 0,
+        page_size: 64,
+    };
+    assert!(command.validate().is_ok());
+    assert!(
+        ViewportCommand::SearchHierarchy {
+            source: HierarchySource::Prim,
+            query: "wall".to_owned(),
+            offset: 0,
+            limit: 30,
+        }
+        .validate()
+        .is_ok()
+    );
 }

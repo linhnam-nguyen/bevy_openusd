@@ -10,8 +10,13 @@ use std::sync::{Arc, Condvar, Mutex};
 use bevy::prelude::Resource;
 use viewport_protocol::{
     DEFAULT_SCENE_PAGE_SIZE, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySearchMatch as ProtocolHierarchySearchMatch, HierarchySource,
     MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference, SceneSearchMatch,
 };
+
+#[path = "scene_query_generic.rs"]
+mod generic;
+use generic::search_hierarchy_generic;
 
 #[derive(Debug)]
 struct LatestMailboxState<T> {
@@ -87,6 +92,8 @@ struct SearchJob {
     offset: u32,
     limit: u32,
     hierarchy: Arc<HierarchyReadModel>,
+    source: HierarchySource,
+    generic: bool,
 }
 
 #[derive(Debug)]
@@ -122,8 +129,15 @@ pub(crate) struct SearchResult {
     pub(crate) query: String,
     pub(crate) offset: u32,
     pub(crate) total: u32,
-    pub(crate) matches: Vec<HierarchySearchMatch>,
+    pub(crate) source: HierarchySource,
+    pub(crate) matches: SearchMatches,
     pub(crate) has_more: bool,
+}
+
+#[derive(Debug)]
+pub(crate) enum SearchMatches {
+    Scene(Vec<HierarchySearchMatch>),
+    Generic(Vec<ProtocolHierarchySearchMatch>),
 }
 
 #[derive(Resource, Debug)]
@@ -156,6 +170,8 @@ impl SceneQueryService {
         offset: u32,
         limit: u32,
         hierarchy: Arc<HierarchyReadModel>,
+        source: HierarchySource,
+        generic: bool,
     ) -> bool {
         self.jobs
             .replace(SearchJob {
@@ -164,6 +180,8 @@ impl SceneQueryService {
                 offset,
                 limit,
                 hierarchy,
+                source,
+                generic,
             })
             .is_ok()
     }
@@ -185,14 +203,27 @@ fn search_worker(
     results: Arc<LatestMailbox<SearchResult>>,
 ) {
     while let Some(job) = pending_jobs.pop() {
-        let (total, matches) = search_hierarchy(&job.hierarchy, &job.query, job.offset, job.limit);
-        let has_more = job.offset.saturating_add(matches.len() as u32) < total;
+        let (total, matches) = if job.generic {
+            let (total, matches) =
+                search_hierarchy_generic(&job.hierarchy, &job.query, job.offset, job.limit);
+            (total, SearchMatches::Generic(matches))
+        } else {
+            let (total, matches) =
+                search_hierarchy(&job.hierarchy, &job.query, job.offset, job.limit);
+            (total, SearchMatches::Scene(matches))
+        };
+        let match_count = match &matches {
+            SearchMatches::Scene(matches) => matches.len(),
+            SearchMatches::Generic(matches) => matches.len(),
+        };
+        let has_more = job.offset.saturating_add(match_count as u32) < total;
         if results
             .replace(SearchResult {
                 request_id: job.request_id,
                 query: job.query,
                 offset: job.offset,
                 total,
+                source: job.source,
                 matches,
                 has_more,
             })

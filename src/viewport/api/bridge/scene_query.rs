@@ -1,7 +1,9 @@
 use std::time::Instant;
 
 use bevy::prelude::*;
-use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{
+    HierarchySource, PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope,
+};
 
 use super::ViewerSettingsState;
 use super::helpers::{build_read_model, reject};
@@ -33,21 +35,32 @@ pub(super) fn publish_scene_query_results(
             counters.query_results += 1;
             counters.record_query_latency_ms(request.submitted_at.elapsed().as_secs_f64() * 1000.0);
         }
-        let matches = result
-            .matches
-            .into_iter()
-            .filter_map(|result| result.into_scene_search_match())
-            .collect();
-        outbox.push(ViewportEventEnvelope::new(
-            Some(result.request_id),
-            ViewportEvent::SearchResults {
-                query: result.query,
-                offset: result.offset,
-                total: result.total,
-                matches,
-                has_more: result.has_more,
-            },
-        ));
+        let event = match result.matches {
+            super::super::scene_query::SearchMatches::Scene(matches) => {
+                let matches = matches
+                    .into_iter()
+                    .filter_map(|result| result.into_scene_search_match())
+                    .collect();
+                ViewportEvent::SearchResults {
+                    query: result.query,
+                    offset: result.offset,
+                    total: result.total,
+                    matches,
+                    has_more: result.has_more,
+                }
+            }
+            super::super::scene_query::SearchMatches::Generic(matches) => {
+                ViewportEvent::HierarchySearchResults {
+                    source: result.source,
+                    query: result.query,
+                    offset: result.offset,
+                    total: result.total,
+                    matches,
+                    has_more: result.has_more,
+                }
+            }
+        };
+        outbox.push(ViewportEventEnvelope::new(Some(result.request_id), event));
     }
 }
 
@@ -85,6 +98,28 @@ pub(super) fn dispatch_scene_query_commands(
                     page: scene_index.children_page(parent.as_ref(), page, page_size),
                 },
             )),
+            ViewportCommand::RequestHierarchyChildren {
+                source,
+                parent_id,
+                page,
+                page_size,
+            } => {
+                if source != HierarchySource::Prim {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "BIM classification hierarchy provider is not active".to_owned(),
+                    );
+                    continue;
+                }
+                match scene_index.hierarchy_children_page(parent_id.as_ref(), page, page_size) {
+                    Ok(page) => outbox.push(ViewportEventEnvelope::new(
+                        Some(request_id),
+                        ViewportEvent::HierarchyChildren { source, page },
+                    )),
+                    Err(error) => reject(&mut outbox, request_id, error),
+                }
+            }
             ViewportCommand::SearchScene {
                 query,
                 offset,
@@ -97,11 +132,60 @@ pub(super) fn dispatch_scene_query_commands(
                     offset,
                     limit,
                     scene_index.hierarchy_snapshot(),
+                    HierarchySource::Prim,
+                    false,
                 ) {
                     // Search is a single latest-query projection in the
                     // viewport read model. Dropping older metadata here also
                     // makes worker-side query coalescing safe: superseded
                     // responses are ignored when they arrive.
+                    search_requests.pending.clear();
+                    search_requests.pending.insert(
+                        request_id,
+                        SceneSearchRequest {
+                            query: query_text,
+                            offset,
+                            submitted_at: Instant::now(),
+                        },
+                    );
+                    if let Some(ref mut counters) = counters {
+                        counters.query_requests += 1;
+                    }
+                } else {
+                    if let Some(ref mut counters) = counters {
+                        counters.query_failures += 1;
+                    }
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "hierarchy search worker is unavailable".to_owned(),
+                    );
+                }
+            }
+            ViewportCommand::SearchHierarchy {
+                source,
+                query,
+                offset,
+                limit,
+            } => {
+                if source != HierarchySource::Prim {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "BIM classification hierarchy provider is not active".to_owned(),
+                    );
+                    continue;
+                }
+                let query_text = query.clone();
+                if scene_query.submit_search(
+                    request_id.clone(),
+                    query,
+                    offset,
+                    limit,
+                    scene_index.hierarchy_snapshot(),
+                    source,
+                    true,
+                ) {
                     search_requests.pending.clear();
                     search_requests.pending.insert(
                         request_id,

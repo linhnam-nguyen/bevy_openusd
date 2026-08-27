@@ -21,6 +21,11 @@ impl HierarchyNodeId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn for_scene_anchor(anchor: &SceneAnchor) -> Self {
+        let instance = anchor.instance_context.as_deref().unwrap_or("single");
+        Self::new(format!("prim:{}:{instance}", anchor.prim_path))
+    }
 }
 
 impl From<String> for HierarchyNodeId {

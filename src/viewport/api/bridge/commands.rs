@@ -73,7 +73,10 @@ pub(super) fn apply_viewport_commands(
                     state.physics.0,
                 );
             }
-            ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. } => {
+            ViewportCommand::RequestSceneChildren { .. }
+            | ViewportCommand::SearchScene { .. }
+            | ViewportCommand::RequestHierarchyChildren { .. }
+            | ViewportCommand::SearchHierarchy { .. } => {
                 reject(
                     &mut outbox,
                     request_id,

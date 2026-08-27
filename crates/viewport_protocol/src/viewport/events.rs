@@ -4,6 +4,7 @@ use crate::{PROTOCOL_VERSION, RequestId};
 
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
+use super::hierarchy::{HierarchyChildrenPage, HierarchySearchMatch, HierarchySource};
 use super::read_models::{
     CameraOrientationReadModel, CameraSource, FocusMode, PresentationReadModel, SceneAnchor,
     SceneChildrenPage, SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
@@ -27,6 +28,18 @@ pub enum ViewportEvent {
         offset: u32,
         total: u32,
         matches: Vec<SceneSearchMatch>,
+        has_more: bool,
+    },
+    HierarchyChildren {
+        source: HierarchySource,
+        page: HierarchyChildrenPage,
+    },
+    HierarchySearchResults {
+        source: HierarchySource,
+        query: String,
+        offset: u32,
+        total: u32,
+        matches: Vec<HierarchySearchMatch>,
         has_more: bool,
     },
     StageLoadStateChanged {

@@ -229,6 +229,42 @@ fn search_paginates_boundary_aware_projected_names_without_path_matching() {
 }
 
 #[test]
+fn generic_search_preserves_provider_ids_and_virtual_reveal_pages() {
+    let category = viewport_protocol::HierarchyNodeReadModel::virtual_node(
+        HierarchyNodeId::new("bim-category-walls"),
+        None,
+        "Walls".to_owned(),
+        "Walls".to_owned(),
+        true,
+    );
+    let leaf = viewport_protocol::HierarchyNodeReadModel::scene(
+        HierarchyNodeId::new("bim-element-42-wall"),
+        Some(category.id.clone()),
+        "42-Wall".to_owned(),
+        "Walls/42-Wall".to_owned(),
+        SceneAnchor::active_session("/World/Wall"),
+        None,
+        true,
+        false,
+    );
+    let hierarchy = HierarchyReadModel {
+        source: viewport_protocol::HierarchySource::BimClassification,
+        revision: 2,
+        nodes: vec![category.clone(), leaf],
+    };
+
+    let (total, matches) = search_hierarchy_generic(&hierarchy, "42-wall", 0, 10);
+
+    assert_eq!(total, 1);
+    assert_eq!(
+        matches[0].node_id,
+        HierarchyNodeId::new("bim-element-42-wall")
+    );
+    assert_eq!(matches[0].reveal_pages[0].parent_id, None);
+    assert_eq!(matches[0].reveal_pages[1].parent_id, Some(category.id));
+}
+
+#[test]
 fn latest_mailbox_replaces_pending_values_without_backlog() {
     let mailbox = LatestMailbox::new();
     for value in 0..10_000 {

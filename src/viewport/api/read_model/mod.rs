@@ -160,6 +160,8 @@ impl ViewportReadModelState {
                 matches,
                 *has_more,
             ),
+            ViewportEvent::HierarchyChildren { .. }
+            | ViewportEvent::HierarchySearchResults { .. } => {}
             ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
             | ViewportEvent::CommandRejected { .. } => {}

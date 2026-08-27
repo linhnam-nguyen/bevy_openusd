@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use viewport_protocol::{
-    HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel, HierarchySource,
-    PrimNodeReadModel, SceneAnchor,
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
 };
 
 /// Shared immutable hierarchy projection for the currently selected provider.
@@ -63,6 +63,54 @@ impl CurrentHierarchyProjection {
 
     pub(crate) fn snapshot(&self) -> Arc<HierarchyReadModel> {
         Arc::clone(&self.read_model)
+    }
+
+    pub(crate) fn children_page(
+        &self,
+        parent_id: Option<&HierarchyNodeId>,
+        page: u32,
+        page_size: u32,
+    ) -> Result<HierarchyChildrenPage, String> {
+        if let Some(parent_id) = parent_id
+            && !self
+                .read_model
+                .nodes
+                .iter()
+                .any(|node| &node.id == parent_id)
+        {
+            return Err(format!(
+                "unknown hierarchy parent id `{}`",
+                parent_id.as_str()
+            ));
+        }
+
+        let page_size = page_size.clamp(1, MAX_SCENE_PAGE_SIZE);
+        let total = self
+            .read_model
+            .nodes
+            .iter()
+            .filter(|node| node.parent_id.as_ref() == parent_id)
+            .count() as u32;
+        let start = (page as usize).saturating_mul(page_size as usize);
+        let nodes = self
+            .read_model
+            .nodes
+            .iter()
+            .filter(|node| node.parent_id.as_ref() == parent_id)
+            .skip(start)
+            .take(page_size as usize)
+            .cloned()
+            .collect();
+
+        Ok(HierarchyChildrenPage {
+            source: self.read_model.source,
+            parent_id: parent_id.cloned(),
+            page,
+            page_size,
+            total,
+            has_more: start.saturating_add(page_size as usize) < total as usize,
+            nodes,
+        })
     }
 }
 

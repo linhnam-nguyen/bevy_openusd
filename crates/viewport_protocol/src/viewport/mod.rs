@@ -4,6 +4,8 @@
 //! session contract grows around them without coupling transport to Bevy.
 
 pub mod bim;
+#[path = "command_validation.rs"]
+mod command_validation;
 mod commands;
 mod constants;
 mod editor;
@@ -20,8 +22,9 @@ pub use hierarchy::{
 pub use commands::{ViewportCommand, ViewportCommandEnvelope};
 pub use constants::{
     DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, MAX_EDITOR_TEXT_BYTES,
-    MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE,
-    MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS,
+    MAX_HIERARCHY_NODE_ID_BYTES, MAX_HIERARCHY_SEARCH_QUERY_BYTES, MAX_RUNTIME_MUTATIONS,
+    MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS,
+    MAX_SELECTION_TARGETS,
 };
 pub use editor::{
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, RuntimeMutation,

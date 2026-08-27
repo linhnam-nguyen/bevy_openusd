@@ -58,7 +58,10 @@ impl ViewportCommandInbox {
         while let Some(envelope) = self.pending.pop_front() {
             if matches!(
                 envelope.command,
-                ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. }
+                ViewportCommand::RequestSceneChildren { .. }
+                    | ViewportCommand::SearchScene { .. }
+                    | ViewportCommand::RequestHierarchyChildren { .. }
+                    | ViewportCommand::SearchHierarchy { .. }
             ) {
                 queries.push(envelope);
             } else {
