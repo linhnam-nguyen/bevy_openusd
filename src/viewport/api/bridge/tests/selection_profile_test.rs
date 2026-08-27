@@ -15,10 +15,10 @@ use crate::viewport::api::scene_index::refresh_scene_anchor_index;
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox};
 use crate::viewport::scene::HoveredTarget;
 use crate::viewport::scene::{
-    HoverColorMaterial, SectionBoxState, SelectedTargets,
-    SelectionColorMaterial, SelectionColorOverride, SelectionColorOverrideState, SelectionOutline,
-    SelectionOutlineState, aggregate_selection_bounds, selected_renderable_entities,
-    sync_section_box_state, sync_selection_color_overrides, sync_selection_outlines,
+    HoverColorMaterial, SectionBoxState, SelectedTargets, SelectionColorMaterial,
+    SelectionColorOverride, SelectionColorOverrideState, SelectionOutline, SelectionOutlineState,
+    aggregate_selection_bounds, selected_renderable_entities, sync_section_box_state,
+    sync_selection_color_overrides, sync_selection_outlines,
 };
 use crate::viewport::session::{Spawned, StageInfo};
 
