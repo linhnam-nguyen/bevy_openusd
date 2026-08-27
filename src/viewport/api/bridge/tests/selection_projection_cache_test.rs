@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use super::selection_profile_support::settle_selection_presentation;
 use super::*;
 
 use bevy_glacial::prelude::BoundsGizmoTarget;
@@ -263,14 +264,17 @@ fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() 
 }
 
 #[test]
-#[ignore = "I1.7.4 incremental projection profile; run explicitly with --ignored"]
-fn profile_i1_7_4_incremental_projection_delta() {
+#[ignore = "I1.7.4 settled incremental projection profile; run explicitly with --ignored"]
+fn profile_i1_7_4_settled_incremental_projection_delta() {
     let mut app = super::projection_profile_test::combined_presentation_app(false);
 
     set_selection(&mut app, selection(4_999));
     let started = Instant::now();
     app.update();
     let initial_micros = started.elapsed().as_micros();
+    // Settle the initial bounded presentation before measuring the one-target
+    // delta. Rapid supersession of unsettled work is covered separately.
+    settle_selection_presentation(&mut app);
     let before_delta_resolution = app
         .world()
         .resource::<SelectedRenderableProjection>()
@@ -349,7 +353,7 @@ fn profile_i1_7_4_incremental_projection_delta() {
         .max()
         .unwrap_or_default();
     println!(
-        "I1.7.4 incremental_projection selected_before=4999 selected_after=5000 initial_update_us={initial_micros} delta_update_us={delta_micros} steady_delta_median_us={} steady_delta_max_us={steady_delta_max} resolution_delta=1 outline_delta=1",
+        "I1.7.4 settled_incremental_projection selected_before=4999 selected_after=5000 initial_update_us={initial_micros} delta_update_us={delta_micros} steady_delta_median_us={} steady_delta_max_us={steady_delta_max} resolution_delta=1 outline_delta=1",
         median_micros(&mut steady_delta_samples)
     );
 }

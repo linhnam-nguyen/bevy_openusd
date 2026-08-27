@@ -25,6 +25,19 @@ fn settle_presentation(app: &mut App) -> usize {
     frames
 }
 
+pub(super) fn settle_selection_presentation(app: &mut App) {
+    const MAX_SETTLE_UPDATES: usize = 32;
+
+    for _ in 0..MAX_SETTLE_UPDATES {
+        if !presentation_pending(app.world()) {
+            return;
+        }
+        app.update();
+    }
+
+    panic!("selection presentation did not settle within {MAX_SETTLE_UPDATES} updates");
+}
+
 pub(super) fn repeat_selection_updates(
     app: &mut App,
     value: &SelectionReadModel,
