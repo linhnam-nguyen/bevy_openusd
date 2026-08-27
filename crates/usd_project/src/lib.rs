@@ -3,6 +3,7 @@
 mod capability;
 mod error;
 mod id;
+mod manifest;
 mod read_model;
 mod root;
 
@@ -12,6 +13,10 @@ mod validation;
 pub use capability::ProjectCapabilities;
 pub use error::ProjectDomainError;
 pub use id::{ModelId, ProjectId, SceneId, SceneMemberId};
+pub use manifest::{
+    ModelManifestEntry, PROJECT_MANIFEST_SCHEMA_VERSION, ProjectManifestError, ProjectManifestV1,
+    SceneManifestEntry, StorageKey,
+};
 pub use read_model::{
     BranchSummary, ModelSourceSummary, ProjectContentCounts, ProjectContentNode, ProjectSummary,
     RepositorySummary, RevisionSummary,
