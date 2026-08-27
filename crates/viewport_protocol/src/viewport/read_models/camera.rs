@@ -42,19 +42,14 @@ impl Default for CameraOrientationReadModel {
 }
 
 /// The six canonical camera directions exposed by the viewport ViewCube.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StandardView {
+    #[default]
     Front,
     Back,
     Left,
     Right,
     Top,
     Bottom,
-}
-
-impl Default for StandardView {
-    fn default() -> Self {
-        Self::Front
-    }
 }

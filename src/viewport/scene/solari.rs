@@ -38,6 +38,7 @@ pub(crate) struct SolariCapability {
     pub(crate) scene_eligible: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for SolariCapability {
     fn default() -> Self {
         Self {

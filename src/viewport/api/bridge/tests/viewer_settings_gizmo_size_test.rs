@@ -7,8 +7,10 @@ use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
 #[test]
 fn selection_gizmo_size_command_updates_authoritative_settings() {
     let mut app = command_test_app();
-    let mut settings = SelectionPresentationSettings::default();
-    settings.gizmo_size_level = 7;
+    let settings = SelectionPresentationSettings {
+        gizmo_size_level: 7,
+        ..Default::default()
+    };
     let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::SetSelectionPresentationSettings {
             settings: settings.clone(),

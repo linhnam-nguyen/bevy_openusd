@@ -266,10 +266,8 @@ fn add_target_renderables(
         let was_unselected = *count == 0;
         *count += 1;
         projection.renderables.insert(*entity);
-        if was_unselected {
-            if !projection.removed_renderables.remove(entity) {
-                projection.added_renderables.insert(*entity);
-            }
+        if was_unselected && !projection.removed_renderables.remove(entity) {
+            projection.added_renderables.insert(*entity);
         }
     }
 }

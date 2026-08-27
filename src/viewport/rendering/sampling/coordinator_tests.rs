@@ -100,8 +100,8 @@ fn dlss_loss_with_fsr_pending_selects_none_and_publishes_unsupported_state() {
     assert!(!app.world().resource::<DlssCameraActivation>().enabled);
 
     let settings = app.world().resource::<ViewerSettingsState>().read_model();
-    assert_eq!(settings.capabilities.dlss_available, false);
-    assert_eq!(settings.capabilities.fsr_available, false);
+    assert!(!settings.capabilities.dlss_available);
+    assert!(!settings.capabilities.fsr_available);
     assert_eq!(settings.sampling.provider, SamplingProvider::None);
 
     let events = app
@@ -161,8 +161,8 @@ fn pending_fsr_state_is_reconciled_to_dlss_when_available() {
     );
     let settings = app.world().resource::<ViewerSettingsState>().read_model();
     assert_eq!(settings.sampling.provider, SamplingProvider::Dlss);
-    assert_eq!(settings.capabilities.dlss_available, true);
-    assert_eq!(settings.capabilities.fsr_available, false);
+    assert!(settings.capabilities.dlss_available);
+    assert!(!settings.capabilities.fsr_available);
 
     let events = app
         .world_mut()
