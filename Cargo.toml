@@ -36,6 +36,7 @@ usd_model = { path = "crates/usd_model" }
 usd_semantic = { path = "crates/usd_semantic" }
 usd_diff = { path = "crates/usd_diff" }
 usd_git = { path = "crates/usd_git" }
+usd_project = { path = "crates/usd_project" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
 turso = { version = "0.7.1", default-features = false, features = ["sync"] }
@@ -134,6 +135,7 @@ usd_model = { workspace = true }
 usd_semantic = { workspace = true }
 usd_diff = { workspace = true }
 usd_git = { workspace = true }
+usd_project = { workspace = true }
 # Pure USD-physics → Rapier builders used by the viewport-owned adapter.
 usd_rapier = { workspace = true }
 openusd = { workspace = true }
@@ -142,6 +144,7 @@ rapier3d-f64 = { workspace = true }
 viewport_protocol = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
+uuid = { workspace = true }
 viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }

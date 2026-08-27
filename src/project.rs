@@ -1,6 +1,7 @@
 //! Application-level project services.
 
 pub(crate) mod blob_store;
+pub(crate) mod catalog;
 pub(crate) mod commit;
 pub(crate) mod ghost_cache;
 pub(crate) mod recovery;
