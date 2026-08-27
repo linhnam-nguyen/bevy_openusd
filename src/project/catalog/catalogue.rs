@@ -9,8 +9,11 @@ use super::{
     workspace_registry::{WorkspaceProjectEntry, WorkspaceRegistry},
 };
 
-const UNAVAILABLE_MANIFEST_REASON: &str = "Project manifest unavailable";
-const IDENTITY_MISMATCH_REASON: &str = "Project manifest identity mismatch";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProjectCatalogueUnavailableReason {
+    ManifestUnavailable,
+    RegistryIdentityMismatch,
+}
 
 /// One cheap catalogue result without exposing a machine-local repository path.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,7 +21,7 @@ pub(crate) enum ProjectCatalogueItem {
     Available(ProjectSummary),
     Unavailable {
         project_id: ProjectId,
-        reason: &'static str,
+        reason: ProjectCatalogueUnavailableReason,
     },
 }
 
@@ -37,7 +40,7 @@ fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
         Ok(manifest) if manifest.raw().project_id != entry.project_id() => {
             ProjectCatalogueItem::Unavailable {
                 project_id: entry.project_id(),
-                reason: IDENTITY_MISMATCH_REASON,
+                reason: ProjectCatalogueUnavailableReason::RegistryIdentityMismatch,
             }
         }
         Ok(manifest) => ProjectCatalogueItem::Available(ProjectSummary {
@@ -60,7 +63,7 @@ fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
         }),
         Err(_) => ProjectCatalogueItem::Unavailable {
             project_id: entry.project_id(),
-            reason: UNAVAILABLE_MANIFEST_REASON,
+            reason: ProjectCatalogueUnavailableReason::ManifestUnavailable,
         },
     }
 }
@@ -223,7 +226,7 @@ mod tests {
             items,
             vec![ProjectCatalogueItem::Unavailable {
                 project_id: registry_project_id,
-                reason: IDENTITY_MISMATCH_REASON,
+                reason: ProjectCatalogueUnavailableReason::RegistryIdentityMismatch,
             }]
         );
         assert!(!items.iter().any(|item| {

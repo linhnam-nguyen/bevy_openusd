@@ -138,6 +138,7 @@ usd_semantic = { workspace = true }
 usd_diff = { workspace = true }
 usd_git = { workspace = true }
 usd_project = { workspace = true }
+project_protocol = { workspace = true }
 # Pure USD-physics → Rapier builders used by the viewport-owned adapter.
 usd_rapier = { workspace = true }
 openusd = { workspace = true }

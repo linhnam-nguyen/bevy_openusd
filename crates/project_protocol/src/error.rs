@@ -6,6 +6,7 @@ use usd_project::ProjectId;
 pub enum ProjectReadErrorCode {
     ManifestUnavailable,
     RegistryIdentityMismatch,
+    RegistryUnavailable,
     RepositoryUnavailable,
     InvalidProjectData,
 }
@@ -22,6 +23,8 @@ pub enum ProjectReadError {
         project_id: ProjectId,
         code: ProjectReadErrorCode,
     },
+    #[error("Project host is unavailable ({code:?})")]
+    HostUnavailable { code: ProjectReadErrorCode },
     #[error("Project read request and response do not match")]
     InvalidResponse,
 }

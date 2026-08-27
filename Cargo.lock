@@ -8781,6 +8781,7 @@ dependencies = [
  "image",
  "log",
  "openusd",
+ "project_protocol",
  "rapier3d-f64",
  "reqwest",
  "rfd",

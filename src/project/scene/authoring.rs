@@ -236,6 +236,31 @@ fn read_scene_member(stage: &Stage, member_id: SceneMemberId) -> Result<SceneMem
     })
 }
 
+/// Read the authored placement records from one validated Project Scene.
+pub(crate) fn read_scene_members(
+    path: &Path,
+    expected_scene_id: SceneId,
+) -> Result<Vec<SceneMember>> {
+    validate_scene_file(path, expected_scene_id, &[])?;
+    let path_string = path.to_string_lossy().into_owned();
+    let stage = Stage::open(&path_string).context("open Project Scene for read projection")?;
+    let members_root = stage.prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str());
+    if !members_root.is_defined()? {
+        return Ok(Vec::new());
+    }
+
+    let mut members = Vec::new();
+    for child in members_root.children()? {
+        let Some(Value::Dictionary(data)) = child.custom_data()? else {
+            bail!("Project Scene member is missing customData");
+        };
+        let member_id = SceneMemberId::parse(metadata_string(&data, MEMBER_ID_METADATA)?)?;
+        members.push(read_scene_member(&stage, member_id)?);
+    }
+    members.sort_by_key(|member| member.id);
+    Ok(members)
+}
+
 fn metadata_string<'a>(data: &'a HashMap<String, Value>, key: &str) -> Result<&'a str> {
     let value = data
         .get(key)
