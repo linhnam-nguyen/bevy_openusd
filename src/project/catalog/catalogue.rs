@@ -170,4 +170,23 @@ mod tests {
         assert_eq!(names, ["Alpha", "Bravo", "Zulu"]);
         assert!(fs::read_dir(directory.path()).unwrap().count() >= 4);
     }
+
+    #[test]
+    fn catalogue_source_has_no_stage_open_or_adapter_scan_path() {
+        let source = include_str!("catalogue.rs");
+        let forbidden = [
+            ["Stage", "::", "open"].concat(),
+            ["open", "usd"].concat(),
+            ["g", "ix"].concat(),
+            ["t", "urso"].concat(),
+            ["render", "er"].concat(),
+        ];
+
+        for token in forbidden {
+            assert!(
+                !source.contains(&token),
+                "forbidden catalogue token: {token}"
+            );
+        }
+    }
 }
