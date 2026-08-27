@@ -1,12 +1,12 @@
 //! Bounded BIM regex search and replacement preview.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BinaryHeap};
 
 use regex::Regex;
 use usd_model::{CanonicalValue, MeasurementMetadata};
 use viewport_protocol::{
-    BimObjectMatch, BimPropertyNameMatch, BimPropertyValueMatch, BimReplacementPreviewRow,
-    BimSearchQuery, BimSearchResult,
+    BimObjectMatch, BimPageRequest, BimPropertyNameMatch, BimPropertyValueMatch,
+    BimReplacementPreviewRow, BimSearchQuery, BimSearchResult, MAX_BIM_SEARCH_GROUPS,
 };
 
 use super::classification::canonical_value_text;
@@ -52,6 +52,12 @@ fn property_names(
             if !regex.is_match(&property.name) {
                 continue;
             }
+            if !grouped.contains_key(&property.name) && grouped.len() >= MAX_BIM_SEARCH_GROUPS {
+                return Err(BimQueryError::TooManyResults {
+                    kind: "property-name",
+                    limit: MAX_BIM_SEARCH_GROUPS,
+                });
+            }
             let entry = grouped.entry(property.name.clone()).or_insert((
                 property.measurement.clone(),
                 true,
@@ -63,8 +69,11 @@ fn property_names(
             entry.2 = entry.2.saturating_add(1);
         }
     }
+    let total = grouped.len() as u32;
     let matches = grouped
         .into_iter()
+        .skip(page.offset as usize)
+        .take(page.limit as usize)
         .map(
             |(name, (measurement, consistent, object_count))| BimPropertyNameMatch {
                 name,
@@ -72,10 +81,10 @@ fn property_names(
                 object_count,
             },
         )
-        .collect();
-    let (offset, total, matches, has_more) = page_items(matches, page);
+        .collect::<Vec<_>>();
+    let has_more = page.offset.saturating_add(matches.len() as u32) < total;
     Ok(BimSearchResult::PropertyNames {
-        offset,
+        offset: page.offset,
         total,
         matches,
         has_more,
@@ -100,6 +109,12 @@ fn property_values(
                 continue;
             }
             let key = (property.name.clone(), display_value.into_owned());
+            if !grouped.contains_key(&key) && grouped.len() >= MAX_BIM_SEARCH_GROUPS {
+                return Err(BimQueryError::TooManyResults {
+                    kind: "property-value",
+                    limit: MAX_BIM_SEARCH_GROUPS,
+                });
+            }
             let entry = grouped.entry(key).or_insert((
                 property.value.clone(),
                 property.measurement.clone(),
@@ -112,8 +127,11 @@ fn property_values(
             entry.3 = entry.3.saturating_add(1);
         }
     }
+    let total = grouped.len() as u32;
     let matches = grouped
         .into_iter()
+        .skip(page.offset as usize)
+        .take(page.limit as usize)
         .map(
             |((name, display_value), (value, measurement, consistent, object_count))| {
                 BimPropertyValueMatch {
@@ -125,10 +143,10 @@ fn property_values(
                 }
             },
         )
-        .collect();
-    let (offset, total, matches, has_more) = page_items(matches, page);
+        .collect::<Vec<_>>();
+    let has_more = page.offset.saturating_add(matches.len() as u32) < total;
     Ok(BimSearchResult::PropertyValues {
-        offset,
+        offset: page.offset,
         total,
         matches,
         has_more,
@@ -141,9 +159,9 @@ fn object_matches(
     regex: &Regex,
     page: viewport_protocol::BimPageRequest,
 ) -> Result<BimSearchResult, BimQueryError> {
-    let mut matches = Vec::new();
+    let mut page_items = BoundedPage::new(page);
     for entity in service.entities() {
-        for property in &entity.properties {
+        for (property_index, property) in entity.properties.iter().enumerate() {
             if property.name != property_name {
                 continue;
             }
@@ -151,20 +169,22 @@ fn object_matches(
                 continue;
             };
             if regex.is_match(&display_value) {
-                matches.push(BimObjectMatch {
-                    anchor: BimReadService::anchor_for_entity(entity),
-                    label: entity_label(entity),
-                    property: property.name.clone(),
-                    value: property.value.clone(),
-                    display_value: display_value.into_owned(),
-                });
+                page_items.push(
+                    object_order_key(entity, property_index),
+                    BimObjectMatch {
+                        anchor: BimReadService::anchor_for_entity(entity),
+                        label: entity_label(entity),
+                        property: property.name.clone(),
+                        value: property.value.clone(),
+                        display_value: display_value.into_owned(),
+                    },
+                );
             }
         }
     }
-    matches.sort_unstable_by(|left, right| left.anchor.prim_path.cmp(&right.anchor.prim_path));
-    let (offset, total, matches, has_more) = page_items(matches, page);
+    let (total, matches, has_more) = page_items.finish(page);
     Ok(BimSearchResult::Objects {
-        offset,
+        offset: page.offset,
         total,
         matches,
         has_more,
@@ -178,9 +198,9 @@ fn replacement_preview(
     replacement: &str,
     page: viewport_protocol::BimPageRequest,
 ) -> Result<BimSearchResult, BimQueryError> {
-    let mut rows = Vec::new();
+    let mut page_items = BoundedPage::new(page);
     for entity in service.entities() {
-        for property in &entity.properties {
+        for (property_index, property) in entity.properties.iter().enumerate() {
             if property.name != property_name {
                 continue;
             }
@@ -188,40 +208,127 @@ fn replacement_preview(
                 continue;
             };
             if regex.is_match(&old_value) {
-                rows.push(BimReplacementPreviewRow {
-                    anchor: BimReadService::anchor_for_entity(entity),
-                    label: entity_label(entity),
-                    property: property.name.clone(),
-                    proposed_value: regex.replace(&old_value, replacement).into_owned(),
-                    old_value: old_value.into_owned(),
-                });
+                page_items.push(
+                    object_order_key(entity, property_index),
+                    BimReplacementPreviewRow {
+                        anchor: BimReadService::anchor_for_entity(entity),
+                        label: entity_label(entity),
+                        property: property.name.clone(),
+                        proposed_value: regex.replace(&old_value, replacement).into_owned(),
+                        old_value: old_value.into_owned(),
+                    },
+                );
             }
         }
     }
-    rows.sort_unstable_by(|left, right| left.anchor.prim_path.cmp(&right.anchor.prim_path));
-    let (offset, total, rows, has_more) = page_items(rows, page);
+    let (total, rows, has_more) = page_items.finish(page);
     Ok(BimSearchResult::ReplacementPreview {
-        offset,
+        offset: page.offset,
         total,
         rows,
         has_more,
     })
 }
 
-fn page_items<T>(
-    items: Vec<T>,
-    page: viewport_protocol::BimPageRequest,
-) -> (u32, u32, Vec<T>, bool) {
-    let total = items.len() as u32;
-    let start = (page.offset as usize).min(items.len());
-    let end = start.saturating_add(page.limit as usize).min(items.len());
-    let rows = items
-        .into_iter()
-        .skip(start)
-        .take(end - start)
-        .collect::<Vec<_>>();
-    let has_more = page.offset.saturating_add(rows.len() as u32) < total;
-    (page.offset, total, rows, has_more)
+struct BoundedPage<K, T> {
+    candidates: BinaryHeap<Ranked<K, T>>,
+    capacity: usize,
+    total: u32,
+    next_ordinal: u64,
+}
+
+impl<K: Ord, T> BoundedPage<K, T> {
+    fn new(page: BimPageRequest) -> Self {
+        Self {
+            candidates: BinaryHeap::with_capacity(page.offset.saturating_add(page.limit) as usize),
+            capacity: page.offset.saturating_add(page.limit) as usize,
+            total: 0,
+            next_ordinal: 0,
+        }
+    }
+
+    fn push(&mut self, key: K, value: T) {
+        let ordinal = self.next_ordinal;
+        self.next_ordinal = self.next_ordinal.saturating_add(1);
+        self.total = self.total.saturating_add(1);
+        if self.capacity == 0 {
+            return;
+        }
+        let candidate = Ranked {
+            key,
+            ordinal,
+            value,
+        };
+        let replace = self.candidates.peek().is_some_and(|worst| {
+            candidate
+                .key
+                .cmp(&worst.key)
+                .then_with(|| candidate.ordinal.cmp(&worst.ordinal))
+                .is_lt()
+        });
+        if self.candidates.len() < self.capacity {
+            self.candidates.push(candidate);
+        } else if replace {
+            let _ = self.candidates.pop();
+            self.candidates.push(candidate);
+        }
+    }
+
+    fn finish(self, page: BimPageRequest) -> (u32, Vec<T>, bool) {
+        let mut candidates = self.candidates.into_vec();
+        candidates.sort_unstable_by(|left, right| {
+            left.key
+                .cmp(&right.key)
+                .then_with(|| left.ordinal.cmp(&right.ordinal))
+        });
+        let rows = candidates
+            .into_iter()
+            .skip(page.offset as usize)
+            .take(page.limit as usize)
+            .map(|candidate| candidate.value)
+            .collect::<Vec<_>>();
+        let has_more = page.offset.saturating_add(rows.len() as u32) < self.total;
+        (self.total, rows, has_more)
+    }
+}
+
+struct Ranked<K, T> {
+    key: K,
+    ordinal: u64,
+    value: T,
+}
+
+impl<K: Ord, T> Ord for Ranked<K, T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key
+            .cmp(&other.key)
+            .then_with(|| self.ordinal.cmp(&other.ordinal))
+    }
+}
+
+impl<K: Ord, T> PartialOrd for Ranked<K, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<K: Ord, T> PartialEq for Ranked<K, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key && self.ordinal == other.ordinal
+    }
+}
+
+impl<K: Ord, T> Eq for Ranked<K, T> {}
+
+fn object_order_key(
+    entity: &usd_model::EntitySnapshot,
+    property_index: usize,
+) -> (String, String, usize) {
+    (
+        entity.prim_path.clone(),
+        entity.key.as_str().to_owned(),
+        property_index,
+    )
 }
 
 fn entity_label(entity: &usd_model::EntitySnapshot) -> String {

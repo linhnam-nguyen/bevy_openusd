@@ -43,6 +43,7 @@ pub(crate) enum BimQueryError {
     ClassificationNodeNotFound(String),
     EntityNotFound(String),
     InvalidRegex(String),
+    TooManyResults { kind: &'static str, limit: usize },
 }
 
 impl fmt::Display for BimQueryError {
@@ -55,6 +56,12 @@ impl fmt::Display for BimQueryError {
             }
             Self::EntityNotFound(key) => write!(formatter, "BIM entity not found: {key}"),
             Self::InvalidRegex(error) => write!(formatter, "invalid BIM regex: {error}"),
+            Self::TooManyResults { kind, limit } => {
+                write!(
+                    formatter,
+                    "BIM {kind} search exceeds bounded group limit {limit}"
+                )
+            }
         }
     }
 }

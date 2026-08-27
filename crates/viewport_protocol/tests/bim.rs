@@ -1,6 +1,7 @@
 use viewport_protocol::{
     BimFieldKey, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyReadModel,
     BimSearchQuery, ClassificationLevel, ClassificationRecipe, CommonValue, MAX_BIM_REGEX_BYTES,
+    MAX_BIM_SEARCH_OFFSET,
 };
 
 #[test]
@@ -25,6 +26,12 @@ fn protocol_rejects_unbounded_bim_inputs() {
     let query = BimSearchQuery::PropertyValueRegex {
         pattern: "x".repeat(MAX_BIM_REGEX_BYTES + 1),
         page: BimPageRequest::new(0, 10),
+    };
+    assert!(query.validate().is_err());
+
+    let query = BimSearchQuery::PropertyValueRegex {
+        pattern: "x".to_owned(),
+        page: BimPageRequest::new(MAX_BIM_SEARCH_OFFSET + 1, 10),
     };
     assert!(query.validate().is_err());
 

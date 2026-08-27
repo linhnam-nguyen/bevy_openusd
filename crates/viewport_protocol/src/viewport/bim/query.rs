@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::constants::{
     MAX_BIM_CLASSIFICATION_LEVELS, MAX_BIM_FIELD_KEY_BYTES, MAX_BIM_REGEX_BYTES,
-    MAX_BIM_REPLACEMENT_BYTES, MAX_BIM_SEARCH_PAGE_SIZE,
+    MAX_BIM_REPLACEMENT_BYTES, MAX_BIM_SEARCH_OFFSET, MAX_BIM_SEARCH_PAGE_SIZE,
 };
 use crate::ProtocolValidationError;
 
@@ -110,7 +110,7 @@ impl BimPageRequest {
         field: &'static str,
         maximum: u32,
     ) -> Result<(), ProtocolValidationError> {
-        if self.limit == 0 || self.limit > maximum {
+        if self.offset > MAX_BIM_SEARCH_OFFSET || self.limit == 0 || self.limit > maximum {
             return Err(ProtocolValidationError::InvalidInput { field });
         }
         Ok(())

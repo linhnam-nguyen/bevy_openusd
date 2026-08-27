@@ -130,3 +130,37 @@ fn search_supports_all_variants_and_compiles_one_bounded_regex() {
     });
     assert!(matches!(invalid, Err(BimQueryError::InvalidRegex(_))));
 }
+
+#[test]
+fn search_pages_are_deterministic_with_a_bounded_window() {
+    let snapshot = snapshot();
+    let service = BimReadService::new(&snapshot);
+    let page = BimPageRequest::new(1, 1);
+
+    let objects = service
+        .search(&BimSearchQuery::ObjectPropertyMatch {
+            property: "Mark".to_owned(),
+            pattern: "^AHU".to_owned(),
+            page,
+        })
+        .expect("object search page");
+    let viewport_protocol::BimSearchResult::Objects { matches, .. } = objects else {
+        panic!("expected object result");
+    };
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].anchor.prim_path, "/World/WallA");
+
+    let preview = service
+        .search(&BimSearchQuery::ReplacementPreview {
+            property: "Mark".to_owned(),
+            pattern: "^AHU".to_owned(),
+            replacement: "MEP".to_owned(),
+            page,
+        })
+        .expect("replacement page");
+    let viewport_protocol::BimSearchResult::ReplacementPreview { rows, .. } = preview else {
+        panic!("expected replacement result");
+    };
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].old_value, "AHU-01");
+}
