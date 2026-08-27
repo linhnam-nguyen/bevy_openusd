@@ -4,7 +4,7 @@
 //! entities. The authoritative USD material is retained in
 //! [`SelectionBaseMaterial`] and restored when no presentation owns the mesh.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
@@ -58,6 +58,7 @@ pub(in crate::viewport) struct SelectionColorOverrideState {
     last_scene_revision: Option<u64>,
     selected_meshes: HashSet<Entity>,
     hovered_meshes: HashSet<Entity>,
+    applied_owners: HashMap<Entity, PresentationOwner>,
     last_projection_generation: Option<u64>,
     pending: Option<PendingColorWork>,
     pub(in crate::viewport) last_affected_entities: usize,
@@ -153,13 +154,16 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         presentation: presentation_key,
     };
     state.last_affected_entities = 0;
-    if state
+    let superseded_pending = state
         .pending
         .as_ref()
-        .is_some_and(|pending| pending.key != key)
-    {
+        .is_some_and(|pending| pending.key != key);
+    let superseded_applied = if superseded_pending {
         state.pending = None;
-    }
+        state.applied_owners.keys().copied().collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     if state.pending.is_some() {
         apply_pending_color_work(
             &mut state,
@@ -170,7 +174,8 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         );
         return;
     }
-    if state.last_selection_revision == Some(key.selection_revision)
+    if !superseded_pending
+        && state.last_selection_revision == Some(key.selection_revision)
         && state.last_scene_revision == Some(key.scene_revision)
         && state.last_projection_generation == key.projection_generation
         && state.last_presentation.as_ref() == Some(&key.presentation)
@@ -254,6 +259,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     if hover_color_changed {
         affected.extend(hovered_meshes.iter().copied());
     }
+    affected.extend(superseded_applied);
     let mut affected = affected.into_iter().collect::<Vec<_>>();
     affected.sort_unstable();
     state.pending = Some(PendingColorWork {
@@ -292,17 +298,18 @@ fn apply_pending_color_work(
     for entity in &work.affected[start..end] {
         let entity = *entity;
         let Ok((_, mut material, base, marker)) = meshes.get_mut(entity) else {
+            state.applied_owners.remove(&entity);
             continue;
         };
-        let desired_handle = match presentation_owner(
+        let desired_owner = presentation_owner(
             work.selected_meshes.contains(&entity),
             work.hovered_meshes.contains(&entity),
-        ) {
-            Some(PresentationOwner::Selection) => Some(selection_handle),
-            Some(PresentationOwner::Hover) => Some(hover_handle),
-            None => None,
-        };
-        if let Some(desired_handle) = desired_handle {
+        );
+        if let Some(desired_owner) = desired_owner {
+            let desired_handle = match desired_owner {
+                PresentationOwner::Selection => selection_handle,
+                PresentationOwner::Hover => hover_handle,
+            };
             if let (Some(base), Some(_marker)) = (base, marker)
                 && material.0 != *selection_handle
                 && material.0 != *hover_handle
@@ -321,11 +328,15 @@ fn apply_pending_color_work(
             if material.0 != *desired_handle {
                 material.0 = desired_handle.clone();
             }
+            state.applied_owners.insert(entity, desired_owner);
         } else if let (Some(base), Some(_marker)) = (base, marker) {
             material.0 = base.0.clone();
             commands
                 .entity(entity)
                 .remove::<(SelectionColorOverride, SelectionBaseMaterial)>();
+            state.applied_owners.remove(&entity);
+        } else {
+            state.applied_owners.remove(&entity);
         }
     }
     work.offset = end;

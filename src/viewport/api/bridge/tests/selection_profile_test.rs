@@ -373,3 +373,6 @@ mod selection_profile_support;
 
 #[path = "selection_projection_cache_test.rs"]
 mod projection_cache_test;
+
+#[path = "selection_color_reconciliation_test.rs"]
+mod color_reconciliation_test;

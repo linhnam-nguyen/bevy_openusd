@@ -32,7 +32,7 @@ pub(in crate::viewport) use section_box_visualization::draw_section_box;
 pub(crate) use selection::{SelectedPrim, SelectedTargets, sync_selected_instance_identity};
 #[allow(unused_imports)]
 pub(in crate::viewport) use selection_color::{
-    HoverColorMaterial, SelectionColorMaterial, SelectionColorOverride,
+    HoverColorMaterial, SelectionBaseMaterial, SelectionColorMaterial, SelectionColorOverride,
     SelectionColorOverrideState, sync_selection_color_overrides,
 };
 #[allow(unused_imports)]
