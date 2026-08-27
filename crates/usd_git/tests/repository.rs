@@ -147,6 +147,13 @@ fn reports_an_unborn_empty_repository_as_clean() {
     let repository = Repository::open(directory.path()).expect("open unborn repository");
 
     assert!(repository.head().expect("read unborn HEAD").is_none());
+    assert_eq!(
+        repository
+            .current_branch()
+            .expect("read unborn branch")
+            .as_deref(),
+        Some("main")
+    );
     assert!(
         repository
             .branches()

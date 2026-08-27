@@ -16,6 +16,9 @@ pub trait GitRepository {
 
     fn head(&self) -> Result<Option<Revision>>;
 
+    /// Return the symbolic current branch, including an unborn branch.
+    fn current_branch(&self) -> Result<Option<String>>;
+
     /// List local branches in stable name order.
     fn branches(&self) -> Result<Vec<BranchInfo>>;
 
@@ -121,12 +124,13 @@ impl GitRepository for Repository {
         }
     }
 
+    fn current_branch(&self) -> Result<Option<String>> {
+        let name = self.inner.head_name().map_err(Error::git)?;
+        Ok(name.map(|name| String::from_utf8_lossy(name.shorten()).into_owned()))
+    }
+
     fn branches(&self) -> Result<Vec<BranchInfo>> {
-        let current_name = self
-            .inner
-            .head_name()
-            .map_err(Error::git)?
-            .map(|name| String::from_utf8_lossy(name.shorten()).into_owned());
+        let current_name = self.current_branch()?;
         let mut branches = Vec::new();
         for reference in self
             .inner

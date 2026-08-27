@@ -186,6 +186,12 @@ fn repository_summary(
         project_id,
         code: ProjectReadErrorCode::RepositoryUnavailable,
     })?;
+    let active_branch = repository
+        .current_branch()
+        .map_err(|_| ProjectReadError::Unavailable {
+            project_id,
+            code: ProjectReadErrorCode::RepositoryUnavailable,
+        })?;
     let head = repository
         .head()
         .map_err(|_| ProjectReadError::Unavailable {
@@ -207,10 +213,6 @@ fn repository_summary(
             is_current: branch.is_current,
         })
         .collect::<Vec<_>>();
-    let active_branch = branches
-        .iter()
-        .find(|branch| branch.is_current)
-        .map(|branch| branch.name.clone());
     let dirty = repository
         .is_dirty()
         .map_err(|_| ProjectReadError::Unavailable {

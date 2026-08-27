@@ -76,6 +76,38 @@ fn repository_summary_projects_git_state_without_backend_handles() {
     assert!(!encoded.contains("notes.txt"));
 }
 
+#[test]
+fn repository_summary_preserves_an_unborn_symbolic_branch() {
+    let directory = tempdir().unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let project_id = ProjectId::new_v4();
+    let repository = directory.path().join("repository");
+    std::fs::create_dir_all(&repository).unwrap();
+    run_git(&repository, &["init", "-b", "main"]);
+    let manifest = ProjectManifestV1::new(
+        project_id,
+        "Unborn Project",
+        ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &repository, None).unwrap();
+    let service = ProjectApplicationService { registry };
+    let reply = service.execute(ProjectReadCommand::new(
+        ProjectReadRequest::GetProjectRepositorySummary(project_id),
+    ));
+    let ProjectReadResponse::RepositorySummary { repository, .. } = reply.result.unwrap() else {
+        panic!("repository request must return RepositorySummary");
+    };
+
+    assert_eq!(repository.active_branch.as_deref(), Some("main"));
+    assert!(repository.branches.is_empty());
+    assert!(repository.head.is_none());
+}
+
 fn run_git(directory: &Path, args: &[&str]) {
     let output = Command::new("git")
         .args(args)
