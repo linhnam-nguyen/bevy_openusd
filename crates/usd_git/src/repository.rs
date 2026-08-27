@@ -48,6 +48,13 @@ pub struct Repository {
 }
 
 impl Repository {
+    /// Initialize an empty worktree repository with the configured default
+    /// branch and no initial commit.
+    pub fn init(path: impl AsRef<Path>) -> Result<Self> {
+        let inner = gix::init(path.as_ref()).map_err(Error::git)?;
+        Ok(Self { inner })
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let inner = gix::open(path.as_ref()).map_err(Error::git)?;
         Ok(Self { inner })

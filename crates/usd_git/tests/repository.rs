@@ -164,6 +164,49 @@ fn reports_an_unborn_empty_repository_as_clean() {
 }
 
 #[test]
+fn initializes_an_empty_worktree_without_a_commit() {
+    let directory = tempfile::tempdir().expect("create Project directory");
+    let repository = Repository::init(directory.path()).expect("initialize repository");
+
+    assert!(directory.path().join(".git").is_dir());
+    assert!(repository.head().expect("read initialized HEAD").is_none());
+    assert_eq!(
+        repository
+            .current_branch()
+            .expect("read initialized branch")
+            .as_deref(),
+        Some("main")
+    );
+    assert!(
+        repository
+            .branches()
+            .expect("list initialized branches")
+            .is_empty()
+    );
+
+    let object_entries = fs::read_dir(directory.path().join(".git/objects"))
+        .expect("read Git object directory")
+        .map(|entry| entry.expect("read Git object entry").path())
+        .collect::<Vec<_>>();
+    assert!(object_entries.iter().all(|path| path.is_dir()));
+    assert!(object_entries.iter().all(|path| {
+        fs::read_dir(path)
+            .expect("read Git object shard")
+            .next()
+            .is_none()
+    }));
+}
+
+#[test]
+fn exact_open_does_not_discover_an_ancestor_repository() {
+    let repository_dir = create_repository();
+    let child = repository_dir.path().join("nested");
+    fs::create_dir(&child).expect("create non-repository child");
+
+    assert!(Repository::open(&child).is_err());
+}
+
+#[test]
 fn walks_both_parents_of_a_merge_commit() {
     let repository_dir = create_repository();
     run_git(repository_dir.path(), ["branch", "feature/merge"]);
