@@ -17,6 +17,8 @@ use openusd::usd::{PrimPredicate, Stage};
 use serde::{Deserialize, Serialize};
 use usd_bevy::LiveStage;
 
+use super::storage::ProjectStorageLayout;
+
 pub(crate) const RECOVERY_FORMAT_VERSION: u32 = 1;
 const WORKING_STAGE_FILE: &str = "working.usda";
 const METADATA_FILE: &str = "metadata.json";
@@ -85,9 +87,8 @@ impl RecoveryStore {
         }
 
         Ok(Self {
-            directory: project_root
-                .join(".usdhub")
-                .join("recovery")
+            directory: ProjectStorageLayout::new(project_root)
+                .recovery_dir()
                 .join(format!("session-{session_id}")),
             session_id,
         })

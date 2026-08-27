@@ -4,8 +4,7 @@ use anyhow::{Context, Result};
 use usd_project::{ProjectManifestV1, ValidatedProjectManifest};
 use uuid::Uuid;
 
-const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
-const PROJECT_MANIFEST_FILE: &str = "project.json";
+use crate::project::storage::ProjectStorageLayout;
 
 pub(crate) struct ManifestStore;
 
@@ -17,7 +16,7 @@ impl ManifestStore {
         manifest.validate().context("validate Project manifest")?;
         let bytes = serde_json::to_vec_pretty(&manifest.canonicalized())
             .context("serialize canonical Project manifest")?;
-        let directory = project_root.join(PROJECT_METADATA_DIRECTORY);
+        let directory = ProjectStorageLayout::new(project_root).metadata_dir();
         fs::create_dir_all(&directory).context("create Project metadata directory")?;
 
         let temporary_path = directory.join(format!(".project.{}.tmp", Uuid::new_v4()));
@@ -38,9 +37,7 @@ impl ManifestStore {
 }
 
 pub(crate) fn manifest_path(project_root: &Path) -> std::path::PathBuf {
-    project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(PROJECT_MANIFEST_FILE)
+    ProjectStorageLayout::new(project_root).manifest_path()
 }
 
 pub(crate) fn write_bytes_atomic(

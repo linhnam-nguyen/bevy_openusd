@@ -10,5 +10,8 @@ pub(crate) mod catalog;
 #[path = "project_api_scene.rs"]
 pub(crate) mod scene;
 
+#[path = "project/storage.rs"]
+pub(crate) mod storage;
+
 #[path = "project/service/mod.rs"]
 pub mod service;
