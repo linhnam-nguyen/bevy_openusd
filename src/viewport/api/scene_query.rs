@@ -9,11 +9,9 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference,
-    SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
+    MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference, SceneSearchMatch,
 };
-
-use super::hierarchy::{HierarchyNode, HierarchyNodeId, HierarchyReadModel};
 
 #[derive(Debug)]
 struct LatestMailboxState<T> {
@@ -96,7 +94,6 @@ pub(crate) struct HierarchySearchMatch {
     pub(crate) node_id: HierarchyNodeId,
     pub(crate) name: String,
     pub(crate) breadcrumb: String,
-    pub(crate) prim_path: Option<String>,
     pub(crate) anchor: Option<SceneAnchor>,
     pub(crate) parent: Option<SceneAnchor>,
     pub(crate) visible: bool,
@@ -107,8 +104,6 @@ pub(crate) struct HierarchySearchMatch {
 impl HierarchySearchMatch {
     pub(crate) fn into_scene_search_match(self) -> Option<SceneSearchMatch> {
         let anchor = self.anchor?;
-        let prim_path = self.prim_path?;
-        debug_assert_eq!(anchor.prim_path, prim_path);
         Some(SceneSearchMatch {
             anchor,
             parent: self.parent,
@@ -236,7 +231,7 @@ pub(crate) fn search_hierarchy(
         .map(|node| (&node.id, node))
         .collect::<std::collections::HashMap<_, _>>();
 
-    let mut matches: Vec<&HierarchyNode> = hierarchy
+    let mut matches: Vec<&HierarchyNodeReadModel> = hierarchy
         .nodes
         .iter()
         .filter(|node| substring_name_matches(&node.name, &query_chars))
@@ -256,7 +251,6 @@ pub(crate) fn search_hierarchy(
             node_id: node.id.clone(),
             name: node.name.clone(),
             breadcrumb: node.breadcrumb.clone(),
-            prim_path: node.prim_path.clone(),
             anchor: node.anchor.clone(),
             parent: node.parent_anchor.clone(),
             visible: node.visible,
@@ -292,9 +286,9 @@ fn matches_numeric_fragment_boundary(name: &[char], start: usize, end: usize) ->
 }
 
 fn reveal_pages(
-    target: &HierarchyNode,
+    target: &HierarchyNodeReadModel,
     hierarchy: &HierarchyReadModel,
-    by_id: &std::collections::HashMap<&HierarchyNodeId, &HierarchyNode>,
+    by_id: &std::collections::HashMap<&HierarchyNodeId, &HierarchyNodeReadModel>,
 ) -> Vec<ScenePageReference> {
     let mut path = Vec::new();
     let mut current = Some(target);
@@ -315,7 +309,7 @@ fn reveal_pages(
         .collect()
 }
 
-fn sibling_page(node: &HierarchyNode, hierarchy: &HierarchyReadModel) -> u32 {
+fn sibling_page(node: &HierarchyNodeReadModel, hierarchy: &HierarchyReadModel) -> u32 {
     let index = hierarchy
         .nodes
         .iter()

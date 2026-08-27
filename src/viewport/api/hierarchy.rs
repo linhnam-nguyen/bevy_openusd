@@ -1,72 +1,73 @@
-//! UI-neutral hierarchy projection types shared by the scene adapter and search.
+//! Current provider-neutral hierarchy projection.
 //!
-//! A hierarchy node owns the name and breadcrumb currently presented to the
-//! user. A prim path is optional identity metadata, not the search algorithm's
-//! source of names. This keeps future classification/filter projections on the
-//! same search boundary as today's USD prim-tree projection.
+//! The scene index owns source-specific rows, while this adapter owns the
+//! single immutable projection consumed by hierarchy search and future
+//! virtual providers. The projection is UI-neutral and never exposes Bevy
+//! entities.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
+use viewport_protocol::{
+    HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel, HierarchySource,
+    PrimNodeReadModel, SceneAnchor,
+};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct HierarchyNodeId(pub(crate) String);
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct HierarchyNode {
-    pub(crate) id: HierarchyNodeId,
-    pub(crate) parent_id: Option<HierarchyNodeId>,
-    pub(crate) name: String,
-    pub(crate) breadcrumb: String,
-    pub(crate) prim_path: Option<String>,
-    pub(crate) anchor: Option<SceneAnchor>,
-    pub(crate) parent_anchor: Option<SceneAnchor>,
-    pub(crate) visible: bool,
-    pub(crate) has_children: bool,
+/// Shared immutable hierarchy projection for the currently selected provider.
+#[derive(Clone, Debug)]
+pub(crate) struct CurrentHierarchyProjection {
+    read_model: Arc<HierarchyReadModel>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct HierarchyReadModel {
-    pub(crate) nodes: Vec<HierarchyNode>,
+impl Default for CurrentHierarchyProjection {
+    fn default() -> Self {
+        Self::from_prim_nodes(&[], 0)
+    }
 }
 
-impl HierarchyReadModel {
-    /// Adapts the current prim-tree read model into the search projection.
-    ///
-    /// `PrimNodeReadModel::label` is populated by the prim-tree builder as the
-    /// node's own name. Search does not need to know how that name was derived.
-    pub(crate) fn from_prim_nodes(nodes: &[PrimNodeReadModel]) -> Self {
+impl CurrentHierarchyProjection {
+    pub(crate) fn from_prim_nodes(nodes: &[PrimNodeReadModel], revision: u64) -> Self {
         let ids: HashMap<SceneAnchor, HierarchyNodeId> = nodes
             .iter()
+            .map(|node| (node.anchor.clone(), prim_node_id(&node.anchor)))
+            .collect();
+
+        let nodes = nodes
+            .iter()
             .map(|node| {
-                (
+                let parent_id = node
+                    .parent
+                    .as_ref()
+                    .and_then(|parent| ids.get(parent).cloned());
+                HierarchyNodeReadModel::scene(
+                    ids[&node.anchor].clone(),
+                    parent_id,
+                    node.label.clone(),
+                    node.anchor.prim_path.clone(),
                     node.anchor.clone(),
-                    HierarchyNodeId(format!(
-                        "prim:{}:{:?}",
-                        node.anchor.prim_path, node.anchor.instance_context
-                    )),
+                    node.parent.clone(),
+                    node.visible,
+                    node.has_children,
                 )
             })
             .collect();
 
         Self {
-            nodes: nodes
-                .iter()
-                .map(|node| HierarchyNode {
-                    id: ids[&node.anchor].clone(),
-                    parent_id: node
-                        .parent
-                        .as_ref()
-                        .and_then(|parent| ids.get(parent).cloned()),
-                    name: node.label.clone(),
-                    breadcrumb: node.anchor.prim_path.clone(),
-                    prim_path: Some(node.anchor.prim_path.clone()),
-                    anchor: Some(node.anchor.clone()),
-                    parent_anchor: node.parent.clone(),
-                    visible: node.visible,
-                    has_children: node.has_children,
-                })
-                .collect(),
+            read_model: Arc::new(HierarchyReadModel {
+                source: HierarchySource::Prim,
+                revision,
+                nodes,
+            }),
         }
     }
+
+    pub(crate) fn snapshot(&self) -> Arc<HierarchyReadModel> {
+        Arc::clone(&self.read_model)
+    }
+}
+
+/// Stable generic identity for a real prim row.
+pub(crate) fn prim_node_id(anchor: &SceneAnchor) -> HierarchyNodeId {
+    let instance = anchor.instance_context.as_deref().unwrap_or("single");
+    HierarchyNodeId::new(format!("prim:{}:{instance}", anchor.prim_path))
 }

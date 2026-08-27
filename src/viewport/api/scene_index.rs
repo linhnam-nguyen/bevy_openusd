@@ -10,11 +10,11 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
-    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, HierarchyReadModel, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel,
+    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
-use super::hierarchy::HierarchyReadModel;
+use super::hierarchy::CurrentHierarchyProjection;
 use crate::viewport::session::Spawned;
 
 /// Returns the current prim-tree node name for a prim path.
@@ -30,7 +30,7 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
-    hierarchy: Arc<HierarchyReadModel>,
+    hierarchy: CurrentHierarchyProjection,
     initialized: bool,
     revision: u64,
 }
@@ -95,15 +95,14 @@ impl SceneAnchorIndex {
     /// Search consumes this projection rather than inspecting USD paths or
     /// semantic storage itself. Cloning the `Arc` is constant-time.
     pub(crate) fn hierarchy_snapshot(&self) -> Arc<HierarchyReadModel> {
-        Arc::clone(&self.hierarchy)
+        self.hierarchy.snapshot()
     }
 
     #[cfg(test)]
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
-        let hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&nodes));
         Self {
+            hierarchy: CurrentHierarchyProjection::from_prim_nodes(&nodes, 1),
             nodes,
-            hierarchy,
             initialized: true,
             revision: 1,
             ..Default::default()
@@ -288,9 +287,9 @@ impl SceneAnchorIndex {
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.nodes = nodes;
-        self.hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&self.nodes));
-        self.initialized = true;
         self.revision = self.revision.saturating_add(1);
+        self.hierarchy = CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision);
+        self.initialized = true;
     }
 }
 

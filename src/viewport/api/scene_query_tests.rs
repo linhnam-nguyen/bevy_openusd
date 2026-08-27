@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::viewport::api::hierarchy::CurrentHierarchyProjection;
+
 fn node(
     path: &str,
     parent: Option<&str>,
@@ -16,8 +18,8 @@ fn node(
     }
 }
 
-fn hierarchy(nodes: &[viewport_protocol::PrimNodeReadModel]) -> HierarchyReadModel {
-    HierarchyReadModel::from_prim_nodes(nodes)
+fn hierarchy(nodes: &[viewport_protocol::PrimNodeReadModel]) -> std::sync::Arc<HierarchyReadModel> {
+    CurrentHierarchyProjection::from_prim_nodes(nodes, 1).snapshot()
 }
 
 #[test]
@@ -80,7 +82,13 @@ fn search_matches_projected_names_only_and_preserves_context() {
         assert_eq!(matches.len(), 1, "query {query}");
         assert_eq!(matches[0].name, name);
         assert_eq!(matches[0].breadcrumb, path);
-        assert_eq!(matches[0].prim_path.as_deref(), Some(path));
+        assert_eq!(
+            matches[0]
+                .anchor
+                .as_ref()
+                .map(|anchor| anchor.prim_path.as_str()),
+            Some(path)
+        );
     };
 
     assert_one("name2", "/root/name1/name2", "name2");
@@ -164,40 +172,30 @@ fn search_matches_name_fragments_without_numeric_prefix_or_ancestor_false_positi
 
 #[test]
 fn search_is_decoupled_from_prim_paths_for_synthetic_projections() {
-    let category = HierarchyNode {
-        id: HierarchyNodeId("category-a".to_owned()),
-        parent_id: None,
-        name: "Category A".to_owned(),
-        breadcrumb: "Category A".to_owned(),
-        prim_path: None,
-        anchor: None,
-        parent_anchor: None,
-        visible: true,
-        has_children: true,
-    };
-    let group = HierarchyNode {
-        id: HierarchyNodeId("group-b".to_owned()),
-        parent_id: Some(category.id.clone()),
-        name: "Group B".to_owned(),
-        breadcrumb: "Category A/Group B".to_owned(),
-        prim_path: None,
-        anchor: None,
-        parent_anchor: None,
-        visible: true,
-        has_children: true,
-    };
-    let object = HierarchyNode {
-        id: HierarchyNodeId("object-c".to_owned()),
-        parent_id: Some(group.id.clone()),
-        name: "Object C".to_owned(),
-        breadcrumb: "Category A/Group B/Object C".to_owned(),
-        prim_path: Some("/Completely/Different/Usd/Path".to_owned()),
-        anchor: None,
-        parent_anchor: None,
-        visible: true,
-        has_children: false,
-    };
+    let category = viewport_protocol::HierarchyNodeReadModel::virtual_node(
+        HierarchyNodeId("category-a".to_owned()),
+        None,
+        "Category A".to_owned(),
+        "Category A".to_owned(),
+        true,
+    );
+    let group = viewport_protocol::HierarchyNodeReadModel::virtual_node(
+        HierarchyNodeId("group-b".to_owned()),
+        Some(category.id.clone()),
+        "Group B".to_owned(),
+        "Category A/Group B".to_owned(),
+        true,
+    );
+    let object = viewport_protocol::HierarchyNodeReadModel::virtual_node(
+        HierarchyNodeId("object-c".to_owned()),
+        Some(group.id.clone()),
+        "Object C".to_owned(),
+        "Category A/Group B/Object C".to_owned(),
+        false,
+    );
     let hierarchy = HierarchyReadModel {
+        source: viewport_protocol::HierarchySource::BimClassification,
+        revision: 1,
         nodes: vec![category, group, object],
     };
 
@@ -205,10 +203,7 @@ fn search_is_decoupled_from_prim_paths_for_synthetic_projections() {
     assert_eq!(total, 1);
     assert_eq!(matches[0].name, "Object C");
     assert_eq!(matches[0].breadcrumb, "Category A/Group B/Object C");
-    assert_eq!(
-        matches[0].prim_path.as_deref(),
-        Some("/Completely/Different/Usd/Path")
-    );
+    assert!(matches[0].anchor.is_none());
     assert_eq!(search_hierarchy(&hierarchy, "Different", 0, 10).0, 0);
 }
 
