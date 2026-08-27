@@ -258,9 +258,17 @@ fn adopt_git_project(
 }
 
 fn inspect_project(project_root: &Path) -> Result<ProjectInspection, ProjectWriteError> {
-    let repository = usd_git::Repository::open(project_root).map_err(|_| ProjectWriteError::Invalid {
-        code: ProjectWriteErrorCode::IncompatibleRepository,
-    })?;
+    let repository = match usd_git::Repository::open(project_root) {
+        Ok(repository) => repository,
+        Err(_) => {
+            return Ok(ProjectInspection {
+                classification: ProjectInspectionClassification::Incompatible,
+                display_name: project_display_name(project_root),
+                warnings: Vec::new(),
+                fingerprint: unopened_fingerprint(project_root),
+            });
+        }
+    };
     let layout = ProjectStorageLayout::new(project_root);
     let mut warnings = Vec::new();
     let ignore = read_gitignore(project_root).map_err(|_| ProjectWriteError::Failed {
@@ -308,6 +316,15 @@ fn inspect_project(project_root: &Path) -> Result<ProjectInspection, ProjectWrit
         warnings,
         fingerprint: repository_fingerprint(&repository, &layout)?,
     })
+}
+
+fn unopened_fingerprint(project_root: &Path) -> String {
+    let mut hasher = blake3::Hasher::new();
+    for relative in [".gitignore", ".usdhub/project.json"] {
+        hasher.update(relative.as_bytes());
+        hasher.update(&fs::read(project_root.join(relative)).unwrap_or_default());
+    }
+    hasher.finalize().to_hex().to_string()
 }
 
 fn repository_fingerprint(
@@ -394,7 +411,7 @@ struct CreateProjectJournal {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeMap, fs};
 
     use tempfile::tempdir;
     use usd_git::GitRepository;
@@ -452,6 +469,76 @@ mod tests {
         }
         assert_eq!(fs::read(parent.join("keep.txt")).unwrap(), b"user data");
         assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn import_inspection_is_read_only_and_classifies_adoptable_git() {
+        let directory = tempdir().unwrap();
+        let project_root = directory.path().join("existing");
+        usd_git::Repository::init(&project_root).unwrap();
+        fs::write(project_root.join("user.usda"), b"#usda 1.0\n").unwrap();
+        let before = snapshot(&project_root);
+        let service = ProjectApplicationService::open(directory.path().join("workspace.json"))
+            .unwrap();
+
+        let inspection = service.inspect_project(&project_root).unwrap();
+
+        assert_eq!(
+            inspection.classification,
+            ProjectInspectionClassification::AdoptableGit
+        );
+        assert!(inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::MissingLocalCacheRoots));
+        assert_eq!(before, snapshot(&project_root));
+    }
+
+    #[test]
+    fn native_project_with_deleted_local_state_remains_importable() {
+        let directory = tempdir().unwrap();
+        let parent = directory.path().join("projects");
+        fs::create_dir(&parent).unwrap();
+        let registry_path = directory.path().join("workspace.json");
+        let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+        let summary = service.create_project(&parent, "Native").unwrap();
+        let project_root = parent.join("Native");
+        fs::remove_dir_all(project_root.join(".usdhub/cache")).unwrap();
+        fs::remove_dir_all(project_root.join(".usdhub/recovery")).unwrap();
+
+        let inspection = service.inspect_project(&project_root).unwrap();
+
+        assert_eq!(
+            inspection.classification,
+            ProjectInspectionClassification::NativeUsdHub
+        );
+        assert!(inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::MissingLocalCacheRoots));
+        assert_eq!(inspection.display_name, summary.name);
+        assert_eq!(fs::read_dir(project_root.join(".usdhub")).unwrap().count(), 1);
+    }
+
+    fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        fn visit(root: &Path, current: &Path, output: &mut BTreeMap<String, Vec<u8>>) {
+            let mut entries = fs::read_dir(current)
+                .unwrap()
+                .map(Result::unwrap)
+                .collect::<Vec<_>>();
+            entries.sort_by_key(|entry| entry.file_name());
+            for entry in entries {
+                let path = entry.path();
+                let relative = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+                if path.is_dir() {
+                    visit(root, &path, output);
+                } else {
+                    output.insert(relative, fs::read(path).unwrap());
+                }
+            }
+        }
+
+        let mut output = BTreeMap::new();
+        visit(root, root, &mut output);
+        output
     }
 }
 
