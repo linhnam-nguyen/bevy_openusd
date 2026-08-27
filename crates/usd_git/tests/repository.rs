@@ -126,6 +126,37 @@ fn lists_local_branches_and_walks_bounded_history() {
 }
 
 #[test]
+fn reports_clean_and_dirty_tracked_worktree_state() {
+    let repository_dir = create_repository();
+    let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
+
+    assert!(!repository.is_dirty().expect("read clean status"));
+
+    fs::write(
+        repository_dir.path().join("model.usda"),
+        b"#usda 1.0\n(def \"changed\") {}\n",
+    )
+    .unwrap();
+    assert!(repository.is_dirty().expect("read dirty worktree status"));
+}
+
+#[test]
+fn reports_an_unborn_empty_repository_as_clean() {
+    let directory = tempfile::tempdir().expect("create temporary directory");
+    run_git(directory.path(), ["init", "-b", "main"]);
+    let repository = Repository::open(directory.path()).expect("open unborn repository");
+
+    assert!(repository.head().expect("read unborn HEAD").is_none());
+    assert!(
+        repository
+            .branches()
+            .expect("list unborn branches")
+            .is_empty()
+    );
+    assert!(!repository.is_dirty().expect("read unborn status"));
+}
+
+#[test]
 fn walks_both_parents_of_a_merge_commit() {
     let repository_dir = create_repository();
     run_git(repository_dir.path(), ["branch", "feature/merge"]);

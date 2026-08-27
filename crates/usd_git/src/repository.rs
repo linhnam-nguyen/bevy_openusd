@@ -19,6 +19,9 @@ pub trait GitRepository {
     /// List local branches in stable name order.
     fn branches(&self) -> Result<Vec<BranchInfo>>;
 
+    /// Return whether the tracked worktree or index differs from HEAD.
+    fn is_dirty(&self) -> Result<bool>;
+
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo>;
 
     /// Return at most `limit` commits reachable from `id`, newest first.
@@ -143,6 +146,10 @@ impl GitRepository for Repository {
             });
         }
         Ok(branches)
+    }
+
+    fn is_dirty(&self) -> Result<bool> {
+        self.inner.is_dirty().map_err(Error::git)
     }
 
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo> {

@@ -211,10 +211,16 @@ fn repository_summary(
         .iter()
         .find(|branch| branch.is_current)
         .map(|branch| branch.name.clone());
+    let dirty = repository
+        .is_dirty()
+        .map_err(|_| ProjectReadError::Unavailable {
+            project_id,
+            code: ProjectReadErrorCode::RepositoryUnavailable,
+        })?;
     Ok(RepositorySummary {
         active_branch,
         branches,
-        dirty: false,
+        dirty,
         head: head.map(|revision| RevisionSummary {
             id: revision.id().to_string(),
         }),
@@ -223,6 +229,8 @@ fn repository_summary(
 
 #[cfg(test)]
 mod tests {
+    use std::{path::Path, process::Command};
+
     use project_protocol::{ProjectReadError, ProjectReadResponse};
     use tempfile::tempdir;
     use usd_project::{
@@ -331,5 +339,94 @@ mod tests {
                 } if *id == member_id && *target == model_id && *parent_scene_id == scene_id
             )
         }));
+    }
+
+    #[test]
+    fn repository_summary_projects_git_state_without_backend_handles() {
+        let directory = tempdir().unwrap();
+        let registry_path = directory.path().join("workspace.json");
+        let project_id = ProjectId::new_v4();
+        let repository = directory.path().join("repository");
+        std::fs::create_dir_all(&repository).unwrap();
+        run_git(&repository, &["init", "-b", "main"]);
+        run_git(&repository, &["config", "user.name", "USDHub Test"]);
+        run_git(
+            &repository,
+            &["config", "user.email", "test@usdhub.invalid"],
+        );
+        let manifest = ProjectManifestV1::new(
+            project_id,
+            "Project",
+            ProjectRoot::Empty,
+            Vec::new(),
+            Vec::new(),
+        );
+        ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+        std::fs::write(repository.join("notes.txt"), b"clean").unwrap();
+        run_git(&repository, &["add", "."]);
+        run_git(&repository, &["commit", "-m", "initial Project"]);
+
+        let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+        registry.register(project_id, &repository, None).unwrap();
+        let service = ProjectApplicationService { registry };
+
+        let read = || {
+            service.execute(ProjectReadCommand::new(
+                ProjectReadRequest::GetProjectRepositorySummary(project_id),
+            ))
+        };
+        let reply = read();
+        let ProjectReadResponse::RepositorySummary { repository, .. } = reply.result.unwrap()
+        else {
+            panic!("repository request must return RepositorySummary");
+        };
+        assert_eq!(repository.active_branch.as_deref(), Some("main"));
+        assert_eq!(
+            repository
+                .branches
+                .iter()
+                .map(|branch| branch.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main"]
+        );
+        assert!(repository.head.is_some());
+        assert!(!repository.dirty);
+
+        std::fs::write(
+            repository_path(&service, project_id).join("notes.txt"),
+            b"dirty",
+        )
+        .unwrap();
+        let reply = read();
+        let ProjectReadResponse::RepositorySummary { repository, .. } = reply.result.unwrap()
+        else {
+            panic!("repository request must return RepositorySummary");
+        };
+        assert!(repository.dirty);
+        let encoded = serde_json::to_string(&repository).unwrap();
+        assert!(!encoded.contains("gix"));
+        assert!(!encoded.contains("notes.txt"));
+    }
+
+    fn repository_path(service: &ProjectApplicationService, project_id: ProjectId) -> &Path {
+        service
+            .registry
+            .get(project_id)
+            .expect("registered Project")
+            .repository_locator()
+    }
+
+    fn run_git(directory: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(directory)
+            .output()
+            .expect("run git command");
+        assert!(
+            output.status.success(),
+            "git command failed: {}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

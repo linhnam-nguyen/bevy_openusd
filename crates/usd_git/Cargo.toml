@@ -7,7 +7,7 @@ description = "Read-only Git history and revision materialization for USDHub."
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
-gix = { version = "0.86", features = ["revision", "tree-editor"] }
+gix = { version = "0.86", features = ["revision", "status", "tree-editor"] }
 
 [dev-dependencies]
 tempfile = "3"
