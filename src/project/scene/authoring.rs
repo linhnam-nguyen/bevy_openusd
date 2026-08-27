@@ -1,22 +1,36 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{sdf::Value, usd::Stage};
-use usd_project::SceneId;
+use usd_project::{ModelId, SceneId, SceneMember, SceneMemberId, SceneMemberTarget};
 use uuid::Uuid;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const SCENES_DIRECTORY: &str = "scenes";
 const SCENE_ROOT_PRIM: &str = "SceneRoot";
+const SCENE_MEMBERS_PRIM: &str = "Members";
 const SCENE_ID_METADATA: &str = "usdhub:sceneId";
 const SCHEMA_VERSION_METADATA: &str = "usdhub:schemaVersion";
+const MEMBER_ID_METADATA: &str = "usdhub:memberId";
+const MEMBER_TARGET_KIND_METADATA: &str = "usdhub:targetKind";
+const MEMBER_TARGET_ID_METADATA: &str = "usdhub:targetId";
+const MEMBER_NAME_METADATA: &str = "usdhub:name";
 const SCENE_SCHEMA_VERSION: i32 = 1;
 
 pub(crate) fn author_scene_atomic(project_root: &Path, scene_id: SceneId) -> Result<PathBuf> {
+    author_scene_atomic_with_members(project_root, scene_id, &[])
+}
+
+pub(crate) fn author_scene_atomic_with_members(
+    project_root: &Path,
+    scene_id: SceneId,
+    members: &[SceneMember],
+) -> Result<PathBuf> {
+    validate_member_ids(members)?;
     let scene_directory = project_root
         .join(PROJECT_METADATA_DIRECTORY)
         .join(SCENES_DIRECTORY);
@@ -27,14 +41,14 @@ pub(crate) fn author_scene_atomic(project_root: &Path, scene_id: SceneId) -> Res
     let mut temporary_created = false;
 
     let result = (|| {
-        let stage = new_scene_stage(scene_id)?;
+        let stage = new_scene_stage(scene_id, members)?;
         let temporary_path_string = temporary_path.to_string_lossy().into_owned();
         temporary_created = true;
         stage
             .root_layer()
             .export(&temporary_path_string)
             .context("export temporary Project Scene layer")?;
-        validate_scene_file(&temporary_path, scene_id)?;
+        validate_scene_file(&temporary_path, scene_id, members)?;
         fs::rename(&temporary_path, &final_path).with_context(|| {
             format!(
                 "publish temporary Project Scene {} as {}",
@@ -59,27 +73,35 @@ pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
         .join(format!("{scene_id}.usda"))
 }
 
-fn new_scene_stage(scene_id: SceneId) -> Result<Stage> {
+fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> {
     let stage = Stage::builder().in_memory(format!("scene-{scene_id}.usda"))?;
-    let mut custom_data = HashMap::new();
-    custom_data.insert(
-        SCENE_ID_METADATA.to_owned(),
-        Value::String(scene_id.to_string()),
-    );
-    custom_data.insert(
-        SCHEMA_VERSION_METADATA.to_owned(),
-        Value::Int(SCENE_SCHEMA_VERSION),
-    );
+    let custom_data = scene_custom_data(scene_id);
 
     stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
         .set_type_name("Xform")?
         .set_metadata("customData", Value::Dictionary(custom_data))?;
     stage.set_default_prim(SCENE_ROOT_PRIM)?;
+    if !members.is_empty() {
+        stage
+            .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
+            .set_type_name("Xform")?;
+    }
+    for member in members {
+        let member_path = scene_member_path(member.id);
+        stage
+            .define_prim(member_path.as_str())?
+            .set_type_name("Xform")?
+            .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?;
+    }
     Ok(stage)
 }
 
-fn validate_scene_file(path: &Path, expected_scene_id: SceneId) -> Result<()> {
+fn validate_scene_file(
+    path: &Path,
+    expected_scene_id: SceneId,
+    expected_members: &[SceneMember],
+) -> Result<()> {
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("reopen exported Project Scene layer")?;
     let default_prim = stage.default_prim();
@@ -113,6 +135,116 @@ fn validate_scene_file(path: &Path, expected_scene_id: SceneId) -> Result<()> {
     ensure!(
         custom_data.get(SCHEMA_VERSION_METADATA) == Some(&Value::Int(SCENE_SCHEMA_VERSION)),
         "Project Scene schema version is unsupported or missing"
+    );
+    for expected_member in expected_members {
+        let member_path = scene_member_path(expected_member.id);
+        let member = stage.prim(member_path.as_str());
+        ensure!(
+            member.is_defined()?,
+            "Project Scene member prim must be defined"
+        );
+        ensure!(
+            read_scene_member(&stage, expected_member.id)? == *expected_member,
+            "Project Scene member metadata does not match the authored placement"
+        );
+    }
+    Ok(())
+}
+
+fn scene_custom_data(scene_id: SceneId) -> HashMap<String, Value> {
+    HashMap::from([
+        (
+            SCENE_ID_METADATA.to_owned(),
+            Value::String(scene_id.to_string()),
+        ),
+        (
+            SCHEMA_VERSION_METADATA.to_owned(),
+            Value::Int(SCENE_SCHEMA_VERSION),
+        ),
+    ])
+}
+
+fn member_custom_data(member: &SceneMember) -> HashMap<String, Value> {
+    let (target_kind, target_id) = match member.target {
+        SceneMemberTarget::Scene(id) => ("scene", id.to_string()),
+        SceneMemberTarget::Model(id) => ("model", id.to_string()),
+    };
+    let mut data = HashMap::from([
+        (
+            MEMBER_ID_METADATA.to_owned(),
+            Value::String(member.id.to_string()),
+        ),
+        (
+            MEMBER_TARGET_KIND_METADATA.to_owned(),
+            Value::String(target_kind.to_owned()),
+        ),
+        (
+            MEMBER_TARGET_ID_METADATA.to_owned(),
+            Value::String(target_id),
+        ),
+    ]);
+    if let Some(name) = &member.name {
+        data.insert(MEMBER_NAME_METADATA.to_owned(), Value::String(name.clone()));
+    }
+    data
+}
+
+fn read_scene_member(stage: &Stage, member_id: SceneMemberId) -> Result<SceneMember> {
+    let member_path = scene_member_path(member_id);
+    let member = stage.prim(member_path.as_str());
+    let Some(Value::Dictionary(data)) = member.custom_data()? else {
+        bail!("Project Scene member is missing customData");
+    };
+    let encoded_id = metadata_string(&data, MEMBER_ID_METADATA)?;
+    ensure!(
+        SceneMemberId::parse(encoded_id)? == member_id,
+        "Project Scene member metadata identity does not match its prim path"
+    );
+    let target_kind = metadata_string(&data, MEMBER_TARGET_KIND_METADATA)?;
+    let target_id = metadata_string(&data, MEMBER_TARGET_ID_METADATA)?;
+    let target = match target_kind {
+        "scene" => SceneMemberTarget::Scene(SceneId::parse(target_id)?),
+        "model" => SceneMemberTarget::Model(ModelId::parse(target_id)?),
+        other => bail!("unsupported Project Scene member target kind {other:?}"),
+    };
+    let name = data
+        .get(MEMBER_NAME_METADATA)
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .context("Project Scene member name must be a string")
+        })
+        .transpose()?;
+    Ok(SceneMember {
+        id: member_id,
+        target,
+        name,
+    })
+}
+
+fn metadata_string<'a>(data: &'a HashMap<String, Value>, key: &str) -> Result<&'a str> {
+    let value = data
+        .get(key)
+        .with_context(|| format!("Project Scene member is missing {key}"))?;
+    value
+        .as_str()
+        .with_context(|| format!("Project Scene member {key} must be a string"))
+}
+
+fn scene_member_path(member_id: SceneMemberId) -> String {
+    let path_id = member_id.to_string().replace('-', "");
+    format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}/Member_{path_id}")
+}
+
+fn validate_member_ids(members: &[SceneMember]) -> Result<()> {
+    let unique_ids = members
+        .iter()
+        .map(|member| member.id)
+        .collect::<HashSet<_>>();
+    ensure!(
+        unique_ids.len() == members.len(),
+        "Project Scene members must have unique SceneMemberId values"
     );
     Ok(())
 }
@@ -165,7 +297,7 @@ mod tests {
             custom_data.get(SCHEMA_VERSION_METADATA),
             Some(&Value::Int(SCENE_SCHEMA_VERSION))
         );
-        validate_scene_file(&path, scene_id)?;
+        validate_scene_file(&path, scene_id, &[])?;
 
         let scene_directory = path.parent().expect("scene directory");
         assert!(fs::read_dir(scene_directory)?.all(|entry| {
@@ -175,6 +307,51 @@ mod tests {
                 .to_string_lossy()
                 .ends_with(".usda")
         }));
+        Ok(())
+    }
+
+    #[test]
+    fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
+        let project_directory = tempdir()?;
+        let scene_id = SceneId::new_v4();
+        let shared_scene_id = SceneId::new_v4();
+        let shared_model_id = ModelId::new_v4();
+        let members = vec![
+            SceneMember {
+                id: SceneMemberId::new_v4(),
+                target: SceneMemberTarget::Scene(shared_scene_id),
+                name: Some("Scene placement A".to_owned()),
+            },
+            SceneMember {
+                id: SceneMemberId::new_v4(),
+                target: SceneMemberTarget::Scene(shared_scene_id),
+                name: Some("Scene placement B".to_owned()),
+            },
+            SceneMember {
+                id: SceneMemberId::new_v4(),
+                target: SceneMemberTarget::Model(shared_model_id),
+                name: Some("Model placement A".to_owned()),
+            },
+            SceneMember {
+                id: SceneMemberId::new_v4(),
+                target: SceneMemberTarget::Model(shared_model_id),
+                name: Some("Model placement B".to_owned()),
+            },
+        ];
+
+        let path = author_scene_atomic_with_members(project_directory.path(), scene_id, &members)?;
+        let path_string = path.to_string_lossy().into_owned();
+        let stage = Stage::open(&path_string)?;
+        let reopened = members
+            .iter()
+            .map(|member| read_scene_member(&stage, member.id))
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(reopened, members);
+        assert_ne!(members[0].id, members[1].id);
+        assert_ne!(members[2].id, members[3].id);
+        assert_eq!(members[0].target, members[1].target);
+        assert_eq!(members[2].target, members[3].target);
         Ok(())
     }
 }

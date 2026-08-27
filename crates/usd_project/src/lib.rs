@@ -6,6 +6,7 @@ mod id;
 mod manifest;
 mod read_model;
 mod root;
+mod scene;
 
 #[cfg(test)]
 mod validation;
@@ -22,6 +23,7 @@ pub use read_model::{
     RepositorySummary, RevisionSummary,
 };
 pub use root::{ModelSourceKind, ProjectRoot};
+pub use scene::{SceneMember, SceneMemberTarget};
 
 #[cfg(test)]
 mod tests {
