@@ -10,6 +10,7 @@ fn node(
         anchor: SceneAnchor::active_session(path),
         parent,
         label: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        display_name: Some(path.rsplit('/').next().unwrap_or(path).to_owned()),
         visible,
         has_children,
     }
@@ -23,7 +24,7 @@ fn snapshot_and_incremental_events_produce_the_authoritative_projection() {
     state.apply(&ViewportEventEnvelope::new(
         None,
         ViewportEvent::Snapshot {
-            state: snapshot.clone(),
+            state: Box::new(snapshot.clone()),
         },
     ));
 
@@ -40,11 +41,20 @@ fn snapshot_and_incremental_events_produce_the_authoritative_projection() {
             },
         },
     ));
+    let mut viewer_settings = viewport_protocol::ViewerSettingsReadModel::default();
+    viewer_settings.environment.grid_color = viewport_protocol::ColorRgb8::new(1, 2, 3);
+    state.apply(&ViewportEventEnvelope::new(
+        Some("local-3".into()),
+        ViewportEvent::ViewerSettingsChanged {
+            settings: viewer_settings.clone(),
+        },
+    ));
 
     let current = state.snapshot().expect("snapshot is available");
     assert!(current.physics_running);
     assert!(current.presentation.ground_grid);
     assert!(current.presentation.wireframe);
+    assert_eq!(current.viewer_settings, viewer_settings);
 }
 
 #[test]
@@ -62,7 +72,9 @@ fn paged_tree_search_and_visibility_reduce_without_ecs_state() {
 
     state.apply(&ViewportEventEnvelope::new(
         None,
-        ViewportEvent::Snapshot { state: snapshot },
+        ViewportEvent::Snapshot {
+            state: Box::new(snapshot),
+        },
     ));
     assert_eq!(state.scene_nodes(), vec![root.clone()]);
 
@@ -120,6 +132,7 @@ fn paged_tree_search_and_visibility_reduce_without_ecs_state() {
                 anchor: door.anchor.clone(),
                 parent: Some(root.anchor.clone()),
                 label: door.label.clone(),
+                breadcrumb: door.anchor.prim_path.clone(),
                 visible: false,
                 has_children: false,
                 reveal_pages: vec![],

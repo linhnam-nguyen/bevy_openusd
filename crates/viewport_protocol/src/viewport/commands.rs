@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
@@ -6,7 +8,8 @@ use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
-    SceneAnchor,
+    SamplingPreference, SceneAnchor, SelectionPresentationSettings, SelectionReadModel,
+    StandardView, ViewerEnvironmentSettings,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,6 +30,35 @@ pub enum ViewportCommand {
     SelectTarget {
         target: Option<SceneAnchor>,
     },
+    /// Replaces the complete selection set. `primary`, when present, must be
+    /// one of the supplied targets.
+    ReplaceSelection {
+        targets: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+    },
+    /// Adds one target while preserving the existing set and optionally
+    /// making the new target primary.
+    AddSelectionTarget {
+        target: SceneAnchor,
+        make_primary: bool,
+    },
+    /// Adds a batch of targets in one authoritative selection transaction.
+    /// When present, `primary` must be one of the added targets.
+    AddSelectionTargets {
+        targets: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+    },
+    /// Removes one target. If it was primary, the server chooses the first
+    /// remaining canonical target as the new primary.
+    RemoveSelectionTarget {
+        target: SceneAnchor,
+    },
+    /// Removes a batch of targets in one authoritative selection transaction.
+    RemoveSelectionTargets {
+        targets: Vec<SceneAnchor>,
+    },
+    /// Clears the complete authoritative selection in one transaction.
+    ClearSelection,
     FocusTarget {
         target: SceneAnchor,
         mode: FocusMode,
@@ -47,6 +79,9 @@ pub enum ViewportCommand {
     SetCameraSource {
         source: CameraSource,
     },
+    SetStandardView {
+        view: StandardView,
+    },
     SetPlayback {
         playing: bool,
     },
@@ -62,6 +97,24 @@ pub enum ViewportCommand {
     },
     SetRendererConfiguration {
         configuration: RendererConfiguration,
+    },
+    /// Sets supplementary environment values not owned by presentation state.
+    /// Renderer configuration and grid origin use their existing authorities.
+    SetEnvironmentSettings {
+        settings: ViewerEnvironmentSettings,
+    },
+    /// Sets only the user's vendor-neutral sampling intent. The active
+    /// provider is selected and reported by the server.
+    SetSamplingPreference {
+        preference: SamplingPreference,
+    },
+    SetSelectionPresentationSettings {
+        settings: SelectionPresentationSettings,
+    },
+    /// Enables or disables the one aggregate Section Box for the current
+    /// authoritative selection set. Transform details are deferred.
+    SetSectionBox {
+        enabled: bool,
     },
     SetPrimMarkerBias {
         bias: f32,
@@ -130,7 +183,7 @@ pub enum ViewportCommand {
     },
 }
 
-/// Legacy command envelope retained byte/schema compatible with version 1.
+/// Versioned viewport command envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewportCommandEnvelope {
     pub protocol_version: u16,
@@ -192,6 +245,36 @@ impl ViewportCommand {
         }
 
         match self {
+            Self::SelectTarget { target } => {
+                if let Some(target) = target {
+                    target.validate()?;
+                }
+            }
+            Self::ReplaceSelection { targets, primary } => {
+                SelectionReadModel::validate_parts(targets, primary.as_ref())?;
+            }
+            Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
+                target.validate()?
+            }
+            Self::AddSelectionTargets { targets, primary } => {
+                validate_selection_delta(targets, "selection.targets")?;
+                if let Some(primary) = primary {
+                    primary.validate()?;
+                    if !targets.contains(primary) {
+                        return Err(ProtocolValidationError::InvalidInput {
+                            field: "selection.primary",
+                        });
+                    }
+                }
+            }
+            Self::RemoveSelectionTargets { targets } => {
+                validate_selection_delta(targets, "selection.targets")?;
+            }
+            Self::ClearSelection => {}
+            Self::SetEnvironmentSettings { .. }
+            | Self::SetSamplingPreference { .. }
+            | Self::SetSectionBox { .. } => {}
+            Self::SetSelectionPresentationSettings { settings } => settings.validate()?,
             Self::DefinePrim {
                 path: value,
                 type_name,
@@ -268,10 +351,10 @@ impl ViewportCommand {
             | Self::RequestSceneChildren { .. }
             | Self::SearchScene { .. }
             | Self::ReloadSession
-            | Self::SelectTarget { .. }
             | Self::FocusTarget { .. }
             | Self::SetSubtreeVisibility { .. }
             | Self::SetCameraSource { .. }
+            | Self::SetStandardView { .. }
             | Self::SetPlayback { .. }
             | Self::Seek { .. }
             | Self::SetOverlay { .. }
@@ -286,4 +369,26 @@ impl ViewportCommand {
         }
         Ok(())
     }
+}
+
+fn validate_selection_delta(
+    targets: &[SceneAnchor],
+    field: &'static str,
+) -> Result<(), crate::ProtocolValidationError> {
+    use crate::ProtocolValidationError;
+
+    if targets.is_empty() {
+        return Err(ProtocolValidationError::EmptyField { field });
+    }
+    if targets.len() > crate::MAX_SELECTION_TARGETS {
+        return Err(ProtocolValidationError::InvalidInput { field });
+    }
+    let mut seen = HashSet::with_capacity(targets.len());
+    for target in targets {
+        target.validate()?;
+        if !seen.insert(target) {
+            return Err(ProtocolValidationError::InvalidInput { field });
+        }
+    }
+    Ok(())
 }

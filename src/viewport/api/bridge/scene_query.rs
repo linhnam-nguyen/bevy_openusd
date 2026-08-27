@@ -3,90 +3,60 @@ use std::time::Instant;
 use bevy::prelude::*;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
+use super::ViewerSettingsState;
 use super::helpers::{build_read_model, reject};
-use super::state::{SemanticSearchRequest, SemanticSearchRequests};
+use super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::animation::UsdStageTime;
+use crate::viewport::api::scene_query::SceneQueryService;
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
-use crate::viewport::camera::CameraMount;
+use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
-use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::semantic::{SemanticQuery, SemanticWorkingStore};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
-/// Drains semantic-worker responses and publishes search results.
-pub(super) fn publish_semantic_query_results(
-    semantic_store: Res<SemanticWorkingStore>,
-    scene_index: Res<SceneAnchorIndex>,
-    mut search_requests: ResMut<SemanticSearchRequests>,
+/// Drains hierarchy-search-worker responses and publishes search results.
+pub(super) fn publish_scene_query_results(
+    scene_query: Res<SceneQueryService>,
+    mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
 ) {
-    use crate::viewport::semantic::SemanticResponse;
-    for response in semantic_store.drain_responses() {
-        match response {
-            SemanticResponse::QueryResult { request_id, result } => {
-                let Some(request) = search_requests.pending.remove(&request_id) else {
-                    // The read model will reject a response whose request is
-                    // no longer current; dropping it here also bounds the
-                    // bridge-side pending request map.
-                    continue;
-                };
-                if let Some(ref mut counters) = counters {
-                    counters.query_results += 1;
-                    counters.record_query_latency_ms(
-                        request.submitted_at.elapsed().as_secs_f64() * 1000.0,
-                    );
-                }
-                let matches = result
-                    .rows
-                    .iter()
-                    .filter_map(|row| scene_index.search_match_for_path(&row.prim_path))
-                    .collect();
-                outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id),
-                    ViewportEvent::SearchResults {
-                        query: request.query,
-                        offset: request.offset,
-                        total: result.total,
-                        matches,
-                        has_more: result.has_more,
-                    },
-                ));
-            }
-            SemanticResponse::Failed {
-                request_id,
-                operation,
-                error,
-            } => {
-                if let Some(request) = search_requests.pending.remove(&request_id) {
-                    if let Some(ref mut counters) = counters {
-                        counters.query_failures += 1;
-                        counters.record_query_latency_ms(
-                            request.submitted_at.elapsed().as_secs_f64() * 1000.0,
-                        );
-                    }
-                    reject(
-                        &mut outbox,
-                        request_id,
-                        format!("semantic {operation} failed: {error}"),
-                    );
-                } else {
-                    warn!("[semantic-worker] {operation} failed: {error}");
-                }
-            }
-            SemanticResponse::SnapshotLoaded { .. } | SemanticResponse::DeltaApplied { .. } => {}
+    for result in scene_query.drain_results() {
+        let Some(request) = search_requests.pending.remove(&result.request_id) else {
+            // The read model will reject a response whose request is no
+            // longer current; dropping it here also bounds pending metadata.
+            continue;
+        };
+        if let Some(ref mut counters) = counters {
+            counters.query_results += 1;
+            counters.record_query_latency_ms(request.submitted_at.elapsed().as_secs_f64() * 1000.0);
         }
+        let matches = result
+            .matches
+            .into_iter()
+            .filter_map(|result| result.into_scene_search_match())
+            .collect();
+        outbox.push(ViewportEventEnvelope::new(
+            Some(result.request_id),
+            ViewportEvent::SearchResults {
+                query: result.query,
+                offset: result.offset,
+                total: result.total,
+                matches,
+                has_more: result.has_more,
+            },
+        ));
     }
 }
 
-/// Routes scene-query commands to the scene index or semantic worker.
+/// Routes scene-query commands to the current hierarchy projection.
 pub(super) fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     scene_index: Res<SceneAnchorIndex>,
-    semantic_store: Res<SemanticWorkingStore>,
-    mut search_requests: ResMut<SemanticSearchRequests>,
+    scene_query: Res<SceneQueryService>,
+    mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
 ) {
@@ -121,53 +91,38 @@ pub(super) fn dispatch_scene_query_commands(
                 limit,
             } => {
                 let query_text = query.clone();
-                match semantic_store.try_submit_query(
+                if scene_query.submit_search(
                     request_id.clone(),
-                    SemanticQuery {
-                        text: Some(query),
-                        offset,
-                        limit,
-                        ..Default::default()
-                    },
+                    query,
+                    offset,
+                    limit,
+                    scene_index.hierarchy_snapshot(),
                 ) {
-                    Ok(()) => {
-                        // Search is a single latest-query projection in the
-                        // viewport read model. Dropping older metadata here also
-                        // makes worker-side query coalescing safe: superseded
-                        // responses are ignored when they arrive.
-                        search_requests.pending.clear();
-                        search_requests.pending.insert(
-                            request_id,
-                            SemanticSearchRequest {
-                                query: query_text,
-                                offset,
-                                submitted_at: Instant::now(),
-                            },
-                        );
-                        if let Some(ref mut counters) = counters {
-                            counters.query_requests += 1;
-                        }
+                    // Search is a single latest-query projection in the
+                    // viewport read model. Dropping older metadata here also
+                    // makes worker-side query coalescing safe: superseded
+                    // responses are ignored when they arrive.
+                    search_requests.pending.clear();
+                    search_requests.pending.insert(
+                        request_id,
+                        SceneSearchRequest {
+                            query: query_text,
+                            offset,
+                            submitted_at: Instant::now(),
+                        },
+                    );
+                    if let Some(ref mut counters) = counters {
+                        counters.query_requests += 1;
                     }
-                    Err(error) => {
-                        if let Some(ref mut counters) = counters {
-                            counters.query_failures += 1;
-                            if matches!(
-                                error,
-                                crate::viewport::semantic::SemanticSubmitError::QueueFull
-                            ) {
-                                counters.query_saturations += 1;
-                            }
-                        }
-                        let message = match error {
-                            crate::viewport::semantic::SemanticSubmitError::QueueFull => {
-                                "semantic search worker queue is full"
-                            }
-                            crate::viewport::semantic::SemanticSubmitError::WorkerClosed => {
-                                "semantic search worker is unavailable"
-                            }
-                        };
-                        reject(&mut outbox, request_id, message.to_owned());
+                } else {
+                    if let Some(ref mut counters) = counters {
+                        counters.query_failures += 1;
                     }
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "hierarchy search worker is unavailable".to_owned(),
+                    );
                 }
             }
             _ => unreachable!("scene query inbox only contains query commands"),
@@ -183,9 +138,11 @@ pub(super) fn publish_stage_load_state(
     stage: Option<Res<StageHandle>>,
     spawned: Res<Spawned>,
     stage_info: Res<StageInfo>,
-    selected: Res<SelectedPrim>,
+    selection: Res<SelectedTargets>,
+    viewer_settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     camera_mount: Res<CameraMount>,
+    camera_orientation: Res<CameraOrientationState>,
     clock: Res<UsdStageTime>,
     toggles: Res<DisplayToggles>,
     tuning: Res<LoaderTuning>,
@@ -220,9 +177,12 @@ pub(super) fn publish_stage_load_state(
         let snapshot = build_read_model(
             &stage_info,
             spawned.0 && matches!(state, StageLoadState::Ready),
-            &selected,
+            &selection.0,
+            selection.revision(),
+            &viewer_settings.0,
             &scene_index,
             &camera_mount,
+            &camera_orientation.latest,
             &clock,
             &toggles,
             &tuning,
@@ -237,7 +197,9 @@ pub(super) fn publish_stage_load_state(
         );
         outbox.push(ViewportEventEnvelope::new(
             None,
-            ViewportEvent::Snapshot { state: snapshot },
+            ViewportEvent::Snapshot {
+                state: Box::new(snapshot),
+            },
         ));
         *last = Some((state, scene_index.revision()));
     }

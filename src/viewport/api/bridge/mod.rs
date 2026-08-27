@@ -8,6 +8,7 @@
 //! - [`mutations`] — `apply_runtime_mutations` helper
 //! - [`tree`]      — `apply_tree_commands` and subtree-geometry helpers
 //! - [`helpers`]   — read-model builders and event emitters
+//! - [`settings`]  — authoritative protocol settings state
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
 
 mod commands;
@@ -17,6 +18,7 @@ mod helpers;
 mod mutations;
 mod plugin;
 mod scene_query;
+mod settings;
 mod state;
 mod tree;
 
@@ -24,4 +26,5 @@ mod tree;
 mod tests;
 
 pub(crate) use plugin::ViewportBridgePlugin;
+pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;

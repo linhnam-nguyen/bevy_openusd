@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use bevy::camera::{Hdr, PerspectiveProjection, Projection};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
-use bevy_glacial::prelude::{AxisGizmo, ChaseCamera};
+#[cfg(feature = "solari")]
+use bevy::{camera::CameraMainTextureUsages, render::render_resource::TextureUsages};
+use bevy_glacial::prelude::{AxisGizmo, ChaseCamera, GizmoCamera};
 
 use crate::viewport::camera::ArcballCamera;
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT};
@@ -74,6 +76,10 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
             near: 0.0001,
             ..default()
         }),
+        #[cfg(feature = "solari")]
+        CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
+        #[cfg(feature = "solari")]
+        Msaa::Off,
         Hdr,
         // AgX is the modern filmic curve Blender / Krita default to.
         // ACES is more contrasty + clips highlights harder; with a
@@ -100,6 +106,7 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
         // controls). `sync_chase_camera` mirrors focus/distance/yaw
         // every frame.
         ChaseCamera::default(),
+        GizmoCamera,
     ));
     // World-origin axis triad — replaces our hand-rolled
     // `draw_axes` overlay system.

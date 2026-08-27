@@ -23,6 +23,7 @@ pub mod camera;
 pub mod coverage;
 pub mod curves;
 pub mod dome;
+mod fallback_material;
 pub mod geom;
 pub mod instancer;
 pub mod instancer_dependency;
@@ -33,44 +34,25 @@ pub mod payload;
 pub mod physics;
 pub mod points;
 pub mod profile;
+mod projection_dirty;
 pub mod reflect;
 pub mod shapes;
 pub mod skel;
 pub mod xform;
 
+pub use projection_dirty::{MeshProjectionConsumers, RenderProjectionDirtySet};
+
 use std::sync::Arc;
 
-use bevy::asset::Assets;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::world::World;
-use bevy::pbr::StandardMaterial;
+use bevy::mesh::Mesh;
 use bevy::prelude::{Entity, Handle};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
 
-/// One shared material for renderable prims whose USD preview material is
-/// absent or cannot be decoded. Keeping it in the route layer means mesh,
-/// shape, and material routes never allocate route-local placeholders.
-#[derive(Resource, Clone)]
-pub(crate) struct FallbackMaterial(Handle<StandardMaterial>);
-
-pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
-    let existing = world
-        .get_resource::<FallbackMaterial>()
-        .map(|material| material.0.clone());
-    if let Some(handle) = existing
-        && world
-            .resource::<Assets<StandardMaterial>>()
-            .contains(&handle)
-    {
-        return handle;
-    }
-    let handle = world
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
-    world.insert_resource(FallbackMaterial(handle.clone()));
-    handle
-}
+pub use fallback_material::{FallbackMaterialColor, set_fallback_material_color};
+pub(crate) use fallback_material::{fallback_material, sync_fallback_material_color};
 
 /// The current time to resolve animated attributes at. A plain `Resource`;
 /// `current` is a USD time code. Set it (scrub / play) and the reprojection
@@ -311,4 +293,35 @@ impl SchemaRegistry {
 /// The current [`StageTime`] in `world`, if the resource is present.
 fn time_of(world: &World) -> Option<f64> {
     world.get_resource::<StageTime>().map(|t| t.current)
+}
+
+/// Record a render-entity change at the USD projection boundary.
+pub(crate) fn mark_render_projection_dirty(world: &mut World, entity: Entity) {
+    if let Some(mut dirty) = world.get_resource_mut::<projection_dirty::RenderProjectionDirtySet>()
+    {
+        dirty.mark(entity);
+    }
+}
+
+/// Track a projected mesh handle and dirty the entity when its handle changes.
+pub(crate) fn track_mesh_projection(world: &mut World, entity: Entity, mesh: &Handle<Mesh>) {
+    let changed = world
+        .get_resource_mut::<projection_dirty::MeshProjectionConsumers>()
+        .is_none_or(|mut consumers| consumers.track(entity, mesh.id()));
+    if changed {
+        mark_render_projection_dirty(world, entity);
+    }
+}
+
+/// Remove an entity from the projection dirty state and mesh consumer index.
+pub(crate) fn remove_mesh_projection_consumer(world: &mut World, entity: Entity) {
+    if let Some(mut dirty) = world.get_resource_mut::<projection_dirty::RenderProjectionDirtySet>()
+    {
+        dirty.remove(entity);
+    }
+    if let Some(mut consumers) =
+        world.get_resource_mut::<projection_dirty::MeshProjectionConsumers>()
+    {
+        consumers.remove(entity);
+    }
 }

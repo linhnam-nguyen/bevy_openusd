@@ -19,6 +19,22 @@ pub struct OffscreenTarget {
     pub generation: u64,
 }
 
+/// Marker for the synthetic window used only to feed remote gizmo hover and
+/// cursor coordinates. Native camera input must ignore this entity.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeadlessInputWindow;
+
+/// Keeps shared Egui input resources available without creating or servicing
+/// a native-window Egui context in the headless renderer.
+pub(crate) fn configure_headless_egui(app: &mut App) {
+    let mut settings = app
+        .world_mut()
+        .resource_mut::<bevy_egui::EguiGlobalSettings>();
+    settings.auto_create_primary_context = false;
+    settings.enable_ime = false;
+    settings.enable_cursor_icon_updates = false;
+}
+
 /// Headless rendering plugin for offscreen Bevy App setup.
 pub struct HeadlessRenderPlugin {
     pub width: u32,
@@ -71,7 +87,18 @@ impl Plugin for HeadlessRenderPlugin {
             height: self.height,
             generation: 0,
         })
-        .add_systems(Update, setup_offscreen_camera_target);
+        .world_mut()
+        .spawn((
+            Window {
+                resolution: (self.width, self.height).into(),
+                focused: false,
+                ..default()
+            },
+            bevy::window::PrimaryWindow,
+            HeadlessInputWindow,
+        ));
+
+        app.add_systems(Update, setup_offscreen_camera_target);
     }
 }
 
@@ -89,5 +116,28 @@ fn setup_offscreen_camera_target(
         if render_target.as_image() != Some(&target.image_handle) {
             *render_target = RenderTarget::Image(target.image_handle.clone().into());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headless_egui_is_passive_without_removing_shared_input() {
+        let mut app = App::new();
+        app.init_resource::<Assets<bevy::shader::Shader>>();
+        app.add_plugins(bevy_egui::EguiPlugin::default());
+
+        configure_headless_egui(&mut app);
+
+        let settings = app.world().resource::<bevy_egui::EguiGlobalSettings>();
+        assert!(!settings.auto_create_primary_context);
+        assert!(!settings.enable_ime);
+        assert!(!settings.enable_cursor_icon_updates);
+        assert!(
+            app.world()
+                .contains_resource::<bevy_egui::input::EguiWantsInput>()
+        );
     }
 }

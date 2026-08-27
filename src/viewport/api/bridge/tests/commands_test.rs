@@ -4,21 +4,19 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::scene_query::{
-        dispatch_scene_query_commands, publish_semantic_query_results,
-    };
-    use crate::viewport::api::bridge::state::{
-        EditorHistories, RuntimeMutationCoordinator, SemanticSearchRequests,
-    };
+    use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::CameraMount;
+    use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
     use crate::viewport::physics::PhysicsActive;
-    use crate::viewport::scene::SelectedPrim;
+    use crate::viewport::rendering::sampling::{
+        DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
+    };
     use crate::viewport::scene::visualization::DisplayToggles;
-    use crate::viewport::semantic::SemanticWorkingStore;
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
@@ -29,7 +27,14 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
+            .init_resource::<SamplingCoordinatorState>()
+            .init_resource::<DlssCapability>()
+            .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()
@@ -42,24 +47,6 @@ mod tests {
                 ..default()
             })
             .add_systems(Update, apply_viewport_commands);
-        app
-    }
-
-    fn semantic_search_test_app() -> App {
-        let mut app = App::new();
-        app.init_resource::<ViewportCommandInbox>()
-            .init_resource::<ViewportEventOutbox>()
-            .init_resource::<SceneAnchorIndex>()
-            .init_resource::<SemanticWorkingStore>()
-            .init_resource::<SemanticSearchRequests>()
-            .add_systems(
-                Update,
-                (
-                    publish_semantic_query_results,
-                    dispatch_scene_query_commands,
-                )
-                    .chain(),
-            );
         app
     }
 
@@ -131,55 +118,55 @@ mod tests {
     }
 
     #[test]
-    fn search_scene_routes_through_the_semantic_worker() -> anyhow::Result<()> {
-        let mut app = semantic_search_test_app();
-        let stage = openusd::usd::Stage::open("tests/stages/custom_attrs_extensive.usda")?;
-        let snapshot =
-            usd_semantic::SemanticExtractor::new(usd_semantic::SemanticConfig::default()).extract(
-                &stage,
-                usd_model::SnapshotSource::Working {
-                    session: "bridge-search-test".to_owned(),
-                    live_revision: 1,
-                },
-            )?;
-        assert!(
-            app.world()
-                .resource::<SemanticWorkingStore>()
-                .submit_snapshot("bridge-load", snapshot)
-        );
-
+    fn standard_view_switches_mounted_camera_to_arcball_without_losing_rig_state() {
+        let mut app = command_test_app();
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Transform::default(),
+            ArcballCamera {
+                focus: Vec3::new(1.0, 2.0, 3.0),
+                distance: 7.5,
+                zoom_target: 7.5,
+                ..Default::default()
+            },
+        ));
+        *app.world_mut().resource_mut::<CameraMount>() = CameraMount::Mounted {
+            prim_path: "/World/Camera".to_owned(),
+        };
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
-            ViewportCommand::SearchScene {
-                query: "Robot".to_owned(),
-                offset: 0,
-                limit: 10,
+            ViewportCommand::SetStandardView {
+                view: StandardView::Top,
             },
         );
 
-        for _ in 0..200 {
-            app.update();
-            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
-                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
-                let ViewportEvent::SearchResults {
-                    query,
-                    offset,
-                    total,
-                    matches,
-                    has_more,
-                } = event.event
-                else {
-                    panic!("expected semantic search results")
-                };
-                assert_eq!(query, "Robot");
-                assert_eq!(offset, 0);
-                assert_eq!(total, 1);
-                assert!(matches.is_empty());
-                assert!(!has_more);
-                return Ok(());
+        app.update();
+
+        assert!(matches!(
+            app.world().resource::<CameraMount>(),
+            CameraMount::Arcball
+        ));
+        let fly_to = app.world().resource::<FlyTo>();
+        assert_eq!(fly_to.target_focus, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(fly_to.target_distance, 7.5);
+        assert_eq!(fly_to.target_elevation, Some(core::f32::consts::FRAC_PI_2));
+        let events: Vec<_> =
+            std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
+                .collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            events[0].event,
+            ViewportEvent::CameraSourceChanged {
+                source: CameraSource::Arcball
             }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        panic!("semantic search result did not arrive")
+        ));
+        assert_eq!(events[1].request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            events[1].event,
+            ViewportEvent::CameraStandardViewStarted {
+                view: StandardView::Top
+            }
+        ));
     }
 
     #[test]
@@ -233,7 +220,8 @@ mod tests {
         };
         assert_eq!(state.stage.display_name, "fixtures/spinner.usda");
         assert!(state.scene.prims.is_empty());
-        assert_eq!(state.selection.target, None);
+        assert!(state.selection.targets.is_empty());
+        assert!(state.selection.primary.is_none());
     }
 
     #[test]

@@ -68,6 +68,15 @@ default-run = "usdview"
 autotests = false
 autoexamples = false
 
+[features]
+default = []
+solari = ["bevy/bevy_solari"]
+dlss = [
+    "bevy/bevy_anti_alias",
+    "bevy/dlss",
+    "bevy/raw_vulkan_init",
+]
+
 [[bin]]
 name = "usdview"
 path = "src/main.rs"
@@ -156,6 +165,7 @@ bevy = { workspace = true, features = [
     "bevy_light",
     "bevy_mesh",
     "bevy_camera",
+    "mesh_picking",
     "bevy_image",
     "bevy_scene",
     "bevy_gizmos",
@@ -187,11 +197,12 @@ bevy_egui = { version = "0.41", default-features = false, features = [
     "default_fonts",
     "render",
 ] }
+# Renderer-owned arbitrary-mesh selection silhouettes; 0.13 targets Bevy 0.19.
+bevy_mod_outline = "0.13.0"
 # Glass-themed editor UI kit (ribbons, floating panels, widgets, tokens).
 bevy_frost = { path = "../bevy_frost/crates/bevy_frost" }
 # Reusable 3D-scene gizmos (axis triads + joint primitives).
 bevy_glacial = { path = "../bevy_glacial" }
-
 # `build.rs` bakes a sample USDZ (USDA + procedural PNG) into
 # `assets/external/` so `cargo run -- usdz_sample.usdz` always has
 # something real to show.

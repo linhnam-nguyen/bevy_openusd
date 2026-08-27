@@ -60,6 +60,26 @@ fn unsupported_render_mode_is_an_explicit_decode_error() {
 }
 
 #[test]
+fn uniform_color_is_valid_for_b2_renderer_presentation() {
+    let configuration = RendererConfiguration {
+        render_mode: RenderMode::UniformColor,
+        ..Default::default()
+    };
+
+    configuration.validate().unwrap();
+}
+
+#[test]
+fn ray_traced_is_protocol_valid_and_runtime_capability_gated() {
+    let configuration = RendererConfiguration {
+        render_mode: RenderMode::RayTraced,
+        ..Default::default()
+    };
+
+    configuration.validate().unwrap();
+}
+
+#[test]
 fn typed_renderer_command_preserves_request_correlation() {
     let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
         "renderer-42",

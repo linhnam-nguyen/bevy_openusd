@@ -194,7 +194,7 @@ impl RenderServerInterface {
 
         if let ViewportEvent::Snapshot { state } = &mut event.event {
             state.stage.display_name = safe_display_name(&state.stage.display_name);
-            pending.latest_snapshot = Some(state.clone());
+            pending.latest_snapshot = Some(state.as_ref().clone());
         }
         pending.viewport_events.push_back(event);
         Ok(())

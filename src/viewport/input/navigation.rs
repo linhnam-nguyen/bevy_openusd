@@ -10,6 +10,8 @@ use viewport_protocol::{
     PointerMotion,
 };
 
+use crate::viewport::app::headless::HeadlessInputWindow;
+
 const REMOTE_INPUT_TIMEOUT: Duration = Duration::from_millis(750);
 const REMOTE_PAN_MULTIPLIER: f32 = 2.0;
 
@@ -21,6 +23,7 @@ pub(crate) struct ViewportNavigationInput {
     pub(crate) buttons: PointerButtons,
     pub(crate) modifiers: InputModifiers,
     pub(crate) viewport_size: Vec2,
+    pub(crate) pointer_position: Option<Vec2>,
     pub(crate) focused: bool,
     pub(crate) generation: u64,
     /// Remote video surfaces use a larger pan response because CSS pixels
@@ -40,6 +43,7 @@ impl Default for ViewportNavigationInput {
             buttons: PointerButtons::default(),
             modifiers: InputModifiers::default(),
             viewport_size: Vec2::new(1400.0, 900.0),
+            pointer_position: None,
             focused: true,
             generation: 0,
             pan_multiplier: 1.0,
@@ -73,6 +77,7 @@ impl ViewportNavigationInput {
         }
         self.pointer_delta = Vec2::ZERO;
         self.wheel_delta = Vec2::ZERO;
+        self.pointer_position = None;
         self.buttons = PointerButtons::default();
         self.modifiers = InputModifiers::default();
         self.focused = false;
@@ -152,6 +157,10 @@ impl ViewportNavigationInput {
             motion.viewport_css_width.max(1.0),
             motion.viewport_css_height.max(1.0),
         );
+        self.pointer_position = Some(
+            Vec2::new(motion.x_css_pixels, motion.y_css_pixels)
+                .clamp(Vec2::ZERO, self.viewport_size),
+        );
         self.focused = true;
         self.note_remote_activity();
     }
@@ -161,6 +170,7 @@ impl ViewportNavigationInput {
         self.wheel_delta = Vec2::ZERO;
         self.buttons = PointerButtons::default();
         self.modifiers = InputModifiers::default();
+        self.pointer_position = None;
         self.focused = false;
         self.generation = 0;
         self.pan_multiplier = 1.0;
@@ -237,7 +247,7 @@ pub(crate) fn apply_remote_navigation_input(
 /// In headless mode the query is empty and the remote adapter is the only
 /// producer.
 pub(crate) fn apply_local_navigation_input(
-    window: Query<&Window, With<PrimaryWindow>>,
+    window: Query<&Window, (With<PrimaryWindow>, Without<HeadlessInputWindow>)>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     scroll: Res<AccumulatedMouseScroll>,
@@ -255,6 +265,7 @@ pub(crate) fn apply_local_navigation_input(
         window.resolution.width().max(1.0),
         window.resolution.height().max(1.0),
     );
+    input.pointer_position = window.cursor_position();
     input.buttons = PointerButtons {
         primary: mouse_buttons.pressed(MouseButton::Left),
         secondary: mouse_buttons.pressed(MouseButton::Right),
@@ -313,6 +324,8 @@ mod tests {
         input.begin_stream_generation(4);
         input.apply_pointer_motion(PointerMotion {
             sequence: 1,
+            x_css_pixels: 40.0,
+            y_css_pixels: 30.0,
             dx_css_pixels: 12.0,
             dy_css_pixels: 8.0,
             wheel_x: 0.0,
@@ -325,6 +338,8 @@ mod tests {
 
         input.apply_pointer_motion(PointerMotion {
             sequence: 2,
+            x_css_pixels: 48.0,
+            y_css_pixels: 36.0,
             dx_css_pixels: 12.0,
             dy_css_pixels: 8.0,
             wheel_x: 0.0,
@@ -334,5 +349,23 @@ mod tests {
             stream_generation: 4,
         });
         assert_eq!(input.pointer_delta, Vec2::new(12.0, 8.0));
+    }
+
+    #[test]
+    fn remote_motion_uses_authoritative_viewport_cursor_without_publishing_state() {
+        let mut input = ViewportNavigationInput::with_viewport_size(100, 80);
+        input.apply_pointer_motion(PointerMotion {
+            sequence: 1,
+            x_css_pixels: 17.0,
+            y_css_pixels: 63.0,
+            dx_css_pixels: 10.0,
+            dy_css_pixels: -5.0,
+            wheel_x: 0.0,
+            wheel_y: 0.0,
+            viewport_css_width: 100.0,
+            viewport_css_height: 80.0,
+            stream_generation: 1,
+        });
+        assert_eq!(input.pointer_position, Some(Vec2::new(17.0, 63.0)));
     }
 }

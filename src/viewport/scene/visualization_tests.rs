@@ -2,8 +2,37 @@ use super::edge::{EdgeOverlay, EdgeOverlayMaterial};
 use super::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
-use bevy_glacial::prelude::GroundGrid;
+use bevy_glacial::prelude::{GizmoOptions, GroundGrid};
 use usd_bevy::UsdPrimRef;
+use viewport_protocol::RenderMode;
+
+#[test]
+fn gizmo_size_level_uses_log_scale_for_both_gizmo_paths() {
+    let mut app = App::new();
+    app.init_resource::<ViewerSettingsState>()
+        .init_resource::<GizmoOptions>()
+        .add_systems(Update, sync_gizmo_size);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(2);
+    app.update();
+    assert_eq!(app.world().resource::<GizmoOptions>().gizmo_size_scale, 1.0);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(10);
+    app.update();
+    assert!((app.world().resource::<GizmoOptions>().gizmo_size_scale - 10.0).abs() < 1e-5);
+
+    app.world_mut()
+        .resource_mut::<ViewerSettingsState>()
+        .set_gizmo_size_level(6);
+    app.update();
+    assert!(
+        (app.world().resource::<GizmoOptions>().gizmo_size_scale - 10.0_f32.sqrt()).abs() < 1e-5
+    );
+}
 
 fn triangle_mesh() -> Mesh {
     let mut mesh = Mesh::new(
@@ -42,80 +71,6 @@ fn grid_visibility_reads_the_authoritative_renderer_configuration() {
     app.update();
 
     assert!(!app.world().resource::<GroundGrid>().visible);
-}
-
-#[test]
-fn shadows_disable_globally_and_restore_each_authored_setting() {
-    let mut app = App::new();
-    let authored_on = app
-        .world_mut()
-        .spawn(DirectionalLight {
-            shadow_maps_enabled: true,
-            ..default()
-        })
-        .id();
-    let authored_off = app
-        .world_mut()
-        .spawn(DirectionalLight {
-            shadow_maps_enabled: false,
-            ..default()
-        })
-        .id();
-    app.insert_resource(DisplayToggles::default()).add_systems(
-        Update,
-        (capture_original_shadow_settings, apply_shadow_toggle).chain(),
-    );
-
-    app.update();
-    app.update();
-    assert!(
-        app.world()
-            .get::<DirectionalLight>(authored_on)
-            .unwrap()
-            .shadow_maps_enabled
-    );
-    assert!(
-        !app.world()
-            .get::<DirectionalLight>(authored_off)
-            .unwrap()
-            .shadow_maps_enabled
-    );
-
-    app.world_mut()
-        .resource_mut::<DisplayToggles>()
-        .renderer
-        .shadows = false;
-    app.update();
-    assert!(
-        !app.world()
-            .get::<DirectionalLight>(authored_on)
-            .unwrap()
-            .shadow_maps_enabled
-    );
-    assert!(
-        !app.world()
-            .get::<DirectionalLight>(authored_off)
-            .unwrap()
-            .shadow_maps_enabled
-    );
-
-    app.world_mut()
-        .resource_mut::<DisplayToggles>()
-        .renderer
-        .shadows = true;
-    app.update();
-    assert!(
-        app.world()
-            .get::<DirectionalLight>(authored_on)
-            .unwrap()
-            .shadow_maps_enabled
-    );
-    assert!(
-        !app.world()
-            .get::<DirectionalLight>(authored_off)
-            .unwrap()
-            .shadow_maps_enabled
-    );
 }
 
 #[test]
@@ -173,6 +128,7 @@ fn full_renderer_configuration_matrix_preserves_each_independent_option() {
         })
         .init_resource::<EdgeOverlayCache>()
         .init_resource::<EdgeOverlayStats>()
+        .init_resource::<ShadowProjectionState>()
         .insert_resource(bevy::pbr::wireframe::WireframeConfig::default())
         .add_systems(
             Update,

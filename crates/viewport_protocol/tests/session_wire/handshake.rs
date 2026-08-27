@@ -113,6 +113,8 @@ fn every_client_command_family_round_trips_through_a_client_envelope() {
         ClientCommand::Stream(StreamCommand::ConfigureViewport { metrics: metrics() }),
         ClientCommand::Input(InputCommand::PointerMotion(PointerMotion {
             sequence: 7,
+            x_css_pixels: 640.0,
+            y_css_pixels: 360.0,
             dx_css_pixels: 2.5,
             dy_css_pixels: -1.0,
             wheel_x: 0.0,
@@ -244,6 +246,8 @@ fn validation_rejects_unbounded_input_motion() {
         1,
         ClientCommand::Input(InputCommand::PointerMotion(PointerMotion {
             sequence: 1,
+            x_css_pixels: 640.0,
+            y_css_pixels: 360.0,
             dx_css_pixels: 4097.0,
             dy_css_pixels: 0.0,
             wheel_x: 0.0,

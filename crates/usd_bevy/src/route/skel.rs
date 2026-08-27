@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use super::cache::MeshInternMetrics;
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
-use super::{PrimRoute, RouteCtx};
+use super::{PrimRoute, RouteCtx, track_mesh_projection};
 use crate::read::skel::{blend_shaped_points_at, has_blend_shapes, is_skinned, skinned_points_at};
 
 /// Replaces a skinned / blend-shaped mesh's geometry with its deformed points.
@@ -84,6 +84,7 @@ impl PrimRoute for SkinRoute {
                 false,
             );
         }
+        track_mesh_projection(world, entity, &handle);
         if let Some(mut m) = world.get_mut::<Mesh3d>(entity) {
             m.0 = handle;
         } else if let Ok(mut e) = world.get_entity_mut(entity) {

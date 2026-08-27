@@ -26,6 +26,7 @@ fn large_snapshots_are_chunked_into_bounded_ordered_events() {
             anchor: viewport_protocol::SceneAnchor::active_session(format!("/World/Prim{index}")),
             parent: None,
             label: format!("Prim {index}"),
+            display_name: None,
             visible: true,
             has_children: false,
         })
@@ -80,6 +81,7 @@ fn terminally_oversized_prim_is_omitted_from_bounded_snapshot_chunks() {
             anchor: viewport_protocol::SceneAnchor::active_session("/World/KeptA"),
             parent: None,
             label: "Kept A".to_owned(),
+            display_name: None,
             visible: true,
             has_children: false,
         },
@@ -90,6 +92,7 @@ fn terminally_oversized_prim_is_omitted_from_bounded_snapshot_chunks() {
             )),
             parent: None,
             label: "Too large".to_owned(),
+            display_name: None,
             visible: true,
             has_children: false,
         },
@@ -97,6 +100,7 @@ fn terminally_oversized_prim_is_omitted_from_bounded_snapshot_chunks() {
             anchor: viewport_protocol::SceneAnchor::active_session("/World/KeptB"),
             parent: None,
             label: "Kept B".to_owned(),
+            display_name: None,
             visible: true,
             has_children: false,
         },
@@ -134,9 +138,11 @@ fn oversized_snapshot_metadata_is_compacted_to_a_bounded_snapshot() {
     snapshot.scene.total_prims = 2_745;
     snapshot.scene.total_roots = 64;
     snapshot.scene.root_page_size = 64;
-    snapshot.selection.target = Some(viewport_protocol::SceneAnchor::active_session(
-        oversized.clone(),
-    ));
+    let selected_target = viewport_protocol::SceneAnchor::active_session(oversized.clone());
+    snapshot.selection = viewport_protocol::SelectionReadModel {
+        targets: vec![selected_target.clone()],
+        primary: Some(selected_target),
+    };
     snapshot.camera_source = CameraSource::Authored {
         prim_path: oversized,
     };
@@ -156,7 +162,8 @@ fn oversized_snapshot_metadata_is_compacted_to_a_bounded_snapshot() {
     };
     assert!(state.scene.prims.is_empty());
     assert_eq!(state.scene.total_prims, 2_745);
-    assert!(state.selection.target.is_none());
+    assert!(state.selection.targets.is_empty());
+    assert!(state.selection.primary.is_none());
     assert_eq!(state.camera_source, CameraSource::Arcball);
     assert!(state.stage.display_name.chars().count() <= MAX_COMPACT_STAGE_DISPLAY_NAME_CHARS + 1);
 }
@@ -178,6 +185,7 @@ fn oversized_scene_child_pages_are_split_without_changing_page_identity() {
             )),
             parent: Some(parent.clone()),
             label: format!("child-{index}"),
+            display_name: None,
             visible: true,
             has_children: false,
         })

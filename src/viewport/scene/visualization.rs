@@ -5,133 +5,106 @@
 //! size gate and can be tested without a monolithic overlay implementation.
 
 use bevy::prelude::*;
-use viewport_protocol::{GroundGridOrigin, RenderMode, RendererConfiguration};
+use viewport_protocol::{
+    GroundGridOrigin, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, RendererConfiguration,
+};
 
 use super::HistoricalGhostState;
+use super::selection_color::{
+    SelectionColorOverrideState, init_selection_color_material, sync_selection_color_overrides,
+};
+use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
+use super::{
+    SectionBoxState, SelectedRenderableProjection, capture_section_box_gizmo_transform,
+    draw_section_box, sync_section_box_clipping, sync_section_box_gizmo_target,
+    sync_section_box_state, sync_selected_renderable_projection,
+};
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
+use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::camera::ArcballCamera;
-use crate::viewport::diagnostics::performance::GroundGridDecisionHelper;
 
 #[path = "visualization_edge.rs"]
 mod edge;
 #[path = "visualization_edge_mesh.rs"]
 mod edge_mesh;
+#[path = "visualization_environment.rs"]
+mod environment;
+#[path = "visualization_render_mode.rs"]
+mod render_mode;
+#[path = "visualization_shadows.rs"]
+mod shadows;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
+pub(super) use environment::{
+    sync_background_color, sync_fallback_surface_color, sync_ground_grid_to_scene,
+    sync_ground_grid_visibility,
+};
+pub(in crate::viewport) use render_mode::{OriginalRenderMaterial, UniformRenderMaterial};
+use render_mode::{apply_render_mode, apply_wireframe_toggle, init_uniform_render_material};
+use shadows::{ShadowProjectionState, apply_shadow_toggle, capture_original_shadow_settings};
 
 pub(crate) use edge::{EdgeOverlay, EdgeOverlayStats};
 
 pub struct OverlaysPlugin;
 
-/// Keeps Glacial's ground-grid visibility aligned with the authoritative
-/// renderer configuration.
-pub(crate) fn sync_ground_grid_visibility(
-    toggles: Res<DisplayToggles>,
-    mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
-) {
-    if grid.visible != toggles.renderer.grid {
-        grid.visible = toggles.renderer.grid;
-    }
-}
-
-fn sync_ground_grid_to_scene(
-    extent: Res<SceneExtent>,
-    cameras: Query<&ArcballCamera>,
-    toggles: Res<DisplayToggles>,
-    mut grid: ResMut<bevy_glacial::prelude::GroundGrid>,
-    glacial_counters: Option<Res<bevy_glacial::prelude::GlacialGridCounters>>,
-    mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
-) {
-    let desired_ground_y = match toggles.ground_grid_origin {
-        GroundGridOrigin::LoadedScene => extent.geometry_ground_y(),
-        GroundGridOrigin::WorldOrigin => Some(0.0),
-    };
-    let camera_distance = cameras
-        .single()
-        .map(|camera| camera.distance)
-        .unwrap_or(0.0);
-    let desired_radius = (extent.diag().max(camera_distance) * 2.5).max(
-        bevy_glacial::prelude::LEVEL_HALF
-            .last()
-            .copied()
-            .unwrap_or(640.0),
-    );
-
-    let ground_y_changed = GroundGridDecisionHelper::optional_field_changed(
-        grid.ground_y,
-        desired_ground_y,
-        GroundGridDecisionHelper::DEFAULT_TOLERANCE,
-    );
-    let coverage_radius_changed = GroundGridDecisionHelper::needs_radius_update(
-        grid.coverage_radius,
-        desired_radius,
-        GroundGridDecisionHelper::DEFAULT_TOLERANCE,
-    );
-    let visibility_changed = grid.visible != toggles.renderer.grid;
-
-    if ground_y_changed {
-        grid.ground_y = desired_ground_y;
-    }
-    if coverage_radius_changed {
-        grid.coverage_radius = desired_radius;
-    }
-    if visibility_changed {
-        grid.visible = toggles.renderer.grid;
-    }
-
-    if let Some(ref mut counters) = counters {
-        counters.grid_sync_calls += 1;
-        for changed in [
-            ground_y_changed,
-            coverage_radius_changed,
-            visibility_changed,
-        ] {
-            if changed {
-                counters.grid_host_writes += 1;
-                counters.grid_value_changes += 1;
-            }
-        }
-        if ground_y_changed {
-            counters.grid_ground_y_writes += 1;
-        }
-        if coverage_radius_changed {
-            counters.grid_coverage_radius_writes += 1;
-        }
-        if visibility_changed {
-            counters.grid_visible_writes += 1;
-        }
-        if grid.is_changed() {
-            counters.grid_changed_observations += 1;
-        }
-        if let Some(ref gc) = glacial_counters {
-            counters.grid_update_alpha_calls = gc.alpha_rebuild_calls;
-            counters.grid_lines_rebuilt = gc.lines_rebuilt;
-            counters.grid_dots_rebuilt = gc.dots_rebuilt;
-            counters.grid_structural_rebuilds = gc.alpha_rebuild_calls;
-            counters.grid_vertices_generated = gc.vertices_generated;
-            counters.grid_indices_generated = gc.indices_generated;
-        }
-    }
-}
-
 impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
+        super::section_box_clipping::register_embedded_shaders(app);
         app.init_resource::<DisplayToggles>()
             .init_resource::<SceneExtent>()
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
-            .add_systems(Startup, init_edge_overlay_material)
+            .init_resource::<SelectionColorOverrideState>()
+            .init_resource::<HoveredTarget>()
+            .init_resource::<HoverPickStats>()
+            .init_resource::<SectionBoxState>()
+            .init_resource::<SelectedRenderableProjection>()
+            .init_resource::<super::section_box_clipping::SectionClipProjectionState>()
+            .init_resource::<super::section_box_clipping::SectionClipDiagnostics>()
+            .init_resource::<render_mode::RenderModeProjectionState>()
+            .init_resource::<ShadowProjectionState>()
+            .add_systems(
+                Startup,
+                (
+                    init_edge_overlay_material,
+                    init_uniform_render_material,
+                    init_selection_color_material,
+                )
+                    .chain(),
+            )
             .add_systems(
                 Update,
                 (
+                    sync_selected_renderable_projection,
+                    sync_gizmo_size,
+                    capture_section_box_gizmo_transform,
                     compute_extent,
+                    sync_section_box_state,
+                    sync_section_box_gizmo_target,
+                    draw_section_box,
+                )
+                    .chain()
+                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                    .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
+                    .before(sync_ground_grid_to_scene)
+                    .before(bevy_glacial::prelude::build_grid_meshes),
+            )
+            .add_systems(
+                Update,
+                (
                     sync_ground_grid_to_scene,
+                    sync_background_color,
+                    sync_fallback_surface_color,
                     sync_shadow_cascade_distance,
                     capture_original_light_levels,
                     capture_original_shadow_settings,
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
+                    apply_render_mode,
+                    update_hover_target,
+                    sync_selection_color_overrides,
+                    sync_section_box_clipping,
                     apply_wireframe_toggle,
                     sync_edge_overlays,
                     sync_ground_grid_visibility,
@@ -139,8 +112,32 @@ impl Plugin for OverlaysPlugin {
                     draw_semantic_diff,
                 )
                     .chain()
+                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                    .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
+                    .after(sync_selected_renderable_projection)
+                    .after(sync_section_box_state)
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
+    }
+}
+
+/// Applies the user's Selection-panel gizmo size level to both ordinary gizmo
+/// primitives and the Section Box face draggers. The level is log-spaced from
+/// 2 (the current size) through 10 (ten times the current size).
+fn sync_gizmo_size(
+    settings: Res<ViewerSettingsState>,
+    mut gizmo_options: ResMut<bevy_glacial::prelude::GizmoOptions>,
+) {
+    let level = settings
+        .selection()
+        .gizmo_size_level
+        .clamp(MIN_GIZMO_SIZE_LEVEL, MAX_GIZMO_SIZE_LEVEL);
+    let exponent = (level - MIN_GIZMO_SIZE_LEVEL) as f32
+        / (MAX_GIZMO_SIZE_LEVEL - MIN_GIZMO_SIZE_LEVEL) as f32;
+    let scale = 10.0_f32.powf(exponent);
+
+    if (gizmo_options.gizmo_size_scale - scale).abs() > f32::EPSILON {
+        gizmo_options.gizmo_size_scale = scale;
     }
 }
 
@@ -176,46 +173,6 @@ fn capture_original_light_levels(
     }
 }
 
-fn capture_original_shadow_settings(
-    mut cmds: Commands,
-    dir: Query<
-        (Entity, &DirectionalLight),
-        (Added<DirectionalLight>, Without<OriginalShadowEnabled>),
-    >,
-    pt: Query<(Entity, &PointLight), (Added<PointLight>, Without<OriginalShadowEnabled>)>,
-    sp: Query<(Entity, &SpotLight), (Added<SpotLight>, Without<OriginalShadowEnabled>)>,
-) {
-    for (entity, light) in &dir {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-    for (entity, light) in &pt {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-    for (entity, light) in &sp {
-        cmds.entity(entity)
-            .insert(OriginalShadowEnabled(light.shadow_maps_enabled));
-    }
-}
-
-fn apply_shadow_toggle(
-    toggles: Res<DisplayToggles>,
-    mut dir: Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
-    mut pt: Query<(&mut PointLight, &OriginalShadowEnabled)>,
-    mut sp: Query<(&mut SpotLight, &OriginalShadowEnabled)>,
-) {
-    for (mut light, authored) in &mut dir {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
-    }
-    for (mut light, authored) in &mut pt {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
-    }
-    for (mut light, authored) in &mut sp {
-        light.shadow_maps_enabled = toggles.renderer.shadows && authored.0;
-    }
-}
-
 fn apply_light_intensity_scale(
     toggles: Res<DisplayToggles>,
     mut dir: Query<(&mut DirectionalLight, &OriginalIlluminance)>,
@@ -232,13 +189,6 @@ fn apply_light_intensity_scale(
     for (mut light, authored) in &mut sp {
         light.intensity = authored.0 * scale;
     }
-}
-
-fn apply_wireframe_toggle(
-    toggles: Res<DisplayToggles>,
-    mut config: ResMut<bevy::pbr::wireframe::WireframeConfig>,
-) {
-    config.global = toggles.renderer.render_mode == RenderMode::Wireframe;
 }
 
 #[derive(Resource, Debug, Clone)]

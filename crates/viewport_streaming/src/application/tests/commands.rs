@@ -40,7 +40,9 @@ fn snapshot_display_name_is_reduced_to_a_basename() {
         .publish_viewport_event(ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
-                state: ViewportReadModel::unloaded("/private/stages/Kitchen_set.usdz"),
+                state: Box::new(ViewportReadModel::unloaded(
+                    "/private/stages/Kitchen_set.usdz",
+                )),
             },
         ))
         .unwrap();
@@ -62,7 +64,7 @@ fn event_history_is_cleared_when_a_session_takes_a_snapshot() {
         .publish_viewport_event(ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
-                state: snapshot.clone(),
+                state: Box::new(snapshot.clone()),
             },
         ))
         .unwrap();
@@ -109,6 +111,8 @@ fn pointer_motion_keeps_only_the_newest_valid_packet() {
     let interface = RenderServerInterface::default();
     let motion = |sequence| PointerMotion {
         sequence,
+        x_css_pixels: 400.0,
+        y_css_pixels: 300.0,
         dx_css_pixels: sequence as f32,
         dy_css_pixels: 0.0,
         wheel_x: 0.0,

@@ -13,15 +13,18 @@ pub(super) struct ViewportProtocolViewportSnapshot;
 impl ViewportProtocolViewportSnapshot {
     pub(super) fn event() -> viewport_protocol::ViewportEvent {
         viewport_protocol::ViewportEvent::Snapshot {
-            state: ViewportReadModel {
+            state: Box::new(ViewportReadModel {
                 protocol_version: viewport_protocol::PROTOCOL_VERSION,
                 stage: viewport_protocol::StageReadModel {
                     display_name: "fixture".to_owned(),
                     loaded: true,
                 },
                 scene: viewport_protocol::SceneReadModel::default(),
-                selection: viewport_protocol::SelectionReadModel { target: None },
+                selection: viewport_protocol::SelectionReadModel::default(),
+                selection_revision: 0,
+                viewer_settings: viewport_protocol::ViewerSettingsReadModel::default(),
                 camera_source: viewport_protocol::CameraSource::Arcball,
+                camera_orientation: viewport_protocol::CameraOrientationReadModel::default(),
                 timeline: viewport_protocol::TimelineReadModel {
                     seconds: 0.0,
                     playing: false,
@@ -48,7 +51,7 @@ impl ViewportProtocolViewportSnapshot {
                     },
                 },
                 physics_running: false,
-            },
+            }),
         }
     }
 }
@@ -137,6 +140,7 @@ fn lazy_scene_queries_round_trip_with_request_correlation() {
         anchor: SceneAnchor::active_session("/World/Door"),
         parent: Some(world.clone()),
         label: "Door".to_owned(),
+        display_name: Some("Door".to_owned()),
         visible: true,
         has_children: false,
     };
@@ -152,6 +156,7 @@ fn lazy_scene_queries_round_trip_with_request_correlation() {
                 anchor: node.anchor.clone(),
                 parent: node.parent.clone(),
                 label: node.label.clone(),
+                breadcrumb: node.anchor.prim_path.clone(),
                 visible: node.visible,
                 has_children: node.has_children,
                 reveal_pages: vec![ScenePageReference {

@@ -14,7 +14,7 @@ use crate::viewport::api::{
     ViewportEventOutbox,
 };
 use crate::viewport::camera::ArcballCameraSet;
-use crate::viewport::input::apply_remote_navigation_input;
+use crate::viewport::input::{apply_remote_navigation_input, sync_headless_gizmo_input};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -70,6 +70,10 @@ impl Plugin for WebRtcTransportPlugin {
                 apply_remote_navigation_input
                     .after(ArcballCameraSet::PrepareInput)
                     .before(ArcballCameraSet::ApplyInput),
+            )
+            .add_systems(
+                Update,
+                sync_headless_gizmo_input.after(apply_remote_navigation_input),
             )
             .add_systems(
                 Update,

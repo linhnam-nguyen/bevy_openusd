@@ -18,7 +18,7 @@ pub enum ServerWireMessage {
     Event(ServerEventEnvelope),
 }
 
-/// Encodes a legacy or decomposed message as one JSON Lines record.
+/// Encodes a versioned or decomposed message as one JSON Lines record.
 pub fn encode_json_frame<T: Serialize>(message: &T) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(message)?;
     line.push('\n');
@@ -30,12 +30,12 @@ pub fn decode_json_frame<T: DeserializeOwned>(line: &str) -> serde_json::Result<
     serde_json::from_str(line)
 }
 
-/// Legacy protocol-version-1 codec retained for stdio compatibility.
+/// Encodes the versioned viewport contract for stdio compatibility.
 pub fn encode_json_line(message: &ViewportWireMessage) -> serde_json::Result<String> {
     encode_json_frame(message)
 }
 
-/// Legacy protocol-version-1 codec retained for stdio compatibility.
+/// Decodes the versioned viewport contract from stdio.
 pub fn decode_json_line(line: &str) -> serde_json::Result<ViewportWireMessage> {
     decode_json_frame(line)
 }

@@ -4,6 +4,7 @@
 //! ECS entity. It never leaves the viewport process.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
@@ -13,7 +14,15 @@ use viewport_protocol::{
     SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
+use super::hierarchy::HierarchyReadModel;
 use crate::viewport::session::Spawned;
+
+/// Returns the current prim-tree node name for a prim path.
+pub(crate) fn prim_name(path: &str) -> &str {
+    path.rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(path)
+}
 
 /// Logical tree and private entity mapping for the active stage.
 #[derive(Resource, Default)]
@@ -21,6 +30,7 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
+    hierarchy: Arc<HierarchyReadModel>,
     initialized: bool,
     revision: u64,
 }
@@ -81,11 +91,29 @@ impl SceneAnchorIndex {
         }
     }
 
-    /// Resolves a semantic row into the current runtime tree representation.
+    /// Returns the immutable hierarchy projection built with the scene index.
+    /// Search consumes this projection rather than inspecting USD paths or
+    /// semantic storage itself. Cloning the `Arc` is constant-time.
+    pub(crate) fn hierarchy_snapshot(&self) -> Arc<HierarchyReadModel> {
+        Arc::clone(&self.hierarchy)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
+        let hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&nodes));
+        Self {
+            nodes,
+            hierarchy,
+            initialized: true,
+            revision: 1,
+            ..Default::default()
+        }
+    }
+
+    /// Resolves an existing prim row into the current runtime tree representation.
     ///
-    /// Semantic storage owns searchable identity and metadata; this index
-    /// owns the session-local anchor, visibility, hierarchy, and reveal-page
-    /// information required by the viewport protocol.
+    /// This index owns the session-local anchor, visibility, hierarchy, and
+    /// reveal-page information required by the viewport protocol.
     pub(crate) fn search_match_for_path(&self, prim_path: &str) -> Option<SceneSearchMatch> {
         let node = self
             .nodes
@@ -120,6 +148,7 @@ impl SceneAnchorIndex {
             anchor: node.anchor.clone(),
             parent: node.parent.clone(),
             label: node.label.clone(),
+            breadcrumb: node.anchor.prim_path.clone(),
             visible: node.visible,
             has_children: node.has_children,
             reveal_pages,
@@ -154,7 +183,8 @@ impl SceneAnchorIndex {
         struct Candidate {
             entity: Entity,
             path: String,
-            label: String,
+            name: String,
+            display_name: Option<String>,
             visible: bool,
             children: Vec<Entity>,
         }
@@ -167,19 +197,13 @@ impl SceneAnchorIndex {
         let mut candidates: Vec<Candidate> = prims
             .iter()
             .filter(|(_, prim, ..)| prim.path != "/")
-            .map(
-                |(entity, prim, display_name, visibility, children)| Candidate {
+            .map(|(entity, prim, display_name, visibility, children)| {
+                let display_name = display_name.map(|display_name| display_name.0.clone());
+                Candidate {
                     entity,
                     path: prim.path.clone(),
-                    label: display_name
-                        .map(|display_name| display_name.0.clone())
-                        .unwrap_or_else(|| {
-                            prim.path
-                                .rsplit('/')
-                                .find(|segment| !segment.is_empty())
-                                .unwrap_or("/")
-                                .to_owned()
-                        }),
+                    name: prim_name(&prim.path).to_owned(),
+                    display_name,
                     visible: !matches!(visibility, Some(Visibility::Hidden)),
                     children: children
                         .map(|children| {
@@ -189,8 +213,8 @@ impl SceneAnchorIndex {
                                 .collect()
                         })
                         .unwrap_or_default(),
-                },
-            )
+                }
+            })
             .collect();
 
         let mut parent_by_child = HashMap::new();
@@ -243,7 +267,8 @@ impl SceneAnchorIndex {
                 Some(PrimNodeReadModel {
                     anchor,
                     parent,
-                    label: candidate.label,
+                    label: candidate.name,
+                    display_name: candidate.display_name,
                     visible: candidate.visible,
                     has_children: !candidate.children.is_empty(),
                 })
@@ -263,6 +288,7 @@ impl SceneAnchorIndex {
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.nodes = nodes;
+        self.hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&self.nodes));
         self.initialized = true;
         self.revision = self.revision.saturating_add(1);
     }
@@ -322,53 +348,5 @@ pub(crate) fn refresh_scene_anchor_index(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
-        PrimNodeReadModel {
-            anchor: SceneAnchor::active_session(path),
-            parent: parent.map(SceneAnchor::active_session),
-            label: label.to_owned(),
-            visible: true,
-            has_children: false,
-        }
-    }
-
-    #[test]
-    fn semantic_path_resolution_preserves_runtime_reveal_pages() {
-        let index = SceneAnchorIndex {
-            nodes: vec![
-                node("/World", None, "World"),
-                node("/World/Environment", Some("/World"), "Environment"),
-                node(
-                    "/World/Environment/Door",
-                    Some("/World/Environment"),
-                    "Door",
-                ),
-            ],
-            ..Default::default()
-        };
-
-        let result = index
-            .search_match_for_path("/World/Environment/Door")
-            .expect("semantic row resolves to a runtime node");
-        assert_eq!(result.label, "Door");
-        assert_eq!(result.reveal_pages.len(), 3);
-        assert_eq!(result.reveal_pages[0].parent, None);
-        assert_eq!(
-            result.reveal_pages[1]
-                .parent
-                .as_ref()
-                .map(|anchor| anchor.prim_path.as_str()),
-            Some("/World")
-        );
-        assert_eq!(
-            result.reveal_pages[2]
-                .parent
-                .as_ref()
-                .map(|anchor| anchor.prim_path.as_str()),
-            Some("/World/Environment")
-        );
-    }
-}
+#[path = "scene_index_tests.rs"]
+mod tests;

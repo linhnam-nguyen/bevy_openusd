@@ -4,6 +4,7 @@
 //! owns in-process queues and will translate them into private ECS state.
 
 mod bridge;
+mod hierarchy;
 mod interface;
 mod queues;
 mod read_model;
@@ -11,7 +12,9 @@ mod scene_index;
 mod scene_query;
 mod session_registry;
 
-pub(crate) use bridge::{ViewportBridgePlugin, ViewportBridgeSet};
+pub(in crate::viewport) use bridge::{
+    ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
+};
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,

@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use openusd::schemas::geom::{PointBased, Points};
 use openusd::sdf::Value;
 
-use super::{PrimRoute, RouteCtx};
+use super::{PrimRoute, RouteCtx, track_mesh_projection};
 
 /// Maps `UsdGeomPoints` to a point-cloud mesh.
 pub struct PointsRoute;
@@ -50,8 +50,17 @@ impl PrimRoute for PointsRoute {
         let material = world
             .resource_mut::<Assets<StandardMaterial>>()
             .add(StandardMaterial::default());
-        if let Ok(mut e) = world.get_entity_mut(entity) {
+        let projected = if let Ok(mut e) = world.get_entity_mut(entity) {
             e.insert((Mesh3d(mesh_handle), MeshMaterial3d(material)));
+            true
+        } else {
+            false
+        };
+        if projected {
+            let mesh = world.get::<Mesh3d>(entity).map(|mesh| mesh.0.clone());
+            if let Some(mesh) = mesh {
+                track_mesh_projection(world, entity, &mesh);
+            }
         }
     }
 }

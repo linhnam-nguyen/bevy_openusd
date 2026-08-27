@@ -55,7 +55,7 @@ pub(crate) fn draw_tree_panel(
     let nodes = read_model.scene_nodes();
     let selection = read_model
         .snapshot()
-        .and_then(|snapshot| snapshot.selection.target.clone());
+        .and_then(|snapshot| snapshot.selection.primary.clone());
     let total_prims = read_model
         .snapshot()
         .map(|snapshot| snapshot.scene.total_prims)
@@ -128,6 +128,7 @@ pub(crate) fn draw_tree_panel(
                                     anchor: search.anchor.clone(),
                                     parent: search.parent.clone(),
                                     label: search.label.clone(),
+                                    display_name: None,
                                     visible: search.visible,
                                     has_children: search.has_children,
                                 };

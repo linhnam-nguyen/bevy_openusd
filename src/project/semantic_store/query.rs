@@ -15,6 +15,7 @@ pub(crate) struct SemanticQuery {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SemanticFilter {
+    DisplayNameContains(String),
     CategoryEquals(String),
     FamilyEquals(String),
     TypeEquals(String),

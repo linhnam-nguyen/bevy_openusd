@@ -18,6 +18,7 @@ use viewport_protocol::{
 #[path = "scenario_driver_setup.rs"]
 mod setup;
 pub use setup::setup_scenario_driver_system;
+pub(in crate::viewport) use setup::setup_section_box_smoke_system;
 
 /// Resource configuring the active scenario action driver.
 #[derive(Resource, Debug, Clone, Default)]
@@ -159,6 +160,8 @@ pub fn scenario_action_driver_system(
                     let sequence = frame.saturating_mul(40).saturating_add(i * 2 + 1);
                     let motion = PointerMotion {
                         sequence,
+                        x_css_pixels: 960.0,
+                        y_css_pixels: 540.0,
                         dx_css_pixels: 2.0,
                         dy_css_pixels: 1.0,
                         wheel_x: 0.0,
@@ -301,6 +304,12 @@ impl Plugin for ScenarioDriverPlugin {
             action_executions: 0,
         })
         .add_systems(Startup, setup_scenario_driver_system)
+        .add_systems(
+            Update,
+            setup_section_box_smoke_system
+                .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
+                .before(crate::viewport::scene::sync_section_box_state),
+        )
         .add_systems(
             Update,
             scenario_action_driver_system

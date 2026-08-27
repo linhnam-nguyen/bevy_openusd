@@ -33,7 +33,7 @@ pub fn draw_selection_panel(
         .unwrap_or_else(|| "(stage loading)".to_owned());
     let selection = read_model
         .snapshot()
-        .and_then(|snapshot| snapshot.selection.target.clone());
+        .and_then(|snapshot| snapshot.selection.primary.clone());
     let accent_col = accent.0;
     let mut keep = true;
     floating_window_for_item(

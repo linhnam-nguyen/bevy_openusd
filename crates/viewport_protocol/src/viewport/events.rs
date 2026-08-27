@@ -5,8 +5,9 @@ use crate::{PROTOCOL_VERSION, RequestId};
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::read_models::{
-    CameraSource, FocusMode, PresentationReadModel, SceneAnchor, SceneChildrenPage,
-    SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel, ViewportReadModel,
+    CameraOrientationReadModel, CameraSource, FocusMode, PresentationReadModel, SceneAnchor,
+    SceneChildrenPage, SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
+    ViewerSettingsReadModel, ViewportReadModel,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -16,7 +17,7 @@ pub enum ViewportEvent {
         protocol_version: u16,
     },
     Snapshot {
-        state: ViewportReadModel,
+        state: Box<ViewportReadModel>,
     },
     SceneChildren {
         page: SceneChildrenPage,
@@ -34,6 +35,15 @@ pub enum ViewportEvent {
     SelectionChanged {
         selection: SelectionReadModel,
     },
+    /// Applies one authoritative selection delta to the client's existing
+    /// selection. Complete selection state remains available in snapshots.
+    SelectionDeltaApplied {
+        revision: u64,
+        added: Vec<SceneAnchor>,
+        removed: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+        count: u32,
+    },
     CameraTransitionStarted {
         target: SceneAnchor,
         mode: FocusMode,
@@ -45,11 +55,20 @@ pub enum ViewportEvent {
     CameraSourceChanged {
         source: CameraSource,
     },
+    CameraOrientationChanged {
+        orientation: CameraOrientationReadModel,
+    },
+    CameraStandardViewStarted {
+        view: super::read_models::StandardView,
+    },
     TimelineChanged {
         timeline: TimelineReadModel,
     },
     PresentationChanged {
         presentation: PresentationReadModel,
+    },
+    ViewerSettingsChanged {
+        settings: ViewerSettingsReadModel,
     },
     PhysicsChanged {
         running: bool,
@@ -82,7 +101,7 @@ pub enum ViewportEvent {
     },
 }
 
-/// Legacy event envelope retained byte/schema compatible with version 1.
+/// Versioned viewport event envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ViewportEventEnvelope {
     pub protocol_version: u16,
@@ -100,7 +119,7 @@ impl ViewportEventEnvelope {
     }
 }
 
-/// Legacy JSON Lines direction marker.
+/// JSON Lines direction marker.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ViewportWireMessage {

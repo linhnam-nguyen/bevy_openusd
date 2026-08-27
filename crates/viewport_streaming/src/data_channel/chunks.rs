@@ -1,6 +1,7 @@
 use log::{error, info, warn};
 use viewport_protocol::{
-    CameraSource, ServerEvent, ServerEventEnvelope, SessionEvent, ViewportReadModel,
+    CameraSource, SelectionReadModel, ServerEvent, ServerEventEnvelope, SessionEvent,
+    ViewportReadModel,
 };
 
 use super::constants::{
@@ -260,7 +261,7 @@ pub(super) fn queue_compact_snapshot(
     session_snapshot: bool,
 ) {
     snapshot.scene.prims.clear();
-    snapshot.selection.target = None;
+    snapshot.selection = SelectionReadModel::default();
     snapshot.camera_source = CameraSource::Arcball;
     snapshot.stage.display_name = truncate_snapshot_display_name(&snapshot.stage.display_name);
 
@@ -282,6 +283,7 @@ pub(super) fn queue_compact_snapshot(
     minimal.scene.root_page_size = snapshot.scene.root_page_size;
     minimal.timeline = snapshot.timeline;
     minimal.presentation = snapshot.presentation;
+    minimal.viewer_settings = snapshot.viewer_settings;
     minimal.physics_running = snapshot.physics_running;
 
     if !queue_bounded_event(state, None, snapshot_event(minimal, session_snapshot)) {

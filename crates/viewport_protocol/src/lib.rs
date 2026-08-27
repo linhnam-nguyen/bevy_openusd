@@ -2,11 +2,11 @@
 //!
 //! The protocol is split by responsibility so transport adapters can depend on
 //! stable wire types without depending on Bevy, egui, Frost, Tauri, or OpenUSD.
-//! The legacy `Viewport*` types remain available for protocol-version-1 stdio
-//! compatibility; the `Client*` and `Server*` types reserve the richer session
-//! contract used by the remote viewport transport.
+//! The `Viewport*` types carry the versioned viewport contract; the `Client*`
+//! and `Server*` types reserve the richer session contract used by the remote
+//! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 5;
 
 pub mod authorization;
 pub mod capabilities;
@@ -59,13 +59,16 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    CameraSource, CurveTuning, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
-    EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
-    GroundGridOrigin, MAX_EDITOR_TEXT_BYTES, MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES,
-    MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation, RuntimeMutationBatch,
-    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
-    SelectionReadModel, StageLoadState, StageReadModel, TimelineReadModel, ViewportCommand,
-    ViewportCommandEnvelope, ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
-    ViewportWireMessage,
+    CameraOrientationReadModel, CameraSource, ColorRgb8, CurveTuning, DEFAULT_GIZMO_SIZE_LEVEL,
+    DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, EditorOperation, EditorPrimReadModel,
+    EditorStateReadModel, EditorValue, FocusMode, GroundGridOrigin, MAX_EDITOR_TEXT_BYTES,
+    MAX_GIZMO_SIZE_LEVEL, MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE,
+    MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS, MIN_GIZMO_SIZE_LEVEL, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation,
+    RuntimeMutationBatch, SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor,
+    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
+    SelectionPresentationSettings, SelectionReadModel, StageLoadState, StageReadModel,
+    StandardView, TimelineReadModel, ViewerEnvironmentSettings, ViewerSettingsCapabilities,
+    ViewerSettingsReadModel, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
+    ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage,
 };

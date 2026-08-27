@@ -44,11 +44,13 @@ pub use route::profile::{
 };
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
+pub use route::{FallbackMaterialColor, set_fallback_material_color};
+pub use route::{MeshProjectionConsumers, RenderProjectionDirtySet};
 pub use snippet::UsdSnippet;
 /// The inline-USD macro (see [`snippet::UsdSnippet`]).
 pub use usd_macro::usd;
 
-use bevy::app::{App, Plugin};
+use bevy::app::{App, Plugin, Update};
 
 /// Registers the [`UsdPrimRef`] reflect type and installs the built-in
 /// [`SchemaRegistry`] (transform / visibility / mesh / reflect routes). Pair
@@ -74,12 +76,16 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();
         // Opt-in mesh/vertex pipeline profiler; disabled on the normal hot path.
         app.init_resource::<route::profile::GeometryProfile>();
+        app.init_resource::<route::RenderProjectionDirtySet>();
+        app.init_resource::<route::MeshProjectionConsumers>();
         // Texture cache for filesystem and USDZ archives.
         app.init_resource::<route::material::UsdTextureCache>();
         // Decoded StandardMaterial cache keyed by composed USD Material path.
         app.init_resource::<route::material::UsdMaterialCache>();
         app.init_resource::<route::material::MaterialConsumerIndex>();
         app.init_resource::<route::material::MaterialRouteDiagnostics>();
+        app.init_resource::<route::FallbackMaterialColor>();
+        app.add_systems(Update, route::sync_fallback_material_color);
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

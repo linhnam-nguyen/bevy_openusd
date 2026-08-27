@@ -6,16 +6,20 @@ mod tests {
     use crate::project::recovery::{RecoverySettings, RecoveryStore};
     use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
     use crate::viewport::animation::UsdStageTime;
+    use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
     use crate::viewport::api::bridge::plugin::checkpoint_recovery;
     use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::CameraMount;
+    use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
     use crate::viewport::physics::PhysicsActive;
-    use crate::viewport::scene::SelectedPrim;
+    use crate::viewport::rendering::sampling::{
+        DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
+    };
     use crate::viewport::scene::visualization::DisplayToggles;
+    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::semantic::synchronize_live_stage;
     use crate::viewport::semantic::{
         SemanticDiffState, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSyncState,
@@ -31,7 +35,14 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
+            .init_resource::<SamplingCoordinatorState>()
+            .init_resource::<DlssCapability>()
+            .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()
@@ -57,7 +68,14 @@ mod tests {
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<ReloadRequest>()
             .init_resource::<SelectedPrim>()
+            .init_resource::<SelectedTargets>()
+            .init_resource::<ViewerSettingsState>()
+            .init_resource::<SamplingCoordinatorState>()
+            .init_resource::<DlssCapability>()
+            .init_resource::<DlssCameraActivation>()
             .init_resource::<CameraMount>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<FlyTo>()
             .init_resource::<UsdStageTime>()
             .init_resource::<DisplayToggles>()
             .init_resource::<LoaderTuning>()

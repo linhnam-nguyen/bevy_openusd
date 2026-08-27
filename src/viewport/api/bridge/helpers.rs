@@ -1,15 +1,15 @@
 use viewport_protocol::{
-    CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation, OverlayKind,
-    PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch, SceneAnchor,
-    SelectionReadModel, StageReadModel, TimelineReadModel, ViewportEvent, ViewportEventEnvelope,
-    ViewportReadModel,
+    CameraOrientationReadModel, CameraSource, CurveTuning as ProtocolCurveTuning, EditorOperation,
+    OverlayKind, PROTOCOL_VERSION, PresentationReadModel, RenderMode, RuntimeMutationBatch,
+    SceneAnchor, SelectionReadModel, StageReadModel, TimelineReadModel, ViewerSettingsReadModel,
+    ViewportEvent, ViewportEventEnvelope, ViewportReadModel,
 };
 
 use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::camera::CameraMount;
-use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
 
@@ -23,6 +23,31 @@ pub(super) fn resolve_anchor(
             anchor.prim_path
         )
     })
+}
+
+/// Publishes the authoritative net selection change without repeating the
+/// complete selected-anchor set on every incremental event. Full selection
+/// state remains available in snapshots.
+pub(super) fn emit_selection_delta(
+    request_id: String,
+    selection: &SelectedTargets,
+    outbox: &mut ViewportEventOutbox,
+) {
+    let delta = selection.last_transaction_delta();
+    let mut added = delta.added.iter().cloned().collect::<Vec<_>>();
+    let mut removed = delta.removed.iter().cloned().collect::<Vec<_>>();
+    added.sort_unstable();
+    removed.sort_unstable();
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::SelectionDeltaApplied {
+            revision: selection.revision(),
+            added,
+            removed,
+            primary: selection.0.primary.clone(),
+            count: selection.0.targets.len() as u32,
+        },
+    ));
 }
 
 pub(super) fn set_overlay(toggles: &mut DisplayToggles, overlay: OverlayKind, enabled: bool) {
@@ -49,9 +74,12 @@ pub(super) fn emit_snapshot(
     request_id: String,
     stage_info: &StageInfo,
     spawned: &Spawned,
-    selected: &SelectedPrim,
+    selection: &SelectionReadModel,
+    selection_revision: u64,
+    settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
+    camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
     toggles: &DisplayToggles,
     tuning: &LoaderTuning,
@@ -60,17 +88,20 @@ pub(super) fn emit_snapshot(
     outbox.push(ViewportEventEnvelope::new(
         Some(request_id),
         ViewportEvent::Snapshot {
-            state: build_read_model(
+            state: Box::new(build_read_model(
                 stage_info,
                 spawned.0,
-                selected,
+                selection,
+                selection_revision,
+                settings,
                 scene_index,
                 camera_mount,
+                camera_orientation,
                 clock,
                 toggles,
                 tuning,
                 physics_running,
-            ),
+            )),
         },
     ));
 }
@@ -79,9 +110,12 @@ pub(super) fn emit_snapshot(
 pub(super) fn build_read_model(
     stage_info: &StageInfo,
     stage_loaded: bool,
-    selected: &SelectedPrim,
+    selection: &SelectionReadModel,
+    selection_revision: u64,
+    settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
+    camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
     toggles: &DisplayToggles,
     tuning: &LoaderTuning,
@@ -94,15 +128,16 @@ pub(super) fn build_read_model(
             loaded: stage_loaded,
         },
         scene: scene_index.roots_read_model(),
-        selection: SelectionReadModel {
-            target: selected.0.and_then(|entity| scene_index.anchor_for(entity)),
-        },
+        selection: selection.clone(),
+        selection_revision,
+        viewer_settings: settings.clone(),
         camera_source: match camera_mount {
             CameraMount::Arcball => CameraSource::Arcball,
             CameraMount::Mounted { prim_path } => CameraSource::Authored {
                 prim_path: prim_path.clone(),
             },
         },
+        camera_orientation: *camera_orientation,
         timeline: timeline_read_model(clock),
         presentation: presentation_read_model(toggles, tuning),
         physics_running,
@@ -153,6 +188,19 @@ pub(super) fn emit_presentation_changed(
         Some(request_id),
         ViewportEvent::PresentationChanged {
             presentation: presentation_read_model(toggles, tuning),
+        },
+    ));
+}
+
+pub(super) fn emit_viewer_settings_changed(
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+    settings: &ViewerSettingsReadModel,
+) {
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::ViewerSettingsChanged {
+            settings: settings.clone(),
         },
     ));
 }

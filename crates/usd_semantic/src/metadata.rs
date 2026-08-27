@@ -1,7 +1,9 @@
 //! Semantic fields and canonical custom-property extraction.
 
 use anyhow::Result;
+use openusd::schemas::ui::SceneGraphPrimAPI;
 use openusd::sdf::{Path, Value};
+use openusd::tf::Token;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SemanticInfo, SemanticProperty};
 
@@ -15,15 +17,10 @@ pub fn extract_metadata(
     let prim = stage.prim(path.clone());
     let type_name = prim.type_name()?.map(|value| value.as_str().to_owned());
     let category = prim.kind()?.map(|value| value.as_str().to_owned());
-    let display_name =
-        configured_text_property(stage, path, config.display_name_property.as_deref())?.or_else(
-            || {
-                path.as_str()
-                    .rsplit('/')
-                    .find(|part| !part.is_empty())
-                    .map(str::to_owned)
-            },
-        );
+    let display_name = match config.display_name_property.as_deref() {
+        Some(property) => configured_text_property(stage, path, Some(property))?,
+        None => authored_display_name(stage, path)?,
+    };
 
     let mut properties = if config.include_custom_properties {
         extract_custom_properties(stage, path)?
@@ -45,6 +42,16 @@ pub fn extract_metadata(
         },
         properties,
     ))
+}
+
+fn authored_display_name(stage: &Stage, path: &Path) -> Result<Option<String>> {
+    let Some(scene_graph) = SceneGraphPrimAPI::get(stage, path.clone())? else {
+        return Ok(None);
+    };
+    Ok(scene_graph
+        .display_name_attr()
+        .get::<Token>()?
+        .map(|value| value.as_str().to_owned()))
 }
 
 fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticProperty>> {

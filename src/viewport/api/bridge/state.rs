@@ -25,11 +25,11 @@ pub(super) struct RuntimeMutationCoordinator {
 }
 
 #[derive(Resource, Default)]
-pub(super) struct SemanticSearchRequests {
-    pub pending: HashMap<String, SemanticSearchRequest>,
+pub(super) struct SceneSearchRequests {
+    pub pending: HashMap<String, SceneSearchRequest>,
 }
 
-pub(super) struct SemanticSearchRequest {
+pub(super) struct SceneSearchRequest {
     pub query: String,
     pub offset: u32,
     pub submitted_at: Instant,

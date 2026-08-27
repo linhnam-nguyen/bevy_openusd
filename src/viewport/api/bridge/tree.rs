@@ -2,12 +2,12 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
-use super::helpers::reject;
+use super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::camera::{ArcballCamera, FlyTo};
-use crate::viewport::scene::SelectedPrim;
+use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 /// Applies focus and visibility actions after scene anchors have been mapped
 /// to their private Bevy entities. Both selection and fly-to use the same
@@ -18,6 +18,7 @@ pub(super) fn apply_tree_commands(
     mut inbox: ResMut<ViewportTreeCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut selected: ResMut<SelectedPrim>,
+    mut selection: ResMut<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     cameras: Query<&ArcballCamera>,
     transforms: Query<&Transform>,
@@ -79,6 +80,9 @@ pub(super) fn apply_tree_commands(
                 };
 
                 selected.0 = Some(entity);
+                selection
+                    .replace(SelectionReadModel::from_legacy_target(Some(target.clone())))
+                    .expect("focused target must satisfy the protocol invariant");
                 fly_to.start_focus = camera.focus;
                 fly_to.start_distance = camera.distance;
                 fly_to.target_focus = target_focus;
@@ -90,14 +94,7 @@ pub(super) fn apply_tree_commands(
                 fly_to.duration = 0.4;
                 fly_to.remaining = 0.4;
 
-                outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id.clone()),
-                    ViewportEvent::SelectionChanged {
-                        selection: SelectionReadModel {
-                            target: Some(target.clone()),
-                        },
-                    },
-                ));
+                emit_selection_delta(request_id.clone(), &selection, &mut outbox);
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
                     ViewportEvent::CameraTransitionStarted { target, mode },

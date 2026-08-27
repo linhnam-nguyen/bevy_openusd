@@ -15,14 +15,19 @@ mod state;
 use bevy::camera::Projection;
 use bevy::prelude::*;
 use bevy_egui::input::egui_wants_any_pointer_input;
+use usd_bevy::UsdCamera;
+use viewport_protocol::{CameraOrientationReadModel, ViewportEvent, ViewportEventEnvelope};
 
+use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::input::{
     ViewportNavigationInput, apply_local_navigation_input, reset_navigation_frame,
 };
 
 pub(crate) use glacial::sync_chase_camera;
 pub(crate) use navigation::{apply_fly_to, fit_camera_once, follow_mounted_camera};
-pub(crate) use state::{CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
+pub(crate) use state::{
+    CameraBookmark, CameraBookmarks, CameraMount, CameraOrientationState, FlyTo,
+};
 
 pub struct ArcballCameraPlugin;
 
@@ -38,6 +43,7 @@ impl Plugin for ArcballCameraPlugin {
         // to the Cameras tab (so a mounted USD camera isn't fought by
         // orbit/pan input). Tiny run-condition saves a lot of confusion.
         app.init_resource::<ViewportNavigationInput>()
+            .init_resource::<CameraOrientationState>()
             .configure_sets(
                 Update,
                 (ArcballCameraSet::PrepareInput, ArcballCameraSet::ApplyInput).chain(),
@@ -54,7 +60,8 @@ impl Plugin for ArcballCameraPlugin {
                     .run_if(not(egui_wants_any_pointer_input))
                     .run_if(arcball_is_active)
                     .in_set(ArcballCameraSet::ApplyInput),
-            );
+            )
+            .add_systems(PostUpdate, publish_camera_orientation);
     }
 }
 
@@ -207,5 +214,131 @@ pub(crate) fn apply_rig(cam: &ArcballCamera, tr: &mut Transform) {
         horizontal * cam.yaw.cos(),
     );
     let cam_world = cam.focus + offset;
-    *tr = Transform::from_translation(cam_world).looking_at(cam.focus, Vec3::Y);
+    let up = if horizontal.abs() <= 1e-5 {
+        // At the poles the world-Y up vector is parallel to the view
+        // direction. Preserve the canonical CAD roll instead of sharing one
+        // fallback: Top looks down with -Z up, Bottom looks up with +Z up.
+        if vertical >= 0.0 {
+            Vec3::NEG_Z
+        } else {
+            Vec3::Z
+        }
+    } else {
+        Vec3::Y
+    };
+    *tr = Transform::from_translation(cam_world).looking_at(cam.focus, up);
+}
+
+fn publish_camera_orientation(
+    time: Res<Time>,
+    mut state: ResMut<CameraOrientationState>,
+    outbox: Option<ResMut<ViewportEventOutbox>>,
+    cameras: Query<&Transform, (With<Camera3d>, Without<UsdCamera>)>,
+) {
+    let Some(mut outbox) = outbox else {
+        return;
+    };
+    let Ok(transform) = cameras.single() else {
+        return;
+    };
+    let rotation = transform.rotation;
+    let raw = rotation.to_array();
+    if !raw.iter().all(|value| value.is_finite()) {
+        return;
+    }
+    if state.last_rotation.is_some_and(|last| {
+        last.to_array()
+            .iter()
+            .zip(raw.iter())
+            .all(|(left, right)| (left - right).abs() <= 1e-5)
+    }) {
+        return;
+    }
+
+    let now = time.elapsed_secs_f64();
+    if state.has_published && now - state.last_published_at < 1.0 / 30.0 {
+        return;
+    }
+    let Some(orientation) = CameraOrientationReadModel::from_rotation_xyzw(raw) else {
+        return;
+    };
+    state.last_rotation = Some(rotation);
+    state.last_published_at = now;
+    state.has_published = true;
+    state.latest = orientation;
+    outbox.push(ViewportEventEnvelope::new(
+        None,
+        ViewportEvent::CameraOrientationChanged { orientation },
+    ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pole_rig_uses_a_stable_up_axis() {
+        let cam = ArcballCamera {
+            elevation: core::f32::consts::FRAC_PI_2,
+            ..Default::default()
+        };
+        let mut transform = Transform::default();
+        apply_rig(&cam, &mut transform);
+        assert!(transform.rotation.is_finite());
+    }
+
+    #[test]
+    fn orientation_publisher_emits_initial_orientation_once_and_then_stays_idle() {
+        let mut app = App::new();
+        app.init_resource::<Time>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<ViewportEventOutbox>()
+            .add_systems(Update, publish_camera_orientation);
+        app.world_mut()
+            .spawn((Camera3d::default(), Transform::default()));
+
+        app.update();
+        let first = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("the initial live camera orientation is published");
+        assert!(matches!(
+            first.event,
+            ViewportEvent::CameraOrientationChanged { orientation }
+                if orientation == CameraOrientationReadModel::default()
+        ));
+
+        app.update();
+        assert!(
+            app.world_mut()
+                .resource_mut::<ViewportEventOutbox>()
+                .pop()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn orientation_publisher_drops_nonfinite_camera_rotations() {
+        let mut app = App::new();
+        app.init_resource::<Time>()
+            .init_resource::<CameraOrientationState>()
+            .init_resource::<ViewportEventOutbox>()
+            .add_systems(Update, publish_camera_orientation);
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Transform {
+                rotation: Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0),
+                ..Default::default()
+            },
+        ));
+
+        app.update();
+        assert!(
+            app.world_mut()
+                .resource_mut::<ViewportEventOutbox>()
+                .pop()
+                .is_none()
+        );
+    }
 }
