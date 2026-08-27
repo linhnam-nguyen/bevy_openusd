@@ -4,7 +4,7 @@ use viewport_protocol::{
 };
 
 #[test]
-fn viewport_command_fixture_uses_the_version_three_json_shape() {
+fn viewport_command_fixture_uses_the_version_four_json_shape() {
     let message = ViewportWireMessage::Command(ViewportCommandEnvelope::new(
         "fixture-command",
         ViewportCommand::RequestSnapshot,
@@ -13,13 +13,13 @@ fn viewport_command_fixture_uses_the_version_three_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"command\",\"payload\":{\"protocol_version\":3,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
+        "{\"type\":\"command\",\"payload\":{\"protocol_version\":4,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
 
 #[test]
-fn viewport_event_fixture_uses_the_version_three_json_shape() {
+fn viewport_event_fixture_uses_the_version_four_json_shape() {
     let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
         None,
         ViewportEvent::Ready {
@@ -30,7 +30,7 @@ fn viewport_event_fixture_uses_the_version_three_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"event\",\"payload\":{\"protocol_version\":3,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":3}}}}\n"
+        "{\"type\":\"event\",\"payload\":{\"protocol_version\":4,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":4}}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
@@ -72,7 +72,7 @@ fn standard_views_use_the_complete_snake_case_wire_vocabulary() {
 }
 
 #[test]
-fn a_version_two_command_envelope_is_rejected_by_the_version_three_contract() {
+fn a_version_two_command_envelope_is_rejected_by_the_version_four_contract() {
     let mut envelope = ViewportCommandEnvelope::new("legacy", ViewportCommand::RequestSnapshot);
     envelope.protocol_version = 2;
     assert!(matches!(
@@ -80,7 +80,7 @@ fn a_version_two_command_envelope_is_rejected_by_the_version_three_contract() {
         Err(
             viewport_protocol::ProtocolValidationError::UnsupportedProtocolVersion {
                 received: 2,
-                expected: 3,
+                expected: 4,
             }
         )
     ));
