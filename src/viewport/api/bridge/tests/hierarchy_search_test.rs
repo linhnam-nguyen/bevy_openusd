@@ -44,6 +44,18 @@ mod tests {
                 "Wall_0042",
                 Some("Exterior Wall"),
             ),
+            node(
+                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_1",
+                Some("/Kitchen_set/Props_grp/DiningTable_grp"),
+                "ChairB_1",
+                None,
+            ),
+            node(
+                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_2",
+                Some("/Kitchen_set/Props_grp/DiningTable_grp"),
+                "ChairB_2",
+                None,
+            ),
         ];
         let mut app = hierarchy_search_test_app(nodes);
 
@@ -97,6 +109,16 @@ mod tests {
         assert_eq!(
             run_search(&mut app, "Wall_0042")?[0].breadcrumb,
             "/Building/Level01/Wall_0042"
+        );
+        assert_eq!(
+            run_search(&mut app, "chair")?
+                .iter()
+                .map(|result| result.anchor.prim_path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_1",
+                "/Kitchen_set/Props_grp/DiningTable_grp/ChairB_2",
+            ]
         );
         Ok(())
     }

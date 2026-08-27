@@ -219,10 +219,11 @@ pub(crate) fn search_hierarchy(
     offset: u32,
     limit: u32,
 ) -> (u32, Vec<HierarchySearchMatch>) {
-    let query = query.trim().to_lowercase();
+    let query = query.trim();
     if query.is_empty() {
         return (0, Vec::new());
     }
+    let query_chars = query.chars().collect::<Vec<_>>();
 
     let limit = if limit == 0 {
         MAX_SCENE_SEARCH_RESULTS
@@ -238,7 +239,7 @@ pub(crate) fn search_hierarchy(
     let mut matches: Vec<&HierarchyNode> = hierarchy
         .nodes
         .iter()
-        .filter(|node| node.name.to_lowercase() == query)
+        .filter(|node| boundary_aware_name_matches(&node.name, &query_chars))
         .collect();
     matches.sort_by(|left, right| {
         left.breadcrumb
@@ -265,6 +266,45 @@ pub(crate) fn search_hierarchy(
         .collect();
 
     (total, matches)
+}
+
+fn boundary_aware_name_matches(name: &str, query: &[char]) -> bool {
+    let name_chars = name.chars().collect::<Vec<_>>();
+    if query.is_empty() || query.len() > name_chars.len() {
+        return false;
+    }
+
+    name_chars
+        .windows(query.len())
+        .enumerate()
+        .any(|(start, window)| {
+            let end = start + query.len();
+            is_name_boundary_before(&name_chars, start)
+                && is_name_boundary_after(&name_chars, end)
+                && window.iter().zip(query).all(|(name_char, query_char)| {
+                    name_char.to_lowercase().eq(query_char.to_lowercase())
+                })
+        })
+}
+
+fn is_name_boundary_before(name: &[char], index: usize) -> bool {
+    index == 0 || is_name_boundary_between(name[index - 1], name[index])
+}
+
+fn is_name_boundary_after(name: &[char], index: usize) -> bool {
+    index == name.len() || is_name_boundary_between(name[index - 1], name[index])
+}
+
+fn is_name_boundary_between(left: char, right: char) -> bool {
+    is_name_separator(left)
+        || is_name_separator(right)
+        || (left.is_lowercase() && right.is_uppercase())
+        || (left.is_alphabetic() && right.is_numeric())
+        || (left.is_numeric() && right.is_alphabetic())
+}
+
+fn is_name_separator(character: char) -> bool {
+    character.is_whitespace() || matches!(character, '_' | '-' | '.')
 }
 
 fn reveal_pages(

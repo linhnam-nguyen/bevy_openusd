@@ -92,6 +92,65 @@ fn search_matches_projected_names_only_and_preserves_context() {
 }
 
 #[test]
+fn search_matches_name_boundaries_without_numeric_prefix_or_ancestor_false_positives() {
+    let nodes = vec![
+        node("/root/name1/name2", Some("/root/name1"), "name2", None),
+        node(
+            "/root/name1/name2/name3",
+            Some("/root/name1/name2"),
+            "name3",
+            None,
+        ),
+        node("/root/name10/name20", Some("/root/name10"), "name20", None),
+        node("/World/ChairB_1", Some("/World"), "ChairB_1", None),
+        node("/World/ChairB_2", Some("/World"), "ChairB_2", None),
+        node(
+            "/World/ExteriorWall_0042",
+            Some("/World"),
+            "ExteriorWall_0042",
+            None,
+        ),
+        node(
+            "/World/Pump-Mechanical-02",
+            Some("/World"),
+            "Pump-Mechanical-02",
+            None,
+        ),
+    ];
+    let hierarchy = hierarchy(&nodes);
+
+    let matching_paths = |query: &str| {
+        search_hierarchy(&hierarchy, query, 0, 10)
+            .1
+            .into_iter()
+            .map(|result| result.breadcrumb)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        matching_paths("chair"),
+        vec!["/World/ChairB_1", "/World/ChairB_2"]
+    );
+    assert_eq!(
+        matching_paths("chairb"),
+        vec!["/World/ChairB_1", "/World/ChairB_2"]
+    );
+    assert_eq!(
+        matching_paths("b"),
+        vec!["/World/ChairB_1", "/World/ChairB_2"]
+    );
+    assert_eq!(matching_paths("1"), vec!["/World/ChairB_1"]);
+    assert_eq!(matching_paths("chairb_1"), vec!["/World/ChairB_1"]);
+    assert_eq!(matching_paths("0042"), vec!["/World/ExteriorWall_0042"]);
+    assert_eq!(
+        matching_paths("mechanical"),
+        vec!["/World/Pump-Mechanical-02"]
+    );
+    assert_eq!(matching_paths("name2"), vec!["/root/name1/name2"]);
+    assert_eq!(matching_paths("name20"), vec!["/root/name10/name20"]);
+}
+
+#[test]
 fn search_is_decoupled_from_prim_paths_for_synthetic_projections() {
     let category = HierarchyNode {
         id: HierarchyNodeId("category-a".to_owned()),
@@ -142,7 +201,7 @@ fn search_is_decoupled_from_prim_paths_for_synthetic_projections() {
 }
 
 #[test]
-fn search_paginates_exact_projected_names_without_path_matching() {
+fn search_paginates_boundary_aware_projected_names_without_path_matching() {
     let nodes = vec![
         node("/World/Left/Door", Some("/World/Left"), "Door", None),
         node("/World/Right/Door", Some("/World/Right"), "Door", None),
@@ -151,11 +210,13 @@ fn search_paginates_exact_projected_names_without_path_matching() {
     let hierarchy = hierarchy(&nodes);
 
     let (total, first) = search_hierarchy(&hierarchy, "door", 0, 1);
-    assert_eq!(total, 2);
-    assert_eq!(first[0].breadcrumb, "/World/Left/Door");
+    assert_eq!(total, 3);
+    assert_eq!(first[0].breadcrumb, "/World/DoorPanel");
 
     let (_, second) = search_hierarchy(&hierarchy, "door", 1, 1);
-    assert_eq!(second[0].breadcrumb, "/World/Right/Door");
+    assert_eq!(second[0].breadcrumb, "/World/Left/Door");
+    let (_, third) = search_hierarchy(&hierarchy, "door", 2, 1);
+    assert_eq!(third[0].breadcrumb, "/World/Right/Door");
     assert_eq!(search_hierarchy(&hierarchy, "doorpanel", 0, 10).0, 1);
     assert_eq!(search_hierarchy(&hierarchy, "World", 0, 10).0, 0);
 }
