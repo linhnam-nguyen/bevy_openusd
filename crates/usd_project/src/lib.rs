@@ -2,6 +2,7 @@
 
 mod capability;
 mod composition;
+mod composition_inspection;
 mod error;
 mod id;
 mod manifest;
@@ -14,6 +15,10 @@ mod validation;
 
 pub use capability::ProjectCapabilities;
 pub use composition::{SceneCompositionError, SceneCompositionGraph};
+pub use composition_inspection::{
+    CompositionClassification, CompositionDiagnostic, CompositionInspection,
+    DependencyClassification, DependencyInspection,
+};
 pub use error::ProjectDomainError;
 pub use id::{ModelId, ProjectId, SceneId, SceneMemberId};
 pub use manifest::{

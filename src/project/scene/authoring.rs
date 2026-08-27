@@ -287,7 +287,6 @@ fn sync_parent_best_effort(parent: Option<&Path>) {
     };
     let _ = directory.sync_all();
 }
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -297,12 +296,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-
     #[test]
     fn authored_scene_reopens_with_default_prim_and_registry_identity() -> Result<()> {
         let project_directory = tempdir()?;
         let scene_id = SceneId::new_v4();
-
         let path = author_scene_atomic(project_directory.path(), scene_id)?;
 
         assert_eq!(path, scene_path(project_directory.path(), scene_id));
