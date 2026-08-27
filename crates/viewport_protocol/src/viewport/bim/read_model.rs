@@ -50,39 +50,6 @@ pub struct BimPropertiesReadModel {
     pub properties: Vec<BimPropertyReadModel>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ClassificationNodeReadModel {
-    pub id: String,
-    pub parent_id: Option<String>,
-    pub level: u32,
-    pub label: String,
-    pub entity_count: u32,
-    pub has_children: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ClassificationLeafReadModel {
-    pub anchor: SceneAnchor,
-    pub label: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
-pub enum ClassificationRow {
-    Group(ClassificationNodeReadModel),
-    Leaf(ClassificationLeafReadModel),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ClassificationChildrenPage {
-    pub parent_id: Option<String>,
-    pub page: u32,
-    pub page_size: u32,
-    pub total: u32,
-    pub rows: Vec<ClassificationRow>,
-    pub has_more: bool,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BimPropertyNameMatch {
     pub name: String,

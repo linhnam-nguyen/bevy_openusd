@@ -1,57 +1,50 @@
 //! Deterministic virtual BIM classification index.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use usd_model::{CanonicalValue, EntityKey, EntitySnapshot, SemanticSnapshot};
+use usd_model::{CanonicalValue, EntityKey, EntitySnapshot, SemanticProperty, SemanticSnapshot};
 use viewport_protocol::{
-    BimFieldKey, BimPageRequest, ClassificationChildrenPage, ClassificationLeafReadModel,
-    ClassificationNodeReadModel, ClassificationRecipe, ClassificationRow, SceneAnchor,
-    UNCLASSIFIED_LABEL,
+    BimFieldKey, ClassificationRecipe, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, SceneAnchor, UNCLASSIFIED_LABEL,
 };
 
-use super::BimQueryError;
-
-const ROOT_PARENT: usize = usize::MAX;
-
 struct ClassificationNode {
-    id: String,
+    id: HierarchyNodeId,
     parent: Option<usize>,
-    level: usize,
     label: String,
-    entity_count: u32,
+    breadcrumb: String,
     children: Vec<usize>,
     leaves: Vec<EntityKey>,
 }
 
-enum PageChildren<'a> {
-    Groups(&'a [usize]),
-    Leaves(&'a [EntityKey]),
-}
-
 pub(super) struct ClassificationIndex {
-    roots: Vec<usize>,
     nodes: Vec<ClassificationNode>,
-    by_id: HashMap<String, usize>,
     child_lookup: HashMap<(usize, String), usize>,
 }
 
 impl ClassificationIndex {
     pub(super) fn build(snapshot: &SemanticSnapshot, recipe: &ClassificationRecipe) -> Self {
         let mut index = Self {
-            roots: Vec::new(),
             nodes: Vec::new(),
-            by_id: HashMap::new(),
             child_lookup: HashMap::new(),
         };
 
+        let property_fields = recipe
+            .levels
+            .iter()
+            .filter_map(|level| match &level.field {
+                BimFieldKey::Property(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+
         for entity in snapshot.entities.values() {
+            let properties = indexed_properties(entity, &property_fields);
             let mut parent = None;
             for (level_index, level) in recipe.levels.iter().enumerate() {
-                let value = group_value(entity, &level.field);
+                let value = group_value(entity, &level.field, &properties);
                 let node_index = index.get_or_insert_node(parent, level_index, level, value);
-                index.nodes[node_index].entity_count =
-                    index.nodes[node_index].entity_count.saturating_add(1);
                 parent = Some(node_index);
             }
             if let Some(leaf_parent) = parent {
@@ -66,76 +59,47 @@ impl ClassificationIndex {
             index.nodes[node_index].leaves.sort_unstable();
         }
         index
-            .roots
-            .sort_unstable_by(|left, right| index.nodes[*left].id.cmp(&index.nodes[*right].id));
-        index
     }
 
-    pub(super) fn page(
+    pub(super) fn read_model(
         &self,
         snapshot: &SemanticSnapshot,
-        parent_id: Option<&str>,
-        page: u32,
-        page_size: u32,
-    ) -> Result<ClassificationChildrenPage, BimQueryError> {
-        let request = BimPageRequest::new(page.saturating_mul(page_size), page_size);
-        request.validate_max(
-            "bim.classification.page_size",
-            viewport_protocol::MAX_BIM_CLASSIFICATION_PAGE_SIZE,
-        )?;
-        let children = match parent_id {
-            None => PageChildren::Groups(&self.roots),
-            Some(id) => {
-                let parent = self
-                    .by_id
-                    .get(id)
-                    .copied()
-                    .ok_or_else(|| BimQueryError::ClassificationNodeNotFound(id.to_owned()))?;
-                let node = &self.nodes[parent];
-                if !node.children.is_empty() {
-                    PageChildren::Groups(&node.children)
-                } else {
-                    PageChildren::Leaves(&node.leaves)
-                }
-            }
-        };
-        let total = match &children {
-            PageChildren::Groups(indices) => indices.len(),
-            PageChildren::Leaves(keys) => keys.len(),
-        };
-        let offset = request.offset as usize;
-        let start = offset.min(total);
-        let end = start.saturating_add(request.limit as usize).min(total);
-        let mut rows = Vec::with_capacity(end.saturating_sub(start));
-        match children {
-            PageChildren::Groups(indices) => {
-                for &index in &indices[start..end] {
-                    rows.push(ClassificationRow::Group(self.node_read_model(index)));
-                }
-            }
-            PageChildren::Leaves(keys) => {
-                for key in &keys[start..end] {
-                    let entity = snapshot
-                        .entities
-                        .get(key)
-                        .ok_or_else(|| BimQueryError::EntityNotFound(key.as_str().to_owned()))?;
-                    rows.push(ClassificationRow::Leaf(ClassificationLeafReadModel {
-                        anchor: SceneAnchor::active_session(entity.prim_path.clone()),
-                        label: entity_label(entity),
-                    }));
-                }
+        revision: u64,
+    ) -> HierarchyReadModel {
+        let leaf_count: usize = self.nodes.iter().map(|node| node.leaves.len()).sum();
+        let mut nodes = Vec::with_capacity(self.nodes.len() + leaf_count);
+        for index in 0..self.nodes.len() {
+            nodes.push(self.node_read_model(index));
+            let parent_id = self.nodes[index].id.clone();
+            let breadcrumb = self.nodes[index].breadcrumb.clone();
+            for key in &self.nodes[index].leaves {
+                let entity = snapshot
+                    .entities
+                    .get(key)
+                    .expect("classification leaf must belong to its snapshot");
+                let name = classification_leaf_name(entity);
+                nodes.push(HierarchyNodeReadModel::scene(
+                    leaf_id(&parent_id, key),
+                    Some(parent_id.clone()),
+                    name.clone(),
+                    format!("{breadcrumb} / {name}"),
+                    SceneAnchor::active_session(entity.prim_path.clone()),
+                    None,
+                    true,
+                    false,
+                ));
             }
         }
-
-        let row_count = rows.len() as u32;
-        Ok(ClassificationChildrenPage {
-            parent_id: parent_id.map(str::to_owned),
-            page,
-            page_size,
-            total: total as u32,
-            rows,
-            has_more: request.offset.saturating_add(row_count) < total as u32,
-        })
+        nodes.sort_unstable_by(|left, right| {
+            left.breadcrumb
+                .cmp(&right.breadcrumb)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        HierarchyReadModel {
+            source: HierarchySource::BimClassification,
+            revision,
+            nodes,
+        }
     }
 
     fn get_or_insert_node(
@@ -145,7 +109,7 @@ impl ClassificationIndex {
         level: &viewport_protocol::ClassificationLevel,
         label: String,
     ) -> usize {
-        let lookup_key = (parent.unwrap_or(ROOT_PARENT), label.clone());
+        let lookup_key = (parent.unwrap_or(usize::MAX), label.clone());
         if let Some(index) = self.child_lookup.get(&lookup_key) {
             return *index;
         }
@@ -154,36 +118,34 @@ impl ClassificationIndex {
             .unwrap_or("root")
             .to_owned();
         let id = node_id(&parent_id, level_index, level, &label);
+        let breadcrumb = parent
+            .map(|index| format!("{} / {label}", self.nodes[index].breadcrumb))
+            .unwrap_or_else(|| label.clone());
         let index = self.nodes.len();
         self.nodes.push(ClassificationNode {
             id: id.clone(),
             parent,
-            level: level_index,
             label,
-            entity_count: 0,
+            breadcrumb,
             children: Vec::new(),
             leaves: Vec::new(),
         });
-        self.by_id.insert(id, index);
         self.child_lookup.insert(lookup_key, index);
         if let Some(parent) = parent {
             self.nodes[parent].children.push(index);
-        } else {
-            self.roots.push(index);
         }
         index
     }
 
-    fn node_read_model(&self, index: usize) -> ClassificationNodeReadModel {
+    fn node_read_model(&self, index: usize) -> HierarchyNodeReadModel {
         let node = &self.nodes[index];
-        ClassificationNodeReadModel {
-            id: node.id.clone(),
-            parent_id: node.parent.map(|parent| self.nodes[parent].id.clone()),
-            level: node.level as u32,
-            label: node.label.clone(),
-            entity_count: node.entity_count,
-            has_children: !node.children.is_empty() || !node.leaves.is_empty(),
-        }
+        HierarchyNodeReadModel::virtual_node(
+            node.id.clone(),
+            node.parent.map(|parent| self.nodes[parent].id.clone()),
+            node.label.clone(),
+            node.breadcrumb.clone(),
+            !node.children.is_empty() || !node.leaves.is_empty(),
+        )
     }
 }
 
@@ -200,15 +162,29 @@ pub(super) fn canonical_value_text(value: &CanonicalValue) -> Option<Cow<'_, str
     })
 }
 
-fn group_value(entity: &EntitySnapshot, field: &BimFieldKey) -> String {
+fn indexed_properties<'a>(
+    entity: &'a EntitySnapshot,
+    requested: &HashSet<&str>,
+) -> HashMap<&'a str, &'a SemanticProperty> {
+    entity
+        .properties
+        .iter()
+        .filter(|property| requested.contains(property.name.as_str()))
+        .map(|property| (property.name.as_str(), property))
+        .collect()
+}
+
+fn group_value(
+    entity: &EntitySnapshot,
+    field: &BimFieldKey,
+    properties: &HashMap<&str, &SemanticProperty>,
+) -> String {
     let value = match field {
         BimFieldKey::Category => entity.semantic.category.as_deref().map(Cow::Borrowed),
         BimFieldKey::Family => entity.semantic.family.as_deref().map(Cow::Borrowed),
         BimFieldKey::Type => entity.semantic.type_name.as_deref().map(Cow::Borrowed),
-        BimFieldKey::Property(name) => entity
-            .properties
-            .iter()
-            .find(|property| property.name == *name)
+        BimFieldKey::Property(name) => properties
+            .get(name.as_str())
             .and_then(|property| canonical_value_text(&property.value)),
     };
     value.filter(|value| !value.trim().is_empty()).map_or_else(
@@ -222,7 +198,7 @@ fn node_id(
     level_index: usize,
     level: &viewport_protocol::ClassificationLevel,
     label: &str,
-) -> String {
+) -> HierarchyNodeId {
     let mut input = Vec::with_capacity(parent_id.len() + level.id.len() + label.len() + 32);
     input.extend_from_slice(parent_id.as_bytes());
     input.push(0);
@@ -231,14 +207,35 @@ fn node_id(
     input.extend_from_slice(level.field.stable_key().as_bytes());
     input.push(0);
     input.extend_from_slice(label.as_bytes());
-    format!("bim-group-{level_index}-{}", blake3::hash(&input).to_hex())
+    HierarchyNodeId::new(format!(
+        "bim-group-{level_index}-{}",
+        blake3::hash(&input).to_hex()
+    ))
 }
 
-fn entity_label(entity: &EntitySnapshot) -> String {
-    entity
+fn leaf_id(parent_id: &HierarchyNodeId, key: &EntityKey) -> HierarchyNodeId {
+    let mut input = Vec::with_capacity(parent_id.as_str().len() + key.as_str().len() + 1);
+    input.extend_from_slice(parent_id.as_str().as_bytes());
+    input.push(0);
+    input.extend_from_slice(key.as_str().as_bytes());
+    HierarchyNodeId::new(format!("bim-leaf-{}", blake3::hash(&input).to_hex()))
+}
+
+/// The classification tree and hierarchy search share this exact name.
+/// EntityKey is the stable element identity; prim path and the reserved
+/// unclassified label are deterministic fallbacks for malformed source data.
+fn classification_leaf_name(entity: &EntitySnapshot) -> String {
+    let element_id = non_empty(entity.key.as_str()).unwrap_or(entity.prim_path.as_str());
+    let family = entity
         .semantic
-        .display_name
+        .family
         .as_deref()
-        .unwrap_or(entity.prim_path.as_str())
-        .to_owned()
+        .and_then(non_empty)
+        .unwrap_or(UNCLASSIFIED_LABEL);
+    format!("{element_id}-{family}")
+}
+
+fn non_empty(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
 }

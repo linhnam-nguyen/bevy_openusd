@@ -15,6 +15,5 @@ pub use query::{
 pub use read_model::{
     BimObjectMatch, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyNameMatch,
     BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchResult,
-    BimUnitOption, ClassificationChildrenPage, ClassificationLeafReadModel,
-    ClassificationNodeReadModel, ClassificationRow, CommonValue,
+    BimUnitOption, CommonValue,
 };

@@ -17,6 +17,8 @@ use viewport_protocol::{
 #[derive(Clone, Debug)]
 pub(crate) struct CurrentHierarchyProjection {
     read_model: Arc<HierarchyReadModel>,
+    by_id: HashMap<HierarchyNodeId, usize>,
+    children_by_parent: HashMap<Option<HierarchyNodeId>, Vec<usize>>,
 }
 
 impl Default for CurrentHierarchyProjection {
@@ -52,12 +54,35 @@ impl CurrentHierarchyProjection {
             })
             .collect();
 
+        Self::from_read_model(HierarchyReadModel {
+            source: HierarchySource::Prim,
+            revision,
+            nodes,
+        })
+    }
+
+    pub(crate) fn from_read_model(read_model: HierarchyReadModel) -> Self {
+        let by_id = read_model
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.id.clone(), index))
+            .collect::<HashMap<_, _>>();
+        let mut children_by_parent: HashMap<Option<HierarchyNodeId>, Vec<usize>> = HashMap::new();
+        for (index, node) in read_model.nodes.iter().enumerate() {
+            children_by_parent
+                .entry(node.parent_id.clone())
+                .or_default()
+                .push(index);
+        }
+        for children in children_by_parent.values_mut() {
+            children.sort_unstable_by_key(|index| read_model.nodes[*index].id.clone());
+        }
+
         Self {
-            read_model: Arc::new(HierarchyReadModel {
-                source: HierarchySource::Prim,
-                revision,
-                nodes,
-            }),
+            read_model: Arc::new(read_model),
+            by_id,
+            children_by_parent,
         }
     }
 
@@ -72,11 +97,7 @@ impl CurrentHierarchyProjection {
         page_size: u32,
     ) -> Result<HierarchyChildrenPage, String> {
         if let Some(parent_id) = parent_id
-            && !self
-                .read_model
-                .nodes
-                .iter()
-                .any(|node| &node.id == parent_id)
+            && !self.by_id.contains_key(parent_id)
         {
             return Err(format!(
                 "unknown hierarchy parent id `{}`",
@@ -85,21 +106,18 @@ impl CurrentHierarchyProjection {
         }
 
         let page_size = page_size.clamp(1, MAX_SCENE_PAGE_SIZE);
-        let total = self
-            .read_model
-            .nodes
-            .iter()
-            .filter(|node| node.parent_id.as_ref() == parent_id)
-            .count() as u32;
+        let child_indices = self
+            .children_by_parent
+            .get(&parent_id.cloned())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let total = child_indices.len() as u32;
         let start = (page as usize).saturating_mul(page_size as usize);
-        let nodes = self
-            .read_model
-            .nodes
+        let nodes = child_indices
             .iter()
-            .filter(|node| node.parent_id.as_ref() == parent_id)
             .skip(start)
             .take(page_size as usize)
-            .cloned()
+            .map(|index| self.read_model.nodes[*index].clone())
             .collect();
 
         Ok(HierarchyChildrenPage {

@@ -15,6 +15,7 @@ mod session_registry;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
+pub(crate) use hierarchy::CurrentHierarchyProjection;
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,

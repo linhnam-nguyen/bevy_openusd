@@ -8,19 +8,28 @@ mod properties;
 mod search;
 
 #[cfg(test)]
+mod test_fixtures;
+
+#[cfg(test)]
+mod classification_tests;
+
+#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
-    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationChildrenPage,
-    ClassificationRecipe, ProtocolValidationError, SceneAnchor, SelectionReadModel,
+    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationRecipe,
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel, ProtocolValidationError,
+    SceneAnchor, SelectionReadModel,
 };
 
 use self::classification::ClassificationIndex;
+use crate::viewport::api::CurrentHierarchyProjection;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BimReadPolicy {
@@ -61,7 +70,7 @@ impl From<ProtocolValidationError> for BimQueryError {
 struct ClassificationCache {
     snapshot_id: SnapshotId,
     recipe: ClassificationRecipe,
-    index: ClassificationIndex,
+    projection: CurrentHierarchyProjection,
     build_count: u64,
 }
 
@@ -96,10 +105,42 @@ impl<'snapshot> BimReadService<'snapshot> {
     pub(crate) fn classification_page(
         &mut self,
         recipe: &ClassificationRecipe,
-        parent_id: Option<&str>,
+        parent_id: Option<&HierarchyNodeId>,
         page: u32,
         page_size: u32,
-    ) -> Result<ClassificationChildrenPage, BimQueryError> {
+    ) -> Result<HierarchyChildrenPage, BimQueryError> {
+        self.ensure_classification_cache(recipe)?;
+        let cache = self
+            .classification_cache
+            .as_ref()
+            .expect("classification cache is initialized");
+        cache
+            .projection
+            .children_page(parent_id, page, page_size)
+            .map_err(|_| {
+                BimQueryError::ClassificationNodeNotFound(
+                    parent_id.map_or_else(|| "<root>".to_owned(), |id| id.as_str().to_owned()),
+                )
+            })
+    }
+
+    pub(crate) fn classification_snapshot(
+        &mut self,
+        recipe: &ClassificationRecipe,
+    ) -> Result<Arc<HierarchyReadModel>, BimQueryError> {
+        self.ensure_classification_cache(recipe)?;
+        Ok(self
+            .classification_cache
+            .as_ref()
+            .expect("classification cache is initialized")
+            .projection
+            .snapshot())
+    }
+
+    fn ensure_classification_cache(
+        &mut self,
+        recipe: &ClassificationRecipe,
+    ) -> Result<(), BimQueryError> {
         recipe.validate()?;
         let needs_rebuild = self.classification_cache.as_ref().is_none_or(|cache| {
             cache.snapshot_id != self.snapshot.snapshot_id || cache.recipe != *recipe
@@ -112,15 +153,14 @@ impl<'snapshot> BimReadService<'snapshot> {
             self.classification_cache = Some(ClassificationCache {
                 snapshot_id: self.snapshot.snapshot_id.clone(),
                 recipe: recipe.clone(),
-                index: ClassificationIndex::build(self.snapshot, recipe),
+                projection: CurrentHierarchyProjection::from_read_model(
+                    ClassificationIndex::build(self.snapshot, recipe)
+                        .read_model(self.snapshot, build_count),
+                ),
                 build_count,
             });
         }
-        let cache = self
-            .classification_cache
-            .as_ref()
-            .expect("classification cache is initialized");
-        cache.index.page(self.snapshot, parent_id, page, page_size)
+        Ok(())
     }
 
     pub(crate) fn search(&self, query: &BimSearchQuery) -> Result<BimSearchResult, BimQueryError> {
