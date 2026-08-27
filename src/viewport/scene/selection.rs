@@ -15,15 +15,25 @@ pub struct SelectedPrim(pub Option<Entity>);
 /// Authoritative logical selection state. The Bevy entity in [`SelectedPrim`]
 /// is only the resolved primary used by internal runtime systems.
 #[derive(Resource, Default, Debug, Clone)]
-pub struct SelectedTargets(pub SelectionReadModel);
+pub struct SelectedTargets(pub SelectionReadModel, pub(crate) u64);
 
 impl SelectedTargets {
+    pub(crate) fn revision(&self) -> u64 {
+        self.1
+    }
+
+    /// Monotonic identity for one logical selection transaction. Derived
+    /// renderer projections use this instead of reconstructing the full
+    /// selection value to detect stale work.
     pub(crate) fn replace(
         &mut self,
         mut selection: SelectionReadModel,
     ) -> Result<(), ProtocolValidationError> {
         selection.canonicalize()?;
-        self.0 = selection;
+        if self.0 != selection {
+            self.0 = selection;
+            self.1 = self.1.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -33,6 +43,7 @@ impl SelectedTargets {
         make_primary: bool,
     ) -> Result<(), ProtocolValidationError> {
         target.validate()?;
+        let before = self.0.clone();
         if !self.0.targets.contains(&target) {
             if self.0.targets.len() >= MAX_SELECTION_TARGETS {
                 return Err(ProtocolValidationError::InvalidInput {
@@ -44,17 +55,26 @@ impl SelectedTargets {
         if make_primary {
             self.0.primary = Some(target);
         }
-        self.0.canonicalize()
+        self.0.canonicalize()?;
+        if self.0 != before {
+            self.1 = self.1.saturating_add(1);
+        }
+        Ok(())
     }
 
     pub(crate) fn remove(&mut self, target: &SceneAnchor) -> Result<(), ProtocolValidationError> {
         target.validate()?;
+        let before = self.0.clone();
         let removed_primary = self.0.primary.as_ref() == Some(target);
         self.0.targets.retain(|candidate| candidate != target);
         if removed_primary {
             self.0.primary = self.0.targets.first().cloned();
         }
-        self.0.canonicalize()
+        self.0.canonicalize()?;
+        if self.0 != before {
+            self.1 = self.1.saturating_add(1);
+        }
+        Ok(())
     }
 }
 
@@ -128,16 +148,23 @@ mod tests {
                 primary: Some(second.clone()),
             })
             .expect("valid selection replaces atomically");
+        assert_eq!(selection.revision(), 1);
         assert_eq!(selection.0.targets, vec![first.clone(), second.clone()]);
         assert_eq!(selection.0.primary, Some(second.clone()));
 
         selection
             .add(third.clone(), false)
             .expect("valid target adds to the set");
+        assert_eq!(selection.revision(), 2);
         assert_eq!(selection.0.primary, Some(second));
+        selection
+            .add(third.clone(), false)
+            .expect("adding an existing non-primary target is a no-op");
+        assert_eq!(selection.revision(), 2);
         selection
             .remove(&selection.0.primary.clone().unwrap())
             .expect("primary target removes");
+        assert_eq!(selection.revision(), 3);
         assert_eq!(selection.0.targets, vec![first, third]);
         assert_eq!(
             selection.0.primary,
@@ -158,6 +185,7 @@ mod tests {
                 .is_err()
         );
         assert_eq!(selection.0, SelectionReadModel::default());
+        assert_eq!(selection.revision(), 0);
     }
 
     use bevy::asset::Assets;
