@@ -218,7 +218,22 @@ fn write_properties(bytes: &mut Vec<u8>, properties: &[SemanticProperty]) {
     for property in properties {
         write_string(bytes, &property.name);
         write_value(bytes, &property.value);
+        write_measurement(bytes, property.measurement.as_ref());
     }
+}
+
+fn write_measurement(bytes: &mut Vec<u8>, measurement: Option<&usd_model::MeasurementMetadata>) {
+    let Some(measurement) = measurement else {
+        bytes.push(0);
+        return;
+    };
+    bytes.push(1);
+    write_string(bytes, measurement.quantity.as_str());
+    write_string(bytes, measurement.canonical_unit.as_str());
+    write_option_string(
+        bytes,
+        measurement.source_unit.as_ref().map(|unit| unit.as_str()),
+    );
 }
 
 fn write_value(bytes: &mut Vec<u8>, value: &CanonicalValue) {

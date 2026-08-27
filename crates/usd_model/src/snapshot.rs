@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct SemanticProperty {
     pub name: String,
     pub value: CanonicalValue,
+    #[serde(default)]
     pub measurement: Option<MeasurementMetadata>,
 }
 

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use usd_diff::{DiffConfig, RecreationReason, compare, compare_with_config};
 use usd_model::{
     Bounds3, CanonicalValue, ChangeFlags, EntityKey, EntitySnapshot, GeometrySignature, HashDigest,
-    IdentitySource, QuantizedPoint3, SemanticInfo, SemanticProperty, SemanticSnapshot, SnapshotId,
-    SnapshotSource, TransformSignature,
+    IdentitySource, MeasurementMetadata, QuantizedPoint3, SemanticInfo, SemanticProperty,
+    SemanticSnapshot, SnapshotId, SnapshotSource, TransformSignature,
 };
 
 fn digest(seed: u8) -> HashDigest {
@@ -293,4 +293,30 @@ fn metadata_details_can_be_disabled_without_changing_flags() {
 
     assert_eq!(entity.flags, ChangeFlags::METADATA);
     assert!(entity.metadata_changes.is_empty());
+}
+
+#[test]
+fn metadata_details_include_measurement_changes() {
+    let baseline = entity("wall", "/World/Wall");
+    let mut current = baseline.clone();
+    current.properties[0].measurement = Some(MeasurementMetadata::new("length", "m", None));
+    current.metadata_hash = digest(49);
+    current.full_hash = digest(50);
+
+    let diff = compare(
+        &snapshot("base", [baseline]),
+        &snapshot("current", [current]),
+    );
+    let change = &diff
+        .entity(&EntityKey::from("wall"))
+        .expect("wall diff")
+        .metadata_changes[0];
+
+    assert_eq!(change.name, "property.Comments");
+    assert_eq!(change.old, Some(CanonicalValue::Text("A".to_owned())));
+    assert!(change.old_measurement.is_none());
+    assert_eq!(
+        change.new_measurement,
+        Some(MeasurementMetadata::new("length", "m", None))
+    );
 }

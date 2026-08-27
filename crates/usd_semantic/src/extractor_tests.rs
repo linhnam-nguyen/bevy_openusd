@@ -160,3 +160,50 @@ fn changing_a_custom_property_changes_entity_and_metadata_hashes() -> Result<()>
     assert_ne!(before.snapshot_id, after.snapshot_id);
     Ok(())
 }
+
+#[test]
+fn measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged() -> Result<()> {
+    let stage = fixture()?;
+    let baseline = SemanticExtractor::default().extract(&stage, source())?;
+
+    stage
+        .prim(openusd::sdf::path("/World/Triangle")?)
+        .attribute("height_unit")
+        .set(Value::String("m".to_owned()))?;
+    let configured = SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+        },
+        ..Default::default()
+    };
+    let measured = SemanticExtractor::new(configured).extract(&stage, source())?;
+
+    let baseline_entity = baseline
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("baseline entity");
+    let measured_entity = measured
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("measured entity");
+    let baseline_height = baseline_entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("baseline height");
+    let measured_height = measured_entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("measured height");
+
+    assert_eq!(baseline_height.value, measured_height.value);
+    assert_ne!(baseline_height.measurement, measured_height.measurement);
+    assert_ne!(baseline_entity.metadata_hash, measured_entity.metadata_hash);
+    assert_ne!(baseline_entity.full_hash, measured_entity.full_hash);
+    Ok(())
+}

@@ -46,7 +46,7 @@ impl MeasurementMetadata {
     pub fn new(
         quantity: impl Into<String>,
         canonical_unit: impl Into<String>,
-        source_unit: Option<impl Into<String>>,
+        source_unit: Option<String>,
     ) -> Self {
         Self {
             quantity: QuantitySpecId::new(quantity),
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn metadata_round_trips_without_losing_source_unit() {
-        let original = MeasurementMetadata::new("length", "m", Some("ft"));
+        let original = MeasurementMetadata::new("length", "m", Some("ft".to_owned()));
         let encoded = serde_json::to_string(&original).expect("measurement metadata serializes");
         let decoded: MeasurementMetadata =
             serde_json::from_str(&encoded).expect("measurement metadata deserializes");
@@ -75,9 +75,19 @@ mod tests {
 
     #[test]
     fn unknown_source_unit_is_distinct_from_a_known_unit() {
-        let known = MeasurementMetadata::new("length", "m", Some("m"));
+        let known = MeasurementMetadata::new("length", "m", Some("m".to_owned()));
         let unknown = MeasurementMetadata::new("length", "m", None::<String>);
 
         assert_ne!(known, unknown);
+    }
+
+    #[test]
+    fn legacy_property_json_defaults_measurement_to_none() {
+        let property: crate::SemanticProperty =
+            serde_json::from_str(r#"{"name":"legacy_height","value":{"Real":10.0}}"#)
+                .expect("legacy semantic property deserializes");
+
+        assert_eq!(property.name, "legacy_height");
+        assert_eq!(property.measurement, None);
     }
 }

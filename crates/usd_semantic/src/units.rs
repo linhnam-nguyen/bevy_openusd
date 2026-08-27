@@ -80,7 +80,7 @@ impl UnitRegistry {
         Ok(MeasurementMetadata::new(
             quantity.as_str(),
             definition.canonical_unit,
-            Some(source_unit.as_str()),
+            Some(source_unit.as_str().to_owned()),
         ))
     }
 

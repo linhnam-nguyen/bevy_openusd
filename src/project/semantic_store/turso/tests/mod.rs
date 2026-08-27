@@ -5,8 +5,9 @@ mod snapshot;
 use std::collections::HashMap;
 
 use usd_model::{
-    CanonicalValue, EntityKey, EntitySnapshot, HashDigest, IdentitySource, SemanticInfo,
-    SemanticProperty, SemanticSnapshot, SnapshotId, SnapshotSource, TransformSignature,
+    CanonicalValue, EntityKey, EntitySnapshot, HashDigest, IdentitySource, MeasurementMetadata,
+    SemanticInfo, SemanticProperty, SemanticSnapshot, SnapshotId, SnapshotSource,
+    TransformSignature,
 };
 
 pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -> SemanticSnapshot {
@@ -29,11 +30,22 @@ pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -
             hash: HashDigest::new([seed; 32]),
         },
         geometry: None,
-        properties: vec![SemanticProperty {
-            name: "Comments".to_owned(),
-            value: CanonicalValue::Text(comments.to_owned()),
-            measurement: None,
-        }],
+        properties: vec![
+            SemanticProperty {
+                name: "Comments".to_owned(),
+                value: CanonicalValue::Text(comments.to_owned()),
+                measurement: None,
+            },
+            SemanticProperty {
+                name: "Height".to_owned(),
+                value: CanonicalValue::Real(3.048),
+                measurement: Some(MeasurementMetadata::new(
+                    "length",
+                    "m",
+                    Some("[ft_i]".to_owned()),
+                )),
+            },
+        ],
         metadata_hash: HashDigest::new([seed.wrapping_add(1); 32]),
         full_hash: HashDigest::new([seed.wrapping_add(2); 32]),
     };

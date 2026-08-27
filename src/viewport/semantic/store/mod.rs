@@ -8,7 +8,7 @@ mod snapshot;
 
 use anyhow::{Context, Result};
 
-use schema::SCHEMA_SQL;
+use schema::{SCHEMA_SQL, migrate};
 
 #[cfg(test)]
 pub(crate) use schema::SCHEMA_VERSION;
@@ -31,6 +31,9 @@ impl SemanticDatabase {
             .execute_batch(SCHEMA_SQL)
             .await
             .context("applying semantic Turso schema")?;
+        migrate(&connection)
+            .await
+            .context("migrating semantic Turso schema")?;
         Ok(Self {
             _database: database,
             connection,
