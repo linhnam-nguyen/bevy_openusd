@@ -73,6 +73,7 @@ fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticP
         properties.push(SemanticProperty {
             name,
             value: canonical_value(value),
+            measurement: None,
         });
     }
     Ok(properties)

@@ -32,6 +32,7 @@ pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -
         properties: vec![SemanticProperty {
             name: "Comments".to_owned(),
             value: CanonicalValue::Text(comments.to_owned()),
+            measurement: None,
         }],
         metadata_hash: HashDigest::new([seed.wrapping_add(1); 32]),
         full_hash: HashDigest::new([seed.wrapping_add(2); 32]),

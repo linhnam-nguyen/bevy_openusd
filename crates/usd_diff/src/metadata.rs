@@ -67,7 +67,7 @@ fn metadata_values(entity: &EntitySnapshot) -> BTreeMap<String, Option<Canonical
             .map(CanonicalValue::Text),
     );
 
-    for SemanticProperty { name, value } in &entity.properties {
+    for SemanticProperty { name, value, .. } in &entity.properties {
         values.insert(format!("property.{name}"), Some(value.clone()));
     }
 

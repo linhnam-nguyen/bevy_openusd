@@ -8725,6 +8725,7 @@ version = "0.0.1"
 dependencies = [
  "bitflags 2.13.1",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@
 pub mod change;
 pub mod hash;
 pub mod identity;
+pub mod measurement;
 pub mod semantic;
 pub mod signature;
 pub mod snapshot;
@@ -15,6 +16,7 @@ pub mod value;
 pub use change::{ChangeFlags, PresenceState};
 pub use hash::{HashDigest, HashDigestError};
 pub use identity::{EntityKey, IdentitySource};
+pub use measurement::{MeasurementMetadata, QuantitySpecId, UnitId};
 pub use semantic::SemanticInfo;
 pub use signature::{BlobId, Bounds3, GeometrySignature, QuantizedPoint3, TransformSignature};
 pub use snapshot::{

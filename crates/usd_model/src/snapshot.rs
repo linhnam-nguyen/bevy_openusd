@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::hash::HashDigest;
 use crate::identity::{EntityKey, IdentitySource};
+use crate::measurement::MeasurementMetadata;
 use crate::semantic::SemanticInfo;
 use crate::signature::{GeometrySignature, TransformSignature};
 use crate::value::CanonicalValue;
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct SemanticProperty {
     pub name: String,
     pub value: CanonicalValue,
+    pub measurement: Option<MeasurementMetadata>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

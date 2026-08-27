@@ -38,6 +38,7 @@ fn entity(key: &str, path: &str) -> EntitySnapshot {
         properties: vec![SemanticProperty {
             name: "Comments".to_owned(),
             value: CanonicalValue::Text("A".to_owned()),
+            measurement: None,
         }],
         metadata_hash: digest(30),
         full_hash: digest(40),
