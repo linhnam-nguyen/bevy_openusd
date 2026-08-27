@@ -8,6 +8,7 @@ mod command;
 mod error;
 mod location;
 mod read;
+mod write;
 
 pub use command::{PROJECT_READ_PROTOCOL_VERSION, ProjectReadCommand, ProjectReadReply};
 pub use error::{ProjectReadError, ProjectReadErrorCode};
@@ -15,6 +16,12 @@ pub use location::{
     LocalSelectionToken, LocalSelectionView, ProjectLocationKind, ProjectLocationResult,
 };
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
+pub use write::{
+    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectImportRequest,
+    ProjectInspection, ProjectInspectionClassification, ProjectInspectionWarning,
+    ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply,
+    ProjectWriteRequest, ProjectWriteResponse,
+};
 
 #[cfg(test)]
 mod tests {

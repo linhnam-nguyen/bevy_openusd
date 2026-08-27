@@ -29,6 +29,8 @@ pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
 }
 
+mod lifecycle;
+
 impl ProjectApplicationService {
     /// Open the host-owned workspace registry without exposing its locator.
     pub fn open(registry_path: impl Into<PathBuf>) -> Result<Self, ProjectReadError> {
