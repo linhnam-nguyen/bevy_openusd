@@ -21,6 +21,7 @@ use crate::viewport::scene::{
     sync_selection_color_overrides, sync_selection_outlines,
 };
 use crate::viewport::session::{Spawned, StageInfo};
+use selection_profile_support::repeat_selection_updates;
 
 const PROFILE_SIZES: [usize; 6] = [1, 10, 100, 256, 1_000, 5_000];
 const PROTOCOL_PROFILE_SIZES: [usize; 8] = [1, 10, 100, 255, 256, 257, 1_000, 5_000];
@@ -82,25 +83,6 @@ fn median_micros(samples: &mut [u128]) -> u128 {
     samples[samples.len() / 2].max(1)
 }
 
-fn repeat_selection_updates(
-    app: &mut App,
-    value: &SelectionReadModel,
-    mut update: impl FnMut(&mut App),
-) -> (u128, u128) {
-    let mut samples = Vec::with_capacity(REPEATS);
-    for _ in 0..REPEATS {
-        set_selection(app, value.clone());
-        let started = Instant::now();
-        update(app);
-        samples.push(started.elapsed().as_micros());
-        set_selection(app, SelectionReadModel::default());
-        app.update();
-    }
-    set_selection(app, value.clone());
-    app.update();
-    let maximum = samples.iter().copied().max().unwrap_or_default();
-    (median_micros(&mut samples), maximum)
-}
 fn profile_protocol() {
     for size in PROTOCOL_PROFILE_SIZES {
         let envelope = ClientCommandEnvelope::new(
@@ -201,10 +183,11 @@ fn profile_resolve_roots() {
             .add_systems(Update, resolve);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         assert_eq!(app.world().resource::<ProfileCount>().0, size);
         println!(
-            "I1.7.1 scene_anchor_resolution size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 scene_anchor_resolution size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -229,10 +212,11 @@ fn profile_renderable_resolution() {
             .add_systems(Update, resolve);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         assert_eq!(app.world().resource::<ProfileCount>().0, size);
         println!(
-            "I1.7.1 selected_renderable_resolution size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 selected_renderable_resolution size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -260,10 +244,11 @@ fn profile_bounds() {
             .add_systems(Update, aggregate);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         assert_eq!(app.world().resource::<ProfileCount>().0, 1);
         println!(
-            "I1.7.1 section_box_aggregate_bounds size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 section_box_aggregate_bounds size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -274,7 +259,8 @@ fn profile_outline() {
             .add_systems(Update, sync_selection_outlines);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         let count = app
             .world_mut()
             .query_filtered::<Entity, With<SelectionOutline>>()
@@ -282,7 +268,7 @@ fn profile_outline() {
             .count();
         assert_eq!(count, size);
         println!(
-            "I1.7.1 selection_boundary_outline size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 selection_boundary_outline size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -296,7 +282,8 @@ fn profile_section_box() {
             .add_systems(Update, sync_section_box_state);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         assert!(app.world().resource::<SectionBoxState>().visible);
         assert_eq!(
             app.world().resource::<SectionBoxState>().targets.len(),
@@ -309,7 +296,7 @@ fn profile_section_box() {
             idle_revision
         );
         println!(
-            "I1.7.1 section_box_reconciliation size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 section_box_reconciliation size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -351,7 +338,8 @@ fn profile_color() {
         app.add_systems(Update, sync_selection_color_overrides);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         let count = app
             .world_mut()
             .query_filtered::<Entity, With<SelectionColorOverride>>()
@@ -359,7 +347,7 @@ fn profile_color() {
             .count();
         assert_eq!(count, size);
         println!(
-            "I1.7.1 selection_color_material size={size} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 selection_color_material size={size} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -379,6 +367,9 @@ fn profile_i1_7_1_large_multi_selection_baseline() {
 
 #[path = "selection_profile_projection_test.rs"]
 mod projection_profile_test;
+
+#[path = "selection_profile_support.rs"]
+mod selection_profile_support;
 
 #[path = "selection_projection_cache_test.rs"]
 mod projection_cache_test;

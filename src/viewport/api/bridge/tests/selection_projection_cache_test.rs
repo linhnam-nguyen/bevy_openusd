@@ -164,6 +164,14 @@ fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() 
         .resource::<SectionBoxState>()
         .bounds_context_generation;
     let idle_revision = app.world().resource::<SectionBoxState>().revision;
+    let idle_fast_path_count = app
+        .world()
+        .resource::<SectionBoxState>()
+        .idle_fast_path_count;
+    let idle_section_resolution_count = app
+        .world()
+        .resource::<SectionBoxState>()
+        .selection_resolution_count;
     app.update();
     assert_eq!(
         app.world()
@@ -192,6 +200,18 @@ fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() 
     assert_eq!(
         app.world().resource::<SectionBoxState>().revision,
         idle_revision
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SectionBoxState>()
+            .selection_resolution_count,
+        idle_section_resolution_count
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SectionBoxState>()
+            .idle_fast_path_count,
+        idle_fast_path_count + 1
     );
 }
 

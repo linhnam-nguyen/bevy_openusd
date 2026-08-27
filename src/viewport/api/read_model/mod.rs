@@ -176,6 +176,32 @@ impl ViewportReadModelState {
                     snapshot.selection = selection.clone();
                 }
             }
+            ViewportEvent::SelectionDeltaApplied {
+                revision,
+                added,
+                removed,
+                primary,
+                count,
+            } => {
+                if let Some(snapshot) = &mut self.snapshot {
+                    let no_op = *revision == snapshot.selection_revision
+                        && added.is_empty()
+                        && removed.is_empty()
+                        && primary.as_ref() == snapshot.selection.primary.as_ref()
+                        && *count == snapshot.selection.targets.len() as u32;
+                    if no_op {
+                        return;
+                    }
+                    if snapshot.selection_revision.saturating_add(1) == *revision
+                        && snapshot
+                            .selection
+                            .apply_delta(added, removed, primary.clone(), *count)
+                            .is_ok()
+                    {
+                        snapshot.selection_revision = *revision;
+                    }
+                }
+            }
             ViewportEvent::CameraSourceChanged { source } => {
                 if let Some(snapshot) = &mut self.snapshot {
                     snapshot.camera_source = source.clone();

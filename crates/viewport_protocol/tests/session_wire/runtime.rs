@@ -21,6 +21,7 @@ impl ViewportProtocolViewportSnapshot {
                 },
                 scene: viewport_protocol::SceneReadModel::default(),
                 selection: viewport_protocol::SelectionReadModel::default(),
+                selection_revision: 0,
                 viewer_settings: viewport_protocol::ViewerSettingsReadModel::default(),
                 camera_source: viewport_protocol::CameraSource::Arcball,
                 camera_orientation: viewport_protocol::CameraOrientationReadModel::default(),

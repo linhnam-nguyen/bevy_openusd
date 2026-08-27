@@ -35,6 +35,15 @@ pub enum ViewportEvent {
     SelectionChanged {
         selection: SelectionReadModel,
     },
+    /// Applies one authoritative selection delta to the client's existing
+    /// selection. Complete selection state remains available in snapshots.
+    SelectionDeltaApplied {
+        revision: u64,
+        added: Vec<SceneAnchor>,
+        removed: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+        count: u32,
+    },
     CameraTransitionStarted {
         target: SceneAnchor,
         mode: FocusMode,

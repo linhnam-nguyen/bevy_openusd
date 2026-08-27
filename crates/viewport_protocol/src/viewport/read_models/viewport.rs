@@ -41,6 +41,8 @@ pub struct ViewportReadModel {
     pub scene: SceneReadModel,
     pub selection: SelectionReadModel,
     #[serde(default)]
+    pub selection_revision: u64,
+    #[serde(default)]
     pub viewer_settings: ViewerSettingsReadModel,
     pub camera_source: CameraSource,
     pub camera_orientation: CameraOrientationReadModel,
@@ -61,6 +63,7 @@ impl ViewportReadModel {
             },
             scene: SceneReadModel::default(),
             selection: SelectionReadModel::default(),
+            selection_revision: 0,
             viewer_settings: ViewerSettingsReadModel::default(),
             camera_source: CameraSource::Arcball,
             camera_orientation: CameraOrientationReadModel::default(),

@@ -55,6 +55,52 @@ impl SelectionReadModel {
         Ok(())
     }
 
+    /// Applies one authoritative server-side selection transaction without
+    /// requiring the complete selection set on the wire.
+    pub fn apply_delta(
+        &mut self,
+        added: &[SceneAnchor],
+        removed: &[SceneAnchor],
+        primary: Option<SceneAnchor>,
+        count: u32,
+    ) -> Result<(), ProtocolValidationError> {
+        validate_delta_targets(added)?;
+        validate_delta_targets(removed)?;
+        let added_set = added.iter().collect::<HashSet<_>>();
+        if removed.iter().any(|target| added_set.contains(target)) {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.delta",
+            });
+        }
+
+        let mut next = self.clone();
+        for target in removed {
+            if !next.targets.contains(target) {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.removed",
+                });
+            }
+        }
+        for target in added {
+            if next.targets.contains(target) {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.added",
+                });
+            }
+        }
+        next.targets.retain(|target| !removed.contains(target));
+        next.targets.extend(added.iter().cloned());
+        next.primary = primary;
+        next.canonicalize()?;
+        if next.targets.len() != count as usize {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.count",
+            });
+        }
+        *self = next;
+        Ok(())
+    }
+
     pub fn from_legacy_target(target: Option<SceneAnchor>) -> Self {
         let Some(target) = target else {
             return Self::default();
@@ -64,6 +110,24 @@ impl SelectionReadModel {
             primary: Some(target),
         }
     }
+}
+
+fn validate_delta_targets(targets: &[SceneAnchor]) -> Result<(), ProtocolValidationError> {
+    if targets.len() > MAX_SELECTION_TARGETS {
+        return Err(ProtocolValidationError::InvalidInput {
+            field: "selection.delta",
+        });
+    }
+    let mut seen = HashSet::with_capacity(targets.len());
+    for target in targets {
+        target.validate()?;
+        if !seen.insert(target) {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.delta",
+            });
+        }
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]

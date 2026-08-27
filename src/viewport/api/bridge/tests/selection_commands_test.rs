@@ -49,7 +49,7 @@ fn select_target_supports_zero_one_and_many_authoritative_targets() {
     let event = next_event(&mut app);
     assert!(matches!(
         event.event,
-        ViewportEvent::SelectionChanged { .. }
+        ViewportEvent::SelectionDeltaApplied { .. }
     ));
     assert!(
         app.world()
@@ -69,7 +69,7 @@ fn select_target_supports_zero_one_and_many_authoritative_targets() {
     let event = next_event(&mut app);
     assert!(matches!(
         event.event,
-        ViewportEvent::SelectionChanged { .. }
+        ViewportEvent::SelectionDeltaApplied { .. }
     ));
     assert_eq!(
         app.world().resource::<SelectedTargets>().0,
@@ -88,7 +88,7 @@ fn select_target_supports_zero_one_and_many_authoritative_targets() {
     let event = next_event(&mut app);
     assert!(matches!(
         event.event,
-        ViewportEvent::SelectionChanged { .. }
+        ViewportEvent::SelectionDeltaApplied { .. }
     ));
     let selection = &app.world().resource::<SelectedTargets>().0;
     assert_eq!(
@@ -141,7 +141,7 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
         app.update();
         assert!(matches!(
             next_event(&mut app).event,
-            ViewportEvent::SelectionChanged { .. }
+            ViewportEvent::SelectionDeltaApplied { .. }
         ));
     }
     assert_eq!(app.world().resource::<SelectedTargets>().0.targets.len(), 2);
@@ -158,7 +158,7 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
     app.update();
     assert!(matches!(
         next_event(&mut app).event,
-        ViewportEvent::SelectionChanged { .. }
+        ViewportEvent::SelectionDeltaApplied { .. }
     ));
     assert_eq!(
         app.world().resource::<SelectedTargets>().0,

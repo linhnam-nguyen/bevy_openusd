@@ -16,7 +16,12 @@ pub struct SelectedPrim(pub Option<Entity>);
 /// Authoritative logical selection state. The Bevy entity in [`SelectedPrim`]
 /// is only the resolved primary used by internal runtime systems.
 #[derive(Resource, Default, Debug, Clone)]
-pub struct SelectedTargets(pub SelectionReadModel, pub(crate) u64, SelectionDelta);
+pub struct SelectedTargets(
+    pub SelectionReadModel,
+    pub(crate) u64,
+    SelectionDelta,
+    SelectionDelta,
+);
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct SelectionDelta {
@@ -25,6 +30,11 @@ pub(crate) struct SelectionDelta {
 }
 
 impl SelectionDelta {
+    fn clear(&mut self) {
+        self.added.clear();
+        self.removed.clear();
+    }
+
     fn record_added(&mut self, target: SceneAnchor) {
         if !self.removed.remove(&target) {
             self.added.insert(target);
@@ -48,8 +58,11 @@ impl SelectedTargets {
     }
 
     pub(crate) fn clear_pending_delta(&mut self) {
-        self.2.added.clear();
-        self.2.removed.clear();
+        self.2.clear();
+    }
+
+    pub(crate) fn last_transaction_delta(&self) -> &SelectionDelta {
+        &self.3
     }
 
     /// Monotonic identity for one logical selection transaction. Derived
@@ -60,6 +73,7 @@ impl SelectedTargets {
         mut selection: SelectionReadModel,
     ) -> Result<(), ProtocolValidationError> {
         selection.canonicalize()?;
+        self.3.clear();
         if self.0 != selection {
             let previous_targets = self.0.targets.iter().collect::<HashSet<_>>();
             let next_targets = selection.targets.iter().collect::<HashSet<_>>();
@@ -81,6 +95,7 @@ impl SelectedTargets {
         make_primary: bool,
     ) -> Result<(), ProtocolValidationError> {
         target.validate()?;
+        self.3.clear();
         let before = self.0.clone();
         if !self.0.targets.contains(&target) {
             if self.0.targets.len() >= MAX_SELECTION_TARGETS {
@@ -89,6 +104,8 @@ impl SelectedTargets {
                 });
             }
             self.0.targets.push(target.clone());
+            self.2.record_added(target.clone());
+            self.3.record_added(target.clone());
         }
         if make_primary {
             self.0.primary = Some(target);
@@ -127,12 +144,14 @@ impl SelectedTargets {
         }
 
         let before = self.0.clone();
+        self.3.clear();
         let additions = targets
             .into_iter()
             .filter(|target| !existing_targets.contains(target))
             .collect::<Vec<_>>();
         for target in &additions {
             self.2.record_added(target.clone());
+            self.3.record_added(target.clone());
         }
         self.0.targets.extend(additions);
         if let Some(primary) = primary {
@@ -148,8 +167,14 @@ impl SelectedTargets {
     pub(crate) fn remove(&mut self, target: &SceneAnchor) -> Result<(), ProtocolValidationError> {
         target.validate()?;
         let before = self.0.clone();
+        self.3.clear();
         let removed_primary = self.0.primary.as_ref() == Some(target);
+        let removed = self.0.targets.iter().any(|candidate| candidate == target);
         self.0.targets.retain(|candidate| candidate != target);
+        if removed {
+            self.2.record_removed(target.clone());
+            self.3.record_removed(target.clone());
+        }
         if removed_primary {
             self.0.primary = self.0.targets.first().cloned();
         }
@@ -167,9 +192,11 @@ impl SelectedTargets {
         validate_delta_targets(&targets)?;
         let removed_targets = targets.iter().collect::<HashSet<_>>();
         let before = self.0.clone();
+        self.3.clear();
         for target in &self.0.targets {
             if removed_targets.contains(target) {
                 self.2.record_removed(target.clone());
+                self.3.record_removed(target.clone());
             }
         }
         self.0
@@ -196,6 +223,11 @@ impl SelectedTargets {
 }
 
 fn validate_delta_targets(targets: &[SceneAnchor]) -> Result<(), ProtocolValidationError> {
+    if targets.len() > MAX_SELECTION_TARGETS {
+        return Err(ProtocolValidationError::InvalidInput {
+            field: "selection.targets",
+        });
+    }
     let mut seen = HashSet::with_capacity(targets.len());
     for target in targets {
         target.validate()?;

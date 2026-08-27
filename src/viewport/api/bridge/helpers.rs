@@ -9,6 +9,7 @@ use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::camera::CameraMount;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
 
@@ -22,6 +23,31 @@ pub(super) fn resolve_anchor(
             anchor.prim_path
         )
     })
+}
+
+/// Publishes the authoritative net selection change without repeating the
+/// complete selected-anchor set on every incremental event. Full selection
+/// state remains available in snapshots.
+pub(super) fn emit_selection_delta(
+    request_id: String,
+    selection: &SelectedTargets,
+    outbox: &mut ViewportEventOutbox,
+) {
+    let delta = selection.last_transaction_delta();
+    let mut added = delta.added.iter().cloned().collect::<Vec<_>>();
+    let mut removed = delta.removed.iter().cloned().collect::<Vec<_>>();
+    added.sort_unstable();
+    removed.sort_unstable();
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::SelectionDeltaApplied {
+            revision: selection.revision(),
+            added,
+            removed,
+            primary: selection.0.primary.clone(),
+            count: selection.0.targets.len() as u32,
+        },
+    ));
 }
 
 pub(super) fn set_overlay(toggles: &mut DisplayToggles, overlay: OverlayKind, enabled: bool) {
@@ -49,6 +75,7 @@ pub(super) fn emit_snapshot(
     stage_info: &StageInfo,
     spawned: &Spawned,
     selection: &SelectionReadModel,
+    selection_revision: u64,
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
@@ -65,6 +92,7 @@ pub(super) fn emit_snapshot(
                 stage_info,
                 spawned.0,
                 selection,
+                selection_revision,
                 settings,
                 scene_index,
                 camera_mount,
@@ -83,6 +111,7 @@ pub(super) fn build_read_model(
     stage_info: &StageInfo,
     stage_loaded: bool,
     selection: &SelectionReadModel,
+    selection_revision: u64,
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
     camera_mount: &CameraMount,
@@ -100,6 +129,7 @@ pub(super) fn build_read_model(
         },
         scene: scene_index.roots_read_model(),
         selection: selection.clone(),
+        selection_revision,
         viewer_settings: settings.clone(),
         camera_source: match camera_mount {
             CameraMount::Arcball => CameraSource::Arcball,

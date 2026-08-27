@@ -178,6 +178,7 @@ pub(super) fn publish_stage_load_state(
             &stage_info,
             spawned.0 && matches!(state, StageLoadState::Ready),
             &selection.0,
+            selection.revision(),
             &viewer_settings.0,
             &scene_index,
             &camera_mount,

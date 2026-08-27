@@ -105,10 +105,75 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v4_selection_delta_migration_is_explicit() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 4);
+fn protocol_v5_selection_delta_migration_is_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 5);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
+}
+
+#[test]
+fn selection_delta_commands_are_capped_at_the_authoritative_limit() {
+    let targets = (0..viewport_protocol::MAX_SELECTION_TARGETS)
+        .map(|index| SceneAnchor::active_session(format!("/World/Target{index}")))
+        .collect::<Vec<_>>();
+    let mut too_many = targets.clone();
+    too_many.push(SceneAnchor::active_session("/World/TooMany"));
+
+    assert!(
+        viewport_protocol::ViewportCommand::AddSelectionTargets {
+            targets: targets.clone(),
+            primary: None,
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::AddSelectionTargets {
+            targets: too_many.clone(),
+            primary: None,
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::RemoveSelectionTargets { targets }
+            .validate()
+            .is_ok()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::RemoveSelectionTargets { targets: too_many }
+            .validate()
+            .is_err()
+    );
+}
+
+#[test]
+fn selection_read_model_applies_a_validated_delta_atomically() {
+    let first = SceneAnchor::active_session("/World/First");
+    let second = SceneAnchor::active_session("/World/Second");
+    let mut selection = SelectionReadModel {
+        targets: vec![first.clone()],
+        primary: Some(first.clone()),
+    };
+
+    selection
+        .apply_delta(
+            std::slice::from_ref(&second),
+            std::slice::from_ref(&first),
+            Some(second.clone()),
+            1,
+        )
+        .expect("valid selection delta");
+    assert_eq!(selection.targets, vec![second.clone()]);
+    assert_eq!(selection.primary, Some(second.clone()));
+
+    let before = selection.clone();
+    assert!(
+        selection
+            .apply_delta(std::slice::from_ref(&second), &[], Some(second.clone()), 2)
+            .is_err()
+    );
+    assert_eq!(selection, before);
 }
 
 #[test]

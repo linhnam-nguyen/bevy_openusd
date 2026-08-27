@@ -1,6 +1,6 @@
-use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{SceneAnchor, SelectionReadModel};
 
-use super::super::helpers::{reject, resolve_anchor};
+use super::super::helpers::{emit_selection_delta, reject, resolve_anchor};
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
@@ -32,7 +32,7 @@ pub(crate) fn select_target(
             }
         },
     }
-    emit_selection_changed(request_id, &selection.0, outbox);
+    emit_selection_delta(request_id, selection, outbox);
 }
 
 pub(crate) fn replace_selection(
@@ -72,7 +72,7 @@ pub(crate) fn replace_selection(
         .replace(next_selection)
         .expect("validated selection must satisfy the protocol invariant");
     selected_prim.0 = resolved_primary;
-    emit_selection_changed(request_id, &selection.0, outbox);
+    emit_selection_delta(request_id, selection, outbox);
 }
 
 pub(crate) fn add_selection_target(
@@ -126,7 +126,7 @@ pub(crate) fn add_selection_targets(
         .primary
         .as_ref()
         .and_then(|primary| scene_index.resolve(primary));
-    emit_selection_changed(request_id, &selection.0, outbox);
+    emit_selection_delta(request_id, selection, outbox);
 }
 
 pub(crate) fn remove_selection_target(
@@ -164,7 +164,7 @@ pub(crate) fn remove_selection_targets(
         .primary
         .as_ref()
         .and_then(|primary| _scene_index.resolve(primary));
-    emit_selection_changed(request_id, &selection.0, outbox);
+    emit_selection_delta(request_id, selection, outbox);
 }
 
 pub(crate) fn clear_selection(
@@ -178,18 +178,5 @@ pub(crate) fn clear_selection(
         return;
     }
     selected_prim.0 = None;
-    emit_selection_changed(request_id, &selection.0, outbox);
-}
-
-fn emit_selection_changed(
-    request_id: String,
-    selection: &SelectionReadModel,
-    outbox: &mut ViewportEventOutbox,
-) {
-    outbox.push(ViewportEventEnvelope::new(
-        Some(request_id.clone()),
-        ViewportEvent::SelectionChanged {
-            selection: selection.clone(),
-        },
-    ));
+    emit_selection_delta(request_id, selection, outbox);
 }

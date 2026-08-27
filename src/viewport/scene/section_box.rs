@@ -91,8 +91,11 @@ pub(crate) struct SectionBoxState {
     pub(crate) face_drag: Option<SectionBoxFaceDrag>,
     tracked_renderables: HashSet<Entity>,
     resolved_targets: Vec<Option<Entity>>,
+    selection_revision: Option<u64>,
     scene_revision: u64,
     projection_bounds_generation: u64,
+    pub(in crate::viewport) idle_fast_path_count: u64,
+    pub(in crate::viewport) selection_resolution_count: u64,
 }
 
 impl Default for SectionBoxState {
@@ -110,8 +113,11 @@ impl Default for SectionBoxState {
             face_drag: None,
             tracked_renderables: HashSet::new(),
             resolved_targets: Vec::new(),
+            selection_revision: None,
             scene_revision: 0,
             projection_bounds_generation: 0,
+            idle_fast_path_count: 0,
+            selection_resolution_count: 0,
         }
     }
 }
@@ -165,29 +171,69 @@ pub(in crate::viewport) fn sync_section_box_state(
         Option<&UsdLocalExtent>,
     )>,
 ) {
-    let targets = selection.0.targets.clone();
+    let scene_revision = scene_index.revision();
+    let selection_revision = selection.revision();
     let projection_bounds_generation = projection
         .as_ref()
         .map_or(state.projection_bounds_generation, |projection| {
             projection.bounds_generation()
         });
-    let resolved_targets = targets
-        .iter()
-        .map(|target| scene_index.resolve(target))
-        .collect::<Vec<_>>();
-    let selection_changed = state.targets != targets;
-    let resolution_changed = state.resolved_targets != resolved_targets;
-    let scene_revision_changed = state.scene_revision != scene_index.revision();
+    let enabled = settings.section_box_enabled();
+    let selection_changed = state
+        .selection_revision
+        .map_or(!selection.0.targets.is_empty(), |revision| {
+            revision != selection_revision
+        });
+    let scene_revision_changed = state.scene_revision != scene_revision;
+    let enabled_changed = state.enabled != enabled;
     let relevant_bounds_changed = if projection.is_some() {
         state.projection_bounds_generation != projection_bounds_generation
     } else {
         !changed_tracked_renderables.is_empty()
             || removed_tracked_renderables.read().next().is_some()
     };
-    let actual_tracked_renderables = tracked_entities.iter().collect::<HashSet<_>>();
-    let tracking_changed = actual_tracked_renderables != state.tracked_renderables;
-    let enabled = settings.section_box_enabled();
-    let enabled_changed = state.enabled != enabled;
+    let (targets, resolved_targets, actual_tracked_renderables, tracking_changed) =
+        if selection_changed || scene_revision_changed || relevant_bounds_changed || enabled_changed
+        {
+            let targets = selection.0.targets.clone();
+            if projection.is_some() {
+                (targets, Vec::new(), HashSet::new(), false)
+            } else {
+                state.selection_resolution_count =
+                    state.selection_resolution_count.saturating_add(1);
+                let resolved_targets = targets
+                    .iter()
+                    .map(|target| scene_index.resolve(target))
+                    .collect::<Vec<_>>();
+                let actual_tracked_renderables = tracked_entities.iter().collect::<HashSet<_>>();
+                let tracking_changed = actual_tracked_renderables != state.tracked_renderables;
+                (
+                    targets,
+                    resolved_targets,
+                    actual_tracked_renderables,
+                    tracking_changed,
+                )
+            }
+        } else if projection.is_some() {
+            state.idle_fast_path_count = state.idle_fast_path_count.saturating_add(1);
+            return;
+        } else {
+            let targets = selection.0.targets.clone();
+            state.selection_resolution_count = state.selection_resolution_count.saturating_add(1);
+            let resolved_targets = targets
+                .iter()
+                .map(|target| scene_index.resolve(target))
+                .collect::<Vec<_>>();
+            let actual_tracked_renderables = tracked_entities.iter().collect::<HashSet<_>>();
+            let tracking_changed = actual_tracked_renderables != state.tracked_renderables;
+            (
+                targets,
+                resolved_targets,
+                actual_tracked_renderables,
+                tracking_changed,
+            )
+        };
+    let resolution_changed = state.resolved_targets != resolved_targets;
     if !should_reconcile_section_box(
         selection_changed,
         resolution_changed,
@@ -199,11 +245,8 @@ pub(in crate::viewport) fn sync_section_box_state(
         return;
     }
 
-    let next_tracked_renderables = if enabled {
-        projection.as_ref().map_or_else(
-            || selected_renderable_entities(&targets, &scene_index, &renderables),
-            |projection| projection.renderables().clone(),
-        )
+    let next_tracked_renderables = if enabled && projection.is_none() {
+        selected_renderable_entities(&targets, &scene_index, &renderables)
     } else {
         HashSet::new()
     };
@@ -215,7 +258,8 @@ pub(in crate::viewport) fn sync_section_box_state(
         && !enabled_changed
     {
         state.resolved_targets = resolved_targets;
-        state.scene_revision = scene_index.revision();
+        state.selection_revision = Some(selection_revision);
+        state.scene_revision = scene_revision;
         state.projection_bounds_generation = projection_bounds_generation;
         reconcile_tracked_renderables(
             &mut commands,
@@ -273,7 +317,8 @@ pub(in crate::viewport) fn sync_section_box_state(
     state.pose_authority = next_pose.authority;
     state.tracked_renderables = next_tracked_renderables.clone();
     state.resolved_targets = resolved_targets;
-    state.scene_revision = scene_index.revision();
+    state.selection_revision = Some(selection_revision);
+    state.scene_revision = scene_revision;
     state.projection_bounds_generation = projection_bounds_generation;
     reconcile_tracked_renderables(
         &mut commands,

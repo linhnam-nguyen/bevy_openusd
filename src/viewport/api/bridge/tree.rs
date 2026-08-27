@@ -2,7 +2,7 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
-use super::helpers::reject;
+use super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{
     SceneAnchorIndex, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
@@ -94,12 +94,7 @@ pub(super) fn apply_tree_commands(
                 fly_to.duration = 0.4;
                 fly_to.remaining = 0.4;
 
-                outbox.push(ViewportEventEnvelope::new(
-                    Some(request_id.clone()),
-                    ViewportEvent::SelectionChanged {
-                        selection: selection.0.clone(),
-                    },
-                ));
+                emit_selection_delta(request_id.clone(), &selection, &mut outbox);
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
                     ViewportEvent::CameraTransitionStarted { target, mode },

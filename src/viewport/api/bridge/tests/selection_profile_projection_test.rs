@@ -100,11 +100,12 @@ fn profile_hierarchical_renderables() {
             .add_systems(Update, resolve);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         let rendered_count = size * MESH_DESCENDANTS_PER_ROOT;
         assert_eq!(app.world().resource::<ProfileCount>().0, rendered_count);
         println!(
-            "I1.7.1 hierarchical selected_renderable_resolution roots={size} rendered_descendants={rendered_count} median_us={micros} max_update_us={max_update}"
+            "I1.7.1 hierarchical selected_renderable_resolution roots={size} rendered_descendants={rendered_count} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}"
         );
     }
 }
@@ -133,10 +134,11 @@ fn profile_hierarchical_bounds() {
             .add_systems(Update, aggregate);
         app.update();
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         assert_eq!(app.world().resource::<ProfileCount>().0, 1);
         println!(
-            "I1.7.1 hierarchical section_box_aggregate_bounds roots={size} rendered_descendants={} median_us={micros} max_update_us={max_update}",
+            "I1.7.1 hierarchical section_box_aggregate_bounds roots={size} rendered_descendants={} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}",
             size * MESH_DESCENDANTS_PER_ROOT
         );
     }
@@ -207,7 +209,8 @@ fn profile_combined_presentation(hierarchical: bool) {
     for &size in sizes {
         let mut app = combined_presentation_app(hierarchical);
         let value = selection(size);
-        let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        let (micros, max_update, settle_frames) =
+            repeat_selection_updates(&mut app, &value, App::update);
         app.update();
         let rendered_count = if hierarchical {
             size * MESH_DESCENDANTS_PER_ROOT
@@ -231,7 +234,7 @@ fn profile_combined_presentation(hierarchical: bool) {
             size
         );
         println!(
-            "I1.7.1 combined_renderer_update topology={} roots={size} rendered_descendants={rendered_count} median_us={micros} max_update_us={max_update}",
+            "I1.7.1 combined_renderer_update topology={} roots={size} rendered_descendants={rendered_count} median_us={micros} max_update_us={max_update} settle_max_frames={settle_frames}",
             if hierarchical { "hierarchical" } else { "flat" }
         );
     }

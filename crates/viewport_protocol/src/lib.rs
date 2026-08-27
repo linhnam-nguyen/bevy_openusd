@@ -6,7 +6,7 @@
 //! and `Server*` types reserve the richer session contract used by the remote
 //! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 4;
+pub const PROTOCOL_VERSION: u16 = 5;
 
 pub mod authorization;
 pub mod capabilities;

@@ -16,19 +16,48 @@ use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 use crate::viewport::scene::{SelectedRenderableProjection, SelectedTargets};
 
 const SELECTION_OUTLINE_WIDTH: f32 = 3.0;
+const MAX_PRESENTATION_ENTITIES_PER_UPDATE: usize = 256;
 
 /// Marks outline components owned by the selection presentation path.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SelectionOutline;
+
+#[derive(Debug, Clone, PartialEq)]
+struct OutlineWorkKey {
+    selection_revision: u64,
+    scene_revision: u64,
+    projection_generation: Option<u64>,
+    boundary: (bool, ColorRgb8),
+}
+
+#[derive(Debug)]
+struct PendingOutlineWork {
+    key: OutlineWorkKey,
+    desired: HashSet<Entity>,
+    added: HashSet<Entity>,
+    removed: Vec<Entity>,
+    updated: Vec<Entity>,
+    removed_offset: usize,
+    updated_offset: usize,
+}
 
 #[derive(Resource, Debug, Default)]
 pub(in crate::viewport) struct SelectionOutlineState {
     entities: HashSet<Entity>,
     last_boundary: Option<(bool, ColorRgb8)>,
     last_projection_generation: Option<u64>,
+    last_selection_revision: Option<u64>,
+    last_scene_revision: Option<u64>,
+    pending: Option<PendingOutlineWork>,
     pub(in crate::viewport) last_added: usize,
     pub(in crate::viewport) last_removed: usize,
     pub(in crate::viewport) last_updated: usize,
+}
+
+impl SelectionOutlineState {
+    pub(in crate::viewport) fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
 }
 
 /// Applies the selected targets' boundary settings to transient projected
@@ -49,19 +78,35 @@ pub(in crate::viewport) fn sync_selection_outlines(
     let projection_generation = projection
         .as_ref()
         .map(|projection| projection.generation());
-    let projection_changed = state.last_projection_generation != projection_generation;
-    if !selection.is_changed()
-        && !scene_index.is_changed()
-        && state.last_boundary == Some(boundary)
-        && !projection_changed
+    let key = OutlineWorkKey {
+        selection_revision: selection.revision(),
+        scene_revision: scene_index.revision(),
+        projection_generation,
+        boundary,
+    };
+    state.last_added = 0;
+    state.last_removed = 0;
+    state.last_updated = 0;
+    if state
+        .pending
+        .as_ref()
+        .is_some_and(|pending| pending.key != key)
     {
-        state.last_added = 0;
-        state.last_removed = 0;
-        state.last_updated = 0;
+        state.pending = None;
+    }
+    if state.pending.is_some() {
+        apply_pending_outline_work(&mut state, &mut commands, &owned_outlines);
+        return;
+    }
+    if state.last_selection_revision == Some(key.selection_revision)
+        && state.last_scene_revision == Some(key.scene_revision)
+        && state.last_projection_generation == key.projection_generation
+        && state.last_boundary == Some(key.boundary)
+    {
         return;
     }
 
-    let desired = if presentation.boundary_enabled {
+    let desired = if key.boundary.0 {
         projection.as_ref().map_or_else(
             || {
                 let mut desired = HashSet::new();
@@ -78,7 +123,8 @@ pub(in crate::viewport) fn sync_selection_outlines(
     } else {
         HashSet::new()
     };
-    let boundary_changed = state.last_boundary != Some(boundary);
+    let boundary_changed = state.last_boundary != Some(key.boundary);
+    let projection_changed = state.last_projection_generation != key.projection_generation;
     let (added, removed) = if !boundary_changed
         && projection_changed
         && let Some(projection) = projection.as_ref()
@@ -108,39 +154,74 @@ pub(in crate::viewport) fn sync_selection_outlines(
                 .collect::<Vec<_>>(),
         )
     };
-    for entity in &removed {
-        if owned_outlines.get(*entity).is_ok() {
-            commands
-                .entity(*entity)
-                .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
-        }
-    }
-
-    let outline = OutlineVolume {
-        visible: presentation.boundary_enabled,
-        width: SELECTION_OUTLINE_WIDTH,
-        colour: color_from_rgb8(presentation.boundary_color),
-    };
-    let to_update = if boundary_changed {
+    let mut to_update = if boundary_changed {
         desired.iter().copied().collect::<Vec<_>>()
     } else {
         added.clone()
     };
-    let updated_count = to_update.len();
-    for entity in to_update {
+    to_update.sort_unstable();
+    let mut removed = removed;
+    removed.sort_unstable();
+    state.pending = Some(PendingOutlineWork {
+        key,
+        desired,
+        added: added.into_iter().collect(),
+        removed,
+        updated: to_update,
+        removed_offset: 0,
+        updated_offset: 0,
+    });
+    apply_pending_outline_work(&mut state, &mut commands, &owned_outlines);
+}
+
+fn apply_pending_outline_work(
+    state: &mut SelectionOutlineState,
+    commands: &mut Commands,
+    owned_outlines: &Query<(), With<SelectionOutline>>,
+) {
+    let Some(mut work) = state.pending.take() else {
+        return;
+    };
+    let outline = OutlineVolume {
+        visible: work.key.boundary.0,
+        width: SELECTION_OUTLINE_WIDTH,
+        colour: color_from_rgb8(work.key.boundary.1),
+    };
+    let mut budget = MAX_PRESENTATION_ENTITIES_PER_UPDATE;
+    while budget > 0 && work.removed_offset < work.removed.len() {
+        let entity = work.removed[work.removed_offset];
+        work.removed_offset += 1;
+        budget -= 1;
+        if owned_outlines.get(entity).is_ok() {
+            commands
+                .entity(entity)
+                .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
+        }
+        state.last_removed += 1;
+    }
+    while budget > 0 && work.updated_offset < work.updated.len() {
+        let entity = work.updated[work.updated_offset];
+        work.updated_offset += 1;
+        budget -= 1;
         commands.entity(entity).insert((
             SelectionOutline,
             outline.clone(),
             OutlineStencil::default(),
         ));
+        state.last_updated += 1;
+        if work.added.contains(&entity) {
+            state.last_added += 1;
+        }
     }
-
-    state.entities = desired;
-    state.last_boundary = Some(boundary);
-    state.last_projection_generation = projection_generation;
-    state.last_added = added.len();
-    state.last_removed = removed.len();
-    state.last_updated = updated_count;
+    if work.removed_offset < work.removed.len() || work.updated_offset < work.updated.len() {
+        state.pending = Some(work);
+        return;
+    }
+    state.entities = work.desired;
+    state.last_boundary = Some(work.key.boundary);
+    state.last_projection_generation = work.key.projection_generation;
+    state.last_selection_revision = Some(work.key.selection_revision);
+    state.last_scene_revision = Some(work.key.scene_revision);
 }
 
 pub(super) fn collect_mesh_descendants(

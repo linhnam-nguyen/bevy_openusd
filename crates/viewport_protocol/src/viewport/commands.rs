@@ -380,6 +380,9 @@ fn validate_selection_delta(
     if targets.is_empty() {
         return Err(ProtocolValidationError::EmptyField { field });
     }
+    if targets.len() > crate::MAX_SELECTION_TARGETS {
+        return Err(ProtocolValidationError::InvalidInput { field });
+    }
     let mut seen = HashSet::with_capacity(targets.len());
     for target in targets {
         target.validate()?;
