@@ -86,7 +86,7 @@ pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
         .join(format!("{scene_id}.usda"))
 }
 
-fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> {
+pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> {
     let stage = Stage::builder().in_memory(format!("scene-{scene_id}.usda"))?;
     let custom_data = scene_custom_data(scene_id);
 
@@ -110,7 +110,7 @@ fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> 
     Ok(stage)
 }
 
-fn validate_scene_file(
+pub(crate) fn validate_scene_file(
     path: &Path,
     expected_scene_id: SceneId,
     expected_members: &[SceneMember],
@@ -177,7 +177,7 @@ fn scene_custom_data(scene_id: SceneId) -> HashMap<String, Value> {
     ])
 }
 
-fn member_custom_data(member: &SceneMember) -> HashMap<String, Value> {
+pub(crate) fn member_custom_data(member: &SceneMember) -> HashMap<String, Value> {
     let (target_kind, target_id) = match member.target {
         SceneMemberTarget::Scene(id) => ("scene", id.to_string()),
         SceneMemberTarget::Model(id) => ("model", id.to_string()),
@@ -245,7 +245,7 @@ fn metadata_string<'a>(data: &'a HashMap<String, Value>, key: &str) -> Result<&'
         .with_context(|| format!("Project Scene member {key} must be a string"))
 }
 
-fn scene_member_path(member_id: SceneMemberId) -> String {
+pub(crate) fn scene_member_path(member_id: SceneMemberId) -> String {
     let path_id = member_id.to_string().replace('-', "");
     format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}/Member_{path_id}")
 }
