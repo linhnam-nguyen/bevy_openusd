@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -21,6 +24,8 @@ pub enum ProjectManifestError {
     DuplicateModelId { id: ModelId },
     #[error("duplicate storage key in Project manifest: {value}")]
     DuplicateStorageKey { value: String },
+    #[error("invalid model source kind in Project manifest")]
+    InvalidModelSourceKind,
     #[error("Project root SceneId is not registered: {id}")]
     MissingRootScene { id: SceneId },
     #[error("Project root ModelId is not registered: {id}")]
@@ -124,6 +129,117 @@ impl ProjectManifestV1 {
         canonical.scenes.sort_by_key(|entry| entry.id);
         canonical.models.sort_by_key(|entry| entry.id);
         canonical
+    }
+
+    pub fn validate(&self) -> Result<(), ProjectManifestError> {
+        self.validate_schema_version()?;
+        if self.name.trim().is_empty() {
+            return Err(ProjectManifestError::EmptyProjectName);
+        }
+
+        let mut scene_ids = HashSet::with_capacity(self.scenes.len());
+        let mut model_ids = HashSet::with_capacity(self.models.len());
+        let mut storage_keys = HashSet::with_capacity(self.scenes.len() + self.models.len());
+
+        for scene in &self.scenes {
+            if !scene_ids.insert(scene.id) {
+                return Err(ProjectManifestError::DuplicateSceneId { id: scene.id });
+            }
+            if !storage_keys.insert(&scene.storage_key) {
+                return Err(ProjectManifestError::DuplicateStorageKey {
+                    value: scene.storage_key.to_string(),
+                });
+            }
+        }
+
+        for model in &self.models {
+            if !model_ids.insert(model.id) {
+                return Err(ProjectManifestError::DuplicateModelId { id: model.id });
+            }
+            if !storage_keys.insert(&model.storage_key) {
+                return Err(ProjectManifestError::DuplicateStorageKey {
+                    value: model.storage_key.to_string(),
+                });
+            }
+            if model.source_kind.validate().is_err() {
+                return Err(ProjectManifestError::InvalidModelSourceKind);
+            }
+        }
+
+        match self.root {
+            ProjectRoot::Empty => {}
+            ProjectRoot::Scene(id) if !scene_ids.contains(&id) => {
+                return Err(ProjectManifestError::MissingRootScene { id });
+            }
+            ProjectRoot::Model(id) if !model_ids.contains(&id) => {
+                return Err(ProjectManifestError::MissingRootModel { id });
+            }
+            ProjectRoot::Scene(_) | ProjectRoot::Model(_) => {}
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_and_index(&self) -> Result<ValidatedProjectManifest, ProjectManifestError> {
+        self.clone().try_into()
+    }
+}
+
+/// Validated manifest state with stable-ID indexes for runtime lookups.
+#[derive(Clone, Debug)]
+pub struct ValidatedProjectManifest {
+    raw: ProjectManifestV1,
+    scene_index: HashMap<SceneId, usize>,
+    model_index: HashMap<ModelId, usize>,
+}
+
+impl ValidatedProjectManifest {
+    pub fn raw(&self) -> &ProjectManifestV1 {
+        &self.raw
+    }
+
+    pub fn scene(&self, id: SceneId) -> Option<&SceneManifestEntry> {
+        self.scene_index
+            .get(&id)
+            .map(|index| &self.raw.scenes[*index])
+    }
+
+    pub fn model(&self, id: ModelId) -> Option<&ModelManifestEntry> {
+        self.model_index
+            .get(&id)
+            .map(|index| &self.raw.models[*index])
+    }
+
+    pub fn scenes(&self) -> &[SceneManifestEntry] {
+        &self.raw.scenes
+    }
+
+    pub fn models(&self) -> &[ModelManifestEntry] {
+        &self.raw.models
+    }
+}
+
+impl TryFrom<ProjectManifestV1> for ValidatedProjectManifest {
+    type Error = ProjectManifestError;
+
+    fn try_from(manifest: ProjectManifestV1) -> Result<Self, Self::Error> {
+        manifest.validate()?;
+
+        let mut scene_index = HashMap::with_capacity(manifest.scenes.len());
+        for (index, scene) in manifest.scenes.iter().enumerate() {
+            scene_index.insert(scene.id, index);
+        }
+
+        let mut model_index = HashMap::with_capacity(manifest.models.len());
+        for (index, model) in manifest.models.iter().enumerate() {
+            model_index.insert(model.id, index);
+        }
+
+        Ok(Self {
+            raw: manifest,
+            scene_index,
+            model_index,
+        })
     }
 }
 

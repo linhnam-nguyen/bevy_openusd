@@ -1,6 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::{ModelId, ModelSourceKind, ProjectId, ProjectRoot, SceneId, SceneMemberId};
+    use crate::{
+        ModelId, ModelManifestEntry, ModelSourceKind, ProjectId, ProjectManifestError,
+        ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, SceneMemberId, StorageKey,
+    };
+
+    fn storage_key(value: &str) -> StorageKey {
+        StorageKey::new(value).unwrap()
+    }
 
     #[test]
     fn identity_categories_are_checked_by_the_type_system() {
@@ -41,5 +48,107 @@ mod tests {
                 .validate()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn manifest_validation_rejects_duplicate_ids_and_storage_keys() {
+        let scene_id = SceneId::new_v4();
+        let manifest = ProjectManifestV1::new(
+            ProjectId::new_v4(),
+            "Project",
+            ProjectRoot::Empty,
+            vec![
+                SceneManifestEntry {
+                    id: scene_id,
+                    storage_key: storage_key("scene-a"),
+                },
+                SceneManifestEntry {
+                    id: scene_id,
+                    storage_key: storage_key("scene-b"),
+                },
+            ],
+            Vec::new(),
+        );
+        assert!(matches!(
+            manifest.validate(),
+            Err(ProjectManifestError::DuplicateSceneId { id }) if id == scene_id
+        ));
+
+        let shared_key = storage_key("shared");
+        let manifest = ProjectManifestV1::new(
+            ProjectId::new_v4(),
+            "Project",
+            ProjectRoot::Empty,
+            vec![SceneManifestEntry {
+                id: SceneId::new_v4(),
+                storage_key: shared_key.clone(),
+            }],
+            vec![ModelManifestEntry {
+                id: ModelId::new_v4(),
+                source_kind: ModelSourceKind::Usd,
+                storage_key: shared_key,
+            }],
+        );
+        assert!(matches!(
+            manifest.validate(),
+            Err(ProjectManifestError::DuplicateStorageKey { value }) if value == "shared"
+        ));
+    }
+
+    #[test]
+    fn manifest_validation_rejects_missing_root_and_empty_name() {
+        let missing_scene = SceneId::new_v4();
+        let manifest = ProjectManifestV1::new(
+            ProjectId::new_v4(),
+            "Project",
+            ProjectRoot::Scene(missing_scene),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(matches!(
+            manifest.validate(),
+            Err(ProjectManifestError::MissingRootScene { id }) if id == missing_scene
+        ));
+
+        let manifest = ProjectManifestV1::new(
+            ProjectId::new_v4(),
+            "  ",
+            ProjectRoot::Empty,
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(
+            manifest.validate(),
+            Err(ProjectManifestError::EmptyProjectName)
+        );
+    }
+
+    #[test]
+    fn manifest_validation_builds_indexed_lookup_and_allows_empty_root() {
+        let scene_id = SceneId::new_v4();
+        let model_id = ModelId::new_v4();
+        let manifest = ProjectManifestV1::new(
+            ProjectId::new_v4(),
+            "Project",
+            ProjectRoot::Empty,
+            vec![SceneManifestEntry {
+                id: scene_id,
+                storage_key: storage_key("scene"),
+            }],
+            vec![ModelManifestEntry {
+                id: model_id,
+                source_kind: ModelSourceKind::Usd,
+                storage_key: storage_key("model"),
+            }],
+        );
+
+        let validated = manifest.validate_and_index().unwrap();
+
+        assert_eq!(validated.scene(scene_id).unwrap().id, scene_id);
+        assert_eq!(validated.model(model_id).unwrap().id, model_id);
+        assert!(validated.scene(SceneId::new_v4()).is_none());
+        assert!(validated.model(ModelId::new_v4()).is_none());
+        assert_eq!(validated.scenes().len(), 1);
+        assert_eq!(validated.models().len(), 1);
     }
 }
