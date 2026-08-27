@@ -15,11 +15,10 @@ use crate::viewport::api::scene_index::refresh_scene_anchor_index;
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox};
 use crate::viewport::scene::HoveredTarget;
 use crate::viewport::scene::{
-    HoverColorMaterial, SectionBoxGizmoTarget, SectionBoxState, SelectedTargets,
+    HoverColorMaterial, SectionBoxState, SelectedTargets,
     SelectionColorMaterial, SelectionColorOverride, SelectionColorOverrideState, SelectionOutline,
     SelectionOutlineState, aggregate_selection_bounds, selected_renderable_entities,
-    sync_section_box_gizmo_target, sync_section_box_state, sync_selection_color_overrides,
-    sync_selection_outlines,
+    sync_section_box_state, sync_selection_color_overrides, sync_selection_outlines,
 };
 use crate::viewport::session::{Spawned, StageInfo};
 
@@ -72,7 +71,10 @@ fn indexed_scene_app(size: usize) -> App {
 }
 
 fn set_selection(app: &mut App, value: SelectionReadModel) {
-    app.world_mut().resource_mut::<SelectedTargets>().0 = value;
+    app.world_mut()
+        .resource_mut::<SelectedTargets>()
+        .replace(value)
+        .expect("profile selection must be valid");
 }
 
 fn median_micros(samples: &mut [u128]) -> u128 {
@@ -377,3 +379,6 @@ fn profile_i1_7_1_large_multi_selection_baseline() {
 
 #[path = "selection_profile_projection_test.rs"]
 mod projection_profile_test;
+
+#[path = "selection_projection_cache_test.rs"]
+mod projection_cache_test;

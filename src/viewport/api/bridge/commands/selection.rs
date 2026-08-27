@@ -4,7 +4,7 @@ use super::super::helpers::{reject, resolve_anchor};
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
-pub(super) fn select_target(
+pub(crate) fn select_target(
     request_id: String,
     target: Option<SceneAnchor>,
     outbox: &mut ViewportEventOutbox,
@@ -35,7 +35,7 @@ pub(super) fn select_target(
     emit_selection_changed(request_id, &selection.0, outbox);
 }
 
-pub(super) fn replace_selection(
+pub(crate) fn replace_selection(
     request_id: String,
     targets: Vec<SceneAnchor>,
     primary: Option<SceneAnchor>,
@@ -75,7 +75,7 @@ pub(super) fn replace_selection(
     emit_selection_changed(request_id, &selection.0, outbox);
 }
 
-pub(super) fn add_selection_target(
+pub(crate) fn add_selection_target(
     request_id: String,
     target: SceneAnchor,
     make_primary: bool,
@@ -95,7 +95,7 @@ pub(super) fn add_selection_target(
     );
 }
 
-pub(super) fn add_selection_targets(
+pub(crate) fn add_selection_targets(
     request_id: String,
     targets: Vec<SceneAnchor>,
     primary: Option<SceneAnchor>,
@@ -129,7 +129,7 @@ pub(super) fn add_selection_targets(
     emit_selection_changed(request_id, &selection.0, outbox);
 }
 
-pub(super) fn remove_selection_target(
+pub(crate) fn remove_selection_target(
     request_id: String,
     target: SceneAnchor,
     outbox: &mut ViewportEventOutbox,
@@ -147,7 +147,7 @@ pub(super) fn remove_selection_target(
     );
 }
 
-pub(super) fn remove_selection_targets(
+pub(crate) fn remove_selection_targets(
     request_id: String,
     targets: Vec<SceneAnchor>,
     outbox: &mut ViewportEventOutbox,
@@ -167,7 +167,7 @@ pub(super) fn remove_selection_targets(
     emit_selection_changed(request_id, &selection.0, outbox);
 }
 
-pub(super) fn clear_selection(
+pub(crate) fn clear_selection(
     request_id: String,
     outbox: &mut ViewportEventOutbox,
     selected_prim: &mut SelectedPrim,

@@ -1,9 +1,11 @@
 use super::*;
 
 use crate::viewport::scene::{
-    SelectionColorMaterial, SelectionColorOverride, SelectionColorOverrideState, SelectionOutline,
-    SelectionOutlineState, aggregate_selection_bounds, selected_renderable_entities,
-    sync_section_box_state, sync_selection_color_overrides, sync_selection_outlines,
+    SectionBoxGizmoTarget, SectionBoxState, SelectedRenderableProjection, SelectionColorMaterial,
+    SelectionColorOverride, SelectionColorOverrideState, SelectionOutline, SelectionOutlineState,
+    aggregate_selection_bounds, selected_renderable_entities, sync_section_box_gizmo_target,
+    sync_section_box_state, sync_selected_renderable_projection, sync_selection_color_overrides,
+    sync_selection_outlines,
 };
 use bevy::ecs::hierarchy::ChildOf;
 
@@ -140,7 +142,7 @@ fn profile_hierarchical_bounds() {
     }
 }
 
-fn combined_presentation_app(hierarchical: bool) -> App {
+pub(super) fn combined_presentation_app(hierarchical: bool) -> App {
     let mut app = if hierarchical {
         hierarchical_scene_app()
     } else {
@@ -148,6 +150,7 @@ fn combined_presentation_app(hierarchical: bool) -> App {
     };
     app.init_resource::<SelectionOutlineState>()
         .init_resource::<SectionBoxState>()
+        .init_resource::<SelectedRenderableProjection>()
         .init_resource::<SelectionColorOverrideState>()
         .init_resource::<Assets<StandardMaterial>>()
         .init_resource::<HoveredTarget>();
@@ -184,10 +187,12 @@ fn combined_presentation_app(hierarchical: bool) -> App {
     app.add_systems(
         Update,
         (
+            sync_selected_renderable_projection,
             sync_selection_outlines,
             sync_selection_color_overrides,
             sync_section_box_state,
-        ),
+        )
+            .chain(),
     );
     app.update();
     app
@@ -203,6 +208,7 @@ fn profile_combined_presentation(hierarchical: bool) {
         let mut app = combined_presentation_app(hierarchical);
         let value = selection(size);
         let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
+        app.update();
         let rendered_count = if hierarchical {
             size * MESH_DESCENDANTS_PER_ROOT
         } else {

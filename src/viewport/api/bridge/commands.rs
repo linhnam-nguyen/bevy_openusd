@@ -14,6 +14,7 @@ mod cadence;
 mod camera;
 mod presentation;
 mod selection;
+mod selection_dispatch;
 mod state;
 mod timeline;
 
@@ -42,7 +43,18 @@ pub(super) fn apply_viewport_commands(
             continue;
         }
 
-        match envelope.command {
+        let Some((command, request_id)) = selection_dispatch::apply_selection_command(
+            envelope.command,
+            request_id,
+            &mut outbox,
+            &mut state.selected_prim,
+            &mut state.selected_targets,
+            &state.scene_index,
+        ) else {
+            continue;
+        };
+
+        match command {
             ViewportCommand::RequestSnapshot => {
                 emit_snapshot(
                     &mut outbox,
@@ -85,80 +97,6 @@ pub(super) fn apply_viewport_commands(
                     &state.toggles,
                     &state.tuning,
                     state.physics.0,
-                );
-            }
-            ViewportCommand::SelectTarget { target } => {
-                selection::select_target(
-                    request_id,
-                    target,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::ReplaceSelection { targets, primary } => {
-                selection::replace_selection(
-                    request_id,
-                    targets,
-                    primary,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::AddSelectionTarget {
-                target,
-                make_primary,
-            } => {
-                selection::add_selection_target(
-                    request_id,
-                    target,
-                    make_primary,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::AddSelectionTargets { targets, primary } => {
-                selection::add_selection_targets(
-                    request_id,
-                    targets,
-                    primary,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::RemoveSelectionTarget { target } => {
-                selection::remove_selection_target(
-                    request_id,
-                    target,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::RemoveSelectionTargets { targets } => {
-                selection::remove_selection_targets(
-                    request_id,
-                    targets,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
-                    &state.scene_index,
-                );
-            }
-            ViewportCommand::ClearSelection => {
-                selection::clear_selection(
-                    request_id,
-                    &mut outbox,
-                    &mut state.selected_prim,
-                    &mut state.selected_targets,
                 );
             }
             ViewportCommand::FocusTarget { target, mode } => {

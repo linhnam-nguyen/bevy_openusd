@@ -10,6 +10,7 @@ mod selection;
 mod selection_color;
 mod selection_hover;
 mod selection_outline;
+mod selection_projection;
 mod skeleton;
 mod solari;
 
@@ -34,6 +35,9 @@ pub(in crate::viewport) use selection_color::{
 pub(in crate::viewport) use selection_hover::HoveredTarget;
 pub(in crate::viewport) use selection_outline::SelectionOutline;
 pub(in crate::viewport) use selection_outline::{SelectionOutlineState, sync_selection_outlines};
+pub(in crate::viewport) use selection_projection::{
+    SelectedRenderableProjection, sync_selected_renderable_projection,
+};
 pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
     setup_skeleton_gizmos_on_top,

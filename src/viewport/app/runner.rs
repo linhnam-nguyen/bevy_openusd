@@ -26,7 +26,8 @@ use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SectionClipMaterial, SelectedPrim, SelectedTargets, SelectionOutlineState,
     ShowJointGizmosFlag, SkeletonGizmos, SolariCapabilityPlugin, hide_meshes_on_startup,
-    setup_skeleton_gizmos_on_top, sync_selected_instance_identity, sync_selection_outlines,
+    setup_skeleton_gizmos_on_top, sync_selected_instance_identity,
+    sync_selected_renderable_projection, sync_selection_outlines,
 };
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::session::{
@@ -364,7 +365,9 @@ pub(crate) fn run() {
     )
     .add_systems(
         Update,
-        sync_selection_outlines.after(ViewportBridgeSet::ApplyCommands),
+        sync_selection_outlines
+            .after(ViewportBridgeSet::ApplyCommands)
+            .after(sync_selected_renderable_projection),
     );
     let hide_meshes = std::env::var("BEVY_OPENUSD_HIDE_MESHES")
         .ok()

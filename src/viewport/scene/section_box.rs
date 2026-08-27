@@ -13,7 +13,12 @@ use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::scene::selection_projection::{
+    ProjectedWorldBounds, SelectedRenderableProjection,
+};
 
+#[path = "section_box_bounds.rs"]
+mod section_box_bounds;
 #[path = "section_box_face.rs"]
 mod section_box_face;
 #[path = "section_box_pose.rs"]
@@ -26,6 +31,7 @@ pub(crate) use section_box_pose::SectionBoxPoseAuthority;
 use section_box_pose::{fit_transform, next_bounds_context_generation, next_section_box_pose};
 use section_box_tracking::{reconcile_tracked_renderables, should_reconcile_section_box};
 
+pub(in crate::viewport) use section_box_bounds::aggregate_selection_bounds;
 pub(in crate::viewport) use section_box_tracking::selected_renderable_entities;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -86,6 +92,7 @@ pub(crate) struct SectionBoxState {
     tracked_renderables: HashSet<Entity>,
     resolved_targets: Vec<Option<Entity>>,
     scene_revision: u64,
+    projection_bounds_generation: u64,
 }
 
 impl Default for SectionBoxState {
@@ -104,6 +111,7 @@ impl Default for SectionBoxState {
             tracked_renderables: HashSet::new(),
             resolved_targets: Vec::new(),
             scene_revision: 0,
+            projection_bounds_generation: 0,
         }
     }
 }
@@ -128,6 +136,7 @@ pub(in crate::viewport) fn sync_section_box_state(
     settings: Res<ViewerSettingsState>,
     selection: Res<super::SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
+    projection: Option<Res<SelectedRenderableProjection>>,
     mut state: ResMut<SectionBoxState>,
     changed_tracked_renderables: Query<
         Entity,
@@ -157,6 +166,11 @@ pub(in crate::viewport) fn sync_section_box_state(
     )>,
 ) {
     let targets = selection.0.targets.clone();
+    let projection_bounds_generation = projection
+        .as_ref()
+        .map_or(state.projection_bounds_generation, |projection| {
+            projection.bounds_generation()
+        });
     let resolved_targets = targets
         .iter()
         .map(|target| scene_index.resolve(target))
@@ -164,8 +178,12 @@ pub(in crate::viewport) fn sync_section_box_state(
     let selection_changed = state.targets != targets;
     let resolution_changed = state.resolved_targets != resolved_targets;
     let scene_revision_changed = state.scene_revision != scene_index.revision();
-    let relevant_bounds_changed = !changed_tracked_renderables.is_empty()
-        || removed_tracked_renderables.read().next().is_some();
+    let relevant_bounds_changed = if projection.is_some() {
+        state.projection_bounds_generation != projection_bounds_generation
+    } else {
+        !changed_tracked_renderables.is_empty()
+            || removed_tracked_renderables.read().next().is_some()
+    };
     let actual_tracked_renderables = tracked_entities.iter().collect::<HashSet<_>>();
     let tracking_changed = actual_tracked_renderables != state.tracked_renderables;
     let enabled = settings.section_box_enabled();
@@ -182,7 +200,10 @@ pub(in crate::viewport) fn sync_section_box_state(
     }
 
     let next_tracked_renderables = if enabled {
-        selected_renderable_entities(&targets, &scene_index, &renderables)
+        projection.as_ref().map_or_else(
+            || selected_renderable_entities(&targets, &scene_index, &renderables),
+            |projection| projection.renderables().clone(),
+        )
     } else {
         HashSet::new()
     };
@@ -195,6 +216,7 @@ pub(in crate::viewport) fn sync_section_box_state(
     {
         state.resolved_targets = resolved_targets;
         state.scene_revision = scene_index.revision();
+        state.projection_bounds_generation = projection_bounds_generation;
         reconcile_tracked_renderables(
             &mut commands,
             &actual_tracked_renderables,
@@ -204,7 +226,12 @@ pub(in crate::viewport) fn sync_section_box_state(
     }
 
     let next_bounds = enabled
-        .then(|| aggregate_selection_bounds(&targets, &scene_index, &renderables))
+        .then(|| {
+            projection.as_ref().map_or_else(
+                || aggregate_selection_bounds(&targets, &scene_index, &renderables),
+                |projection| projection.aggregate_bounds().map(projected_bounds),
+            )
+        })
         .flatten();
     let next_visible = enabled && !targets.is_empty() && next_bounds.is_some();
     let force_auto_fit =
@@ -247,6 +274,7 @@ pub(in crate::viewport) fn sync_section_box_state(
     state.tracked_renderables = next_tracked_renderables.clone();
     state.resolved_targets = resolved_targets;
     state.scene_revision = scene_index.revision();
+    state.projection_bounds_generation = projection_bounds_generation;
     reconcile_tracked_renderables(
         &mut commands,
         &actual_tracked_renderables,
@@ -254,114 +282,11 @@ pub(in crate::viewport) fn sync_section_box_state(
     );
 }
 
-pub(in crate::viewport) fn aggregate_selection_bounds(
-    targets: &[SceneAnchor],
-    scene_index: &SceneAnchorIndex,
-    renderables: &Query<(
-        Option<&GlobalTransform>,
-        Option<&Children>,
-        Option<&Mesh3d>,
-        Option<&Aabb>,
-        Option<&UsdLocalExtent>,
-    )>,
-) -> Option<SectionBoxBounds> {
-    let mut aggregate: Option<SectionBoxBounds> = None;
-    for target in targets {
-        let Some(root) = scene_index.resolve(target) else {
-            continue;
-        };
-        let Some(target_bounds) = target_bounds(root, renderables) else {
-            continue;
-        };
-        if let Some(current) = &mut aggregate {
-            current.include(target_bounds);
-        } else {
-            aggregate = Some(target_bounds);
-        }
+fn projected_bounds(bounds: ProjectedWorldBounds) -> SectionBoxBounds {
+    SectionBoxBounds {
+        min: bounds.min,
+        max: bounds.max,
     }
-    aggregate
-}
-
-fn target_bounds(
-    root: Entity,
-    renderables: &Query<(
-        Option<&GlobalTransform>,
-        Option<&Children>,
-        Option<&Mesh3d>,
-        Option<&Aabb>,
-        Option<&UsdLocalExtent>,
-    )>,
-) -> Option<SectionBoxBounds> {
-    let mut stack = vec![root];
-    let mut visited = HashSet::new();
-    let mut aggregate: Option<SectionBoxBounds> = None;
-    while let Some(entity) = stack.pop() {
-        if !visited.insert(entity) {
-            continue;
-        }
-        let Ok((global, children, mesh, aabb, local_extent)) = renderables.get(entity) else {
-            continue;
-        };
-        if let (Some(global), Some(_mesh)) = (global, mesh) {
-            let local_bounds = local_extent
-                .map(|extent| SectionBoxBounds {
-                    min: Vec3::from_array(extent.min),
-                    max: Vec3::from_array(extent.max),
-                })
-                .or_else(|| {
-                    aabb.map(|aabb| {
-                        let center = Vec3::from(aabb.center);
-                        let half_extents = Vec3::from(aabb.half_extents);
-                        SectionBoxBounds {
-                            min: center - half_extents,
-                            max: center + half_extents,
-                        }
-                    })
-                });
-            if let Some(local_bounds) = local_bounds {
-                let world_bounds = transform_bounds(local_bounds, global.to_matrix());
-                if let Some(current) = &mut aggregate {
-                    current.include(world_bounds);
-                } else {
-                    aggregate = Some(world_bounds);
-                }
-            }
-        }
-        if let Some(children) = children {
-            stack.extend(children.iter());
-        }
-    }
-    aggregate
-}
-
-fn transform_bounds(bounds: SectionBoxBounds, matrix: Mat4) -> SectionBoxBounds {
-    let mut transformed = SectionBoxBounds {
-        min: Vec3::splat(f32::INFINITY),
-        max: Vec3::splat(f32::NEG_INFINITY),
-    };
-    for index in 0..8 {
-        let corner = Vec3::new(
-            if index & 1 == 0 {
-                bounds.min.x
-            } else {
-                bounds.max.x
-            },
-            if index & 2 == 0 {
-                bounds.min.y
-            } else {
-                bounds.max.y
-            },
-            if index & 4 == 0 {
-                bounds.min.z
-            } else {
-                bounds.max.z
-            },
-        );
-        let world = matrix.transform_point3(corner);
-        transformed.min = transformed.min.min(world);
-        transformed.max = transformed.max.max(world);
-    }
-    transformed
 }
 
 impl SectionBoxClipPlanes {

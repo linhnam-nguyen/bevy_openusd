@@ -13,7 +13,7 @@ use viewport_protocol::ColorRgb8;
 use viewport_protocol::SelectionPresentationSettings;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::SelectedTargets;
+use crate::viewport::scene::{SelectedRenderableProjection, SelectedTargets};
 
 const SELECTION_OUTLINE_WIDTH: f32 = 3.0;
 
@@ -25,6 +25,10 @@ pub(crate) struct SelectionOutline;
 pub(in crate::viewport) struct SelectionOutlineState {
     entities: HashSet<Entity>,
     last_boundary: Option<(bool, ColorRgb8)>,
+    last_projection_generation: Option<u64>,
+    pub(in crate::viewport) last_added: usize,
+    pub(in crate::viewport) last_removed: usize,
+    pub(in crate::viewport) last_updated: usize,
 }
 
 /// Applies the selected targets' boundary settings to transient projected
@@ -34,6 +38,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
     selection: Res<SelectedTargets>,
     settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
+    projection: Option<Res<SelectedRenderableProjection>>,
     mut state: ResMut<SelectionOutlineState>,
     mut commands: Commands,
     meshes: Query<(Option<&Mesh3d>, Option<&Children>)>,
@@ -41,30 +46,72 @@ pub(in crate::viewport) fn sync_selection_outlines(
 ) {
     let presentation = settings.selection();
     let boundary = (presentation.boundary_enabled, presentation.boundary_color);
-    if !selection.is_changed() && !scene_index.is_changed() && state.last_boundary == Some(boundary)
+    let projection_generation = projection
+        .as_ref()
+        .map(|projection| projection.generation());
+    let projection_changed = state.last_projection_generation != projection_generation;
+    if !selection.is_changed()
+        && !scene_index.is_changed()
+        && state.last_boundary == Some(boundary)
+        && !projection_changed
     {
+        state.last_added = 0;
+        state.last_removed = 0;
+        state.last_updated = 0;
         return;
     }
 
-    let mut desired = HashSet::new();
-    if presentation.boundary_enabled {
-        for target in &selection.0.targets {
-            let Some(entity) = scene_index.resolve(target) else {
-                continue;
-            };
-            collect_mesh_descendants(entity, &meshes, &mut desired);
-        }
-    }
-
-    for entity in state
-        .entities
-        .difference(&desired)
-        .copied()
-        .collect::<Vec<_>>()
+    let desired = if presentation.boundary_enabled {
+        projection.as_ref().map_or_else(
+            || {
+                let mut desired = HashSet::new();
+                for target in &selection.0.targets {
+                    let Some(entity) = scene_index.resolve(target) else {
+                        continue;
+                    };
+                    collect_mesh_descendants(entity, &meshes, &mut desired);
+                }
+                desired
+            },
+            |projection| projection.renderables().clone(),
+        )
+    } else {
+        HashSet::new()
+    };
+    let boundary_changed = state.last_boundary != Some(boundary);
+    let (added, removed) = if !boundary_changed
+        && projection_changed
+        && let Some(projection) = projection.as_ref()
     {
-        if owned_outlines.get(entity).is_ok() {
+        (
+            projection
+                .added_renderables()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            projection
+                .removed_renderables()
+                .intersection(&state.entities)
+                .copied()
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        (
+            desired
+                .difference(&state.entities)
+                .copied()
+                .collect::<Vec<_>>(),
+            state
+                .entities
+                .difference(&desired)
+                .copied()
+                .collect::<Vec<_>>(),
+        )
+    };
+    for entity in &removed {
+        if owned_outlines.get(*entity).is_ok() {
             commands
-                .entity(entity)
+                .entity(*entity)
                 .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
         }
     }
@@ -74,7 +121,13 @@ pub(in crate::viewport) fn sync_selection_outlines(
         width: SELECTION_OUTLINE_WIDTH,
         colour: color_from_rgb8(presentation.boundary_color),
     };
-    for entity in desired.iter().copied() {
+    let to_update = if boundary_changed {
+        desired.iter().copied().collect::<Vec<_>>()
+    } else {
+        added.clone()
+    };
+    let updated_count = to_update.len();
+    for entity in to_update {
         commands.entity(entity).insert((
             SelectionOutline,
             outline.clone(),
@@ -84,6 +137,10 @@ pub(in crate::viewport) fn sync_selection_outlines(
 
     state.entities = desired;
     state.last_boundary = Some(boundary);
+    state.last_projection_generation = projection_generation;
+    state.last_added = added.len();
+    state.last_removed = removed.len();
+    state.last_updated = updated_count;
 }
 
 pub(super) fn collect_mesh_descendants(

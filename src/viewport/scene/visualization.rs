@@ -15,8 +15,9 @@ use super::selection_color::{
 };
 use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
 use super::{
-    SectionBoxState, capture_section_box_gizmo_transform, draw_section_box,
-    sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
+    SectionBoxState, SelectedRenderableProjection, capture_section_box_gizmo_transform,
+    draw_section_box, sync_section_box_clipping, sync_section_box_gizmo_target,
+    sync_section_box_state, sync_selected_renderable_projection,
 };
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::api::ViewerSettingsState;
@@ -58,6 +59,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HoveredTarget>()
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
+            .init_resource::<SelectedRenderableProjection>()
             .init_resource::<super::section_box_clipping::SectionClipProjectionState>()
             .init_resource::<super::section_box_clipping::SectionClipDiagnostics>()
             .init_resource::<render_mode::RenderModeProjectionState>()
@@ -74,6 +76,7 @@ impl Plugin for OverlaysPlugin {
             .add_systems(
                 Update,
                 (
+                    sync_selected_renderable_projection,
                     sync_gizmo_size,
                     capture_section_box_gizmo_transform,
                     compute_extent,
@@ -111,6 +114,8 @@ impl Plugin for OverlaysPlugin {
                     .chain()
                     .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
                     .after(crate::viewport::camera::ArcballCameraSet::ApplyInput)
+                    .after(sync_selected_renderable_projection)
+                    .after(sync_section_box_state)
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
     }

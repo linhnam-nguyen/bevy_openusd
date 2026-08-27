@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use viewport_protocol::{ColorRgb8, SceneAnchor, SelectionReadModel};
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::SelectedTargets;
+use crate::viewport::scene::{SelectedRenderableProjection, SelectedTargets};
 
 use super::selection_hover::HoveredTarget;
 use super::selection_outline::collect_mesh_descendants;
@@ -38,6 +38,8 @@ pub(in crate::viewport) struct SelectionColorOverrideState {
     last_scene_revision: Option<u64>,
     selected_meshes: HashSet<Entity>,
     hovered_meshes: HashSet<Entity>,
+    last_projection_generation: Option<u64>,
+    pub(in crate::viewport) last_affected_entities: usize,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -82,33 +84,25 @@ pub(super) fn init_selection_color_material(
 /// Rebinds selected or hovered projected meshes to shared presentation materials.
 ///
 /// The system is change-gated by logical selection, scene-anchor resolution,
-/// selection settings, and material changes on already-overridden entities.
+/// and presentation settings.
 /// It never edits the USD stage or creates a material per target.
 pub(in crate::viewport) fn sync_selection_color_overrides(
     selection: Res<SelectedTargets>,
     settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     hovered_target: Res<HoveredTarget>,
+    projection: Option<Res<SelectedRenderableProjection>>,
     color_material: Option<Res<SelectionColorMaterial>>,
     hover_material: Option<Res<HoverColorMaterial>>,
     mut state: ResMut<SelectionColorOverrideState>,
     mut commands: Commands,
     mut material_assets: ResMut<Assets<StandardMaterial>>,
     mesh_hierarchy: Query<(Option<&Mesh3d>, Option<&Children>)>,
-    mut meshes: ParamSet<(
-        Query<(
-            Entity,
-            &mut MeshMaterial3d<StandardMaterial>,
-            Option<&SelectionBaseMaterial>,
-            Option<&SelectionColorOverride>,
-        )>,
-        Query<
-            Entity,
-            (
-                With<SelectionColorOverride>,
-                Changed<MeshMaterial3d<StandardMaterial>>,
-            ),
-        >,
+    mut meshes: Query<(
+        Entity,
+        &mut MeshMaterial3d<StandardMaterial>,
+        Option<&SelectionBaseMaterial>,
+        Option<&SelectionColorOverride>,
     )>,
 ) {
     let (Some(color_material), Some(hover_material)) = (color_material, hover_material) else {
@@ -122,15 +116,18 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         presentation.hover_color,
         hovered_target.anchor.clone(),
     );
-    let changed_owned_entities: Vec<Entity> = meshes.p1().iter().collect();
-    let material_changed = !changed_owned_entities.is_empty();
     let selection_changed = state.last_selection.as_ref() != Some(&selection.0);
     let scene_changed = state.last_scene_revision != Some(scene_index.revision());
+    let projection_generation = projection
+        .as_ref()
+        .map(|projection| projection.generation());
+    let projection_changed = state.last_projection_generation != projection_generation;
     if !selection_changed
         && !scene_changed
+        && !projection_changed
         && state.last_presentation.as_ref() == Some(&presentation_key)
-        && !material_changed
     {
+        state.last_affected_entities = 0;
         return;
     }
 
@@ -153,6 +150,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
 
     let sets_changed = selection_changed
         || scene_changed
+        || projection_changed
         || state.last_presentation.as_ref().is_none_or(|last| {
             last.0 != presentation.color_change_enabled
                 || last.2 != presentation.hover_color_change_enabled
@@ -161,15 +159,23 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     let previous_selected_meshes = std::mem::take(&mut state.selected_meshes);
     let previous_hovered_meshes = std::mem::take(&mut state.hovered_meshes);
     let (selected_meshes, hovered_meshes) = if sets_changed {
-        let mut selected_meshes = HashSet::new();
-        if presentation.color_change_enabled {
-            for target in &selection.0.targets {
-                let Some(entity) = scene_index.resolve(target) else {
-                    continue;
-                };
-                collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected_meshes);
-            }
-        }
+        let selected_meshes = if presentation.color_change_enabled {
+            projection.as_ref().map_or_else(
+                || {
+                    let mut selected_meshes = HashSet::new();
+                    for target in &selection.0.targets {
+                        let Some(entity) = scene_index.resolve(target) else {
+                            continue;
+                        };
+                        collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected_meshes);
+                    }
+                    selected_meshes
+                },
+                |projection| projection.renderables().clone(),
+            )
+        } else {
+            HashSet::new()
+        };
 
         let mut hovered_meshes = HashSet::new();
         if presentation.hover_color_change_enabled
@@ -187,11 +193,29 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     };
 
     let mut affected = HashSet::new();
-    if sets_changed {
-        affected.extend(previous_selected_meshes.iter().copied());
-        affected.extend(previous_hovered_meshes.iter().copied());
-        affected.extend(selected_meshes.iter().copied());
-        affected.extend(hovered_meshes.iter().copied());
+    let can_use_projection_delta = projection_changed
+        && projection.is_some()
+        && state
+            .last_presentation
+            .as_ref()
+            .is_some_and(|last| last.0 == presentation.color_change_enabled);
+    if can_use_projection_delta {
+        let projection = projection.as_ref().expect("projection is present");
+        affected.extend(projection.added_renderables().iter().copied());
+        affected.extend(projection.removed_renderables().iter().copied());
+    } else if previous_selected_meshes != selected_meshes {
+        affected.extend(
+            previous_selected_meshes
+                .symmetric_difference(&selected_meshes)
+                .copied(),
+        );
+    }
+    if previous_hovered_meshes != hovered_meshes {
+        affected.extend(
+            previous_hovered_meshes
+                .symmetric_difference(&hovered_meshes)
+                .copied(),
+        );
     }
     if selection_color_changed {
         affected.extend(selected_meshes.iter().copied());
@@ -199,11 +223,10 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     if hover_color_changed {
         affected.extend(hovered_meshes.iter().copied());
     }
-    affected.extend(changed_owned_entities);
+    state.last_affected_entities = affected.len();
 
     let selection_handle = &color_material.0;
     let hover_handle = &hover_material.0;
-    let mut meshes = meshes.p0();
     for entity in affected {
         let Ok((_, mut material, base, marker)) = meshes.get_mut(entity) else {
             continue;
@@ -251,6 +274,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     state.hovered_meshes = hovered_meshes;
     state.last_selection = Some(selection.0.clone());
     state.last_scene_revision = Some(scene_index.revision());
+    state.last_projection_generation = projection_generation;
     state.last_presentation = Some(presentation_key);
 }
 

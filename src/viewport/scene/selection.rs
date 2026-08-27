@@ -273,6 +273,44 @@ mod tests {
         assert_eq!(selection.revision(), 0);
     }
 
+    #[test]
+    fn large_selection_transactions_advance_the_authority_once_each() {
+        let mut selection = SelectedTargets::default();
+        let initial_targets = (0..1_000)
+            .map(|index| SceneAnchor::active_session(format!("/World/Initial{index:04}")))
+            .collect::<Vec<_>>();
+        selection
+            .replace(SelectionReadModel {
+                primary: initial_targets.first().cloned(),
+                targets: initial_targets,
+            })
+            .expect("1,000-target replacement must be valid");
+        assert_eq!(selection.revision(), 1);
+        assert_eq!(selection.0.targets.len(), 1_000);
+
+        let additions = (0..100)
+            .map(|index| SceneAnchor::active_session(format!("/World/Added{index:04}")))
+            .collect::<Vec<_>>();
+        selection
+            .add_many(additions, None)
+            .expect("100-target addition must be valid");
+        assert_eq!(selection.revision(), 2);
+        assert_eq!(selection.0.targets.len(), 1_100);
+
+        let removals = (0..100)
+            .map(|index| SceneAnchor::active_session(format!("/World/Initial{index:04}")))
+            .collect::<Vec<_>>();
+        selection
+            .remove_many(removals)
+            .expect("100-target removal must be valid");
+        assert_eq!(selection.revision(), 3);
+        assert_eq!(selection.0.targets.len(), 1_000);
+        assert_eq!(
+            selection.0.primary,
+            Some(SceneAnchor::active_session("/World/Added0000"))
+        );
+    }
+
     use bevy::asset::Assets;
     use bevy::mesh::Mesh;
     use bevy::pbr::StandardMaterial;

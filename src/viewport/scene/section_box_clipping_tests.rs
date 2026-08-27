@@ -2,6 +2,9 @@ use bevy::asset::AssetPlugin;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 
 use super::*;
+use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::scene::{HoveredTarget, SectionBoxState};
 
 fn clipping_test_app() -> App {
     let mut app = App::new();
