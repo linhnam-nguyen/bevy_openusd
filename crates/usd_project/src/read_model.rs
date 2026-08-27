@@ -1,0 +1,159 @@
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    ModelId, ModelSourceKind, ProjectCapabilities, ProjectId, ProjectRoot, SceneId, SceneMemberId,
+};
+
+/// Safe summary state exposed by the Project application boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectSummary {
+    pub id: ProjectId,
+    pub name: String,
+    pub root: ProjectRoot,
+    pub repository: RepositorySummary,
+    pub counts: ProjectContentCounts,
+    pub capabilities: ProjectCapabilities,
+}
+
+/// Git-neutral repository state for a Project summary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RepositorySummary {
+    pub active_branch: Option<String>,
+    pub branches: Vec<BranchSummary>,
+    pub dirty: bool,
+    pub head: Option<RevisionSummary>,
+}
+
+/// One local branch represented without a Git implementation type.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BranchSummary {
+    pub name: String,
+    pub tip: RevisionSummary,
+    pub is_current: bool,
+}
+
+/// Opaque revision metadata safe to send across the Project boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RevisionSummary {
+    pub id: String,
+}
+
+/// Bounded counts for Project content without copying the content catalogue.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectContentCounts {
+    pub scenes: u64,
+    pub models: u64,
+    pub scene_placements: u64,
+    pub model_placements: u64,
+}
+
+/// A safe, flat Project content node suitable for paging or tree projection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ProjectContentNode {
+    Scene {
+        scene_id: SceneId,
+        name: String,
+        parent_scene_id: Option<SceneId>,
+    },
+    Model {
+        model_id: ModelId,
+        name: String,
+        source: ModelSourceSummary,
+    },
+    ScenePlacement {
+        member_id: SceneMemberId,
+        target: SceneId,
+        parent_scene_id: SceneId,
+        name: Option<String>,
+    },
+    ModelPlacement {
+        member_id: SceneMemberId,
+        target: ModelId,
+        parent_scene_id: SceneId,
+        name: Option<String>,
+    },
+}
+
+/// Public model-source metadata derived from the pure source-kind contract.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ModelSourceSummary {
+    pub kind: ModelSourceKind,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn revision(id: &str) -> RevisionSummary {
+        RevisionSummary { id: id.to_owned() }
+    }
+
+    #[test]
+    fn summary_round_trips_without_adapter_handles() {
+        let project = ProjectSummary {
+            id: ProjectId::new_v4(),
+            name: "Peer view".to_owned(),
+            root: ProjectRoot::Scene(SceneId::new_v4()),
+            repository: RepositorySummary {
+                active_branch: Some("main".to_owned()),
+                branches: vec![BranchSummary {
+                    name: "main".to_owned(),
+                    tip: revision("abc123"),
+                    is_current: true,
+                }],
+                dirty: false,
+                head: Some(revision("abc123")),
+            },
+            counts: ProjectContentCounts {
+                scenes: 2,
+                models: 1,
+                scene_placements: 1,
+                model_placements: 2,
+            },
+            capabilities: ProjectCapabilities {
+                can_create_scene: true,
+                can_import_scene: true,
+                can_import_model: true,
+                can_switch_branch: false,
+                can_commit: false,
+            },
+        };
+
+        let encoded = serde_json::to_string(&project).unwrap();
+        let decoded: ProjectSummary = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(project, decoded);
+    }
+
+    #[test]
+    fn repeated_placements_keep_distinct_member_identity() {
+        let scene_id = SceneId::new_v4();
+        let first = SceneMemberId::new_v4();
+        let second = SceneMemberId::new_v4();
+        let nodes = [
+            ProjectContentNode::ScenePlacement {
+                member_id: first,
+                target: scene_id,
+                parent_scene_id: scene_id,
+                name: Some("First".to_owned()),
+            },
+            ProjectContentNode::ScenePlacement {
+                member_id: second,
+                target: scene_id,
+                parent_scene_id: scene_id,
+                name: Some("Second".to_owned()),
+            },
+        ];
+
+        let ids = nodes
+            .iter()
+            .map(|node| match node {
+                ProjectContentNode::ScenePlacement { member_id, .. } => *member_id,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>();
+
+        assert_ne!(ids[0], ids[1]);
+        assert_eq!(nodes[0], nodes[0]);
+    }
+}

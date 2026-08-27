@@ -1,11 +1,18 @@
 //! Pure Project domain contracts shared by Project adapters and read models.
 
+mod capability;
 mod error;
 mod id;
+mod read_model;
 mod root;
 
+pub use capability::ProjectCapabilities;
 pub use error::ProjectDomainError;
 pub use id::{ModelId, ProjectId, SceneId, SceneMemberId};
+pub use read_model::{
+    BranchSummary, ModelSourceSummary, ProjectContentCounts, ProjectContentNode, ProjectSummary,
+    RepositorySummary, RevisionSummary,
+};
 pub use root::{ModelSourceKind, ProjectRoot};
 
 #[cfg(test)]
