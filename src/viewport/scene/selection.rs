@@ -16,11 +16,40 @@ pub struct SelectedPrim(pub Option<Entity>);
 /// Authoritative logical selection state. The Bevy entity in [`SelectedPrim`]
 /// is only the resolved primary used by internal runtime systems.
 #[derive(Resource, Default, Debug, Clone)]
-pub struct SelectedTargets(pub SelectionReadModel, pub(crate) u64);
+pub struct SelectedTargets(pub SelectionReadModel, pub(crate) u64, SelectionDelta);
+
+#[derive(Default, Debug, Clone)]
+pub(crate) struct SelectionDelta {
+    pub(crate) added: HashSet<SceneAnchor>,
+    pub(crate) removed: HashSet<SceneAnchor>,
+}
+
+impl SelectionDelta {
+    fn record_added(&mut self, target: SceneAnchor) {
+        if !self.removed.remove(&target) {
+            self.added.insert(target);
+        }
+    }
+
+    fn record_removed(&mut self, target: SceneAnchor) {
+        if !self.added.remove(&target) {
+            self.removed.insert(target);
+        }
+    }
+}
 
 impl SelectedTargets {
     pub(crate) fn revision(&self) -> u64 {
         self.1
+    }
+
+    pub(crate) fn pending_delta(&self) -> &SelectionDelta {
+        &self.2
+    }
+
+    pub(crate) fn clear_pending_delta(&mut self) {
+        self.2.added.clear();
+        self.2.removed.clear();
     }
 
     /// Monotonic identity for one logical selection transaction. Derived
@@ -32,6 +61,14 @@ impl SelectedTargets {
     ) -> Result<(), ProtocolValidationError> {
         selection.canonicalize()?;
         if self.0 != selection {
+            let previous_targets = self.0.targets.iter().collect::<HashSet<_>>();
+            let next_targets = selection.targets.iter().collect::<HashSet<_>>();
+            for target in previous_targets.difference(&next_targets) {
+                self.2.record_removed((*target).clone());
+            }
+            for target in next_targets.difference(&previous_targets) {
+                self.2.record_added((*target).clone());
+            }
             self.0 = selection;
             self.1 = self.1.saturating_add(1);
         }
@@ -94,6 +131,9 @@ impl SelectedTargets {
             .into_iter()
             .filter(|target| !existing_targets.contains(target))
             .collect::<Vec<_>>();
+        for target in &additions {
+            self.2.record_added(target.clone());
+        }
         self.0.targets.extend(additions);
         if let Some(primary) = primary {
             self.0.primary = Some(primary);
@@ -127,6 +167,11 @@ impl SelectedTargets {
         validate_delta_targets(&targets)?;
         let removed_targets = targets.iter().collect::<HashSet<_>>();
         let before = self.0.clone();
+        for target in &self.0.targets {
+            if removed_targets.contains(target) {
+                self.2.record_removed(target.clone());
+            }
+        }
         self.0
             .targets
             .retain(|candidate| !removed_targets.contains(candidate));
@@ -309,6 +354,28 @@ mod tests {
             selection.0.primary,
             Some(SceneAnchor::active_session("/World/Added0000"))
         );
+    }
+
+    #[test]
+    fn pending_selection_delta_coalesces_until_projection_consumes_it() {
+        let first = SceneAnchor::active_session("/World/First");
+        let second = SceneAnchor::active_session("/World/Second");
+        let mut selection = SelectedTargets::default();
+
+        selection
+            .add_many(vec![first.clone(), second.clone()], None)
+            .expect("valid targets add");
+        selection
+            .remove_many(vec![first])
+            .expect("valid target removal");
+
+        assert_eq!(selection.pending_delta().added.len(), 1);
+        assert!(selection.pending_delta().added.contains(&second));
+        assert!(selection.pending_delta().removed.is_empty());
+
+        selection.clear_pending_delta();
+        assert!(selection.pending_delta().added.is_empty());
+        assert!(selection.pending_delta().removed.is_empty());
     }
 
     use bevy::asset::Assets;

@@ -72,7 +72,7 @@ impl SelectedRenderableProjection {
 
 #[allow(clippy::type_complexity)]
 pub(in crate::viewport) fn sync_selected_renderable_projection(
-    selection: Res<SelectedTargets>,
+    mut selection: ResMut<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     mut projection: ResMut<SelectedRenderableProjection>,
     hierarchy: Query<(Option<&Children>, Option<&Mesh3d>)>,
@@ -143,15 +143,10 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
             .difference(&projection.renderables)
             .copied()
             .collect();
+        selection.clear_pending_delta();
     } else {
-        let current_targets = targets.iter().collect::<HashSet<_>>();
-        let removed_targets = projection
-            .target_renderables
-            .keys()
-            .filter(|target| !current_targets.contains(target))
-            .cloned()
-            .collect::<Vec<_>>();
-        for target in removed_targets {
+        let pending_delta = selection.pending_delta().clone();
+        for target in pending_delta.removed {
             if let Some(renderables) = projection.target_renderables.remove(&target) {
                 remove_target_renderables(&mut projection, &renderables);
                 mapping_changed = true;
@@ -162,24 +157,22 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
             }
         }
 
-        for target in targets {
-            if !projection.target_renderables.contains_key(target) {
-                let previous_bounds = projection.target_bounds.get(target).copied();
-                insert_target_projection(
-                    target,
-                    &scene_index,
-                    &hierarchy,
-                    &geometry,
-                    &mut projection,
-                );
-                if let Some(bounds) = projection.target_bounds.get(target).copied()
-                    && previous_bounds.is_none()
-                {
-                    added_bounds.push(bounds);
-                }
-                mapping_changed = true;
-                bounds_changed = true;
+        for target in pending_delta.added {
+            let previous_bounds = projection.target_bounds.get(&target).copied();
+            insert_target_projection(
+                &target,
+                &scene_index,
+                &hierarchy,
+                &geometry,
+                &mut projection,
+            );
+            if let Some(bounds) = projection.target_bounds.get(&target).copied()
+                && previous_bounds.is_none()
+            {
+                added_bounds.push(bounds);
             }
+            mapping_changed = true;
+            bounds_changed = true;
         }
 
         if !geometry_changed.is_empty() {
@@ -201,14 +194,10 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
                 }
             }
         }
+        selection.clear_pending_delta();
     }
 
-    if mapping_changed || scene_changed {
-        projection.renderables = projection
-            .target_renderables
-            .values()
-            .flat_map(|renderables| renderables.iter().copied())
-            .collect();
+    if mapping_changed {
         projection.generation = projection.generation.saturating_add(1);
     }
     if bounds_changed {
