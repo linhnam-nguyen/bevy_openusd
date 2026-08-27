@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
@@ -40,11 +42,23 @@ pub enum ViewportCommand {
         target: SceneAnchor,
         make_primary: bool,
     },
+    /// Adds a batch of targets in one authoritative selection transaction.
+    /// When present, `primary` must be one of the added targets.
+    AddSelectionTargets {
+        targets: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+    },
     /// Removes one target. If it was primary, the server chooses the first
     /// remaining canonical target as the new primary.
     RemoveSelectionTarget {
         target: SceneAnchor,
     },
+    /// Removes a batch of targets in one authoritative selection transaction.
+    RemoveSelectionTargets {
+        targets: Vec<SceneAnchor>,
+    },
+    /// Clears the complete authoritative selection in one transaction.
+    ClearSelection,
     FocusTarget {
         target: SceneAnchor,
         mode: FocusMode,
@@ -242,6 +256,21 @@ impl ViewportCommand {
             Self::AddSelectionTarget { target, .. } | Self::RemoveSelectionTarget { target } => {
                 target.validate()?
             }
+            Self::AddSelectionTargets { targets, primary } => {
+                validate_selection_delta(targets, "selection.targets")?;
+                if let Some(primary) = primary {
+                    primary.validate()?;
+                    if !targets.contains(primary) {
+                        return Err(ProtocolValidationError::InvalidInput {
+                            field: "selection.primary",
+                        });
+                    }
+                }
+            }
+            Self::RemoveSelectionTargets { targets } => {
+                validate_selection_delta(targets, "selection.targets")?;
+            }
+            Self::ClearSelection => {}
             Self::SetEnvironmentSettings { .. }
             | Self::SetSamplingPreference { .. }
             | Self::SetSectionBox { .. } => {}
@@ -340,4 +369,23 @@ impl ViewportCommand {
         }
         Ok(())
     }
+}
+
+fn validate_selection_delta(
+    targets: &[SceneAnchor],
+    field: &'static str,
+) -> Result<(), crate::ProtocolValidationError> {
+    use crate::ProtocolValidationError;
+
+    if targets.is_empty() {
+        return Err(ProtocolValidationError::EmptyField { field });
+    }
+    let mut seen = HashSet::with_capacity(targets.len());
+    for target in targets {
+        target.validate()?;
+        if !seen.insert(target) {
+            return Err(ProtocolValidationError::InvalidInput { field });
+        }
+    }
+    Ok(())
 }

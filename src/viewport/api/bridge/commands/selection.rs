@@ -16,7 +16,7 @@ pub(super) fn select_target(
         None => {
             selected_prim.0 = None;
             selection
-                .replace(SelectionReadModel::default())
+                .clear()
                 .expect("empty selection must satisfy the protocol invariant");
         }
         Some(anchor) => match resolve_anchor(&anchor, scene_index) {
@@ -84,18 +84,40 @@ pub(super) fn add_selection_target(
     selection: &mut SelectedTargets,
     scene_index: &SceneAnchorIndex,
 ) {
-    if resolve_anchor(&target, scene_index).is_err() {
-        reject(
-            outbox,
-            request_id,
-            format!(
-                "target {} is not present in the active scene",
-                target.prim_path
-            ),
-        );
-        return;
+    add_selection_targets(
+        request_id,
+        vec![target.clone()],
+        make_primary.then_some(target),
+        outbox,
+        selected_prim,
+        selection,
+        scene_index,
+    );
+}
+
+pub(super) fn add_selection_targets(
+    request_id: String,
+    targets: Vec<SceneAnchor>,
+    primary: Option<SceneAnchor>,
+    outbox: &mut ViewportEventOutbox,
+    selected_prim: &mut SelectedPrim,
+    selection: &mut SelectedTargets,
+    scene_index: &SceneAnchorIndex,
+) {
+    for target in &targets {
+        if resolve_anchor(target, scene_index).is_err() {
+            reject(
+                outbox,
+                request_id,
+                format!(
+                    "target {} is not present in the active scene",
+                    target.prim_path
+                ),
+            );
+            return;
+        }
     }
-    if let Err(error) = selection.add(target, make_primary) {
+    if let Err(error) = selection.add_many(targets, primary) {
         reject(outbox, request_id, error.to_string());
         return;
     }
@@ -115,7 +137,25 @@ pub(super) fn remove_selection_target(
     selection: &mut SelectedTargets,
     scene_index: &SceneAnchorIndex,
 ) {
-    if let Err(error) = selection.remove(&target) {
+    remove_selection_targets(
+        request_id,
+        vec![target],
+        outbox,
+        selected_prim,
+        selection,
+        scene_index,
+    );
+}
+
+pub(super) fn remove_selection_targets(
+    request_id: String,
+    targets: Vec<SceneAnchor>,
+    outbox: &mut ViewportEventOutbox,
+    selected_prim: &mut SelectedPrim,
+    selection: &mut SelectedTargets,
+    _scene_index: &SceneAnchorIndex,
+) {
+    if let Err(error) = selection.remove_many(targets) {
         reject(outbox, request_id, error.to_string());
         return;
     }
@@ -123,7 +163,21 @@ pub(super) fn remove_selection_target(
         .0
         .primary
         .as_ref()
-        .and_then(|primary| scene_index.resolve(primary));
+        .and_then(|primary| _scene_index.resolve(primary));
+    emit_selection_changed(request_id, &selection.0, outbox);
+}
+
+pub(super) fn clear_selection(
+    request_id: String,
+    outbox: &mut ViewportEventOutbox,
+    selected_prim: &mut SelectedPrim,
+    selection: &mut SelectedTargets,
+) {
+    if let Err(error) = selection.clear() {
+        reject(outbox, request_id, error.to_string());
+        return;
+    }
+    selected_prim.0 = None;
     emit_selection_changed(request_id, &selection.0, outbox);
 }
 

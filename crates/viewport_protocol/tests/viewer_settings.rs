@@ -105,8 +105,8 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v3_selection_wire_migration_is_explicit() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 3);
+fn protocol_v4_selection_delta_migration_is_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 4);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
 }
@@ -220,6 +220,40 @@ fn selection_commands_validate_membership_and_anchor_identity() {
         }
         .validate()
         .is_err()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::AddSelectionTargets {
+            targets: vec![
+                SceneAnchor::active_session("/World/First"),
+                SceneAnchor::active_session("/World/Second"),
+            ],
+            primary: Some(SceneAnchor::active_session("/World/Second")),
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::AddSelectionTargets {
+            targets: vec![SceneAnchor::active_session("/World/First")],
+            primary: Some(SceneAnchor::active_session("/World/Other")),
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::RemoveSelectionTargets {
+            targets: vec![
+                SceneAnchor::active_session("/World/First"),
+                SceneAnchor::active_session("/World/First"),
+            ],
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        viewport_protocol::ViewportCommand::ClearSelection
+            .validate()
+            .is_ok()
     );
 }
 

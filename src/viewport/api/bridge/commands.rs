@@ -122,6 +122,17 @@ pub(super) fn apply_viewport_commands(
                     &state.scene_index,
                 );
             }
+            ViewportCommand::AddSelectionTargets { targets, primary } => {
+                selection::add_selection_targets(
+                    request_id,
+                    targets,
+                    primary,
+                    &mut outbox,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
+                    &state.scene_index,
+                );
+            }
             ViewportCommand::RemoveSelectionTarget { target } => {
                 selection::remove_selection_target(
                     request_id,
@@ -130,6 +141,24 @@ pub(super) fn apply_viewport_commands(
                     &mut state.selected_prim,
                     &mut state.selected_targets,
                     &state.scene_index,
+                );
+            }
+            ViewportCommand::RemoveSelectionTargets { targets } => {
+                selection::remove_selection_targets(
+                    request_id,
+                    targets,
+                    &mut outbox,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
+                    &state.scene_index,
+                );
+            }
+            ViewportCommand::ClearSelection => {
+                selection::clear_selection(
+                    request_id,
+                    &mut outbox,
+                    &mut state.selected_prim,
+                    &mut state.selected_targets,
                 );
             }
             ViewportCommand::FocusTarget { target, mode } => {

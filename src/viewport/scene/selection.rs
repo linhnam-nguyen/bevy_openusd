@@ -2,6 +2,7 @@
 
 use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
+use std::collections::HashSet;
 use usd_bevy::{PointInstancerSelection, UsdInstanceId, UsdPrimRef};
 use viewport_protocol::{
     MAX_SELECTION_TARGETS, ProtocolValidationError, SceneAnchor, SelectionReadModel,
@@ -62,6 +63,48 @@ impl SelectedTargets {
         Ok(())
     }
 
+    pub(crate) fn add_many(
+        &mut self,
+        targets: Vec<SceneAnchor>,
+        primary: Option<SceneAnchor>,
+    ) -> Result<(), ProtocolValidationError> {
+        validate_delta_targets(&targets)?;
+        if let Some(primary) = &primary {
+            primary.validate()?;
+            if !targets.contains(primary) {
+                return Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.primary",
+                });
+            }
+        }
+
+        let existing_targets = self.0.targets.iter().cloned().collect::<HashSet<_>>();
+        let new_targets = targets
+            .iter()
+            .filter(|target| !existing_targets.contains(*target))
+            .count();
+        if self.0.targets.len() + new_targets > MAX_SELECTION_TARGETS {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.targets",
+            });
+        }
+
+        let before = self.0.clone();
+        let additions = targets
+            .into_iter()
+            .filter(|target| !existing_targets.contains(target))
+            .collect::<Vec<_>>();
+        self.0.targets.extend(additions);
+        if let Some(primary) = primary {
+            self.0.primary = Some(primary);
+        }
+        self.0.canonicalize()?;
+        if self.0 != before {
+            self.1 = self.1.saturating_add(1);
+        }
+        Ok(())
+    }
+
     pub(crate) fn remove(&mut self, target: &SceneAnchor) -> Result<(), ProtocolValidationError> {
         target.validate()?;
         let before = self.0.clone();
@@ -76,6 +119,48 @@ impl SelectedTargets {
         }
         Ok(())
     }
+
+    pub(crate) fn remove_many(
+        &mut self,
+        targets: Vec<SceneAnchor>,
+    ) -> Result<(), ProtocolValidationError> {
+        validate_delta_targets(&targets)?;
+        let removed_targets = targets.iter().collect::<HashSet<_>>();
+        let before = self.0.clone();
+        self.0
+            .targets
+            .retain(|candidate| !removed_targets.contains(candidate));
+        if self
+            .0
+            .primary
+            .as_ref()
+            .is_some_and(|primary| removed_targets.contains(primary))
+        {
+            self.0.primary = self.0.targets.first().cloned();
+        }
+        self.0.canonicalize()?;
+        if self.0 != before {
+            self.1 = self.1.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear(&mut self) -> Result<(), ProtocolValidationError> {
+        self.replace(SelectionReadModel::default())
+    }
+}
+
+fn validate_delta_targets(targets: &[SceneAnchor]) -> Result<(), ProtocolValidationError> {
+    let mut seen = HashSet::with_capacity(targets.len());
+    for target in targets {
+        target.validate()?;
+        if !seen.insert(target) {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "selection.targets",
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Copies a selected instance's stable USD identity before a route is allowed

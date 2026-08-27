@@ -167,6 +167,87 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
 }
 
 #[test]
+fn batched_selection_deltas_apply_once_and_preserve_primary_invariants() {
+    let mut app = selection_test_app();
+    let initial = vec![anchor(FIRST), anchor(SECOND), anchor(THIRD)];
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::ReplaceSelection {
+            targets: initial,
+            primary: Some(anchor(FIRST)),
+        },
+    );
+    app.update();
+    let _ = next_event(&mut app);
+    let before_add_revision = app.world().resource::<SelectedTargets>().revision();
+
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::AddSelectionTargets {
+            targets: vec![anchor("/World/Missing")],
+            primary: None,
+        },
+    );
+    app.update();
+    let _ = next_event(&mut app);
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().revision(),
+        before_add_revision,
+        "unresolved batched add must not mutate the authority"
+    );
+
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::AddSelectionTargets {
+            targets: vec![anchor(SECOND), anchor(THIRD)],
+            primary: Some(anchor(THIRD)),
+        },
+    );
+    app.update();
+    let _ = next_event(&mut app);
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().revision(),
+        before_add_revision + 1
+    );
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().0.primary,
+        Some(anchor(THIRD))
+    );
+
+    let before_remove_revision = app.world().resource::<SelectedTargets>().revision();
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::RemoveSelectionTargets {
+            targets: vec![anchor(FIRST), anchor(THIRD)],
+        },
+    );
+    app.update();
+    let _ = next_event(&mut app);
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().revision(),
+        before_remove_revision + 1
+    );
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().0,
+        SelectionReadModel::from_legacy_target(Some(anchor(SECOND)))
+    );
+
+    let before_clear_revision = app.world().resource::<SelectedTargets>().revision();
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::ClearSelection);
+    app.update();
+    let _ = next_event(&mut app);
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().revision(),
+        before_clear_revision + 1
+    );
+    assert!(
+        app.world()
+            .resource::<SelectedTargets>()
+            .0
+            .targets
+            .is_empty()
+    );
+}
+
+#[test]
 fn snapshot_reduces_complete_selection_for_reconnect() {
     let mut app = selection_test_app();
     app.world_mut().resource_mut::<ViewportCommandInbox>().send(

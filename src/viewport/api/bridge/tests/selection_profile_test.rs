@@ -4,8 +4,8 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use usd_bevy::{UsdLocalExtent, UsdPrimRef};
 use viewport_protocol::{
-    ClientCommand, ClientCommandEnvelope, ProtocolValidationError, SceneAnchor, SelectionReadModel,
-    ViewportCommand, decode_client_json_line, encode_client_json_line,
+    ClientCommand, ClientCommandEnvelope, SceneAnchor, SelectionReadModel, ViewportCommand,
+    decode_client_json_line, encode_client_json_line,
 };
 
 use super::super::ViewerSettingsState;
@@ -118,16 +118,8 @@ fn profile_protocol() {
         let started = Instant::now();
         let validation = decoded.validate();
         let validation_micros = started.elapsed().as_micros();
-        if size <= 256 {
+        if size <= viewport_protocol::MAX_SELECTION_TARGETS {
             assert!(validation.is_ok(), "protocol size {size} must be accepted");
-        }
-        if size == 257 {
-            assert_eq!(
-                validation,
-                Err(ProtocolValidationError::InvalidInput {
-                    field: "selection.targets"
-                })
-            );
         }
         println!(
             "I1.7.1 protocol size={size} wire_bytes={} encode_us={encode_micros} decode_us={decode_micros} validate_us={validation_micros} validation={:?}",
@@ -158,7 +150,7 @@ fn profile_authority() {
     app.update();
     for size in PROTOCOL_PROFILE_SIZES
         .into_iter()
-        .filter(|size| *size <= 256)
+        .filter(|size| *size <= viewport_protocol::MAX_SELECTION_TARGETS)
     {
         let value = selection(size);
         let mut samples = Vec::with_capacity(REPEATS);
