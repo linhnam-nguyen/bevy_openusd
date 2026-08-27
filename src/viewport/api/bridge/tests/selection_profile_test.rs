@@ -4,8 +4,8 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use usd_bevy::{UsdLocalExtent, UsdPrimRef};
 use viewport_protocol::{
-    ClientCommand, ClientCommandEnvelope, SceneAnchor, SelectionReadModel, ViewportCommand,
-    decode_client_json_line, encode_client_json_line,
+    ClientCommand, ClientCommandEnvelope, ProtocolValidationError, SceneAnchor, SelectionReadModel,
+    ViewportCommand, decode_client_json_line, encode_client_json_line,
 };
 
 use super::super::ViewerSettingsState;
@@ -24,6 +24,7 @@ use crate::viewport::scene::{
 use crate::viewport::session::{Spawned, StageInfo};
 
 const PROFILE_SIZES: [usize; 6] = [1, 10, 100, 256, 1_000, 5_000];
+const PROTOCOL_PROFILE_SIZES: [usize; 8] = [1, 10, 100, 255, 256, 257, 1_000, 5_000];
 const ACCEPTED_SCENE_SIZE: usize = 5_000;
 const REPEATS: usize = 5;
 
@@ -99,7 +100,7 @@ fn repeat_selection_updates(
     (median_micros(&mut samples), maximum)
 }
 fn profile_protocol() {
-    for size in PROFILE_SIZES {
+    for size in PROTOCOL_PROFILE_SIZES {
         let envelope = ClientCommandEnvelope::new(
             format!("profile-{size}"),
             1,
@@ -117,6 +118,17 @@ fn profile_protocol() {
         let started = Instant::now();
         let validation = decoded.validate();
         let validation_micros = started.elapsed().as_micros();
+        if size <= 256 {
+            assert!(validation.is_ok(), "protocol size {size} must be accepted");
+        }
+        if size == 257 {
+            assert_eq!(
+                validation,
+                Err(ProtocolValidationError::InvalidInput {
+                    field: "selection.targets"
+                })
+            );
+        }
         println!(
             "I1.7.1 protocol size={size} wire_bytes={} encode_us={encode_micros} decode_us={decode_micros} validate_us={validation_micros} validation={:?}",
             wire.len(),
@@ -144,7 +156,10 @@ fn profile_authority() {
     }
     app.world_mut().resource_mut::<Spawned>().0 = true;
     app.update();
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROTOCOL_PROFILE_SIZES
+        .into_iter()
+        .filter(|size| *size <= 256)
+    {
         let value = selection(size);
         let mut samples = Vec::with_capacity(REPEATS);
         for _ in 0..REPEATS {
@@ -186,7 +201,7 @@ fn profile_resolve_roots() {
             .filter(|target| index.resolve(target).is_some())
             .count();
     }
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.insert_resource(ProfileCount::default())
             .add_systems(Update, resolve);
@@ -214,7 +229,7 @@ fn profile_renderable_resolution() {
     ) {
         result.0 = selected_renderable_entities(&selection.0.targets, &index, &renderables).len();
     }
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.insert_resource(ProfileCount::default())
             .add_systems(Update, resolve);
@@ -245,7 +260,7 @@ fn profile_bounds() {
         );
     }
 
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.insert_resource(ProfileCount::default())
             .add_systems(Update, aggregate);
@@ -259,7 +274,7 @@ fn profile_bounds() {
     }
 }
 fn profile_outline() {
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.init_resource::<SelectionOutlineState>()
             .add_systems(Update, sync_selection_outlines);
@@ -278,7 +293,7 @@ fn profile_outline() {
     }
 }
 fn profile_section_box() {
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.world_mut()
             .resource_mut::<ViewerSettingsState>()
@@ -305,7 +320,7 @@ fn profile_section_box() {
     }
 }
 fn profile_color() {
-    for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
+    for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.init_resource::<Assets<StandardMaterial>>()
             .init_resource::<SelectionColorOverrideState>()
@@ -354,36 +369,6 @@ fn profile_color() {
         );
     }
 }
-fn profile_gizmo_reconciliation() {
-    let mut app = App::new();
-    let mut state = SectionBoxState::default();
-    state.enabled = true;
-    state.visible = true;
-    state.transform = Transform::from_scale(Vec3::splat(2.0));
-    app.add_plugins(MinimalPlugins)
-        .insert_resource(state)
-        .add_systems(Update, sync_section_box_gizmo_target);
-    let mut samples = Vec::with_capacity(REPEATS);
-    for _ in 0..REPEATS {
-        app.world_mut().resource_mut::<SectionBoxState>().visible = false;
-        app.update();
-        app.world_mut().resource_mut::<SectionBoxState>().visible = true;
-        let started = Instant::now();
-        app.update();
-        samples.push(started.elapsed().as_micros());
-    }
-    let count = app
-        .world_mut()
-        .query_filtered::<Entity, With<SectionBoxGizmoTarget>>()
-        .iter(app.world())
-        .count();
-    assert_eq!(count, 1);
-    let maximum = samples.iter().copied().max().unwrap_or_default();
-    println!(
-        "I1.7.1 bounds_gizmo_target_reconciliation median_us={} max_update_us={maximum} targets={count}",
-        median_micros(&mut samples)
-    );
-}
 #[test]
 #[ignore = "I1.7.1 profile checkpoint; run explicitly with --ignored"]
 fn profile_i1_7_1_large_multi_selection_baseline() {
@@ -395,5 +380,8 @@ fn profile_i1_7_1_large_multi_selection_baseline() {
     profile_outline();
     profile_color();
     profile_section_box();
-    profile_gizmo_reconciliation();
+    projection_profile_test::profile_gizmo_reconciliation();
 }
+
+#[path = "selection_profile_projection_test.rs"]
+mod projection_profile_test;
