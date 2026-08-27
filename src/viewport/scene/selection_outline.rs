@@ -43,7 +43,12 @@ struct PendingOutlineWork {
 
 #[derive(Resource, Debug, Default)]
 pub(in crate::viewport) struct SelectionOutlineState {
+    /// The completed desired set from the last fully reconciled work item.
     entities: HashSet<Entity>,
+    /// The entities that currently have outline work physically applied. A
+    /// bounded work item can be interrupted after a prefix has been queued,
+    /// so cancellation must reconcile from this set rather than `entities`.
+    applied_entities: HashSet<Entity>,
     last_boundary: Option<(bool, ColorRgb8)>,
     last_projection_generation: Option<u64>,
     last_selection_revision: Option<u64>,
@@ -137,18 +142,18 @@ pub(in crate::viewport) fn sync_selection_outlines(
                 .collect::<Vec<_>>(),
             projection
                 .removed_renderables()
-                .intersection(&state.entities)
+                .intersection(&state.applied_entities)
                 .copied()
                 .collect::<Vec<_>>(),
         )
     } else {
         (
             desired
-                .difference(&state.entities)
+                .difference(&state.applied_entities)
                 .copied()
                 .collect::<Vec<_>>(),
             state
-                .entities
+                .applied_entities
                 .difference(&desired)
                 .copied()
                 .collect::<Vec<_>>(),
@@ -197,6 +202,7 @@ fn apply_pending_outline_work(
                 .entity(entity)
                 .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
         }
+        state.applied_entities.remove(&entity);
         state.last_removed += 1;
     }
     while budget > 0 && work.updated_offset < work.updated.len() {
@@ -208,6 +214,7 @@ fn apply_pending_outline_work(
             outline.clone(),
             OutlineStencil::default(),
         ));
+        state.applied_entities.insert(entity);
         state.last_updated += 1;
         if work.added.contains(&entity) {
             state.last_added += 1;
@@ -217,7 +224,8 @@ fn apply_pending_outline_work(
         state.pending = Some(work);
         return;
     }
-    state.entities = work.desired;
+    state.entities = work.desired.clone();
+    state.applied_entities = work.desired;
     state.last_boundary = Some(work.key.boundary);
     state.last_projection_generation = work.key.projection_generation;
     state.last_selection_revision = Some(work.key.selection_revision);

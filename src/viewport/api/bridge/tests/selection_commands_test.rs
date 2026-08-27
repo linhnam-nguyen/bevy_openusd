@@ -39,6 +39,90 @@ fn next_event(app: &mut App) -> ViewportEventEnvelope {
         .expect("selection command must publish an event")
 }
 
+fn reduce_next_selection_delta(
+    app: &mut App,
+    client_selection: &mut SelectionReadModel,
+    client_revision: &mut u64,
+) {
+    let event = next_event(app);
+    let ViewportEvent::SelectionDeltaApplied {
+        revision,
+        added,
+        removed,
+        primary,
+        count,
+    } = event.event
+    else {
+        panic!("selection command must publish a selection delta");
+    };
+    assert_eq!(revision, client_revision.saturating_add(1));
+    client_selection
+        .apply_delta(&added, &removed, primary, count)
+        .expect("selection delta must reconstruct the authoritative selection");
+    assert_eq!(
+        client_selection,
+        &app.world().resource::<SelectedTargets>().0,
+        "client reduction must match the authoritative selection"
+    );
+    *client_revision = revision;
+}
+
+#[test]
+fn replace_and_clear_publish_reconstructable_transaction_deltas() {
+    let mut app = selection_test_app();
+    let mut client_selection = SelectionReadModel::default();
+    let mut client_revision = 0;
+
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::SelectTarget {
+            target: Some(anchor(FIRST)),
+        });
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::SelectTarget {
+            target: Some(anchor(SECOND)),
+        });
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::ReplaceSelection {
+            targets: vec![anchor(SECOND), anchor(THIRD)],
+            primary: Some(anchor(THIRD)),
+        },
+    );
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::ReplaceSelection {
+            targets: vec![anchor(FIRST), anchor(SECOND)],
+            primary: Some(anchor(SECOND)),
+        },
+    );
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+
+    app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+        ViewportCommand::ReplaceSelection {
+            targets: vec![anchor(FIRST), anchor(SECOND)],
+            primary: Some(anchor(FIRST)),
+        },
+    );
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::ClearSelection);
+    app.update();
+    reduce_next_selection_delta(&mut app, &mut client_selection, &mut client_revision);
+}
+
 #[test]
 fn select_target_supports_zero_one_and_many_authoritative_targets() {
     let mut app = selection_test_app();

@@ -67,6 +67,53 @@ fn selection_projection_reuses_unchanged_targets_and_deltas_only_touch_the_chang
 }
 
 #[test]
+fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes() {
+    let mut app = super::projection_profile_test::combined_presentation_app(false);
+
+    set_selection(&mut app, selection(5_000));
+    app.update();
+    let first_frame_outlines = app
+        .world_mut()
+        .query_filtered::<Entity, With<SelectionOutline>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(first_frame_outlines, 256);
+    assert!(app.world().resource::<SelectionOutlineState>().is_pending());
+
+    set_selection(
+        &mut app,
+        SelectionReadModel {
+            targets: vec![anchor(4_999)],
+            primary: Some(anchor(4_999)),
+        },
+    );
+    for _ in 0..32 {
+        app.update();
+        if !app.world().resource::<SelectionOutlineState>().is_pending() {
+            break;
+        }
+    }
+
+    assert!(
+        !app.world().resource::<SelectionOutlineState>().is_pending(),
+        "replacement outline work must settle within the bounded test budget"
+    );
+    let outlines = app
+        .world_mut()
+        .query_filtered::<Entity, With<SelectionOutline>>()
+        .iter(app.world())
+        .collect::<Vec<_>>();
+    assert_eq!(outlines.len(), 1);
+    let outlined_paths = app
+        .world_mut()
+        .query::<(&UsdPrimRef, &SelectionOutline)>()
+        .iter(app.world())
+        .map(|(prim, _)| prim.path.to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(outlined_paths, vec!["/World/Profile04999".to_owned()]);
+}
+
+#[test]
 fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() {
     let mut app = indexed_scene_app(3);
     app.init_resource::<SelectedRenderableProjection>()

@@ -78,10 +78,14 @@ impl SelectedTargets {
             let previous_targets = self.0.targets.iter().collect::<HashSet<_>>();
             let next_targets = selection.targets.iter().collect::<HashSet<_>>();
             for target in previous_targets.difference(&next_targets) {
-                self.2.record_removed((*target).clone());
+                let target = (*target).clone();
+                self.2.record_removed(target.clone());
+                self.3.record_removed(target);
             }
             for target in next_targets.difference(&previous_targets) {
-                self.2.record_added((*target).clone());
+                let target = (*target).clone();
+                self.2.record_added(target.clone());
+                self.3.record_added(target);
             }
             self.0 = selection;
             self.1 = self.1.saturating_add(1);
