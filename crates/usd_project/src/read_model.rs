@@ -53,7 +53,6 @@ pub enum ProjectContentNode {
     Scene {
         scene_id: SceneId,
         name: String,
-        parent_scene_id: Option<SceneId>,
     },
     Model {
         model_id: ModelId,
@@ -127,20 +126,21 @@ mod tests {
 
     #[test]
     fn repeated_placements_keep_distinct_member_identity() {
-        let scene_id = SceneId::new_v4();
+        let parent_scene_id = SceneId::new_v4();
+        let target_scene_id = SceneId::new_v4();
         let first = SceneMemberId::new_v4();
         let second = SceneMemberId::new_v4();
         let nodes = [
             ProjectContentNode::ScenePlacement {
                 member_id: first,
-                target: scene_id,
-                parent_scene_id: scene_id,
+                target: target_scene_id,
+                parent_scene_id,
                 name: Some("First".to_owned()),
             },
             ProjectContentNode::ScenePlacement {
                 member_id: second,
-                target: scene_id,
-                parent_scene_id: scene_id,
+                target: target_scene_id,
+                parent_scene_id,
                 name: Some("Second".to_owned()),
             },
         ];
@@ -154,6 +154,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_ne!(ids[0], ids[1]);
+        assert_ne!(parent_scene_id, target_scene_id);
         assert_eq!(nodes[0], nodes[0]);
     }
 }
