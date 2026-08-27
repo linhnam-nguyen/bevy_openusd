@@ -1,0 +1,181 @@
+//! Explicit mapping for observed NVIDIA Revit Connector USD properties.
+
+use usd_model::{CanonicalValue, MeasurementMetadata, QuantitySpecId, SemanticProperty, UnitId};
+
+use crate::units::UnitRegistry;
+
+/// A source-observed relationship between a BIM value property and its unit
+/// property. There is intentionally no default mapping: connector schemas are
+/// version- and export-setting-sensitive and must be configured from evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NvidiaRevitMeasurementMapping {
+    pub property_name: String,
+    pub quantity: QuantitySpecId,
+    pub source_unit_property_name: String,
+}
+
+impl NvidiaRevitMeasurementMapping {
+    pub fn new(
+        property_name: impl Into<String>,
+        quantity: impl Into<String>,
+        source_unit_property_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            property_name: property_name.into(),
+            quantity: QuantitySpecId::new(quantity),
+            source_unit_property_name: source_unit_property_name.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NvidiaRevitConfig {
+    pub measurement_mappings: Vec<NvidiaRevitMeasurementMapping>,
+}
+
+impl NvidiaRevitConfig {
+    pub(crate) fn write_hash(&self, bytes: &mut Vec<u8>) {
+        bytes.extend_from_slice(&(self.measurement_mappings.len() as u64).to_le_bytes());
+        for mapping in &self.measurement_mappings {
+            write_string(bytes, &mapping.property_name);
+            write_string(bytes, mapping.quantity.as_str());
+            write_string(bytes, &mapping.source_unit_property_name);
+        }
+    }
+}
+
+pub(crate) fn attach_measurements(properties: &mut [SemanticProperty], config: &NvidiaRevitConfig) {
+    let registry = UnitRegistry::global();
+    for mapping in &config.measurement_mappings {
+        let Some(property_index) = properties
+            .iter()
+            .position(|property| property.name == mapping.property_name)
+        else {
+            continue;
+        };
+        let Some(source_unit) = properties
+            .iter()
+            .find(|property| property.name == mapping.source_unit_property_name)
+            .and_then(text_value)
+            .map(UnitId::new)
+        else {
+            continue;
+        };
+        let Some(metadata) = registry.metadata_for(&mapping.quantity, &source_unit).ok() else {
+            continue;
+        };
+        let Some(value) = normalize_value(
+            &properties[property_index].value,
+            registry,
+            &source_unit,
+            &metadata,
+        ) else {
+            continue;
+        };
+        properties[property_index].value = value;
+        properties[property_index].measurement = Some(metadata);
+    }
+}
+
+fn text_value(property: &SemanticProperty) -> Option<&str> {
+    match &property.value {
+        CanonicalValue::Text(value) => Some(value),
+        _ => None,
+    }
+}
+
+fn normalize_value(
+    value: &CanonicalValue,
+    registry: &UnitRegistry,
+    source_unit: &UnitId,
+    metadata: &MeasurementMetadata,
+) -> Option<CanonicalValue> {
+    match value {
+        CanonicalValue::Integer(value) => registry
+            .convert(*value as f64, source_unit, &metadata.canonical_unit)
+            .ok()
+            .map(CanonicalValue::Real),
+        CanonicalValue::Real(value) => registry
+            .convert(*value, source_unit, &metadata.canonical_unit)
+            .ok()
+            .map(CanonicalValue::Real),
+        CanonicalValue::NumberArray(values) => values
+            .iter()
+            .map(|value| registry.convert(*value, source_unit, &metadata.canonical_unit))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()
+            .map(CanonicalValue::NumberArray),
+        _ => None,
+    }
+}
+
+fn write_string(bytes: &mut Vec<u8>, value: &str) {
+    bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn property(name: &str, value: CanonicalValue) -> SemanticProperty {
+        SemanticProperty {
+            name: name.to_owned(),
+            value,
+            measurement: None,
+        }
+    }
+
+    #[test]
+    fn mapping_normalizes_numeric_value_and_attaches_metadata() {
+        let mut properties = vec![
+            property("height", CanonicalValue::Real(10.0)),
+            property("height_unit", CanonicalValue::Text("[ft_i]".to_owned())),
+        ];
+        let config = NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+        };
+
+        attach_measurements(&mut properties, &config);
+
+        assert_eq!(properties[0].value, CanonicalValue::Real(3.048));
+        let metadata = properties[0]
+            .measurement
+            .as_ref()
+            .expect("configured measurement");
+        assert_eq!(metadata.quantity.as_str(), "length");
+        assert_eq!(metadata.canonical_unit.as_str(), "m");
+        assert_eq!(metadata.source_unit.as_ref().unwrap().as_str(), "[ft_i]");
+    }
+
+    #[test]
+    fn missing_or_unknown_units_preserve_the_typed_value_without_guessing() {
+        let mut missing = vec![property("height", CanonicalValue::Real(10.0))];
+        let mut unknown = vec![
+            property("height", CanonicalValue::Real(10.0)),
+            property(
+                "height_unit",
+                CanonicalValue::Text("revit:unknown".to_owned()),
+            ),
+        ];
+        let config = NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+        };
+
+        attach_measurements(&mut missing, &config);
+        attach_measurements(&mut unknown, &config);
+
+        assert_eq!(missing[0].value, CanonicalValue::Real(10.0));
+        assert_eq!(unknown[0].value, CanonicalValue::Real(10.0));
+        assert!(missing[0].measurement.is_none());
+        assert!(unknown[0].measurement.is_none());
+    }
+}

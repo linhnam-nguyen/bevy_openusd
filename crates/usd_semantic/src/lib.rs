@@ -9,10 +9,12 @@ mod extractor;
 mod geometry;
 mod identity;
 mod metadata;
+mod nvidia;
 mod transform;
 pub mod units;
 
 pub use config::{IdentityConfig, SemanticConfig};
 pub use extractor::{SemanticExtractor, extract_stage};
 pub use identity::resolve_identity;
+pub use nvidia::{NvidiaRevitConfig, NvidiaRevitMeasurementMapping};
 pub use units::{UnitConversionError, UnitDefinition, UnitRegistry};

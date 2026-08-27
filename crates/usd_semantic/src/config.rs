@@ -2,6 +2,8 @@
 
 use usd_model::HashDigest;
 
+use crate::nvidia::NvidiaRevitConfig;
+
 /// Candidate authored-property names for resolving a stable source identity.
 ///
 /// The vectors are deliberately empty by default. Exporters disagree on
@@ -57,6 +59,7 @@ pub struct SemanticConfig {
     pub type_id_property: Option<String>,
     pub display_name_property: Option<String>,
     pub identity: IdentityConfig,
+    pub nvidia_revit: NvidiaRevitConfig,
 }
 
 impl Default for SemanticConfig {
@@ -74,6 +77,7 @@ impl Default for SemanticConfig {
                 allow_prim_path_fallback: true,
                 ..Default::default()
             },
+            nvidia_revit: NvidiaRevitConfig::default(),
         }
     }
 }
@@ -105,6 +109,7 @@ impl SemanticConfig {
             }
         }
         self.identity.write_hash(&mut bytes);
+        self.nvidia_revit.write_hash(&mut bytes);
         HashDigest::new(*blake3::hash(&bytes).as_bytes())
     }
 }

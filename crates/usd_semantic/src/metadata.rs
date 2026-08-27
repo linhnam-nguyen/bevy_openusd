@@ -27,6 +27,7 @@ pub fn extract_metadata(
     } else {
         Vec::new()
     };
+    crate::nvidia::attach_measurements(&mut properties, &config.nvidia_revit);
     properties.sort_by(|left, right| left.name.cmp(&right.name));
 
     let family = configured_text_from_properties(&properties, config.family_property.as_deref());

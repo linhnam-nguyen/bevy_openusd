@@ -1,4 +1,5 @@
 use super::*;
+use crate::{NvidiaRevitConfig, NvidiaRevitMeasurementMapping};
 use openusd::gf::{Vec3d, Vec3f};
 use openusd::schemas::ui::SceneGraphPrimAPI;
 use openusd::sdf::Value;
@@ -31,6 +32,10 @@ fn fixture() -> Result<Stage> {
         .set(Value::TokenVec(vec!["xformOp:translate".into()]))?;
     mesh.create_attribute("family", "string")?
         .set(Value::String("Furniture".to_owned()))?;
+    mesh.create_attribute("height", "double")?
+        .set(Value::Double(10.0))?;
+    mesh.create_attribute("height_unit", "string")?
+        .set(Value::String("[ft_i]".to_owned()))?;
     let ui = SceneGraphPrimAPI::apply(&stage, "/World/Triangle")?;
     ui.create_display_name_attr()?
         .set(Value::token("Triangle"))?;
@@ -91,6 +96,39 @@ fn absent_display_name_does_not_fall_back_to_prim_basename() -> Result<()> {
         .get(&EntityKey::from("/Architecture/Level01/Wall_0042"))
         .expect("wall entity");
     assert_eq!(wall.semantic.display_name, None);
+    Ok(())
+}
+
+#[test]
+fn configured_revit_measurement_is_normalized_during_snapshot_extraction() -> Result<()> {
+    let stage = fixture()?;
+    let config = SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+        },
+        ..Default::default()
+    };
+
+    let snapshot = SemanticExtractor::new(config).extract(&stage, source())?;
+    let entity = snapshot
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("triangle semantic entity");
+    let height = entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("height property");
+
+    assert_eq!(height.value, CanonicalValue::Real(3.048));
+    let measurement = height.measurement.as_ref().expect("height measurement");
+    assert_eq!(measurement.quantity.as_str(), "length");
+    assert_eq!(measurement.canonical_unit.as_str(), "m");
+    assert_eq!(measurement.source_unit.as_ref().unwrap().as_str(), "[ft_i]");
     Ok(())
 }
 
