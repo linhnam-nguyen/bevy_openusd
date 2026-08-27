@@ -41,7 +41,7 @@ pub(super) fn reconcile_tracked_renderables(
     }
 }
 
-pub(super) fn selected_renderable_entities(
+pub(in crate::viewport) fn selected_renderable_entities(
     targets: &[SceneAnchor],
     scene_index: &SceneAnchorIndex,
     renderables: &Query<(

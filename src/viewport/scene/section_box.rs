@@ -24,9 +24,9 @@ mod section_box_tracking;
 pub(crate) use section_box_face::{SectionBoxFace, SectionBoxFaceDrag, resize_section_box_face};
 pub(crate) use section_box_pose::SectionBoxPoseAuthority;
 use section_box_pose::{fit_transform, next_bounds_context_generation, next_section_box_pose};
-use section_box_tracking::{
-    reconcile_tracked_renderables, selected_renderable_entities, should_reconcile_section_box,
-};
+use section_box_tracking::{reconcile_tracked_renderables, should_reconcile_section_box};
+
+pub(in crate::viewport) use section_box_tracking::selected_renderable_entities;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SectionBoxBounds {
@@ -254,7 +254,7 @@ pub(in crate::viewport) fn sync_section_box_state(
     );
 }
 
-fn aggregate_selection_bounds(
+pub(in crate::viewport) fn aggregate_selection_bounds(
     targets: &[SceneAnchor],
     scene_index: &SceneAnchorIndex,
     renderables: &Query<(

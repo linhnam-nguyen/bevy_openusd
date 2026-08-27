@@ -32,7 +32,7 @@ pub(in crate::viewport) struct SelectionColorMaterial(
 );
 
 #[derive(Resource, Debug, Default, Clone)]
-pub(super) struct SelectionColorOverrideState {
+pub(in crate::viewport) struct SelectionColorOverrideState {
     last_presentation: Option<(bool, ColorRgb8, bool, ColorRgb8, Option<SceneAnchor>)>,
     last_selection: Option<SelectionReadModel>,
     last_scene_revision: Option<u64>,
@@ -84,7 +84,7 @@ pub(super) fn init_selection_color_material(
 /// The system is change-gated by logical selection, scene-anchor resolution,
 /// selection settings, and material changes on already-overridden entities.
 /// It never edits the USD stage or creates a material per target.
-pub(super) fn sync_selection_color_overrides(
+pub(in crate::viewport) fn sync_selection_color_overrides(
     selection: Res<SelectedTargets>,
     settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,

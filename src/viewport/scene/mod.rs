@@ -15,15 +15,24 @@ mod solari;
 
 pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
-pub(in crate::viewport) use section_box::{SectionBoxState, sync_section_box_state};
+pub(in crate::viewport) use section_box::{
+    SectionBoxState, aggregate_selection_bounds, selected_renderable_entities,
+    sync_section_box_state,
+};
 pub(in crate::viewport) use section_box_clipping::{
     SectionClipMaterial, sync_section_box_clipping,
 };
 pub(in crate::viewport) use section_box_gizmo::{
-    capture_section_box_gizmo_transform, sync_section_box_gizmo_target,
+    SectionBoxGizmoTarget, capture_section_box_gizmo_transform, sync_section_box_gizmo_target,
 };
 pub(in crate::viewport) use section_box_visualization::draw_section_box;
 pub(crate) use selection::{SelectedPrim, SelectedTargets, sync_selected_instance_identity};
+pub(in crate::viewport) use selection_color::{
+    HoverColorMaterial, SelectionColorMaterial, SelectionColorOverride,
+    SelectionColorOverrideState, sync_selection_color_overrides,
+};
+pub(in crate::viewport) use selection_hover::HoveredTarget;
+pub(in crate::viewport) use selection_outline::SelectionOutline;
 pub(in crate::viewport) use selection_outline::{SelectionOutlineState, sync_selection_outlines};
 pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,

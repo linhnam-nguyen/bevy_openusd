@@ -6,6 +6,7 @@ mod hierarchy_search_test;
 mod mutations_test;
 mod renderer_commands_test;
 mod selection_commands_test;
+mod selection_profile_test;
 mod support;
 mod viewer_settings_acceptance_test;
 mod viewer_settings_commands_test;
