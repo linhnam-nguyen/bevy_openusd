@@ -518,6 +518,54 @@ mod tests {
         assert_eq!(fs::read_dir(project_root.join(".usdhub")).unwrap().count(), 1);
     }
 
+    #[test]
+    fn confirmed_adoption_adds_metadata_without_rewriting_git_history() {
+        let directory = tempdir().unwrap();
+        let project_root = directory.path().join("adopted");
+        usd_git::Repository::init(&project_root).unwrap();
+        fs::write(project_root.join("user.usda"), b"#usda 1.0\n").unwrap();
+        let registry_path = directory.path().join("workspace.json");
+        let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+        let inspection = service.inspect_project(&project_root).unwrap();
+
+        let summary = service.import_project(&project_root, &inspection).unwrap();
+        let repository = usd_git::Repository::open(&project_root).unwrap();
+
+        assert_eq!(inspection.classification, ProjectInspectionClassification::AdoptableGit);
+        assert_eq!(summary.name, "adopted");
+        assert!(repository.head().unwrap().is_none());
+        assert!(project_root.join("user.usda").is_file());
+        assert!(project_root.join(".usdhub/project.json").is_file());
+        assert!(project_root.join(".usdhub/cache").is_dir());
+        assert!(WorkspaceRegistry::load(registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_some());
+    }
+
+    #[test]
+    fn broad_ignore_conflict_is_reported_without_mutation() {
+        let directory = tempdir().unwrap();
+        let project_root = directory.path().join("conflict");
+        usd_git::Repository::init(&project_root).unwrap();
+        fs::write(project_root.join(".gitignore"), b".usdhub/\nkeep\n").unwrap();
+        let before = snapshot(&project_root);
+        let registry_path = directory.path().join("workspace.json");
+        let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+        let inspection = service.inspect_project(&project_root).unwrap();
+
+        assert!(inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::BroadUsdHubIgnore));
+        assert!(matches!(
+            service.import_project(&project_root, &inspection),
+            Err(ProjectWriteError::Invalid {
+                code: ProjectWriteErrorCode::IgnoreConflict
+            })
+        ));
+        assert_eq!(before, snapshot(&project_root));
+    }
+
     fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
         fn visit(root: &Path, current: &Path, output: &mut BTreeMap<String, Vec<u8>>) {
             let mut entries = fs::read_dir(current)
