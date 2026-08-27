@@ -57,6 +57,7 @@ pub struct HierarchyNodeReadModel {
 }
 
 impl HierarchyNodeReadModel {
+    #[allow(clippy::too_many_arguments)]
     pub fn scene(
         id: HierarchyNodeId,
         parent_id: Option<HierarchyNodeId>,

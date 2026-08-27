@@ -59,9 +59,9 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    BimFieldKey, BimObjectMatch, BimPageRequest, BimPropertiesReadModel, BimPropertyNameMatch,
-    BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchQuery,
-    BimSearchResult, BimUnitOption, CameraOrientationReadModel, CameraSource,
+    BimFieldKey, BimObjectMatch, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId,
+    BimPropertyNameMatch, BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow,
+    BimSearchQuery, BimSearchResult, BimUnitOption, CameraOrientationReadModel, CameraSource,
     ClassificationChildrenPage, ClassificationLeafReadModel, ClassificationLevel,
     ClassificationNodeReadModel, ClassificationRecipe, ClassificationRow, ColorRgb8, CommonValue,
     CurveTuning, DEFAULT_GIZMO_SIZE_LEVEL, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,

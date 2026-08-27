@@ -17,7 +17,7 @@ use std::fmt;
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
     BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationChildrenPage,
-    ClassificationRecipe, ProtocolValidationError, SceneAnchor,
+    ClassificationRecipe, ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
 
 use self::classification::ClassificationIndex;
@@ -86,10 +86,11 @@ impl<'snapshot> BimReadService<'snapshot> {
 
     pub(crate) fn read_properties(
         &self,
-        targets: &[SceneAnchor],
+        selection: &SelectionReadModel,
+        selection_revision: u64,
         policy: BimReadPolicy,
     ) -> Result<BimPropertiesReadModel, BimQueryError> {
-        properties::read_properties(self, targets, policy)
+        properties::read_properties(self, selection, selection_revision, policy)
     }
 
     pub(crate) fn classification_page(

@@ -5,16 +5,20 @@ use std::collections::{BTreeMap, HashMap};
 use usd_model::{MeasurementMetadata, SemanticProperty};
 use usd_semantic::UnitRegistry;
 use viewport_protocol::{
-    BimPropertiesReadModel, BimPropertyReadModel, BimUnitOption, CommonValue, SceneAnchor,
+    BimPropertiesReadModel, BimPropertyGroupId, BimPropertyReadModel, BimUnitOption, CommonValue,
+    SelectionReadModel,
 };
 
 use super::{BimQueryError, BimReadPolicy, BimReadService};
 
 pub(super) fn read_properties<'snapshot>(
     service: &BimReadService<'snapshot>,
-    targets: &[SceneAnchor],
+    selection: &SelectionReadModel,
+    selection_revision: u64,
     policy: BimReadPolicy,
 ) -> Result<BimPropertiesReadModel, BimQueryError> {
+    selection.validate()?;
+    let targets = &selection.targets;
     if targets.len() > viewport_protocol::MAX_BIM_SELECTION_TARGETS {
         return Err(BimQueryError::Invalid(
             viewport_protocol::ProtocolValidationError::InvalidInput {
@@ -29,6 +33,7 @@ pub(super) fn read_properties<'snapshot>(
     if entities.is_empty() {
         return Ok(BimPropertiesReadModel {
             targets: Vec::new(),
+            selection_revision,
             properties: Vec::new(),
         });
     }
@@ -61,6 +66,7 @@ pub(super) fn read_properties<'snapshot>(
         .collect();
     Ok(BimPropertiesReadModel {
         targets: targets.to_vec(),
+        selection_revision,
         properties,
     })
 }
@@ -89,6 +95,7 @@ fn project_property(
 
     BimPropertyReadModel {
         key,
+        group_id: BimPropertyGroupId::Semantic,
         value: if same_value {
             CommonValue::Same(first.value.clone())
         } else {

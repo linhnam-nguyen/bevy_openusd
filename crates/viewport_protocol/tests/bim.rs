@@ -1,6 +1,6 @@
 use viewport_protocol::{
-    BimFieldKey, BimPageRequest, BimSearchQuery, ClassificationLevel, ClassificationRecipe,
-    MAX_BIM_REGEX_BYTES,
+    BimFieldKey, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyReadModel,
+    BimSearchQuery, ClassificationLevel, ClassificationRecipe, CommonValue, MAX_BIM_REGEX_BYTES,
 };
 
 #[test]
@@ -33,4 +33,25 @@ fn protocol_rejects_unbounded_bim_inputs() {
         ClassificationLevel::new("duplicate", BimFieldKey::Family),
     ]);
     assert!(recipe.validate().is_err());
+}
+
+#[test]
+fn property_group_identity_and_selection_revision_round_trip() {
+    let model = BimPropertiesReadModel {
+        targets: Vec::new(),
+        selection_revision: 9,
+        properties: vec![BimPropertyReadModel {
+            key: "Mark".to_owned(),
+            group_id: BimPropertyGroupId::SourceFallback,
+            value: CommonValue::Multiple,
+            measurement: None,
+            units: Vec::new(),
+            editable: false,
+        }],
+    };
+    let encoded = serde_json::to_string(&model).expect("BIM properties serialize");
+    let decoded: BimPropertiesReadModel =
+        serde_json::from_str(&encoded).expect("BIM properties deserialize");
+
+    assert_eq!(decoded, model);
 }

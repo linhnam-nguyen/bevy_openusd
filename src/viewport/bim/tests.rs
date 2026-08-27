@@ -8,7 +8,7 @@ use usd_model::{
 };
 use viewport_protocol::{
     BimFieldKey, BimPageRequest, BimSearchQuery, ClassificationLevel, ClassificationRecipe,
-    ClassificationRow, CommonValue,
+    ClassificationRow, CommonValue, SelectionReadModel,
 };
 
 use super::{BimQueryError, BimReadPolicy, BimReadService};
@@ -134,15 +134,22 @@ fn property_read_projects_intersection_and_authoritative_units() {
         viewport_protocol::SceneAnchor::active_session("/World/WallA"),
         viewport_protocol::SceneAnchor::active_session("/World/WallB"),
     ];
+    let selection = SelectionReadModel {
+        targets,
+        primary: None,
+    };
     let result = service
         .read_properties(
-            &targets,
+            &selection,
+            17,
             BimReadPolicy {
                 allow_value_edit: true,
             },
         )
         .expect("selected properties read");
 
+    assert_eq!(result.targets, selection.targets);
+    assert_eq!(result.selection_revision, 17);
     assert_eq!(result.properties.len(), 3);
     let mark = result
         .properties
@@ -150,6 +157,10 @@ fn property_read_projects_intersection_and_authoritative_units() {
         .find(|property| property.key == "Mark")
         .expect("common Mark property");
     assert!(matches!(mark.value, CommonValue::Multiple));
+    assert_eq!(
+        mark.group_id,
+        viewport_protocol::BimPropertyGroupId::Semantic
+    );
     assert!(mark.editable);
 
     let width = result
@@ -163,6 +174,19 @@ fn property_read_projects_intersection_and_authoritative_units() {
         "m"
     );
     assert!(width.units.iter().any(|unit| unit.unit.as_str() == "mm"));
+}
+
+#[test]
+fn empty_selection_preserves_authoritative_revision() {
+    let snapshot = snapshot();
+    let service = BimReadService::new(&snapshot);
+    let result = service
+        .read_properties(&SelectionReadModel::default(), 23, BimReadPolicy::default())
+        .expect("empty selection read");
+
+    assert!(result.targets.is_empty());
+    assert!(result.properties.is_empty());
+    assert_eq!(result.selection_revision, 23);
 }
 
 #[test]

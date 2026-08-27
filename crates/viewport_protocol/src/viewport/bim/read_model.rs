@@ -18,9 +18,24 @@ pub struct BimUnitOption {
     pub label: String,
 }
 
+/// Identifies the authoritative source group for one projected BIM property.
+///
+/// `SourceFallback` is reserved for validated source properties that are not
+/// part of the normalized semantic property set. It is intentionally distinct
+/// from `Semantic` so a client cannot silently merge provenance groups.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BimPropertyGroupId {
+    #[default]
+    Semantic,
+    SourceFallback,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BimPropertyReadModel {
     pub key: String,
+    #[serde(default)]
+    pub group_id: BimPropertyGroupId,
     pub value: CommonValue,
     pub measurement: Option<MeasurementMetadata>,
     pub units: Vec<BimUnitOption>,
@@ -30,6 +45,8 @@ pub struct BimPropertyReadModel {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BimPropertiesReadModel {
     pub targets: Vec<SceneAnchor>,
+    #[serde(default)]
+    pub selection_revision: u64,
     pub properties: Vec<BimPropertyReadModel>,
 }
 
