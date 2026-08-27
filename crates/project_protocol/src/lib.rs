@@ -6,10 +6,14 @@
 
 mod command;
 mod error;
+mod location;
 mod read;
 
 pub use command::{PROJECT_READ_PROTOCOL_VERSION, ProjectReadCommand, ProjectReadReply};
 pub use error::{ProjectReadError, ProjectReadErrorCode};
+pub use location::{
+    LocalSelectionToken, LocalSelectionView, ProjectLocationKind, ProjectLocationResult,
+};
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 
 #[cfg(test)]
@@ -62,5 +66,17 @@ mod tests {
         );
         let encoded = serde_json::to_string(&command.validate().unwrap_err()).unwrap();
         assert!(!encoded.contains("/"));
+    }
+
+    #[test]
+    fn local_selection_wire_contract_does_not_contain_a_filesystem_path() {
+        let result = ProjectLocationResult::Selected(LocalSelectionView {
+            token: LocalSelectionToken::new("session-token"),
+            display_name: "Selected Project Folder".to_owned(),
+        });
+        let encoded = serde_json::to_string(&result).unwrap();
+        assert!(encoded.contains("session-token"));
+        assert!(!encoded.contains("PathBuf"));
+        assert!(!encoded.contains("/Users/"));
     }
 }
