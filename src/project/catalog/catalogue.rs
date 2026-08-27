@@ -10,6 +10,7 @@ use super::{
 };
 
 const UNAVAILABLE_MANIFEST_REASON: &str = "Project manifest unavailable";
+const IDENTITY_MISMATCH_REASON: &str = "Project manifest identity mismatch";
 
 /// One cheap catalogue result without exposing a machine-local repository path.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +34,12 @@ pub(crate) fn list_projects(registry: &WorkspaceRegistry) -> Vec<ProjectCatalogu
 
 fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
     match ManifestStore::read_validated(entry.repository_locator()) {
+        Ok(manifest) if manifest.raw().project_id != entry.project_id() => {
+            ProjectCatalogueItem::Unavailable {
+                project_id: entry.project_id(),
+                reason: IDENTITY_MISMATCH_REASON,
+            }
+        }
         Ok(manifest) => ProjectCatalogueItem::Available(ProjectSummary {
             id: manifest.raw().project_id,
             name: manifest.raw().name.clone(),
@@ -188,5 +195,42 @@ mod tests {
                 "forbidden catalogue token: {token}"
             );
         }
+    }
+
+    #[test]
+    fn registry_project_id_remains_authoritative_for_a_mismatched_manifest() {
+        let directory = tempdir().unwrap();
+        let repository_root = directory.path().join("repository");
+        let registry_project_id = ProjectId::new_v4();
+        let manifest_project_id = ProjectId::new_v4();
+        let manifest = ProjectManifestV1::new(
+            manifest_project_id,
+            "Different Project",
+            ProjectRoot::Empty,
+            Vec::new(),
+            Vec::new(),
+        );
+        ManifestStore::write_manifest_atomic(&repository_root, &manifest).unwrap();
+
+        let mut registry =
+            WorkspaceRegistry::load(directory.path().join("workspace.json")).unwrap();
+        registry
+            .register(registry_project_id, repository_root, None)
+            .unwrap();
+
+        let items = list_projects(&registry);
+        assert_eq!(
+            items,
+            vec![ProjectCatalogueItem::Unavailable {
+                project_id: registry_project_id,
+                reason: IDENTITY_MISMATCH_REASON,
+            }]
+        );
+        assert!(!items.iter().any(|item| {
+            matches!(
+                item,
+                ProjectCatalogueItem::Available(summary) if summary.id == manifest_project_id
+            )
+        }));
     }
 }
