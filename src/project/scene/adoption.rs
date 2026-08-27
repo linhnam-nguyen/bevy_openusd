@@ -10,11 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::{
-    sdf,
-    sdf::Value,
-    usd::{InitialLoadSet, Stage},
-};
+use openusd::usd::{InitialLoadSet, Stage};
 use usd_project::{
     CompositionClassification, CompositionInspection, ProjectManifestV1, ProjectRoot,
     SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMember, SceneMemberId,
@@ -22,15 +18,12 @@ use usd_project::{
 };
 use uuid::Uuid;
 
-use super::{authoring, inspection::inspect_composition};
+use super::{adoption_authoring, authoring, inspection::inspect_composition};
 use crate::project::catalog::manifest_store::ManifestStore;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
 const SCENES_DIRECTORY: &str = "scenes";
-const SCENE_ROOT_PRIM: &str = "SceneRoot";
-const SOURCE_PRIM: &str = "Source";
-const REFERENCES_FIELD: &str = "references";
 
 /// Inputs for one backend-only Scene adoption transaction.
 pub(crate) struct SceneAdoptionRequest<'a> {
@@ -146,13 +139,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
 
     let result = (|| {
         if scene_is_new {
-            author_scene_wrapper_to_path(
+            adoption_authoring::author_scene_wrapper_to_path(
                 &temporary_scene_path,
                 scene_id,
                 request.source,
                 &default_prim,
             )?;
-            validate_scene_wrapper(&temporary_scene_path, scene_id)?;
+            adoption_authoring::validate_scene_wrapper(&temporary_scene_path, scene_id)?;
             ensure!(
                 !final_scene_path.exists(),
                 "new Project Scene canonical layer already exists"
@@ -164,7 +157,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            prepare_parent_layer(
+            adoption_authoring::prepare_parent_layer(
                 parent_scene_path,
                 temporary_parent_path,
                 request
@@ -315,90 +308,6 @@ fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<
         .default_prim()
         .map(|token| token.as_str().to_owned())
         .context("Scene adoption source has no defaultPrim")
-}
-
-fn author_scene_wrapper_to_path(
-    path: &Path,
-    scene_id: SceneId,
-    source: &Path,
-    default_prim: &str,
-) -> Result<()> {
-    let stage = authoring::new_scene_stage(scene_id, &[])?;
-    let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
-    stage
-        .define_prim(source_path.as_str())?
-        .set_type_name("Xform")?
-        .set_metadata(
-            REFERENCES_FIELD,
-            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
-                asset_path: source
-                    .to_str()
-                    .context("Scene adoption source path must be valid UTF-8")?
-                    .to_owned(),
-                prim_path: sdf::path(format!("/{default_prim}"))?,
-                ..Default::default()
-            }])),
-        )?;
-    stage
-        .root_layer()
-        .export(path.to_string_lossy().as_ref())
-        .context("export temporary adopted Scene wrapper")?;
-    Ok(())
-}
-
-fn validate_scene_wrapper(path: &Path, scene_id: SceneId) -> Result<()> {
-    authoring::validate_scene_file(path, scene_id, &[])?;
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(&path_string)
-        .context("reopen temporary adopted Scene wrapper")?;
-    ensure!(
-        stage
-            .prim(format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}").as_str())
-            .is_defined()?,
-        "adopted Scene wrapper source prim must be defined"
-    );
-    let source_path = sdf::path(format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}"))?;
-    ensure!(
-        stage
-            .root_layer()
-            .prim(source_path)
-            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
-        "adopted Scene wrapper must preserve the source as a reference"
-    );
-    Ok(())
-}
-
-fn prepare_parent_layer(
-    existing_path: &Path,
-    temporary_path: &Path,
-    parent_scene_id: SceneId,
-    members: &[SceneMember],
-) -> Result<()> {
-    let stage = if existing_path.exists() {
-        let path_string = existing_path.to_string_lossy().into_owned();
-        Stage::open(&path_string).context("open existing parent Scene layer")?
-    } else {
-        authoring::new_scene_stage(parent_scene_id, &[])?
-    };
-    stage
-        .define_prim(format!("/{SCENE_ROOT_PRIM}/Members").as_str())?
-        .set_type_name("Xform")?;
-    for member in members {
-        stage
-            .define_prim(authoring::scene_member_path(member.id).as_str())?
-            .set_type_name("Xform")?
-            .set_metadata(
-                "customData",
-                Value::Dictionary(authoring::member_custom_data(member)),
-            )?;
-    }
-    stage
-        .root_layer()
-        .export(temporary_path.to_string_lossy().as_ref())
-        .context("export temporary parent Scene layer")?;
-    Ok(())
 }
 
 fn rollback_publication(
