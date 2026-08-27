@@ -49,7 +49,7 @@ impl ModelImporter for UsdModelImporter {
 
     fn inspect(&self, source: &Path) -> Result<ModelImportInspection> {
         let composition = inspect_composition(source).context("inspect USD Model source")?;
-        ensure_model_candidate(&composition)?;
+        ensure_model_importable(&composition)?;
         Ok(ModelImportInspection { composition })
     }
 
@@ -58,7 +58,7 @@ impl ModelImporter for UsdModelImporter {
             request.source.is_file(),
             "USD Model source disappeared or is not a file"
         );
-        ensure_model_candidate(&request.inspection.composition)?;
+        ensure_model_importable(&request.inspection.composition)?;
         let revalidated = self.inspect(&request.source)?;
         ensure!(
             revalidated == request.inspection,
@@ -88,10 +88,13 @@ impl ModelImporterRegistry {
     }
 }
 
-fn ensure_model_candidate(inspection: &CompositionInspection) -> Result<()> {
+fn ensure_model_importable(inspection: &CompositionInspection) -> Result<()> {
     ensure!(
-        inspection.classification == CompositionClassification::ModelLike,
-        "USD source is not a safe opaque Model candidate"
+        !matches!(
+            inspection.classification,
+            CompositionClassification::Unsupported
+        ),
+        "USD source is not a supported opaque Model candidate"
     );
     ensure!(
         inspection.dependencies.iter().all(|dependency| {
@@ -132,7 +135,7 @@ def Xform "Asset" (
     }
 
     #[test]
-    fn usd_importer_reports_only_model_like_sources() -> Result<()> {
+    fn usd_importer_reports_model_like_sources() -> Result<()> {
         let directory = tempdir()?;
         let source = model_source(directory.path(), "asset.usda");
         let importer = UsdModelImporter;
@@ -144,6 +147,37 @@ def Xform "Asset" (
             inspection.composition.classification,
             CompositionClassification::ModelLike
         );
+        Ok(())
+    }
+
+    #[test]
+    fn scene_like_source_can_be_prepared_as_one_opaque_model() -> Result<()> {
+        let directory = tempdir()?;
+        let source = directory.path().join("assembly.usda");
+        fs::write(
+            &source,
+            r#"#usda 1.0
+(
+    defaultPrim = "Assembly"
+)
+def Xform "Assembly" (
+    kind = "assembly"
+) {
+    def Xform "Child" {}
+}
+"#,
+        )?;
+        let importer = UsdModelImporter;
+        let inspection = importer.inspect(&source)?;
+
+        assert_eq!(
+            inspection.composition.classification,
+            CompositionClassification::SceneLike
+        );
+        let prepared = importer.prepare(ModelImportRequest { source, inspection })?;
+
+        assert_eq!(prepared.source_kind, ModelSourceKind::Usd);
+        assert!(!prepared.id.as_uuid().is_nil());
         Ok(())
     }
 
