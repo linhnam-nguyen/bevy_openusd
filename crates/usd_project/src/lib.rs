@@ -1,6 +1,7 @@
 //! Pure Project domain contracts shared by Project adapters and read models.
 
 mod capability;
+mod composition;
 mod error;
 mod id;
 mod manifest;
@@ -12,6 +13,7 @@ mod scene;
 mod validation;
 
 pub use capability::ProjectCapabilities;
+pub use composition::{SceneCompositionError, SceneCompositionGraph};
 pub use error::ProjectDomainError;
 pub use id::{ModelId, ProjectId, SceneId, SceneMemberId};
 pub use manifest::{

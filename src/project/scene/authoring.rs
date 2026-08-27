@@ -6,7 +6,9 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{sdf::Value, usd::Stage};
-use usd_project::{ModelId, SceneId, SceneMember, SceneMemberId, SceneMemberTarget};
+use usd_project::{
+    ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
+};
 use uuid::Uuid;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
@@ -30,7 +32,18 @@ pub(crate) fn author_scene_atomic_with_members(
     scene_id: SceneId,
     members: &[SceneMember],
 ) -> Result<PathBuf> {
+    let graph = SceneCompositionGraph::default();
+    author_scene_atomic_with_graph(project_root, scene_id, &graph, members)
+}
+
+pub(crate) fn author_scene_atomic_with_graph(
+    project_root: &Path,
+    scene_id: SceneId,
+    graph: &SceneCompositionGraph,
+    members: &[SceneMember],
+) -> Result<PathBuf> {
     validate_member_ids(members)?;
+    validate_scene_targets(graph, scene_id, members)?;
     let scene_directory = project_root
         .join(PROJECT_METADATA_DIRECTORY)
         .join(SCENES_DIRECTORY);
@@ -249,6 +262,22 @@ fn validate_member_ids(members: &[SceneMember]) -> Result<()> {
     Ok(())
 }
 
+fn validate_scene_targets(
+    graph: &SceneCompositionGraph,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+) -> Result<()> {
+    for member in members {
+        if let SceneMemberTarget::Scene(child_scene_id) = &member.target {
+            ensure!(
+                !graph.would_create_cycle(parent_scene_id, *child_scene_id),
+                "Project Scene composition cycle rejected before publication"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn sync_parent_best_effort(parent: Option<&Path>) {
     let Some(parent) = parent else {
         return;
@@ -353,5 +382,22 @@ mod tests {
         assert_eq!(members[0].target, members[1].target);
         assert_eq!(members[2].target, members[3].target);
         Ok(())
+    }
+
+    #[test]
+    fn self_scene_placement_is_rejected_before_publication() {
+        let project_directory = tempdir().unwrap();
+        let scene_id = SceneId::new_v4();
+        let member = SceneMember {
+            id: SceneMemberId::new_v4(),
+            target: SceneMemberTarget::Scene(scene_id),
+            name: None,
+        };
+
+        assert!(
+            author_scene_atomic_with_members(project_directory.path(), scene_id, &[member])
+                .is_err()
+        );
+        assert!(!scene_path(project_directory.path(), scene_id).exists());
     }
 }
