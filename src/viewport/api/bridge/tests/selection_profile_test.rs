@@ -144,7 +144,6 @@ fn profile_authority() {
     }
     app.world_mut().resource_mut::<Spawned>().0 = true;
     app.update();
-
     for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
         let value = selection(size);
         let mut samples = Vec::with_capacity(REPEATS);
@@ -187,7 +186,6 @@ fn profile_resolve_roots() {
             .filter(|target| index.resolve(target).is_some())
             .count();
     }
-
     for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.insert_resource(ProfileCount::default())
@@ -216,7 +214,6 @@ fn profile_renderable_resolution() {
     ) {
         result.0 = selected_renderable_entities(&selection.0.targets, &index, &renderables).len();
     }
-
     for size in PROFILE_SIZES.into_iter().filter(|size| *size <= 256) {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.insert_resource(ProfileCount::default())
@@ -291,9 +288,17 @@ fn profile_section_box() {
         app.update();
         let value = selection(size);
         let (micros, max_update) = repeat_selection_updates(&mut app, &value, App::update);
-        let state = app.world().resource::<SectionBoxState>();
-        assert!(state.visible);
-        assert_eq!(state.targets.len(), size);
+        assert!(app.world().resource::<SectionBoxState>().visible);
+        assert_eq!(
+            app.world().resource::<SectionBoxState>().targets.len(),
+            size
+        );
+        let idle_revision = app.world().resource::<SectionBoxState>().revision;
+        app.update();
+        assert_eq!(
+            app.world().resource::<SectionBoxState>().revision,
+            idle_revision
+        );
         println!(
             "I1.7.1 section_box_reconciliation size={size} median_us={micros} max_update_us={max_update}"
         );
