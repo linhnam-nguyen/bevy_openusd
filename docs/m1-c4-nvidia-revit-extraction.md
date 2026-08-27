@@ -30,16 +30,19 @@ the explicit unknown-measurement behavior required for incomplete exports.
 ## Test evidence
 
 The in-memory semantic fixture in `crates/usd_semantic/src/extractor_tests.rs`
-models the decoder contract with `height = 10.0` and
+models the numeric conversion contract with `height = 10.0` and
 `height_unit = "[ft_i]"`. With an explicit `height -> length` mapping, the
 snapshot contains `3.048` in canonical metres and records the source unit.
 Separate tests verify that missing and unknown units are preserved without
 guessing.
 
-This is synthetic contract evidence, not a claim about the NVIDIA connector
-schema. No real NVIDIA Omniverse Revit Connector export is present in this
-checkout; connector-specific coverage remains pending the real fixture and its
-recorded Include BIM Data/export settings.
+The real connector gate is documented in
+`docs/m1-c6-real-nvidia-revit-audit.md`. The supplied Revit 2024 export
+contains `BIM:Instance:*` and `BIM:Type:*` custom string attributes, not the
+numeric value plus sibling unit-property shape used by this synthetic
+conversion fixture. The ignored real-fixture test opens the composed export
+and verifies that those observed properties reach `SemanticSnapshot` as raw
+text with unknown measurement metadata.
 
 ## Stage-unit boundary
 
