@@ -8,13 +8,17 @@ mod tests {
     };
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::scene_query::SceneQueryService;
-    use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::api::{
+        CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+    };
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
+        let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 1);
         let mut app = App::new();
         app.init_resource::<ViewportCommandInbox>()
             .init_resource::<ViewportEventOutbox>()
             .insert_resource(SceneAnchorIndex::from_test_nodes(nodes))
+            .insert_resource(projection)
             .init_resource::<SceneQueryService>()
             .init_resource::<SceneSearchRequests>()
             .add_systems(

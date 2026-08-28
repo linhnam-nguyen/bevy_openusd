@@ -29,7 +29,7 @@ use viewport_protocol::{
 };
 
 use self::classification::ClassificationIndex;
-use crate::viewport::api::CurrentHierarchyProjection;
+use crate::viewport::api::HierarchyPageIndex;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BimReadPolicy {
@@ -77,7 +77,8 @@ impl From<ProtocolValidationError> for BimQueryError {
 struct ClassificationCache {
     snapshot_id: SnapshotId,
     recipe: ClassificationRecipe,
-    projection: CurrentHierarchyProjection,
+    read_model: Arc<HierarchyReadModel>,
+    page_index: HierarchyPageIndex,
     build_count: u64,
 }
 
@@ -122,8 +123,8 @@ impl<'snapshot> BimReadService<'snapshot> {
             .as_ref()
             .expect("classification cache is initialized");
         cache
-            .projection
-            .children_page(parent_id, page, page_size)
+            .page_index
+            .children_page(&cache.read_model, parent_id, page, page_size)
             .map_err(|_| {
                 BimQueryError::ClassificationNodeNotFound(
                     parent_id.map_or_else(|| "<root>".to_owned(), |id| id.as_str().to_owned()),
@@ -136,12 +137,13 @@ impl<'snapshot> BimReadService<'snapshot> {
         recipe: &ClassificationRecipe,
     ) -> Result<Arc<HierarchyReadModel>, BimQueryError> {
         self.ensure_classification_cache(recipe)?;
-        Ok(self
-            .classification_cache
-            .as_ref()
-            .expect("classification cache is initialized")
-            .projection
-            .snapshot())
+        Ok(Arc::clone(
+            &self
+                .classification_cache
+                .as_ref()
+                .expect("classification cache is initialized")
+                .read_model,
+        ))
     }
 
     fn ensure_classification_cache(
@@ -157,13 +159,16 @@ impl<'snapshot> BimReadService<'snapshot> {
                 .classification_cache
                 .as_ref()
                 .map_or(1, |cache| cache.build_count.saturating_add(1));
+            let read_model = Arc::new(
+                ClassificationIndex::build(self.snapshot, recipe)
+                    .read_model(self.snapshot, build_count),
+            );
+            let page_index = HierarchyPageIndex::from_read_model(&read_model);
             self.classification_cache = Some(ClassificationCache {
                 snapshot_id: self.snapshot.snapshot_id.clone(),
                 recipe: recipe.clone(),
-                projection: CurrentHierarchyProjection::from_read_model(
-                    ClassificationIndex::build(self.snapshot, recipe)
-                        .read_model(self.snapshot, build_count),
-                ),
+                read_model,
+                page_index,
                 build_count,
             });
         }

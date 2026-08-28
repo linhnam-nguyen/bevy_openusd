@@ -15,8 +15,8 @@ use crate::project::ghost_cache::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::api::{
-    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
-    ViewportTreeCommandInbox,
+    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+    ViewportReadModelState, ViewportTreeCommandInbox,
 };
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{
@@ -35,6 +35,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
             .init_resource::<SelectedTargets>()
             .init_resource::<ViewerSettingsState>()

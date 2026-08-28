@@ -4,15 +4,13 @@
 //! ECS entity. It never leaves the viewport process.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel,
-    MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor, SceneChildrenPage, ScenePageReference,
-    SceneReadModel, SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
+    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
 use super::hierarchy::CurrentHierarchyProjection;
@@ -31,7 +29,6 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
-    hierarchy: CurrentHierarchyProjection,
     initialized: bool,
     revision: u64,
 }
@@ -92,26 +89,9 @@ impl SceneAnchorIndex {
         }
     }
 
-    /// Returns the immutable hierarchy projection built with the scene index.
-    /// Search consumes this projection rather than inspecting USD paths or
-    /// semantic storage itself. Cloning the `Arc` is constant-time.
-    pub(crate) fn hierarchy_snapshot(&self) -> Arc<HierarchyReadModel> {
-        self.hierarchy.snapshot()
-    }
-
-    pub(crate) fn hierarchy_children_page(
-        &self,
-        parent_id: Option<&HierarchyNodeId>,
-        page: u32,
-        page_size: u32,
-    ) -> Result<HierarchyChildrenPage, String> {
-        self.hierarchy.children_page(parent_id, page, page_size)
-    }
-
     #[cfg(test)]
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
         Self {
-            hierarchy: CurrentHierarchyProjection::from_prim_nodes(&nodes, 1),
             nodes,
             initialized: true,
             revision: 1,
@@ -187,7 +167,7 @@ impl SceneAnchorIndex {
             Option<&Visibility>,
             Option<&Children>,
         )>,
-    ) {
+    ) -> CurrentHierarchyProjection {
         #[derive(Debug)]
         struct Candidate {
             entity: Entity,
@@ -298,8 +278,8 @@ impl SceneAnchorIndex {
         self.by_entity = by_entity;
         self.nodes = nodes;
         self.revision = self.revision.saturating_add(1);
-        self.hierarchy = CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision);
         self.initialized = true;
+        CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision)
     }
 }
 
@@ -329,6 +309,7 @@ pub(crate) fn refresh_scene_anchor_index(
     )>,
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut index: ResMut<SceneAnchorIndex>,
+    mut current_projection: ResMut<CurrentHierarchyProjection>,
 ) {
     // ScenePatch materialization can happen across a frame boundary after
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
@@ -338,10 +319,11 @@ pub(crate) fn refresh_scene_anchor_index(
         spawned.is_changed() || !changed_prims.is_empty() || removed_prims.read().next().is_some();
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
+        *current_projection = CurrentHierarchyProjection::default();
         return;
     }
     if changed || !index.initialized {
-        index.rebuild(&prims);
+        *current_projection = index.rebuild(&prims);
         let root_count = index
             .nodes
             .iter()

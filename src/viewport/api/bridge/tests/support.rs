@@ -4,7 +4,8 @@ use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
 use crate::viewport::api::{
-    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
+    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+    ViewportTreeCommandInbox,
 };
 use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
 use crate::viewport::physics::PhysicsActive;
@@ -23,6 +24,7 @@ pub(super) fn command_test_app() -> App {
         .init_resource::<ViewportEventOutbox>()
         .init_resource::<ViewportTreeCommandInbox>()
         .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
         .init_resource::<ReloadRequest>()
         .init_resource::<SelectedPrim>()
         .init_resource::<SelectedTargets>()

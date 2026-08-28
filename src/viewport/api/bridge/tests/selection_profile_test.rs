@@ -12,7 +12,7 @@ use super::super::ViewerSettingsState;
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::scene_index::refresh_scene_anchor_index;
-use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox};
+use crate::viewport::api::{CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox};
 use crate::viewport::scene::HoveredTarget;
 use crate::viewport::scene::{
     HoverColorMaterial, SectionBoxState, SelectedTargets, SelectionColorMaterial,
@@ -47,6 +47,7 @@ fn indexed_scene_app(size: usize) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
         .init_resource::<SelectedTargets>()
         .init_resource::<ViewerSettingsState>()
         .init_resource::<Spawned>()

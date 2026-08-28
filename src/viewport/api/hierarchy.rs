@@ -8,15 +8,26 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bevy::prelude::Resource;
 use viewport_protocol::{
     HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
     HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
 };
 
 /// Shared immutable hierarchy projection for the currently selected provider.
-#[derive(Clone, Debug)]
+#[derive(Resource, Clone, Debug)]
 pub(crate) struct CurrentHierarchyProjection {
     read_model: Arc<HierarchyReadModel>,
+    page_index: HierarchyPageIndex,
+}
+
+/// Reusable indexes for one immutable hierarchy read model.
+///
+/// Provider caches may prepare a candidate read model and its paging index,
+/// but only [`CurrentHierarchyProjection`] is installed as the active
+/// application resource consumed by hierarchy commands and search.
+#[derive(Clone, Debug)]
+pub(crate) struct HierarchyPageIndex {
     by_id: HashMap<HierarchyNodeId, usize>,
     children_by_parent: HashMap<Option<HierarchyNodeId>, Vec<usize>>,
 }
@@ -62,6 +73,34 @@ impl CurrentHierarchyProjection {
     }
 
     pub(crate) fn from_read_model(read_model: HierarchyReadModel) -> Self {
+        let page_index = HierarchyPageIndex::from_read_model(&read_model);
+        Self {
+            read_model: Arc::new(read_model),
+            page_index,
+        }
+    }
+
+    pub(crate) fn source(&self) -> HierarchySource {
+        self.read_model.source
+    }
+
+    pub(crate) fn snapshot(&self) -> Arc<HierarchyReadModel> {
+        Arc::clone(&self.read_model)
+    }
+
+    pub(crate) fn children_page(
+        &self,
+        parent_id: Option<&HierarchyNodeId>,
+        page: u32,
+        page_size: u32,
+    ) -> Result<HierarchyChildrenPage, String> {
+        self.page_index
+            .children_page(&self.read_model, parent_id, page, page_size)
+    }
+}
+
+impl HierarchyPageIndex {
+    pub(crate) fn from_read_model(read_model: &HierarchyReadModel) -> Self {
         let by_id = read_model
             .nodes
             .iter()
@@ -80,18 +119,14 @@ impl CurrentHierarchyProjection {
         }
 
         Self {
-            read_model: Arc::new(read_model),
             by_id,
             children_by_parent,
         }
     }
 
-    pub(crate) fn snapshot(&self) -> Arc<HierarchyReadModel> {
-        Arc::clone(&self.read_model)
-    }
-
     pub(crate) fn children_page(
         &self,
+        read_model: &HierarchyReadModel,
         parent_id: Option<&HierarchyNodeId>,
         page: u32,
         page_size: u32,
@@ -117,11 +152,11 @@ impl CurrentHierarchyProjection {
             .iter()
             .skip(start)
             .take(page_size as usize)
-            .map(|index| self.read_model.nodes[*index].clone())
+            .map(|index| read_model.nodes[*index].clone())
             .collect();
 
         Ok(HierarchyChildrenPage {
-            source: self.read_model.source,
+            source: read_model.source,
             parent_id: parent_id.cloned(),
             page,
             page_size,

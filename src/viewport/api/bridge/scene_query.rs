@@ -10,7 +10,9 @@ use super::helpers::{build_read_model, reject};
 use super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::scene_query::SceneQueryService;
-use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::api::{
+    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+};
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
@@ -68,6 +70,7 @@ pub(super) fn publish_scene_query_results(
 pub(super) fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     scene_index: Res<SceneAnchorIndex>,
+    current_projection: Res<CurrentHierarchyProjection>,
     scene_query: Res<SceneQueryService>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -104,15 +107,15 @@ pub(super) fn dispatch_scene_query_commands(
                 page,
                 page_size,
             } => {
-                if source != HierarchySource::Prim {
+                if source != current_projection.source() {
                     reject(
                         &mut outbox,
                         request_id,
-                        "BIM classification hierarchy provider is not active".to_owned(),
+                        format!("hierarchy provider {source:?} is not active"),
                     );
                     continue;
                 }
-                match scene_index.hierarchy_children_page(parent_id.as_ref(), page, page_size) {
+                match current_projection.children_page(parent_id.as_ref(), page, page_size) {
                     Ok(page) => outbox.push(ViewportEventEnvelope::new(
                         Some(request_id),
                         ViewportEvent::HierarchyChildren { source, page },
@@ -126,12 +129,20 @@ pub(super) fn dispatch_scene_query_commands(
                 limit,
             } => {
                 let query_text = query.clone();
+                if current_projection.source() != HierarchySource::Prim {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "prim scene search provider is not active".to_owned(),
+                    );
+                    continue;
+                }
                 if scene_query.submit_search(
                     request_id.clone(),
                     query,
                     offset,
                     limit,
-                    scene_index.hierarchy_snapshot(),
+                    current_projection.snapshot(),
                     HierarchySource::Prim,
                     false,
                 ) {
@@ -168,11 +179,11 @@ pub(super) fn dispatch_scene_query_commands(
                 offset,
                 limit,
             } => {
-                if source != HierarchySource::Prim {
+                if source != current_projection.source() {
                     reject(
                         &mut outbox,
                         request_id,
-                        "BIM classification hierarchy provider is not active".to_owned(),
+                        format!("hierarchy provider {source:?} is not active"),
                     );
                     continue;
                 }
@@ -182,7 +193,7 @@ pub(super) fn dispatch_scene_query_commands(
                     query,
                     offset,
                     limit,
-                    scene_index.hierarchy_snapshot(),
+                    current_projection.snapshot(),
                     source,
                     true,
                 ) {

@@ -56,10 +56,11 @@ fn prim_name_projection_uses_only_the_final_path_segment() {
 
 #[test]
 fn hierarchy_snapshot_reuses_cached_projection() {
-    let index = SceneAnchorIndex::from_test_nodes(vec![node("/World", None, "World")]);
+    let projection =
+        CurrentHierarchyProjection::from_prim_nodes(&[node("/World", None, "World")], 1);
 
-    let first = index.hierarchy_snapshot();
-    let second = index.hierarchy_snapshot();
+    let first = projection.snapshot();
+    let second = projection.snapshot();
 
     assert!(std::sync::Arc::ptr_eq(&first, &second));
 }
