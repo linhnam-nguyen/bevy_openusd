@@ -34,6 +34,10 @@ pub(crate) struct SceneAnchorIndex {
 }
 
 impl SceneAnchorIndex {
+    pub(crate) fn prim_projection(&self) -> CurrentHierarchyProjection {
+        CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision)
+    }
+
     pub(crate) fn resolve(&self, anchor: &SceneAnchor) -> Option<Entity> {
         self.by_anchor.get(anchor).copied()
     }
@@ -310,6 +314,7 @@ pub(crate) fn refresh_scene_anchor_index(
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut index: ResMut<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
+    provider: Option<Res<super::ActiveHierarchyProvider>>,
 ) {
     // ScenePatch materialization can happen across a frame boundary after
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
@@ -323,7 +328,13 @@ pub(crate) fn refresh_scene_anchor_index(
         return;
     }
     if changed || !index.initialized {
-        *current_projection = index.rebuild(&prims);
+        let prim_projection = index.rebuild(&prims);
+        if provider
+            .as_ref()
+            .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
+        {
+            *current_projection = prim_projection;
+        }
         let root_count = index
             .nodes
             .iter()

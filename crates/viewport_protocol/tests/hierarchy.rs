@@ -1,6 +1,6 @@
 use viewport_protocol::{
-    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
-    HierarchySource, ViewportCommand,
+    BimFieldKey, ClassificationLevel, ClassificationRecipe, HierarchyNodeId, HierarchyNodeKind,
+    HierarchyNodeReadModel, HierarchyReadModel, HierarchySource, ViewportCommand,
 };
 
 #[test]
@@ -90,5 +90,36 @@ fn generic_hierarchy_commands_validate_provider_ids_and_bounds() {
         }
         .validate()
         .is_ok()
+    );
+
+    assert!(
+        ViewportCommand::SetHierarchySource {
+            source: HierarchySource::BimClassification,
+            classification_recipe: Some(ClassificationRecipe::new(vec![ClassificationLevel::new(
+                "category",
+                BimFieldKey::Category,
+            )])),
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        ViewportCommand::SetHierarchySource {
+            source: HierarchySource::BimClassification,
+            classification_recipe: None,
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        ViewportCommand::SetHierarchySource {
+            source: HierarchySource::Prim,
+            classification_recipe: Some(ClassificationRecipe::new(vec![ClassificationLevel::new(
+                "category",
+                BimFieldKey::Category,
+            )])),
+        }
+        .validate()
+        .is_err()
     );
 }

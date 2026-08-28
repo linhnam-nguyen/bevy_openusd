@@ -11,7 +11,8 @@ use super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::scene_query::SceneQueryService;
 use crate::viewport::api::{
-    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox,
+    ViewportEventOutbox,
 };
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
@@ -70,7 +71,9 @@ pub(super) fn publish_scene_query_results(
 pub(super) fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     scene_index: Res<SceneAnchorIndex>,
-    current_projection: Res<CurrentHierarchyProjection>,
+    mut current_projection: ResMut<CurrentHierarchyProjection>,
+    mut provider: Option<ResMut<ActiveHierarchyProvider>>,
+    semantic: Option<Res<crate::viewport::semantic::SemanticSyncState>>,
     scene_query: Res<SceneQueryService>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -220,9 +223,73 @@ pub(super) fn dispatch_scene_query_commands(
                     );
                 }
             }
+            ViewportCommand::SetHierarchySource {
+                source,
+                classification_recipe,
+            } => {
+                let Some(provider) = provider.as_deref_mut() else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "hierarchy provider state is unavailable".to_owned(),
+                    );
+                    continue;
+                };
+                let projection = match source {
+                    HierarchySource::Prim => Ok(scene_index.prim_projection()),
+                    HierarchySource::BimClassification => match (
+                        classification_recipe.as_ref(),
+                        semantic.as_ref().and_then(|state| state.snapshot()),
+                    ) {
+                        (Some(recipe), Some(snapshot)) => {
+                            let mut service = crate::viewport::bim::BimReadService::new(snapshot);
+                            service
+                                .classification_snapshot(recipe)
+                                .map(|read_model| {
+                                    CurrentHierarchyProjection::from_read_model(
+                                        (*read_model).clone(),
+                                    )
+                                })
+                                .map_err(|error| error.to_string())
+                        }
+                        _ => Err(
+                            "BIM classification recipe or semantic snapshot is unavailable"
+                                .to_owned(),
+                        ),
+                    },
+                };
+                match projection {
+                    Ok(projection) => {
+                        *current_projection = projection;
+                        provider.set(source, classification_recipe);
+                    }
+                    Err(error) => reject(&mut outbox, request_id, error),
+                }
+            }
             _ => unreachable!("scene query inbox only contains query commands"),
         }
     }
+}
+
+/// Rebuilds the active virtual provider only when the semantic snapshot
+/// changes. Prim projection refresh remains owned by `SceneAnchorIndex`.
+pub(super) fn refresh_active_hierarchy_projection(
+    provider: Res<ActiveHierarchyProvider>,
+    semantic: Res<crate::viewport::semantic::SemanticSyncState>,
+    mut current_projection: ResMut<CurrentHierarchyProjection>,
+) {
+    if provider.source() != HierarchySource::BimClassification || !semantic.is_changed() {
+        return;
+    }
+    let (Some(recipe), Some(snapshot)) = (provider.classification_recipe(), semantic.snapshot())
+    else {
+        return;
+    };
+    let mut service = crate::viewport::bim::BimReadService::new(snapshot);
+    let Ok(read_model) = service.classification_snapshot(recipe) else {
+        return;
+    };
+    *current_projection = CurrentHierarchyProjection::from_read_model((*read_model).clone());
 }
 
 /// Emits lifecycle changes independently of who initiated the load. That

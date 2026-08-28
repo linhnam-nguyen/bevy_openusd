@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
-use super::bim::BimPropertyMutation;
+use super::bim::{BimPropertyMutation, ClassificationRecipe};
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::hierarchy::{HierarchyNodeId, HierarchySource};
 use super::read_models::{
@@ -36,6 +36,12 @@ pub enum ViewportCommand {
         query: String,
         offset: u32,
         limit: u32,
+    },
+    /// Selects the provider for the single hierarchy panel. A BIM provider
+    /// must carry a non-empty classification recipe; Prim must not carry one.
+    SetHierarchySource {
+        source: HierarchySource,
+        classification_recipe: Option<ClassificationRecipe>,
     },
     ReloadSession,
     SelectTarget {

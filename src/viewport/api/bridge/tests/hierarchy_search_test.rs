@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use bevy::prelude::*;
+    use usd_model::{HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
     use viewport_protocol::*;
 
     use crate::viewport::api::bridge::scene_query::{
@@ -9,8 +12,10 @@ mod tests {
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::scene_query::SceneQueryService;
     use crate::viewport::api::{
-        CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+        ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
+        ViewportCommandInbox, ViewportEventOutbox,
     };
+    use crate::viewport::semantic::SemanticSyncState;
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
         let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 1);
@@ -26,6 +31,59 @@ mod tests {
                 (publish_scene_query_results, dispatch_scene_query_commands).chain(),
             );
         app
+    }
+
+    #[test]
+    fn classification_provider_switch_builds_a_virtual_projection() {
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<CurrentHierarchyProjection>()
+            .init_resource::<ActiveHierarchyProvider>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(empty_snapshot()))
+            .add_systems(Update, dispatch_scene_query_commands);
+
+        let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
+            "category",
+            BimFieldKey::Category,
+        )]);
+        let _request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetHierarchySource {
+                source: HierarchySource::BimClassification,
+                classification_recipe: Some(recipe),
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ActiveHierarchyProvider>().source(),
+            HierarchySource::BimClassification
+        );
+        let projection = app.world().resource::<CurrentHierarchyProjection>();
+        assert_eq!(projection.source(), HierarchySource::BimClassification);
+        assert!(projection.snapshot().nodes.is_empty());
+        assert!(
+            app.world_mut()
+                .resource_mut::<ViewportEventOutbox>()
+                .pop()
+                .is_none()
+        );
+    }
+
+    fn empty_snapshot() -> SemanticSnapshot {
+        SemanticSnapshot {
+            snapshot_id: SnapshotId("hierarchy-test".to_owned()),
+            source: SnapshotSource::Working {
+                session: "hierarchy-test".to_owned(),
+                live_revision: 1,
+            },
+            config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
+            entities: HashMap::new(),
+        }
     }
 
     #[test]

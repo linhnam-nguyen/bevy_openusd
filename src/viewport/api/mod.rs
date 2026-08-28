@@ -16,7 +16,9 @@ pub(crate) use bridge::editor_value_to_usd;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
-pub(crate) use hierarchy::{CurrentHierarchyProjection, HierarchyPageIndex};
+pub(crate) use hierarchy::{
+    ActiveHierarchyProvider, CurrentHierarchyProjection, HierarchyPageIndex,
+};
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,

@@ -62,6 +62,7 @@ impl ViewportCommandInbox {
                     | ViewportCommand::SearchScene { .. }
                     | ViewportCommand::RequestHierarchyChildren { .. }
                     | ViewportCommand::SearchHierarchy { .. }
+                    | ViewportCommand::SetHierarchySource { .. }
             ) {
                 queries.push(envelope);
             } else {

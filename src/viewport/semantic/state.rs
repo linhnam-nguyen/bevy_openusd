@@ -15,4 +15,13 @@ impl SemanticSyncState {
     pub(crate) fn snapshot(&self) -> Option<&SemanticSnapshot> {
         self.snapshot.as_ref()
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_snapshot(snapshot: SemanticSnapshot) -> Self {
+        Self {
+            snapshot: Some(snapshot),
+            session_id: None,
+            revision: None,
+        }
+    }
 }

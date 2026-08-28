@@ -10,9 +10,32 @@ use std::sync::Arc;
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
-    HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
+    ClassificationRecipe, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel,
+    HierarchyReadModel, HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
 };
+
+/// Session-local provider selection. The recipe is retained with the
+/// selection so a semantic snapshot refresh can rebuild the same projection.
+#[derive(Resource, Clone, Debug, Default)]
+pub(crate) struct ActiveHierarchyProvider {
+    source: HierarchySource,
+    classification_recipe: Option<ClassificationRecipe>,
+}
+
+impl ActiveHierarchyProvider {
+    pub(crate) fn source(&self) -> HierarchySource {
+        self.source
+    }
+
+    pub(crate) fn classification_recipe(&self) -> Option<&ClassificationRecipe> {
+        self.classification_recipe.as_ref()
+    }
+
+    pub(crate) fn set(&mut self, source: HierarchySource, recipe: Option<ClassificationRecipe>) {
+        self.source = source;
+        self.classification_recipe = recipe;
+    }
+}
 
 /// Shared immutable hierarchy projection for the currently selected provider.
 #[derive(Resource, Clone, Debug)]

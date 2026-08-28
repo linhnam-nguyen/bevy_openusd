@@ -116,6 +116,26 @@ impl ViewportCommand {
                     });
                 }
             }
+            Self::SetHierarchySource {
+                source,
+                classification_recipe,
+            } => match source {
+                super::hierarchy::HierarchySource::Prim => {
+                    if classification_recipe.is_some() {
+                        return Err(ProtocolValidationError::InvalidInput {
+                            field: "hierarchy.classification_recipe",
+                        });
+                    }
+                }
+                super::hierarchy::HierarchySource::BimClassification => {
+                    let Some(recipe) = classification_recipe else {
+                        return Err(ProtocolValidationError::InvalidInput {
+                            field: "hierarchy.classification_recipe",
+                        });
+                    };
+                    recipe.validate()?;
+                }
+            },
             Self::DefinePrim {
                 path: value,
                 type_name,

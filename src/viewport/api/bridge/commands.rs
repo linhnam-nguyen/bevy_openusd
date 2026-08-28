@@ -76,7 +76,8 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::RequestSceneChildren { .. }
             | ViewportCommand::SearchScene { .. }
             | ViewportCommand::RequestHierarchyChildren { .. }
-            | ViewportCommand::SearchHierarchy { .. } => {
+            | ViewportCommand::SearchHierarchy { .. }
+            | ViewportCommand::SetHierarchySource { .. } => {
                 reject(
                     &mut outbox,
                     request_id,
