@@ -13,6 +13,7 @@
 pub(crate) mod cadence;
 pub(crate) mod headless;
 mod offscreen_resize;
+mod project_stage;
 mod runner;
 mod scene;
 mod sync;

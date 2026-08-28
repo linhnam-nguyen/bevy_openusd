@@ -76,6 +76,7 @@ pub(super) fn adopt_scene(
             code: ProjectWriteErrorCode::FilesystemFailure,
         })?
         .unwrap_or_else(Vec::<SceneMember>::new);
+    service.stage_mutations.ensure_capacity(project_root)?;
 
     let adopted = crate::project::scene::adoption::adopt_scene_atomic(
         crate::project::scene::adoption::SceneAdoptionRequest {
@@ -94,14 +95,15 @@ pub(super) fn adopt_scene(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
-    service
-        .stage_mutations
-        .submit(super::ProjectStageMutation::AdoptScene {
+    service.stage_mutations.submit_for_project(
+        project_root,
+        super::ProjectStageMutation::AdoptScene {
             project_id,
             scene_id: adopted.scene_id,
             parent_scene_id,
             placement_id: adopted.member.as_ref().map(|member| member.id),
-        })?;
+        },
+    )?;
 
     Ok(ProjectSceneAdoptionResponse {
         project,

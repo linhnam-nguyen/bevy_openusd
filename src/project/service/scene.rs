@@ -93,6 +93,7 @@ pub(super) fn create_scene(
             code: ProjectWriteErrorCode::FilesystemFailure,
         })?
         .unwrap_or_default();
+    service.stage_mutations.ensure_capacity(project_root)?;
 
     let created = crate::project::scene::create::create_scene_atomic(
         crate::project::scene::create::CreateSceneRequest {
@@ -109,14 +110,15 @@ pub(super) fn create_scene(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let summary = super::inspection::project_summary(&created.manifest, project_root)?;
-    service
-        .stage_mutations
-        .submit(super::ProjectStageMutation::CreateScene {
+    service.stage_mutations.submit_for_project(
+        project_root,
+        super::ProjectStageMutation::CreateScene {
             project_id,
             scene_id: created.scene_id,
             parent_scene_id,
             placement_id: created.member.as_ref().map(|member| member.id),
-        })?;
+        },
+    )?;
     Ok(ProjectSceneWriteResponse {
         project: summary,
         scene_id: created.scene_id,

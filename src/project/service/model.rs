@@ -96,6 +96,7 @@ pub(super) fn publish_model(
             code: ProjectWriteErrorCode::FilesystemFailure,
         })?
         .unwrap_or_default();
+    service.stage_mutations.ensure_capacity(project_root)?;
 
     let placement = parent_scene_id.map(|parent_scene_id| ModelPlacement {
         parent_scene_id,
@@ -112,14 +113,15 @@ pub(super) fn publish_model(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&published.manifest, project_root)?;
-    service
-        .stage_mutations
-        .submit(super::ProjectStageMutation::PublishModel {
+    service.stage_mutations.submit_for_project(
+        project_root,
+        super::ProjectStageMutation::PublishModel {
             project_id,
             model_id: published.id,
             parent_scene_id,
             placement_id: published.placement.as_ref().map(|member| member.id),
-        })?;
+        },
+    )?;
 
     Ok(ProjectModelWriteResponse {
         project,

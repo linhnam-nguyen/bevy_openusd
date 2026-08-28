@@ -1,18 +1,28 @@
 //! Application-to-LiveStage authority boundary for Project mutations.
+//!
+//! The native Project host and the render server are separate processes. The
+//! host therefore publishes typed, durable mutation records into the private
+//! Project runtime directory; the active-stage owner consumes those records on
+//! the LiveStage thread. OpenUSD and Bevy state never cross this boundary.
 
 use std::{
-    collections::VecDeque,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
+use openusd::{sdf, sdf::Value};
 use project_protocol::ProjectWriteError;
+use serde::{Deserialize, Serialize};
 use usd_project::{ModelId, ProjectId, SceneId, SceneMemberId};
+use uuid::Uuid;
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///
-/// This DTO contains only stable Project identities. The OpenUSD `Stage` and
+/// This DTO contains only stable Project identities. The OpenUSD Stage and
 /// Bevy entities remain owned by the active-stage thread.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectStageMutation {
     CreateScene {
         project_id: ProjectId,
@@ -35,68 +45,119 @@ pub enum ProjectStageMutation {
 }
 
 const STAGE_MUTATION_CAPACITY: usize = 128;
+const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
+const RUNTIME_DIRECTORY: &str = "runtime";
+const OUTBOX_DIRECTORY: &str = "project-stage-mutations";
+const REFERENCES_FIELD: &str = "references";
+const SCENE_ROOT_PATH: &str = "/SceneRoot";
+const MODEL_ROOT_PATH: &str = "/ModelRoot";
 
-/// Shared host queue connecting request-scoped Project services to the active
-/// LiveStage owner. A queue entry is applied only when its Project is active.
+/// Durable host-to-render-server Project stage handoff.
+///
+/// The mutex only protects concurrent access by one host process. The file is
+/// the process boundary and is read by the active-stage owner in the viewer.
 #[derive(Clone, Default)]
 pub struct ProjectStageMutationQueue {
-    pending: Arc<Mutex<VecDeque<ProjectStageMutation>>>,
+    file_lock: Arc<Mutex<()>>,
 }
 
 impl ProjectStageMutationQueue {
-    pub fn submit(&self, mutation: ProjectStageMutation) -> Result<(), ProjectWriteError> {
-        let mut pending = self
-            .pending
+    /// Check capacity before a canonical publication starts. This prevents a
+    /// successful disk mutation from being reported as failed because its
+    /// stage handoff was discovered to be full afterward.
+    pub fn ensure_capacity(&self, project_root: &Path) -> Result<(), ProjectWriteError> {
+        let _guard = self
+            .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
+        let pending = read_pending(&outbox_path(project_root))?;
         if pending.len() >= STAGE_MUTATION_CAPACITY {
-            return Err(ProjectWriteError::Failed {
-                code: project_protocol::ProjectWriteErrorCode::Busy,
-            });
+            return Err(busy_error());
         }
-        pending.push_back(mutation);
         Ok(())
     }
 
-    /// Apply queued mutations for the currently active Project on the
-    /// LiveStage owner thread. Other Project entries remain queued.
-    pub fn apply_for_project(
+    /// Publish one typed mutation into the private Project runtime outbox.
+    pub fn submit_for_project(
+        &self,
+        project_root: &Path,
+        mutation: ProjectStageMutation,
+    ) -> Result<(), ProjectWriteError> {
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        let path = outbox_path(project_root);
+        let pending = read_pending(&path)?;
+        if pending.len() >= STAGE_MUTATION_CAPACITY {
+            return Err(busy_error());
+        }
+        fs::create_dir_all(&path).map_err(|_| filesystem_error())?;
+        let id = Uuid::new_v4();
+        let temporary = path.join(format!(".{id}.tmp"));
+        let final_path = path.join(format!("{id}.json"));
+        let encoded = serde_json::to_vec(&mutation).map_err(|_| filesystem_error())?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|_| filesystem_error())?;
+        file.write_all(&encoded).map_err(|_| filesystem_error())?;
+        file.sync_all().map_err(|_| filesystem_error())?;
+        fs::rename(&temporary, final_path).map_err(|_| filesystem_error())?;
+        Ok(())
+    }
+
+    /// Consume mutations for the active Project on the actual LiveStage owner
+    /// thread. Failed records and records for another Project remain in the
+    /// outbox for a later retry.
+    pub fn apply_for_active_project(
         &self,
         live: &usd_bevy::LiveStage,
+        project_root: &Path,
         active_project_id: ProjectId,
     ) -> Result<usize, ProjectWriteError> {
-        let selected = {
-            let mut pending = self
-                .pending
-                .lock()
-                .expect("Project stage mutation queue is not poisoned");
-            let mut selected = Vec::new();
-            let mut retained = VecDeque::with_capacity(pending.len());
-            while let Some(mutation) = pending.pop_front() {
-                if mutation.project_id() == active_project_id {
-                    selected.push(mutation);
-                } else {
-                    retained.push_back(mutation);
-                }
-            }
-            *pending = retained;
-            selected
-        };
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        let path = outbox_path(project_root);
+        let pending = read_pending(&path)?;
+        if pending.is_empty() {
+            return Ok(0);
+        }
 
         let mut applied = 0;
-        for mutation in selected {
-            apply_mutation(live, &mutation)?;
-            applied += 1;
+        let mut first_error = None;
+        for (mutation_path, mutation) in pending {
+            if mutation.project_id() != active_project_id {
+                continue;
+            }
+            match apply_mutation(live, project_root, &mutation) {
+                Ok(()) => match fs::remove_file(&mutation_path) {
+                    Ok(()) => applied += 1,
+                    Err(_) => {
+                        if first_error.is_none() {
+                            first_error = Some(filesystem_error());
+                        }
+                    }
+                },
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         Ok(applied)
     }
 
     #[cfg(test)]
-    fn pending_len(&self) -> usize {
-        self.pending
-            .lock()
-            .expect("Project stage mutation queue is not poisoned")
-            .len()
+    fn pending_len_for_project(&self, project_root: &Path) -> usize {
+        read_pending(&outbox_path(project_root)).unwrap().len()
     }
 }
 
@@ -112,75 +173,106 @@ impl ProjectStageMutation {
 
 fn apply_mutation(
     live: &usd_bevy::LiveStage,
+    project_root: &Path,
     mutation: &ProjectStageMutation,
 ) -> Result<(), ProjectWriteError> {
-    let (content_path, placement_path) = match mutation {
+    let (target_path, asset_path, referenced_prim) = match mutation {
         ProjectStageMutation::CreateScene {
-            project_id,
             scene_id,
-            parent_scene_id,
             placement_id,
+            ..
         }
         | ProjectStageMutation::AdoptScene {
-            project_id,
             scene_id,
-            parent_scene_id,
             placement_id,
+            ..
         } => (
-            format!(
-                "{}/scene_{}",
-                scene_parent_path(*project_id, *parent_scene_id),
-                scene_id.as_uuid().simple()
-            ),
-            placement_id.map(|id| {
-                format!(
-                    "{}/placement_{}",
-                    scene_parent_path(*project_id, *parent_scene_id),
-                    id.as_uuid().simple()
-                )
-            }),
+            placement_path(*placement_id, SCENE_ROOT_PATH),
+            crate::project::scene::authoring::scene_path(project_root, *scene_id),
+            SCENE_ROOT_PATH,
         ),
         ProjectStageMutation::PublishModel {
-            project_id,
             model_id,
-            parent_scene_id,
             placement_id,
+            ..
         } => (
-            format!(
-                "{}/model_{}",
-                scene_parent_path(*project_id, *parent_scene_id),
-                model_id.as_uuid().simple()
-            ),
-            placement_id.map(|id| {
-                format!(
-                    "{}/placement_{}",
-                    scene_parent_path(*project_id, *parent_scene_id),
-                    id.as_uuid().simple()
-                )
-            }),
+            placement_path(*placement_id, MODEL_ROOT_PATH),
+            crate::project::model_wrapper::model_wrapper_path(project_root, *model_id),
+            MODEL_ROOT_PATH,
         ),
     };
 
-    usd_bevy::define_prim(&live.stage, &content_path, "Xform").map_err(|_| {
-        ProjectWriteError::Failed {
-            code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
-        }
-    })?;
-    if let Some(placement_path) = placement_path {
-        usd_bevy::define_prim(&live.stage, &placement_path, "Xform").map_err(|_| {
-            ProjectWriteError::Failed {
-                code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
-            }
-        })?;
-    }
+    let asset_path = asset_path.to_str().ok_or_else(filesystem_error)?.to_owned();
+    let reference = sdf::Reference {
+        asset_path,
+        prim_path: sdf::path(referenced_prim).map_err(|_| filesystem_error())?,
+        ..Default::default()
+    };
+    live.stage
+        .define_prim(target_path.as_str())
+        .map_err(|_| filesystem_error())?
+        .set_type_name("Xform")
+        .map_err(|_| filesystem_error())?
+        .set_metadata(
+            REFERENCES_FIELD,
+            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([reference])),
+        )
+        .map_err(|_| filesystem_error())?;
     Ok(())
 }
 
-fn scene_parent_path(project_id: ProjectId, parent_scene_id: Option<SceneId>) -> String {
-    let project_path = format!("/__usdhub/project_{}", project_id.as_uuid().simple());
-    parent_scene_id.map_or(project_path.clone(), |scene_id| {
-        format!("{project_path}/scene_{}", scene_id.as_uuid().simple())
-    })
+fn placement_path(placement_id: Option<SceneMemberId>, root_path: &str) -> String {
+    placement_id.map_or_else(
+        || root_path.to_owned(),
+        crate::project::scene::authoring::scene_member_path,
+    )
+}
+
+fn outbox_path(project_root: &Path) -> PathBuf {
+    project_root
+        .join(PROJECT_METADATA_DIRECTORY)
+        .join(RUNTIME_DIRECTORY)
+        .join(OUTBOX_DIRECTORY)
+}
+
+fn read_pending(path: &Path) -> Result<Vec<(PathBuf, ProjectStageMutation)>, ProjectWriteError> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(filesystem_error()),
+    };
+    let mut paths = entries
+        .map(|entry| {
+            entry
+                .map(|entry| entry.path())
+                .map_err(|_| filesystem_error())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    paths.retain(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "json")
+    });
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let bytes = fs::read(&path).map_err(|_| filesystem_error())?;
+            let mutation = serde_json::from_slice(&bytes).map_err(|_| filesystem_error())?;
+            Ok((path, mutation))
+        })
+        .collect()
+}
+
+fn busy_error() -> ProjectWriteError {
+    ProjectWriteError::Failed {
+        code: project_protocol::ProjectWriteErrorCode::Busy,
+    }
+}
+
+fn filesystem_error() -> ProjectWriteError {
+    ProjectWriteError::Failed {
+        code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
+    }
 }
 
 #[cfg(test)]
@@ -189,102 +281,97 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn actual_project_mutations_reach_one_live_stage_change_batch() {
-        let directory = tempfile::tempdir().unwrap();
-        let parent = directory.path().join("projects");
-        std::fs::create_dir(&parent).unwrap();
-        let queue = ProjectStageMutationQueue::default();
-        let mut service = super::super::ProjectApplicationService::open_with_stage_mutation_queue(
-            directory.path().join("workspace.json"),
-            queue.clone(),
-        )
-        .unwrap();
-        let project = service.create_project(&parent, "Project").unwrap();
-        let scene = service
-            .create_scene(
-                project.id,
-                project_protocol::ProjectWriteTarget::Project(project.id),
-                "Scene",
-            )
-            .unwrap();
-        let source = directory.path().join("assembly.usda");
-        std::fs::write(
-            &source,
-            "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
-        )
-        .unwrap();
-        let inspection = crate::project::scene::inspection::inspect_composition(&source).unwrap();
-        let adopted = service
-            .adopt_scene(
-                project.id,
-                project_protocol::ProjectWriteTarget::Scene(scene.scene_id),
-                &source,
-                &inspection,
-                "adopt".to_owned(),
-                1,
-            )
-            .unwrap();
-        let preparations = super::super::ProjectModelPreparationQueue::default();
-        preparations.prepare("model".to_owned(), 1, source.clone());
-        let model = service
-            .publish_model(
-                &preparations,
-                project.id,
-                project_protocol::ProjectWriteTarget::Scene(scene.scene_id),
-                &source,
-                "model".to_owned(),
-                1,
-            )
-            .unwrap();
-
-        let live = usd_bevy::LiveStage::new(
+    fn stage() -> usd_bevy::LiveStage {
+        usd_bevy::LiveStage::new(
             Stage::builder()
                 .in_memory("project-active-stage.usda")
                 .unwrap(),
-        );
-        assert_eq!(queue.apply_for_project(&live, project.id).unwrap(), 3);
-        let batch = live.drain_change_batch().expect("Project mutations batch");
-        assert_eq!(batch.revision, usd_bevy::LiveRevision(1));
-        assert!(batch.has_resync());
-        let contains_path = |needle: String| {
-            batch.changes.iter().any(|change| {
-                change
-                    .resynced
-                    .iter()
-                    .chain(change.changed_info.iter())
-                    .any(|path| path.contains(&needle))
-            })
-        };
-        assert!(contains_path(scene.scene_id.as_uuid().simple().to_string()));
-        assert!(contains_path(
-            adopted.scene_id.as_uuid().simple().to_string()
-        ));
-        assert!(contains_path(model.model_id.as_uuid().simple().to_string()));
-        assert!(live.drain_change_batch().is_none());
+        )
     }
 
     #[test]
-    fn inactive_project_mutations_remain_queued() {
+    fn canonical_project_mutations_reach_live_stage_as_real_references() {
+        let directory = tempfile::tempdir().unwrap();
+        let project_root = directory.path().join("Project");
+        fs::create_dir_all(&project_root).unwrap();
+        let project_id = ProjectId::new_v4();
+        let scene_id = SceneId::new_v4();
+        let placement_id = SceneMemberId::new_v4();
+        let model_id = ModelId::new_v4();
+        let queue = ProjectStageMutationQueue::default();
+
+        queue
+            .submit_for_project(
+                &project_root,
+                ProjectStageMutation::AdoptScene {
+                    project_id,
+                    scene_id,
+                    parent_scene_id: Some(SceneId::new_v4()),
+                    placement_id: Some(placement_id),
+                },
+            )
+            .unwrap();
+        queue
+            .submit_for_project(
+                &project_root,
+                ProjectStageMutation::PublishModel {
+                    project_id,
+                    model_id,
+                    parent_scene_id: Some(SceneId::new_v4()),
+                    placement_id: Some(SceneMemberId::new_v4()),
+                },
+            )
+            .unwrap();
+
+        let live = stage();
+        assert_eq!(
+            queue
+                .apply_for_active_project(&live, &project_root, project_id)
+                .unwrap(),
+            2
+        );
+        let batch = live
+            .drain_change_batch()
+            .expect("real Project change batch");
+        assert!(batch.has_resync());
+        let exported = live.stage.root_layer().export_to_string().unwrap();
+        assert!(exported.contains("references"));
+        assert!(exported.contains(&scene_id.to_string()));
+        assert!(exported.contains(&model_id.to_string()));
+        assert!(exported.contains(&placement_id.to_string().replace('-', "")));
+        assert!(!exported.contains("/__usdhub/project_"));
+        assert_eq!(queue.pending_len_for_project(&project_root), 0);
+    }
+
+    #[test]
+    fn inactive_project_outbox_remains_isolated() {
+        let directory = tempfile::tempdir().unwrap();
+        let first_root = directory.path().join("first");
+        let second_root = directory.path().join("second");
+        fs::create_dir_all(&first_root).unwrap();
+        fs::create_dir_all(&second_root).unwrap();
         let queue = ProjectStageMutationQueue::default();
         let first = ProjectId::new_v4();
         let second = ProjectId::new_v4();
+        for (root, project_id) in [(&first_root, first), (&second_root, second)] {
+            queue
+                .submit_for_project(
+                    root,
+                    ProjectStageMutation::CreateScene {
+                        project_id,
+                        scene_id: SceneId::new_v4(),
+                        parent_scene_id: None,
+                        placement_id: None,
+                    },
+                )
+                .unwrap();
+        }
+
+        let live = stage();
         queue
-            .submit(ProjectStageMutation::CreateScene {
-                project_id: first,
-                scene_id: SceneId::new_v4(),
-                parent_scene_id: None,
-                placement_id: None,
-            })
+            .apply_for_active_project(&live, &first_root, first)
             .unwrap();
-        queue
-            .submit(ProjectStageMutation::CreateScene {
-                project_id: second,
-                scene_id: SceneId::new_v4(),
-                parent_scene_id: None,
-                placement_id: None,
-            })
-            .unwrap();
-        assert_eq!(queue.pending_len(), 2);
+        assert_eq!(queue.pending_len_for_project(&first_root), 0);
+        assert_eq!(queue.pending_len_for_project(&second_root), 1);
     }
 }

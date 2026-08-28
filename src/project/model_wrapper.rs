@@ -35,6 +35,14 @@ const SCHEMA_VERSION_METADATA: &str = "usdhub:schemaVersion";
 const MODEL_SCHEMA_VERSION: i32 = 1;
 const REFERENCES_FIELD: &str = "references";
 
+pub(crate) fn model_wrapper_path(project_root: &Path, model_id: usd_project::ModelId) -> PathBuf {
+    project_root
+        .join(PROJECT_METADATA_DIRECTORY)
+        .join(MODELS_DIRECTORY)
+        .join(model_id.to_string())
+        .join("model.usda")
+}
+
 /// Inputs for publishing one stable Model wrapper.
 pub(crate) struct ModelWrapperRequest<'a> {
     pub project_root: &'a Path,
