@@ -51,6 +51,7 @@ fn property_group_identity_and_selection_revision_round_trip() {
             key: "Mark".to_owned(),
             group_id: BimPropertyGroupId::SourceFallback,
             value: CommonValue::Multiple,
+            target_values: Vec::new(),
             measurement: None,
             units: Vec::new(),
             editable: false,

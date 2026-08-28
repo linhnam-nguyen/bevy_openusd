@@ -113,6 +113,10 @@ fn project_property(
         } else {
             CommonValue::Multiple
         },
+        target_values: values
+            .iter()
+            .map(|property| property.value.clone())
+            .collect(),
         measurement,
         units,
         editable: policy.allow_value_edit,

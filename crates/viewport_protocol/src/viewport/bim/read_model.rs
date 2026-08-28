@@ -50,6 +50,10 @@ pub struct BimPropertyReadModel {
     #[serde(default)]
     pub group_id: BimPropertyGroupId,
     pub value: CommonValue,
+    /// Canonical compare-and-set values aligned with the read-model targets.
+    /// This is authoritative batch-edit input, not presentation text.
+    #[serde(default)]
+    pub target_values: Vec<CanonicalValue>,
     pub measurement: Option<MeasurementMetadata>,
     pub units: Vec<BimUnitOption>,
     pub editable: bool,

@@ -37,6 +37,13 @@ fn property_read_projects_intersection_and_authoritative_units() {
         .expect("common Mark property");
     assert!(matches!(mark.value, CommonValue::Multiple));
     assert_eq!(
+        mark.target_values,
+        vec![
+            CanonicalValue::Text("AHU-01".to_owned()),
+            CanonicalValue::Text("AHU-02".to_owned()),
+        ]
+    );
+    assert_eq!(
         mark.group_id,
         viewport_protocol::BimPropertyGroupId::Semantic
     );
