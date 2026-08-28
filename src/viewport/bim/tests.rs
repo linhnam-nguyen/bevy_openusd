@@ -46,7 +46,7 @@ fn property_read_projects_intersection_and_authoritative_units() {
     );
     assert_eq!(
         mark.group_id,
-        viewport_protocol::BimPropertyGroupId::Semantic
+        viewport_protocol::BimPropertyGroupId::SourceFallback
     );
     assert!(mark.editable);
 
@@ -64,7 +64,7 @@ fn property_read_projects_intersection_and_authoritative_units() {
 }
 
 #[test]
-fn property_read_preserves_observed_connector_source_fallback_group() {
+fn property_read_uses_ungrouped_fallback_without_validated_source_metadata() {
     let mut snapshot = super::test_fixtures::snapshot();
     for path in ["/World/WallA", "/World/WallB"] {
         snapshot

@@ -11,11 +11,6 @@ use viewport_protocol::{
 
 use super::{BimQueryError, BimReadPolicy, BimReadService};
 
-/// Namespace observed in the supplied NVIDIA Omniverse Revit Connector USD
-/// export for raw connector properties. These properties remain available in
-/// the semantic snapshot, but are distinct from normalized semantic fields.
-const OBSERVED_NVIDIA_SOURCE_NAMESPACE: &str = "BIM:";
-
 pub(super) fn read_properties<'snapshot>(
     service: &BimReadService<'snapshot>,
     selection: &SelectionReadModel,
@@ -140,12 +135,11 @@ fn project_property(
     }
 }
 
-fn property_group_id(key: &str) -> BimPropertyGroupId {
-    if key.starts_with(OBSERVED_NVIDIA_SOURCE_NAMESPACE) {
-        BimPropertyGroupId::SourceFallback
-    } else {
-        BimPropertyGroupId::Semantic
-    }
+fn property_group_id(_key: &str) -> BimPropertyGroupId {
+    // SemanticProperty currently carries no validated source-group metadata.
+    // Keep all such rows in the explicit fallback group until extraction
+    // promotes observed connector metadata into the semantic model.
+    BimPropertyGroupId::SourceFallback
 }
 
 fn property_group_name(group_id: BimPropertyGroupId) -> &'static str {
