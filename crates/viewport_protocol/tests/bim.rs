@@ -47,14 +47,20 @@ fn property_group_identity_and_selection_revision_round_trip() {
     let model = BimPropertiesReadModel {
         targets: Vec::new(),
         selection_revision: 9,
-        properties: vec![BimPropertyReadModel {
-            key: "Mark".to_owned(),
-            group_id: BimPropertyGroupId::SourceFallback,
-            value: CommonValue::Multiple,
-            target_values: Vec::new(),
-            measurement: None,
-            units: Vec::new(),
-            editable: false,
+        groups: vec![viewport_protocol::BimPropertyGroupReadModel {
+            id: BimPropertyGroupId::SourceFallback,
+            name: "<Ungrouped>".to_owned(),
+            editable_group: false,
+            properties: vec![BimPropertyReadModel {
+                key: "Mark".to_owned(),
+                group_id: BimPropertyGroupId::SourceFallback,
+                value: CommonValue::Multiple,
+                target_values: Vec::new(),
+                measurement: None,
+                units: Vec::new(),
+                current_display_unit: None,
+                editable: false,
+            }],
         }],
     };
     let encoded = serde_json::to_string(&model).expect("BIM properties serialize");

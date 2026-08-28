@@ -29,8 +29,9 @@ fn property_read_projects_intersection_and_authoritative_units() {
 
     assert_eq!(result.targets, selection.targets);
     assert_eq!(result.selection_revision, 17);
-    assert_eq!(result.properties.len(), 3);
-    let mark = result
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].properties.len(), 3);
+    let mark = result.groups[0]
         .properties
         .iter()
         .find(|property| property.key == "Mark")
@@ -49,7 +50,7 @@ fn property_read_projects_intersection_and_authoritative_units() {
     );
     assert!(mark.editable);
 
-    let width = result
+    let width = result.groups[0]
         .properties
         .iter()
         .find(|property| property.key == "Width")
@@ -94,8 +95,9 @@ fn property_read_preserves_observed_connector_source_fallback_group() {
         .read_properties(&selection, 18, BimReadPolicy::default())
         .expect("selected properties read");
     let source_property = result
-        .properties
+        .groups
         .iter()
+        .flat_map(|group| group.properties.iter())
         .find(|property| property.key == "BIM:Instance:Surface")
         .expect("observed source property");
     assert_eq!(
@@ -113,7 +115,7 @@ fn empty_selection_preserves_authoritative_revision() {
         .expect("empty selection read");
 
     assert!(result.targets.is_empty());
-    assert!(result.properties.is_empty());
+    assert!(result.groups.is_empty());
     assert_eq!(result.selection_revision, 23);
 }
 

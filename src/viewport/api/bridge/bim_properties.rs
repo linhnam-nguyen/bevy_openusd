@@ -43,7 +43,7 @@ pub(super) fn dispatch(
             BimPropertiesReadModel {
                 targets: selection_model.targets.clone(),
                 selection_revision: selection.revision(),
-                properties: Vec::new(),
+                groups: Vec::new(),
             }
         }
         Err(error) => {

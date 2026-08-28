@@ -36,7 +36,7 @@ fn default_unit_scale() -> f64 {
 /// `SourceFallback` is reserved for validated source properties that are not
 /// part of the normalized semantic property set. It is intentionally distinct
 /// from `Semantic` so a client cannot silently merge provenance groups.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BimPropertyGroupId {
     #[default]
@@ -56,7 +56,19 @@ pub struct BimPropertyReadModel {
     pub target_values: Vec<CanonicalValue>,
     pub measurement: Option<MeasurementMetadata>,
     pub units: Vec<BimUnitOption>,
+    /// The authoritative unit used for display and input. The UI must not
+    /// offer a unit selector; this value is chosen by the backend registry.
+    #[serde(default)]
+    pub current_display_unit: Option<UnitId>,
     pub editable: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BimPropertyGroupReadModel {
+    pub id: BimPropertyGroupId,
+    pub name: String,
+    pub editable_group: bool,
+    pub properties: Vec<BimPropertyReadModel>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -64,7 +76,7 @@ pub struct BimPropertiesReadModel {
     pub targets: Vec<SceneAnchor>,
     #[serde(default)]
     pub selection_revision: u64,
-    pub properties: Vec<BimPropertyReadModel>,
+    pub groups: Vec<BimPropertyGroupReadModel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

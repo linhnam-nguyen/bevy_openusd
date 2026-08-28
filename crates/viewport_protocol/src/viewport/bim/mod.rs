@@ -19,7 +19,7 @@ pub use query::{
     BimFieldKey, BimPageRequest, BimSearchQuery, ClassificationLevel, ClassificationRecipe,
 };
 pub use read_model::{
-    BimObjectMatch, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyNameMatch,
-    BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchResult,
-    BimUnitOption, CommonValue,
+    BimObjectMatch, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyGroupReadModel,
+    BimPropertyNameMatch, BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow,
+    BimSearchResult, BimUnitOption, CommonValue,
 };

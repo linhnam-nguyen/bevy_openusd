@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 use usd_model::{MeasurementMetadata, SemanticProperty};
 use usd_semantic::UnitRegistry;
 use viewport_protocol::{
-    BimPropertiesReadModel, BimPropertyGroupId, BimPropertyReadModel, BimUnitOption, CommonValue,
-    SelectionReadModel,
+    BimPropertiesReadModel, BimPropertyGroupId, BimPropertyGroupReadModel, BimPropertyReadModel,
+    BimUnitOption, CommonValue, SelectionReadModel,
 };
 
 use super::{BimQueryError, BimReadPolicy, BimReadService};
@@ -39,7 +39,7 @@ pub(super) fn read_properties<'snapshot>(
         return Ok(BimPropertiesReadModel {
             targets: Vec::new(),
             selection_revision,
-            properties: Vec::new(),
+            groups: Vec::new(),
         });
     }
 
@@ -65,14 +65,24 @@ pub(super) fn read_properties<'snapshot>(
         });
     }
 
-    let properties = common
+    let mut grouped: BTreeMap<BimPropertyGroupId, Vec<BimPropertyReadModel>> = BTreeMap::new();
+    for (key, values) in common {
+        let property = project_property(key, &values, policy);
+        grouped.entry(property.group_id).or_default().push(property);
+    }
+    let groups = grouped
         .into_iter()
-        .map(|(key, values)| project_property(key, &values, policy))
+        .map(|(id, properties)| BimPropertyGroupReadModel {
+            id,
+            name: property_group_name(id).to_owned(),
+            editable_group: policy.allow_value_edit,
+            properties,
+        })
         .collect();
     Ok(BimPropertiesReadModel {
         targets: targets.to_vec(),
         selection_revision,
-        properties,
+        groups,
     })
 }
 
@@ -104,6 +114,12 @@ fn project_property(
         })
         .unwrap_or_default();
     let group_id = property_group_id(&key);
+    let current_display_unit = measurement.as_ref().and_then(|metadata| {
+        metadata
+            .source_unit
+            .clone()
+            .or_else(|| Some(metadata.canonical_unit.clone()))
+    });
 
     BimPropertyReadModel {
         key,
@@ -119,6 +135,7 @@ fn project_property(
             .collect(),
         measurement,
         units,
+        current_display_unit,
         editable: policy.allow_value_edit,
     }
 }
@@ -128,6 +145,13 @@ fn property_group_id(key: &str) -> BimPropertyGroupId {
         BimPropertyGroupId::SourceFallback
     } else {
         BimPropertyGroupId::Semantic
+    }
+}
+
+fn property_group_name(group_id: BimPropertyGroupId) -> &'static str {
+    match group_id {
+        BimPropertyGroupId::Semantic => "Semantic",
+        BimPropertyGroupId::SourceFallback => "<Ungrouped>",
     }
 }
 

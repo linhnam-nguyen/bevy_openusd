@@ -63,14 +63,20 @@ mod tests {
         assert!(diff.is_none());
         assert_eq!(properties.targets, vec![target]);
         assert_eq!(properties.selection_revision, revision);
-        assert!(properties.properties.iter().any(|property| {
-            property.key == "Width"
-                && property.editable
-                && property.units.iter().any(|unit| {
-                    unit.unit.as_str() == "mm"
-                        && (unit.scale_to_canonical - 0.001).abs() < f64::EPSILON
-                        && unit.offset_to_canonical.abs() < f64::EPSILON
+        assert!(
+            properties
+                .groups
+                .iter()
+                .flat_map(|group| group.properties.iter())
+                .any(|property| {
+                    property.key == "Width"
+                        && property.editable
+                        && property.units.iter().any(|unit| {
+                            unit.unit.as_str() == "mm"
+                                && (unit.scale_to_canonical - 0.001).abs() < f64::EPSILON
+                                && unit.offset_to_canonical.abs() < f64::EPSILON
+                        })
                 })
-        }));
+        );
     }
 }
