@@ -81,3 +81,33 @@ fn plugin_publishes_one_batch_for_later_consumers() {
             .is_none()
     );
 }
+
+#[test]
+fn project_style_stage_authoring_feeds_one_shared_batch() {
+    let stage = Stage::builder()
+        .in_memory("project-style-authoring.usda")
+        .expect("in-memory stage");
+    let live = LiveStage::new(stage);
+
+    // Project/OpenUSD authoring uses the same Stage reference that owns the
+    // installed sink; it does not maintain a parallel renderer invalidator.
+    crate::authoring::define_prim(&live.stage, "/ProjectRoot", "Xform")
+        .expect("author Project root");
+    crate::authoring::define_prim(&live.stage, "/ProjectRoot/Model", "Xform")
+        .expect("author Project Model");
+
+    let batch = live.drain_change_batch().expect("one Project change batch");
+    assert_eq!(batch.revision, LiveRevision(1));
+    assert!(batch.has_resync());
+    assert!(batch.is_path_under_resync("/ProjectRoot/Model"));
+
+    // These are the same owned batch/revision that projection, semantic sync,
+    // and recovery receive after the one authoritative drain.
+    let projection_batch = batch.clone();
+    let semantic_batch = batch.clone();
+    let recovery_batch = batch;
+    assert_eq!(projection_batch, semantic_batch);
+    assert_eq!(semantic_batch, recovery_batch);
+    assert_eq!(live.current_revision(), LiveRevision(1));
+    assert!(live.drain_change_batch().is_none());
+}
