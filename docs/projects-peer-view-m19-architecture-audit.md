@@ -1,4 +1,4 @@
-# M19-C3++ Projects Phase-2 architecture audit
+# M19-C3+++ Projects Phase-2 architecture audit
 
 This packet records the final M19 repair evidence. M19 freezes the existing
 Projects Phase-2 workflow and production boundary; it does not add another
@@ -6,12 +6,12 @@ product surface, renderer owner, or transport authority.
 
 ## Checkpoint ledger
 
-| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 | M19-C1++ | M19-C3++ |
-| --- | --- | --- | --- | --- | --- | --- |
-| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | `9295c63c2cf6fdc2f1e798370acc41d606f9927b` | `4e18fabdf6515455bb0adce34f37bb7712fc0414` | this commit |
-| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0922b4c9ce06ca7751186a945313fecf6a` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | `c63f8dd54a5f24c413dfb8d735e57f4ec4ddb16d` | `8c6d479ccfcfabc266850caeb33f5fddf8c29d1c` | this commit |
+| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 | M19-C1++ | M19-C3++ | M19-C1+++ | M19-C3+++ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | `9295c63c2cf6fdc2f1e798370acc41d606f9927b` | `4e18fabdf6515455bb0adce34f37bb7712fc0414` | `8f3d9ee3fc525a784ec44bbf7f22bab97b13192e` | `f75fea096134c04d6cf9e431972243c403760fb0` | this commit |
+| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0922b4c9ce06ca7751186a945313fecf6a` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | `c63f8dd54a5f24c413dfb8d735e57f4ec4ddb16d` | `8c6d479ccfcfabc266850caeb33f5fddf8c29d1c` | `57739cd09789a7eb4e36e3c2dfac9aab59cb0e8e` | `617793d215e0b6ad3dd05481d9f32c6edf83fff6` | this commit |
 
-The implementation-plan ledger records the exact M19-C3++ tip SHAs after the
+The implementation-plan ledger records the exact M19-C3+++ tip SHAs after the
 audit-packet commits are pushed.
 
 ## Final repair contract
@@ -21,13 +21,16 @@ performs dirty-worktree preflight, checks out the requested existing local
 branch without stash, discard, force, or rollback, then validates that
 branch's Project metadata.
 
-If checkout succeeds but the target branch has invalid or mismatched Project
-metadata, the service returns `BranchProjectInvalid` carrying the actual
-post-checkout `RepositorySummary`. The repository remains on that branch so
-the user can recover explicitly. The UI replaces repository truth with that
-summary, removes the retained old tree from presentation, marks Project
-content unavailable, and keeps the diagnostic. Generation and ProjectId
-guards still reject stale completions.
+If checkout succeeds but any target Project projection is invalid, the service
+returns `BranchProjectInvalid` carrying the actual post-checkout
+`RepositorySummary` whenever repository truth is readable. If the manifest is
+valid but a Scene/Model projection or repository summary cannot be read, it
+returns the distinct `BranchProjectTruthUnavailable` signal. The repository
+remains on that branch so the user can recover explicitly. The UI replaces
+repository truth with the structured summary when available; otherwise it
+invalidates the old repository and tree authority, marks Project content
+unavailable, and keeps the diagnostic. Generation and ProjectId guards still
+reject stale completions.
 
 The Git adapter also treats ignored `.usdhub/cache` and `.usdhub/recovery`
 files as local implementation state rather than user edits. Ignored-only
@@ -46,8 +49,12 @@ The M19 repair adds:
   protection, valid switching, and no stash/discard behavior;
 - Project-service coverage proving an invalid target branch reports the actual
   checked-out branch and remains recoverable by switching to a valid branch;
+- Project-service coverage proving a corrupt Scene document after checkout
+  cannot surface the old branch as authoritative;
 - UI coverage proving an invalid target branch cannot keep the old Scene/Model
   hierarchy authoritative while the actual branch summary is displayed;
+- UI coverage proving unavailable post-checkout repository truth removes the
+  old repository, Scene/Model tree, and placement presentation;
 - generation-aware stale branch completion and active/inactive activation
   coverage retained from the prior M19 checkpoints.
 
@@ -121,12 +128,12 @@ lines). No broad refactor or unrelated source-layout cleanup was introduced.
 - Backend and UI `cargo fmt --all -- --check`: passed.
 - Backend `cargo check --workspace --no-default-features`: passed.
 - UI `cargo check --workspace`: passed.
-- Backend `cargo test --workspace --no-default-features`: passed; 360 unit
+- Backend `cargo test --workspace --no-default-features`: passed; 361 unit
   tests passed, 4 were ignored, and integration suites/doctests passed.
-- UI `cargo test --workspace`: passed; 297 desktop tests passed, 1 was
+- UI `cargo test --workspace`: passed; 298 desktop tests passed, 1 was
   ignored, and 11 viewport-client tests passed.
-- Focused repair tests passed: `usd_git` 5, Project service 3, UI branch
-  controller 4.
+- Focused repair tests passed: `usd_git` 5, Project service 4, UI branch
+  controller 5.
 - `cargo clippy -p project_protocol --all-targets -- -D warnings`: passed;
   the prior `ProjectListItem` large-enum diagnostic is resolved.
 - Backend source-size audit: 584 files, 44 warnings, 0 failures.
