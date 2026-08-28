@@ -157,6 +157,25 @@ pub struct ClassificationColorEntry {
     pub color: ColorRgb8,
 }
 
+/// Browser/application intent for the backend-owned classification color plan.
+/// The browser selects a source and level; it never submits entries derived
+/// from whatever lazy hierarchy pages happen to be loaded.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ClassificationColorIntent {
+    pub source: ClassificationColorSource,
+    pub active_level: Option<String>,
+    pub generation: u64,
+}
+
+/// Mutually exclusive classification color source requested by the UI.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ClassificationColorSource {
+    None,
+    Profile(String),
+    Auto,
+}
+
 /// One bounded page of direct provider children.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HierarchyChildrenPage {

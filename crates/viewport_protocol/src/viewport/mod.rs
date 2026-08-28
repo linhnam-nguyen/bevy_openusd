@@ -15,9 +15,9 @@ mod read_models;
 
 pub use bim::*;
 pub use hierarchy::{
-    ClassificationColorEntry, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind,
-    HierarchyNodeReadModel, HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch,
-    HierarchySource,
+    ClassificationColorEntry, ClassificationColorIntent, ClassificationColorSource,
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel,
+    HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch, HierarchySource,
 };
 
 pub use commands::{ViewportCommand, ViewportCommandEnvelope};

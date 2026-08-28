@@ -21,6 +21,13 @@ struct ClassificationNode {
 pub(super) struct ClassificationIndex {
     nodes: Vec<ClassificationNode>,
     child_lookup: HashMap<(usize, String), usize>,
+    color_groups: Vec<ClassificationColorGroup>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ClassificationColorGroup {
+    pub(super) anchor: SceneAnchor,
+    pub(super) levels: Vec<(String, String)>,
 }
 
 impl ClassificationIndex {
@@ -28,6 +35,7 @@ impl ClassificationIndex {
         let mut index = Self {
             nodes: Vec::new(),
             child_lookup: HashMap::new(),
+            color_groups: Vec::with_capacity(snapshot.entities.len()),
         };
 
         let property_fields = recipe
@@ -42,14 +50,20 @@ impl ClassificationIndex {
         for entity in snapshot.entities.values() {
             let properties = indexed_properties(entity, &property_fields);
             let mut parent = None;
+            let mut levels = Vec::with_capacity(recipe.levels.len());
             for (level_index, level) in recipe.levels.iter().enumerate() {
                 let value = group_value(entity, &level.field, &properties);
+                levels.push((level.id.clone(), value.clone()));
                 let node_index = index.get_or_insert_node(parent, level_index, level, value);
                 parent = Some(node_index);
             }
             if let Some(leaf_parent) = parent {
                 index.nodes[leaf_parent].leaves.push(entity.key.clone());
             }
+            index.color_groups.push(ClassificationColorGroup {
+                anchor: SceneAnchor::active_session(entity.prim_path.clone()),
+                levels,
+            });
         }
 
         for node_index in 0..index.nodes.len() {
@@ -59,6 +73,10 @@ impl ClassificationIndex {
             index.nodes[node_index].leaves.sort_unstable();
         }
         index
+    }
+
+    pub(super) fn color_groups(&self) -> &[ClassificationColorGroup] {
+        &self.color_groups
     }
 
     pub(super) fn read_model(

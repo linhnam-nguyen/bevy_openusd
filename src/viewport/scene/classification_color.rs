@@ -10,33 +10,14 @@ use std::collections::{HashMap, HashSet};
 use bevy::ecs::hierarchy::Children;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
-use viewport_protocol::{ClassificationColorEntry, ColorRgb8};
+use viewport_protocol::ColorRgb8;
 
 use crate::viewport::api::SceneAnchorIndex;
 
+use super::ClassificationColorPlan;
 use super::section_box_clipping::SectionClipUnderlyingMaterial;
 use super::selection_color::SelectionBaseMaterial;
 use super::selection_outline::collect_mesh_descendants;
-
-/// Temporary color plan received from the BIM presentation layer.
-#[derive(Resource, Debug, Default)]
-pub(in crate::viewport) struct ClassificationColorPlan {
-    generation: u64,
-    revision: u64,
-    entries: Vec<ClassificationColorEntry>,
-}
-
-impl ClassificationColorPlan {
-    pub(in crate::viewport) fn replace(
-        &mut self,
-        generation: u64,
-        entries: Vec<ClassificationColorEntry>,
-    ) {
-        self.generation = generation;
-        self.entries = entries;
-        self.revision = self.revision.saturating_add(1);
-    }
-}
 
 /// Instrumentation for the M5 idle-work and restore evidence.
 #[derive(Resource, Debug, Default)]
@@ -92,12 +73,12 @@ pub(in crate::viewport) fn sync_classification_color_overrides(
     >,
 ) {
     let scene_revision = scene_index.revision();
-    if *last_plan_revision == plan.revision && *last_scene_revision == scene_revision {
+    if *last_plan_revision == plan.revision() && *last_scene_revision == scene_revision {
         return;
     }
 
     let mut desired = HashMap::<Entity, ColorRgb8>::new();
-    for entry in &plan.entries {
+    for entry in plan.entries() {
         let Some(root) = scene_index.resolve(&entry.anchor) else {
             continue;
         };
@@ -175,9 +156,9 @@ pub(in crate::viewport) fn sync_classification_color_overrides(
 
     diagnostics.applied_entities = applied_entities;
     diagnostics.rebuilds = diagnostics.rebuilds.saturating_add(1);
-    diagnostics.last_generation = Some(plan.generation);
+    diagnostics.last_generation = Some(plan.generation());
     diagnostics.last_scene_revision = Some(scene_revision);
-    *last_plan_revision = plan.revision;
+    *last_plan_revision = plan.revision();
     *last_scene_revision = scene_revision;
 }
 

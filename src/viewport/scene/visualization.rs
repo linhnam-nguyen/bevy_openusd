@@ -105,6 +105,7 @@ impl Plugin for OverlaysPlugin {
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_render_mode,
+                    super::refresh_classification_color_plan,
                     super::sync_classification_color_overrides,
                     update_hover_target,
                     sync_selection_color_overrides,

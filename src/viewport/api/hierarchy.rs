@@ -103,6 +103,18 @@ impl CurrentHierarchyProjection {
         }
     }
 
+    /// Installs provider-owned immutable parts without cloning the read model.
+    /// The page index must have been built from the same `Arc` contents.
+    pub(crate) fn from_shared_parts(
+        read_model: Arc<HierarchyReadModel>,
+        page_index: HierarchyPageIndex,
+    ) -> Self {
+        Self {
+            read_model,
+            page_index,
+        }
+    }
+
     pub(crate) fn source(&self) -> HierarchySource {
         self.read_model.source
     }

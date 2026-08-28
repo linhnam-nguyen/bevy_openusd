@@ -136,20 +136,14 @@ impl ViewportCommand {
                     recipe.validate()?;
                 }
             },
-            Self::SetClassificationColorPlan { entries, .. } => {
-                if entries.len() > super::constants::MAX_CLASSIFICATION_COLOR_ENTRIES {
-                    return Err(ProtocolValidationError::InvalidInput {
-                        field: "classification_color.entries",
-                    });
+            Self::SetClassificationColorPlan { intent } => {
+                if let Some(level) = intent.active_level.as_deref() {
+                    text("classification_color.active_level", level)?;
                 }
-                let mut anchors = HashSet::with_capacity(entries.len());
-                for entry in entries {
-                    entry.anchor.validate()?;
-                    if !anchors.insert(&entry.anchor) {
-                        return Err(ProtocolValidationError::InvalidInput {
-                            field: "classification_color.anchor",
-                        });
-                    }
+                if let super::hierarchy::ClassificationColorSource::Profile(profile) =
+                    &intent.source
+                {
+                    text("classification_color.profile", profile)?;
                 }
             }
             Self::DefinePrim {

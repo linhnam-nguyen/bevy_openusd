@@ -1,7 +1,7 @@
 use viewport_protocol::{
-    BimFieldKey, ClassificationColorEntry, ClassificationLevel, ClassificationRecipe, ColorRgb8,
-    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
-    HierarchySource, MAX_CLASSIFICATION_COLOR_ENTRIES, SceneAnchor, ViewportCommand,
+    BimFieldKey, ClassificationColorIntent, ClassificationColorSource, ClassificationLevel,
+    ClassificationRecipe, HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel,
+    HierarchyReadModel, HierarchySource, ViewportCommand,
 };
 
 #[test]
@@ -126,16 +126,14 @@ fn generic_hierarchy_commands_validate_provider_ids_and_bounds() {
 }
 
 #[test]
-fn classification_color_plan_validates_anchor_identity_and_bounds() {
-    let anchor = SceneAnchor::active_session("/World/Wall");
-    let entry = ClassificationColorEntry {
-        anchor: anchor.clone(),
-        color: ColorRgb8::new(0x12, 0x34, 0x56),
-    };
+fn classification_color_plan_validates_backend_owned_intent() {
     assert!(
         ViewportCommand::SetClassificationColorPlan {
-            generation: 4,
-            entries: vec![entry.clone()],
+            intent: ClassificationColorIntent {
+                source: ClassificationColorSource::Profile("default".to_owned()),
+                active_level: Some("category".to_owned()),
+                generation: 4,
+            },
         }
         .validate()
         .is_ok()
@@ -143,8 +141,11 @@ fn classification_color_plan_validates_anchor_identity_and_bounds() {
 
     assert!(
         ViewportCommand::SetClassificationColorPlan {
-            generation: 4,
-            entries: vec![entry.clone(), entry.clone()],
+            intent: ClassificationColorIntent {
+                source: ClassificationColorSource::Auto,
+                active_level: Some("   ".to_owned()),
+                generation: 4,
+            },
         }
         .validate()
         .is_err()
@@ -152,8 +153,11 @@ fn classification_color_plan_validates_anchor_identity_and_bounds() {
 
     assert!(
         ViewportCommand::SetClassificationColorPlan {
-            generation: 4,
-            entries: vec![entry; MAX_CLASSIFICATION_COLOR_ENTRIES + 1],
+            intent: ClassificationColorIntent {
+                source: ClassificationColorSource::Profile(String::new()),
+                active_level: None,
+                generation: 4,
+            },
         }
         .validate()
         .is_err()

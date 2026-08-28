@@ -5,6 +5,7 @@
 
 pub(crate) mod authoring;
 mod classification;
+mod classification_color;
 pub(super) mod diff;
 mod properties;
 mod search;
@@ -28,13 +29,13 @@ use std::sync::Arc;
 
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
-    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationRecipe,
-    HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel, ProtocolValidationError,
-    SceneAnchor, SelectionReadModel,
+    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationColorEntry,
+    ClassificationColorIntent, ClassificationRecipe, HierarchyChildrenPage, HierarchyNodeId,
+    HierarchyReadModel, ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
 
 use self::classification::ClassificationIndex;
-use crate::viewport::api::HierarchyPageIndex;
+use crate::viewport::api::{CurrentHierarchyProjection, HierarchyPageIndex};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BimReadPolicy {
@@ -84,6 +85,7 @@ struct ClassificationCache {
     recipe: ClassificationRecipe,
     read_model: Arc<HierarchyReadModel>,
     page_index: HierarchyPageIndex,
+    color_groups: Arc<Vec<classification::ClassificationColorGroup>>,
     build_count: u64,
 }
 
@@ -159,6 +161,49 @@ impl<'snapshot> BimReadService<'snapshot> {
         ))
     }
 
+    pub(crate) fn classification_projection(
+        mut self,
+        recipe: &ClassificationRecipe,
+    ) -> Result<CurrentHierarchyProjection, BimQueryError> {
+        self.ensure_classification_cache(recipe)?;
+        let cache = self
+            .classification_cache
+            .take()
+            .expect("classification cache is initialized");
+        Ok(CurrentHierarchyProjection::from_shared_parts(
+            cache.read_model,
+            cache.page_index,
+        ))
+    }
+
+    pub(crate) fn classification_color_entries(
+        &mut self,
+        recipe: &ClassificationRecipe,
+        intent: &ClassificationColorIntent,
+    ) -> Result<Vec<ClassificationColorEntry>, BimQueryError> {
+        recipe.validate()?;
+        if !matches!(
+            intent.source,
+            viewport_protocol::ClassificationColorSource::None
+        ) && !recipe
+            .levels
+            .iter()
+            .any(|level| Some(level.id.as_str()) == intent.active_level.as_deref())
+        {
+            return Err(BimQueryError::Invalid(
+                ProtocolValidationError::InvalidInput {
+                    field: "classification_color.active_level",
+                },
+            ));
+        }
+        self.ensure_classification_cache(recipe)?;
+        let cache = self
+            .classification_cache
+            .as_ref()
+            .expect("classification cache is initialized");
+        classification_color::entries(&cache.color_groups, intent)
+    }
+
     fn ensure_classification_cache(
         &mut self,
         recipe: &ClassificationRecipe,
@@ -172,16 +217,16 @@ impl<'snapshot> BimReadService<'snapshot> {
                 .classification_cache
                 .as_ref()
                 .map_or(1, |cache| cache.build_count.saturating_add(1));
-            let read_model = Arc::new(
-                ClassificationIndex::build(self.snapshot, recipe)
-                    .read_model(self.snapshot, build_count),
-            );
+            let index = ClassificationIndex::build(self.snapshot, recipe);
+            let color_groups = Arc::new(index.color_groups().to_vec());
+            let read_model = Arc::new(index.read_model(self.snapshot, build_count));
             let page_index = HierarchyPageIndex::from_read_model(&read_model);
             self.classification_cache = Some(ClassificationCache {
                 snapshot_id: self.snapshot.snapshot_id.clone(),
                 recipe: recipe.clone(),
                 read_model,
                 page_index,
+                color_groups,
                 build_count,
             });
         }

@@ -17,8 +17,8 @@ use crate::viewport::api::{
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::physics::PhysicsActive;
-use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Drains hierarchy-search-worker responses and publishes search results.
@@ -242,14 +242,8 @@ pub(super) fn dispatch_scene_query_commands(
                         semantic.as_ref().and_then(|state| state.snapshot()),
                     ) {
                         (Some(recipe), Some(snapshot)) => {
-                            let mut service = crate::viewport::bim::BimReadService::new(snapshot);
-                            service
-                                .classification_snapshot(recipe)
-                                .map(|read_model| {
-                                    CurrentHierarchyProjection::from_read_model(
-                                        (*read_model).clone(),
-                                    )
-                                })
+                            crate::viewport::bim::BimReadService::new(snapshot)
+                                .classification_projection(recipe)
                                 .map_err(|error| error.to_string())
                         }
                         _ => Err(
@@ -277,6 +271,7 @@ pub(super) fn refresh_active_hierarchy_projection(
     provider: Res<ActiveHierarchyProvider>,
     semantic: Res<crate::viewport::semantic::SemanticSyncState>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
+    mut color_plan: Option<ResMut<ClassificationColorPlan>>,
 ) {
     if provider.source() != HierarchySource::BimClassification || !semantic.is_changed() {
         return;
@@ -286,10 +281,19 @@ pub(super) fn refresh_active_hierarchy_projection(
         return;
     };
     let mut service = crate::viewport::bim::BimReadService::new(snapshot);
-    let Ok(read_model) = service.classification_snapshot(recipe) else {
+    let color_intent = color_plan.as_ref().and_then(|plan| plan.intent());
+    let color_entries = color_intent.as_ref().map(|intent| {
+        service
+            .classification_color_entries(recipe, intent)
+            .unwrap_or_default()
+    });
+    let Ok(projection) = service.classification_projection(recipe) else {
         return;
     };
-    *current_projection = CurrentHierarchyProjection::from_read_model((*read_model).clone());
+    *current_projection = projection;
+    if let (Some(plan), Some(entries)) = (color_plan.as_deref_mut(), color_entries) {
+        plan.replace_entries(entries);
+    }
 }
 
 /// Emits lifecycle changes independently of who initiated the load. That

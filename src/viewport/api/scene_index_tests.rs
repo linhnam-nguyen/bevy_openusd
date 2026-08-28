@@ -1,4 +1,5 @@
 use super::*;
+use crate::viewport::api::HierarchyPageIndex;
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
@@ -63,6 +64,23 @@ fn hierarchy_snapshot_reuses_cached_projection() {
     let second = projection.snapshot();
 
     assert!(std::sync::Arc::ptr_eq(&first, &second));
+}
+
+#[test]
+fn shared_provider_projection_installs_arc_and_matching_page_index() {
+    let read_model = std::sync::Arc::new(viewport_protocol::HierarchyReadModel {
+        source: viewport_protocol::HierarchySource::BimClassification,
+        revision: 3,
+        nodes: Vec::new(),
+    });
+    let page_index = HierarchyPageIndex::from_read_model(&read_model);
+    let projection = CurrentHierarchyProjection::from_shared_parts(
+        std::sync::Arc::clone(&read_model),
+        page_index,
+    );
+
+    assert!(std::sync::Arc::ptr_eq(&read_model, &projection.snapshot()));
+    assert_eq!(projection.children_page(None, 0, 1).unwrap().total, 0);
 }
 
 #[test]

@@ -306,10 +306,7 @@ pub(super) fn apply_viewport_commands(
                 state.viewer_settings.0.selection = settings;
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
-            ViewportCommand::SetClassificationColorPlan {
-                generation,
-                entries,
-            } => {
+            ViewportCommand::SetClassificationColorPlan { intent } => {
                 let Some(plan) = state.classification_color_plan.as_deref_mut() else {
                     reject(
                         &mut outbox,
@@ -318,7 +315,9 @@ pub(super) fn apply_viewport_commands(
                     );
                     continue;
                 };
-                plan.replace(generation, entries);
+                if let Err(error) = plan.accept_intent(intent) {
+                    reject(&mut outbox, request_id, error.to_owned());
+                }
             }
             ViewportCommand::SetSectionBox { enabled } => {
                 state.viewer_settings.set_section_box_enabled(enabled);
