@@ -113,6 +113,34 @@ impl ProjectActivationReply {
             },
         }
     }
+
+    /// Returns whether this reply still belongs to the exact activation
+    /// request that is awaiting completion. Callers must not accept a reply
+    /// by generation alone because another Project may reuse that number.
+    pub fn matches_command(&self, command: &ProjectActivationCommand) -> bool {
+        if self.protocol_version != PROJECT_ACTIVATION_PROTOCOL_VERSION
+            || self.request_id != command.request_id
+        {
+            return false;
+        }
+        match &self.result {
+            ProjectActivationResult::Activated {
+                generation,
+                project_id,
+                root,
+            }
+            | ProjectActivationResult::Failed {
+                generation,
+                project_id,
+                root,
+                ..
+            } => {
+                *generation == command.generation
+                    && *project_id == command.project_id
+                    && root == &command.root
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -136,5 +164,22 @@ mod tests {
         assert_eq!(decoded, ProjectActivationReply::activated(&command));
         assert!(!encoded.contains("/Users/"));
         assert!(!encoded.contains("PathBuf"));
+    }
+
+    #[test]
+    fn activation_reply_requires_request_project_root_and_generation_match() {
+        let command = ProjectActivationCommand::new(
+            "activation-1",
+            4,
+            ProjectId::new_v4(),
+            ProjectRoot::Scene(SceneId::new_v4()),
+        );
+        let mut reply = ProjectActivationReply::activated(&command);
+        assert!(reply.matches_command(&command));
+
+        if let ProjectActivationResult::Activated { generation, .. } = &mut reply.result {
+            *generation += 1;
+        }
+        assert!(!reply.matches_command(&command));
     }
 }
