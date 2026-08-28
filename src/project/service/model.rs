@@ -22,6 +22,41 @@ pub(super) fn publish_model(
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectModelWriteResponse, ProjectWriteError> {
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Validating,
+    });
+    let result = publish_model_inner(
+        service,
+        preparation,
+        project_id,
+        target,
+        source,
+        operation_id.clone(),
+        generation,
+    );
+    service.progress.publish(ProjectImportProgress {
+        operation_id,
+        generation,
+        phase: if result.is_ok() {
+            ProjectImportPhase::Completed
+        } else {
+            ProjectImportPhase::Failed
+        },
+    });
+    result
+}
+
+fn publish_model_inner(
+    service: &mut ProjectApplicationService,
+    preparation: &ProjectModelPreparationQueue,
+    project_id: usd_project::ProjectId,
+    target: ProjectWriteTarget,
+    source: &Path,
+    operation_id: String,
+    generation: u64,
+) -> Result<ProjectModelWriteResponse, ProjectWriteError> {
     let publisher = service.publication_coordinator.publisher(project_id);
     let _publication = publisher
         .lock()
@@ -101,6 +136,11 @@ pub(super) fn publish_model(
     let placement = parent_scene_id.map(|parent_scene_id| ModelPlacement {
         parent_scene_id,
         parent_members: &parent_members,
+    });
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Publishing,
     });
     let published = publish_model_wrapper_atomic(ModelWrapperRequest {
         project_root,

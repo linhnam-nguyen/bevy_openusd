@@ -34,6 +34,7 @@ pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
     pub(super) publication_coordinator: ProjectPublicationCoordinator,
     pub(super) stage_mutations: ProjectStageMutationQueue,
+    pub(super) progress: ProjectImportProgressStore,
 }
 
 /// Shared admission state for non-idempotent publication mutations.
@@ -62,10 +63,12 @@ mod inspection;
 mod lifecycle;
 mod model;
 mod model_preparation;
+mod progress;
 mod scene;
 mod scene_adoption;
 mod stage_mutation;
 pub use model_preparation::ProjectModelPreparationQueue;
+pub use progress::ProjectImportProgressStore;
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
@@ -97,11 +100,28 @@ impl ProjectApplicationService {
         publication_coordinator: ProjectPublicationCoordinator,
         stage_mutations: ProjectStageMutationQueue,
     ) -> Result<Self, ProjectReadError> {
+        Self::open_with_project_state_and_progress(
+            registry_path,
+            publication_coordinator,
+            stage_mutations,
+            ProjectImportProgressStore::default(),
+        )
+    }
+
+    /// Open the service with all host-owned shared Project state, including
+    /// the progress status observed by the native host.
+    pub fn open_with_project_state_and_progress(
+        registry_path: impl Into<PathBuf>,
+        publication_coordinator: ProjectPublicationCoordinator,
+        stage_mutations: ProjectStageMutationQueue,
+        progress: ProjectImportProgressStore,
+    ) -> Result<Self, ProjectReadError> {
         WorkspaceRegistry::load(registry_path)
             .map(|registry| Self {
                 registry,
                 publication_coordinator,
                 stage_mutations,
+                progress,
             })
             .map_err(|_| ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,

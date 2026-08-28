@@ -10,7 +10,10 @@ use usd_project::{
     StorageKey,
 };
 
-use super::{ProjectApplicationService, ProjectPublicationCoordinator, ProjectStageMutationQueue};
+use super::{
+    ProjectApplicationService, ProjectImportProgressStore, ProjectPublicationCoordinator,
+    ProjectStageMutationQueue,
+};
 use crate::project::catalog::{
     manifest_store::ManifestStore, workspace_registry::WorkspaceRegistry,
 };
@@ -23,6 +26,7 @@ fn unknown_project_id_returns_typed_not_found_without_a_path() {
         registry,
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
     };
     let project_id = ProjectId::new_v4();
 
@@ -54,6 +58,7 @@ fn list_projects_returns_owned_summaries_from_the_registry() {
         registry,
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
     };
 
     let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));
@@ -103,6 +108,7 @@ fn tree_projection_keeps_authored_model_placement_identity() {
         registry,
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
     };
 
     let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(

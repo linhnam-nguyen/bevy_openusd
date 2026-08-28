@@ -14,6 +14,8 @@ use project_protocol::{
 
 use crate::project::model_import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
 
+use super::ProjectImportProgressStore;
+
 struct PreparationJob {
     operation_id: String,
     generation: u64,
@@ -61,22 +63,32 @@ impl PreparedState {
 pub struct ProjectModelPreparationQueue {
     sender: mpsc::SyncSender<PreparationJob>,
     prepared: Arc<Mutex<PreparedState>>,
+    progress: ProjectImportProgressStore,
 }
 
 impl Default for ProjectModelPreparationQueue {
     fn default() -> Self {
-        let (sender, receiver) = mpsc::sync_channel(PREPARATION_CAPACITY);
-        let prepared = Arc::new(Mutex::new(PreparedState::new()));
-        let worker_prepared = Arc::clone(&prepared);
-        std::thread::Builder::new()
-            .name("usdhub-model-preparation".to_owned())
-            .spawn(move || worker_loop(receiver, worker_prepared))
-            .expect("Model preparation worker must start");
-        Self { sender, prepared }
+        Self::with_progress(ProjectImportProgressStore::default())
     }
 }
 
 impl ProjectModelPreparationQueue {
+    pub fn with_progress(progress: ProjectImportProgressStore) -> Self {
+        let (sender, receiver) = mpsc::sync_channel(PREPARATION_CAPACITY);
+        let prepared = Arc::new(Mutex::new(PreparedState::new()));
+        let worker_prepared = Arc::clone(&prepared);
+        let worker_progress = progress.clone();
+        std::thread::Builder::new()
+            .name("usdhub-model-preparation".to_owned())
+            .spawn(move || worker_loop(receiver, worker_prepared, worker_progress))
+            .expect("Model preparation worker must start");
+        Self {
+            sender,
+            prepared,
+            progress,
+        }
+    }
+
     pub fn prepare(
         &self,
         operation_id: String,
@@ -90,7 +102,17 @@ impl ProjectModelPreparationQueue {
             source,
             reply,
         };
+        self.progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase: ProjectImportPhase::Queued,
+        });
         if self.sender.try_send(job).is_err() {
+            self.progress.publish(ProjectImportProgress {
+                operation_id: operation_id.clone(),
+                generation,
+                phase: ProjectImportPhase::Failed,
+            });
             return ProjectModelPreparationResult {
                 operation_id: operation_id.clone(),
                 generation,
@@ -121,13 +143,27 @@ impl ProjectModelPreparationQueue {
     }
 }
 
-fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<PreparedState>>) {
+fn worker_loop(
+    receiver: mpsc::Receiver<PreparationJob>,
+    prepared: Arc<Mutex<PreparedState>>,
+    progress: ProjectImportProgressStore,
+) {
     let registry = ModelImporterRegistry::default();
     let importer = registry
         .importer_for(&usd_project::ModelSourceKind::Usd)
         .expect("USD Model importer is registered");
     while let Ok(job) = receiver.recv() {
+        progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase: ProjectImportPhase::Inspecting,
+        });
         let inspection = importer.inspect(&job.source).and_then(|inspection| {
+            progress.publish(ProjectImportProgress {
+                operation_id: job.operation_id.clone(),
+                generation: job.generation,
+                phase: ProjectImportPhase::Preparing,
+            });
             let prepared_model = importer.prepare(ModelImportRequest {
                 source: job.source,
                 inspection,
@@ -147,6 +183,11 @@ fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<Pre
         } else {
             ProjectImportPhase::Failed
         };
+        progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase,
+        });
         let _ = job.reply.send(ProjectModelPreparationResult {
             operation_id: job.operation_id.clone(),
             generation: job.generation,
@@ -177,13 +218,18 @@ mod tests {
             "#usda 1.0\n(\n defaultPrim = \"Asset\"\n)\ndef Xform \"Asset\" (kind = \"component\") {}\n",
         )
         .unwrap();
-        let queue = ProjectModelPreparationQueue::default();
+        let progress = ProjectImportProgressStore::default();
+        let queue = ProjectModelPreparationQueue::with_progress(progress.clone());
         let result = queue.prepare("operation-1".to_owned(), 4, source);
 
         assert_eq!(result.operation_id, "operation-1");
         assert_eq!(result.generation, 4);
         assert!(result.inspection.is_ok());
         assert!(queue.take_prepared("operation-1", 4).is_some());
+        assert_eq!(
+            progress.latest("operation-1", 4).unwrap().phase,
+            ProjectImportPhase::Preparing
+        );
     }
 
     #[test]

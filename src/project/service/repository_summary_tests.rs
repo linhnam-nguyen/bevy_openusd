@@ -5,8 +5,8 @@ use tempfile::tempdir;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot};
 
 use super::{
-    ManifestStore, ProjectApplicationService, ProjectPublicationCoordinator,
-    ProjectStageMutationQueue, WorkspaceRegistry,
+    ManifestStore, ProjectApplicationService, ProjectImportProgressStore,
+    ProjectPublicationCoordinator, ProjectStageMutationQueue, WorkspaceRegistry,
 };
 
 #[test]
@@ -40,6 +40,7 @@ fn repository_summary_projects_git_state_without_backend_handles() {
         registry,
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
     };
 
     let read = || {
@@ -106,6 +107,7 @@ fn repository_summary_preserves_an_unborn_symbolic_branch() {
         registry,
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
     };
     let reply = service.execute(ProjectReadCommand::new(
         ProjectReadRequest::GetProjectRepositorySummary(project_id),

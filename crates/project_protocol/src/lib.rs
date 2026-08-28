@@ -22,7 +22,10 @@ pub use model_preparation::{
     PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION, ProjectModelPreparationCommand,
     ProjectModelPreparationReply, ProjectModelPreparationRequest, ProjectModelPreparationResult,
 };
-pub use progress::{ProjectImportPhase, ProjectImportProgress};
+pub use progress::{
+    PROJECT_IMPORT_PROGRESS_PROTOCOL_VERSION, ProjectImportPhase, ProjectImportProgress,
+    ProjectImportProgressCommand, ProjectImportProgressReply, ProjectImportProgressRequest,
+};
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 pub use scene_inspection::{
     PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION, ProjectSceneInspectionCommand,
@@ -190,6 +193,19 @@ mod tests {
 
         assert_eq!(progress, decoded);
         assert_eq!(decoded.phase, ProjectImportPhase::Publishing);
+    }
+
+    #[test]
+    fn import_progress_query_round_trips_opaque_operation_identity() {
+        let command = ProjectImportProgressCommand::new(ProjectImportProgressRequest {
+            operation_id: "import-1".to_owned(),
+            generation: 3,
+        });
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: ProjectImportProgressCommand = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(command, decoded);
+        assert!(!encoded.contains("/Users/"));
     }
 
     #[test]

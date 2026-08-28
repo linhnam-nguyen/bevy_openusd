@@ -19,6 +19,46 @@ pub(super) fn adopt_scene(
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Queued,
+    });
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Inspecting,
+    });
+    let result = adopt_scene_inner(
+        service,
+        project_id,
+        target,
+        source,
+        inspection,
+        operation_id.clone(),
+        generation,
+    );
+    service.progress.publish(ProjectImportProgress {
+        operation_id,
+        generation,
+        phase: if result.is_ok() {
+            ProjectImportPhase::Completed
+        } else {
+            ProjectImportPhase::Failed
+        },
+    });
+    result
+}
+
+fn adopt_scene_inner(
+    service: &mut ProjectApplicationService,
+    project_id: usd_project::ProjectId,
+    target: ProjectWriteTarget,
+    source: &Path,
+    inspection: &CompositionInspection,
+    operation_id: String,
+    generation: u64,
+) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
     let (entry, validated) =
         service
             .validated_project(project_id)
@@ -58,6 +98,11 @@ pub(super) fn adopt_scene(
         }
     };
 
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Validating,
+    });
     let project_root = entry.repository_locator();
     let graph = super::scene::scene_graph(project_root, &validated).map_err(|_| {
         ProjectWriteError::Failed {
@@ -78,6 +123,11 @@ pub(super) fn adopt_scene(
         .unwrap_or_else(Vec::<SceneMember>::new);
     service.stage_mutations.ensure_capacity(project_root)?;
 
+    service.progress.publish(ProjectImportProgress {
+        operation_id: operation_id.clone(),
+        generation,
+        phase: ProjectImportPhase::Publishing,
+    });
     let adopted = crate::project::scene::adoption::adopt_scene_atomic(
         crate::project::scene::adoption::SceneAdoptionRequest {
             project_root,
@@ -128,7 +178,8 @@ mod tests {
 
     use super::*;
     use crate::project::{
-        scene::inspection::inspect_composition, service::ProjectApplicationService,
+        scene::inspection::inspect_composition,
+        service::{ProjectApplicationService, ProjectImportProgressStore},
     };
 
     #[test]
@@ -214,5 +265,44 @@ mod tests {
             member.id == placement_id
                 && member.target == usd_project::SceneMemberTarget::Scene(nested.scene_id)
         }));
+    }
+
+    #[test]
+    fn adoption_publishes_backend_owned_terminal_progress() {
+        let directory = tempdir().unwrap();
+        let parent = directory.path().join("projects");
+        fs::create_dir(&parent).unwrap();
+        let progress = ProjectImportProgressStore::default();
+        let mut service = ProjectApplicationService::open_with_project_state_and_progress(
+            directory.path().join("workspace.json"),
+            Default::default(),
+            Default::default(),
+            progress.clone(),
+        )
+        .unwrap();
+        let project = service.create_project(&parent, "Project").unwrap();
+        let source = directory.path().join("assembly.usda");
+        fs::write(
+            &source,
+            "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
+        )
+        .unwrap();
+        let inspection = inspect_composition(&source).unwrap();
+
+        service
+            .adopt_scene(
+                project.id,
+                ProjectWriteTarget::Project(project.id),
+                &source,
+                &inspection,
+                "adoption-progress".to_owned(),
+                5,
+            )
+            .unwrap();
+
+        assert_eq!(
+            progress.latest("adoption-progress", 5).unwrap().phase,
+            ProjectImportPhase::Completed
+        );
     }
 }

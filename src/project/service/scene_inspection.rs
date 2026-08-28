@@ -10,6 +10,8 @@ use project_protocol::{
     ProjectWriteErrorCode,
 };
 
+use super::ProjectImportProgressStore;
+
 #[derive(Clone, Debug)]
 struct InspectionJob {
     operation_id: String,
@@ -28,21 +30,27 @@ struct InspectionState {
 #[derive(Clone)]
 pub struct ProjectSceneInspectionQueue {
     state: Arc<(Mutex<InspectionState>, Condvar)>,
+    progress: ProjectImportProgressStore,
 }
 
 impl Default for ProjectSceneInspectionQueue {
     fn default() -> Self {
-        let state = Arc::new((Mutex::new(InspectionState::default()), Condvar::new()));
-        let worker_state = Arc::clone(&state);
-        std::thread::Builder::new()
-            .name("usdhub-scene-inspection".to_owned())
-            .spawn(move || worker_loop(worker_state))
-            .expect("Scene inspection worker must start");
-        Self { state }
+        Self::with_progress(ProjectImportProgressStore::default())
     }
 }
 
 impl ProjectSceneInspectionQueue {
+    pub fn with_progress(progress: ProjectImportProgressStore) -> Self {
+        let state = Arc::new((Mutex::new(InspectionState::default()), Condvar::new()));
+        let worker_state = Arc::clone(&state);
+        let worker_progress = progress.clone();
+        std::thread::Builder::new()
+            .name("usdhub-scene-inspection".to_owned())
+            .spawn(move || worker_loop(worker_state, worker_progress))
+            .expect("Scene inspection worker must start");
+        Self { state, progress }
+    }
+
     pub fn inspect(
         &self,
         operation_id: String,
@@ -56,6 +64,11 @@ impl ProjectSceneInspectionQueue {
             source,
             reply,
         };
+        self.progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase: ProjectImportPhase::Queued,
+        });
         let (lock, wake) = &*self.state;
         let mut state = lock.lock().expect("Scene inspection state is not poisoned");
         if let Some(previous) = state.pending.replace(job) {
@@ -80,7 +93,10 @@ impl ProjectSceneInspectionQueue {
     }
 }
 
-fn worker_loop(state: Arc<(Mutex<InspectionState>, Condvar)>) -> ! {
+fn worker_loop(
+    state: Arc<(Mutex<InspectionState>, Condvar)>,
+    progress: ProjectImportProgressStore,
+) -> ! {
     loop {
         let job = {
             let (lock, wake) = &*state;
@@ -92,6 +108,11 @@ fn worker_loop(state: Arc<(Mutex<InspectionState>, Condvar)>) -> ! {
             }
             state.pending.take().expect("pending job exists")
         };
+        progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase: ProjectImportPhase::Inspecting,
+        });
         let inspection = crate::project::scene::inspection::inspect_composition(&job.source)
             .map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::FilesystemFailure,
@@ -101,6 +122,11 @@ fn worker_loop(state: Arc<(Mutex<InspectionState>, Condvar)>) -> ! {
         } else {
             ProjectImportPhase::Failed
         };
+        progress.publish(ProjectImportProgress {
+            operation_id: job.operation_id.clone(),
+            generation: job.generation,
+            phase,
+        });
         let _ = job.reply.send(ProjectSceneInspectionResult {
             operation_id: job.operation_id.clone(),
             generation: job.generation,
@@ -130,7 +156,8 @@ mod tests {
         )
         .expect("write inspection source");
 
-        let queue = ProjectSceneInspectionQueue::default();
+        let progress = ProjectImportProgressStore::default();
+        let queue = ProjectSceneInspectionQueue::with_progress(progress.clone());
         let result = queue.inspect("operation-1".to_owned(), 7, source);
 
         assert_eq!(result.operation_id, "operation-1");
@@ -138,5 +165,9 @@ mod tests {
         assert_eq!(result.progress.phase, ProjectImportPhase::Inspecting);
         let inspection = result.inspection.expect("valid USD should inspect");
         assert!(!inspection.diagnostics.is_empty() || inspection.dependencies.is_empty());
+        assert_eq!(
+            progress.latest("operation-1", 7).unwrap().phase,
+            ProjectImportPhase::Inspecting
+        );
     }
 }
