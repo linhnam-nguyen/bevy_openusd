@@ -22,11 +22,11 @@ pub use scene_inspection::{
     ProjectSceneInspectionReply, ProjectSceneInspectionRequest, ProjectSceneInspectionResult,
 };
 pub use write::{
-    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectCreateSceneRequest,
-    ProjectImportRequest, ProjectInspection, ProjectInspectionClassification,
-    ProjectInspectionWarning, ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError,
-    ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse,
-    ProjectWriteTarget,
+    PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectCreateRequest,
+    ProjectCreateSceneRequest, ProjectImportRequest, ProjectInspection,
+    ProjectInspectionClassification, ProjectInspectionWarning, ProjectSceneAdoptionResponse,
+    ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode,
+    ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]
@@ -122,6 +122,34 @@ mod tests {
 
         let encoded = serde_json::to_string(&command).unwrap();
         let decoded: ProjectSceneInspectionCommand = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(command, decoded);
+        assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn scene_adoption_command_round_trips_typed_target_and_preview_identity() {
+        let project_id = ProjectId::new_v4();
+        let command =
+            ProjectWriteCommand::new(ProjectWriteRequest::AdoptScene(ProjectAdoptSceneRequest {
+                project_id,
+                target: ProjectWriteTarget::Project(project_id),
+                source: LocalSelectionToken::new("scene-source"),
+                inspection: usd_project::CompositionInspection {
+                    classification: usd_project::CompositionClassification::SceneLike,
+                    dependencies: Vec::new(),
+                    diagnostics: Vec::new(),
+                    has_variants: false,
+                    has_payloads: false,
+                    has_references: true,
+                    has_sublayers: false,
+                },
+                operation_id: "adoption-1".to_owned(),
+                generation: 11,
+            }));
+
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: ProjectWriteCommand = serde_json::from_str(&encoded).unwrap();
 
         assert_eq!(command, decoded);
         assert!(!encoded.contains("/Users/"));

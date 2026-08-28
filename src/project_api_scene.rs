@@ -1,3 +1,5 @@
+#[path = "project/scene/adoption.rs"]
+pub(crate) mod adoption;
 #[path = "project/scene/adoption_authoring.rs"]
 pub(crate) mod adoption_authoring;
 #[path = "project/scene/authoring.rs"]

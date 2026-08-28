@@ -32,6 +32,7 @@ pub struct ProjectApplicationService {
 mod inspection;
 mod lifecycle;
 mod scene;
+mod scene_adoption;
 pub use scene_inspection::ProjectSceneInspectionQueue;
 mod scene_inspection;
 

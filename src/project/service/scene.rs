@@ -116,7 +116,7 @@ pub(super) fn create_scene(
     })
 }
 
-fn scene_graph(
+pub(super) fn scene_graph(
     project_root: &Path,
     manifest: &usd_project::ValidatedProjectManifest,
 ) -> anyhow::Result<SceneCompositionGraph> {

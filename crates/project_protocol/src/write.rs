@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use usd_project::{ModelId, ProjectId, ProjectSummary, SceneId, SceneMemberId};
+use usd_project::{
+    CompositionInspection, ModelId, ProjectId, ProjectSummary, SceneId, SceneMemberId,
+};
 
 use crate::{LocalSelectionToken, ProjectReadError};
 
@@ -101,11 +103,31 @@ pub struct ProjectSceneWriteResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectAdoptSceneRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectWriteTarget,
+    pub source: LocalSelectionToken,
+    pub inspection: CompositionInspection,
+    pub operation_id: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectSceneAdoptionResponse {
+    pub project: ProjectSummary,
+    pub scene_id: SceneId,
+    pub placement_id: Option<SceneMemberId>,
+    pub operation_id: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectWriteRequest {
     Inspect { selection: LocalSelectionToken },
     Create(ProjectCreateRequest),
     Import(ProjectImportRequest),
     CreateScene(ProjectCreateSceneRequest),
+    AdoptScene(ProjectAdoptSceneRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -113,6 +135,7 @@ pub enum ProjectWriteResponse {
     Inspection(ProjectInspection),
     Project(ProjectSummary),
     Scene(ProjectSceneWriteResponse),
+    SceneAdopted(ProjectSceneAdoptionResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

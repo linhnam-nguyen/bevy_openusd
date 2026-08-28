@@ -43,6 +43,26 @@ impl ProjectApplicationService {
     ) -> Result<project_protocol::ProjectSceneWriteResponse, ProjectWriteError> {
         super::scene::create_scene(self, project_id, target, name)
     }
+
+    pub fn adopt_scene(
+        &mut self,
+        project_id: usd_project::ProjectId,
+        target: project_protocol::ProjectWriteTarget,
+        source: &Path,
+        inspection: &usd_project::CompositionInspection,
+        operation_id: String,
+        generation: u64,
+    ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
+        super::scene_adoption::adopt_scene(
+            self,
+            project_id,
+            target,
+            source,
+            inspection,
+            operation_id,
+            generation,
+        )
+    }
 }
 
 /// Create a Project under an already-selected parent directory.
