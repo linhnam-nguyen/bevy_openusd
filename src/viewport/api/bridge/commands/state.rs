@@ -12,7 +12,9 @@ use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
+use crate::viewport::scene::{
+    ClassificationColorPlan, SelectedPrim, SelectedTargets, SolariCapability,
+};
 use crate::viewport::semantic::SemanticSyncState;
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
 
@@ -24,6 +26,7 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub reload: ResMut<'w, ReloadRequest>,
     pub selected_prim: ResMut<'w, SelectedPrim>,
     pub selected_targets: ResMut<'w, SelectedTargets>,
+    pub classification_color_plan: Option<ResMut<'w, ClassificationColorPlan>>,
     pub viewer_settings: ResMut<'w, super::super::ViewerSettingsState>,
     pub sampling: ResMut<'w, SamplingCoordinatorState>,
     pub dlss: Res<'w, DlssCapability>,

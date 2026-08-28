@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::read_models::SceneAnchor;
+use super::read_models::{ColorRgb8, SceneAnchor};
 
 /// Stable identity for one row in the active hierarchy provider.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -147,6 +147,14 @@ pub struct HierarchyReadModel {
     pub source: HierarchySource,
     pub revision: u64,
     pub nodes: Vec<HierarchyNodeReadModel>,
+}
+
+/// One temporary classification presentation color assigned to a real scene
+/// anchor. Virtual classification rows never cross this boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ClassificationColorEntry {
+    pub anchor: SceneAnchor,
+    pub color: ColorRgb8,
 }
 
 /// One bounded page of direct provider children.

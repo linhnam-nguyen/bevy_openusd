@@ -4,7 +4,7 @@ use crate::{PROTOCOL_VERSION, RequestId};
 
 use super::bim::{BimPropertyMutation, ClassificationRecipe};
 use super::editor::{EditorValue, RuntimeMutationBatch};
-use super::hierarchy::{HierarchyNodeId, HierarchySource};
+use super::hierarchy::{ClassificationColorEntry, HierarchyNodeId, HierarchySource};
 use super::read_models::{
     CameraSource, CurveTuning, FocusMode, GroundGridOrigin, OverlayKind, RendererConfiguration,
     SamplingPreference, SceneAnchor, SelectionPresentationSettings, StandardView,
@@ -42,6 +42,12 @@ pub enum ViewportCommand {
     SetHierarchySource {
         source: HierarchySource,
         classification_recipe: Option<ClassificationRecipe>,
+    },
+    /// Applies a temporary classification presentation plan to real scene
+    /// anchors. An empty plan clears the override and never authors USD.
+    SetClassificationColorPlan {
+        generation: u64,
+        entries: Vec<ClassificationColorEntry>,
     },
     ReloadSession,
     SelectTarget {

@@ -103,6 +103,17 @@ impl SceneAnchorIndex {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_test_entity(anchor: SceneAnchor, entity: Entity) -> Self {
+        Self {
+            by_anchor: HashMap::from([(anchor.clone(), entity)]),
+            by_entity: HashMap::from([(entity, anchor)]),
+            initialized: true,
+            revision: 1,
+            ..Default::default()
+        }
+    }
+
     /// Resolves an existing prim row into the current runtime tree representation.
     ///
     /// This index owns the session-local anchor, visibility, hierarchy, and

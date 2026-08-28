@@ -136,6 +136,22 @@ impl ViewportCommand {
                     recipe.validate()?;
                 }
             },
+            Self::SetClassificationColorPlan { entries, .. } => {
+                if entries.len() > super::constants::MAX_CLASSIFICATION_COLOR_ENTRIES {
+                    return Err(ProtocolValidationError::InvalidInput {
+                        field: "classification_color.entries",
+                    });
+                }
+                let mut anchors = HashSet::with_capacity(entries.len());
+                for entry in entries {
+                    entry.anchor.validate()?;
+                    if !anchors.insert(&entry.anchor) {
+                        return Err(ProtocolValidationError::InvalidInput {
+                            field: "classification_color.anchor",
+                        });
+                    }
+                }
+            }
             Self::DefinePrim {
                 path: value,
                 type_name,

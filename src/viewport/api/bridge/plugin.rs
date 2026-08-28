@@ -19,6 +19,7 @@ use crate::viewport::api::{
     ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox,
     ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
 };
+use crate::viewport::scene::ClassificationColorPlan;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{
     RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
@@ -40,6 +41,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ClassificationColorPlan>()
             .init_resource::<ViewerSettingsState>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<RuntimeDeliveryRuntime>()

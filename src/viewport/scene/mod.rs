@@ -1,5 +1,6 @@
 //! Scene-derived state and visual presentation controls.
 
+mod classification_color;
 mod diff;
 mod ghost;
 mod section_box;
@@ -14,6 +15,10 @@ mod selection_projection;
 mod skeleton;
 mod solari;
 
+pub(in crate::viewport) use classification_color::{
+    ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
+    sync_classification_color_overrides,
+};
 pub(crate) use diff::draw_semantic_diff;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
 #[allow(unused_imports)]
