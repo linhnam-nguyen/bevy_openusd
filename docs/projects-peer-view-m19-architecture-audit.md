@@ -1,160 +1,154 @@
-# M19-C3 Projects Phase-2 architecture audit
+# M19-C3++ Projects Phase-2 architecture audit
 
-This packet records the final Phase-2 Projects review. M19 adds regression
-coverage and removes the production fixture fallback; it does not introduce a
-new Project product surface, renderer owner, or transport authority.
+This packet records the final M19 repair evidence. M19 freezes the existing
+Projects Phase-2 workflow and production boundary; it does not add another
+product surface, renderer owner, or transport authority.
 
 ## Checkpoint ledger
 
-| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 |
-| --- | --- | --- | --- | --- |
-| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | this commit |
-| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | this commit |
+| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 | M19-C1++ | M19-C3++ |
+| --- | --- | --- | --- | --- | --- | --- |
+| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | `9295c63c2cf6fdc2f1e798370acc41d606f9927b` | `4e18fabdf6515455bb0adce34f37bb7712fc0414` | this commit |
+| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0922b4c9ce06ca7751186a945313fecf6a` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | `c63f8dd54a5f24c413dfb8d735e57f4ec4ddb16d` | `8c6d479ccfcfabc266850caeb33f5fddf8c29d1c` | this commit |
 
-The authoritative implementation plan records the exact final M19-C3 commit
-SHAs after both commits are created and pushed.
+The implementation-plan ledger records the exact M19-C3++ tip SHAs after the
+audit-packet commits are pushed.
 
-## M19-C1 regression evidence
+## Final repair contract
 
-Backend `src/project/service/m19_tests.rs` covers the canonical end-to-end
-backend path for project creation, unborn `main`, managed local-state roots,
-root and nested Scene creation, Model publication into a nested Scene,
-activation resolution, and cache/recovery deletion without invalidating the
-canonical Project. It also covers native/adopted repository imports and a
-moved Project becoming unavailable while another registered Project remains
-readable.
+Production branch switching is now backend-owned and Git-neutral. The service
+performs dirty-worktree preflight, checks out the requested existing local
+branch without stash, discard, force, or rollback, then validates that
+branch's Project metadata.
 
-UI `apps/desktop/src/features/projects/controller_m19_tests.rs` covers the
-deterministic fixture-side interaction matrix: root and nested Scenes, Model
-import and Scene composition import, selected-versus-active identity, branch
-read/switch behavior, dirty-state protection, overview/Commit intent, and
-Viewport opening. Existing M10-M18 tests provide the lower-level native
-protocol, stale-completion, root-model restriction, activation, and failure
-retention coverage.
+If checkout succeeds but the target branch has invalid or mismatched Project
+metadata, the service returns `BranchProjectInvalid` carrying the actual
+post-checkout `RepositorySummary`. The repository remains on that branch so
+the user can recover explicitly. The UI replaces repository truth with that
+summary, removes the retained old tree from presentation, marks Project
+content unavailable, and keeps the diagnostic. Generation and ProjectId
+guards still reject stale completions.
 
-## M19-C2 production boundary
+The Git adapter also treats ignored `.usdhub/cache` and `.usdhub/recovery`
+files as local implementation state rather than user edits. Ignored-only
+changes remain clean and do not block an otherwise eligible branch switch.
 
-`ProjectsController::runtime_default` now always constructs an empty read model
-with `TauriProjectsGateway`; it never substitutes the Phase-1 fixture
-catalogue. Fixture modules, fixture catalogue access, fixture constructors,
-and fixture branch defaults are compiled only under `cfg(test)`. The runtime
-read/write path therefore reports the actual gateway result, including host
-unavailability, instead of presenting deterministic fixture data as success.
+## M19 regression evidence
 
-The Projects feature contains no direct component-to-filesystem,
-component-to-Tauri, component-to-`gix`, component-to-OpenUSD, or
-component-to-renderer-cache path. The platform adapter is the only UI module
-that owns the Tauri invocation shape; Project feature code consumes typed
-gateway/protocol DTOs and emits typed intents.
+Backend `src/project/service/m19_tests.rs` retains the end-to-end Project
+workflow coverage for creation, unborn `main`, managed local-state roots,
+root and nested Scene creation, Model publication, activation resolution,
+cache/recovery deletion, repository imports, and moved-Project isolation.
+
+The M19 repair adds:
+
+- `usd_git` coverage for ignored cache/recovery state, dirty and untracked
+  protection, valid switching, and no stash/discard behavior;
+- Project-service coverage proving an invalid target branch reports the actual
+  checked-out branch and remains recoverable by switching to a valid branch;
+- UI coverage proving an invalid target branch cannot keep the old Scene/Model
+  hierarchy authoritative while the actual branch summary is displayed;
+- generation-aware stale branch completion and active/inactive activation
+  coverage retained from the prior M19 checkpoints.
+
+## Runtime and ownership boundary
+
+The backend application service owns `ProjectId` registry lookup, private
+repository resolution, manifest identity validation, branch mutation, and
+authoritative Project/repository/tree projection. The canonical Tauri host is
+the only host wiring for the machine-local registry.
+
+The UI reaches that boundary through `ProjectsGateway` and
+`ProjectWriteGateway`; components do not invoke Tauri, Git, filesystem,
+OpenUSD, or renderer-cache APIs directly. Runtime construction uses an empty
+read model plus `TauriProjectsGateway`; it never falls back to Phase-1 fixture
+data. Fixture catalogues and fixture constructors remain test-only.
 
 ## Public Project API inventory
 
-The adapter-neutral `project_protocol` boundary exposes:
+The adapter-neutral `project_protocol` surface includes:
 
-- read commands/replies for project lists, Project trees, and repository
-  summaries;
-- write commands/replies for location inspection, Project creation/import,
-  root/nested Scene creation, Scene adoption, and Model import;
-- typed Project read/write errors and stable Project/Scene/Model/member
-  identities;
-- Scene inspection, Model preparation, and import-progress commands/replies;
-- Project-to-render-host activation command/reply/result types.
+- Project list, Project tree, and repository-summary reads;
+- location inspection, Project creation/import, root/nested Scene creation,
+  Scene adoption, Model import, and branch-switch writes;
+- typed Project/Scene/Model/member identities and typed read/write errors;
+- `ProjectBranchSwitchRequest`/`ProjectBranchSwitchResponse`, including
+  boxed `BranchProjectInvalid` repository truth;
+- Scene inspection, Model preparation, import progress, and Project-stage
+  activation contracts.
 
-The backend application boundary owns `ProjectId` registry lookup, manifest
-identity validation, private repository locators, canonical Stage resolution,
-and atomic Project mutations. `ProjectSummary`, `ProjectContentNode`,
-`RepositorySummary`, and the placement/member identities are the only Project
-read data projected across the host boundary. No filesystem path, Git handle,
-OpenUSD Stage, renderer object, or renderer cache key is part of that DTO
-surface.
+No DTO exposes a filesystem path, Git handle, OpenUSD Stage, renderer object,
+or renderer cache key.
 
-## Queue and ownership audit
+## Queue, complexity, and allocation audit
 
 | Boundary | Capacity / policy | Owner |
 | --- | --- | --- |
 | Scene inspection | one worker plus one replaceable pending job | Project service |
 | Model preparation | synchronous capacity `4`, bounded prepared-artifact retention | Project service |
-| Stage mutation outbox | capacity `128`, rejected as typed `Busy` when full | Project service; applied by existing LiveStage owner |
-| Import progress | coalesced retention capacity `64` by `(operation_id, generation)` | Project service progress store |
-| Project activation preparation | bounded request/result channels of capacity `2` | existing render-host preparation worker |
-| Project-stage activation per UI/session | at most one unresolved activation | existing viewport `SessionCoordinator` |
+| Stage mutation outbox | capacity `128`, typed `Busy` on saturation | Project service / existing LiveStage owner |
+| Import progress | coalesced retention `64` by operation and generation | Project service |
+| Project activation preparation | bounded request/result channels of capacity `2` | existing render-host worker |
+| Project-stage activation per UI/session | one unresolved activation | existing viewport `SessionCoordinator` |
 
-There is one active-stage authority. Project preparation occurs outside the
-Bevy `Update` path, while `LiveStage` remains the owner of activation. The UI
-uses generation and stable identity guards for stale replies; it does not add a
-second queue or second stage owner.
+Registry and manifest identity lookups remain O(1) average through `HashMap`
+indexes. Catalogue projection is O(P), tree projection and uncached reusable
+Scene search are O(V + E), visible UI rows are O(K), and atomic publication is
+O(files changed) plus validation. Branch enumeration is O(B) in the number of
+local branches, with repository status delegated to the Git adapter.
 
-## Complexity and allocation audit
-
-| Operation | Expected cost | Evidence |
-| --- | --- | --- |
-| Registry/manifest identity lookup | O(1) average per indexed lookup | `WorkspaceRegistry` and validated manifest indexes use `HashMap` |
-| Catalogue list projection | O(P) for P registered Projects | one registry traversal, retaining unavailable entries |
-| Project tree projection | O(V + E) for the selected Scene graph | one read and stable placement identities |
-| Reusable Scene search | O(V + E) per uncached query | adjacency-indexed traversal; M18 memoization is retained |
-| Visible UI rows | O(K) for K visible rows | collapsed descendants are not materialized |
-| Atomic publication | O(files changed) plus validation | transaction directory, validate-before-publish, rollback on failure |
-
-The M19 changes do not add hot-path allocations. Project IDs and operation
-identities are captured instead of complete records; immutable catalogue
-snapshots are shared; worker paths remain private to the backend boundary;
-and typed DTOs are owned only at transport boundaries. The M18 allocation and
-queue audits remain the governing evidence for renderer/session work.
+M19 does not add a hot-path queue or duplicate Stage authority. IDs and
+operation identities are captured instead of whole records; immutable
+snapshots are shared; fresh transport DTOs are owned at the boundary; and
+invalid-target failure drops stale tree presentation without introducing a
+second cache.
 
 ## Source-layout audit
 
-`./scripts/check_rust_file_size.sh` passes at **580 files, 44 warnings in the
-351–400 range, and 0 failures above 400**. The largest materially modified or
-new backend file is `src/project/service/mod.rs` at 396 lines; the new
-`m19_tests.rs` is 157 lines. The M19 backend diff contains no file above the
-400-line hard limit.
+The backend source audit passes with **584 files scanned, 44 warnings in the
+351–400 range, and 0 failures above 400**. M19 backend files remain within the
+hard limit; the largest is `src/project/service/mod.rs` at 399 lines.
 
-The UI M19 diff contains seven Rust files. Their final line counts are:
-
-```text
-catalogue.rs 400    controller.rs 378    controller_m19_tests.rs 151
-mod.rs 107         model.rs 324        store.rs 148
-lib.rs 325
-```
-
-The UI repository has unrelated legacy files above 400 lines, but none is
-materially modified or newly added by M19. No M19 source-layout warning is
-being hidden by a test-only extraction.
+The UI M19 diff contains 15 Rust files. New and responsibility-specific
+Projects files remain within the 400-line hard limit. Pre-existing legacy
+files receiving narrow routing edits remain oversized and are explicitly
+recorded rather than hidden: `features/projects/gateway.rs` (680 lines),
+`platform/project_host.rs` (601 lines), and `src-tauri/src/lib.rs` (582
+lines). No broad refactor or unrelated source-layout cleanup was introduced.
 
 ## Gate evidence and limitations
 
 - Backend and UI `cargo fmt --all -- --check`: passed.
 - Backend `cargo check --workspace --no-default-features`: passed.
 - UI `cargo check --workspace`: passed.
-- Backend `cargo test --workspace --no-default-features`: passed; the final
-  `usdview` unit run was 357 passed and 4 ignored, with all integration suites
-  and doctests passing.
-- UI `cargo test --workspace`: passed; 293 desktop tests passed, 1 was
+- Backend `cargo test --workspace --no-default-features`: passed; 360 unit
+  tests passed, 4 were ignored, and integration suites/doctests passed.
+- UI `cargo test --workspace`: passed; 297 desktop tests passed, 1 was
   ignored, and 11 viewport-client tests passed.
-- Focused M19 backend tests: 2 passed. Focused M19 UI tests: 3 passed.
-- `git diff --check`: passed for both repositories.
+- Focused repair tests passed: `usd_git` 5, Project service 3, UI branch
+  controller 4.
+- `cargo clippy -p project_protocol --all-targets -- -D warnings`: passed;
+  the prior `ProjectListItem` large-enum diagnostic is resolved.
+- Backend source-size audit: 584 files, 44 warnings, 0 failures.
+- Backend/UI `git diff --check`: passed.
 - `make harden`: format, source-size, no-default check, and no-default test
-  stages passed. The all-features stage remains blocked by inherited
-  environment/dependency conditions: `DLSS_SDK` is unset, installed
-  `wgpu-hal` lacks the Vulkan symbols required by Bevy, and the existing
-  `project_protocol::ProjectListItem` `large_enum_variant` Clippy diagnostic
-  is promoted to an error by the hardening profile.
+  stages passed. The all-features stage remains blocked only by inherited
+  environment/dependency conditions: `DLSS_SDK` is unset and the installed
+  `wgpu-hal` lacks the Vulkan symbols expected by Bevy.
+- Native Tauri host compilation remains dependency-resolution blocked by the
+  existing yanked `bisync 0.3.0`/`0.3.1` chain through
+  `gix-protocol -> gix -> usd_git`; this is not a M19 source failure.
 
-These gates are source, compilation, and automated regression evidence. They
-do not claim live browser/Tauri, GPU, renderer-hardware, or production
-deployment proof. No external web reference was needed for M19; the
-authoritative implementation plan and local repository sources are the
-references used.
+These are source, compilation, and automated-regression results. They do not
+claim live browser/Tauri, GPU, renderer-hardware, or production-deployment
+proof.
 
 ## Known debt and non-goals
 
-- The inherited all-features DLSS/Vulkan hardening blockers remain accepted
-  environment debt and are not reclassified as a Projects defect.
-- Production branch switching remains an explicit unavailable capability
-  until its backend command is authorized; fixture branch mutation is test
-  coverage only and cannot silently affect runtime state.
-- Commit Graph, Issues/BCF, Team, Turso, renderer-cache ownership, and new
-  Frost/Glacial Project branches are outside M19.
-- Frost and Glacial were not changed for Projects Phase 2: **NO CHANGE**.
+Inherited DLSS/Vulkan hardening and yanked-bisync resolution limitations remain
+accepted debt. Commit Graph, Issues/BCF, Team, Turso, renderer-cache ownership,
+and new Frost/Glacial Project branches are outside M19. Frost and Glacial were
+not changed for Projects Phase 2: **NO CHANGE**.
 
-M19 is a freeze/evidence milestone. No M20 work is present in either branch.
+M19 is the Phase-2 freeze/evidence milestone. No M20 work is present in either
+branch.
