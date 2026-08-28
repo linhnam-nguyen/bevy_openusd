@@ -6,7 +6,10 @@ use std::{
     sync::{Arc, Mutex, mpsc},
 };
 
-use project_protocol::{ProjectModelPreparationResult, ProjectWriteError, ProjectWriteErrorCode};
+use project_protocol::{
+    ProjectImportPhase, ProjectImportProgress, ProjectModelPreparationResult, ProjectWriteError,
+    ProjectWriteErrorCode,
+};
 
 use crate::project::model_import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
 
@@ -54,8 +57,13 @@ impl ProjectModelPreparationQueue {
         };
         if self.sender.try_send(job).is_err() {
             return ProjectModelPreparationResult {
-                operation_id,
+                operation_id: operation_id.clone(),
                 generation,
+                progress: ProjectImportProgress {
+                    operation_id: operation_id.clone(),
+                    generation,
+                    phase: ProjectImportPhase::Failed,
+                },
                 inspection: Err(ProjectWriteError::Failed {
                     code: ProjectWriteErrorCode::Busy,
                 }),
@@ -99,12 +107,23 @@ fn worker_loop(
                 .insert((job.operation_id.clone(), job.generation), prepared_model);
             Ok(public_inspection)
         });
+        let inspection = inspection.map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure,
+        });
+        let phase = if inspection.is_ok() {
+            ProjectImportPhase::Preparing
+        } else {
+            ProjectImportPhase::Failed
+        };
         let _ = job.reply.send(ProjectModelPreparationResult {
-            operation_id: job.operation_id,
+            operation_id: job.operation_id.clone(),
             generation: job.generation,
-            inspection: inspection.map_err(|_| ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::FilesystemFailure,
-            }),
+            progress: ProjectImportProgress {
+                operation_id: job.operation_id,
+                generation: job.generation,
+                phase,
+            },
+            inspection,
         });
     }
     unreachable!("Model preparation worker channel is retained by the queue")

@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use project_protocol::{
-    ProjectModelWriteResponse, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
+    ProjectImportPhase, ProjectImportProgress, ProjectModelWriteResponse, ProjectWriteError,
+    ProjectWriteErrorCode, ProjectWriteTarget,
 };
 use usd_project::ProjectRoot;
 
@@ -111,8 +112,13 @@ pub(super) fn publish_model(
         project,
         model_id: published.id,
         placement_id: published.placement.map(|member| member.id),
-        operation_id,
+        operation_id: operation_id.clone(),
         generation,
+        progress: ProjectImportProgress {
+            operation_id: operation_id.clone(),
+            generation,
+            phase: ProjectImportPhase::Completed,
+        },
     })
 }
 

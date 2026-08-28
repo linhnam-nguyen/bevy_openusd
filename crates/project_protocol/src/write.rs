@@ -3,7 +3,7 @@ use usd_project::{
     CompositionInspection, ModelId, ProjectId, ProjectSummary, SceneId, SceneMemberId,
 };
 
-use crate::{LocalSelectionToken, ProjectReadError};
+use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
 pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 1;
@@ -138,6 +138,7 @@ pub struct ProjectModelWriteResponse {
     pub placement_id: Option<SceneMemberId>,
     pub operation_id: String,
     pub generation: u64,
+    pub progress: ProjectImportProgress,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

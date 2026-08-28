@@ -8,6 +8,7 @@ mod command;
 mod error;
 mod location;
 mod model_preparation;
+mod progress;
 mod read;
 mod scene_inspection;
 mod write;
@@ -21,6 +22,7 @@ pub use model_preparation::{
     PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION, ProjectModelPreparationCommand,
     ProjectModelPreparationReply, ProjectModelPreparationRequest, ProjectModelPreparationResult,
 };
+pub use progress::{ProjectImportPhase, ProjectImportProgress};
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 pub use scene_inspection::{
     PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION, ProjectSceneInspectionCommand,
@@ -174,6 +176,20 @@ mod tests {
 
         assert_eq!(command, decoded);
         assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn import_progress_round_trips_the_latest_operation_phase() {
+        let progress = ProjectImportProgress {
+            operation_id: "import-1".to_owned(),
+            generation: 3,
+            phase: ProjectImportPhase::Publishing,
+        };
+        let encoded = serde_json::to_string(&progress).unwrap();
+        let decoded: ProjectImportProgress = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(progress, decoded);
+        assert_eq!(decoded.phase, ProjectImportPhase::Publishing);
     }
 
     #[test]
