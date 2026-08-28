@@ -3,12 +3,10 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::project::recovery::{RecoverySettings, RecoveryStore};
-    use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
+    use crate::project::recovery::RecoveryStore;
     use crate::viewport::animation::UsdStageTime;
     use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::plugin::checkpoint_recovery;
     use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
         SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
@@ -20,10 +18,8 @@ mod tests {
     };
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-    use crate::viewport::semantic::synchronize_live_stage;
     use crate::viewport::semantic::{
-        SemanticDiffState, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSyncState,
-        SemanticWorkingStore,
+        SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore,
     };
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
@@ -55,53 +51,6 @@ mod tests {
                 ..default()
             })
             .add_systems(Update, apply_viewport_commands);
-        app
-    }
-
-    fn runtime_semantic_test_app(project_root: std::path::PathBuf) -> App {
-        let mut app = App::new();
-        app.add_plugins(usd_bevy::UsdPlugin)
-            .add_plugins(usd_bevy::LiveStagePlugin)
-            .init_resource::<ViewportCommandInbox>()
-            .init_resource::<ViewportEventOutbox>()
-            .init_resource::<ViewportTreeCommandInbox>()
-            .init_resource::<SceneAnchorIndex>()
-            .init_resource::<ReloadRequest>()
-            .init_resource::<SelectedPrim>()
-            .init_resource::<SelectedTargets>()
-            .init_resource::<ViewerSettingsState>()
-            .init_resource::<SamplingCoordinatorState>()
-            .init_resource::<DlssCapability>()
-            .init_resource::<DlssCameraActivation>()
-            .init_resource::<CameraMount>()
-            .init_resource::<CameraOrientationState>()
-            .init_resource::<FlyTo>()
-            .init_resource::<UsdStageTime>()
-            .init_resource::<DisplayToggles>()
-            .init_resource::<LoaderTuning>()
-            .init_resource::<PhysicsActive>()
-            .init_resource::<EditorHistories>()
-            .init_resource::<RuntimeMutationCoordinator>()
-            .init_resource::<Spawned>()
-            .init_resource::<SemanticWorkingStore>()
-            .init_resource::<SemanticSyncState>()
-            .init_resource::<SemanticDiffState>()
-            .init_resource::<RecoveryRuntime>()
-            .insert_resource(RecoverySettings { project_root })
-            .insert_resource(StageInfo {
-                path: "runtime-semantic-test.usda".to_owned(),
-                ..default()
-            })
-            .add_systems(Update, apply_viewport_commands)
-            .add_systems(
-                PostUpdate,
-                (
-                    synchronize_live_stage,
-                    drain_recovery_results,
-                    checkpoint_recovery,
-                )
-                    .chain(),
-            );
         app
     }
 
@@ -218,7 +167,8 @@ mod tests {
     #[test]
     fn runtime_attribute_batch_reaches_bevy_and_semantic_worker() -> anyhow::Result<()> {
         let project_root = tempfile::tempdir()?;
-        let mut app = runtime_semantic_test_app(project_root.path().to_path_buf());
+        let mut app =
+            super::super::support::runtime_semantic_test_app(project_root.path().to_path_buf());
         let stage = openusd::usd::Stage::builder()
             .in_memory("bridge_runtime_semantic_test.usda")
             .unwrap();

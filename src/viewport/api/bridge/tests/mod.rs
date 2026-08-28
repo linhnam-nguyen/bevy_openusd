@@ -4,6 +4,8 @@
 mod bim_edit_test;
 mod commands_test;
 mod hierarchy_search_test;
+mod m3_integration_support;
+mod m3_integration_test;
 mod mutations_test;
 mod renderer_commands_test;
 mod save_stage_test;
