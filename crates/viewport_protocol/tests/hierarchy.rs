@@ -1,6 +1,7 @@
 use viewport_protocol::{
-    BimFieldKey, ClassificationLevel, ClassificationRecipe, HierarchyNodeId, HierarchyNodeKind,
-    HierarchyNodeReadModel, HierarchyReadModel, HierarchySource, ViewportCommand,
+    BimFieldKey, ClassificationColorEntry, ClassificationLevel, ClassificationRecipe, ColorRgb8,
+    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, MAX_CLASSIFICATION_COLOR_ENTRIES, SceneAnchor, ViewportCommand,
 };
 
 #[test]
@@ -118,6 +119,41 @@ fn generic_hierarchy_commands_validate_provider_ids_and_bounds() {
                 "category",
                 BimFieldKey::Category,
             )])),
+        }
+        .validate()
+        .is_err()
+    );
+}
+
+#[test]
+fn classification_color_plan_validates_anchor_identity_and_bounds() {
+    let anchor = SceneAnchor::active_session("/World/Wall");
+    let entry = ClassificationColorEntry {
+        anchor: anchor.clone(),
+        color: ColorRgb8::new(0x12, 0x34, 0x56),
+    };
+    assert!(
+        ViewportCommand::SetClassificationColorPlan {
+            generation: 4,
+            entries: vec![entry.clone()],
+        }
+        .validate()
+        .is_ok()
+    );
+
+    assert!(
+        ViewportCommand::SetClassificationColorPlan {
+            generation: 4,
+            entries: vec![entry.clone(), entry.clone()],
+        }
+        .validate()
+        .is_err()
+    );
+
+    assert!(
+        ViewportCommand::SetClassificationColorPlan {
+            generation: 4,
+            entries: vec![entry; MAX_CLASSIFICATION_COLOR_ENTRIES + 1],
         }
         .validate()
         .is_err()
