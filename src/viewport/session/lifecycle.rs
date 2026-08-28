@@ -9,6 +9,8 @@ use super::{
     StageCameraProjection, StageHandle, StageInfo, VariantSetInfo,
 };
 
+const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
+
 /// Open the requested file directly through the current OpenUSD API and place
 /// it in `usd_bevy::LiveStage`. The new live plugin owns projection/revision
 /// reconciliation; this system only owns the host-side open boundary.
@@ -32,8 +34,10 @@ pub(crate) fn activate_stage(world: &mut World, path: std::path::PathBuf) -> Res
         .ok_or_else(|| "resolved Project stage has no valid filename".to_owned())?
         .to_owned();
     let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::open(&path_string)
-        .map_err(|error| format!("failed to open Project stage {}: {error:#}", path.display()))?;
+    let stage = Stage::open(&path_string).map_err(|error| {
+        error!("failed to open Project stage {}: {error:#}", path.display());
+        PROJECT_STAGE_OPEN_FAILURE.to_owned()
+    })?;
 
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
         && !cache.archive_paths.contains(&path)
@@ -199,4 +203,85 @@ fn clear_projected_stage(world: &mut World) {
     *world.resource_mut::<PrimEntities>() = PrimEntities::default();
     world.remove_non_send::<LiveStage>();
     world.resource_mut::<Spawned>().0 = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use project_protocol::{ProjectActivationCommand, ProjectActivationReply};
+    use usd_project::{ProjectId, ProjectRoot};
+
+    fn fixture_path(file_name: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/stages")
+            .join(file_name)
+    }
+
+    fn activation_world() -> World {
+        let mut world = World::new();
+        world.insert_resource(PrimEntities::default());
+        world.insert_resource(Spawned::default());
+        world.insert_resource(StageInfo::default());
+        world
+    }
+
+    fn assert_active_stage(world: &World, expected: &std::path::Path) {
+        let expected_string = expected.to_string_lossy().into_owned();
+        let expected_root = expected.parent().unwrap().to_path_buf();
+        let expected_name = expected.file_name().unwrap().to_string_lossy();
+        let requested = world.resource::<RequestedAsset>();
+        assert_eq!(requested.root, expected_root);
+        assert_eq!(requested.name, expected_name.as_ref());
+        assert_eq!(world.resource::<StageHandle>().path, expected);
+        assert_eq!(world.resource::<StageInfo>().path, expected_string);
+        assert!(
+            world
+                .get_non_send::<LiveStage>()
+                .unwrap()
+                .stage
+                .layer_identifiers()
+                .iter()
+                .any(|identifier| identifier == &expected_string)
+        );
+    }
+
+    #[test]
+    fn project_activation_replaces_a_with_b_and_failed_b_preserves_a() {
+        let scene_a = fixture_path("hierarchy.usda");
+        let scene_b = fixture_path("primitives.usda");
+        let missing_b = fixture_path("missing-project-root.usda");
+        let mut world = activation_world();
+
+        activate_stage(&mut world, scene_a.clone()).unwrap();
+        let session_a = world.get_non_send::<LiveStage>().unwrap().session_id();
+        assert_active_stage(&world, &scene_a);
+
+        activate_stage(&mut world, scene_b.clone()).unwrap();
+        let session_b = world.get_non_send::<LiveStage>().unwrap().session_id();
+        assert_ne!(session_a, session_b);
+        assert_active_stage(&world, &scene_b);
+
+        activate_stage(&mut world, scene_a.clone()).unwrap();
+        let preserved_session = world.get_non_send::<LiveStage>().unwrap().session_id();
+        let error = activate_stage(&mut world, missing_b.clone()).unwrap_err();
+
+        assert_eq!(error, PROJECT_STAGE_OPEN_FAILURE);
+        assert_eq!(
+            world.get_non_send::<LiveStage>().unwrap().session_id(),
+            preserved_session
+        );
+        assert_active_stage(&world, &scene_a);
+
+        let command = ProjectActivationCommand::new(
+            "activation-failed",
+            2,
+            ProjectId::new_v4(),
+            ProjectRoot::Empty,
+        );
+        let encoded =
+            serde_json::to_string(&ProjectActivationReply::failed(&command, error)).unwrap();
+        assert!(!encoded.contains(&missing_b.to_string_lossy().to_string()));
+        assert!(!encoded.contains("missing-project-root.usda"));
+        assert!(encoded.contains(PROJECT_STAGE_OPEN_FAILURE));
+    }
 }
