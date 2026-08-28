@@ -32,6 +32,8 @@ use crate::project::{
     scene::authoring::{read_scene_members, scene_path},
 };
 
+use self::error::project_read_error_code;
+
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
@@ -62,6 +64,7 @@ impl ProjectPublicationCoordinator {
     }
 }
 
+mod error;
 mod inspection;
 mod lifecycle;
 mod model;
@@ -237,24 +240,6 @@ fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
                 }
             },
         },
-    }
-}
-
-fn project_read_error_code(reason: ProjectCatalogueUnavailableReason) -> ProjectReadErrorCode {
-    match reason {
-        ProjectCatalogueUnavailableReason::ManifestUnavailable => {
-            ProjectReadErrorCode::ManifestUnavailable
-        }
-        ProjectCatalogueUnavailableReason::RepositoryMissing => {
-            ProjectReadErrorCode::RepositoryMissing
-        }
-        ProjectCatalogueUnavailableReason::RepositoryPermissionDenied => {
-            ProjectReadErrorCode::RepositoryPermissionDenied
-        }
-        ProjectCatalogueUnavailableReason::InvalidManifest => ProjectReadErrorCode::InvalidManifest,
-        ProjectCatalogueUnavailableReason::RegistryIdentityMismatch => {
-            ProjectReadErrorCode::RegistryIdentityMismatch
-        }
     }
 }
 
