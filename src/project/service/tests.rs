@@ -114,9 +114,14 @@ fn tree_projection_keeps_authored_model_placement_identity() {
     let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(
         project_id,
     )));
-    let ProjectReadResponse::ProjectTree { nodes, .. } = reply.result.unwrap() else {
+    let ProjectReadResponse::ProjectTree { nodes, counts, .. } = reply.result.unwrap() else {
         panic!("GetProjectTree must return ProjectTree");
     };
+
+    assert_eq!(counts.scenes, 1);
+    assert_eq!(counts.models, 1);
+    assert_eq!(counts.scene_placements, 0);
+    assert_eq!(counts.model_placements, 1);
 
     assert!(nodes.iter().any(|node| {
         matches!(

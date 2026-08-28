@@ -162,9 +162,11 @@ impl ProjectApplicationService {
             )),
             ProjectReadRequest::GetProjectTree(project_id) => {
                 let (entry, manifest) = self.validated_project(*project_id)?;
+                let (nodes, counts) = project_tree(entry.repository_locator(), &manifest)?;
                 Ok(ProjectReadResponse::ProjectTree {
                     project_id: *project_id,
-                    nodes: project_tree(entry.repository_locator(), &manifest)?,
+                    nodes,
+                    counts,
                 })
             }
             ProjectReadRequest::GetProjectRepositorySummary(project_id) => {
@@ -227,12 +229,17 @@ fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
 fn project_tree(
     project_root: &Path,
     manifest: &usd_project::ValidatedProjectManifest,
-) -> Result<Vec<ProjectContentNode>, ProjectReadError> {
+) -> Result<(Vec<ProjectContentNode>, usd_project::ProjectContentCounts), ProjectReadError> {
     let mut scenes = manifest.scenes().to_vec();
     scenes.sort_by_key(|scene| scene.id);
     let mut models = manifest.models().to_vec();
     models.sort_by_key(|model| model.id);
 
+    let mut counts = usd_project::ProjectContentCounts {
+        scenes: scenes.len() as u64,
+        models: models.len() as u64,
+        ..Default::default()
+    };
     let mut nodes = Vec::with_capacity(scenes.len() + models.len());
     nodes.extend(scenes.iter().map(|scene| ProjectContentNode::Scene {
         scene_id: scene.id,
@@ -257,6 +264,7 @@ fn project_tree(
         for member in members {
             match member.target {
                 usd_project::SceneMemberTarget::Scene(target) => {
+                    counts.scene_placements += 1;
                     nodes.push(ProjectContentNode::ScenePlacement {
                         member_id: member.id,
                         target,
@@ -265,6 +273,7 @@ fn project_tree(
                     });
                 }
                 usd_project::SceneMemberTarget::Model(target) => {
+                    counts.model_placements += 1;
                     nodes.push(ProjectContentNode::ModelPlacement {
                         member_id: member.id,
                         target,
@@ -275,7 +284,7 @@ fn project_tree(
             }
         }
     }
-    Ok(nodes)
+    Ok((nodes, counts))
 }
 
 fn repository_summary(

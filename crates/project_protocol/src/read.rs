@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use usd_project::{ProjectContentNode, ProjectId, ProjectSummary, RepositorySummary};
+use usd_project::{
+    ProjectContentCounts, ProjectContentNode, ProjectId, ProjectSummary, RepositorySummary,
+};
 
 use crate::ProjectReadErrorCode;
 
@@ -29,6 +31,7 @@ pub enum ProjectReadResponse {
     ProjectTree {
         project_id: ProjectId,
         nodes: Vec<ProjectContentNode>,
+        counts: ProjectContentCounts,
     },
     RepositorySummary {
         project_id: ProjectId,
