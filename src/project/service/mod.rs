@@ -4,7 +4,12 @@
 //! resolves a stable ProjectId through the private workspace registry and
 //! returns owned, Git-neutral protocol DTOs.
 
-use std::{path::Path, path::PathBuf};
+use std::{
+    collections::HashMap,
+    path::Path,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use project_protocol::{
     ProjectListItem, ProjectReadCommand, ProjectReadError, ProjectReadErrorCode, ProjectReadReply,
@@ -27,6 +32,29 @@ use crate::project::{
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
+    pub(super) publication_coordinator: ProjectPublicationCoordinator,
+}
+
+/// Shared admission state for non-idempotent publication mutations.
+///
+/// The host may construct a fresh application service for each command, so
+/// this coordinator must outlive an individual request. The map lock is held
+/// only while resolving a Project-specific lock; publication work is serialized
+/// by the returned lock and never by one global Project mutex.
+#[derive(Clone, Default)]
+pub struct ProjectPublicationCoordinator {
+    publishers: Arc<Mutex<HashMap<ProjectId, Arc<Mutex<()>>>>>,
+}
+
+impl ProjectPublicationCoordinator {
+    pub fn publisher(&self, project_id: ProjectId) -> Arc<Mutex<()>> {
+        self.publishers
+            .lock()
+            .expect("Project publication coordinator is not poisoned")
+            .entry(project_id)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
 }
 
 mod inspection;
@@ -42,8 +70,22 @@ mod scene_inspection;
 impl ProjectApplicationService {
     /// Open the host-owned workspace registry without exposing its locator.
     pub fn open(registry_path: impl Into<PathBuf>) -> Result<Self, ProjectReadError> {
+        Self::open_with_publication_coordinator(
+            registry_path,
+            ProjectPublicationCoordinator::default(),
+        )
+    }
+
+    /// Open the service with host-owned shared publication admission state.
+    pub fn open_with_publication_coordinator(
+        registry_path: impl Into<PathBuf>,
+        publication_coordinator: ProjectPublicationCoordinator,
+    ) -> Result<Self, ProjectReadError> {
         WorkspaceRegistry::load(registry_path)
-            .map(|registry| Self { registry })
+            .map(|registry| Self {
+                registry,
+                publication_coordinator,
+            })
             .map_err(|_| ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,
             })
@@ -245,6 +287,8 @@ mod repository_summary_tests;
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Barrier, mpsc};
+
     use project_protocol::{ProjectReadError, ProjectReadResponse};
     use tempfile::tempdir;
     use usd_project::{
@@ -261,7 +305,10 @@ mod tests {
     fn unknown_project_id_returns_typed_not_found_without_a_path() {
         let directory = tempdir().unwrap();
         let registry = WorkspaceRegistry::load(directory.path().join("workspace.json")).unwrap();
-        let service = ProjectApplicationService { registry };
+        let service = ProjectApplicationService {
+            registry,
+            publication_coordinator: ProjectPublicationCoordinator::default(),
+        };
         let project_id = ProjectId::new_v4();
 
         let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(
@@ -288,7 +335,10 @@ mod tests {
         ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
         let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
         registry.register(project_id, &repository, None).unwrap();
-        let service = ProjectApplicationService { registry };
+        let service = ProjectApplicationService {
+            registry,
+            publication_coordinator: ProjectPublicationCoordinator::default(),
+        };
 
         let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));
         let ProjectReadResponse::Projects(items) = reply.result.unwrap() else {
@@ -333,7 +383,10 @@ mod tests {
         .unwrap();
         let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
         registry.register(project_id, &repository, None).unwrap();
-        let service = ProjectApplicationService { registry };
+        let service = ProjectApplicationService {
+            registry,
+            publication_coordinator: ProjectPublicationCoordinator::default(),
+        };
 
         let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(
             project_id,
@@ -353,5 +406,37 @@ mod tests {
                 } if *id == member_id && *target == model_id && *parent_scene_id == scene_id
             )
         }));
+    }
+
+    #[test]
+    fn publication_admission_is_shared_per_project_and_not_globally_serialized() {
+        let coordinator = ProjectPublicationCoordinator::default();
+        let project_id = ProjectId::new_v4();
+        let other_project_id = ProjectId::new_v4();
+        let publisher = coordinator.publisher(project_id);
+        let same_project_publisher = coordinator.publisher(project_id);
+        let other_project_publisher = coordinator.publisher(other_project_id);
+
+        assert!(Arc::ptr_eq(&publisher, &same_project_publisher));
+        assert!(!Arc::ptr_eq(&publisher, &other_project_publisher));
+
+        let guard = publisher.lock().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        let barrier = Arc::new(Barrier::new(2));
+        let worker_barrier = Arc::clone(&barrier);
+        let worker_publisher = Arc::clone(&same_project_publisher);
+        let worker = std::thread::spawn(move || {
+            worker_barrier.wait();
+            let _guard = worker_publisher.lock().unwrap();
+            sender.send(()).unwrap();
+        });
+
+        barrier.wait();
+        assert!(receiver.try_recv().is_err());
+        drop(guard);
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("same Project publisher must be admitted after release");
+        worker.join().unwrap();
     }
 }

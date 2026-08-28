@@ -22,6 +22,11 @@ pub(super) fn publish_model(
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectModelWriteResponse, ProjectWriteError> {
+    let publisher = service.publication_coordinator.publisher(project_id);
+    let _publication = publisher
+        .lock()
+        .expect("Project publication lock is not poisoned");
+
     let (entry, validated) =
         service
             .validated_project(project_id)

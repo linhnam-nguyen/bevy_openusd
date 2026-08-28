@@ -4,7 +4,9 @@ use project_protocol::{ProjectReadCommand, ProjectReadRequest, ProjectReadRespon
 use tempfile::tempdir;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot};
 
-use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
+use super::{
+    ManifestStore, ProjectApplicationService, ProjectPublicationCoordinator, WorkspaceRegistry,
+};
 
 #[test]
 fn repository_summary_projects_git_state_without_backend_handles() {
@@ -33,7 +35,10 @@ fn repository_summary_projects_git_state_without_backend_handles() {
 
     let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
     registry.register(project_id, &repository, None).unwrap();
-    let service = ProjectApplicationService { registry };
+    let service = ProjectApplicationService {
+        registry,
+        publication_coordinator: ProjectPublicationCoordinator::default(),
+    };
 
     let read = || {
         service.execute(ProjectReadCommand::new(
@@ -95,7 +100,10 @@ fn repository_summary_preserves_an_unborn_symbolic_branch() {
 
     let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
     registry.register(project_id, &repository, None).unwrap();
-    let service = ProjectApplicationService { registry };
+    let service = ProjectApplicationService {
+        registry,
+        publication_coordinator: ProjectPublicationCoordinator::default(),
+    };
     let reply = service.execute(ProjectReadCommand::new(
         ProjectReadRequest::GetProjectRepositorySummary(project_id),
     ));

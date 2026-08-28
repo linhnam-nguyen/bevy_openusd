@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    collections::VecDeque,
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
 };
@@ -20,18 +21,52 @@ struct PreparationJob {
     reply: mpsc::Sender<ProjectModelPreparationResult>,
 }
 
+const PREPARATION_CAPACITY: usize = 4;
+type PreparedKey = (String, u64);
+
+struct PreparedState {
+    artifacts: HashMap<PreparedKey, PreparedModel>,
+    order: VecDeque<PreparedKey>,
+}
+
+impl PreparedState {
+    fn new() -> Self {
+        Self {
+            artifacts: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn insert(&mut self, key: PreparedKey, prepared: PreparedModel) {
+        self.order.retain(|existing| existing != &key);
+        self.order.push_back(key.clone());
+        self.artifacts.insert(key, prepared);
+        while self.order.len() > PREPARATION_CAPACITY {
+            let Some(expired) = self.order.pop_front() else {
+                break;
+            };
+            self.artifacts.remove(&expired);
+        }
+    }
+
+    fn take(&mut self, key: &PreparedKey) -> Option<PreparedModel> {
+        self.order.retain(|existing| existing != key);
+        self.artifacts.remove(key)
+    }
+}
+
 /// One bounded preparation worker. The prepared backend artifact stays here
 /// until the host asks the same operation to publish it.
 #[derive(Clone)]
 pub struct ProjectModelPreparationQueue {
     sender: mpsc::SyncSender<PreparationJob>,
-    prepared: Arc<Mutex<HashMap<(String, u64), PreparedModel>>>,
+    prepared: Arc<Mutex<PreparedState>>,
 }
 
 impl Default for ProjectModelPreparationQueue {
     fn default() -> Self {
-        let (sender, receiver) = mpsc::sync_channel(4);
-        let prepared = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, receiver) = mpsc::sync_channel(PREPARATION_CAPACITY);
+        let prepared = Arc::new(Mutex::new(PreparedState::new()));
         let worker_prepared = Arc::clone(&prepared);
         std::thread::Builder::new()
             .name("usdhub-model-preparation".to_owned())
@@ -82,14 +117,11 @@ impl ProjectModelPreparationQueue {
         self.prepared
             .lock()
             .expect("Model preparation state is not poisoned")
-            .remove(&(operation_id.to_owned(), generation))
+            .take(&(operation_id.to_owned(), generation))
     }
 }
 
-fn worker_loop(
-    receiver: mpsc::Receiver<PreparationJob>,
-    prepared: Arc<Mutex<HashMap<(String, u64), PreparedModel>>>,
-) -> ! {
+fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<PreparedState>>) -> ! {
     let registry = ModelImporterRegistry::default();
     let importer = registry
         .importer_for(&usd_project::ModelSourceKind::Usd)
@@ -153,5 +185,29 @@ mod tests {
         assert_eq!(result.generation, 4);
         assert!(result.inspection.is_ok());
         assert!(queue.take_prepared("operation-1", 4).is_some());
+    }
+
+    #[test]
+    fn abandoned_prepared_models_are_evicted_after_the_bounded_retention_window() {
+        let directory = tempdir().unwrap();
+        let source = directory.path().join("asset.usda");
+        fs::write(
+            &source,
+            "#usda 1.0\n(\n defaultPrim = \"Asset\"\n)\ndef Xform \"Asset\" (kind = \"component\") {}\n",
+        )
+        .unwrap();
+        let queue = ProjectModelPreparationQueue::default();
+
+        for generation in 0..=PREPARATION_CAPACITY as u64 {
+            let result = queue.prepare("eviction".to_owned(), generation, source.clone());
+            assert!(result.inspection.is_ok());
+        }
+
+        assert!(queue.take_prepared("eviction", 0).is_none());
+        assert!(
+            queue
+                .take_prepared("eviction", PREPARATION_CAPACITY as u64)
+                .is_some()
+        );
     }
 }
