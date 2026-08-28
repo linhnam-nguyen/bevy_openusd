@@ -28,6 +28,9 @@ pub enum ViewportCommand {
     SearchBim {
         query: BimSearchQuery,
     },
+    /// Reads the authoritative BIM properties for the current selection.
+    /// Selection and its revision are owned by the viewport session.
+    RequestBimProperties,
     RequestHierarchyChildren {
         source: HierarchySource,
         parent_id: Option<HierarchyNodeId>,

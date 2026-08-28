@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
-use super::bim::{BimPropertyEditOutcome, BimSearchResult};
+use super::bim::{
+    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyEditOutcome, BimSearchResult,
+};
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::hierarchy::{HierarchyChildrenPage, HierarchySearchMatch, HierarchySource};
@@ -33,6 +35,10 @@ pub enum ViewportEvent {
     },
     BimSearchResults {
         result: BimSearchResult,
+    },
+    BimPropertiesRead {
+        properties: BimPropertiesReadModel,
+        diff: Option<BimPropertyDiffReadModel>,
     },
     HierarchyChildren {
         source: HierarchySource,

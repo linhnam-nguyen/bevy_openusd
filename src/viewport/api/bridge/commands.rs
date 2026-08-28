@@ -76,6 +76,7 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::RequestSceneChildren { .. }
             | ViewportCommand::SearchScene { .. }
             | ViewportCommand::SearchBim { .. }
+            | ViewportCommand::RequestBimProperties
             | ViewportCommand::RequestHierarchyChildren { .. }
             | ViewportCommand::SearchHierarchy { .. }
             | ViewportCommand::SetHierarchySource { .. } => {

@@ -227,6 +227,7 @@ impl ViewportCommand {
             | Self::RequestSnapshot
             | Self::RequestSceneChildren { .. }
             | Self::SearchScene { .. }
+            | Self::RequestBimProperties
             | Self::ReloadSession
             | Self::FocusTarget { .. }
             | Self::SetSubtreeVisibility { .. }

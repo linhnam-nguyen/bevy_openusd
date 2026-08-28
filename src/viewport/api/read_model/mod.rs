@@ -97,7 +97,6 @@ impl ViewportReadModelState {
     pub(crate) fn clear_search(&mut self) {
         self.search = None;
     }
-
     /// Returns the latest accepted server-side search matches.
     pub(crate) fn search_results(&self) -> &[SceneSearchMatch] {
         self.search
@@ -161,6 +160,7 @@ impl ViewportReadModelState {
             ViewportEvent::HierarchyChildren { .. }
             | ViewportEvent::HierarchySearchResults { .. }
             | ViewportEvent::BimSearchResults { .. }
+            | ViewportEvent::BimPropertiesRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
             | ViewportEvent::CommandRejected { .. } => {}

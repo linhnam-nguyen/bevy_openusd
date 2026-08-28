@@ -6,9 +6,9 @@ use viewport_protocol::{
 };
 
 use super::ViewerSettingsState;
-use super::bim_search;
 use super::helpers::{build_read_model, reject};
 use super::state::{SceneSearchRequest, SceneSearchRequests};
+use super::{bim_properties, bim_search};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::scene_query::SceneQueryService;
 use crate::viewport::api::{
@@ -31,6 +31,8 @@ pub(super) fn dispatch_scene_query_commands(
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut provider: Option<ResMut<ActiveHierarchyProvider>>,
     semantic: Option<Res<crate::viewport::semantic::SemanticSyncState>>,
+    semantic_diff: Option<Res<crate::viewport::semantic::SemanticDiffState>>,
+    selection: Option<Res<SelectedTargets>>,
     scene_query: Res<SceneQueryService>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -189,6 +191,15 @@ pub(super) fn dispatch_scene_query_commands(
                     &mut search_requests,
                     &mut outbox,
                     &mut counters,
+                );
+            }
+            ViewportCommand::RequestBimProperties => {
+                bim_properties::dispatch(
+                    request_id,
+                    selection.as_deref(),
+                    semantic.as_deref(),
+                    semantic_diff.as_deref(),
+                    &mut outbox,
                 );
             }
             ViewportCommand::SetHierarchySource {
