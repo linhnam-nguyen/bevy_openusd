@@ -9,6 +9,7 @@ mod progressive;
 mod progressive_cleanup;
 mod progressive_resident;
 mod progressive_state;
+mod project_readiness;
 mod projection;
 mod projection_plan;
 mod reconcile;
@@ -24,6 +25,7 @@ pub use path::{
     validate_prim_path,
 };
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
+pub use project_readiness::{ProjectOpenReadiness, ProjectOpenReadinessState};
 pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
@@ -65,6 +67,7 @@ impl Plugin for LiveStagePlugin {
         app.init_resource::<PrimEntities>()
             .init_resource::<ProjectionBudget>()
             .init_resource::<ProgressiveProjectionState>()
+            .init_resource::<ProjectOpenReadinessState>()
             .init_resource::<SemanticEntityIndex>()
             .init_resource::<PendingStageChanges>()
             .init_resource::<ReconcileStats>()
@@ -84,6 +87,11 @@ impl Plugin for LiveStagePlugin {
                 ),
             )
             .add_systems(Update, project_on_load_system.in_set(LiveStageSet::Project))
+            .add_systems(
+                Update,
+                project_readiness::observe_project_open_readiness
+                    .in_set(LiveStageSet::Presentation),
+            )
             .add_systems(
                 Update,
                 drain_stage_changes_system.in_set(LiveStageSet::Drain),
