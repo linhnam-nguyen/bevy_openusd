@@ -223,6 +223,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             adoption_authoring::prepare_parent_layer(
                 parent_path,
                 temporary_parent_path,
+                request.project_root,
                 request
                     .placement
                     .as_ref()

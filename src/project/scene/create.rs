@@ -125,6 +125,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             adoption_authoring::prepare_parent_layer(
                 parent_path,
                 temporary_parent_path,
+                request.project_root,
                 request
                     .parent_scene_id
                     .expect("parent path implies parent identity"),

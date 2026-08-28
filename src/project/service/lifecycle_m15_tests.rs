@@ -1,5 +1,6 @@
 use std::fs;
 
+use openusd::usd::Stage;
 use project_protocol::{ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget};
 use tempfile::tempdir;
 
@@ -37,6 +38,11 @@ fn create_scene_promotes_an_empty_project_without_a_fake_placement() {
     let manifest = ManifestStore::read_validated(&parent.join("Scene Project")).unwrap();
     assert_eq!(manifest.scenes().len(), 1);
     assert_eq!(manifest.raw().root, created.project.root);
+    assert!(
+        !parent
+            .join("Scene Project/.usdhub/cache/project-stage-mutations")
+            .exists()
+    );
 }
 
 #[test]
@@ -80,6 +86,14 @@ fn create_scene_adds_one_identity_preserving_child_placement() {
             ..
         }] if *target == child.scene_id && name == "Child Scene"
     ));
+    let parent_stage = Stage::open(
+        &crate::project::scene::authoring::scene_path(&project_root, root.scene_id)
+            .to_string_lossy(),
+    )
+    .unwrap();
+    let authored = parent_stage.root_layer().export_to_string().unwrap();
+    assert!(authored.contains("references"));
+    assert!(authored.contains(&child.scene_id.to_string()));
     assert_eq!(
         ManifestStore::read_validated(&project_root)
             .unwrap()

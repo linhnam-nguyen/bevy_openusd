@@ -131,7 +131,9 @@ fn publish_model_inner(
             code: ProjectWriteErrorCode::FilesystemFailure,
         })?
         .unwrap_or_default();
-    service.stage_mutations.ensure_capacity(project_root)?;
+    if parent_scene_id.is_some() {
+        service.stage_mutations.ensure_capacity(project_root)?;
+    }
 
     let placement = parent_scene_id.map(|parent_scene_id| ModelPlacement {
         parent_scene_id,
@@ -153,15 +155,17 @@ fn publish_model_inner(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&published.manifest, project_root)?;
-    service.stage_mutations.submit_for_project(
-        project_root,
-        super::ProjectStageMutation::PublishModel {
-            project_id,
-            model_id: published.id,
-            parent_scene_id,
-            placement_id: published.placement.as_ref().map(|member| member.id),
-        },
-    )?;
+    if let Some(parent_scene_id) = parent_scene_id {
+        service.stage_mutations.submit_for_project(
+            project_root,
+            super::ProjectStageMutation::PublishModel {
+                project_id,
+                model_id: published.id,
+                parent_scene_id: Some(parent_scene_id),
+                placement_id: published.placement.as_ref().map(|member| member.id),
+            },
+        )?;
+    }
 
     Ok(ProjectModelWriteResponse {
         project,
@@ -181,6 +185,7 @@ fn publish_model_inner(
 mod tests {
     use std::fs;
 
+    use openusd::usd::Stage;
     use tempfile::tempdir;
     use usd_project::{ProjectRoot, SceneMemberTarget};
 
@@ -230,6 +235,12 @@ mod tests {
         assert!(response.placement_id.is_none());
         assert_eq!(response.project.root, ProjectRoot::Model(response.model_id));
         assert_eq!(response.project.counts.models, 1);
+        assert!(
+            !directory
+                .path()
+                .join("projects/Project/.usdhub/cache/project-stage-mutations")
+                .exists()
+        );
     }
 
     #[test]
@@ -267,6 +278,17 @@ mod tests {
             member.id == placement_id
                 && member.target == SceneMemberTarget::Model(response.model_id)
         }));
+        let parent_stage = Stage::open(
+            &crate::project::scene::authoring::scene_path(
+                &directory.path().join("projects/Project"),
+                scene.scene_id,
+            )
+            .to_string_lossy(),
+        )
+        .unwrap();
+        let authored = parent_stage.root_layer().export_to_string().unwrap();
+        assert!(authored.contains("references"));
+        assert!(authored.contains(&response.model_id.to_string()));
     }
 
     #[test]

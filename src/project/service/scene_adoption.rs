@@ -121,7 +121,9 @@ fn adopt_scene_inner(
             code: ProjectWriteErrorCode::FilesystemFailure,
         })?
         .unwrap_or_else(Vec::<SceneMember>::new);
-    service.stage_mutations.ensure_capacity(project_root)?;
+    if parent_scene_id.is_some() {
+        service.stage_mutations.ensure_capacity(project_root)?;
+    }
 
     service.progress.publish(ProjectImportProgress {
         operation_id: operation_id.clone(),
@@ -145,15 +147,17 @@ fn adopt_scene_inner(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
-    service.stage_mutations.submit_for_project(
-        project_root,
-        super::ProjectStageMutation::AdoptScene {
-            project_id,
-            scene_id: adopted.scene_id,
-            parent_scene_id,
-            placement_id: adopted.member.as_ref().map(|member| member.id),
-        },
-    )?;
+    if let Some(parent_scene_id) = parent_scene_id {
+        service.stage_mutations.submit_for_project(
+            project_root,
+            super::ProjectStageMutation::AdoptScene {
+                project_id,
+                scene_id: adopted.scene_id,
+                parent_scene_id: Some(parent_scene_id),
+                placement_id: adopted.member.as_ref().map(|member| member.id),
+            },
+        )?;
+    }
 
     Ok(ProjectSceneAdoptionResponse {
         project,
