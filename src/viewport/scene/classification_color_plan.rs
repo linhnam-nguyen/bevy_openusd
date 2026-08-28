@@ -78,8 +78,9 @@ impl ClassificationColorPlan {
     }
 }
 
-/// Rebuilds the complete semantic color plan only when intent, provider, or
-/// semantic inputs change. Browser hierarchy paging never participates.
+/// Rebuilds the complete semantic color plan only when intent or provider
+/// inputs change. Semantic refresh is coalesced with hierarchy projection;
+/// browser hierarchy paging never participates.
 pub(in crate::viewport) fn refresh_classification_color_plan(
     provider: Option<Res<ActiveHierarchyProvider>>,
     semantic: Option<Res<SemanticSyncState>>,
@@ -115,9 +116,16 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
             plan.replace_entries(Vec::new());
             return;
         }
-        BimReadService::new(snapshot)
-            .classification_color_entries(recipe, &intent)
-            .unwrap_or_default()
+        match BimReadService::new(snapshot).classification_color_entries(recipe, &intent) {
+            Ok(entries) => entries,
+            Err(error) => {
+                bevy::log::warn!(
+                    error = %error,
+                    "classification color intent could not be materialized"
+                );
+                Vec::new()
+            }
+        }
     };
     plan.replace_entries(entries);
 }

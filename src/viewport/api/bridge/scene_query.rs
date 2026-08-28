@@ -283,9 +283,16 @@ pub(super) fn refresh_active_hierarchy_projection(
     let mut service = crate::viewport::bim::BimReadService::new(snapshot);
     let color_intent = color_plan.as_ref().and_then(|plan| plan.intent());
     let color_entries = color_intent.as_ref().map(|intent| {
-        service
-            .classification_color_entries(recipe, intent)
-            .unwrap_or_default()
+        match service.classification_color_entries(recipe, intent) {
+            Ok(entries) => entries,
+            Err(error) => {
+                bevy::log::warn!(
+                    error = %error,
+                    "classification color intent could not be materialized"
+                );
+                Vec::new()
+            }
+        }
     });
     let Ok(projection) = service.classification_projection(recipe) else {
         return;
