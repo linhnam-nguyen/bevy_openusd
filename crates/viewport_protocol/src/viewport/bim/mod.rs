@@ -20,6 +20,7 @@ pub use query::{
 };
 pub use read_model::{
     BimObjectMatch, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyGroupReadModel,
-    BimPropertyNameMatch, BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow,
-    BimSearchResult, BimUnitOption, CommonValue,
+    BimPropertyNameMatch, BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus,
+    BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchResult,
+    BimUnitOption, CommonValue,
 };

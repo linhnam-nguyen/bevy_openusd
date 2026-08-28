@@ -1,7 +1,8 @@
 use viewport_protocol::{
-    BimFieldKey, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId, BimPropertyReadModel,
+    BimFieldKey, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId,
+    BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus, BimPropertyReadModel,
     BimSearchQuery, ClassificationLevel, ClassificationRecipe, CommonValue, MAX_BIM_REGEX_BYTES,
-    MAX_BIM_SEARCH_OFFSET,
+    MAX_BIM_SEARCH_OFFSET, SceneAnchor, ViewportCommand,
 };
 
 #[test]
@@ -66,6 +67,34 @@ fn property_group_identity_and_selection_revision_round_trip() {
     let encoded = serde_json::to_string(&model).expect("BIM properties serialize");
     let decoded: BimPropertiesReadModel =
         serde_json::from_str(&encoded).expect("BIM properties deserialize");
+
+    assert_eq!(decoded, model);
+}
+
+#[test]
+fn provenance_command_and_read_model_are_typed_and_bounded() {
+    let target = SceneAnchor::active_session("/World/Door");
+    let command = ViewportCommand::RequestBimPropertyProvenance {
+        target: target.clone(),
+        property: "Mark".to_owned(),
+    };
+    command.validate().expect("provenance command validates");
+
+    let model = BimPropertyProvenanceReadModel {
+        target,
+        property: "Mark".to_owned(),
+        status: BimPropertyProvenanceStatus::Available,
+        commit_id: Some("abc123".to_owned()),
+        commit_message: Some("Update door mark".to_owned()),
+        author_name: Some("BIM Author".to_owned()),
+        author_email: Some("author@example.test".to_owned()),
+        authored_at_seconds: Some(1_725_000_000),
+        old_value: Some(viewport_protocol::CanonicalValue::Text("D-01".to_owned())),
+        new_value: Some(viewport_protocol::CanonicalValue::Text("D-02".to_owned())),
+    };
+    let encoded = serde_json::to_string(&model).expect("provenance serializes");
+    let decoded: BimPropertyProvenanceReadModel =
+        serde_json::from_str(&encoded).expect("provenance deserializes");
 
     assert_eq!(decoded, model);
 }

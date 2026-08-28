@@ -31,6 +31,11 @@ pub enum ViewportCommand {
     /// Reads the authoritative BIM properties for the current selection.
     /// Selection and its revision are owned by the viewport session.
     RequestBimProperties,
+    /// Lazily reads semantic Git provenance for one property.
+    RequestBimPropertyProvenance {
+        target: SceneAnchor,
+        property: String,
+    },
     RequestHierarchyChildren {
         source: HierarchySource,
         parent_id: Option<HierarchyNodeId>,

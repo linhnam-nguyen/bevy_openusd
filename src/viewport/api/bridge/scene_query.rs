@@ -33,6 +33,7 @@ pub(super) fn dispatch_scene_query_commands(
     semantic: Option<Res<crate::viewport::semantic::SemanticSyncState>>,
     semantic_diff: Option<Res<crate::viewport::semantic::SemanticDiffState>>,
     selection: Option<Res<SelectedTargets>>,
+    stage_handle: Option<Res<StageHandle>>,
     scene_query: Res<SceneQueryService>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -199,6 +200,20 @@ pub(super) fn dispatch_scene_query_commands(
                     selection.as_deref(),
                     semantic.as_deref(),
                     semantic_diff.as_deref(),
+                    &mut outbox,
+                );
+            }
+            ViewportCommand::RequestBimPropertyProvenance { target, property } => {
+                let Some(stage_handle) = stage_handle.as_deref() else {
+                    bim_properties::emit_unavailable(request_id, target, property, &mut outbox);
+                    continue;
+                };
+                bim_properties::dispatch_provenance(
+                    request_id,
+                    target,
+                    property,
+                    semantic_diff.as_deref(),
+                    &stage_handle.path,
                     &mut outbox,
                 );
             }

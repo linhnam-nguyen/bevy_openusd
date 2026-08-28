@@ -161,6 +161,7 @@ impl ViewportReadModelState {
             | ViewportEvent::HierarchySearchResults { .. }
             | ViewportEvent::BimSearchResults { .. }
             | ViewportEvent::BimPropertiesRead { .. }
+            | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
             | ViewportEvent::CommandRejected { .. } => {}
@@ -395,6 +396,5 @@ impl ViewportReadModelState {
         self.search = None;
     }
 }
-
 #[cfg(test)]
 mod tests;

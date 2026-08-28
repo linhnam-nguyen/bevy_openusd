@@ -62,6 +62,7 @@ impl ViewportCommandInbox {
                     | ViewportCommand::SearchScene { .. }
                     | ViewportCommand::SearchBim { .. }
                     | ViewportCommand::RequestBimProperties
+                    | ViewportCommand::RequestBimPropertyProvenance { .. }
                     | ViewportCommand::RequestHierarchyChildren { .. }
                     | ViewportCommand::SearchHierarchy { .. }
                     | ViewportCommand::SetHierarchySource { .. }

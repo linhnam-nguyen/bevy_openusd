@@ -71,6 +71,27 @@ pub struct BimPropertyGroupReadModel {
     pub properties: Vec<BimPropertyReadModel>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BimPropertyProvenanceStatus {
+    Available,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BimPropertyProvenanceReadModel {
+    pub target: SceneAnchor,
+    pub property: String,
+    pub status: BimPropertyProvenanceStatus,
+    pub commit_id: Option<String>,
+    pub commit_message: Option<String>,
+    pub author_name: Option<String>,
+    pub author_email: Option<String>,
+    pub authored_at_seconds: Option<i64>,
+    pub old_value: Option<CanonicalValue>,
+    pub new_value: Option<CanonicalValue>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BimPropertiesReadModel {
     pub targets: Vec<SceneAnchor>,

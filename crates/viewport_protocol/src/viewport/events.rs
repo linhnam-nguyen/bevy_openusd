@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::{PROTOCOL_VERSION, RequestId};
 
 use super::bim::{
-    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyEditOutcome, BimSearchResult,
+    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyEditOutcome,
+    BimPropertyProvenanceReadModel, BimSearchResult,
 };
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
@@ -39,6 +40,9 @@ pub enum ViewportEvent {
     BimPropertiesRead {
         properties: BimPropertiesReadModel,
         diff: Option<BimPropertyDiffReadModel>,
+    },
+    BimPropertyProvenanceRead {
+        provenance: BimPropertyProvenanceReadModel,
     },
     HierarchyChildren {
         source: HierarchySource,
