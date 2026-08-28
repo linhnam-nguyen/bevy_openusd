@@ -3,7 +3,6 @@ use usd_bevy::LiveStage;
 use usd_model::SemanticSnapshot;
 use viewport_protocol::{EditorOperation, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
-use super::bim_edit;
 use super::convert::editor_value_to_usd;
 use super::helpers::{
     emit_editor_completed, emit_editor_export, emit_runtime_mutation_accepted, reject,
@@ -24,6 +23,18 @@ pub(super) fn apply_editor_command(
     save_stage_path: Option<&std::path::Path>,
     selected_targets: &SelectedTargets,
 ) -> bool {
+    let (command, request_id) = match super::bim_commands::try_apply_bim_command(
+        command,
+        request_id,
+        outbox,
+        histories,
+        semantic_snapshot,
+        stage,
+        selected_targets,
+    ) {
+        Ok(result) => return result,
+        Err(command_and_request) => command_and_request,
+    };
     macro_rules! require_stage {
         () => {
             match stage {
@@ -155,38 +166,6 @@ pub(super) fn apply_editor_command(
                 EditorOperation::SetAttribute,
                 vec![format!("{prim_path}.{name}")],
                 histories,
-            );
-        }
-        ViewportCommand::EditBimProperty { mutation } => {
-            let stage = require_stage!();
-            let outcome = bim_edit::apply_bim_property_mutation(
-                stage,
-                histories,
-                semantic_snapshot,
-                &mutation,
-            );
-            bim_edit::emit_bim_property_completed(
-                outbox,
-                request_id,
-                outcome,
-                stage.current_revision().0,
-                histories,
-            );
-        }
-        ViewportCommand::EditBimProperties {
-            selection_revision,
-            mutations,
-        } => {
-            let stage = require_stage!();
-            bim_edit::apply_bim_property_batch_command(
-                stage,
-                histories,
-                semantic_snapshot,
-                selection_revision,
-                selected_targets,
-                mutations,
-                outbox,
-                request_id,
             );
         }
         ViewportCommand::ClearAttribute { prim_path, name } => {

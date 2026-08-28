@@ -33,11 +33,33 @@ pub(super) fn apply_bim_property_batch_command(
         stage,
         histories,
         semantic_snapshot,
-        selection_revision,
-        &selected_targets.0.targets,
-        selected_targets.revision(),
+        Some((
+            selection_revision,
+            &selected_targets.0.targets,
+            selected_targets.revision(),
+        )),
         &mutations,
     );
+    emit_bim_property_batch_completed(
+        outbox,
+        request_id,
+        outcomes,
+        applied,
+        stage.current_revision().0,
+        histories,
+    );
+}
+
+pub(super) fn apply_bim_replacement_batch_command(
+    stage: &LiveStage,
+    histories: &mut EditorHistories,
+    semantic_snapshot: Option<&SemanticSnapshot>,
+    mutations: Vec<BimPropertyMutation>,
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+) {
+    let (outcomes, applied) =
+        apply_bim_property_mutations(stage, histories, semantic_snapshot, None, &mutations);
     emit_bim_property_batch_completed(
         outbox,
         request_id,
@@ -146,9 +168,7 @@ pub(super) fn apply_bim_property_mutations(
     stage: &LiveStage,
     histories: &mut EditorHistories,
     semantic_snapshot: Option<&SemanticSnapshot>,
-    requested_selection_revision: u64,
-    selected_targets: &[viewport_protocol::SceneAnchor],
-    authoritative_selection_revision: u64,
+    selection: Option<(u64, &[viewport_protocol::SceneAnchor], u64)>,
     mutations: &[BimPropertyMutation],
 ) -> (Vec<BimPropertyEditOutcome>, bool) {
     if let Err(error) = validate_bim_mutation_batch(mutations) {
@@ -160,24 +180,31 @@ pub(super) fn apply_bim_property_mutations(
             false,
         );
     }
-    if requested_selection_revision != authoritative_selection_revision {
-        return rejected_bim_batch(
-            mutations,
-            format!(
-                "BIM selection is stale: expected revision {authoritative_selection_revision}, received {requested_selection_revision}"
-            ),
-        );
-    }
-    let selected = selected_targets.iter().collect::<HashSet<_>>();
-    let requested = mutations
-        .iter()
-        .map(|mutation| &mutation.target)
-        .collect::<HashSet<_>>();
-    if selected != requested {
-        return rejected_bim_batch(
-            mutations,
-            "BIM batch targets do not match the authoritative selection".to_owned(),
-        );
+    if let Some((
+        requested_selection_revision,
+        selected_targets,
+        authoritative_selection_revision,
+    )) = selection
+    {
+        if requested_selection_revision != authoritative_selection_revision {
+            return rejected_bim_batch(
+                mutations,
+                format!(
+                    "BIM selection is stale: expected revision {authoritative_selection_revision}, received {requested_selection_revision}"
+                ),
+            );
+        }
+        let selected = selected_targets.iter().collect::<HashSet<_>>();
+        let requested = mutations
+            .iter()
+            .map(|mutation| &mutation.target)
+            .collect::<HashSet<_>>();
+        if selected != requested {
+            return rejected_bim_batch(
+                mutations,
+                "BIM batch targets do not match the authoritative selection".to_owned(),
+            );
+        }
     }
 
     let semantic_index = semantic_snapshot.map(|snapshot| {

@@ -141,6 +141,73 @@ mod tests {
     }
 
     #[test]
+    fn replacement_batch_uses_preview_targets_without_selection_binding() {
+        let mut app = command_test_app();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyBimReplacementBatch {
+                mutations: vec![
+                    mutation("/World/A", 1.0, 10.0),
+                    mutation("/World/B", 2.0, 20.0),
+                ],
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("replacement batch publishes one event");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        assert!(matches!(
+            event.event,
+            ViewportEvent::BimPropertyBatchEditCompleted {
+                applied: true,
+                outcomes,
+                ..
+            } if outcomes.len() == 2 && outcomes.iter().all(|outcome| outcome.status == BimPropertyEditStatus::Applied)
+        ));
+        assert_eq!(read_width(&app, "/World/A"), 10.0);
+        assert_eq!(read_width(&app, "/World/B"), 20.0);
+    }
+
+    #[test]
+    fn replacement_batch_stale_member_rejects_without_stage_changes() {
+        let mut app = command_test_app();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::ApplyBimReplacementBatch {
+                mutations: vec![
+                    mutation("/World/A", 1.0, 10.0),
+                    mutation("/World/B", 99.0, 20.0),
+                ],
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("stale replacement publishes one event");
+        assert!(matches!(
+            event.event,
+            ViewportEvent::BimPropertyBatchEditCompleted {
+                applied: false,
+                outcomes,
+                ..
+            } if outcomes.len() == 2 && outcomes.iter().all(|outcome| outcome.status == BimPropertyEditStatus::Rejected)
+        ));
+        assert_eq!(read_width(&app, "/World/A"), 1.0);
+        assert_eq!(read_width(&app, "/World/B"), 2.0);
+    }
+
+    #[test]
     fn stale_member_rejects_the_whole_batch_without_stage_changes() {
         let mut app = command_test_app();
         app.world_mut()

@@ -186,6 +186,11 @@ pub enum ViewportCommand {
         selection_revision: u64,
         mutations: Vec<BimPropertyMutation>,
     },
+    /// Applies a bounded search-replacement batch by compare-and-set target;
+    /// unlike selection editing, the batch targets come from the preview.
+    ApplyBimReplacementBatch {
+        mutations: Vec<BimPropertyMutation>,
+    },
     ClearAttribute {
         prim_path: String,
         name: String,

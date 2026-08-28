@@ -11,6 +11,7 @@
 //! - [`settings`]  — authoritative protocol settings state
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
 
+mod bim_commands;
 mod bim_edit;
 mod bim_search;
 mod commands;
