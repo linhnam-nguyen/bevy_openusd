@@ -56,6 +56,48 @@ fn property_read_projects_intersection_and_authoritative_units() {
 }
 
 #[test]
+fn property_read_preserves_observed_connector_source_fallback_group() {
+    let mut snapshot = super::test_fixtures::snapshot();
+    for path in ["/World/WallA", "/World/WallB"] {
+        snapshot
+            .entities
+            .get_mut(&usd_model::EntityKey::from(if path.ends_with('A') {
+                "wall-a"
+            } else {
+                "wall-b"
+            }))
+            .expect("fixture wall")
+            .properties
+            .push(super::test_fixtures::property(
+                "BIM:Instance:Surface",
+                CanonicalValue::Text("22 m²".to_owned()),
+                None,
+            ));
+    }
+    let service = BimReadService::new(&snapshot);
+    let selection = SelectionReadModel {
+        targets: ["/World/WallA", "/World/WallB"]
+            .into_iter()
+            .map(viewport_protocol::SceneAnchor::active_session)
+            .collect(),
+        primary: None,
+    };
+
+    let result = service
+        .read_properties(&selection, 18, BimReadPolicy::default())
+        .expect("selected properties read");
+    let source_property = result
+        .properties
+        .iter()
+        .find(|property| property.key == "BIM:Instance:Surface")
+        .expect("observed source property");
+    assert_eq!(
+        source_property.group_id,
+        viewport_protocol::BimPropertyGroupId::SourceFallback
+    );
+}
+
+#[test]
 fn empty_selection_preserves_authoritative_revision() {
     let snapshot = snapshot();
     let service = BimReadService::new(&snapshot);
