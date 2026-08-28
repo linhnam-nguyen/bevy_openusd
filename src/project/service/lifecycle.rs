@@ -63,6 +63,26 @@ impl ProjectApplicationService {
             generation,
         )
     }
+
+    pub fn publish_model(
+        &mut self,
+        preparation: &super::ProjectModelPreparationQueue,
+        project_id: usd_project::ProjectId,
+        target: project_protocol::ProjectWriteTarget,
+        source: &std::path::Path,
+        operation_id: String,
+        generation: u64,
+    ) -> Result<project_protocol::ProjectModelWriteResponse, ProjectWriteError> {
+        super::model::publish_model(
+            self,
+            preparation,
+            project_id,
+            target,
+            source,
+            operation_id,
+            generation,
+        )
+    }
 }
 
 /// Create a Project under an already-selected parent directory.

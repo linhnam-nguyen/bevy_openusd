@@ -59,6 +59,7 @@ fn stable_wrapper_survives_original_source_rename() -> Result<()> {
         base_manifest: &base,
         prepared: &prepared,
         set_as_root: true,
+        placement: None,
     })?;
 
     fs::rename(&original, project.path().join("renamed-original.usda"))?;
@@ -117,6 +118,7 @@ fn composed_model_source_remains_one_opaque_product_model() -> Result<()> {
         base_manifest: &base,
         prepared: &prepared,
         set_as_root: true,
+        placement: None,
     })?;
 
     assert_eq!(published.manifest.models.len(), 1);

@@ -5,23 +5,25 @@
 //! Project Models or flatten the source Stage.
 
 use std::{
-    collections::HashMap,
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::{
-    sdf,
-    sdf::Value,
-    usd::{InitialLoadSet, Stage},
+use usd_project::{
+    ModelManifestEntry, ProjectManifestV1, ProjectRoot, SceneId, SceneMember, SceneMemberTarget,
+    StorageKey,
 };
-use usd_project::{ModelManifestEntry, ProjectManifestV1, ProjectRoot, StorageKey};
 use uuid::Uuid;
 
 use super::model_import::{ModelImporter, UsdModelImporter};
-use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::{
+    catalog::manifest_store::ManifestStore,
+    scene::{adoption_authoring, authoring},
+};
+
+#[path = "model_wrapper_authoring.rs"]
+mod wrapper_authoring;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
@@ -39,6 +41,13 @@ pub(crate) struct ModelWrapperRequest<'a> {
     pub base_manifest: &'a ProjectManifestV1,
     pub prepared: &'a super::model_import::PreparedModel,
     pub set_as_root: bool,
+    pub placement: Option<ModelPlacement<'a>>,
+}
+
+/// Existing authored Scene layer that receives a new Model placement.
+pub(crate) struct ModelPlacement<'a> {
+    pub parent_scene_id: SceneId,
+    pub parent_members: &'a [SceneMember],
 }
 
 /// Published Model identity and canonical wrapper location.
@@ -46,6 +55,7 @@ pub(crate) struct ModelWrapperRequest<'a> {
 pub(crate) struct PublishedModel {
     pub id: usd_project::ModelId,
     pub wrapper_path: PathBuf,
+    pub placement: Option<SceneMember>,
     pub manifest: ProjectManifestV1,
 }
 
@@ -81,8 +91,22 @@ pub(crate) fn publish_model_wrapper_atomic(
             .any(|entry| entry.id == request.prepared.id),
         "prepared Model identity is already registered in the Project manifest"
     );
+    if let Some(placement) = request.placement.as_ref() {
+        ensure!(
+            request
+                .base_manifest
+                .scenes
+                .iter()
+                .any(|entry| entry.id == placement.parent_scene_id),
+            "Model placement parent Scene is not registered in the Project manifest"
+        );
+        ensure!(
+            !request.set_as_root,
+            "a Model placement cannot also replace the Project root"
+        );
+    }
 
-    let source_default_prim = source_default_prim(&request.prepared.source)?;
+    let source_default_prim = wrapper_authoring::source_default_prim(&request.prepared.source)?;
     let model_directory = request
         .project_root
         .join(PROJECT_METADATA_DIRECTORY)
@@ -92,6 +116,22 @@ pub(crate) fn publish_model_wrapper_atomic(
         !model_directory.exists(),
         "canonical Model wrapper directory already exists"
     );
+
+    let placement = request.placement.as_ref().map(|_| SceneMember {
+        id: usd_project::SceneMemberId::new_v4(),
+        target: SceneMemberTarget::Model(request.prepared.id),
+        name: None,
+    });
+    let parent_members = request.placement.as_ref().map(|placement_request| {
+        let mut members = placement_request.parent_members.to_vec();
+        members.push(
+            placement
+                .as_ref()
+                .expect("Model placement request creates a placement")
+                .clone(),
+        );
+        members
+    });
 
     let mut manifest_candidate = request.base_manifest.clone();
     manifest_candidate.models.push(ModelManifestEntry {
@@ -119,6 +159,24 @@ pub(crate) fn publish_model_wrapper_atomic(
     let temporary_source_directory = temporary_model_directory.join("source");
     let temporary_source_path = temporary_source_directory.join("model.usda");
     let temporary_wrapper_path = temporary_model_directory.join("model.usda");
+    let parent_scene_path = request
+        .placement
+        .as_ref()
+        .map(|placement| authoring::scene_path(request.project_root, placement.parent_scene_id));
+    let temporary_parent_path = request.placement.as_ref().map(|placement| {
+        transaction_directory
+            .join("scenes")
+            .join(format!("{}.usda", placement.parent_scene_id))
+    });
+    let parent_backup_path = transaction_directory.join("parent-backup.usda");
+    let mut parent_published = false;
+    let mut parent_backup_created = false;
+    let mut model_published = false;
+
+    if let Some(path) = temporary_parent_path.as_ref() {
+        fs::create_dir_all(path.parent().expect("temporary parent path has a parent"))
+            .context("create Model placement transaction directory")?;
+    }
 
     let result = (|| {
         let copy_source = request
@@ -130,7 +188,7 @@ pub(crate) fn publish_model_wrapper_atomic(
         let published_source_path = if copy_source {
             fs::create_dir_all(&temporary_source_directory)
                 .context("create controlled Model source directory")?;
-            copy_file_synced(&request.prepared.source, &temporary_source_path)?;
+            wrapper_authoring::copy_file_synced(&request.prepared.source, &temporary_source_path)?;
             "./source/model.usda".to_owned()
         } else {
             request
@@ -141,19 +199,65 @@ pub(crate) fn publish_model_wrapper_atomic(
                 .to_owned()
         };
 
-        author_model_wrapper(
+        wrapper_authoring::author_model_wrapper(
             &temporary_wrapper_path,
             request.prepared.id,
             &published_source_path,
             &source_default_prim,
         )?;
-        validate_model_wrapper(&temporary_wrapper_path, request.prepared.id)?;
+        wrapper_authoring::validate_model_wrapper(&temporary_wrapper_path, request.prepared.id)?;
+
+        if let (Some(parent_path), Some(temporary_parent_path), Some(parent_members)) = (
+            parent_scene_path.as_ref(),
+            temporary_parent_path.as_ref(),
+            parent_members.as_deref(),
+        ) {
+            adoption_authoring::prepare_parent_layer(
+                parent_path,
+                temporary_parent_path,
+                request
+                    .placement
+                    .as_ref()
+                    .expect("parent path implies Model placement")
+                    .parent_scene_id,
+                parent_members,
+            )?;
+            authoring::validate_scene_file(
+                temporary_parent_path,
+                request
+                    .placement
+                    .as_ref()
+                    .expect("parent path implies Model placement")
+                    .parent_scene_id,
+                parent_members,
+            )?;
+        }
+
+        if let Some(parent_path) = parent_scene_path.as_ref() {
+            ensure!(
+                parent_path.exists(),
+                "Model placement parent Scene layer is missing"
+            );
+            fs::copy(parent_path, &parent_backup_path)
+                .context("backup parent Scene layer before Model publication")?;
+            parent_backup_created = true;
+            fs::rename(
+                temporary_parent_path
+                    .as_ref()
+                    .expect("parent path implies temporary parent path"),
+                parent_path,
+            )
+            .context("publish updated parent Scene layer")?;
+            parent_published = true;
+        }
+
         let models_directory = model_directory
             .parent()
             .context("canonical Model directory has no parent")?;
         fs::create_dir_all(models_directory).context("create canonical Model directory")?;
         fs::rename(&temporary_model_directory, &model_directory)
             .context("publish canonical Model wrapper directory")?;
+        model_published = true;
         if manifest_candidate != request.base_manifest.canonicalized() {
             ManifestStore::write_manifest_atomic(request.project_root, &manifest_candidate)
                 .context("publish Model Project manifest")?;
@@ -165,11 +269,29 @@ pub(crate) fn publish_model_wrapper_atomic(
         Ok(()) => Ok(PublishedModel {
             id: request.prepared.id,
             wrapper_path: model_directory.join("model.usda"),
+            placement,
             manifest: manifest_candidate,
         }),
         Err(error) => {
-            if model_directory.exists() {
+            if model_published && model_directory.exists() {
                 let _ = fs::remove_dir_all(&model_directory);
+            }
+            if parent_published {
+                if parent_backup_created {
+                    let _ = fs::remove_file(
+                        &parent_scene_path
+                            .as_ref()
+                            .expect("published parent path exists"),
+                    );
+                    let _ = fs::rename(
+                        &parent_backup_path,
+                        parent_scene_path
+                            .as_ref()
+                            .expect("published parent path exists"),
+                    );
+                } else if let Some(parent_path) = parent_scene_path.as_ref() {
+                    let _ = fs::remove_file(parent_path);
+                }
             }
             Err(error)
         }
@@ -184,124 +306,6 @@ fn ensure_current_manifest(project_root: &Path, expected: &ProjectManifestV1) ->
     ensure!(
         current.raw() == &expected.canonicalized(),
         "Project manifest changed after Model preparation"
-    );
-    Ok(())
-}
-
-fn source_default_prim(source: &Path) -> Result<String> {
-    let source_string = source
-        .to_str()
-        .context("Model source path must be valid UTF-8")?;
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(source_string)
-        .context("open prepared Model source")?;
-    stage
-        .default_prim()
-        .map(|token| token.as_str().to_owned())
-        .context("prepared Model source has no defaultPrim")
-}
-
-fn copy_file_synced(source: &Path, destination: &Path) -> Result<()> {
-    let mut input = File::open(source)
-        .with_context(|| format!("open controlled Model source {}", source.display()))?;
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .with_context(|| format!("create controlled Model source {}", destination.display()))?;
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = input.read(&mut buffer).context("read Model source")?;
-        if count == 0 {
-            break;
-        }
-        output
-            .write_all(&buffer[..count])
-            .context("copy Model source")?;
-    }
-    output.sync_all().context("sync controlled Model source")?;
-    Ok(())
-}
-
-fn author_model_wrapper(
-    path: &Path,
-    model_id: usd_project::ModelId,
-    source_path: &str,
-    source_default_prim: &str,
-) -> Result<()> {
-    let stage = Stage::builder().in_memory(format!("model-{model_id}.usda"))?;
-    stage
-        .define_prim(format!("/{MODEL_ROOT_PRIM}").as_str())?
-        .set_type_name("Xform")?
-        .set_metadata(
-            "customData",
-            Value::Dictionary(HashMap::from([
-                (
-                    MODEL_ID_METADATA.to_owned(),
-                    Value::String(model_id.to_string()),
-                ),
-                (
-                    SCHEMA_VERSION_METADATA.to_owned(),
-                    Value::Int(MODEL_SCHEMA_VERSION),
-                ),
-            ])),
-        )?;
-    stage.set_default_prim(MODEL_ROOT_PRIM)?;
-    stage
-        .define_prim(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
-        .set_type_name("Xform")?
-        .set_metadata(
-            REFERENCES_FIELD,
-            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
-                asset_path: source_path.to_owned(),
-                prim_path: sdf::path(format!("/{source_default_prim}"))?,
-                ..Default::default()
-            }])),
-        )?;
-    stage
-        .root_layer()
-        .export(path.to_string_lossy().as_ref())
-        .context("export temporary stable Model wrapper")?;
-    Ok(())
-}
-
-fn validate_model_wrapper(path: &Path, model_id: usd_project::ModelId) -> Result<()> {
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(&path_string)
-        .context("reopen stable Model wrapper")?;
-    ensure!(
-        stage
-            .default_prim()
-            .as_ref()
-            .is_some_and(|token| token.as_str() == MODEL_ROOT_PRIM),
-        "stable Model wrapper defaultPrim must be /{MODEL_ROOT_PRIM}"
-    );
-    let root = stage.prim(format!("/{MODEL_ROOT_PRIM}").as_str());
-    ensure!(
-        root.is_defined()?,
-        "stable Model wrapper root must be defined"
-    );
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
-        anyhow::bail!("stable Model wrapper root is missing customData");
-    };
-    ensure!(
-        data.get(MODEL_ID_METADATA) == Some(&Value::String(model_id.to_string())),
-        "stable Model wrapper identity does not match its directory"
-    );
-    ensure!(
-        data.get(SCHEMA_VERSION_METADATA) == Some(&Value::Int(MODEL_SCHEMA_VERSION)),
-        "stable Model wrapper schema version is unsupported or missing"
-    );
-    let source_path = sdf::path(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}"))?;
-    ensure!(
-        stage
-            .root_layer()
-            .prim(source_path)
-            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
-        "stable Model wrapper must reference its source"
     );
     Ok(())
 }

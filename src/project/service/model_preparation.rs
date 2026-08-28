@@ -8,9 +8,7 @@ use std::{
 
 use project_protocol::{ProjectModelPreparationResult, ProjectWriteError, ProjectWriteErrorCode};
 
-use crate::project::model_import::{
-    ModelImportRequest, ModelImporterRegistry, PreparedModel,
-};
+use crate::project::model_import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
 
 struct PreparationJob {
     operation_id: String,

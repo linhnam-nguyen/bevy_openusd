@@ -31,6 +31,7 @@ pub struct ProjectApplicationService {
 
 mod inspection;
 mod lifecycle;
+mod model;
 mod model_preparation;
 mod scene;
 mod scene_adoption;
