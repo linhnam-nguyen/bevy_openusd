@@ -5,7 +5,10 @@ use std::{
     sync::{Arc, Condvar, Mutex, mpsc},
 };
 
-use project_protocol::{ProjectSceneInspectionResult, ProjectWriteError, ProjectWriteErrorCode};
+use project_protocol::{
+    ProjectImportPhase, ProjectImportProgress, ProjectSceneInspectionResult, ProjectWriteError,
+    ProjectWriteErrorCode,
+};
 
 #[derive(Clone, Debug)]
 struct InspectionJob {
@@ -56,9 +59,16 @@ impl ProjectSceneInspectionQueue {
         let (lock, wake) = &*self.state;
         let mut state = lock.lock().expect("Scene inspection state is not poisoned");
         if let Some(previous) = state.pending.replace(job) {
+            let operation_id = previous.operation_id;
+            let generation = previous.generation;
             let _ = previous.reply.send(ProjectSceneInspectionResult {
-                operation_id: previous.operation_id,
-                generation: previous.generation,
+                operation_id: operation_id.clone(),
+                generation,
+                progress: ProjectImportProgress {
+                    operation_id,
+                    generation,
+                    phase: ProjectImportPhase::Failed,
+                },
                 inspection: Err(ProjectWriteError::ConcurrentChange),
             });
         }
@@ -86,9 +96,19 @@ fn worker_loop(state: Arc<(Mutex<InspectionState>, Condvar)>) -> ! {
             .map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::FilesystemFailure,
             });
+        let phase = if inspection.is_ok() {
+            ProjectImportPhase::Inspecting
+        } else {
+            ProjectImportPhase::Failed
+        };
         let _ = job.reply.send(ProjectSceneInspectionResult {
-            operation_id: job.operation_id,
+            operation_id: job.operation_id.clone(),
             generation: job.generation,
+            progress: ProjectImportProgress {
+                operation_id: job.operation_id,
+                generation: job.generation,
+                phase,
+            },
             inspection,
         });
     }
@@ -115,6 +135,7 @@ mod tests {
 
         assert_eq!(result.operation_id, "operation-1");
         assert_eq!(result.generation, 7);
+        assert_eq!(result.progress.phase, ProjectImportPhase::Inspecting);
         let inspection = result.inspection.expect("valid USD should inspect");
         assert!(!inspection.diagnostics.is_empty() || inspection.dependencies.is_empty());
     }

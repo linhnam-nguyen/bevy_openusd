@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use usd_project::CompositionInspection;
 
-use crate::{LocalSelectionToken, ProjectWriteError};
+use crate::{LocalSelectionToken, ProjectImportProgress, ProjectWriteError};
 
 /// Version of the bounded composed-Scene inspection command boundary.
 pub const PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION: u16 = 1;
@@ -45,6 +45,7 @@ impl ProjectSceneInspectionCommand {
 pub struct ProjectSceneInspectionResult {
     pub operation_id: String,
     pub generation: u64,
+    pub progress: ProjectImportProgress,
     pub inspection: Result<CompositionInspection, ProjectWriteError>,
 }
 

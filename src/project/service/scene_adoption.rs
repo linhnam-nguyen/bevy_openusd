@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use project_protocol::{
-    ProjectSceneAdoptionResponse, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
+    ProjectImportPhase, ProjectImportProgress, ProjectSceneAdoptionResponse, ProjectWriteError,
+    ProjectWriteErrorCode, ProjectWriteTarget,
 };
 use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 
@@ -106,8 +107,13 @@ pub(super) fn adopt_scene(
         project,
         scene_id: adopted.scene_id,
         placement_id: adopted.member.map(|member| member.id),
-        operation_id,
+        operation_id: operation_id.clone(),
         generation,
+        progress: ProjectImportProgress {
+            operation_id,
+            generation,
+            phase: ProjectImportPhase::Completed,
+        },
     })
 }
 
@@ -152,6 +158,9 @@ mod tests {
         assert!(adopted.placement_id.is_none());
         assert_eq!(adopted.operation_id, "operation-1");
         assert!(matches!(adopted.project.root, ProjectRoot::Scene(_)));
+        assert_eq!(adopted.progress.operation_id, "operation-1");
+        assert_eq!(adopted.progress.generation, 1);
+        assert_eq!(adopted.progress.phase, ProjectImportPhase::Completed);
         assert!(project_root.join(".usdhub/scenes").is_dir());
     }
 

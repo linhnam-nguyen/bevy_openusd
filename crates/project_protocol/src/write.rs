@@ -120,6 +120,7 @@ pub struct ProjectSceneAdoptionResponse {
     pub placement_id: Option<SceneMemberId>,
     pub operation_id: String,
     pub generation: u64,
+    pub progress: ProjectImportProgress,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
