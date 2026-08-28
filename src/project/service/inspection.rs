@@ -175,6 +175,7 @@ pub(super) fn project_summary(
             model_placements: 0,
         },
         issues: usd_project::ProjectIssueSummary::default(),
+        people: usd_project::ProjectPeopleSummary::default(),
         capabilities: ProjectCapabilities::default(),
     })
 }

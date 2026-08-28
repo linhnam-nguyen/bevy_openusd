@@ -61,6 +61,7 @@ fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
                 model_placements: 0,
             },
             issues: usd_project::ProjectIssueSummary::default(),
+            people: usd_project::ProjectPeopleSummary::default(),
             capabilities: ProjectCapabilities::default(),
         }),
         Err(_) => ProjectCatalogueItem::Unavailable {

@@ -13,6 +13,7 @@ pub struct ProjectSummary {
     pub repository: RepositorySummary,
     pub counts: ProjectContentCounts,
     pub issues: ProjectIssueSummary,
+    pub people: ProjectPeopleSummary,
     pub capabilities: ProjectCapabilities,
 }
 
@@ -32,6 +33,14 @@ pub struct ProjectIssueSummary {
     pub availability: ProjectProviderAvailability,
     pub issue_count: Option<u64>,
     pub bcf_topic_count: Option<u64>,
+}
+
+/// Read-only people summary. Identity and membership management remain
+/// outside this milestone; `None` preserves an absent provider explicitly.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectPeopleSummary {
+    pub availability: ProjectProviderAvailability,
+    pub participant_count: Option<u64>,
 }
 
 /// Git-neutral repository state for a Project summary.
@@ -145,6 +154,7 @@ mod tests {
                 model_placements: 2,
             },
             issues: ProjectIssueSummary::default(),
+            people: ProjectPeopleSummary::default(),
             capabilities: ProjectCapabilities {
                 can_create_scene: true,
                 can_import_scene: true,
@@ -204,5 +214,16 @@ mod tests {
         );
         assert_eq!(issues.issue_count, None);
         assert_eq!(issues.bcf_topic_count, None);
+    }
+
+    #[test]
+    fn optional_people_provider_does_not_fabricate_zero_count() {
+        let people = ProjectPeopleSummary::default();
+
+        assert_eq!(
+            people.availability,
+            ProjectProviderAvailability::NotConfigured
+        );
+        assert_eq!(people.participant_count, None);
     }
 }

@@ -68,6 +68,7 @@ mod tests {
                 },
                 counts: usd_project::ProjectContentCounts::default(),
                 issues: usd_project::ProjectIssueSummary::default(),
+                people: usd_project::ProjectPeopleSummary::default(),
                 capabilities: usd_project::ProjectCapabilities::default(),
             }),
         ]));
