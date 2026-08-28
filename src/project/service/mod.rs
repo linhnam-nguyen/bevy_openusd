@@ -64,6 +64,9 @@ impl ProjectPublicationCoordinator {
     }
 }
 
+mod branch;
+#[cfg(test)]
+mod branch_tests;
 mod error;
 mod inspection;
 mod lifecycle;
@@ -219,7 +222,7 @@ impl ProjectApplicationService {
 
 fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
     match item {
-        ProjectCatalogueItem::Available(summary) => ProjectListItem::Available(summary),
+        ProjectCatalogueItem::Available(summary) => ProjectListItem::Available(Box::new(summary)),
         ProjectCatalogueItem::Unavailable { project_id, reason } => ProjectListItem::Unavailable {
             project_id,
             code: match reason {

@@ -11,6 +11,11 @@ pub enum Error {
     UnsupportedEntry { path: PathBuf, kind: String },
     InvalidSourceDirectory(PathBuf),
     UnsupportedSourceEntry { path: PathBuf, kind: String },
+    InvalidBranchName(String),
+    BranchNotFound(String),
+    DirtyWorkingTree,
+    MissingWorktree,
+    Checkout(String),
     ReadOnly,
 }
 
@@ -61,6 +66,15 @@ impl fmt::Display for Error {
                     path.display()
                 )
             }
+            Self::InvalidBranchName(name) => {
+                write!(formatter, "invalid local branch name: {name:?}")
+            }
+            Self::BranchNotFound(name) => write!(formatter, "local branch not found: {name:?}"),
+            Self::DirtyWorkingTree => {
+                formatter.write_str("cannot switch branches with a dirty working tree")
+            }
+            Self::MissingWorktree => formatter.write_str("Git repository has no working tree"),
+            Self::Checkout(error) => write!(formatter, "branch checkout failed: {error}"),
             Self::ReadOnly => formatter.write_str("Git repository backend is read-only"),
         }
     }

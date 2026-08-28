@@ -3,13 +3,17 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use gix::bstr::ByteSlice;
-use gix::object::tree::EntryKind;
-
 use crate::{
     BranchInfo, CommitInfo, CommitRequest, CommitSignature, Error, MaterializedRevision, Result,
     Revision, RevisionId, RevisionSpec,
 };
+use gix::bstr::ByteSlice;
+use gix::object::tree::EntryKind;
+
+#[path = "branch.rs"]
+mod branch;
+
+pub use branch::{BranchName, BranchSwitchOutcome, WorkingTreeStatus};
 
 /// The Git boundary used by the rest of USDHub.
 pub trait GitRepository {
@@ -25,6 +29,14 @@ pub trait GitRepository {
 
     /// Return whether the tracked worktree or index differs from HEAD.
     fn is_dirty(&self) -> Result<bool>;
+
+    /// Return authoritative working-tree state, including non-ignored
+    /// untracked files.
+    fn working_tree_status(&self) -> Result<WorkingTreeStatus>;
+
+    /// Switch to an existing local branch without fetching, creating,
+    /// stashing, discarding, or force-overwriting user work.
+    fn switch_branch(&mut self, name: &BranchName) -> Result<BranchSwitchOutcome>;
 
     /// Return whether the Git index tracks any path below `prefix`.
     ///
@@ -166,7 +178,15 @@ impl GitRepository for Repository {
     }
 
     fn is_dirty(&self) -> Result<bool> {
-        self.inner.is_dirty().map_err(Error::git)
+        self.working_tree_status().map(|status| status.dirty)
+    }
+
+    fn working_tree_status(&self) -> Result<WorkingTreeStatus> {
+        branch::working_tree_status(self)
+    }
+
+    fn switch_branch(&mut self, name: &BranchName) -> Result<BranchSwitchOutcome> {
+        branch::switch_branch(self, name)
     }
 
     fn has_tracked_path_prefix(&self, prefix: &str) -> Result<bool> {

@@ -37,8 +37,9 @@ pub use scene_inspection::{
     ProjectSceneInspectionReply, ProjectSceneInspectionRequest, ProjectSceneInspectionResult,
 };
 pub use write::{
-    PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectCreateRequest,
-    ProjectCreateSceneRequest, ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
+    PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectBranchSwitchRequest,
+    ProjectBranchSwitchResponse, ProjectCreateRequest, ProjectCreateSceneRequest,
+    ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
     ProjectInspectionClassification, ProjectInspectionWarning, ProjectModelWriteResponse,
     ProjectSceneAdoptionResponse, ProjectSceneWriteResponse, ProjectWriteCommand,
     ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
@@ -60,7 +61,7 @@ mod tests {
         assert_eq!(command, decoded);
 
         let reply = ProjectReadReply::success(ProjectReadResponse::Projects(vec![
-            ProjectListItem::Available(ProjectSummary {
+            ProjectListItem::Available(Box::new(ProjectSummary {
                 id: project_id,
                 name: "Project".to_owned(),
                 root: usd_project::ProjectRoot::Empty,
@@ -75,7 +76,7 @@ mod tests {
                 issues: usd_project::ProjectIssueSummary::default(),
                 people: usd_project::ProjectPeopleSummary::default(),
                 capabilities: usd_project::ProjectCapabilities::default(),
-            }),
+            })),
         ]));
         let encoded = serde_json::to_string(&reply).unwrap();
         let decoded: ProjectReadReply = serde_json::from_str(&encoded).unwrap();

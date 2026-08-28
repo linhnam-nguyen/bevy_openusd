@@ -1,0 +1,132 @@
+use std::{fs, path::Path, process::Command};
+
+use project_protocol::{ProjectWriteError, ProjectWriteErrorCode};
+use tempfile::tempdir;
+use usd_git::GitRepository;
+use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot};
+
+use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
+
+#[test]
+fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("project");
+    fs::create_dir_all(&repository).unwrap();
+    run_git(&repository, &["init", "-b", "main"]);
+    run_git(&repository, &["config", "user.name", "USDHub Test"]);
+    run_git(
+        &repository,
+        &["config", "user.email", "test@usdhub.invalid"],
+    );
+
+    let project_id = ProjectId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        project_id,
+        "Branch Project",
+        ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    fs::write(repository.join("branch.txt"), b"main").unwrap();
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "main Project"]);
+    run_git(&repository, &["branch", "feature"]);
+    run_git(&repository, &["checkout", "feature"]);
+    fs::write(repository.join("branch.txt"), b"feature").unwrap();
+    run_git(&repository, &["add", "branch.txt"]);
+    run_git(&repository, &["commit", "-m", "feature Project"]);
+    run_git(&repository, &["checkout", "main"]);
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &repository, None).unwrap();
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+
+    let response = service
+        .switch_branch(project_id, "feature")
+        .expect("clean repository switches");
+    assert_eq!(
+        response.repository.active_branch.as_deref(),
+        Some("feature")
+    );
+    assert_eq!(fs::read(repository.join("branch.txt")).unwrap(), b"feature");
+    assert_eq!(
+        usd_git::Repository::open(&repository)
+            .unwrap()
+            .current_branch()
+            .unwrap()
+            .as_deref(),
+        Some("feature")
+    );
+
+    fs::write(repository.join("branch.txt"), b"local edit").unwrap();
+    assert!(matches!(
+        service.switch_branch(project_id, "main"),
+        Err(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::DirtyWorkingTree
+        })
+    ));
+    assert_eq!(
+        fs::read(repository.join("branch.txt")).unwrap(),
+        b"local edit"
+    );
+}
+
+#[test]
+fn service_branch_switch_reports_typed_invalid_and_missing_branch_failures() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("project");
+    fs::create_dir_all(&repository).unwrap();
+    run_git(&repository, &["init", "-b", "main"]);
+    run_git(&repository, &["config", "user.name", "USDHub Test"]);
+    run_git(
+        &repository,
+        &["config", "user.email", "test@usdhub.invalid"],
+    );
+
+    let project_id = ProjectId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        project_id,
+        "Branch Project",
+        ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    fs::write(repository.join("branch.txt"), b"main").unwrap();
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "main Project"]);
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &repository, None).unwrap();
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+
+    assert!(matches!(
+        service.switch_branch(project_id, "../unsafe"),
+        Err(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::InvalidBranchName
+        })
+    ));
+    assert!(matches!(
+        service.switch_branch(project_id, "missing"),
+        Err(ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::BranchNotFound
+        })
+    ));
+}
+
+fn run_git(directory: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(directory)
+        .output()
+        .expect("run git command");
+    assert!(
+        output.status.success(),
+        "git command failed: {}\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

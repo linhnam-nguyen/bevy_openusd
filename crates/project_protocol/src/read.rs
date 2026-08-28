@@ -17,7 +17,7 @@ pub enum ProjectReadRequest {
 /// registry-owned identity while exposing only a typed diagnostic code.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectListItem {
-    Available(ProjectSummary),
+    Available(Box<ProjectSummary>),
     Unavailable {
         project_id: ProjectId,
         code: ProjectReadErrorCode,

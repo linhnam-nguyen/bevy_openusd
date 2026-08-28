@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use usd_project::{
-    CompositionInspection, ModelId, ProjectId, ProjectSummary, SceneId, SceneMemberId,
+    CompositionInspection, ModelId, ProjectContentCounts, ProjectContentNode, ProjectId,
+    ProjectSummary, RepositorySummary, SceneId, SceneMemberId,
 };
 
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
@@ -52,6 +53,11 @@ pub enum ProjectWriteErrorCode {
     Busy,
     RegistrationFailed,
     FilesystemFailure,
+    InvalidBranchName,
+    BranchNotFound,
+    DirtyWorkingTree,
+    BranchProjectInvalid,
+    BranchSwitchFailed,
 }
 
 /// Typed write failures safe to return through the native host.
@@ -133,6 +139,20 @@ pub struct ProjectImportModelRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectBranchSwitchRequest {
+    pub project_id: ProjectId,
+    pub branch_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectBranchSwitchResponse {
+    pub project: ProjectSummary,
+    pub repository: RepositorySummary,
+    pub nodes: Vec<ProjectContentNode>,
+    pub counts: ProjectContentCounts,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectModelWriteResponse {
     pub project: ProjectSummary,
     pub model_id: ModelId,
@@ -150,6 +170,7 @@ pub enum ProjectWriteRequest {
     CreateScene(ProjectCreateSceneRequest),
     AdoptScene(ProjectAdoptSceneRequest),
     ImportModel(ProjectImportModelRequest),
+    SwitchBranch(ProjectBranchSwitchRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -159,6 +180,7 @@ pub enum ProjectWriteResponse {
     Scene(ProjectSceneWriteResponse),
     SceneAdopted(ProjectSceneAdoptionResponse),
     ModelImported(ProjectModelWriteResponse),
+    BranchSwitched(ProjectBranchSwitchResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
