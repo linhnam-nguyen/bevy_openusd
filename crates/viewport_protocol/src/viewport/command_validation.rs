@@ -200,9 +200,14 @@ impl ViewportCommand {
                 }
             }
             Self::EditBimProperty { mutation } => mutation.validate()?,
-            Self::RequestBimPropertyProvenance { target, property } => {
+            Self::RequestBimPropertyProvenance {
+                target,
+                property,
+                history_head,
+            } => {
                 target.validate()?;
                 text("bim.provenance.property", property)?;
+                text("bim.provenance.history_head", history_head)?;
             }
             Self::EditBimProperties { mutations, .. }
             | Self::ApplyBimReplacementBatch { mutations } => {

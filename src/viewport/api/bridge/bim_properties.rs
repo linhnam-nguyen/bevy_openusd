@@ -6,6 +6,7 @@ use viewport_protocol::{
     SceneAnchor, SelectionReadModel, ViewportEvent, ViewportEventEnvelope,
 };
 
+use crate::viewport::api::BimProvenanceService;
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState};
@@ -84,74 +85,66 @@ fn reject(outbox: &mut ViewportEventOutbox, request_id: String, reason: String) 
     ));
 }
 
-pub(super) fn dispatch_provenance(
+pub(super) fn submit_provenance(
     request_id: String,
     target: SceneAnchor,
     property: String,
+    history_head: String,
+    semantic: Option<&SemanticSyncState>,
     semantic_diff: Option<&SemanticDiffState>,
     stage_path: &Path,
+    service: &BimProvenanceService,
     outbox: &mut ViewportEventOutbox,
 ) {
+    let Some(snapshot) = semantic.and_then(SemanticSyncState::snapshot) else {
+        emit_unavailable(request_id, target, property, history_head, outbox);
+        return;
+    };
     let Some(diff) =
         semantic_diff.and_then(|state| state.bim_property_diff(std::slice::from_ref(&target)))
     else {
-        emit_unavailable(request_id, target, property, outbox);
+        emit_unavailable(request_id, target, property, history_head, outbox);
         return;
     };
-    let Some(row) = diff.properties.iter().find(|row| row.key == property) else {
-        emit_unavailable(request_id, target, property, outbox);
+    if diff.base_git_oid != history_head {
+        emit_unavailable(request_id, target, property, history_head, outbox);
+        return;
+    }
+    if !diff.properties.iter().any(|row| row.key == property) {
+        emit_unavailable(request_id, target, property, history_head, outbox);
+        return;
+    }
+    let Some(entity) = snapshot
+        .entities
+        .values()
+        .find(|entity| entity.prim_path == target.prim_path)
+    else {
+        emit_unavailable(request_id, target, property, history_head, outbox);
         return;
     };
 
-    let repository = match usd_git::Repository::open(stage_path) {
-        Ok(repository) => repository,
-        Err(error) => {
-            reject(
-                outbox,
-                request_id,
-                format!("BIM property provenance is unavailable: {error}"),
-            );
-            return;
-        }
-    };
-    let commit = match usd_git::GitRepository::read_commit(
-        &repository,
-        &usd_git::RevisionId::new(diff.base_git_oid.clone()),
+    if service.submit(
+        request_id.clone(),
+        target.clone(),
+        property.clone(),
+        entity.key.clone(),
+        usd_git::RevisionId::new(history_head),
+        stage_path.to_owned(),
     ) {
-        Ok(commit) => commit,
-        Err(error) => {
-            reject(
-                outbox,
-                request_id,
-                format!("BIM property provenance commit could not be read: {error}"),
-            );
-            return;
-        }
-    };
-
-    outbox.push(ViewportEventEnvelope::new(
-        Some(request_id),
-        ViewportEvent::BimPropertyProvenanceRead {
-            provenance: BimPropertyProvenanceReadModel {
-                target,
-                property,
-                status: BimPropertyProvenanceStatus::Available,
-                commit_id: Some(commit.id.to_string()),
-                commit_message: Some(commit.message),
-                author_name: Some(commit.author.name),
-                author_email: Some(commit.author.email),
-                authored_at_seconds: Some(commit.author.time_seconds),
-                old_value: row.old_value.clone(),
-                new_value: row.new_value.clone(),
-            },
-        },
-    ));
+        return;
+    }
+    reject(
+        outbox,
+        request_id,
+        "BIM property provenance worker is unavailable".to_owned(),
+    );
 }
 
 pub(super) fn emit_unavailable(
     request_id: String,
     target: SceneAnchor,
     property: String,
+    history_head: String,
     outbox: &mut ViewportEventOutbox,
 ) {
     outbox.push(ViewportEventEnvelope::new(
@@ -160,6 +153,7 @@ pub(super) fn emit_unavailable(
             provenance: BimPropertyProvenanceReadModel {
                 target,
                 property,
+                history_head,
                 status: BimPropertyProvenanceStatus::Unavailable,
                 commit_id: None,
                 commit_message: None,

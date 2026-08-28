@@ -35,6 +35,8 @@ pub enum ViewportCommand {
     RequestBimPropertyProvenance {
         target: SceneAnchor,
         property: String,
+        /// Git history head used to validate the provenance generation.
+        history_head: String,
     },
     RequestHierarchyChildren {
         source: HierarchySource,

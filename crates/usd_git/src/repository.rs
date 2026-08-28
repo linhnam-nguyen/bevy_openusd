@@ -47,6 +47,12 @@ impl Repository {
         Ok(Self { inner })
     }
 
+    /// Return the working-tree root used to resolve paths for read-only
+    /// history materialization.
+    pub fn work_dir(&self) -> Option<&Path> {
+        self.inner.workdir()
+    }
+
     fn commit_for_spec(&self, spec: &str) -> Result<gix::Commit<'_>> {
         let id = self.inner.rev_parse_single(spec).map_err(Error::git)?;
         self.inner.find_commit(id.detach()).map_err(Error::git)

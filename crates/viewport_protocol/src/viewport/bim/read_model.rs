@@ -82,6 +82,8 @@ pub enum BimPropertyProvenanceStatus {
 pub struct BimPropertyProvenanceReadModel {
     pub target: SceneAnchor,
     pub property: String,
+    /// Git history head used to compute this result and validate cache use.
+    pub history_head: String,
     pub status: BimPropertyProvenanceStatus,
     pub commit_id: Option<String>,
     pub commit_message: Option<String>,

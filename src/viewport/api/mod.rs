@@ -3,6 +3,7 @@
 //! The shared `viewport_protocol` crate owns public data types. This module
 //! owns in-process queues and will translate them into private ECS state.
 
+mod bim_provenance;
 mod bridge;
 mod hierarchy;
 mod interface;
@@ -12,6 +13,7 @@ mod scene_index;
 mod scene_query;
 mod session_registry;
 
+pub(crate) use bim_provenance::BimProvenanceService;
 pub(crate) use bridge::editor_value_to_usd;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,

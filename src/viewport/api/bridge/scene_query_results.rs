@@ -3,17 +3,32 @@ use viewport_protocol::{ViewportEvent, ViewportEventEnvelope};
 
 use super::bim_search;
 use super::state::SceneSearchRequests;
-use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::api::scene_query::{SceneQueryService, SearchMatches, SearchResult};
+use crate::viewport::api::{BimProvenanceService, ViewportEventOutbox};
 use crate::viewport::diagnostics::performance::RendererCounters;
 
 /// Drains hierarchy-search-worker responses and publishes search results.
 pub(super) fn publish_scene_query_results(
     scene_query: Res<SceneQueryService>,
+    bim_provenance: Option<Res<BimProvenanceService>>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
 ) {
+    if let Some(bim_provenance) = bim_provenance {
+        for result in bim_provenance.drain_results() {
+            let request_id = result.request_id;
+            let event = match result.result {
+                Ok(provenance) => ViewportEvent::BimPropertyProvenanceRead { provenance },
+                Err(reason) => ViewportEvent::CommandRejected {
+                    request_id: request_id.clone(),
+                    reason,
+                },
+            };
+            outbox.push(ViewportEventEnvelope::new(Some(request_id), event));
+        }
+    }
+
     for result in scene_query.drain_results() {
         let request_id = match &result {
             SearchResult::Hierarchy { request_id, .. } | SearchResult::Bim { request_id, .. } => {

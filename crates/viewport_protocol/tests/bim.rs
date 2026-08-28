@@ -77,12 +77,14 @@ fn provenance_command_and_read_model_are_typed_and_bounded() {
     let command = ViewportCommand::RequestBimPropertyProvenance {
         target: target.clone(),
         property: "Mark".to_owned(),
+        history_head: "c10".to_owned(),
     };
     command.validate().expect("provenance command validates");
 
     let model = BimPropertyProvenanceReadModel {
         target,
         property: "Mark".to_owned(),
+        history_head: "c10".to_owned(),
         status: BimPropertyProvenanceStatus::Available,
         commit_id: Some("abc123".to_owned()),
         commit_message: Some("Update door mark".to_owned()),

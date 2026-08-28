@@ -16,8 +16,8 @@ use crate::project::ghost_cache::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::api::{
-    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox,
-    ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
+    ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
+    ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
 };
 use crate::viewport::scene::ClassificationColorPlan;
 use crate::viewport::scene::SelectedTargets;
@@ -40,6 +40,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ActiveHierarchyProvider>()
             .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
+            .init_resource::<BimProvenanceService>()
             .init_resource::<SelectedTargets>()
             .init_resource::<ClassificationColorPlan>()
             .init_resource::<ViewerSettingsState>()

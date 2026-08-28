@@ -21,7 +21,7 @@ mod generic;
 use generic::search_hierarchy_generic;
 
 #[derive(Debug)]
-struct LatestMailboxState<T> {
+pub(super) struct LatestMailboxState<T> {
     pending: Option<T>,
     closed: bool,
 }
@@ -36,20 +36,20 @@ impl<T> Default for LatestMailboxState<T> {
 }
 
 #[derive(Debug)]
-struct LatestMailbox<T> {
+pub(super) struct LatestMailbox<T> {
     state: Mutex<LatestMailboxState<T>>,
     wake: Condvar,
 }
 
 impl<T> LatestMailbox<T> {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             state: Mutex::new(LatestMailboxState::default()),
             wake: Condvar::new(),
         }
     }
 
-    fn replace(&self, value: T) -> Result<(), T> {
+    pub(super) fn replace(&self, value: T) -> Result<(), T> {
         let Ok(mut state) = self.state.lock() else {
             return Err(value);
         };
@@ -61,7 +61,7 @@ impl<T> LatestMailbox<T> {
         Ok(())
     }
 
-    fn pop(&self) -> Option<T> {
+    pub(super) fn pop(&self) -> Option<T> {
         let mut state = self.state.lock().ok()?;
         loop {
             if let Some(value) = state.pending.take() {
@@ -74,11 +74,11 @@ impl<T> LatestMailbox<T> {
         }
     }
 
-    fn take(&self) -> Option<T> {
+    pub(super) fn take(&self) -> Option<T> {
         self.state.lock().ok()?.pending.take()
     }
 
-    fn close(&self) {
+    pub(super) fn close(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.pending = None;
             state.closed = true;

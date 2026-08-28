@@ -12,8 +12,8 @@ use super::{bim_properties, bim_search};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::scene_query::SceneQueryService;
 use crate::viewport::api::{
-    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox,
-    ViewportEventOutbox,
+    ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
+    ViewportCommandInbox, ViewportEventOutbox,
 };
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
@@ -35,6 +35,7 @@ pub(super) fn dispatch_scene_query_commands(
     selection: Option<Res<SelectedTargets>>,
     stage_handle: Option<Res<StageHandle>>,
     scene_query: Res<SceneQueryService>,
+    bim_provenance: Option<Res<BimProvenanceService>>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
@@ -203,17 +204,40 @@ pub(super) fn dispatch_scene_query_commands(
                     &mut outbox,
                 );
             }
-            ViewportCommand::RequestBimPropertyProvenance { target, property } => {
+            ViewportCommand::RequestBimPropertyProvenance {
+                target,
+                property,
+                history_head,
+            } => {
                 let Some(stage_handle) = stage_handle.as_deref() else {
-                    bim_properties::emit_unavailable(request_id, target, property, &mut outbox);
+                    bim_properties::emit_unavailable(
+                        request_id,
+                        target,
+                        property,
+                        history_head,
+                        &mut outbox,
+                    );
                     continue;
                 };
-                bim_properties::dispatch_provenance(
+                let Some(bim_provenance) = bim_provenance.as_deref() else {
+                    bim_properties::emit_unavailable(
+                        request_id,
+                        target,
+                        property,
+                        history_head,
+                        &mut outbox,
+                    );
+                    continue;
+                };
+                bim_properties::submit_provenance(
                     request_id,
                     target,
                     property,
+                    history_head,
+                    semantic.as_deref(),
                     semantic_diff.as_deref(),
                     &stage_handle.path,
+                    &bim_provenance,
                     &mut outbox,
                 );
             }
