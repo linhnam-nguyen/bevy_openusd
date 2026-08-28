@@ -12,6 +12,7 @@
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
 
 mod bim_edit;
+mod bim_search;
 mod commands;
 pub(crate) mod convert;
 mod editor_commands;
@@ -20,6 +21,7 @@ mod mutations;
 mod plugin;
 mod save;
 mod scene_query;
+mod scene_query_results;
 mod settings;
 mod state;
 mod tree;

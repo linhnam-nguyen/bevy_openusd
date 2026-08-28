@@ -152,7 +152,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
                         live_revision: result.identity.live_revision,
                         projection_generation: current_generation,
                     },
-                    snapshot,
+                    snapshot: snapshot.as_ref().clone(),
                     // The stale worker already persisted its prepared bytes.
                     // The retry only rebuilds the complete manifest/hierarchy.
                     prepared_blobs: Vec::new(),

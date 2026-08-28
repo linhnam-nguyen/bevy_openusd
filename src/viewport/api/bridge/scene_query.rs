@@ -6,6 +6,7 @@ use viewport_protocol::{
 };
 
 use super::ViewerSettingsState;
+use super::bim_search;
 use super::helpers::{build_read_model, reject};
 use super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::animation::UsdStageTime;
@@ -21,51 +22,7 @@ use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
-/// Drains hierarchy-search-worker responses and publishes search results.
-pub(super) fn publish_scene_query_results(
-    scene_query: Res<SceneQueryService>,
-    mut search_requests: ResMut<SceneSearchRequests>,
-    mut outbox: ResMut<ViewportEventOutbox>,
-    mut counters: Option<ResMut<RendererCounters>>,
-) {
-    for result in scene_query.drain_results() {
-        let Some(request) = search_requests.pending.remove(&result.request_id) else {
-            // The read model will reject a response whose request is no
-            // longer current; dropping it here also bounds pending metadata.
-            continue;
-        };
-        if let Some(ref mut counters) = counters {
-            counters.query_results += 1;
-            counters.record_query_latency_ms(request.submitted_at.elapsed().as_secs_f64() * 1000.0);
-        }
-        let event = match result.matches {
-            super::super::scene_query::SearchMatches::Scene(matches) => {
-                let matches = matches
-                    .into_iter()
-                    .filter_map(|result| result.into_scene_search_match())
-                    .collect();
-                ViewportEvent::SearchResults {
-                    query: result.query,
-                    offset: result.offset,
-                    total: result.total,
-                    matches,
-                    has_more: result.has_more,
-                }
-            }
-            super::super::scene_query::SearchMatches::Generic(matches) => {
-                ViewportEvent::HierarchySearchResults {
-                    source: result.source,
-                    query: result.query,
-                    offset: result.offset,
-                    total: result.total,
-                    matches,
-                    has_more: result.has_more,
-                }
-            }
-        };
-        outbox.push(ViewportEventEnvelope::new(Some(result.request_id), event));
-    }
-}
+pub(super) use super::scene_query_results::publish_scene_query_results;
 
 /// Routes scene-query commands to the current hierarchy projection.
 pub(super) fn dispatch_scene_query_commands(
@@ -222,6 +179,17 @@ pub(super) fn dispatch_scene_query_commands(
                         "hierarchy search worker is unavailable".to_owned(),
                     );
                 }
+            }
+            ViewportCommand::SearchBim { query } => {
+                bim_search::dispatch(
+                    request_id,
+                    query,
+                    semantic.as_ref().map(|state| &**state),
+                    &scene_query,
+                    &mut search_requests,
+                    &mut outbox,
+                    &mut counters,
+                );
             }
             ViewportCommand::SetHierarchySource {
                 source,

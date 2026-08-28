@@ -187,6 +187,54 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn bim_search_routes_through_the_semantic_worker() -> anyhow::Result<()> {
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<CurrentHierarchyProjection>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(empty_snapshot()))
+            .add_systems(
+                Update,
+                (publish_scene_query_results, dispatch_scene_query_commands).chain(),
+            );
+
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SearchBim {
+                query: BimSearchQuery::PropertyNameRegex {
+                    pattern: "Fire.*".to_owned(),
+                    page: BimPageRequest::new(0, 20),
+                },
+            },
+        );
+
+        for _ in 0..200 {
+            app.update();
+            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
+                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+                let ViewportEvent::BimSearchResults { result } = event.event else {
+                    panic!("expected BIM search results")
+                };
+                assert!(matches!(
+                    result,
+                    BimSearchResult::PropertyNames {
+                        total: 0,
+                        matches,
+                        has_more: false,
+                        ..
+                    } if matches.is_empty()
+                ));
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        anyhow::bail!("BIM search result did not arrive")
+    }
+
     fn node(
         path: &str,
         parent: Option<&str>,

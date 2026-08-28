@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
-use super::bim::BimPropertyEditOutcome;
+use super::bim::{BimPropertyEditOutcome, BimSearchResult};
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::hierarchy::{HierarchyChildrenPage, HierarchySearchMatch, HierarchySource};
@@ -30,6 +30,9 @@ pub enum ViewportEvent {
         total: u32,
         matches: Vec<SceneSearchMatch>,
         has_more: bool,
+    },
+    BimSearchResults {
+        result: BimSearchResult,
     },
     HierarchyChildren {
         source: HierarchySource,

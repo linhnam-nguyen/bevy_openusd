@@ -116,6 +116,7 @@ impl ViewportCommand {
                     });
                 }
             }
+            Self::SearchBim { query } => query.validate()?,
             Self::SetHierarchySource {
                 source,
                 classification_recipe,

@@ -18,7 +18,6 @@ struct ScenePageKey {
     page: u32,
     page_size: u32,
 }
-
 /// A paged scene request that a local reference adapter must send through the
 /// same public command as the remote frontend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,8 +159,9 @@ impl ViewportReadModelState {
                 *has_more,
             ),
             ViewportEvent::HierarchyChildren { .. }
-            | ViewportEvent::HierarchySearchResults { .. } => {}
-            ViewportEvent::Ready { .. }
+            | ViewportEvent::HierarchySearchResults { .. }
+            | ViewportEvent::BimSearchResults { .. }
+            | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
             | ViewportEvent::CommandRejected { .. } => {}
             ViewportEvent::StageLoadStateChanged { state } => {

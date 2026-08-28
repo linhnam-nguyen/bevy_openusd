@@ -60,6 +60,7 @@ impl ViewportCommandInbox {
                 envelope.command,
                 ViewportCommand::RequestSceneChildren { .. }
                     | ViewportCommand::SearchScene { .. }
+                    | ViewportCommand::SearchBim { .. }
                     | ViewportCommand::RequestHierarchyChildren { .. }
                     | ViewportCommand::SearchHierarchy { .. }
                     | ViewportCommand::SetHierarchySource { .. }

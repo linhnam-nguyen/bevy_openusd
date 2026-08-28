@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
-use super::bim::{BimPropertyMutation, ClassificationRecipe};
+use super::bim::{BimPropertyMutation, BimSearchQuery, ClassificationRecipe};
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::hierarchy::{ClassificationColorIntent, HierarchyNodeId, HierarchySource};
 use super::read_models::{
@@ -24,6 +24,9 @@ pub enum ViewportCommand {
         query: String,
         offset: u32,
         limit: u32,
+    },
+    SearchBim {
+        query: BimSearchQuery,
     },
     RequestHierarchyChildren {
         source: HierarchySource,

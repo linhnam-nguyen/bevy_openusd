@@ -4,7 +4,7 @@ mod delivery;
 mod delivery_worker;
 mod subtree;
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 pub(crate) use action::SubtreeUpdateError;
 pub(in crate::viewport::semantic) use action::{SemanticExtractionOutcome, SemanticSyncAction};
@@ -221,7 +221,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                             match resync_subtree_update(
                                 &live.stage,
                                 &extractor,
-                                previous_snapshot.clone(),
+                                previous_snapshot.as_ref().clone(),
                                 &batch,
                                 source.clone(),
                             ) {
@@ -258,7 +258,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                     match changed_info_update(
                         &live.stage,
                         &extractor,
-                        previous_snapshot,
+                        previous_snapshot.as_ref().clone(),
                         &batch,
                         source.clone(),
                     ) {
@@ -329,7 +329,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 .submit_snapshot(request_id, snapshot.clone());
             if submitted {
                 queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
-                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                world.resource_mut::<SemanticSyncState>().snapshot =
+                    Some(Arc::new(snapshot.clone()));
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
                 }
@@ -343,7 +344,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 .submit_delta_with_snapshot(request_id, update.request, &snapshot);
             if submitted {
                 queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
-                world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                world.resource_mut::<SemanticSyncState>().snapshot =
+                    Some(Arc::new(snapshot.clone()));
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
                 }
