@@ -59,10 +59,11 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    BimFieldKey, BimObjectMatch, BimPageRequest, BimPropertiesReadModel, BimPropertyEditOutcome,
-    BimPropertyEditStatus, BimPropertyGroupId, BimPropertyMutation, BimPropertyNameMatch,
-    BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchQuery,
-    BimSearchResult, BimUnitOption, CameraOrientationReadModel, CameraSource, ClassificationLevel,
+    BimFieldKey, BimObjectMatch, BimPageRequest, BimPropertiesReadModel, BimPropertyDiffReadModel,
+    BimPropertyDiffRow, BimPropertyDiffStatus, BimPropertyEditOutcome, BimPropertyEditStatus,
+    BimPropertyGroupId, BimPropertyMutation, BimPropertyNameMatch, BimPropertyReadModel,
+    BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchQuery, BimSearchResult,
+    BimUnitOption, CameraOrientationReadModel, CameraSource, ClassificationLevel,
     ClassificationRecipe, ColorRgb8, CommonValue, CurveTuning, DEFAULT_GIZMO_SIZE_LEVEL,
     DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE, EditorOperation, EditorPrimReadModel,
     EditorStateReadModel, EditorValue, FocusMode, GroundGridOrigin, HierarchyChildrenPage,

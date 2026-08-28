@@ -5,6 +5,7 @@
 
 pub(crate) mod authoring;
 mod classification;
+pub(super) mod diff;
 mod properties;
 mod search;
 
@@ -112,6 +113,14 @@ impl<'snapshot> BimReadService<'snapshot> {
         policy: BimReadPolicy,
     ) -> Result<BimPropertiesReadModel, BimQueryError> {
         properties::read_properties(self, selection, selection_revision, policy)
+    }
+
+    pub(crate) fn property_diff(
+        &self,
+        baseline: &SemanticSnapshot,
+        selection: &[SceneAnchor],
+    ) -> Option<viewport_protocol::BimPropertyDiffReadModel> {
+        diff::property_diff(baseline, self.snapshot, selection)
     }
 
     pub(crate) fn classification_page(
