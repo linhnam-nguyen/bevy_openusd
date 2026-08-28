@@ -9,7 +9,7 @@ use viewport_protocol::{
     BimReplacementPreviewRow, BimSearchQuery, BimSearchResult, MAX_BIM_SEARCH_GROUPS,
 };
 
-use super::classification::canonical_value_text;
+use super::classification::{canonical_value_text, projected_entity_name};
 use super::{BimQueryError, BimReadService};
 
 pub(super) fn execute(
@@ -332,10 +332,5 @@ fn object_order_key(
 }
 
 fn entity_label(entity: &usd_model::EntitySnapshot) -> String {
-    entity
-        .semantic
-        .display_name
-        .as_deref()
-        .unwrap_or(entity.prim_path.as_str())
-        .to_owned()
+    projected_entity_name(entity)
 }

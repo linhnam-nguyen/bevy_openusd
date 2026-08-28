@@ -77,7 +77,7 @@ impl ClassificationIndex {
                     .entities
                     .get(key)
                     .expect("classification leaf must belong to its snapshot");
-                let name = classification_leaf_name(entity);
+                let name = projected_entity_name(entity);
                 nodes.push(HierarchyNodeReadModel::scene(
                     leaf_id(&parent_id, key),
                     Some(parent_id.clone()),
@@ -222,17 +222,25 @@ fn leaf_id(parent_id: &HierarchyNodeId, key: &EntityKey) -> HierarchyNodeId {
 }
 
 /// The classification tree and hierarchy search share this exact name.
-/// EntityKey is the stable element identity; prim path and the reserved
-/// unclassified label are deterministic fallbacks for malformed source data.
-fn classification_leaf_name(entity: &EntitySnapshot) -> String {
-    let element_id = non_empty(entity.key.as_str()).unwrap_or(entity.prim_path.as_str());
-    let family = entity
-        .semantic
-        .family
-        .as_deref()
-        .and_then(non_empty)
-        .unwrap_or(UNCLASSIFIED_LABEL);
-    format!("{element_id}-{family}")
+/// `SemanticInfo::type_id` is the normalized BIM element identity populated
+/// from the observed connector ElementId field. It is intentionally preferred
+/// over `EntityKey`, whose value may be an IFC, application, path, or synthetic
+/// identity and therefore is not necessarily a user-facing element ID.
+pub(super) fn projected_entity_name(entity: &EntitySnapshot) -> String {
+    let element_id = entity.semantic.type_id.as_deref().and_then(non_empty);
+    let family = entity.semantic.family.as_deref().and_then(non_empty);
+    match (element_id, family) {
+        (Some(element_id), Some(family)) => format!("{element_id}-{family}"),
+        (Some(element_id), None) => element_id.to_owned(),
+        (None, Some(family)) => family.to_owned(),
+        (None, None) => entity
+            .semantic
+            .display_name
+            .as_deref()
+            .and_then(non_empty)
+            .unwrap_or(entity.prim_path.as_str())
+            .to_owned(),
+    }
 }
 
 fn non_empty(value: &str) -> Option<&str> {
