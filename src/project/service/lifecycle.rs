@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use project_protocol::{
     ProjectInspection, ProjectInspectionClassification, ProjectWriteError, ProjectWriteErrorCode,
 };
-use usd_project::{ProjectManifestV1, ProjectSummary};
+use usd_project::{ProjectManifestV1, ProjectRoot, ProjectSummary};
 
 use super::ProjectApplicationService;
 use crate::project::{

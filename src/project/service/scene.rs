@@ -15,22 +15,22 @@ pub(super) fn create_scene(
     target: ProjectWriteTarget,
     name: &str,
 ) -> Result<ProjectSceneWriteResponse, ProjectWriteError> {
-    let (entry, validated) = service
-        .validated_project(project_id)
-        .map_err(|error| ProjectWriteError::Failed {
-            code: match error {
-                project_protocol::ProjectReadError::NotFound { .. } => {
-                    ProjectWriteErrorCode::SelectionUnavailable
-                }
-                _ => ProjectWriteErrorCode::ManifestUnavailable,
-            },
-        })?;
+    let (entry, validated) =
+        service
+            .validated_project(project_id)
+            .map_err(|error| ProjectWriteError::Failed {
+                code: match error {
+                    project_protocol::ProjectReadError::NotFound { .. } => {
+                        ProjectWriteErrorCode::SelectionUnavailable
+                    }
+                    _ => ProjectWriteErrorCode::ManifestUnavailable,
+                },
+            })?;
     let name = name.trim();
-    let storage_key = usd_project::StorageKey::new(name.to_owned()).map_err(|_| {
-        ProjectWriteError::Invalid {
+    let storage_key =
+        usd_project::StorageKey::new(name.to_owned()).map_err(|_| ProjectWriteError::Invalid {
             code: ProjectWriteErrorCode::InvalidSceneName,
-        }
-    })?;
+        })?;
     if validated
         .scenes()
         .iter()

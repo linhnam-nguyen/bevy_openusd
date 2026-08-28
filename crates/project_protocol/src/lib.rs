@@ -8,6 +8,7 @@ mod command;
 mod error;
 mod location;
 mod read;
+mod scene_inspection;
 mod write;
 
 pub use command::{PROJECT_READ_PROTOCOL_VERSION, ProjectReadCommand, ProjectReadReply};
@@ -16,6 +17,10 @@ pub use location::{
     LocalSelectionToken, LocalSelectionView, ProjectLocationKind, ProjectLocationResult,
 };
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
+pub use scene_inspection::{
+    PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION, ProjectSceneInspectionCommand,
+    ProjectSceneInspectionReply, ProjectSceneInspectionRequest, ProjectSceneInspectionResult,
+};
 pub use write::{
     PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectCreateSceneRequest,
     ProjectImportRequest, ProjectInspection, ProjectInspectionClassification,
@@ -104,6 +109,21 @@ mod tests {
 
         assert_eq!(command, decoded);
         assert!(!encoded.contains("PathBuf"));
+        assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn scene_inspection_command_round_trips_operation_and_generation() {
+        let command = ProjectSceneInspectionCommand::new(ProjectSceneInspectionRequest {
+            source: LocalSelectionToken::new("scene-source"),
+            operation_id: "inspection-1".to_owned(),
+            generation: 9,
+        });
+
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: ProjectSceneInspectionCommand = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(command, decoded);
         assert!(!encoded.contains("/Users/"));
     }
 

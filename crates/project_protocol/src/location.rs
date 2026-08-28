@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum ProjectLocationKind {
     CreateProject,
     ImportProject,
+    ImportScene,
 }
 
 /// Opaque process/session-local handle for a host-selected directory.
