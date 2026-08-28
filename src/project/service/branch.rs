@@ -40,7 +40,6 @@ fn switch_branch(
         code: ProjectWriteErrorCode::Busy,
     })?;
 
-    validated_branch_manifest(project_id, &project_root)?;
     let mut repository =
         usd_git::Repository::open(&project_root).map_err(|_| ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::RepositoryUnavailable,
@@ -66,7 +65,10 @@ fn switch_branch(
         ProjectWriteError::Failed { code }
     })?;
 
-    let manifest = validated_branch_manifest(project_id, &project_root)?;
+    let manifest = match validated_branch_manifest(project_id, &project_root) {
+        Ok(manifest) => manifest,
+        Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
+    };
     let (nodes, counts) =
         super::project_tree(&project_root, &manifest).map_err(|_| ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::BranchProjectInvalid,
@@ -81,6 +83,17 @@ fn switch_branch(
         nodes,
         counts,
     })
+}
+
+fn branch_project_invalid(project_id: ProjectId, project_root: &Path) -> ProjectWriteError {
+    match super::repository_summary(project_id, project_root) {
+        Ok(repository) => ProjectWriteError::BranchProjectInvalid {
+            repository: Box::new(repository),
+        },
+        Err(_) => ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::BranchProjectInvalid,
+        },
+    }
 }
 
 fn validated_branch_manifest(

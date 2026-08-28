@@ -85,6 +85,44 @@ fn switching_to_the_current_branch_is_a_noop() {
     );
 }
 
+#[test]
+fn ignored_cache_and_recovery_changes_keep_branch_switch_eligible() {
+    let directory = create_repository();
+    fs::write(
+        directory.path().join(".gitignore"),
+        ".usdhub/cache/\n.usdhub/recovery/\n",
+    )
+    .unwrap();
+    run_git(directory.path(), ["add", ".gitignore"]);
+    run_git(
+        directory.path(),
+        ["commit", "-m", "ignore local Project state"],
+    );
+    run_git(directory.path(), ["branch", "feature"]);
+    fs::create_dir_all(directory.path().join(".usdhub/cache")).unwrap();
+    fs::create_dir_all(directory.path().join(".usdhub/recovery")).unwrap();
+    fs::write(directory.path().join(".usdhub/cache/object"), b"cache").unwrap();
+    fs::write(
+        directory.path().join(".usdhub/recovery/checkpoint"),
+        b"recovery",
+    )
+    .unwrap();
+
+    let mut repository = Repository::open(directory.path()).expect("open repository");
+    assert!(
+        !repository
+            .working_tree_status()
+            .expect("read ignored worktree status")
+            .dirty
+    );
+    assert!(matches!(
+        repository
+            .switch_branch(&BranchName::new("feature").unwrap())
+            .expect("switch with ignored local state"),
+        BranchSwitchOutcome::Switched { .. }
+    ));
+}
+
 fn create_repository() -> TempDir {
     let directory = tempfile::tempdir().expect("create temporary directory");
     run_git(directory.path(), ["init", "-b", "main"]);

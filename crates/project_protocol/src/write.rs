@@ -73,6 +73,8 @@ pub enum ProjectWriteError {
     RegistrationFailed { project_created: bool },
     #[error("Project changed after inspection")]
     ConcurrentChange,
+    #[error("target branch contains invalid Project metadata")]
+    BranchProjectInvalid { repository: Box<RepositorySummary> },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
