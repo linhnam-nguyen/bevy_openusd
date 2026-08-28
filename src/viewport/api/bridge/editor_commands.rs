@@ -1,6 +1,10 @@
 use bevy::prelude::*;
 use usd_bevy::LiveStage;
-use viewport_protocol::{EditorOperation, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
+use usd_model::SemanticSnapshot;
+use viewport_protocol::{
+    BimPropertyEditOutcome, BimPropertyEditStatus, BimPropertyMutation, EditorOperation,
+    ViewportCommand, ViewportEvent, ViewportEventEnvelope,
+};
 
 use super::convert::editor_value_to_usd;
 use super::helpers::{
@@ -9,6 +13,10 @@ use super::helpers::{
 use super::mutations::apply_runtime_mutations;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
 use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::bim::authoring::{
+    BimAuthoringError, canonical_value_for_comparison, current_bim_value, prepare_bim_value,
+    resolve_bim_authoring_locator,
+};
 
 /// Handles authoring-class commands (DefinePrim, SetAttribute, Undo, Export, …)
 /// that require a loaded `LiveStage`. The return value is `true` when the
@@ -19,6 +27,7 @@ pub(super) fn apply_editor_command(
     outbox: &mut ViewportEventOutbox,
     histories: &mut EditorHistories,
     runtime_mutations: &mut RuntimeMutationCoordinator,
+    semantic_snapshot: Option<&SemanticSnapshot>,
     stage: Option<&LiveStage>,
 ) -> bool {
     macro_rules! require_stage {
@@ -147,6 +156,18 @@ pub(super) fn apply_editor_command(
                 request_id,
                 EditorOperation::SetAttribute,
                 vec![format!("{prim_path}.{name}")],
+                histories,
+            );
+        }
+        ViewportCommand::EditBimProperty { mutation } => {
+            let stage = require_stage!();
+            let outcome =
+                apply_bim_property_mutation(stage, histories, semantic_snapshot, &mutation);
+            emit_bim_property_completed(
+                outbox,
+                request_id,
+                outcome,
+                stage.current_revision().0,
                 histories,
             );
         }
@@ -364,4 +385,107 @@ pub(super) fn apply_editor_command(
         _ => return false,
     }
     true
+}
+
+fn apply_bim_property_mutation(
+    stage: &LiveStage,
+    histories: &mut EditorHistories,
+    semantic_snapshot: Option<&SemanticSnapshot>,
+    mutation: &BimPropertyMutation,
+) -> BimPropertyEditOutcome {
+    let rejected = |error: BimAuthoringError| BimPropertyEditOutcome {
+        target: mutation.target.clone(),
+        property: mutation.property.clone(),
+        status: BimPropertyEditStatus::Rejected,
+        old_value: None,
+        new_value: None,
+        reason: Some(error.to_string()),
+    };
+
+    let locator =
+        match resolve_bim_authoring_locator(&stage.stage, &mutation.target, &mutation.property) {
+            Ok(locator) => locator,
+            Err(error) => return rejected(error),
+        };
+    let current_raw = match current_bim_value(&stage.stage, &locator) {
+        Ok(value) => value,
+        Err(error) => return rejected(error),
+    };
+    let measurement = semantic_snapshot.and_then(|snapshot| {
+        snapshot
+            .entities
+            .values()
+            .find(|entity| entity.prim_path == mutation.target.prim_path)
+            .and_then(|entity| {
+                entity
+                    .properties
+                    .iter()
+                    .find(|property| property.name == mutation.property)
+            })
+            .and_then(|property| property.measurement.as_ref())
+    });
+    let current = match canonical_value_for_comparison(current_raw, measurement) {
+        Ok(value) => value,
+        Err(error) => return rejected(error),
+    };
+    if current != mutation.expected_old_value {
+        return BimPropertyEditOutcome {
+            target: mutation.target.clone(),
+            property: mutation.property.clone(),
+            status: BimPropertyEditStatus::Rejected,
+            old_value: Some(current),
+            new_value: None,
+            reason: Some("expected old BIM value does not match the current value".to_owned()),
+        };
+    }
+    let (authored, new_value) = match prepare_bim_value(
+        &locator,
+        &mutation.value,
+        mutation.input_unit.as_ref(),
+        measurement,
+    ) {
+        Ok(value) => value,
+        Err(error) => return rejected(error),
+    };
+    let Some(type_name) = locator.type_name.as_deref() else {
+        return rejected(BimAuthoringError::InvalidValue(
+            "editable BIM attribute has no USD type".to_owned(),
+        ));
+    };
+    stage.mark_authored(locator.prim_path.clone());
+    if let Err(error) = histories.authoring.set_attr(
+        &stage.stage,
+        &locator.prim_path,
+        &locator.property_key,
+        type_name,
+        authored,
+    ) {
+        return rejected(BimAuthoringError::Stage(error.to_string()));
+    }
+    histories.record(EditorHistoryDomain::Authoring);
+    BimPropertyEditOutcome {
+        target: mutation.target.clone(),
+        property: mutation.property.clone(),
+        status: BimPropertyEditStatus::Applied,
+        old_value: Some(current),
+        new_value: Some(new_value),
+        reason: None,
+    }
+}
+
+fn emit_bim_property_completed(
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+    outcome: BimPropertyEditOutcome,
+    live_revision: u64,
+    histories: &EditorHistories,
+) {
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::BimPropertyEditCompleted {
+            outcome,
+            live_revision,
+            state: histories.state(),
+        },
+    ));
 }

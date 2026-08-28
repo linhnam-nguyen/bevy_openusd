@@ -13,6 +13,7 @@ use crate::viewport::rendering::sampling::{
 };
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
+use crate::viewport::semantic::SemanticSyncState;
 use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
 /// Groups the command system's independently-owned resources into one
@@ -42,5 +43,6 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub runtime_mutations: ResMut<'w, RuntimeMutationCoordinator>,
     pub configuration: ParamSet<'w, 's, (Res<'w, StageInfo>, Option<ResMut<'w, RendererCadence>>)>,
     pub stage: Option<NonSend<'w, LiveStage>>,
+    pub semantic: Option<Res<'w, SemanticSyncState>>,
     pub spawned: Res<'w, Spawned>,
 }

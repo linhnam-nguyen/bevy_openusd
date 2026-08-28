@@ -346,6 +346,10 @@ pub(super) fn apply_viewport_commands(
                     &mut outbox,
                     &mut state.histories,
                     &mut state.runtime_mutations,
+                    state
+                        .semantic
+                        .as_ref()
+                        .and_then(|semantic| semantic.snapshot()),
                     state.stage.as_deref(),
                 );
             }

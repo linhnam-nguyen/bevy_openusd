@@ -3,7 +3,7 @@
 //! This module borrows the current semantic snapshot. It does not author the
 //! stage, mutate USD hierarchy, or run work on a Bevy render/update system.
 
-mod authoring;
+pub(crate) mod authoring;
 mod classification;
 mod properties;
 mod search;

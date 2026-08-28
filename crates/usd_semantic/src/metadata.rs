@@ -120,7 +120,9 @@ fn text_value(value: Value) -> Option<String> {
     }
 }
 
-pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
+/// Convert an OpenUSD value into the transport-neutral semantic value used by
+/// snapshots, diffing, and authoritative compare-and-set checks.
+pub fn canonical_value(value: Value) -> CanonicalValue {
     match value {
         Value::None | Value::ValueBlock => CanonicalValue::Null,
         Value::Bool(value) => CanonicalValue::Bool(value),

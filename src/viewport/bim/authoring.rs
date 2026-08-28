@@ -7,40 +7,44 @@
 
 use std::fmt;
 
+use openusd::sdf::Value;
 use openusd::usd::Stage;
-use viewport_protocol::SceneAnchor;
+use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
+use viewport_protocol::{EditorValue, SceneAnchor};
+
+use crate::viewport::api::editor_value_to_usd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum BimEditability {
+pub(crate) enum BimEditability {
     Editable,
     NonEditable { reason: BimNonEditableReason },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum BimNonEditableReason {
+pub(crate) enum BimNonEditableReason {
     DerivedProperty,
     NonCustomAttribute,
     UnsupportedType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct BimAuthoringLocator {
-    pub(super) target: SceneAnchor,
-    pub(super) property_key: String,
-    pub(super) prim_path: String,
-    pub(super) attribute_path: String,
-    pub(super) type_name: Option<String>,
-    pub(super) editability: BimEditability,
+pub(crate) struct BimAuthoringLocator {
+    pub(crate) target: SceneAnchor,
+    pub(crate) property_key: String,
+    pub(crate) prim_path: String,
+    pub(crate) attribute_path: String,
+    pub(crate) type_name: Option<String>,
+    pub(crate) editability: BimEditability,
 }
 
 impl BimAuthoringLocator {
-    pub(super) fn is_editable(&self) -> bool {
+    pub(crate) fn is_editable(&self) -> bool {
         self.editability == BimEditability::Editable
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub(super) enum BimAuthoringError {
+pub(crate) enum BimAuthoringError {
     InvalidPropertyKey,
     InvalidPrimPath(String),
     PrimNotFound(String),
@@ -48,6 +52,20 @@ pub(super) enum BimAuthoringError {
         prim_path: String,
         property_key: String,
     },
+    AttributeValueMissing {
+        attribute_path: String,
+    },
+    ExpectedValueMismatch {
+        property_key: String,
+        expected: CanonicalValue,
+        current: CanonicalValue,
+    },
+    NonEditable {
+        property_key: String,
+        reason: BimNonEditableReason,
+    },
+    InvalidUnit(String),
+    InvalidValue(String),
     Stage(String),
 }
 
@@ -64,14 +82,220 @@ impl fmt::Display for BimAuthoringError {
                 formatter,
                 "BIM property {property_key} is missing on prim {prim_path}"
             ),
+            Self::AttributeValueMissing { attribute_path } => {
+                write!(
+                    formatter,
+                    "BIM property has no authored value: {attribute_path}"
+                )
+            }
+            Self::ExpectedValueMismatch {
+                property_key,
+                expected,
+                current,
+            } => write!(
+                formatter,
+                "BIM property {property_key} is stale: expected {expected:?}, current {current:?}"
+            ),
+            Self::NonEditable {
+                property_key,
+                reason,
+            } => write!(
+                formatter,
+                "BIM property {property_key} is not editable ({reason:?})"
+            ),
+            Self::InvalidUnit(error) => write!(formatter, "invalid BIM edit unit: {error}"),
+            Self::InvalidValue(error) => write!(formatter, "invalid BIM edit value: {error}"),
             Self::Stage(error) => write!(formatter, "BIM stage inspection failed: {error}"),
         }
     }
 }
 
+pub(crate) fn current_bim_value(
+    stage: &Stage,
+    locator: &BimAuthoringLocator,
+) -> Result<Value, BimAuthoringError> {
+    let attribute = stage
+        .prim(
+            openusd::sdf::path(&locator.prim_path)
+                .map_err(|_| BimAuthoringError::InvalidPrimPath(locator.prim_path.clone()))?,
+        )
+        .attribute(&locator.property_key);
+    attribute
+        .get::<Value>()
+        .map_err(stage_error)?
+        .ok_or_else(|| BimAuthoringError::AttributeValueMissing {
+            attribute_path: locator.attribute_path.clone(),
+        })
+}
+
+pub(crate) fn canonical_value_for_comparison(
+    value: Value,
+    measurement: Option<&MeasurementMetadata>,
+) -> Result<CanonicalValue, BimAuthoringError> {
+    let value = usd_semantic::canonical_value(value);
+    let Some(measurement) = measurement else {
+        return Ok(value);
+    };
+    let Some(source_unit) = measurement.source_unit.as_ref() else {
+        return Ok(value);
+    };
+    map_numeric_value(&value, |number| {
+        usd_semantic::UnitRegistry::global()
+            .convert(number, source_unit, &measurement.canonical_unit)
+            .map_err(|error| error.to_string())
+    })
+}
+
+pub(crate) fn prepare_bim_value(
+    locator: &BimAuthoringLocator,
+    input: &EditorValue,
+    input_unit: Option<&UnitId>,
+    measurement: Option<&MeasurementMetadata>,
+) -> Result<(Value, CanonicalValue), BimAuthoringError> {
+    if !locator.is_editable() {
+        let reason = match locator.editability {
+            BimEditability::Editable => unreachable!("editable locator has no reason"),
+            BimEditability::NonEditable { reason } => reason,
+        };
+        return Err(BimAuthoringError::NonEditable {
+            property_key: locator.property_key.clone(),
+            reason,
+        });
+    }
+    let type_name = locator
+        .type_name
+        .as_deref()
+        .ok_or_else(|| BimAuthoringError::InvalidValue("attribute has no USD type".to_owned()))?;
+
+    let authored_input = match measurement {
+        None => {
+            if input_unit.is_some() {
+                return Err(BimAuthoringError::InvalidUnit(
+                    "a unit is only valid for measurable properties".to_owned(),
+                ));
+            }
+            input.clone()
+        }
+        Some(measurement) => {
+            let input_unit = input_unit.ok_or_else(|| {
+                BimAuthoringError::InvalidUnit(
+                    "a measurable property requires an explicit input unit".to_owned(),
+                )
+            })?;
+            let registry = usd_semantic::UnitRegistry::global();
+            let input_definition = registry.definition(input_unit).ok_or_else(|| {
+                BimAuthoringError::InvalidUnit(format!("unknown unit {}", input_unit.as_str()))
+            })?;
+            if input_definition.quantity().as_str() != measurement.quantity.as_str() {
+                return Err(BimAuthoringError::InvalidUnit(format!(
+                    "unit {} does not measure {}",
+                    input_unit.as_str(),
+                    measurement.quantity.as_str()
+                )));
+            }
+            let author_unit = measurement
+                .source_unit
+                .as_ref()
+                .unwrap_or(&measurement.canonical_unit);
+            rewrite_numeric_json(input, type_name, |number| {
+                let canonical = registry
+                    .convert(number, input_unit, &measurement.canonical_unit)
+                    .map_err(|error| error.to_string())?;
+                registry
+                    .convert(canonical, &measurement.canonical_unit, author_unit)
+                    .map_err(|error| error.to_string())
+            })?
+        }
+    };
+    let authored =
+        editor_value_to_usd(type_name, &authored_input).map_err(BimAuthoringError::InvalidValue)?;
+    let canonical = canonical_value_for_comparison(authored.clone(), measurement)?;
+    Ok((authored, canonical))
+}
+
+fn map_numeric_value(
+    value: &CanonicalValue,
+    convert: impl Fn(f64) -> Result<f64, String> + Copy,
+) -> Result<CanonicalValue, BimAuthoringError> {
+    match value {
+        CanonicalValue::Integer(value) => convert(*value as f64)
+            .map(CanonicalValue::Real)
+            .map_err(BimAuthoringError::InvalidValue),
+        CanonicalValue::Real(value) => convert(*value)
+            .map(CanonicalValue::Real)
+            .map_err(BimAuthoringError::InvalidValue),
+        CanonicalValue::NumberArray(values) => values
+            .iter()
+            .copied()
+            .map(convert)
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::NumberArray)
+            .map_err(BimAuthoringError::InvalidValue),
+        _ => Err(BimAuthoringError::InvalidValue(
+            "measurable BIM properties must contain numeric values".to_owned(),
+        )),
+    }
+}
+
+fn rewrite_numeric_json(
+    value: &EditorValue,
+    type_name: &str,
+    convert: impl Fn(f64) -> Result<f64, String> + Copy,
+) -> Result<EditorValue, BimAuthoringError> {
+    if let Some(values) = value.as_array() {
+        return values
+            .iter()
+            .map(|value| rewrite_numeric_json(value, type_name, convert))
+            .collect::<Result<Vec<_>, _>>()
+            .map(EditorValue::Array);
+    }
+    let input = value
+        .as_f64()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| {
+            BimAuthoringError::InvalidValue("measurable input must be numeric".to_owned())
+        })?;
+    let converted = convert(input).map_err(BimAuthoringError::InvalidValue)?;
+    if !converted.is_finite() {
+        return Err(BimAuthoringError::InvalidValue(
+            "converted BIM value is not finite".to_owned(),
+        ));
+    }
+    if is_integer_type(type_name) {
+        if converted.fract() != 0.0 {
+            return Err(BimAuthoringError::InvalidValue(format!(
+                "converted value {converted} is not an integer for {type_name}"
+            )));
+        }
+        let integer = converted as i128;
+        if !((i64::MIN as i128)..=(u64::MAX as i128)).contains(&integer) {
+            return Err(BimAuthoringError::InvalidValue(
+                "converted integer is outside USD range".to_owned(),
+            ));
+        }
+        if type_name.starts_with("uint") && integer < 0 {
+            return Err(BimAuthoringError::InvalidValue(
+                "converted unsigned value is negative".to_owned(),
+            ));
+        }
+        return Ok(EditorValue::Number(if type_name.starts_with("uint") {
+            serde_json::Number::from(integer as u64)
+        } else {
+            serde_json::Number::from(integer as i64)
+        }));
+    }
+    serde_json::Number::from_f64(converted)
+        .map(EditorValue::Number)
+        .ok_or_else(|| BimAuthoringError::InvalidValue("converted value is not finite".to_owned()))
+}
+
+fn is_integer_type(type_name: &str) -> bool {
+    type_name.starts_with("int") || type_name.starts_with("uint") || type_name == "uchar"
+}
+
 impl std::error::Error for BimAuthoringError {}
 
-pub(super) fn resolve_bim_authoring_locator(
+pub(crate) fn resolve_bim_authoring_locator(
     stage: &Stage,
     target: &SceneAnchor,
     property_key: &str,
@@ -310,5 +534,54 @@ mod tests {
                 reason: BimNonEditableReason::UnsupportedType
             }
         );
+    }
+
+    #[test]
+    fn measured_edit_converts_input_to_the_authored_source_unit() {
+        let stage = stage_with_attribute("double", true);
+        let locator = resolve_bim_authoring_locator(&stage, &target(), "Width")
+            .expect("measured attribute resolves");
+        let measurement = MeasurementMetadata::new("length", "m", Some("mm".to_owned()));
+
+        let (authored, canonical) = prepare_bim_value(
+            &locator,
+            &serde_json::json!(0.2),
+            Some(&UnitId::new("m")),
+            Some(&measurement),
+        )
+        .expect("metres convert to source millimetres");
+        assert!(matches!(authored, Value::Double(value) if (value - 200.0).abs() < 1e-9));
+        assert_eq!(canonical, CanonicalValue::Real(0.2));
+
+        let current = canonical_value_for_comparison(Value::Double(200.0), Some(&measurement))
+            .expect("source value normalizes to canonical metres");
+        assert_eq!(current, CanonicalValue::Real(0.2));
+    }
+
+    #[test]
+    fn measured_edit_rejects_unknown_or_wrong_quantity_units() {
+        let stage = stage_with_attribute("double", true);
+        let locator = resolve_bim_authoring_locator(&stage, &target(), "Width")
+            .expect("measured attribute resolves");
+        let measurement = MeasurementMetadata::new("length", "m", Some("mm".to_owned()));
+
+        assert!(matches!(
+            prepare_bim_value(
+                &locator,
+                &serde_json::json!(1.0),
+                Some(&UnitId::new("unknown")),
+                Some(&measurement),
+            ),
+            Err(BimAuthoringError::InvalidUnit(_))
+        ));
+        assert!(matches!(
+            prepare_bim_value(
+                &locator,
+                &serde_json::json!(1.0),
+                Some(&UnitId::new("Pa")),
+                Some(&measurement),
+            ),
+            Err(BimAuthoringError::InvalidUnit(_))
+        ));
     }
 }

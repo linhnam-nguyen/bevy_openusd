@@ -12,7 +12,7 @@
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
 
 mod commands;
-mod convert;
+pub(crate) mod convert;
 mod editor_commands;
 mod helpers;
 mod mutations;
@@ -25,6 +25,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use convert::editor_value_to_usd;
 pub(crate) use plugin::ViewportBridgePlugin;
 pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
+use super::bim::BimPropertyMutation;
 use super::editor::{EditorValue, RuntimeMutationBatch};
 use super::hierarchy::{HierarchyNodeId, HierarchySource};
 use super::read_models::{
@@ -162,6 +163,9 @@ pub enum ViewportCommand {
         name: String,
         type_name: String,
         value: EditorValue,
+    },
+    EditBimProperty {
+        mutation: BimPropertyMutation,
     },
     ClearAttribute {
         prim_path: String,

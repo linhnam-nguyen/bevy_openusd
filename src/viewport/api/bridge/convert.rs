@@ -1,7 +1,7 @@
 use viewport_protocol::EditorValue;
 
 /// Converts a JSON-typed editor value into its USD SDF equivalent.
-pub(super) fn editor_value_to_usd(
+pub(crate) fn editor_value_to_usd(
     type_name: &str,
     value: &EditorValue,
 ) -> Result<openusd::sdf::Value, String> {

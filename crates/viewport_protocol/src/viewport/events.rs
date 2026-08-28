@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
+use super::bim::BimPropertyEditOutcome;
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
 use super::hierarchy::{HierarchyChildrenPage, HierarchySearchMatch, HierarchySource};
@@ -93,6 +94,11 @@ pub enum ViewportEvent {
     EditorCommandCompleted {
         operation: EditorOperation,
         changed_paths: Vec<String>,
+        state: EditorStateReadModel,
+    },
+    BimPropertyEditCompleted {
+        outcome: BimPropertyEditOutcome,
+        live_revision: u64,
         state: EditorStateReadModel,
     },
     RuntimeMutationBatchAccepted {

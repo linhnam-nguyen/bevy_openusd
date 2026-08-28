@@ -167,6 +167,7 @@ impl ViewportCommand {
                     });
                 }
             }
+            Self::EditBimProperty { mutation } => mutation.validate()?,
             Self::ClearAttribute { prim_path, name } => {
                 path("editor.prim_path", prim_path)?;
                 text("editor.name", name)?;

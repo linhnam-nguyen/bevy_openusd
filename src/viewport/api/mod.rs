@@ -12,6 +12,7 @@ mod scene_index;
 mod scene_query;
 mod session_registry;
 
+pub(crate) use bridge::editor_value_to_usd;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
