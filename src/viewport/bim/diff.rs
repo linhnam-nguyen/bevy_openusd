@@ -115,10 +115,11 @@ fn property_rows(
         .map(|(key, (old, new))| match (old, new) {
             (Some(old), Some(new)) => BimPropertyDiffRow {
                 key,
-                status: changed_property_names
-                    .contains(&old.name)
-                    .then_some(modified_status)
-                    .unwrap_or(BimPropertyDiffStatus::Unchanged),
+                status: if changed_property_names.contains(&old.name) {
+                    modified_status
+                } else {
+                    BimPropertyDiffStatus::Unchanged
+                },
                 old_value: Some(old.value.clone()),
                 new_value: Some(new.value.clone()),
                 old_measurement: old.measurement.clone(),

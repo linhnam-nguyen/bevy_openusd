@@ -116,15 +116,13 @@ impl EditHistory {
     }
 
     fn record_group(&mut self, stage: &Stage, group: EditGroup) -> Result<()> {
-        let mut applied = 0;
-        for operation in &group.forward {
+        for (applied, operation) in group.forward.iter().enumerate() {
             if let Err(error) = operation.apply(stage) {
                 for inverse in group.inverse[..applied].iter().rev() {
                     let _ = inverse.apply(stage);
                 }
                 return Err(error);
             }
-            applied += 1;
         }
         self.undo.push(group);
         self.redo.clear();
@@ -276,8 +274,7 @@ impl EditHistory {
         let Some(group) = self.redo.pop() else {
             return Ok(false);
         };
-        let mut applied = 0;
-        for operation in &group.forward {
+        for (applied, operation) in group.forward.iter().enumerate() {
             if let Err(error) = operation.apply(stage) {
                 for inverse in group.inverse[..applied].iter().rev() {
                     let _ = inverse.apply(stage);
@@ -285,7 +282,6 @@ impl EditHistory {
                 self.redo.push(group);
                 return Err(error);
             }
-            applied += 1;
         }
         self.undo.push(group);
         Ok(true)
@@ -300,8 +296,8 @@ impl EditHistory {
 }
 
 fn current_attribute_value(stage: &Stage, prim: &str, name: &str) -> Result<Option<Value>> {
-    Ok(stage
+    stage
         .prim(openusd::sdf::path(prim)?)
         .attribute(name)
-        .get::<Value>()?)
+        .get::<Value>()
 }

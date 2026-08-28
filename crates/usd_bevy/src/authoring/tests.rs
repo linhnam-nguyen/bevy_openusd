@@ -161,8 +161,8 @@ fn atomic_attribute_edit_undoes_and_redoes_as_one_group() {
     assert!(matches!(read("/World/B"), Some(Value::Double(value)) if value == 3.0));
 
     assert!(hist.undo(&stage).unwrap());
-    assert!(matches!(read("/World/A"), None));
-    assert!(matches!(read("/World/B"), None));
+    assert!(read("/World/A").is_none());
+    assert!(read("/World/B").is_none());
     assert!(hist.redo(&stage).unwrap());
     assert!(matches!(read("/World/A"), Some(Value::Double(value)) if value == 2.0));
     assert!(matches!(read("/World/B"), Some(Value::Double(value)) if value == 3.0));

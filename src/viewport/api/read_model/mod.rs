@@ -12,7 +12,6 @@ use viewport_protocol::{
     SceneChildrenPage, SceneSearchMatch, StageLoadState, ViewportEvent, ViewportEventEnvelope,
     ViewportReadModel,
 };
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ScenePageKey {
     parent: Option<SceneAnchor>,
@@ -248,13 +247,9 @@ impl ViewportReadModelState {
                 }
             }
             ViewportEvent::EditorCommandCompleted { state, .. }
-            | ViewportEvent::RuntimeMutationBatchAccepted { state, .. } => {
-                self.editor = state.clone();
-            }
-            ViewportEvent::BimPropertyEditCompleted { state, .. } => {
-                self.editor = state.clone();
-            }
-            ViewportEvent::BimPropertyBatchEditCompleted { state, .. } => {
+            | ViewportEvent::RuntimeMutationBatchAccepted { state, .. }
+            | ViewportEvent::BimPropertyEditCompleted { state, .. }
+            | ViewportEvent::BimPropertyBatchEditCompleted { state, .. } => {
                 self.editor = state.clone();
             }
             ViewportEvent::EditorPrimState { .. }
