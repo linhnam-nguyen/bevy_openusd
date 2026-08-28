@@ -11,7 +11,7 @@ mod properties;
 mod search;
 
 #[cfg(test)]
-mod test_fixtures;
+pub(crate) mod test_fixtures;
 
 #[cfg(test)]
 mod classification_tests;

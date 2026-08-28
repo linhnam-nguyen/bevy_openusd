@@ -56,7 +56,7 @@ pub(super) fn entity(
     }
 }
 
-pub(super) fn snapshot() -> SemanticSnapshot {
+pub(crate) fn snapshot() -> SemanticSnapshot {
     let measured = Some(MeasurementMetadata::new(
         "length",
         "m",
