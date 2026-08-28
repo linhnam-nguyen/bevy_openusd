@@ -181,7 +181,12 @@ fn group_value(
 ) -> String {
     let value = match field {
         BimFieldKey::Category => entity.semantic.category.as_deref().map(Cow::Borrowed),
-        BimFieldKey::Family => entity.semantic.family.as_deref().map(Cow::Borrowed),
+        BimFieldKey::Family => entity
+            .semantic
+            .bim
+            .family_name
+            .as_deref()
+            .map(Cow::Borrowed),
         BimFieldKey::Type => entity.semantic.type_name.as_deref().map(Cow::Borrowed),
         BimFieldKey::Property(name) => properties
             .get(name.as_str())
@@ -222,13 +227,23 @@ fn leaf_id(parent_id: &HierarchyNodeId, key: &EntityKey) -> HierarchyNodeId {
 }
 
 /// The classification tree and hierarchy search share this exact name.
-/// `SemanticInfo::type_id` is the normalized BIM element identity populated
-/// from the observed connector ElementId field. It is intentionally preferred
-/// over `EntityKey`, whose value may be an IFC, application, path, or synthetic
-/// identity and therefore is not necessarily a user-facing element ID.
+/// `SemanticInfo::bim` contains source-neutral identities populated by the
+/// observed connector adapter. It is intentionally preferred over `EntityKey`,
+/// whose value may be an IFC, application, path, or synthetic identity and
+/// therefore is not necessarily a user-facing element ID.
 pub(super) fn projected_entity_name(entity: &EntitySnapshot) -> String {
-    let element_id = entity.semantic.type_id.as_deref().and_then(non_empty);
-    let family = entity.semantic.family.as_deref().and_then(non_empty);
+    let element_id = entity
+        .semantic
+        .bim
+        .element_id
+        .as_deref()
+        .and_then(non_empty);
+    let family = entity
+        .semantic
+        .bim
+        .family_name
+        .as_deref()
+        .and_then(non_empty);
     match (element_id, family) {
         (Some(element_id), Some(family)) => format!("{element_id}-{family}"),
         (Some(element_id), None) => element_id.to_owned(),

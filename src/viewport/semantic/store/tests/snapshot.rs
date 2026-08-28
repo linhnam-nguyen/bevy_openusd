@@ -70,6 +70,7 @@ def Xform "World"
                     "length",
                     "height_unit",
                 )],
+                ..Default::default()
             },
             ..Default::default()
         });

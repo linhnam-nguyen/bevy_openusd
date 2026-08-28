@@ -32,6 +32,7 @@ pub fn extract_metadata(
 
     let family = configured_text_from_properties(&properties, config.family_property.as_deref());
     let type_id = configured_text_from_properties(&properties, config.type_id_property.as_deref());
+    let bim = crate::nvidia::extract_bim_identity(&properties, &config.nvidia_revit.identity);
 
     Ok((
         SemanticInfo {
@@ -40,6 +41,7 @@ pub fn extract_metadata(
             type_name,
             type_id,
             display_name,
+            bim,
         },
         properties,
     ))

@@ -1,6 +1,8 @@
 //! Explicit mapping for observed NVIDIA Revit Connector USD properties.
 
-use usd_model::{CanonicalValue, MeasurementMetadata, QuantitySpecId, SemanticProperty, UnitId};
+use usd_model::{
+    BimIdentity, CanonicalValue, MeasurementMetadata, QuantitySpecId, SemanticProperty, UnitId,
+};
 
 use crate::units::UnitRegistry;
 
@@ -30,17 +32,38 @@ impl NvidiaRevitMeasurementMapping {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NvidiaRevitConfig {
+    pub identity: NvidiaRevitIdentityConfig,
     pub measurement_mappings: Vec<NvidiaRevitMeasurementMapping>,
+}
+
+/// Explicit source-property mapping for the source-neutral BIM identity.
+/// There are no defaults because connector schemas vary by export settings.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NvidiaRevitIdentityConfig {
+    pub element_id_property: Option<String>,
+    pub family_name_property: Option<String>,
 }
 
 impl NvidiaRevitConfig {
     pub(crate) fn write_hash(&self, bytes: &mut Vec<u8>) {
+        write_optional_string(bytes, self.identity.element_id_property.as_deref());
+        write_optional_string(bytes, self.identity.family_name_property.as_deref());
         bytes.extend_from_slice(&(self.measurement_mappings.len() as u64).to_le_bytes());
         for mapping in &self.measurement_mappings {
             write_string(bytes, &mapping.property_name);
             write_string(bytes, mapping.quantity.as_str());
             write_string(bytes, &mapping.source_unit_property_name);
         }
+    }
+}
+
+pub(crate) fn extract_bim_identity(
+    properties: &[SemanticProperty],
+    config: &NvidiaRevitIdentityConfig,
+) -> BimIdentity {
+    BimIdentity {
+        element_id: configured_text(properties, config.element_id_property.as_deref()),
+        family_name: configured_text(properties, config.family_name_property.as_deref()),
     }
 }
 
@@ -84,6 +107,17 @@ fn text_value(property: &SemanticProperty) -> Option<&str> {
     }
 }
 
+fn configured_text(properties: &[SemanticProperty], property: Option<&str>) -> Option<String> {
+    let property = property?;
+    properties
+        .iter()
+        .find(|candidate| candidate.name == property)
+        .and_then(text_value)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
 fn normalize_value(
     value: &CanonicalValue,
     registry: &UnitRegistry,
@@ -114,6 +148,16 @@ fn write_string(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(value.as_bytes());
 }
 
+fn write_optional_string(bytes: &mut Vec<u8>, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            bytes.push(1);
+            write_string(bytes, value);
+        }
+        None => bytes.push(0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +182,7 @@ mod tests {
                 "length",
                 "height_unit",
             )],
+            ..Default::default()
         };
 
         attach_measurements(&mut properties, &config);
@@ -168,6 +213,7 @@ mod tests {
                 "length",
                 "height_unit",
             )],
+            ..Default::default()
         };
 
         attach_measurements(&mut missing, &config);
@@ -177,5 +223,50 @@ mod tests {
         assert_eq!(unknown[0].value, CanonicalValue::Real(10.0));
         assert!(missing[0].measurement.is_none());
         assert!(unknown[0].measurement.is_none());
+    }
+
+    #[test]
+    fn identity_mapping_does_not_promote_category_to_family_name() {
+        let properties = vec![
+            property(
+                "BIM:Instance:Category",
+                CanonicalValue::Text("Murs".to_owned()),
+            ),
+            property(
+                "BIM:Instance:ElementId",
+                CanonicalValue::Text("150663".to_owned()),
+            ),
+            property(
+                "BIM:Type:Name",
+                CanonicalValue::Text("Générique - 200 mm".to_owned()),
+            ),
+        ];
+        let identity = extract_bim_identity(
+            &properties,
+            &NvidiaRevitIdentityConfig {
+                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
+                family_name_property: None,
+            },
+        );
+
+        assert_eq!(identity.element_id.as_deref(), Some("150663"));
+        assert_eq!(identity.family_name, None);
+    }
+
+    #[test]
+    fn identity_mapping_accepts_only_explicit_family_name_source() {
+        let properties = vec![property(
+            "BIM:Instance:FamilyName",
+            CanonicalValue::Text("Basic Wall".to_owned()),
+        )];
+        let identity = extract_bim_identity(
+            &properties,
+            &NvidiaRevitIdentityConfig {
+                family_name_property: Some("BIM:Instance:FamilyName".to_owned()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(identity.family_name.as_deref(), Some("Basic Wall"));
     }
 }

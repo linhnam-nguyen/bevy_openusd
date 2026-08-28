@@ -65,7 +65,8 @@ fn classification_uses_normalized_leaf_names_and_generic_projection() {
             .get_mut(&EntityKey::from(key))
             .expect("fixture wall")
             .semantic
-            .type_id = Some(element_id.to_owned());
+            .bim
+            .element_id = Some(element_id.to_owned());
     }
     let mut service = BimReadService::new(&snapshot);
     let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
@@ -121,8 +122,8 @@ fn classification_leaf_name_follows_all_normalized_identity_fallbacks() {
     let mut snapshot = snapshot();
     let key = EntityKey::from("equipment-a");
     let mut entity = snapshot.entities.get(&key).expect("fixture entity").clone();
-    entity.semantic.type_id = Some("184392".to_owned());
-    entity.semantic.family = Some("Air Handling Unit".to_owned());
+    entity.semantic.bim.element_id = Some("184392".to_owned());
+    entity.semantic.bim.family_name = Some("Air Handling Unit".to_owned());
     entity.semantic.display_name = Some("Projected AHU".to_owned());
     snapshot.entities.insert(key.clone(), entity);
 
@@ -159,18 +160,18 @@ fn classification_leaf_name_follows_all_normalized_identity_fallbacks() {
     );
 
     let mut expected = snapshot.entities[&key].clone();
-    expected.semantic.family = None;
+    expected.semantic.bim.family_name = None;
     assert_eq!(
         super::classification::projected_entity_name(&expected),
         "184392"
     );
-    expected.semantic.type_id = None;
-    expected.semantic.family = Some("Air Handling Unit".to_owned());
+    expected.semantic.bim.element_id = None;
+    expected.semantic.bim.family_name = Some("Air Handling Unit".to_owned());
     assert_eq!(
         super::classification::projected_entity_name(&expected),
         "Air Handling Unit"
     );
-    expected.semantic.family = None;
+    expected.semantic.bim.family_name = None;
     assert_eq!(
         super::classification::projected_entity_name(&expected),
         "Projected AHU"
@@ -189,8 +190,8 @@ fn classification_groups_by_arbitrary_property_and_reuses_projected_leaf_name() 
         .entities
         .get_mut(&EntityKey::from("wall-a"))
         .expect("fixture wall A");
-    wall_a.semantic.type_id = Some("184392".to_owned());
-    wall_a.semantic.family = Some("Air Handling Unit".to_owned());
+    wall_a.semantic.bim.element_id = Some("184392".to_owned());
+    wall_a.semantic.bim.family_name = Some("Air Handling Unit".to_owned());
     wall_a.properties.push(property(
         "BIM:Type:Largeur",
         CanonicalValue::Real(200.0),
@@ -200,8 +201,8 @@ fn classification_groups_by_arbitrary_property_and_reuses_projected_leaf_name() 
         .entities
         .get_mut(&EntityKey::from("wall-b"))
         .expect("fixture wall B");
-    wall_b.semantic.type_id = Some("184393".to_owned());
-    wall_b.semantic.family = Some("Air Handling Unit".to_owned());
+    wall_b.semantic.bim.element_id = Some("184393".to_owned());
+    wall_b.semantic.bim.family_name = Some("Air Handling Unit".to_owned());
     wall_b.properties.push(property(
         "BIM:Type:Largeur",
         CanonicalValue::Real(300.0),

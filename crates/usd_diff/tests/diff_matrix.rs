@@ -205,6 +205,7 @@ fn recreation_candidates_include_confidence_reasons_and_preserve_details() {
         type_name: Some("Door".to_owned()),
         type_id: Some("door-type".to_owned()),
         display_name: Some("Old door".to_owned()),
+        bim: Default::default(),
     };
 
     let mut added = removed.clone();

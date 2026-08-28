@@ -1,5 +1,5 @@
 use super::*;
-use crate::{NvidiaRevitConfig, NvidiaRevitMeasurementMapping};
+use crate::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, NvidiaRevitMeasurementMapping};
 use openusd::gf::{Vec3d, Vec3f};
 use openusd::schemas::ui::SceneGraphPrimAPI;
 use openusd::sdf::Value;
@@ -109,6 +109,7 @@ fn configured_revit_measurement_is_normalized_during_snapshot_extraction() -> Re
                 "length",
                 "height_unit",
             )],
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -177,6 +178,7 @@ fn measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged() 
                 "length",
                 "height_unit",
             )],
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -219,8 +221,13 @@ fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
     let stage = Stage::open(fixture)?;
 
     let config = SemanticConfig {
-        family_property: Some("BIM:Instance:Category".to_owned()),
-        type_id_property: Some("BIM:Instance:ElementId".to_owned()),
+        nvidia_revit: NvidiaRevitConfig {
+            identity: NvidiaRevitIdentityConfig {
+                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
         identity: crate::IdentityConfig {
             ifc_guid_candidates: vec!["BIM:Instance:IfcGUID".to_owned()],
             allow_prim_path_fallback: true,
@@ -242,8 +249,10 @@ fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
         .expect("real Revit wall entity should be present");
 
     assert_eq!(wall.identity_source, usd_model::IdentitySource::IfcGuid);
-    assert_eq!(wall.semantic.family.as_deref(), Some("Murs"));
-    assert_eq!(wall.semantic.type_id.as_deref(), Some("150663"));
+    assert_eq!(wall.semantic.family, None);
+    assert_eq!(wall.semantic.type_id, None);
+    assert_eq!(wall.semantic.bim.element_id.as_deref(), Some("150663"));
+    assert_eq!(wall.semantic.bim.family_name, None);
     assert!(wall.properties.iter().any(|property| {
         property.name == "BIM:Instance:Surface"
             && property.value == CanonicalValue::Text("22 m²".to_owned())
