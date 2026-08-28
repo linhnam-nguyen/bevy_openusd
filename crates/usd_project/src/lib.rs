@@ -27,7 +27,8 @@ pub use manifest::{
 };
 pub use read_model::{
     BranchSummary, CommitSummary, ModelSourceSummary, ProjectContentCounts, ProjectContentNode,
-    ProjectSummary, RepositorySummary, RevisionSummary,
+    ProjectIssueSummary, ProjectProviderAvailability, ProjectSummary, RepositorySummary,
+    RevisionSummary,
 };
 pub use root::{ModelSourceKind, ProjectRoot};
 pub use scene::{SceneMember, SceneMemberTarget};

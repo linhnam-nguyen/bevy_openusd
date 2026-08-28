@@ -268,6 +268,7 @@ mod tests {
                 latest_commit: None,
             },
             counts: ProjectContentCounts::default(),
+            issues: usd_project::ProjectIssueSummary::default(),
             capabilities: ProjectCapabilities::default(),
         };
 

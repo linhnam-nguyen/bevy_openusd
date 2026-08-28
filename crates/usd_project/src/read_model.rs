@@ -12,7 +12,26 @@ pub struct ProjectSummary {
     pub root: ProjectRoot,
     pub repository: RepositorySummary,
     pub counts: ProjectContentCounts,
+    pub issues: ProjectIssueSummary,
     pub capabilities: ProjectCapabilities,
+}
+
+/// Availability of an optional Project summary provider.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ProjectProviderAvailability {
+    Available,
+    #[default]
+    NotConfigured,
+    Unavailable,
+}
+
+/// Read-only Issue and BCF counts. `None` is intentional when no provider
+/// exists; it must not be presented as an authoritative zero.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectIssueSummary {
+    pub availability: ProjectProviderAvailability,
+    pub issue_count: Option<u64>,
+    pub bcf_topic_count: Option<u64>,
 }
 
 /// Git-neutral repository state for a Project summary.
@@ -125,6 +144,7 @@ mod tests {
                 scene_placements: 1,
                 model_placements: 2,
             },
+            issues: ProjectIssueSummary::default(),
             capabilities: ProjectCapabilities {
                 can_create_scene: true,
                 can_import_scene: true,
@@ -172,5 +192,17 @@ mod tests {
         assert_ne!(ids[0], ids[1]);
         assert_ne!(parent_scene_id, target_scene_id);
         assert_eq!(nodes[0], nodes[0]);
+    }
+
+    #[test]
+    fn optional_issue_provider_does_not_fabricate_zero_counts() {
+        let issues = ProjectIssueSummary::default();
+
+        assert_eq!(
+            issues.availability,
+            ProjectProviderAvailability::NotConfigured
+        );
+        assert_eq!(issues.issue_count, None);
+        assert_eq!(issues.bcf_topic_count, None);
     }
 }

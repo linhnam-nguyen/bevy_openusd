@@ -67,6 +67,7 @@ mod tests {
                     latest_commit: None,
                 },
                 counts: usd_project::ProjectContentCounts::default(),
+                issues: usd_project::ProjectIssueSummary::default(),
                 capabilities: usd_project::ProjectCapabilities::default(),
             }),
         ]));
