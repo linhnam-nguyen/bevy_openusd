@@ -194,7 +194,6 @@ fn adopt_git_project(
 ) -> Result<ProjectSummary, ProjectWriteError> {
     let layout = ProjectStorageLayout::new(project_root);
     let had_manifest = layout.manifest_path().exists();
-    let had_ignore = project_root.join(".gitignore").exists();
     let had_cache = layout.cache_dir().exists();
     let had_recovery = layout.recovery_dir().exists();
     let ignore = install_managed_ignore(project_root).map_err(|error| {
@@ -251,7 +250,7 @@ fn adopt_git_project(
         if !had_recovery {
             let _ = fs::remove_dir(layout.recovery_dir());
         }
-        if !had_ignore {
+        if ignore.changed {
             restore_ignore(project_root, ignore);
         }
     }

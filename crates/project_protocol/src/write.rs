@@ -19,6 +19,7 @@ pub enum ProjectInspectionClassification {
 pub enum ProjectInspectionWarning {
     BroadUsdHubIgnore,
     MissingLocalCacheRoots,
+    TrackedDerivedLocalState,
     UnsupportedManifestVersion,
     MalformedManifest,
 }

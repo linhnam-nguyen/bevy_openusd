@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use project_protocol::ProjectInspectionWarning;
 use tempfile::tempdir;
@@ -177,6 +177,93 @@ fn broad_ignore_conflict_is_reported_without_mutation() {
         })
     ));
     assert_eq!(before, snapshot(&project_root));
+}
+
+#[test]
+fn inspection_warns_when_derived_local_state_is_tracked() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("tracked-derived");
+    usd_git::Repository::init(&project_root).unwrap();
+    fs::create_dir_all(project_root.join(".usdhub/cache")).unwrap();
+    fs::create_dir_all(project_root.join(".usdhub/recovery")).unwrap();
+    fs::write(project_root.join(".usdhub/cache/object"), b"cache").unwrap();
+    fs::write(project_root.join(".usdhub/recovery/session"), b"recovery").unwrap();
+    run_git(&project_root, ["add", "."]);
+    run_git(&project_root, ["commit", "-m", "track derived state"]);
+
+    let service = ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    assert!(
+        inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::TrackedDerivedLocalState)
+    );
+}
+
+#[test]
+fn adoption_failure_restores_a_pre_existing_gitignore_byte_for_byte() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("rollback-ignore");
+    usd_git::Repository::init(&project_root).unwrap();
+    let original_ignore = b"user-rule/\n# preserve this exact file\n";
+    fs::write(project_root.join(".gitignore"), original_ignore).unwrap();
+    fs::create_dir_all(project_root.join(".usdhub")).unwrap();
+    fs::write(project_root.join(".usdhub/cache"), b"user data").unwrap();
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+    let inspection = service.inspect_project(&project_root).unwrap();
+    let result = service.import_project(&project_root, &inspection);
+
+    assert!(matches!(
+        result,
+        Err(ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure
+        })
+    ));
+    assert_eq!(
+        fs::read(project_root.join(".gitignore")).unwrap(),
+        original_ignore
+    );
+    assert!(!project_root.join(".usdhub/project.json").exists());
+    assert_eq!(
+        fs::read(project_root.join(".usdhub/cache")).unwrap(),
+        b"user data"
+    );
+}
+
+#[test]
+fn tracked_derived_state_changes_invalidate_an_old_import_inspection() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("stale-tracked-derived");
+    usd_git::Repository::init(&project_root).unwrap();
+    let service = ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    fs::create_dir_all(project_root.join(".usdhub/cache")).unwrap();
+    fs::write(project_root.join(".usdhub/cache/object"), b"cache").unwrap();
+    run_git(&project_root, ["add", "."]);
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+
+    assert!(matches!(
+        service.import_project(&project_root, &inspection),
+        Err(ProjectWriteError::ConcurrentChange)
+    ));
+}
+
+fn run_git<const N: usize>(root: &Path, args: [&str; N]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {

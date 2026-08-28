@@ -204,10 +204,10 @@ fn is_broad_usdhub_rule(line: &str) -> bool {
     if rule.is_empty() || rule.starts_with('#') || rule.starts_with('!') {
         return false;
     }
-    matches!(
-        rule.trim_end_matches('/'),
-        ".usdhub" | "/.usdhub" | "**/.usdhub"
-    )
+    let rule = rule.trim_end_matches('/');
+    let rule = rule.strip_prefix("**/").unwrap_or(rule);
+    let rule = rule.strip_prefix('/').unwrap_or(rule);
+    rule == ".usdhub" || matches!(rule.strip_prefix(".usdhub/"), Some("*" | "**"))
 }
 
 #[cfg(test)]
@@ -260,8 +260,19 @@ mod tests {
 
     #[test]
     fn broad_usdhub_rule_is_a_conflict() {
-        assert!(has_broad_usdhub_ignore(b".usdhub/\n").unwrap());
+        for rule in [
+            ".usdhub/",
+            "/.usdhub/",
+            "**/.usdhub",
+            ".usdhub/*",
+            ".usdhub/**",
+            "/.usdhub/*",
+            "**/.usdhub/**",
+        ] {
+            assert!(has_broad_usdhub_ignore(rule.as_bytes()).unwrap(), "{rule}");
+        }
         assert!(!has_broad_usdhub_ignore(b".usdhub/cache/\n").unwrap());
+        assert!(!has_broad_usdhub_ignore(b".usdhub/recovery/**\n").unwrap());
     }
 
     #[test]

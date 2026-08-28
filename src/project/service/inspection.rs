@@ -4,6 +4,7 @@ use project_protocol::{
     ProjectInspection, ProjectInspectionClassification, ProjectInspectionWarning,
     ProjectWriteError, ProjectWriteErrorCode,
 };
+use usd_git::GitRepository;
 use usd_project::{ProjectCapabilities, ProjectContentCounts, ProjectManifestV1, ProjectSummary};
 
 use super::repository_summary;
@@ -35,6 +36,19 @@ pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, 
     }
     if !layout.cache_dir().is_dir() || !layout.recovery_dir().is_dir() {
         warnings.push(ProjectInspectionWarning::MissingLocalCacheRoots);
+    }
+    let tracked_cache = repository
+        .has_tracked_path_prefix(".usdhub/cache")
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::RepositoryUnavailable,
+        })?;
+    let tracked_recovery = repository
+        .has_tracked_path_prefix(".usdhub/recovery")
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::RepositoryUnavailable,
+        })?;
+    if tracked_cache || tracked_recovery {
+        warnings.push(ProjectInspectionWarning::TrackedDerivedLocalState);
     }
 
     let manifest_path = layout.manifest_path();
@@ -91,7 +105,6 @@ fn repository_fingerprint(
     repository: &usd_git::Repository,
     layout: &ProjectStorageLayout,
 ) -> Result<String, ProjectWriteError> {
-    use usd_git::GitRepository;
     let mut hasher = blake3::Hasher::new();
     hasher.update(&fs::read(layout.manifest_path()).unwrap_or_default());
     hasher.update(&fs::read(layout.root().join(".gitignore")).unwrap_or_default());
@@ -117,6 +130,27 @@ fn repository_fingerprint(
     {
         hasher.update(branch.name.as_bytes());
         hasher.update(branch.tip.to_string().as_bytes());
+    }
+    for (prefix, tracked) in [
+        (
+            ".usdhub/cache",
+            repository
+                .has_tracked_path_prefix(".usdhub/cache")
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::RepositoryUnavailable,
+                })?,
+        ),
+        (
+            ".usdhub/recovery",
+            repository
+                .has_tracked_path_prefix(".usdhub/recovery")
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::RepositoryUnavailable,
+                })?,
+        ),
+    ] {
+        hasher.update(prefix.as_bytes());
+        hasher.update(&[tracked as u8]);
     }
     Ok(hasher.finalize().to_hex().to_string())
 }

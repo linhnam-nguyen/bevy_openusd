@@ -3,6 +3,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use gix::bstr::ByteSlice;
 use gix::object::tree::EntryKind;
 
 use crate::{
@@ -24,6 +25,11 @@ pub trait GitRepository {
 
     /// Return whether the tracked worktree or index differs from HEAD.
     fn is_dirty(&self) -> Result<bool>;
+
+    /// Return whether the Git index tracks any path below `prefix`.
+    ///
+    /// The prefix uses Git's repository-relative slash-separated path format.
+    fn has_tracked_path_prefix(&self, prefix: &str) -> Result<bool>;
 
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo>;
 
@@ -161,6 +167,17 @@ impl GitRepository for Repository {
 
     fn is_dirty(&self) -> Result<bool> {
         self.inner.is_dirty().map_err(Error::git)
+    }
+
+    fn has_tracked_path_prefix(&self, prefix: &str) -> Result<bool> {
+        let prefix = format!("{}/", prefix.trim_end_matches('/'));
+        let index = self.inner.index_or_empty().map_err(Error::git)?;
+        Ok(index
+            .entries_with_paths_by_filter_map(|path, _| {
+                path.as_bytes().starts_with(prefix.as_bytes()).then_some(())
+            })
+            .next()
+            .is_some())
     }
 
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo> {
