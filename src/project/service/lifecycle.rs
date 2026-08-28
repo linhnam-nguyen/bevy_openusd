@@ -335,6 +335,10 @@ struct CreateProjectJournal {
 #[path = "lifecycle_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "lifecycle_m15_tests.rs"]
+mod m15_tests;
+
 impl CreateProjectJournal {
     fn rollback(&self, project_root: &Path) {
         if self.project_dir_created && !self.registry_entry_added {
