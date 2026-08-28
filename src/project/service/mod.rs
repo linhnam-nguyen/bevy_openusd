@@ -31,6 +31,7 @@ pub struct ProjectApplicationService {
 
 mod inspection;
 mod lifecycle;
+mod scene;
 
 impl ProjectApplicationService {
     /// Open the host-owned workspace registry without exposing its locator.

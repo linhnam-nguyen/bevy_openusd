@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use project_protocol::{
     ProjectInspection, ProjectInspectionClassification, ProjectWriteError, ProjectWriteErrorCode,
 };
-use usd_project::{ProjectManifestV1, ProjectRoot, ProjectSummary};
+use usd_project::{ProjectManifestV1, ProjectSummary};
 
 use super::ProjectApplicationService;
 use crate::project::{
@@ -33,6 +33,15 @@ impl ProjectApplicationService {
         expected: &ProjectInspection,
     ) -> Result<ProjectSummary, ProjectWriteError> {
         import_project(self, project_root, expected)
+    }
+
+    pub fn create_scene(
+        &mut self,
+        project_id: usd_project::ProjectId,
+        target: project_protocol::ProjectWriteTarget,
+        name: &str,
+    ) -> Result<project_protocol::ProjectSceneWriteResponse, ProjectWriteError> {
+        super::scene::create_scene(self, project_id, target, name)
     }
 }
 

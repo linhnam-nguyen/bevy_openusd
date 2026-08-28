@@ -17,10 +17,11 @@ pub use location::{
 };
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 pub use write::{
-    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectImportRequest, ProjectInspection,
-    ProjectInspectionClassification, ProjectInspectionWarning, ProjectWriteCommand,
-    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
-    ProjectWriteResponse,
+    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectCreateSceneRequest,
+    ProjectImportRequest, ProjectInspection, ProjectInspectionClassification,
+    ProjectInspectionWarning, ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError,
+    ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse,
+    ProjectWriteTarget,
 };
 
 #[cfg(test)]
@@ -104,5 +105,23 @@ mod tests {
         assert_eq!(command, decoded);
         assert!(!encoded.contains("PathBuf"));
         assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn create_scene_command_round_trips_typed_target_and_result() {
+        let project_id = ProjectId::new_v4();
+        let command = ProjectWriteCommand::new(ProjectWriteRequest::CreateScene(
+            ProjectCreateSceneRequest {
+                project_id,
+                target: ProjectWriteTarget::Project(project_id),
+                name: "Main Scene".to_owned(),
+            },
+        ));
+        let encoded = serde_json::to_string(&command).unwrap();
+        assert!(!encoded.contains("PathBuf"));
+        assert_eq!(
+            command,
+            serde_json::from_str::<ProjectWriteCommand>(&encoded).unwrap()
+        );
     }
 }

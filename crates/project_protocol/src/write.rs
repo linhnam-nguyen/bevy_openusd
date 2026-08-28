@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use usd_project::ProjectSummary;
+use usd_project::{ModelId, ProjectId, ProjectSummary, SceneId, SceneMemberId};
 
 use crate::{LocalSelectionToken, ProjectReadError};
 
@@ -37,7 +37,10 @@ pub struct ProjectInspection {
 #[serde(rename_all = "snake_case")]
 pub enum ProjectWriteErrorCode {
     InvalidProjectName,
+    InvalidSceneName,
     SelectionUnavailable,
+    InvalidSelection,
+    InvalidRootForComposition,
     ProjectAlreadyExists,
     RepositoryUnavailable,
     ManifestUnavailable,
@@ -75,17 +78,41 @@ pub struct ProjectImportRequest {
     pub inspection: ProjectInspection,
 }
 
+/// The stable Project identity selected as the composition target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ProjectWriteTarget {
+    Project(ProjectId),
+    Scene(SceneId),
+    Model(ModelId),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectCreateSceneRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectWriteTarget,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectSceneWriteResponse {
+    pub project: ProjectSummary,
+    pub scene_id: SceneId,
+    pub placement_id: Option<SceneMemberId>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectWriteRequest {
     Inspect { selection: LocalSelectionToken },
     Create(ProjectCreateRequest),
     Import(ProjectImportRequest),
+    CreateScene(ProjectCreateSceneRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectWriteResponse {
     Inspection(ProjectInspection),
     Project(ProjectSummary),
+    Scene(ProjectSceneWriteResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
