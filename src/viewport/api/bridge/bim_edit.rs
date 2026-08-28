@@ -23,6 +23,9 @@ pub(super) fn apply_bim_property_mutation(
     semantic_snapshot: Option<&SemanticSnapshot>,
     mutation: &BimPropertyMutation,
 ) -> BimPropertyEditOutcome {
+    if let Err(error) = mutation.validate() {
+        return rejected_bim_mutation(mutation, error.to_string());
+    }
     let prepared = match prepare_bim_mutation(stage, semantic_snapshot, mutation) {
         Ok(prepared) => prepared,
         Err(error) => return rejected_bim_error(mutation, error),

@@ -75,13 +75,19 @@ pub struct BimObjectMatch {
     pub display_value: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BimReplacementPreviewRow {
     pub anchor: SceneAnchor,
     pub label: String,
     pub property: String,
     pub old_value: String,
     pub proposed_value: String,
+    /// The typed compare-and-set value captured when the preview was built.
+    pub expected_old_value: CanonicalValue,
+    /// `None` means the replacement text cannot be represented by the
+    /// original semantic value type and must be rejected on Apply.
+    pub proposed_canonical_value: Option<CanonicalValue>,
+    pub measurement: Option<MeasurementMetadata>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

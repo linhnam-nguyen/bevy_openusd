@@ -165,6 +165,18 @@ fn search_supports_all_variants_and_compiles_one_bounded_regex() {
         rows.iter()
             .any(|row| { row.old_value == "AHU-01" && row.proposed_value == "MEP-AHU-01" })
     );
+    let first = rows
+        .iter()
+        .find(|row| row.old_value == "AHU-01")
+        .expect("typed replacement row");
+    assert_eq!(
+        first.expected_old_value,
+        CanonicalValue::Text("AHU-01".to_owned())
+    );
+    assert_eq!(
+        first.proposed_canonical_value,
+        Some(CanonicalValue::Text("MEP-AHU-01".to_owned()))
+    );
 
     let invalid = service.search(&BimSearchQuery::PropertyValueRegex {
         pattern: "(".to_owned(),

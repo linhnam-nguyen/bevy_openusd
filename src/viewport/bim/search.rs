@@ -208,13 +208,20 @@ fn replacement_preview(
                 continue;
             };
             if regex.is_match(&old_value) {
+                let proposed_value = regex.replace(old_value.as_ref(), replacement).into_owned();
                 page_items.push(
                     object_order_key(entity, property_index),
                     BimReplacementPreviewRow {
                         anchor: BimReadService::anchor_for_entity(entity),
                         label: entity_label(entity),
                         property: property.name.clone(),
-                        proposed_value: regex.replace(&old_value, replacement).into_owned(),
+                        proposed_value: proposed_value.clone(),
+                        expected_old_value: property.value.clone(),
+                        proposed_canonical_value: replacement_canonical_value(
+                            &property.value,
+                            &proposed_value,
+                        ),
+                        measurement: property.measurement.clone(),
                         old_value: old_value.into_owned(),
                     },
                 );
@@ -228,6 +235,31 @@ fn replacement_preview(
         rows,
         has_more,
     })
+}
+
+fn replacement_canonical_value(
+    old_value: &CanonicalValue,
+    proposed_value: &str,
+) -> Option<CanonicalValue> {
+    match old_value {
+        CanonicalValue::Null => (proposed_value == "null").then_some(CanonicalValue::Null),
+        CanonicalValue::Bool(_) => proposed_value.parse().ok().map(CanonicalValue::Bool),
+        CanonicalValue::Integer(_) => proposed_value.parse().ok().map(CanonicalValue::Integer),
+        CanonicalValue::Real(_) => proposed_value
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(CanonicalValue::Real),
+        CanonicalValue::Text(_) => Some(CanonicalValue::Text(proposed_value.to_owned())),
+        CanonicalValue::TextArray(_) => serde_json::from_str(proposed_value)
+            .ok()
+            .map(CanonicalValue::TextArray),
+        CanonicalValue::NumberArray(_) => serde_json::from_str::<Vec<f64>>(proposed_value)
+            .ok()
+            .filter(|values| values.iter().all(|value| value.is_finite()))
+            .map(CanonicalValue::NumberArray),
+        CanonicalValue::Json(_) => None,
+    }
 }
 
 struct BoundedPage<K, T> {
