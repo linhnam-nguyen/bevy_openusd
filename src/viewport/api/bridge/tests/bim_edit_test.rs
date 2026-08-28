@@ -172,6 +172,30 @@ mod tests {
         ));
         assert_eq!(read_width(&app, "/World/A"), 10.0);
         assert_eq!(read_width(&app, "/World/B"), 20.0);
+
+        let undo_request = app
+            .world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::UndoEditor);
+        app.update();
+        let undo_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("replacement undo publishes one event");
+        assert_eq!(
+            undo_event.request_id.as_deref(),
+            Some(undo_request.as_str())
+        );
+        assert!(matches!(
+            undo_event.event,
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::Undo,
+                ..
+            }
+        ));
+        assert_eq!(read_width(&app, "/World/A"), 1.0);
+        assert_eq!(read_width(&app, "/World/B"), 2.0);
     }
 
     #[test]
