@@ -109,6 +109,14 @@ pub(super) fn create_scene(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let summary = super::inspection::project_summary(&created.manifest, project_root)?;
+    service
+        .stage_mutations
+        .submit(super::ProjectStageMutation::CreateScene {
+            project_id,
+            scene_id: created.scene_id,
+            parent_scene_id,
+            placement_id: created.member.as_ref().map(|member| member.id),
+        })?;
     Ok(ProjectSceneWriteResponse {
         project: summary,
         scene_id: created.scene_id,

@@ -93,6 +93,14 @@ pub(super) fn adopt_scene(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
+    service
+        .stage_mutations
+        .submit(super::ProjectStageMutation::AdoptScene {
+            project_id,
+            scene_id: adopted.scene_id,
+            parent_scene_id,
+            placement_id: adopted.member.as_ref().map(|member| member.id),
+        })?;
 
     Ok(ProjectSceneAdoptionResponse {
         project,

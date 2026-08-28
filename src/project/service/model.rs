@@ -112,6 +112,14 @@ pub(super) fn publish_model(
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
     let project = super::inspection::project_summary(&published.manifest, project_root)?;
+    service
+        .stage_mutations
+        .submit(super::ProjectStageMutation::PublishModel {
+            project_id,
+            model_id: published.id,
+            parent_scene_id,
+            placement_id: published.placement.as_ref().map(|member| member.id),
+        })?;
 
     Ok(ProjectModelWriteResponse {
         project,

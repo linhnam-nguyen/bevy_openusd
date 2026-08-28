@@ -33,6 +33,7 @@ use crate::project::{
 pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
     pub(super) publication_coordinator: ProjectPublicationCoordinator,
+    pub(super) stage_mutations: ProjectStageMutationQueue,
 }
 
 /// Shared admission state for non-idempotent publication mutations.
@@ -63,8 +64,10 @@ mod model;
 mod model_preparation;
 mod scene;
 mod scene_adoption;
+mod stage_mutation;
 pub use model_preparation::ProjectModelPreparationQueue;
 pub use scene_inspection::ProjectSceneInspectionQueue;
+pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
 
 impl ProjectApplicationService {
@@ -81,14 +84,41 @@ impl ProjectApplicationService {
         registry_path: impl Into<PathBuf>,
         publication_coordinator: ProjectPublicationCoordinator,
     ) -> Result<Self, ProjectReadError> {
+        Self::open_with_project_state(
+            registry_path,
+            publication_coordinator,
+            ProjectStageMutationQueue::default(),
+        )
+    }
+
+    /// Open the service with all host-owned shared Project state.
+    pub fn open_with_project_state(
+        registry_path: impl Into<PathBuf>,
+        publication_coordinator: ProjectPublicationCoordinator,
+        stage_mutations: ProjectStageMutationQueue,
+    ) -> Result<Self, ProjectReadError> {
         WorkspaceRegistry::load(registry_path)
             .map(|registry| Self {
                 registry,
                 publication_coordinator,
+                stage_mutations,
             })
             .map_err(|_| ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,
             })
+    }
+
+    /// Open with a shared LiveStage handoff queue and default publication
+    /// admission. This is useful for hosts that already own stage activation.
+    pub fn open_with_stage_mutation_queue(
+        registry_path: impl Into<PathBuf>,
+        stage_mutations: ProjectStageMutationQueue,
+    ) -> Result<Self, ProjectReadError> {
+        Self::open_with_project_state(
+            registry_path,
+            ProjectPublicationCoordinator::default(),
+            stage_mutations,
+        )
     }
 
     /// Execute one versioned read command and return a typed reply envelope.
@@ -308,6 +338,7 @@ mod tests {
         let service = ProjectApplicationService {
             registry,
             publication_coordinator: ProjectPublicationCoordinator::default(),
+            stage_mutations: ProjectStageMutationQueue::default(),
         };
         let project_id = ProjectId::new_v4();
 
@@ -338,6 +369,7 @@ mod tests {
         let service = ProjectApplicationService {
             registry,
             publication_coordinator: ProjectPublicationCoordinator::default(),
+            stage_mutations: ProjectStageMutationQueue::default(),
         };
 
         let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));
@@ -386,6 +418,7 @@ mod tests {
         let service = ProjectApplicationService {
             registry,
             publication_coordinator: ProjectPublicationCoordinator::default(),
+            stage_mutations: ProjectStageMutationQueue::default(),
         };
 
         let reply = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(

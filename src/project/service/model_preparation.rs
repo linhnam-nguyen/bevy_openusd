@@ -121,7 +121,7 @@ impl ProjectModelPreparationQueue {
     }
 }
 
-fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<PreparedState>>) -> ! {
+fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<PreparedState>>) {
     let registry = ModelImporterRegistry::default();
     let importer = registry
         .importer_for(&usd_project::ModelSourceKind::Usd)
@@ -158,7 +158,6 @@ fn worker_loop(receiver: mpsc::Receiver<PreparationJob>, prepared: Arc<Mutex<Pre
             inspection,
         });
     }
-    unreachable!("Model preparation worker channel is retained by the queue")
 }
 
 #[cfg(test)]
