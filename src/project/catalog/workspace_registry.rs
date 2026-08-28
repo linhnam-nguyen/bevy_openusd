@@ -265,6 +265,7 @@ mod tests {
                 branches: Vec::new(),
                 dirty: false,
                 head: None,
+                latest_commit: None,
             },
             counts: ProjectContentCounts::default(),
             capabilities: ProjectCapabilities::default(),

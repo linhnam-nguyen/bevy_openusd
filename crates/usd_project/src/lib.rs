@@ -26,8 +26,8 @@ pub use manifest::{
     SceneManifestEntry, StorageKey, ValidatedProjectManifest,
 };
 pub use read_model::{
-    BranchSummary, ModelSourceSummary, ProjectContentCounts, ProjectContentNode, ProjectSummary,
-    RepositorySummary, RevisionSummary,
+    BranchSummary, CommitSummary, ModelSourceSummary, ProjectContentCounts, ProjectContentNode,
+    ProjectSummary, RepositorySummary, RevisionSummary,
 };
 pub use root::{ModelSourceKind, ProjectRoot};
 pub use scene::{SceneMember, SceneMemberTarget};

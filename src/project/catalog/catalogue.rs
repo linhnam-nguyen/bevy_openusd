@@ -52,6 +52,7 @@ fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
                 branches: Vec::new(),
                 dirty: false,
                 head: None,
+                latest_commit: None,
             },
             counts: ProjectContentCounts {
                 scenes: manifest.scenes().len() as u64,

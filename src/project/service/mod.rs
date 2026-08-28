@@ -16,8 +16,8 @@ use project_protocol::{
     ProjectReadRequest, ProjectReadResponse,
 };
 use usd_project::{
-    BranchSummary, ModelSourceSummary, ProjectContentNode, ProjectId, RepositorySummary,
-    RevisionSummary,
+    BranchSummary, CommitSummary, ModelSourceSummary, ProjectContentNode, ProjectId,
+    RepositorySummary, RevisionSummary,
 };
 
 use crate::project::{
@@ -321,6 +321,31 @@ fn repository_summary(
             project_id,
             code: ProjectReadErrorCode::RepositoryUnavailable,
         })?;
+    let latest_commit = head
+        .as_ref()
+        .map(|revision| {
+            repository
+                .read_commit(revision.id())
+                .map(|commit| CommitSummary {
+                    revision: RevisionSummary {
+                        id: commit.id.to_string(),
+                    },
+                    subject: commit
+                        .message
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_owned(),
+                    author: commit.author.name,
+                    authored_at_seconds: commit.author.time_seconds,
+                })
+        })
+        .transpose()
+        .map_err(|_| ProjectReadError::Unavailable {
+            project_id,
+            code: ProjectReadErrorCode::RepositoryUnavailable,
+        })?;
     Ok(RepositorySummary {
         active_branch,
         branches,
@@ -328,6 +353,7 @@ fn repository_summary(
         head: head.map(|revision| RevisionSummary {
             id: revision.id().to_string(),
         }),
+        latest_commit,
     })
 }
 

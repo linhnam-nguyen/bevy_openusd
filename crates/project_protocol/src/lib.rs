@@ -64,6 +64,7 @@ mod tests {
                     branches: Vec::new(),
                     dirty: false,
                     head: None,
+                    latest_commit: None,
                 },
                 counts: usd_project::ProjectContentCounts::default(),
                 capabilities: usd_project::ProjectCapabilities::default(),

@@ -22,6 +22,7 @@ pub struct RepositorySummary {
     pub branches: Vec<BranchSummary>,
     pub dirty: bool,
     pub head: Option<RevisionSummary>,
+    pub latest_commit: Option<CommitSummary>,
 }
 
 /// One local branch represented without a Git implementation type.
@@ -36,6 +37,15 @@ pub struct BranchSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevisionSummary {
     pub id: String,
+}
+
+/// Git-neutral metadata for the current HEAD commit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommitSummary {
+    pub revision: RevisionSummary,
+    pub subject: String,
+    pub author: String,
+    pub authored_at_seconds: i64,
 }
 
 /// Bounded counts for Project content without copying the content catalogue.
@@ -102,6 +112,12 @@ mod tests {
                 }],
                 dirty: false,
                 head: Some(revision("abc123")),
+                latest_commit: Some(CommitSummary {
+                    revision: revision("abc123"),
+                    subject: "Initial Project".to_owned(),
+                    author: "USDHub Test".to_owned(),
+                    authored_at_seconds: 0,
+                }),
             },
             counts: ProjectContentCounts {
                 scenes: 2,

@@ -62,6 +62,16 @@ fn repository_summary_projects_git_state_without_backend_handles() {
         vec!["main"]
     );
     assert!(repository.head.is_some());
+    let latest_commit = repository
+        .latest_commit
+        .as_ref()
+        .expect("latest commit metadata");
+    assert_eq!(latest_commit.subject, "initial Project");
+    assert_eq!(latest_commit.author, "USDHub Test");
+    assert_eq!(
+        &latest_commit.revision.id,
+        &repository.head.as_ref().unwrap().id
+    );
     assert!(!repository.dirty);
 
     std::fs::write(
@@ -119,6 +129,7 @@ fn repository_summary_preserves_an_unborn_symbolic_branch() {
     assert_eq!(repository.active_branch.as_deref(), Some("main"));
     assert!(repository.branches.is_empty());
     assert!(repository.head.is_none());
+    assert!(repository.latest_commit.is_none());
 }
 
 fn run_git(directory: &Path, args: &[&str]) {
