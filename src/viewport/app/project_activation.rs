@@ -4,7 +4,13 @@
 //! place where that identity is resolved through the Project application
 //! service and handed to the existing LiveStage stage-open lifecycle.
 
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        Mutex,
+        mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel},
+    },
+};
 
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{App, Resource, Update, World};
@@ -18,11 +24,22 @@ use crate::viewport::api::RenderServerInterface;
 use crate::viewport::session::activate_stage;
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
+const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
 
 /// Host-owned locator for the machine-local Project registry.
-#[derive(Debug, Resource)]
+#[derive(Resource)]
 pub(super) struct ProjectStageActivationRuntime {
-    registry_path: Option<PathBuf>,
+    preparation: ProjectActivationPreparation,
+}
+
+struct ProjectActivationPreparation {
+    sender: SyncSender<ProjectActivationRequest>,
+    receiver: Mutex<Receiver<PreparedProjectActivation>>,
+}
+
+struct PreparedProjectActivation {
+    request: ProjectActivationRequest,
+    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
 }
 
 impl ProjectStageActivationRuntime {
@@ -33,22 +50,77 @@ impl ProjectStageActivationRuntime {
                 "[project-activation] {PROJECT_REGISTRY_PATH_ENV} is not configured; Project stage activation is unavailable"
             );
         }
-        Self { registry_path }
+        Self::with_registry_path(registry_path)
     }
 
-    fn resolve(
-        &self,
-        request: &ProjectActivationRequest,
-    ) -> Result<Option<crate::project::service::ProjectStageActivationTarget>, String> {
-        let Some(registry_path) = self.registry_path.as_ref() else {
-            return Err("Project activation registry is unavailable".to_owned());
-        };
-        let service = ProjectApplicationService::open(registry_path.clone())
-            .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
-        service
-            .resolve_stage_activation(request.command.project_id, request.command.root.clone())
-            .map_err(|error| format!("Project root activation was rejected: {error}"))
+    fn with_registry_path(registry_path: Option<PathBuf>) -> Self {
+        let (sender, requests) = sync_channel(PROJECT_ACTIVATION_PREPARATION_CAPACITY);
+        let (prepared, receiver) = sync_channel(PROJECT_ACTIVATION_PREPARATION_CAPACITY);
+        std::thread::Builder::new()
+            .name("project-activation-preparation".to_owned())
+            .spawn(move || {
+                while let Ok(request) = requests.recv() {
+                    let target = resolve_project_activation(registry_path.as_deref(), &request);
+                    if prepared
+                        .send(PreparedProjectActivation { request, target })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("Project activation preparation worker must start");
+
+        Self {
+            preparation: ProjectActivationPreparation {
+                sender,
+                receiver: Mutex::new(receiver),
+            },
+        }
     }
+
+    fn submit(
+        &self,
+        request: ProjectActivationRequest,
+    ) -> Result<(), TrySendError<ProjectActivationRequest>> {
+        self.preparation.sender.try_send(request)
+    }
+
+    fn take_prepared(&self) -> Option<PreparedProjectActivation> {
+        let receiver = self
+            .preparation
+            .receiver
+            .lock()
+            .expect("Project activation preparation receiver is not poisoned");
+        match receiver.try_recv() {
+            Ok(prepared) => Some(prepared),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn wait_for_prepared(&self) -> Option<PreparedProjectActivation> {
+        self.preparation
+            .receiver
+            .lock()
+            .expect("Project activation preparation receiver is not poisoned")
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .ok()
+    }
+}
+
+fn resolve_project_activation(
+    registry_path: Option<&Path>,
+    request: &ProjectActivationRequest,
+) -> Result<Option<crate::project::service::ProjectStageActivationTarget>, String> {
+    let Some(registry_path) = registry_path else {
+        return Err("Project activation registry is unavailable".to_owned());
+    };
+    let service = ProjectApplicationService::open(registry_path.to_path_buf())
+        .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
+    service
+        .resolve_stage_activation(request.command.project_id, request.command.root.clone())
+        .map_err(|error| format!("Project root activation was rejected: {error}"))
 }
 
 pub(super) fn install(app: &mut App) {
@@ -59,7 +131,8 @@ pub(super) fn install(app: &mut App) {
         );
 }
 
-/// Resolves and applies all queued Project activations on the Bevy main world.
+/// Submits queued Project activations for preparation and applies prepared
+/// results on the Bevy main world.
 ///
 /// The candidate Stage is opened before the current LiveStage is replaced, so
 /// a failed activation leaves the previous renderer state untouched.
@@ -68,28 +141,69 @@ pub(super) fn process_project_activations(world: &mut World) {
         return;
     };
     let interface = interface_resource.shared();
-    while let Some(request) = interface.pop_project_activation() {
-        let command = request.command.clone();
-        let reply = match world
+
+    loop {
+        let prepared = world
             .resource::<ProjectStageActivationRuntime>()
-            .resolve(&request)
-        {
-            Ok(None) => ProjectActivationReply::activated(&command),
-            Ok(Some(target)) => match activate_stage(world, target.path) {
-                Ok(()) => ProjectActivationReply::activated(&command),
-                Err(error) => ProjectActivationReply::failed(&command, error),
-            },
-            Err(error) => ProjectActivationReply::failed(&command, error),
+            .take_prepared();
+        let Some(prepared) = prepared else {
+            break;
         };
-        let result = RoutedProjectActivationResult {
-            session_id: request.session_id,
-            reply,
-        };
-        if let Err(error) = interface.publish_project_activation_result(result) {
-            bevy::log::error!(
-                "[project-activation] could not publish activation result: {error:?}"
+        publish_prepared_result(world, &interface, prepared);
+    }
+
+    while let Some(request) = interface.pop_project_activation() {
+        let submit_result = world
+            .resource::<ProjectStageActivationRuntime>()
+            .submit(request);
+        if let Err(error) = submit_result {
+            let (request, message) = match error {
+                TrySendError::Full(request) => {
+                    (request, "Project activation preparation is busy".to_owned())
+                }
+                TrySendError::Disconnected(request) => (
+                    request,
+                    "Project activation preparation is unavailable".to_owned(),
+                ),
+            };
+            let command = request.command.clone();
+            publish_activation_result(
+                &interface,
+                request,
+                ProjectActivationReply::failed(&command, message),
             );
         }
+    }
+}
+
+fn publish_prepared_result(
+    world: &mut World,
+    interface: &viewport_streaming::RenderServerInterface,
+    prepared: PreparedProjectActivation,
+) {
+    let command = prepared.request.command.clone();
+    let reply = match prepared.target {
+        Ok(None) => ProjectActivationReply::activated(&command),
+        Ok(Some(target)) => match activate_stage(world, target.path) {
+            Ok(()) => ProjectActivationReply::activated(&command),
+            Err(error) => ProjectActivationReply::failed(&command, error),
+        },
+        Err(error) => ProjectActivationReply::failed(&command, error),
+    };
+    publish_activation_result(interface, prepared.request, reply);
+}
+
+fn publish_activation_result(
+    interface: &viewport_streaming::RenderServerInterface,
+    request: ProjectActivationRequest,
+    reply: ProjectActivationReply,
+) {
+    let result = RoutedProjectActivationResult {
+        session_id: request.session_id,
+        reply,
+    };
+    if let Err(error) = interface.publish_project_activation_result(result) {
+        bevy::log::error!("[project-activation] could not publish activation result: {error:?}");
     }
 }
 
@@ -142,5 +256,31 @@ mod tests {
             .unwrap();
         assert_eq!(result.session_id, SessionId::new("session-a"));
         assert_eq!(result.reply.request_id, command.request_id);
+    }
+
+    #[test]
+    fn preparation_worker_preserves_request_identity_when_registry_is_unavailable() {
+        let runtime = ProjectStageActivationRuntime::with_registry_path(None);
+        let command = ProjectActivationCommand::new(
+            "activation-preparation-failure",
+            4,
+            ProjectId::new_v4(),
+            ProjectRoot::Empty,
+        );
+        let request = ProjectActivationRequest {
+            session_id: SessionId::new("session-preparation"),
+            command: command.clone(),
+        };
+
+        runtime.submit(request.clone()).unwrap();
+        let prepared = runtime
+            .wait_for_prepared()
+            .expect("preparation worker should return a result");
+        assert_eq!(prepared.request.session_id, request.session_id);
+        assert_eq!(prepared.request.command, command);
+        assert_eq!(
+            prepared.target,
+            Err("Project activation registry is unavailable".to_owned())
+        );
     }
 }
