@@ -10,6 +10,11 @@ pub(crate) mod catalog;
 #[path = "project_api_scene.rs"]
 pub(crate) mod scene;
 
+#[path = "project/model_import.rs"]
+pub(crate) mod model_import;
+#[path = "project/model_wrapper.rs"]
+pub(crate) mod model_wrapper;
+
 #[path = "project/storage.rs"]
 pub(crate) mod storage;
 

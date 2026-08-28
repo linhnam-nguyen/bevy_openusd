@@ -7,6 +7,7 @@
 mod command;
 mod error;
 mod location;
+mod model_preparation;
 mod read;
 mod scene_inspection;
 mod write;
@@ -16,6 +17,10 @@ pub use error::{ProjectReadError, ProjectReadErrorCode};
 pub use location::{
     LocalSelectionToken, LocalSelectionView, ProjectLocationKind, ProjectLocationResult,
 };
+pub use model_preparation::{
+    PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION, ProjectModelPreparationCommand,
+    ProjectModelPreparationReply, ProjectModelPreparationRequest, ProjectModelPreparationResult,
+};
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 pub use scene_inspection::{
     PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION, ProjectSceneInspectionCommand,
@@ -23,10 +28,11 @@ pub use scene_inspection::{
 };
 pub use write::{
     PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectCreateRequest,
-    ProjectCreateSceneRequest, ProjectImportRequest, ProjectInspection,
-    ProjectInspectionClassification, ProjectInspectionWarning, ProjectSceneAdoptionResponse,
-    ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode,
-    ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
+    ProjectCreateSceneRequest, ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
+    ProjectInspectionClassification, ProjectInspectionWarning, ProjectModelWriteResponse,
+    ProjectSceneAdoptionResponse, ProjectSceneWriteResponse, ProjectWriteCommand,
+    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
+    ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]
@@ -150,6 +156,21 @@ mod tests {
 
         let encoded = serde_json::to_string(&command).unwrap();
         let decoded: ProjectWriteCommand = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(command, decoded);
+        assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn model_preparation_command_round_trips_operation_and_generation() {
+        let command = ProjectModelPreparationCommand::new(ProjectModelPreparationRequest {
+            source: LocalSelectionToken::new("model-source"),
+            operation_id: "preparation-1".to_owned(),
+            generation: 12,
+        });
+
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: ProjectModelPreparationCommand = serde_json::from_str(&encoded).unwrap();
 
         assert_eq!(command, decoded);
         assert!(!encoded.contains("/Users/"));

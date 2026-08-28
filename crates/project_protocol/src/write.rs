@@ -49,6 +49,7 @@ pub enum ProjectWriteErrorCode {
     IncompatibleRepository,
     IgnoreConflict,
     ConcurrentChange,
+    Busy,
     RegistrationFailed,
     FilesystemFailure,
 }
@@ -122,12 +123,31 @@ pub struct ProjectSceneAdoptionResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectImportModelRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectWriteTarget,
+    pub source: LocalSelectionToken,
+    pub operation_id: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectModelWriteResponse {
+    pub project: ProjectSummary,
+    pub model_id: ModelId,
+    pub placement_id: Option<SceneMemberId>,
+    pub operation_id: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectWriteRequest {
     Inspect { selection: LocalSelectionToken },
     Create(ProjectCreateRequest),
     Import(ProjectImportRequest),
     CreateScene(ProjectCreateSceneRequest),
     AdoptScene(ProjectAdoptSceneRequest),
+    ImportModel(ProjectImportModelRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -136,6 +156,7 @@ pub enum ProjectWriteResponse {
     Project(ProjectSummary),
     Scene(ProjectSceneWriteResponse),
     SceneAdopted(ProjectSceneAdoptionResponse),
+    ModelImported(ProjectModelWriteResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
