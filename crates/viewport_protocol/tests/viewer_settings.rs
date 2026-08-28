@@ -105,8 +105,8 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v5_selection_delta_migration_is_explicit() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 5);
+fn protocol_v6_selection_delta_migration_is_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 6);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
 }

@@ -43,11 +43,22 @@ pub enum HierarchySource {
     BimClassification,
 }
 
+/// Semantic kind of one row in the active hierarchy provider.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HierarchyNodeKind {
+    #[default]
+    Group,
+    Object,
+}
+
 /// Provider-neutral hierarchy row.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HierarchyNodeReadModel {
     pub id: HierarchyNodeId,
     pub parent_id: Option<HierarchyNodeId>,
+    pub kind: HierarchyNodeKind,
+    pub selectable: bool,
     pub name: String,
     pub breadcrumb: String,
     pub anchor: Option<SceneAnchor>,
@@ -71,6 +82,8 @@ impl HierarchyNodeReadModel {
         Self {
             id,
             parent_id,
+            kind: HierarchyNodeKind::Object,
+            selectable: true,
             name,
             breadcrumb,
             anchor: Some(anchor),
@@ -90,6 +103,34 @@ impl HierarchyNodeReadModel {
         Self {
             id,
             parent_id,
+            kind: HierarchyNodeKind::Group,
+            selectable: false,
+            name,
+            breadcrumb,
+            anchor: None,
+            parent_anchor: None,
+            visible: true,
+            has_children,
+        }
+    }
+
+    /// Creates a virtual row with an explicit provider-neutral kind and
+    /// selection policy. The usual virtual-group constructor remains the
+    /// concise path for non-selectable classification groups.
+    pub fn virtual_node_with_kind(
+        id: HierarchyNodeId,
+        parent_id: Option<HierarchyNodeId>,
+        name: String,
+        breadcrumb: String,
+        kind: HierarchyNodeKind,
+        selectable: bool,
+        has_children: bool,
+    ) -> Self {
+        Self {
+            id,
+            parent_id,
+            kind,
+            selectable,
             name,
             breadcrumb,
             anchor: None,

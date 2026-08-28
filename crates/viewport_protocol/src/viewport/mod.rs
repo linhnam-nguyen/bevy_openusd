@@ -15,8 +15,8 @@ mod read_models;
 
 pub use bim::*;
 pub use hierarchy::{
-    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel, HierarchyPageReference,
-    HierarchyReadModel, HierarchySearchMatch, HierarchySource,
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel,
+    HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch, HierarchySource,
 };
 
 pub use commands::{ViewportCommand, ViewportCommandEnvelope};

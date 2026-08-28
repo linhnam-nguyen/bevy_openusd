@@ -1,5 +1,6 @@
 use viewport_protocol::{
-    HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel, HierarchySource, ViewportCommand,
+    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, ViewportCommand,
 };
 
 #[test]
@@ -23,11 +24,32 @@ fn generic_hierarchy_keeps_virtual_and_scene_identity_distinct() {
     );
 
     assert!(group.anchor.is_none());
+    assert_eq!(group.kind, HierarchyNodeKind::Group);
+    assert!(!group.selectable);
     assert_eq!(
         leaf.anchor.as_ref().map(|anchor| anchor.prim_path.as_str()),
         Some("/World/Wall")
     );
+    assert_eq!(leaf.kind, HierarchyNodeKind::Object);
+    assert!(leaf.selectable);
     assert_eq!(leaf.parent_id, Some(group.id));
+}
+
+#[test]
+fn generic_hierarchy_can_carry_explicit_virtual_kind_and_selection_policy() {
+    let object = HierarchyNodeReadModel::virtual_node_with_kind(
+        HierarchyNodeId::new("bim-object"),
+        None,
+        "Object".to_owned(),
+        "Object".to_owned(),
+        HierarchyNodeKind::Object,
+        true,
+        false,
+    );
+
+    assert_eq!(object.kind, HierarchyNodeKind::Object);
+    assert!(object.selectable);
+    assert!(object.anchor.is_none());
 }
 
 #[test]

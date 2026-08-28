@@ -6,7 +6,7 @@
 //! and `Server*` types reserve the richer session contract used by the remote
 //! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 5;
+pub const PROTOCOL_VERSION: u16 = 6;
 
 pub mod authorization;
 pub mod capabilities;
@@ -65,19 +65,20 @@ pub use viewport::{
     ClassificationLevel, ClassificationRecipe, ColorRgb8, CommonValue, CurveTuning,
     DEFAULT_GIZMO_SIZE_LEVEL, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
-    GroundGridOrigin, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel,
-    HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch, HierarchySource,
-    MAX_BIM_BATCH_EDITS, MAX_BIM_CLASSIFICATION_LEVELS, MAX_BIM_CLASSIFICATION_PAGE_SIZE,
-    MAX_BIM_FIELD_KEY_BYTES, MAX_BIM_REGEX_BYTES, MAX_BIM_REPLACEMENT_BYTES, MAX_BIM_SEARCH_GROUPS,
-    MAX_BIM_SEARCH_OFFSET, MAX_BIM_SEARCH_PAGE_SIZE, MAX_BIM_SELECTION_TARGETS,
-    MAX_EDITOR_TEXT_BYTES, MAX_GIZMO_SIZE_LEVEL, MAX_HIERARCHY_NODE_ID_BYTES,
-    MAX_HIERARCHY_SEARCH_QUERY_BYTES, MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES,
-    MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS, MIN_GIZMO_SIZE_LEVEL,
-    OverlayKind, PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration,
-    RuntimeMutation, RuntimeMutationBatch, SamplingPreference, SamplingProvider, SamplingReadModel,
-    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
-    SectionBoxReadModel, SelectionPresentationSettings, SelectionReadModel, StageLoadState,
-    StageReadModel, StandardView, TimelineReadModel, UNCLASSIFIED_LABEL, ViewerEnvironmentSettings,
+    GroundGridOrigin, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind,
+    HierarchyNodeReadModel, HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch,
+    HierarchySource, MAX_BIM_BATCH_EDITS, MAX_BIM_CLASSIFICATION_LEVELS,
+    MAX_BIM_CLASSIFICATION_PAGE_SIZE, MAX_BIM_FIELD_KEY_BYTES, MAX_BIM_REGEX_BYTES,
+    MAX_BIM_REPLACEMENT_BYTES, MAX_BIM_SEARCH_GROUPS, MAX_BIM_SEARCH_OFFSET,
+    MAX_BIM_SEARCH_PAGE_SIZE, MAX_BIM_SELECTION_TARGETS, MAX_EDITOR_TEXT_BYTES,
+    MAX_GIZMO_SIZE_LEVEL, MAX_HIERARCHY_NODE_ID_BYTES, MAX_HIERARCHY_SEARCH_QUERY_BYTES,
+    MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE,
+    MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS, MIN_GIZMO_SIZE_LEVEL, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation,
+    RuntimeMutationBatch, SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor,
+    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
+    SelectionPresentationSettings, SelectionReadModel, StageLoadState, StageReadModel,
+    StandardView, TimelineReadModel, UNCLASSIFIED_LABEL, ViewerEnvironmentSettings,
     ViewerSettingsCapabilities, ViewerSettingsReadModel, ViewportCommand, ViewportCommandEnvelope,
     ViewportEvent, ViewportEventEnvelope, ViewportReadModel, ViewportWireMessage, bim,
 };
