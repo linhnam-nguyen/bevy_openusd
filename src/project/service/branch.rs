@@ -69,12 +69,18 @@ fn switch_branch(
         Ok(manifest) => manifest,
         Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
     };
-    let (nodes, counts) =
-        super::project_tree(&project_root, &manifest).map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::BranchProjectInvalid,
-        })?;
-    let repository_summary = super::repository_summary(project_id, &project_root)?;
-    let mut project = super::inspection::project_summary(manifest.raw(), &project_root)?;
+    let (nodes, counts) = match super::project_tree(&project_root, &manifest) {
+        Ok(projection) => projection,
+        Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
+    };
+    let repository_summary = match super::repository_summary(project_id, &project_root) {
+        Ok(repository) => repository,
+        Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
+    };
+    let mut project = match super::inspection::project_summary(manifest.raw(), &project_root) {
+        Ok(project) => project,
+        Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
+    };
     project.repository = repository_summary.clone();
     project.counts = counts;
     Ok(ProjectBranchSwitchResponse {
@@ -90,9 +96,7 @@ fn branch_project_invalid(project_id: ProjectId, project_root: &Path) -> Project
         Ok(repository) => ProjectWriteError::BranchProjectInvalid {
             repository: Box::new(repository),
         },
-        Err(_) => ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::BranchProjectInvalid,
-        },
+        Err(_) => ProjectWriteError::BranchProjectTruthUnavailable,
     }
 }
 

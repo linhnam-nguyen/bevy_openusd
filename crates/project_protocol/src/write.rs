@@ -75,6 +75,8 @@ pub enum ProjectWriteError {
     ConcurrentChange,
     #[error("target branch contains invalid Project metadata")]
     BranchProjectInvalid { repository: Box<RepositorySummary> },
+    #[error("repository truth unavailable after branch checkout")]
+    BranchProjectTruthUnavailable,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
