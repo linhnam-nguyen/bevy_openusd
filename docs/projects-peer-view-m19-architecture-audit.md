@@ -6,12 +6,12 @@ product surface, renderer owner, or transport authority.
 
 ## Checkpoint ledger
 
-| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 | M19-C1++ | M19-C3++ | M19-C1+++ | M19-C3+++ |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | `9295c63c2cf6fdc2f1e798370acc41d606f9927b` | `4e18fabdf6515455bb0adce34f37bb7712fc0414` | `8f3d9ee3fc525a784ec44bbf7f22bab97b13192e` | `f75fea096134c04d6cf9e431972243c403760fb0` | this commit |
-| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0922b4c9ce06ca7751186a945313fecf6a` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | `c63f8dd54a5f24c413dfb8d735e57f4ec4ddb16d` | `8c6d479ccfcfabc266850caeb33f5fddf8c29d1c` | `57739cd09789a7eb4e36e3c2dfac9aab59cb0e8e` | `617793d215e0b6ad3dd05481d9f32c6edf83fff6` | this commit |
+| Repository | Frozen M18 base | M19-C1 | M19-C2 | M19-C3 | M19-C1++ | M19-C3++ | M19-C1+++ | M19-C3+++ | M19-C3++++ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bevy_openusd` / `develop/project-peerView` | `0d1516e5173b8bf08421792c3fe7458e4bd640c9` | `e158d4a7911c9029780bc57d976b177b79f06ddb` | no backend change required | `9295c63c2cf6fdc2f1e798370acc41d606f9927b` | `4e18fabdf6515455bb0adce34f37bb7712fc0414` | `8f3d9ee3fc525a784ec44bbf7f22bab97b13192e` | `f75fea096134c04d6cf9e431972243c403760fb0` | `090c796baaf47b82c6055928ec6dbb659a1ebdad` | this commit |
+| `UsdHubUI` / `projects-peerView` | `4bf6fafb2ede11d354313a6a7d27678db8e10918` | `dbeb7b0922b4c9ce06ca7751186a945313fecf6a` | `fab6d8b2474d06158c245fdebe73d22b7bda4252` | `c63f8dd54a5f24c413dfb8d735e57f4ec4ddb16d` | `8c6d479ccfcfabc266850caeb33f5fddf8c29d1c` | `57739cd09789a7eb4e36e3c2dfac9aab59cb0e8e` | `617793d215e0b6ad3dd05481d9f32c6edf83fff6` | `0cb2f108b79486699f0d3b6497506bbd43073fd8` | `843615eb0eef7ba6cb748aba0d0c3fab8b171cbb` |
 
-The implementation-plan ledger records the exact M19-C3+++ tip SHAs after the
+The implementation-plan ledger records the exact M19-C3++++ tip SHAs after the
 audit-packet commits are pushed.
 
 ## Final repair contract
@@ -116,7 +116,10 @@ The backend source audit passes with **584 files scanned, 44 warnings in the
 351–400 range, and 0 failures above 400**. M19 backend files remain within the
 hard limit; the largest is `src/project/service/mod.rs` at 399 lines.
 
-The UI M19 diff contains 15 Rust files. New and responsibility-specific
+The UI M19 diff contains 16 Rust files. The source-layout repair extracts the
+branch-result reducer into `authoritative_branch.rs`: `authoritative.rs` is
+338 lines, the new module is 91 lines, and
+`controller_m19_branch_tests.rs` is 332 lines. All new and materially modified
 Projects files remain within the 400-line hard limit. Pre-existing legacy
 files receiving narrow routing edits remain oversized and are explicitly
 recorded rather than hidden: `features/projects/gateway.rs` (680 lines),
