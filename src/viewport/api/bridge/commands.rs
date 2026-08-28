@@ -351,6 +351,10 @@ pub(super) fn apply_viewport_commands(
                         .as_ref()
                         .and_then(|semantic| semantic.snapshot()),
                     state.stage.as_deref(),
+                    state
+                        .stage_handle
+                        .as_ref()
+                        .map(|handle| handle.path.as_path()),
                 );
             }
         }

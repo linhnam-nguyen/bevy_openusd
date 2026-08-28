@@ -18,6 +18,7 @@ mod editor_commands;
 mod helpers;
 mod mutations;
 mod plugin;
+mod save;
 mod scene_query;
 mod settings;
 mod state;

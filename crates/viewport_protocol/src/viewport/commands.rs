@@ -188,6 +188,7 @@ pub enum ViewportCommand {
     },
     UndoEditor,
     RedoEditor,
+    SaveStage,
     SaveStageAs {
         filename: String,
     },

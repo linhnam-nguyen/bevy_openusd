@@ -30,6 +30,7 @@ pub enum EditorOperation {
     UnloadPayload,
     Undo,
     Redo,
+    SaveStage,
     SaveStageAs,
     ExportStage,
     QueryPrim,

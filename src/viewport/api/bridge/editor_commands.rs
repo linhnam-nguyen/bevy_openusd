@@ -9,6 +9,7 @@ use super::helpers::{
     emit_editor_completed, emit_editor_export, emit_runtime_mutation_accepted, reject,
 };
 use super::mutations::apply_runtime_mutations;
+use super::save;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
 use crate::viewport::api::ViewportEventOutbox;
 
@@ -20,6 +21,7 @@ pub(super) fn apply_editor_command(
     runtime_mutations: &mut RuntimeMutationCoordinator,
     semantic_snapshot: Option<&SemanticSnapshot>,
     stage: Option<&LiveStage>,
+    save_stage_path: Option<&std::path::Path>,
 ) -> bool {
     macro_rules! require_stage {
         () => {
@@ -330,18 +332,10 @@ pub(super) fn apply_editor_command(
             }
         }
         ViewportCommand::SaveStageAs { filename } => {
-            let stage = require_stage!();
-            if let Err(e) = usd_bevy::authoring::save_stage_as(&stage.stage, &filename) {
-                reject(outbox, request_id, e.to_string());
-                return true;
-            }
-            emit_editor_completed(
-                outbox,
-                request_id,
-                EditorOperation::SaveStageAs,
-                Vec::new(),
-                histories,
-            );
+            save::save_stage_as(request_id, outbox, histories, stage, &filename);
+        }
+        ViewportCommand::SaveStage => {
+            save::save_current_stage(request_id, outbox, histories, stage, save_stage_path);
         }
         ViewportCommand::ExportStage => {
             let stage = require_stage!();

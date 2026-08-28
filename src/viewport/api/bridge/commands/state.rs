@@ -14,7 +14,7 @@ use crate::viewport::rendering::sampling::{
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
 use crate::viewport::semantic::SemanticSyncState;
-use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
+use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
 
 /// Groups the command system's independently-owned resources into one
 /// [`SystemParam`], keeping the system within Bevy's top-level parameter
@@ -43,6 +43,7 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub runtime_mutations: ResMut<'w, RuntimeMutationCoordinator>,
     pub configuration: ParamSet<'w, 's, (Res<'w, StageInfo>, Option<ResMut<'w, RendererCadence>>)>,
     pub stage: Option<NonSend<'w, LiveStage>>,
+    pub stage_handle: Option<Res<'w, StageHandle>>,
     pub semantic: Option<Res<'w, SemanticSyncState>>,
     pub spawned: Res<'w, Spawned>,
 }

@@ -208,6 +208,7 @@ impl ViewportCommand {
             | Self::SetPhysicsRunning { .. }
             | Self::UndoEditor
             | Self::RedoEditor
+            | Self::SaveStage
             | Self::ExportStage => {}
         }
         Ok(())
