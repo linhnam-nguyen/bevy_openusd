@@ -72,6 +72,47 @@ fn list_projects_returns_owned_summaries_from_the_registry() {
 }
 
 #[test]
+fn unavailable_project_keeps_registry_identity_and_reports_missing_repository() {
+    let directory = tempdir().unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let project_id = ProjectId::new_v4();
+    let missing_repository = directory.path().join("missing-repository");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry
+        .register(project_id, &missing_repository, None)
+        .unwrap();
+    let service = ProjectApplicationService {
+        registry,
+        publication_coordinator: ProjectPublicationCoordinator::default(),
+        stage_mutations: ProjectStageMutationQueue::default(),
+        progress: ProjectImportProgressStore::default(),
+    };
+
+    let list = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));
+    assert_eq!(
+        list.result,
+        Ok(ProjectReadResponse::Projects(vec![
+            ProjectListItem::Unavailable {
+                project_id,
+                code: project_protocol::ProjectReadErrorCode::RepositoryMissing,
+            }
+        ]))
+    );
+
+    let tree = service.execute(ProjectReadCommand::new(ProjectReadRequest::GetProjectTree(
+        project_id,
+    )));
+    assert_eq!(
+        tree.result,
+        Err(ProjectReadError::Unavailable {
+            project_id,
+            code: project_protocol::ProjectReadErrorCode::RepositoryMissing,
+        })
+    );
+    assert!(service.registry.get(project_id).is_some());
+}
+
+#[test]
 fn stage_activation_resolves_the_registered_project_root_to_a_canonical_stage() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");

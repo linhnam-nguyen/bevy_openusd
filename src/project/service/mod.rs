@@ -22,7 +22,10 @@ use usd_project::{
 
 use crate::project::{
     catalog::{
-        catalogue::{ProjectCatalogueItem, ProjectCatalogueUnavailableReason, list_projects},
+        catalogue::{
+            ProjectCatalogueItem, ProjectCatalogueUnavailableReason, list_projects,
+            unavailable_reason,
+        },
         manifest_store::ManifestStore,
         workspace_registry::{WorkspaceProjectEntry, WorkspaceRegistry},
     },
@@ -198,7 +201,7 @@ impl ProjectApplicationService {
         let manifest = ManifestStore::read_validated(entry.repository_locator()).map_err(|_| {
             ProjectReadError::Unavailable {
                 project_id,
-                code: ProjectReadErrorCode::ManifestUnavailable,
+                code: project_read_error_code(unavailable_reason(entry)),
             }
         })?;
         if manifest.raw().project_id != project_id {
@@ -220,11 +223,38 @@ fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
                 ProjectCatalogueUnavailableReason::ManifestUnavailable => {
                     ProjectReadErrorCode::ManifestUnavailable
                 }
+                ProjectCatalogueUnavailableReason::RepositoryMissing => {
+                    ProjectReadErrorCode::RepositoryMissing
+                }
+                ProjectCatalogueUnavailableReason::RepositoryPermissionDenied => {
+                    ProjectReadErrorCode::RepositoryPermissionDenied
+                }
+                ProjectCatalogueUnavailableReason::InvalidManifest => {
+                    ProjectReadErrorCode::InvalidManifest
+                }
                 ProjectCatalogueUnavailableReason::RegistryIdentityMismatch => {
                     ProjectReadErrorCode::RegistryIdentityMismatch
                 }
             },
         },
+    }
+}
+
+fn project_read_error_code(reason: ProjectCatalogueUnavailableReason) -> ProjectReadErrorCode {
+    match reason {
+        ProjectCatalogueUnavailableReason::ManifestUnavailable => {
+            ProjectReadErrorCode::ManifestUnavailable
+        }
+        ProjectCatalogueUnavailableReason::RepositoryMissing => {
+            ProjectReadErrorCode::RepositoryMissing
+        }
+        ProjectCatalogueUnavailableReason::RepositoryPermissionDenied => {
+            ProjectReadErrorCode::RepositoryPermissionDenied
+        }
+        ProjectCatalogueUnavailableReason::InvalidManifest => ProjectReadErrorCode::InvalidManifest,
+        ProjectCatalogueUnavailableReason::RegistryIdentityMismatch => {
+            ProjectReadErrorCode::RegistryIdentityMismatch
+        }
     }
 }
 

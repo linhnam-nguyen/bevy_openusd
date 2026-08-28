@@ -5,6 +5,9 @@ use usd_project::ProjectId;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectReadErrorCode {
     ManifestUnavailable,
+    RepositoryMissing,
+    RepositoryPermissionDenied,
+    InvalidManifest,
     RegistryIdentityMismatch,
     RegistryUnavailable,
     RepositoryUnavailable,

@@ -1,17 +1,20 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fs, io::ErrorKind};
 
 use usd_project::{
     ProjectCapabilities, ProjectContentCounts, ProjectId, ProjectSummary, RepositorySummary,
 };
 
 use super::{
-    manifest_store::ManifestStore,
+    manifest_store::{ManifestStore, manifest_path},
     workspace_registry::{WorkspaceProjectEntry, WorkspaceRegistry},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProjectCatalogueUnavailableReason {
     ManifestUnavailable,
+    RepositoryMissing,
+    RepositoryPermissionDenied,
+    InvalidManifest,
     RegistryIdentityMismatch,
 }
 
@@ -66,7 +69,36 @@ fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
         }),
         Err(_) => ProjectCatalogueItem::Unavailable {
             project_id: entry.project_id(),
-            reason: ProjectCatalogueUnavailableReason::ManifestUnavailable,
+            reason: unavailable_reason(entry),
+        },
+    }
+}
+
+pub(crate) fn unavailable_reason(
+    entry: &WorkspaceProjectEntry,
+) -> ProjectCatalogueUnavailableReason {
+    let root = entry.repository_locator();
+    match fs::metadata(root) {
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            ProjectCatalogueUnavailableReason::RepositoryMissing
+        }
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+            ProjectCatalogueUnavailableReason::RepositoryPermissionDenied
+        }
+        Err(_) => ProjectCatalogueUnavailableReason::ManifestUnavailable,
+        Ok(metadata) if !metadata.is_dir() => ProjectCatalogueUnavailableReason::InvalidManifest,
+        Ok(_) => match fs::metadata(manifest_path(root)) {
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                ProjectCatalogueUnavailableReason::ManifestUnavailable
+            }
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+                ProjectCatalogueUnavailableReason::RepositoryPermissionDenied
+            }
+            Err(_) => ProjectCatalogueUnavailableReason::InvalidManifest,
+            Ok(metadata) if !metadata.is_file() => {
+                ProjectCatalogueUnavailableReason::InvalidManifest
+            }
+            Ok(_) => ProjectCatalogueUnavailableReason::InvalidManifest,
         },
     }
 }
@@ -144,8 +176,10 @@ mod tests {
         assert!(items.iter().any(|item| {
             matches!(
                 item,
-                ProjectCatalogueItem::Unavailable { project_id, .. }
-                    if *project_id == missing_project_id
+                ProjectCatalogueItem::Unavailable {
+                    project_id,
+                    reason: ProjectCatalogueUnavailableReason::RepositoryMissing,
+                } if *project_id == missing_project_id
             )
         }));
         let encoded = format!("{items:?}");
@@ -238,5 +272,34 @@ mod tests {
                 ProjectCatalogueItem::Available(summary) if summary.id == manifest_project_id
             )
         }));
+    }
+
+    #[test]
+    fn malformed_manifest_is_unavailable_without_removing_registry_entry() {
+        let directory = tempdir().unwrap();
+        let repository_root = directory.path().join("repository");
+        let metadata = repository_root.join(".usdhub");
+        fs::create_dir_all(&metadata).unwrap();
+        fs::write(metadata.join("project.json"), b"not a Project manifest").unwrap();
+        let project_id = ProjectId::new_v4();
+        let registry_path = directory.path().join("workspace.json");
+        let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+        registry
+            .register(project_id, &repository_root, None)
+            .unwrap();
+
+        let items = list_projects(&registry);
+        assert_eq!(
+            items,
+            vec![ProjectCatalogueItem::Unavailable {
+                project_id,
+                reason: ProjectCatalogueUnavailableReason::InvalidManifest,
+            }]
+        );
+        assert!(registry.get(project_id).is_some());
+        assert_eq!(
+            unavailable_reason(registry.get(project_id).unwrap()),
+            ProjectCatalogueUnavailableReason::InvalidManifest
+        );
     }
 }
