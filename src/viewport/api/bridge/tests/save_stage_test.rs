@@ -3,6 +3,7 @@ mod tests {
     use openusd::usd::Stage;
     use viewport_protocol::*;
 
+    use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::session::StageHandle;
 
@@ -31,6 +32,9 @@ mod tests {
             path: path.clone(),
             error: None,
         });
+        app.world_mut()
+            .resource_mut::<EditorHistories>()
+            .record(EditorHistoryDomain::Authoring);
         let request_id = app
             .world_mut()
             .resource_mut::<ViewportCommandInbox>()
@@ -49,8 +53,9 @@ mod tests {
             ViewportEvent::EditorCommandCompleted {
                 operation: EditorOperation::SaveStage,
                 changed_paths,
+                state,
                 ..
-            } if changed_paths.is_empty()
+            } if changed_paths.is_empty() && state.can_undo && !state.is_dirty
         ));
 
         let reopened = Stage::open(path.to_str().expect("temporary path is valid UTF-8"))

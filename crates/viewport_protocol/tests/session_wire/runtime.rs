@@ -209,6 +209,7 @@ fn editor_commands_and_events_round_trip_with_frontend_values() {
             state: viewport_protocol::EditorStateReadModel {
                 can_undo: true,
                 can_redo: false,
+                is_dirty: true,
             },
         }),
     );

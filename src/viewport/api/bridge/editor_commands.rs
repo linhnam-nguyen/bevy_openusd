@@ -264,6 +264,7 @@ pub(super) fn apply_editor_command(
             match result {
                 Ok(true) => {
                     histories.redo_domains.push(domain);
+                    histories.mark_dirty();
                     emit_editor_completed(
                         outbox,
                         request_id,
@@ -296,6 +297,7 @@ pub(super) fn apply_editor_command(
             match result {
                 Ok(true) => {
                     histories.undo_domains.push(domain);
+                    histories.mark_dirty();
                     emit_editor_completed(
                         outbox,
                         request_id,

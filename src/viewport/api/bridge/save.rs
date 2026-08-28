@@ -12,7 +12,7 @@ use crate::viewport::api::ViewportEventOutbox;
 pub(super) fn save_stage_as(
     request_id: String,
     outbox: &mut ViewportEventOutbox,
-    histories: &EditorHistories,
+    histories: &mut EditorHistories,
     stage: Option<&LiveStage>,
     filename: &str,
 ) {
@@ -33,7 +33,7 @@ pub(super) fn save_stage_as(
 pub(super) fn save_current_stage(
     request_id: String,
     outbox: &mut ViewportEventOutbox,
-    histories: &EditorHistories,
+    histories: &mut EditorHistories,
     stage: Option<&LiveStage>,
     path: Option<&Path>,
 ) {
@@ -63,7 +63,7 @@ pub(super) fn save_current_stage(
 fn persist(
     request_id: String,
     outbox: &mut ViewportEventOutbox,
-    histories: &EditorHistories,
+    histories: &mut EditorHistories,
     stage: &LiveStage,
     filename: &str,
     operation: EditorOperation,
@@ -72,5 +72,6 @@ fn persist(
         reject(outbox, request_id, error.to_string());
         return;
     }
+    histories.mark_saved();
     emit_editor_completed(outbox, request_id, operation, Vec::new(), histories);
 }
