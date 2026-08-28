@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotId, SnapshotSource};
-use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
+use viewport_protocol::{
+    BimFieldKey, ClassificationLevel, ClassificationRecipe, HierarchyNodeKind,
+};
 
 use super::test_fixtures::{digest, entity, property, recipe, snapshot};
 use super::{BimQueryError, BimReadService};
@@ -221,10 +223,19 @@ fn classification_groups_by_arbitrary_property_and_reuses_projected_leaf_name() 
         .find(|node| node.name == "200")
         .map(|node| node.id.clone())
         .expect("200 width group");
+    let width_group = roots
+        .nodes
+        .iter()
+        .find(|node| node.id == width_200)
+        .expect("200 width group row");
+    assert_eq!(width_group.kind, HierarchyNodeKind::Group);
+    assert!(!width_group.selectable);
     let leaves = service
         .classification_page(&recipe, Some(&width_200), 0, 20)
         .expect("arbitrary property leaves");
     assert_eq!(leaves.nodes[0].name, "184392-Air Handling Unit");
+    assert_eq!(leaves.nodes[0].kind, HierarchyNodeKind::Object);
+    assert!(leaves.nodes[0].selectable);
 
     let objects = service
         .search(&viewport_protocol::BimSearchQuery::ObjectPropertyMatch {
