@@ -14,6 +14,9 @@ mod test_fixtures;
 mod classification_tests;
 
 #[cfg(test)]
+mod classification_real_fixture_tests;
+
+#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
