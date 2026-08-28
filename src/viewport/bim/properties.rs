@@ -87,12 +87,18 @@ fn project_property(
     let units = measurement
         .as_ref()
         .map(|metadata| {
-            UnitRegistry::global()
+            let registry = UnitRegistry::global();
+            registry
                 .units_for_quantity(&metadata.quantity)
                 .into_iter()
-                .map(|unit| BimUnitOption {
-                    label: unit.as_str().to_owned(),
-                    unit,
+                .filter_map(|unit| {
+                    let definition = registry.definition(&unit)?;
+                    Some(BimUnitOption {
+                        label: unit.as_str().to_owned(),
+                        unit,
+                        scale_to_canonical: definition.scale_to_canonical(),
+                        offset_to_canonical: definition.offset_to_canonical(),
+                    })
                 })
                 .collect()
         })

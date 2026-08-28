@@ -8,7 +8,7 @@
 
 pub const PROTOCOL_VERSION: u16 = 6;
 
-pub use usd_model::CanonicalValue;
+pub use usd_model::{CanonicalValue, UnitId};
 
 pub mod authorization;
 pub mod capabilities;

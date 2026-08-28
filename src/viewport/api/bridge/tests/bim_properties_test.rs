@@ -66,7 +66,11 @@ mod tests {
         assert!(properties.properties.iter().any(|property| {
             property.key == "Width"
                 && property.editable
-                && property.units.iter().any(|unit| unit.unit.as_str() == "mm")
+                && property.units.iter().any(|unit| {
+                    unit.unit.as_str() == "mm"
+                        && (unit.scale_to_canonical - 0.001).abs() < f64::EPSILON
+                        && unit.offset_to_canonical.abs() < f64::EPSILON
+                })
         }));
     }
 }

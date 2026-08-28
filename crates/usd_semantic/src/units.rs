@@ -46,6 +46,14 @@ impl UnitDefinition {
     pub fn canonical_unit(&self) -> UnitId {
         UnitId::new(self.canonical_unit)
     }
+
+    pub fn scale_to_canonical(&self) -> f64 {
+        self.scale_to_canonical
+    }
+
+    pub fn offset_to_canonical(&self) -> f64 {
+        self.offset_to_canonical
+    }
 }
 
 #[derive(Debug)]

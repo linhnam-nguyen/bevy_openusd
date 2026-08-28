@@ -17,6 +17,18 @@ pub enum CommonValue {
 pub struct BimUnitOption {
     pub unit: UnitId,
     pub label: String,
+    /// Preview-only scale supplied by the authoritative registry. Clients
+    /// must still send the stable unit ID; the backend resolves conversion
+    /// factors independently before authoring.
+    #[serde(default = "default_unit_scale")]
+    pub scale_to_canonical: f64,
+    /// Preview-only affine offset supplied by the authoritative registry.
+    #[serde(default)]
+    pub offset_to_canonical: f64,
+}
+
+fn default_unit_scale() -> f64 {
+    1.0
 }
 
 /// Identifies the authoritative source group for one projected BIM property.
