@@ -14,7 +14,8 @@ pub mod signaling;
 pub mod stream_session;
 
 pub use application::{
-    RenderServerInterface, RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestKind,
+    ProjectActivationRequest, ProjectActivationResult, RenderServerInterface,
+    RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestKind,
 };
 pub use config::{StreamingConfig, StreamingPreset};
 pub use data_channel::{

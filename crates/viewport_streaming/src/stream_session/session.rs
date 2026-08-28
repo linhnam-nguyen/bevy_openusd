@@ -110,6 +110,8 @@ impl StreamingSession {
             self.application.queue_configuration_applied(configuration);
         }
         self.application
+            .flush_project_activation_results(self.channels.control());
+        self.application
             .flush_authoritative_events(self.channels.control());
     }
 

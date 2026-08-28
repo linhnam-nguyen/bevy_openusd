@@ -6,6 +6,7 @@ mod sync;
 mod types;
 
 pub use interface::RenderServerInterface;
+pub use types::{ProjectActivationRequest, ProjectActivationResult};
 pub use types::{RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestKind};
 
 #[cfg(test)]

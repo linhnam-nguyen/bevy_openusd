@@ -9,7 +9,7 @@ use bevy_glacial::prelude::{
 use bevy_mod_outline::OutlinePlugin;
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 
-use super::{cadence, headless, offscreen_resize, project_stage, scene, sync};
+use super::{cadence, headless, offscreen_resize, project_activation, project_stage, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -141,7 +141,7 @@ pub(crate) fn run() {
             Update,
             project_stage::consume_project_stage_mutations.in_set(LiveStageSet::Project),
         );
-
+    project_activation::install(&mut app);
     if launch_options.headless {
         app.add_plugins(headless::HeadlessRenderPlugin {
             width: launch_options.width,

@@ -6,15 +6,23 @@ pub(crate) use send::{encoded_size, flush_pending_server_events, next_server_env
 
 use gstreamer_webrtc::WebRTCDataChannel;
 use log::{debug, error, warn};
+use project_protocol::{ProjectActivationCommand, ProjectActivationReply};
 use viewport_protocol::{InputCommand, SessionRole, decode_client_json_line};
 
 use crate::data_channel::session::{ApplicationSession, remember_request_id};
 use commands::handle_authenticated_command;
 use handshake::handle_handshake;
-use send::{rejection_for, send_command_rejection, send_handshake_rejection};
+use send::{
+    rejection_for, send_command_rejection, send_handshake_rejection, send_project_activation_reply,
+};
 
 impl ApplicationSession {
     pub(super) fn handle_control_message(&self, channel: &WebRTCDataChannel, text: &str) {
+        if let Ok(command) = serde_json::from_str::<ProjectActivationCommand>(text) {
+            self.handle_project_activation(channel, command);
+            return;
+        }
+
         let envelope = match decode_client_json_line(text) {
             Ok(envelope) => envelope,
             Err(error) => {
@@ -81,6 +89,62 @@ impl ApplicationSession {
         }
 
         handle_authenticated_command(channel, &mut state, envelope);
+    }
+
+    fn handle_project_activation(
+        &self,
+        channel: &WebRTCDataChannel,
+        command: ProjectActivationCommand,
+    ) {
+        let Ok(mut state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if let Err(error) = command.validate() {
+            send_project_activation_reply(
+                channel,
+                &ProjectActivationReply::failed(&command, error.to_string()),
+            );
+            return;
+        }
+        if !state.handshaken {
+            send_project_activation_reply(
+                channel,
+                &ProjectActivationReply::failed(&command, "viewport session is not ready"),
+            );
+            return;
+        }
+        if state.role != Some(SessionRole::Controller) {
+            send_project_activation_reply(
+                channel,
+                &ProjectActivationReply::failed(
+                    &command,
+                    "observer sessions cannot activate a Project",
+                ),
+            );
+            return;
+        }
+        if !remember_request_id(&mut state, command.request_id.clone()) {
+            send_project_activation_reply(
+                channel,
+                &ProjectActivationReply::failed(&command, "duplicate request ID"),
+            );
+            return;
+        }
+
+        let request = crate::application::ProjectActivationRequest {
+            session_id: state.session_id.clone(),
+            command,
+        };
+        if let Err(error) = state.interface.submit_project_activation(request.clone()) {
+            send_project_activation_reply(
+                channel,
+                &ProjectActivationReply::failed(
+                    &request.command,
+                    format!("Project activation request rejected: {error:?}"),
+                ),
+            );
+        }
     }
 
     pub(super) fn handle_input_message(&self, text: &str) {

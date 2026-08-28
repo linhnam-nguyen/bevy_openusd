@@ -8911,6 +8911,7 @@ dependencies = [
  "gstreamer-video",
  "gstreamer-webrtc",
  "log",
+ "project_protocol",
  "serde",
  "serde_json",
  "tokio",

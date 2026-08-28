@@ -25,6 +25,33 @@ impl RenderServerInterface {
         self.0.pop_input()
     }
 
+    pub(crate) fn submit_project_activation(
+        &self,
+        request: viewport_streaming::ProjectActivationRequest,
+    ) -> Result<(), viewport_streaming::RenderServerPortError> {
+        self.0.submit_project_activation(request)
+    }
+
+    pub(crate) fn pop_project_activation(
+        &self,
+    ) -> Option<viewport_streaming::ProjectActivationRequest> {
+        self.0.pop_project_activation()
+    }
+
+    pub(crate) fn publish_project_activation_result(
+        &self,
+        result: viewport_streaming::ProjectActivationResult,
+    ) -> Result<(), viewport_streaming::RenderServerPortError> {
+        self.0.publish_project_activation_result(result)
+    }
+
+    pub(crate) fn take_project_activation_result(
+        &self,
+        session_id: &viewport_protocol::SessionId,
+    ) -> Option<viewport_streaming::ProjectActivationResult> {
+        self.0.take_project_activation_result(session_id)
+    }
+
     pub(crate) fn take_latest_pointer_motion(&self) -> Option<viewport_protocol::PointerMotion> {
         self.0.take_latest_pointer_motion()
     }

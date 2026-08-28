@@ -5,7 +5,7 @@ use viewport_protocol::{
     ViewportReadModel,
 };
 
-use super::types::SemanticSyncRequest;
+use super::types::{ProjectActivationRequest, ProjectActivationResult, SemanticSyncRequest};
 
 #[derive(Debug, Default)]
 pub(super) struct PendingMessages {
@@ -22,6 +22,8 @@ pub(super) struct PendingMessages {
     pub(super) latest_snapshot: Option<ViewportReadModel>,
     pub(super) authorization: AuthorizationPolicy,
     pub(super) semantic_sync_statuses: HashMap<SessionId, SemanticSyncStatus>,
+    pub(super) project_activations: VecDeque<ProjectActivationRequest>,
+    pub(super) project_activation_results: VecDeque<ProjectActivationResult>,
     pub(super) runtime_manifest: Option<RuntimeManifest>,
     pub(super) runtime_blobs: HashMap<String, Vec<u8>>,
     pub(super) pending_stream_configuration: Option<ViewportMetrics>,

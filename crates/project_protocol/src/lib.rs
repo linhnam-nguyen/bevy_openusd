@@ -4,6 +4,7 @@
 //! does not know about Tauri, Git implementations, filesystems, OpenUSD, or
 //! renderer state.
 
+mod activation;
 mod command;
 mod error;
 mod location;
@@ -13,6 +14,10 @@ mod read;
 mod scene_inspection;
 mod write;
 
+pub use activation::{
+    PROJECT_ACTIVATION_PROTOCOL_VERSION, ProjectActivationCommand, ProjectActivationError,
+    ProjectActivationReply, ProjectActivationResult,
+};
 pub use command::{PROJECT_READ_PROTOCOL_VERSION, ProjectReadCommand, ProjectReadReply};
 pub use error::{ProjectReadError, ProjectReadErrorCode};
 pub use location::{

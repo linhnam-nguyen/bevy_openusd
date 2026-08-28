@@ -18,6 +18,41 @@ pub(crate) fn load_stage(world: &mut World) {
     open_stage(world, path);
 }
 
+/// Opens a resolved Project root without disturbing the current stage if the
+/// candidate cannot be opened. The caller owns identity resolution; this
+/// function remains only a stage/lifecycle operation.
+pub(crate) fn activate_stage(world: &mut World, path: std::path::PathBuf) -> Result<(), String> {
+    let root = path
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "resolved Project stage has no valid filename".to_owned())?
+        .to_owned();
+    let path_string = path.to_string_lossy().into_owned();
+    let stage = Stage::open(&path_string)
+        .map_err(|error| format!("failed to open Project stage {}: {error:#}", path.display()))?;
+
+    if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
+        && !cache.archive_paths.contains(&path)
+    {
+        cache.archive_paths.push(path.clone());
+    }
+    clear_projected_stage(world);
+    world.insert_resource(RequestedAsset { name, root });
+    world.insert_resource(StageHandle {
+        path: path.clone(),
+        error: None,
+    });
+    world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
+    world.resource_mut::<Spawned>().0 = false;
+    world.insert_non_send(LiveStage::new(stage));
+    info!("activated Project USD stage: {}", path.display());
+    Ok(())
+}
+
 /// Reload the current stage after a command or native keyboard request.
 pub(crate) fn handle_usd_hot_reload(world: &mut World) {
     if !world.resource::<ReloadRequest>().requested {

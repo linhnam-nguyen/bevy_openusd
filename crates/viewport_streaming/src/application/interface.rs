@@ -6,7 +6,10 @@ use viewport_protocol::{
 };
 
 use super::state::PendingMessages;
-use super::types::{MAX_PENDING_MESSAGES, RenderServerPortError, safe_display_name};
+use super::types::{
+    MAX_PENDING_MESSAGES, ProjectActivationRequest, ProjectActivationResult, RenderServerPortError,
+    safe_display_name,
+};
 
 /// Transport-neutral application boundary shared across the ECS and WebRTC
 /// threads. It contains no Bevy, GStreamer, Tokio, or DOM objects.
@@ -121,6 +124,78 @@ impl RenderServerInterface {
             .expect("render-server interface queue is not poisoned")
             .input_commands
             .pop_front()
+    }
+
+    pub fn submit_project_activation(
+        &self,
+        request: ProjectActivationRequest,
+    ) -> Result<(), RenderServerPortError> {
+        request
+            .command
+            .validate()
+            .map_err(|_| RenderServerPortError::InvalidPayload)?;
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.project_activations.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.project_activations.push_back(request);
+        Ok(())
+    }
+
+    pub fn pop_project_activation(&self) -> Option<ProjectActivationRequest> {
+        self.pending
+            .lock()
+            .expect("render-server interface queue is not poisoned")
+            .project_activations
+            .pop_front()
+    }
+
+    pub fn publish_project_activation_result(
+        &self,
+        result: ProjectActivationResult,
+    ) -> Result<(), RenderServerPortError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.project_activation_results.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.project_activation_results.push_back(result);
+        Ok(())
+    }
+
+    pub fn take_project_activation_result(
+        &self,
+        session_id: &viewport_protocol::SessionId,
+    ) -> Option<ProjectActivationResult> {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("render-server interface queue is not poisoned");
+        let index = pending
+            .project_activation_results
+            .iter()
+            .position(|result| &result.session_id == session_id)?;
+        pending.project_activation_results.remove(index)
+    }
+
+    pub fn requeue_project_activation_result(
+        &self,
+        result: ProjectActivationResult,
+    ) -> Result<(), RenderServerPortError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| RenderServerPortError::QueueClosed)?;
+        if pending.project_activation_results.len() >= MAX_PENDING_MESSAGES {
+            return Err(RenderServerPortError::QueueFull);
+        }
+        pending.project_activation_results.push_front(result);
+        Ok(())
     }
 
     /// Assigns a server-monotonic generation and queues the newest validated viewport request.

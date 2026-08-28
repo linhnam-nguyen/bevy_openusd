@@ -4,7 +4,7 @@ mod lifecycle;
 mod state;
 
 pub(crate) use lifecycle::{
-    apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
+    activate_stage, apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
 };
 pub(crate) use state::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageCameraData,

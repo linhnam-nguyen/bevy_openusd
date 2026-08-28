@@ -66,10 +66,12 @@ mod model_preparation;
 mod progress;
 mod scene;
 mod scene_adoption;
+mod stage_activation;
 mod stage_mutation;
 pub use model_preparation::ProjectModelPreparationQueue;
 pub use progress::ProjectImportProgressStore;
 pub use scene_inspection::ProjectSceneInspectionQueue;
+pub use stage_activation::ProjectStageActivationTarget;
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
 

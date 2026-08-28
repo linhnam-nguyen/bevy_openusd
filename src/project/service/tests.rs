@@ -1,4 +1,7 @@
-use std::sync::{Arc, Barrier, mpsc};
+use std::{
+    fs,
+    sync::{Arc, Barrier, mpsc},
+};
 
 use project_protocol::{
     ProjectListItem, ProjectReadCommand, ProjectReadError, ProjectReadRequest, ProjectReadResponse,
@@ -66,6 +69,35 @@ fn list_projects_returns_owned_summaries_from_the_registry() {
         panic!("ListProjects must return catalogue items");
     };
     assert!(matches!(items.as_slice(), [ProjectListItem::Available(_)]));
+}
+
+#[test]
+fn stage_activation_resolves_the_registered_project_root_to_a_canonical_stage() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+    let project = service
+        .create_project(&parent, "Activation Project")
+        .unwrap();
+    let created = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Project(project.id),
+            "Main Scene",
+        )
+        .unwrap();
+
+    let target = service
+        .resolve_stage_activation(project.id, created.project.root.clone())
+        .unwrap()
+        .expect("a non-empty Project root must resolve to a stage");
+
+    assert_eq!(target.project_id, project.id);
+    assert_eq!(target.root, created.project.root);
+    assert_eq!(target.path, fs::canonicalize(target.path.clone()).unwrap());
+    assert!(target.path.is_file());
 }
 
 #[test]

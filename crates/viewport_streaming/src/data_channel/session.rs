@@ -12,7 +12,9 @@ use viewport_protocol::{
 use super::constants::MAX_RECENT_REQUEST_IDS;
 use super::dispatch::flush_pending_server_events;
 use super::events::queue_server_event_for_request;
-use crate::application::{RenderServerInterface, SemanticSyncRequest, SemanticSyncRequestKind};
+use crate::application::{
+    ProjectActivationResult, RenderServerInterface, SemanticSyncRequest, SemanticSyncRequestKind,
+};
 use crate::session::{SessionAdmission, SessionAdmissionError};
 
 pub(super) struct ApplicationSessionState {
@@ -226,6 +228,38 @@ impl ApplicationSession {
         }
 
         flush_pending_server_events(channel, &mut state);
+    }
+
+    pub(crate) fn flush_project_activation_results(&self, channel: &WebRTCDataChannel) {
+        let Ok(state) = self.state.lock() else {
+            error!("[viewport-data-channel] application session state is poisoned");
+            return;
+        };
+        if !state.handshaken {
+            return;
+        }
+
+        while let Some(result) = state
+            .interface
+            .take_project_activation_result(&state.session_id)
+        {
+            let encoded = match serde_json::to_string(&result.reply) {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    error!(
+                        "[viewport-data-channel] Project activation reply encoding failed: {error}"
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) = channel.send_string_full(Some(&encoded)) {
+                let _ = state
+                    .interface
+                    .requeue_project_activation_result(ProjectActivationResult { ..result });
+                error!("[viewport-data-channel] Project activation reply send failed: {error}");
+                break;
+            }
+        }
     }
 }
 

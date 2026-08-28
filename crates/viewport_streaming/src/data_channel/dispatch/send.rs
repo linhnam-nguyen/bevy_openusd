@@ -1,5 +1,6 @@
 use gstreamer_webrtc::WebRTCDataChannel;
 use log::warn;
+use project_protocol::ProjectActivationReply;
 use viewport_protocol::{
     HandshakeEvent, HandshakeRejectionReason, ProtocolValidationError, ServerEvent,
     ServerEventEnvelope, StreamEvent, ViewportEvent, encode_server_json_line,
@@ -166,5 +167,24 @@ pub(crate) fn flush_pending_server_events(
                 break;
             }
         }
+    }
+}
+
+/// Sends a Project activation result on the reliable control channel. This is
+/// deliberately a Project-protocol frame rather than a viewport-protocol
+/// event, keeping Project management out of the viewport contract.
+pub(crate) fn send_project_activation_reply(
+    channel: &WebRTCDataChannel,
+    reply: &ProjectActivationReply,
+) {
+    let result = serde_json::to_string(reply)
+        .map_err(|error| error.to_string())
+        .and_then(|json| {
+            channel
+                .send_string_full(Some(&json))
+                .map_err(|error| error.to_string())
+        });
+    if let Err(error) = result {
+        warn!("[viewport-data-channel] Project activation reply send failed: {error}");
     }
 }
