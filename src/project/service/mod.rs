@@ -29,6 +29,7 @@ pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,
 }
 
+mod inspection;
 mod lifecycle;
 
 impl ProjectApplicationService {

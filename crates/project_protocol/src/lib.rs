@@ -17,10 +17,10 @@ pub use location::{
 };
 pub use read::{ProjectListItem, ProjectReadRequest, ProjectReadResponse};
 pub use write::{
-    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectImportRequest,
-    ProjectInspection, ProjectInspectionClassification, ProjectInspectionWarning,
-    ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply,
-    ProjectWriteRequest, ProjectWriteResponse,
+    PROJECT_WRITE_PROTOCOL_VERSION, ProjectCreateRequest, ProjectImportRequest, ProjectInspection,
+    ProjectInspectionClassification, ProjectInspectionWarning, ProjectWriteCommand,
+    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
+    ProjectWriteResponse,
 };
 
 #[cfg(test)]
@@ -83,6 +83,25 @@ mod tests {
         });
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(encoded.contains("session-token"));
+        assert!(!encoded.contains("PathBuf"));
+        assert!(!encoded.contains("/Users/"));
+    }
+
+    #[test]
+    fn write_command_round_trip_keeps_selection_and_fingerprint_opaque() {
+        let command = ProjectWriteCommand::new(ProjectWriteRequest::Import(ProjectImportRequest {
+            selection: LocalSelectionToken::new("selection-token"),
+            inspection: ProjectInspection {
+                classification: ProjectInspectionClassification::AdoptableGit,
+                display_name: "Project".to_owned(),
+                warnings: vec![ProjectInspectionWarning::MissingLocalCacheRoots],
+                fingerprint: "opaque-fingerprint".to_owned(),
+            },
+        }));
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: ProjectWriteCommand = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(command, decoded);
         assert!(!encoded.contains("PathBuf"));
         assert!(!encoded.contains("/Users/"));
     }

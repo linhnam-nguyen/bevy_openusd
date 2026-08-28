@@ -1,0 +1,207 @@
+use std::{collections::BTreeMap, fs};
+
+use project_protocol::ProjectInspectionWarning;
+use tempfile::tempdir;
+use usd_git::GitRepository;
+
+use super::*;
+use crate::project::catalog::workspace_registry::WorkspaceRegistry;
+
+#[test]
+fn create_project_keeps_head_unborn_and_registers_last() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    fs::write(parent.join("keep.txt"), b"user data").unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+
+    let summary = service.create_project(&parent, "Created Project").unwrap();
+    let project_root = parent.join("Created Project");
+    let repository = usd_git::Repository::open(&project_root).unwrap();
+
+    assert_eq!(summary.name, "Created Project");
+    assert_eq!(
+        repository.current_branch().unwrap().as_deref(),
+        Some("main")
+    );
+    assert!(repository.head().unwrap().is_none());
+    assert!(project_root.join(".git").is_dir());
+    assert!(project_root.join(".usdhub/project.json").is_file());
+    assert!(project_root.join(".usdhub/cache").is_dir());
+    assert!(project_root.join(".usdhub/recovery").is_dir());
+    assert_eq!(fs::read(parent.join("keep.txt")).unwrap(), b"user data");
+    assert!(
+        fs::read_to_string(project_root.join(".gitignore"))
+            .unwrap()
+            .contains(".usdhub/cache/")
+    );
+    assert_eq!(
+        WorkspaceRegistry::load(registry_path)
+            .unwrap()
+            .get(summary.id)
+            .unwrap()
+            .repository_locator(),
+        project_root
+    );
+}
+
+#[test]
+fn create_project_rejects_unsafe_names_without_touching_parent() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    fs::write(parent.join("keep.txt"), b"user data").unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+
+    for name in ["", ".", "..", "nested/name", "nested\\name", "bad\0name"] {
+        assert!(matches!(
+            service.create_project(&parent, name),
+            Err(ProjectWriteError::Invalid {
+                code: ProjectWriteErrorCode::InvalidProjectName
+            })
+        ));
+    }
+    assert_eq!(fs::read(parent.join("keep.txt")).unwrap(), b"user data");
+    assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+}
+
+#[test]
+fn import_inspection_is_read_only_and_classifies_adoptable_git() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("existing");
+    usd_git::Repository::init(&project_root).unwrap();
+    fs::write(project_root.join("user.usda"), b"#usda 1.0\n").unwrap();
+    let before = snapshot(&project_root);
+    let service = ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    assert_eq!(
+        inspection.classification,
+        ProjectInspectionClassification::AdoptableGit
+    );
+    assert!(
+        inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::MissingLocalCacheRoots)
+    );
+    assert_eq!(before, snapshot(&project_root));
+}
+
+#[test]
+fn native_project_with_deleted_local_state_remains_importable() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let summary = service.create_project(&parent, "Native").unwrap();
+    let project_root = parent.join("Native");
+    fs::remove_dir_all(project_root.join(".usdhub/cache")).unwrap();
+    fs::remove_dir_all(project_root.join(".usdhub/recovery")).unwrap();
+
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    assert_eq!(
+        inspection.classification,
+        ProjectInspectionClassification::NativeUsdHub
+    );
+    assert!(
+        inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::MissingLocalCacheRoots)
+    );
+    assert_eq!(inspection.display_name, summary.name);
+    assert_eq!(
+        fs::read_dir(project_root.join(".usdhub")).unwrap().count(),
+        1
+    );
+
+    service.import_project(&project_root, &inspection).unwrap();
+    assert!(project_root.join(".usdhub/cache").is_dir());
+    assert!(project_root.join(".usdhub/recovery").is_dir());
+}
+
+#[test]
+fn confirmed_adoption_adds_metadata_without_rewriting_git_history() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("adopted");
+    usd_git::Repository::init(&project_root).unwrap();
+    fs::write(project_root.join("user.usda"), b"#usda 1.0\n").unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    let summary = service.import_project(&project_root, &inspection).unwrap();
+    let repository = usd_git::Repository::open(&project_root).unwrap();
+
+    assert_eq!(
+        inspection.classification,
+        ProjectInspectionClassification::AdoptableGit
+    );
+    assert_eq!(summary.name, "adopted");
+    assert!(repository.head().unwrap().is_none());
+    assert!(project_root.join("user.usda").is_file());
+    assert!(project_root.join(".usdhub/project.json").is_file());
+    assert!(project_root.join(".usdhub/cache").is_dir());
+    assert!(
+        WorkspaceRegistry::load(registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_some()
+    );
+}
+
+#[test]
+fn broad_ignore_conflict_is_reported_without_mutation() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("conflict");
+    usd_git::Repository::init(&project_root).unwrap();
+    fs::write(project_root.join(".gitignore"), b".usdhub/\nkeep\n").unwrap();
+    let before = snapshot(&project_root);
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let inspection = service.inspect_project(&project_root).unwrap();
+
+    assert!(
+        inspection
+            .warnings
+            .contains(&ProjectInspectionWarning::BroadUsdHubIgnore)
+    );
+    assert!(matches!(
+        service.import_project(&project_root, &inspection),
+        Err(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::IgnoreConflict
+        })
+    ));
+    assert_eq!(before, snapshot(&project_root));
+}
+
+fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn visit(root: &Path, current: &Path, output: &mut BTreeMap<String, Vec<u8>>) {
+        let mut entries = fs::read_dir(current)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if path.is_dir() {
+                visit(root, &path, output);
+            } else {
+                output.insert(relative, fs::read(path).unwrap());
+            }
+        }
+    }
+
+    let mut output = BTreeMap::new();
+    visit(root, root, &mut output);
+    output
+}
