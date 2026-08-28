@@ -162,7 +162,7 @@ impl<'snapshot> BimReadService<'snapshot> {
     }
 
     pub(crate) fn classification_projection(
-        mut self,
+        &mut self,
         recipe: &ClassificationRecipe,
     ) -> Result<CurrentHierarchyProjection, BimQueryError> {
         self.ensure_classification_cache(recipe)?;

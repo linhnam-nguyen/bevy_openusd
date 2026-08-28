@@ -205,4 +205,48 @@ mod tests {
             .expect("type plan");
         assert_ne!(category, types);
     }
+
+    #[test]
+    fn auto_changes_only_when_the_explicit_generation_changes() {
+        let snapshot = snapshot();
+        let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
+            "category",
+            BimFieldKey::Category,
+        )]);
+        let mut first_service = BimReadService::new(&snapshot);
+        let first = first_service
+            .classification_color_entries(
+                &recipe,
+                &ClassificationColorIntent {
+                    source: ClassificationColorSource::Auto,
+                    active_level: Some("category".to_owned()),
+                    generation: 7,
+                },
+            )
+            .expect("first auto plan");
+        let mut same_service = BimReadService::new(&snapshot);
+        let same = same_service
+            .classification_color_entries(
+                &recipe,
+                &ClassificationColorIntent {
+                    source: ClassificationColorSource::Auto,
+                    active_level: Some("category".to_owned()),
+                    generation: 7,
+                },
+            )
+            .expect("same auto plan");
+        let mut refreshed_service = BimReadService::new(&snapshot);
+        let refreshed = refreshed_service
+            .classification_color_entries(
+                &recipe,
+                &ClassificationColorIntent {
+                    source: ClassificationColorSource::Auto,
+                    active_level: Some("category".to_owned()),
+                    generation: 8,
+                },
+            )
+            .expect("refreshed auto plan");
+        assert_eq!(first, same);
+        assert_ne!(first, refreshed);
+    }
 }

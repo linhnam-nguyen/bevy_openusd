@@ -57,6 +57,21 @@ fn classification_is_virtual_paged_and_cached() {
 }
 
 #[test]
+fn classification_projection_reuses_the_cached_read_model_arc() {
+    let snapshot = snapshot();
+    let recipe = recipe();
+    let mut service = BimReadService::new(&snapshot);
+    let cached = service
+        .classification_snapshot(&recipe)
+        .expect("classification snapshot");
+    let projection = service
+        .classification_projection(&recipe)
+        .expect("classification projection");
+
+    assert!(std::sync::Arc::ptr_eq(&cached, &projection.snapshot()));
+}
+
+#[test]
 fn classification_uses_normalized_leaf_names_and_generic_projection() {
     let mut snapshot = snapshot();
     for (key, element_id) in [("wall-a", "184392"), ("wall-b", "184393")] {
