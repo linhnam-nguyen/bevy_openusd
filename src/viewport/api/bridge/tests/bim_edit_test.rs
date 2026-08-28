@@ -5,6 +5,7 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::scene::SelectedTargets;
 
     use super::super::support::command_test_app;
 
@@ -62,13 +63,31 @@ mod tests {
         }
     }
 
+    fn select_targets(app: &mut App) -> u64 {
+        let mut selection = SelectedTargets::default();
+        selection
+            .replace(SelectionReadModel {
+                targets: vec![
+                    SceneAnchor::active_session("/World/A"),
+                    SceneAnchor::active_session("/World/B"),
+                ],
+                primary: Some(SceneAnchor::active_session("/World/A")),
+            })
+            .expect("selection is valid");
+        let revision = selection.revision();
+        app.world_mut().insert_resource(selection);
+        revision
+    }
+
     #[test]
     fn multi_selection_edit_is_atomic_and_has_one_undo_step() {
         let mut app = command_test_app();
         app.world_mut()
             .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        let selection_revision = select_targets(&mut app);
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::EditBimProperties {
+                selection_revision,
                 mutations: vec![
                     mutation("/World/A", 1.0, 10.0),
                     mutation("/World/B", 2.0, 20.0),
@@ -126,8 +145,10 @@ mod tests {
         let mut app = command_test_app();
         app.world_mut()
             .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        let selection_revision = select_targets(&mut app);
         app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::EditBimProperties {
+                selection_revision,
                 mutations: vec![
                     mutation("/World/A", 1.0, 10.0),
                     mutation("/World/B", 99.0, 20.0),
@@ -149,6 +170,74 @@ mod tests {
                 outcomes,
                 ..
             } if outcomes.len() == 2 && outcomes.iter().all(|outcome| outcome.status == BimPropertyEditStatus::Rejected)
+        ));
+        assert_eq!(read_width(&app, "/World/A"), 1.0);
+        assert_eq!(read_width(&app, "/World/B"), 2.0);
+    }
+
+    #[test]
+    fn stale_selection_revision_rejects_the_whole_batch_without_stage_changes() {
+        let mut app = command_test_app();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        let selection_revision = select_targets(&mut app);
+        app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::EditBimProperties {
+                selection_revision: selection_revision.saturating_sub(1),
+                mutations: vec![
+                    mutation("/World/A", 1.0, 10.0),
+                    mutation("/World/B", 2.0, 20.0),
+                ],
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("stale selection publishes one event");
+        assert!(matches!(
+            event.event,
+            ViewportEvent::BimPropertyBatchEditCompleted {
+                applied: false,
+                outcomes,
+                ..
+            } if outcomes.iter().all(|outcome| outcome.status == BimPropertyEditStatus::Rejected)
+        ));
+        assert_eq!(read_width(&app, "/World/A"), 1.0);
+        assert_eq!(read_width(&app, "/World/B"), 2.0);
+    }
+
+    #[test]
+    fn batch_targets_must_match_the_authoritative_selection() {
+        let mut app = command_test_app();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
+        let selection_revision = select_targets(&mut app);
+        app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::EditBimProperties {
+                selection_revision,
+                mutations: vec![mutation("/World/A", 1.0, 10.0)],
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("target mismatch publishes one event");
+        assert!(matches!(
+            event.event,
+            ViewportEvent::BimPropertyBatchEditCompleted {
+                applied: false,
+                outcomes,
+                ..
+            } if outcomes.len() == 1
+                && outcomes[0].status == BimPropertyEditStatus::Rejected
         ));
         assert_eq!(read_width(&app, "/World/A"), 1.0);
         assert_eq!(read_width(&app, "/World/B"), 2.0);

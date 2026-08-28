@@ -130,7 +130,7 @@ pub(super) fn apply_viewport_commands(
                     .variants
                     .insert((prim_path.clone(), set_name.clone()), option.clone());
                 if let Some(stage) = state.stage.as_deref() {
-                    stage.mark_authored(prim_path.clone());
+                    let suppression = stage.mark_authored_guard(prim_path.clone());
                     if let Err(error) = state.histories.authoring.set_variant(
                         &stage.stage,
                         &prim_path,
@@ -140,6 +140,7 @@ pub(super) fn apply_viewport_commands(
                         reject(&mut outbox, request_id, error.to_string());
                         continue;
                     }
+                    suppression.commit();
                     state
                         .histories
                         .record(super::state::EditorHistoryDomain::Authoring);
@@ -355,6 +356,7 @@ pub(super) fn apply_viewport_commands(
                         .stage_handle
                         .as_ref()
                         .map(|handle| handle.path.as_path()),
+                    &state.selected_targets,
                 );
             }
         }

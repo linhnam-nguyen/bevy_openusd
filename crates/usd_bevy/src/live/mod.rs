@@ -28,7 +28,7 @@ pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
-pub use stage::LiveStage;
+pub use stage::{AuthoredSuppressionGuard, LiveStage};
 
 use bevy::app::{App, Plugin, Update};
 use bevy::prelude::*;

@@ -169,7 +169,7 @@ impl ViewportCommand {
                 }
             }
             Self::EditBimProperty { mutation } => mutation.validate()?,
-            Self::EditBimProperties { mutations } => validate_bim_mutation_batch(mutations)?,
+            Self::EditBimProperties { mutations, .. } => validate_bim_mutation_batch(mutations)?,
             Self::ClearAttribute { prim_path, name } => {
                 path("editor.prim_path", prim_path)?;
                 text("editor.name", name)?;

@@ -168,6 +168,7 @@ pub enum ViewportCommand {
         mutation: BimPropertyMutation,
     },
     EditBimProperties {
+        selection_revision: u64,
         mutations: Vec<BimPropertyMutation>,
     },
     ClearAttribute {

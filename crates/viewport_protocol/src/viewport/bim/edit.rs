@@ -1,6 +1,7 @@
 //! Authoritative BIM value-edit intent and outcomes.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use usd_model::{CanonicalValue, UnitId};
 
 use super::super::constants::MAX_EDITOR_TEXT_BYTES;
@@ -86,17 +87,15 @@ pub fn validate_bim_mutation_batch(
         });
     }
     let property = mutations[0].property.as_str();
-    for (index, mutation) in mutations.iter().enumerate() {
+    let mut targets = HashSet::with_capacity(mutations.len());
+    for mutation in mutations {
         mutation.validate()?;
         if mutation.property != property {
             return Err(ProtocolValidationError::InvalidInput {
                 field: "bim.edit.mutations.property",
             });
         }
-        if mutations[..index]
-            .iter()
-            .any(|previous| previous.target == mutation.target)
-        {
+        if !targets.insert(&mutation.target) {
             return Err(ProtocolValidationError::InvalidInput {
                 field: "bim.edit.mutations.targets",
             });

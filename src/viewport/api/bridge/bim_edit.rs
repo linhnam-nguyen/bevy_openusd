@@ -1,9 +1,10 @@
 //! Authoritative BIM property edit commands.
 
 use bevy::prelude::*;
+use std::collections::HashSet;
 use usd_bevy::LiveStage;
 use usd_bevy::authoring::AttributeEdit;
-use usd_model::SemanticSnapshot;
+use usd_model::{EntitySnapshot, SemanticSnapshot};
 use viewport_protocol::bim::validate_bim_mutation_batch;
 use viewport_protocol::{
     BimPropertyEditOutcome, BimPropertyEditStatus, BimPropertyMutation, ViewportEvent,
@@ -16,6 +17,36 @@ use crate::viewport::bim::authoring::{
     BimAuthoringError, BimAuthoringLocator, canonical_value_for_comparison, current_bim_value,
     prepare_bim_value, resolve_bim_authoring_locator,
 };
+use crate::viewport::scene::SelectedTargets;
+
+pub(super) fn apply_bim_property_batch_command(
+    stage: &LiveStage,
+    histories: &mut EditorHistories,
+    semantic_snapshot: Option<&SemanticSnapshot>,
+    selection_revision: u64,
+    selected_targets: &SelectedTargets,
+    mutations: Vec<BimPropertyMutation>,
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+) {
+    let (outcomes, applied) = apply_bim_property_mutations(
+        stage,
+        histories,
+        semantic_snapshot,
+        selection_revision,
+        &selected_targets.0.targets,
+        selected_targets.revision(),
+        &mutations,
+    );
+    emit_bim_property_batch_completed(
+        outbox,
+        request_id,
+        outcomes,
+        applied,
+        stage.current_revision().0,
+        histories,
+    );
+}
 
 pub(super) fn apply_bim_property_mutation(
     stage: &LiveStage,
@@ -30,7 +61,7 @@ pub(super) fn apply_bim_property_mutation(
         Ok(prepared) => prepared,
         Err(error) => return rejected_bim_error(mutation, error),
     };
-    stage.mark_authored(prepared.locator.prim_path.clone());
+    let suppression = stage.mark_authored_guard(prepared.locator.prim_path.clone());
     if let Err(error) = histories.authoring.set_attr(
         &stage.stage,
         &prepared.locator.prim_path,
@@ -40,6 +71,7 @@ pub(super) fn apply_bim_property_mutation(
     ) {
         return rejected_bim_error(mutation, BimAuthoringError::Stage(error.to_string()));
     }
+    suppression.commit();
     histories.record(EditorHistoryDomain::Authoring);
     BimPropertyEditOutcome {
         target: mutation.target.clone(),
@@ -79,6 +111,15 @@ fn prepare_bim_mutation(
             })
             .and_then(|property| property.measurement.as_ref())
     });
+    prepare_bim_mutation_with_measurement(mutation, locator, current_raw, measurement)
+}
+
+fn prepare_bim_mutation_with_measurement(
+    mutation: &BimPropertyMutation,
+    locator: BimAuthoringLocator,
+    current_raw: openusd::sdf::Value,
+    measurement: Option<&usd_model::MeasurementMetadata>,
+) -> Result<PreparedBimMutation, BimAuthoringError> {
     let current = canonical_value_for_comparison(current_raw, measurement)?;
     if current != mutation.expected_old_value {
         return Err(BimAuthoringError::ExpectedValueMismatch {
@@ -105,6 +146,9 @@ pub(super) fn apply_bim_property_mutations(
     stage: &LiveStage,
     histories: &mut EditorHistories,
     semantic_snapshot: Option<&SemanticSnapshot>,
+    requested_selection_revision: u64,
+    selected_targets: &[viewport_protocol::SceneAnchor],
+    authoritative_selection_revision: u64,
     mutations: &[BimPropertyMutation],
 ) -> (Vec<BimPropertyEditOutcome>, bool) {
     if let Err(error) = validate_bim_mutation_batch(mutations) {
@@ -116,10 +160,51 @@ pub(super) fn apply_bim_property_mutations(
             false,
         );
     }
+    if requested_selection_revision != authoritative_selection_revision {
+        return rejected_bim_batch(
+            mutations,
+            format!(
+                "BIM selection is stale: expected revision {authoritative_selection_revision}, received {requested_selection_revision}"
+            ),
+        );
+    }
+    let selected = selected_targets.iter().collect::<HashSet<_>>();
+    let requested = mutations
+        .iter()
+        .map(|mutation| &mutation.target)
+        .collect::<HashSet<_>>();
+    if selected != requested {
+        return rejected_bim_batch(
+            mutations,
+            "BIM batch targets do not match the authoritative selection".to_owned(),
+        );
+    }
 
+    let semantic_index = semantic_snapshot.map(|snapshot| {
+        snapshot
+            .entities
+            .values()
+            .map(|entity| (entity.prim_path.as_str(), entity))
+            .collect::<std::collections::HashMap<&str, &EntitySnapshot>>()
+    });
     let prepared = mutations
         .iter()
-        .map(|mutation| prepare_bim_mutation(stage, semantic_snapshot, mutation))
+        .map(|mutation| {
+            let locator =
+                resolve_bim_authoring_locator(&stage.stage, &mutation.target, &mutation.property)?;
+            let current_raw = current_bim_value(&stage.stage, &locator)?;
+            let measurement = semantic_index
+                .as_ref()
+                .and_then(|index| index.get(mutation.target.prim_path.as_str()).copied())
+                .and_then(|entity| {
+                    entity
+                        .properties
+                        .iter()
+                        .find(|property| property.name == mutation.property)
+                })
+                .and_then(|property| property.measurement.as_ref());
+            prepare_bim_mutation_with_measurement(mutation, locator, current_raw, measurement)
+        })
         .collect::<Vec<_>>();
     let Some(first_error) = prepared.iter().find_map(|result| result.as_ref().err()) else {
         let prepared = prepared.into_iter().map(Result::unwrap).collect::<Vec<_>>();
@@ -137,9 +222,10 @@ pub(super) fn apply_bim_property_mutations(
                 value: mutation.authored.clone(),
             })
             .collect::<Vec<_>>();
-        for mutation in &prepared {
-            stage.mark_authored(mutation.locator.prim_path.clone());
-        }
+        let suppressions = prepared
+            .iter()
+            .map(|mutation| stage.mark_authored_guard(mutation.locator.prim_path.clone()))
+            .collect::<Vec<_>>();
         if let Err(error) = histories.authoring.set_attrs_atomic(&stage.stage, &edits) {
             let reason = format!("BIM batch authoring failed atomically: {error}");
             return (
@@ -149,6 +235,9 @@ pub(super) fn apply_bim_property_mutations(
                     .collect(),
                 false,
             );
+        }
+        for suppression in suppressions {
+            suppression.commit();
         }
         histories.record(EditorHistoryDomain::Authoring);
         return (
@@ -177,6 +266,19 @@ pub(super) fn apply_bim_property_mutations(
                 Ok(_) => rejected_bim_mutation(mutation, reason.clone()),
                 Err(error) => rejected_bim_error(mutation, error),
             })
+            .collect(),
+        false,
+    )
+}
+
+fn rejected_bim_batch(
+    mutations: &[BimPropertyMutation],
+    reason: String,
+) -> (Vec<BimPropertyEditOutcome>, bool) {
+    (
+        mutations
+            .iter()
+            .map(|mutation| rejected_bim_mutation(mutation, reason.clone()))
             .collect(),
         false,
     )

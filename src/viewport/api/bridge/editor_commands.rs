@@ -12,7 +12,7 @@ use super::mutations::apply_runtime_mutations;
 use super::save;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
 use crate::viewport::api::ViewportEventOutbox;
-
+use crate::viewport::scene::SelectedTargets;
 pub(super) fn apply_editor_command(
     command: ViewportCommand,
     request_id: String,
@@ -22,6 +22,7 @@ pub(super) fn apply_editor_command(
     semantic_snapshot: Option<&SemanticSnapshot>,
     stage: Option<&LiveStage>,
     save_stage_path: Option<&std::path::Path>,
+    selected_targets: &SelectedTargets,
 ) -> bool {
     macro_rules! require_stage {
         () => {
@@ -34,12 +35,12 @@ pub(super) fn apply_editor_command(
             }
         };
     }
-
     match command {
         ViewportCommand::DefinePrim { path, type_name } => {
             let stage = require_stage!();
-            stage.mark_authored(path.clone());
-            if let Err(error) = histories.authoring.define(&stage.stage, &path, &type_name) {
+            if let Err(error) = stage.with_authored(path.clone(), || {
+                histories.authoring.define(&stage.stage, &path, &type_name)
+            }) {
                 reject(outbox, request_id, error.to_string());
                 return true;
             }
@@ -54,7 +55,7 @@ pub(super) fn apply_editor_command(
         }
         ViewportCommand::RemovePrim { path } => {
             let stage = require_stage!();
-            stage.mark_authored(path.clone());
+            let suppression = stage.mark_authored_guard(path.clone());
             let removed = match usd_bevy::authoring::remove_prim(&stage.stage, &path) {
                 Ok(r) => r,
                 Err(e) => {
@@ -62,6 +63,9 @@ pub(super) fn apply_editor_command(
                     return true;
                 }
             };
+            if removed {
+                suppression.commit();
+            }
             emit_editor_completed(
                 outbox,
                 request_id,
@@ -72,8 +76,9 @@ pub(super) fn apply_editor_command(
         }
         ViewportCommand::RenamePrim { path, new_name } => {
             let stage = require_stage!();
-            stage.mark_authored(path.clone());
-            if let Err(e) = histories.authoring.rename(&stage.stage, &path, &new_name) {
+            if let Err(e) = stage.with_authored(path.clone(), || {
+                histories.authoring.rename(&stage.stage, &path, &new_name)
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
@@ -88,11 +93,11 @@ pub(super) fn apply_editor_command(
         }
         ViewportCommand::ReparentPrim { path, new_parent } => {
             let stage = require_stage!();
-            stage.mark_authored(path.clone());
-            if let Err(e) = histories
-                .authoring
-                .reparent(&stage.stage, &path, &new_parent)
-            {
+            if let Err(e) = stage.with_authored(path.clone(), || {
+                histories
+                    .authoring
+                    .reparent(&stage.stage, &path, &new_parent)
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
@@ -107,8 +112,9 @@ pub(super) fn apply_editor_command(
         }
         ViewportCommand::MovePrim { old_path, new_path } => {
             let stage = require_stage!();
-            stage.mark_authored(old_path.clone());
-            if let Err(e) = usd_bevy::authoring::move_prim(&stage.stage, &old_path, &new_path) {
+            if let Err(e) = stage.with_authored(old_path.clone(), || {
+                usd_bevy::authoring::move_prim(&stage.stage, &old_path, &new_path)
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
@@ -134,12 +140,11 @@ pub(super) fn apply_editor_command(
                     return true;
                 }
             };
-            stage.mark_authored(prim_path.clone());
-            if let Err(e) =
+            if let Err(e) = stage.with_authored(prim_path.clone(), || {
                 histories
                     .authoring
                     .set_attr(&stage.stage, &prim_path, &name, &type_name, value)
-            {
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
@@ -168,27 +173,27 @@ pub(super) fn apply_editor_command(
                 histories,
             );
         }
-        ViewportCommand::EditBimProperties { mutations } => {
+        ViewportCommand::EditBimProperties {
+            selection_revision,
+            mutations,
+        } => {
             let stage = require_stage!();
-            let (outcomes, applied) = bim_edit::apply_bim_property_mutations(
+            bim_edit::apply_bim_property_batch_command(
                 stage,
                 histories,
                 semantic_snapshot,
-                &mutations,
-            );
-            bim_edit::emit_bim_property_batch_completed(
+                selection_revision,
+                selected_targets,
+                mutations,
                 outbox,
                 request_id,
-                outcomes,
-                applied,
-                stage.current_revision().0,
-                histories,
             );
         }
         ViewportCommand::ClearAttribute { prim_path, name } => {
             let stage = require_stage!();
-            stage.mark_authored(prim_path.clone());
-            if let Err(e) = usd_bevy::authoring::clear_attribute(&stage.stage, &prim_path, &name) {
+            if let Err(e) = stage.with_authored(prim_path.clone(), || {
+                usd_bevy::authoring::clear_attribute(&stage.stage, &prim_path, &name)
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
@@ -207,16 +212,16 @@ pub(super) fn apply_editor_command(
             scale,
         } => {
             let stage = require_stage!();
-            stage.mark_authored(prim_path.clone());
             let transform = Transform {
                 translation: Vec3::from_array(translation),
                 rotation: Quat::from_array(rotation),
                 scale: Vec3::from_array(scale),
             };
-            if let Err(e) = histories
-                .transforms
-                .author(&stage.stage, &prim_path, transform)
-            {
+            if let Err(e) = stage.with_authored(prim_path.clone(), || {
+                histories
+                    .transforms
+                    .author(&stage.stage, &prim_path, transform)
+            }) {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }
