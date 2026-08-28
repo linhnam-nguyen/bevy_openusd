@@ -167,6 +167,9 @@ pub enum ViewportCommand {
     EditBimProperty {
         mutation: BimPropertyMutation,
     },
+    EditBimProperties {
+        mutations: Vec<BimPropertyMutation>,
+    },
     ClearAttribute {
         prim_path: String,
         name: String,

@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use super::bim::validate_bim_mutation_batch;
 use super::commands::ViewportCommand;
 use super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::hierarchy::HierarchyNodeId;
@@ -168,6 +169,7 @@ impl ViewportCommand {
                 }
             }
             Self::EditBimProperty { mutation } => mutation.validate()?,
+            Self::EditBimProperties { mutations } => validate_bim_mutation_batch(mutations)?,
             Self::ClearAttribute { prim_path, name } => {
                 path("editor.prim_path", prim_path)?;
                 text("editor.name", name)?;

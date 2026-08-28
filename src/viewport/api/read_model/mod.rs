@@ -254,6 +254,9 @@ impl ViewportReadModelState {
             ViewportEvent::BimPropertyEditCompleted { state, .. } => {
                 self.editor = state.clone();
             }
+            ViewportEvent::BimPropertyBatchEditCompleted { state, .. } => {
+                self.editor = state.clone();
+            }
             ViewportEvent::EditorPrimState { .. }
             | ViewportEvent::EditorStageExportChunk { .. } => {}
         }

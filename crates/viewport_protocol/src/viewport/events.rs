@@ -101,6 +101,12 @@ pub enum ViewportEvent {
         live_revision: u64,
         state: EditorStateReadModel,
     },
+    BimPropertyBatchEditCompleted {
+        outcomes: Vec<BimPropertyEditOutcome>,
+        applied: bool,
+        live_revision: u64,
+        state: EditorStateReadModel,
+    },
     RuntimeMutationBatchAccepted {
         source_id: String,
         sequence: u64,

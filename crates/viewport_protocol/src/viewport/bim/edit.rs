@@ -6,7 +6,7 @@ use usd_model::{CanonicalValue, UnitId};
 use super::super::constants::MAX_EDITOR_TEXT_BYTES;
 use super::super::editor::EditorValue;
 use super::super::read_models::SceneAnchor;
-use super::constants::{MAX_BIM_FIELD_KEY_BYTES, MAX_BIM_SELECTION_TARGETS};
+use super::constants::{MAX_BIM_BATCH_EDITS, MAX_BIM_FIELD_KEY_BYTES};
 use crate::ProtocolValidationError;
 
 /// One compare-and-set value edit against one stable scene target.
@@ -80,17 +80,25 @@ pub enum BimPropertyEditStatus {
 pub fn validate_bim_mutation_batch(
     mutations: &[BimPropertyMutation],
 ) -> Result<(), ProtocolValidationError> {
-    if mutations.is_empty() || mutations.len() > MAX_BIM_SELECTION_TARGETS {
+    if mutations.is_empty() || mutations.len() > MAX_BIM_BATCH_EDITS {
         return Err(ProtocolValidationError::InvalidInput {
             field: "bim.edit.mutations",
         });
     }
     let property = mutations[0].property.as_str();
-    for mutation in mutations {
+    for (index, mutation) in mutations.iter().enumerate() {
         mutation.validate()?;
         if mutation.property != property {
             return Err(ProtocolValidationError::InvalidInput {
                 field: "bim.edit.mutations.property",
+            });
+        }
+        if mutations[..index]
+            .iter()
+            .any(|previous| previous.target == mutation.target)
+        {
+            return Err(ProtocolValidationError::InvalidInput {
+                field: "bim.edit.mutations.targets",
             });
         }
     }

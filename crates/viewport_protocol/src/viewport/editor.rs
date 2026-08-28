@@ -22,6 +22,7 @@ pub enum EditorOperation {
     MovePrim,
     SetAttribute,
     EditBimProperty,
+    EditBimProperties,
     ClearAttribute,
     SetVariantSelection,
     SetTransform,
