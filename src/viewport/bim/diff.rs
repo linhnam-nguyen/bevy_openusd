@@ -68,7 +68,7 @@ pub(crate) fn property_diff(
             );
             let status = if properties
                 .iter()
-                .any(|property| property.status == BimPropertyDiffStatus::Modified)
+                .any(|property| property.status != BimPropertyDiffStatus::Unchanged)
             {
                 BimPropertyDiffStatus::Modified
             } else {
@@ -310,5 +310,48 @@ mod tests {
         .expect("deleted baseline entity is addressable by path");
         assert_eq!(diff.status, BimPropertyDiffStatus::Deleted);
         assert_eq!(diff.properties[0].status, BimPropertyDiffStatus::Deleted);
+    }
+
+    #[test]
+    fn added_or_deleted_property_marks_existing_entity_modified() {
+        let old = entity("revit-42", "/World/Wall", 1, 10);
+        let mut new = entity("revit-42", "/World/Wall", 2, 10);
+        new.properties.clear();
+        new.properties.push(SemanticProperty {
+            name: "BIM:Height".to_owned(),
+            value: usd_model::CanonicalValue::Integer(4),
+            measurement: None,
+        });
+        let baseline = snapshot(
+            SnapshotSource::GitCommit {
+                oid: "abc123".into(),
+            },
+            old,
+        );
+        let working = snapshot(
+            SnapshotSource::Working {
+                session: "session".into(),
+                live_revision: 3,
+            },
+            new,
+        );
+
+        let diff = property_diff(
+            &baseline,
+            &working,
+            &[SceneAnchor::active_session("/World/Wall")],
+        )
+        .expect("existing entity has a property diff");
+        assert_eq!(diff.status, BimPropertyDiffStatus::Modified);
+        assert!(
+            diff.properties
+                .iter()
+                .any(|property| property.status == BimPropertyDiffStatus::Deleted)
+        );
+        assert!(
+            diff.properties
+                .iter()
+                .any(|property| property.status == BimPropertyDiffStatus::Added)
+        );
     }
 }
