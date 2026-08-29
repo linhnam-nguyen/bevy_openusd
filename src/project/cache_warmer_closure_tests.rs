@@ -120,6 +120,53 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
 }
 
 #[test]
+fn target_cache_identity_changes_when_authoritative_display_name_changes() -> Result<()> {
+    let directory = tempdir()?;
+    usd_git::Repository::init(directory.path())?;
+    let scene_id = SceneId::new_v4();
+    let project_id = ProjectId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        project_id,
+        "Identity Project",
+        ProjectRoot::Scene(scene_id),
+        vec![usd_project::SceneManifestEntry {
+            id: scene_id,
+            storage_key: StorageKey::new("architecture")?,
+            display_name: "Architecture".to_owned(),
+        }],
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+    crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
+
+    let target = ProjectCacheTarget::Scene {
+        id: scene_id.to_string(),
+    };
+    let before = ProjectCacheIdentity::for_project(
+        directory.path(),
+        target.clone(),
+        RuntimeProfile::NativeMedium,
+        SemanticConfig::default().hash(),
+    )?;
+
+    let mut renamed = manifest;
+    renamed.scenes[0].display_name = "Architecture Revised".to_owned();
+    ManifestStore::write_manifest_atomic(directory.path(), &renamed)?;
+    let after = ProjectCacheIdentity::for_project(
+        directory.path(),
+        target,
+        RuntimeProfile::NativeMedium,
+        SemanticConfig::default().hash(),
+    )?;
+
+    assert_ne!(
+        before.target_content_hash, after.target_content_hash,
+        "stale runtime labels must not survive a canonical name change"
+    );
+    Ok(())
+}
+
+#[test]
 fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<()> {
     let directory = tempdir()?;
     usd_git::Repository::init(directory.path())?;

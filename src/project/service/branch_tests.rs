@@ -82,6 +82,92 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
 }
 
 #[test]
+fn branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let project = service.create_project(&parent, "Branch Coherence").unwrap();
+    let project_root = parent.join("Branch Coherence");
+    let scene = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Project(project.id),
+            "Architecture",
+        )
+        .unwrap();
+
+    run_git(&project_root, &["add", "."]);
+    run_git(&project_root, &["commit", "-m", "Architecture A"]);
+    run_git(&project_root, &["branch", "revised"]);
+    run_git(&project_root, &["checkout", "revised"]);
+    service
+        .rename(
+            project.id,
+            project_protocol::ProjectWriteTarget::Scene(scene.scene_id),
+            "Architecture Revised",
+        )
+        .unwrap();
+    run_git(&project_root, &["add", "."]);
+    run_git(&project_root, &["commit", "-m", "Architecture B"]);
+    let revision_b = usd_git::Repository::open(&project_root)
+        .unwrap()
+        .head()
+        .unwrap()
+        .unwrap()
+        .id()
+        .to_string();
+    run_git(&project_root, &["checkout", "main"]);
+
+    let branch_b = service
+        .switch_branch(project.id, "revised")
+        .expect("branch B switches cleanly");
+    assert_eq!(branch_b.project.id, project.id);
+    assert_eq!(branch_b.project.name, "Branch Coherence");
+    assert_eq!(
+        branch_b.repository.active_branch.as_deref(),
+        Some("revised")
+    );
+    assert_eq!(branch_b.repository.head.as_ref().unwrap().id, revision_b);
+    assert!(branch_b.nodes.iter().any(|node| {
+        matches!(
+            node,
+            usd_project::ProjectContentNode::Scene { name, .. }
+                if name == "Architecture Revised"
+        )
+    }));
+    assert_eq!(
+        branch_b.project.counts, branch_b.counts,
+        "summary and tree counts must describe the same branch snapshot"
+    );
+
+    let branch_a = service
+        .switch_branch(project.id, "main")
+        .expect("branch A switches cleanly");
+    assert_eq!(branch_a.repository.active_branch.as_deref(), Some("main"));
+    assert_ne!(
+        branch_a.repository.head.as_ref().unwrap().id,
+        branch_b.repository.head.as_ref().unwrap().id
+    );
+    assert!(branch_a.nodes.iter().any(|node| {
+        matches!(
+            node,
+            usd_project::ProjectContentNode::Scene { name, .. }
+                if name == "Architecture"
+        )
+    }));
+    assert!(!branch_a.nodes.iter().any(|node| {
+        matches!(
+            node,
+            usd_project::ProjectContentNode::Scene { name, .. }
+                if name == "Architecture Revised"
+        )
+    }));
+    assert_eq!(branch_a.project.counts, branch_a.counts);
+}
+
+#[test]
 fn switching_to_a_legacy_scene_branch_migrates_and_composes_content() {
     let directory = tempdir().unwrap();
     let repository = directory.path().join("project");

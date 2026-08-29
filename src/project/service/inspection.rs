@@ -159,6 +159,15 @@ pub(super) fn project_summary(
     manifest: &ProjectManifestV1,
     project_root: &Path,
 ) -> Result<ProjectSummary, ProjectWriteError> {
+    let validated = manifest
+        .validate_and_index()
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::ManifestUnavailable,
+        })?;
+    let (_, counts) =
+        super::project_tree(project_root, &validated).map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure,
+        })?;
     Ok(ProjectSummary {
         id: manifest.project_id,
         name: manifest.name.clone(),
@@ -168,12 +177,7 @@ pub(super) fn project_summary(
                 code: ProjectWriteErrorCode::RepositoryUnavailable,
             }
         })?,
-        counts: ProjectContentCounts {
-            scenes: manifest.scenes.len() as u64,
-            models: manifest.models.len() as u64,
-            scene_placements: 0,
-            model_placements: 0,
-        },
+        counts,
         issues: usd_project::ProjectIssueSummary::default(),
         people: usd_project::ProjectPeopleSummary::default(),
         capabilities: ProjectCapabilities::default(),

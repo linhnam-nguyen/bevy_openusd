@@ -67,6 +67,13 @@ fn collect_target_files(
         "target".to_owned(),
         Vec::new(),
     ));
+    if let Some(name) = target_display_name(manifest, target) {
+        files.push((
+            format!("@name/{}", target.key()),
+            "name".to_owned(),
+            name.into_bytes(),
+        ));
+    }
     match target {
         ProjectCacheTarget::ProjectRoot => match &manifest.raw().root {
             usd_project::ProjectRoot::Empty => {}
@@ -143,6 +150,25 @@ fn collect_target_files(
         }
     }
     Ok(())
+}
+
+fn target_display_name(
+    manifest: &usd_project::ValidatedProjectManifest,
+    target: &ProjectCacheTarget,
+) -> Option<String> {
+    match target {
+        ProjectCacheTarget::ProjectRoot => Some(manifest.raw().name.clone()),
+        ProjectCacheTarget::Scene { id } => manifest
+            .scenes()
+            .iter()
+            .find(|scene| scene.id.to_string() == *id)
+            .map(|scene| scene.display_name.clone()),
+        ProjectCacheTarget::Model { id } => manifest
+            .models()
+            .iter()
+            .find(|model| model.id.to_string() == *id)
+            .map(|model| model.display_name.clone()),
+    }
 }
 
 fn collect_one_file(
