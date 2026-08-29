@@ -12,4 +12,5 @@ pub(crate) mod runtime_delivery;
 pub(crate) mod scene;
 pub(crate) mod semantic_store;
 pub mod service;
+pub(crate) mod spatial;
 pub(crate) mod storage;

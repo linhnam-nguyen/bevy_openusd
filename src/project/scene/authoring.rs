@@ -5,9 +5,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{gf::Matrix4d, sdf::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
+    ScenePlacementTransform,
 };
 use uuid::Uuid;
 
@@ -95,6 +96,7 @@ pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Res
         .set_type_name("Xform")?
         .set_metadata("customData", Value::Dictionary(custom_data))?;
     stage.set_default_prim(SCENE_ROOT_PRIM)?;
+    crate::project::spatial::author_canonical_stage(&stage)?;
     if !members.is_empty() {
         stage
             .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
@@ -233,7 +235,43 @@ fn read_scene_member(stage: &Stage, member_id: SceneMemberId) -> Result<SceneMem
         id: member_id,
         target,
         name,
+        transform: read_scene_member_transform(&member)?,
     })
+}
+
+pub(crate) fn author_scene_member_transform(
+    member_prim: &openusd::usd::Prim,
+    transform: ScenePlacementTransform,
+) -> Result<()> {
+    member_prim
+        .create_attribute("xformOp:transform", "matrix4d")?
+        .set_custom(false)?
+        .set(Value::Matrix4d(Matrix4d(transform.0)))?;
+    member_prim
+        .create_attribute("xformOpOrder", "token[]")?
+        .set_custom(false)?
+        .set(Value::TokenVec(vec!["xformOp:transform".into()]))?;
+    Ok(())
+}
+
+fn read_scene_member_transform(
+    member_prim: &openusd::usd::Prim,
+) -> Result<ScenePlacementTransform> {
+    let Some(value) = member_prim.attribute("xformOp:transform").get::<Value>()? else {
+        return Ok(ScenePlacementTransform::IDENTITY);
+    };
+    let Value::Matrix4d(matrix) = value else {
+        bail!("Project Scene placement transform must be matrix4d");
+    };
+    let order = member_prim
+        .attribute("xformOpOrder")
+        .get::<Value>()?
+        .context("Project Scene placement is missing xformOpOrder")?;
+    ensure!(
+        order == Value::TokenVec(vec!["xformOp:transform".into()]),
+        "Project Scene placement must use only xformOp:transform"
+    );
+    Ok(ScenePlacementTransform(matrix.0))
 }
 
 /// Read the authored placement records from one validated Project Scene.

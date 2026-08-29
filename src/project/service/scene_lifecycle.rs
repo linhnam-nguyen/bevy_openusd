@@ -250,6 +250,7 @@ mod tests {
             id: usd_project::SceneMemberId::new_v4(),
             target: usd_project::SceneMemberTarget::Scene(child.scene_id),
             name: Some("Repeated child placement".to_owned()),
+            transform: Default::default(),
         };
         let temporary_path = root.join(format!(".{}.repeat.tmp.usda", root_scene.scene_id));
         adoption_authoring::prepare_parent_layer(

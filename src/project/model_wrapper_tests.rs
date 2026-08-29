@@ -84,11 +84,13 @@ fn repeated_scene_placements_share_model_id_but_not_member_id() -> Result<()> {
         id: SceneMemberId::new_v4(),
         target: SceneMemberTarget::Model(model_id),
         name: None,
+        transform: Default::default(),
     };
     let second_model = SceneMember {
         id: SceneMemberId::new_v4(),
         target: SceneMemberTarget::Model(model_id),
         name: None,
+        transform: Default::default(),
     };
     assert_ne!(first_model.id, second_model.id);
     assert_eq!(first_model.target, second_model.target);

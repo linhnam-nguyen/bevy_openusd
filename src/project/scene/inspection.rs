@@ -49,7 +49,19 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         has_payloads: false,
         has_references: false,
         has_sublayers: stage.layer_stack().len() > 1,
+        spatial: crate::project::spatial::inspect_stage(&stage)
+            .context("inspect USD source spatial convention")?,
     };
+    if !inspection.spatial.up_axis_was_authored {
+        inspection.diagnostics.push(diagnostic(
+            "USD source does not author upAxis; OpenUSD fallback Y was used",
+        ));
+    }
+    if !inspection.spatial.meters_per_unit_was_authored {
+        inspection.diagnostics.push(diagnostic(
+            "USD source does not author metersPerUnit; OpenUSD fallback 0.01 was used",
+        ));
+    }
     let mut dependencies = BTreeMap::new();
 
     collect_sublayer_dependencies(&stage, source, &mut dependencies);
@@ -322,6 +334,7 @@ fn unsupported_inspection(message: String) -> CompositionInspection {
         has_payloads: false,
         has_references: false,
         has_sublayers: false,
+        spatial: Default::default(),
     }
 }
 

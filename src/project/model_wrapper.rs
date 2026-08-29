@@ -129,6 +129,7 @@ pub(crate) fn publish_model_wrapper_atomic(
         id: usd_project::SceneMemberId::new_v4(),
         target: SceneMemberTarget::Model(request.prepared.id),
         name: None,
+        transform: Default::default(),
     });
     let parent_members = request.placement.as_ref().map(|placement_request| {
         let mut members = placement_request.parent_members.to_vec();
@@ -212,8 +213,13 @@ pub(crate) fn publish_model_wrapper_atomic(
             request.prepared.id,
             &published_source_path,
             &source_default_prim,
+            &request.prepared.inspection.composition.spatial,
         )?;
-        wrapper_authoring::validate_model_wrapper(&temporary_wrapper_path, request.prepared.id)?;
+        wrapper_authoring::validate_model_wrapper(
+            &temporary_wrapper_path,
+            request.prepared.id,
+            &request.prepared.inspection.composition.spatial,
+        )?;
 
         if let (Some(parent_path), Some(temporary_parent_path), Some(parent_members)) = (
             parent_scene_path.as_ref(),

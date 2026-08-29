@@ -17,10 +17,11 @@ pub(crate) fn author_scene_wrapper_to_path(
     scene_id: SceneId,
     source: &Path,
     default_prim: &str,
+    spatial: &usd_project::SourceSpatialConvention,
 ) -> Result<()> {
     let stage = authoring::new_scene_stage(scene_id, &[])?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
-    stage
+    let source_prim = stage
         .define_prim(source_path.as_str())?
         .set_type_name("Xform")?
         .set_metadata(
@@ -34,6 +35,7 @@ pub(crate) fn author_scene_wrapper_to_path(
                 ..Default::default()
             }])),
         )?;
+    crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -41,7 +43,11 @@ pub(crate) fn author_scene_wrapper_to_path(
     Ok(())
 }
 
-pub(crate) fn validate_scene_wrapper(path: &Path, scene_id: SceneId) -> Result<()> {
+pub(crate) fn validate_scene_wrapper(
+    path: &Path,
+    scene_id: SceneId,
+    spatial: &usd_project::SourceSpatialConvention,
+) -> Result<()> {
     authoring::validate_scene_file(path, scene_id, &[])?;
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::builder()
@@ -58,9 +64,15 @@ pub(crate) fn validate_scene_wrapper(path: &Path, scene_id: SceneId) -> Result<(
     ensure!(
         stage
             .root_layer()
-            .prim(source_path)
+            .prim(&source_path)
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "adopted Scene wrapper must preserve the source as a reference"
+    );
+    let source_prim = stage.prim(source_path.as_str());
+    ensure!(
+        crate::project::spatial::read_source_normalization(&source_prim)?
+            == crate::project::spatial::source_normalization_transform(spatial),
+        "adopted Scene wrapper spatial normalization does not match the inspected source"
     );
     Ok(())
 }
@@ -117,7 +129,7 @@ pub(crate) fn author_scene_member(
         prim_path: sdf::path(format!("/{referenced_prim}"))?,
         ..Default::default()
     };
-    stage
+    let member_prim = stage
         .define_prim(authoring::scene_member_path(member.id).as_str())?
         .set_type_name("Xform")?
         .set_metadata(
@@ -128,5 +140,6 @@ pub(crate) fn author_scene_member(
             REFERENCES_FIELD,
             Value::ReferenceListOp(sdf::ReferenceListOp::prepended([reference])),
         )?;
+    authoring::author_scene_member_transform(&member_prim, member.transform)?;
     Ok(())
 }

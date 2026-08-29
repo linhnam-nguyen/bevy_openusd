@@ -31,7 +31,9 @@ pub use read_model::{
     RepositorySummary, RevisionSummary,
 };
 pub use root::{ModelSourceKind, ProjectRoot};
-pub use scene::{SceneMember, SceneMemberTarget};
+pub use scene::{
+    SceneMember, SceneMemberTarget, ScenePlacementTransform, SourceSpatialConvention, StageUpAxis,
+};
 
 #[cfg(test)]
 mod tests {

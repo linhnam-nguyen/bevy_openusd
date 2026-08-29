@@ -63,6 +63,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(scene_id),
             name: Some(request.storage_key.to_string()),
+            transform: Default::default(),
         };
         let mut parent_members = request.parent_members.to_vec();
         parent_members.push(member.clone());

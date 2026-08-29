@@ -11,7 +11,7 @@ use usd_project::{CompositionClassification, CompositionInspection, ModelId, Mod
 use super::scene::inspection::inspect_composition;
 
 /// Source-neutral result of inspecting a possible Product Model source.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ModelImportInspection {
     pub composition: CompositionInspection,
 }

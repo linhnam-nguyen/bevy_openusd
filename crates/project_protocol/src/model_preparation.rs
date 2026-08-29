@@ -37,7 +37,7 @@ impl ProjectModelPreparationCommand {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectModelPreparationResult {
     pub operation_id: String,
     pub generation: u64,
@@ -45,7 +45,7 @@ pub struct ProjectModelPreparationResult {
     pub inspection: Result<CompositionInspection, ProjectWriteError>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectModelPreparationReply {
     pub protocol_version: u16,
     pub result: Result<ProjectModelPreparationResult, ProjectWriteError>,

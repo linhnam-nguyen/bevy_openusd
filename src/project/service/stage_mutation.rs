@@ -255,6 +255,7 @@ fn apply_mutation(
             id: placement_id,
             target,
             name: None,
+            transform: Default::default(),
         },
     )
     .map_err(|_| filesystem_error())

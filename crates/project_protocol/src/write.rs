@@ -122,7 +122,7 @@ pub struct ProjectSceneWriteResponse {
     pub placement_id: Option<SceneMemberId>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectAdoptSceneRequest {
     pub project_id: ProjectId,
     pub target: ProjectWriteTarget,
@@ -205,7 +205,7 @@ pub struct ProjectModelWriteResponse {
     pub progress: ProjectImportProgress,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum ProjectWriteRequest {
     Inspect { selection: LocalSelectionToken },
     Create(ProjectCreateRequest),
@@ -234,7 +234,7 @@ pub enum ProjectWriteResponse {
     SceneDeleted(ProjectSceneLifecycleResponse),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectWriteCommand {
     pub protocol_version: u16,
     pub request: ProjectWriteRequest,

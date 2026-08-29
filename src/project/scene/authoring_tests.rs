@@ -19,6 +19,14 @@ fn authored_scene_reopens_with_default_prim_and_registry_identity() -> Result<()
         stage.default_prim().as_ref().map(|token| token.as_str()),
         Some(SCENE_ROOT_PRIM)
     );
+    assert_eq!(
+        stage.stage_metadata("upAxis")?,
+        Some(Value::Token("Y".into()))
+    );
+    assert_eq!(
+        stage.stage_metadata("metersPerUnit")?,
+        Some(Value::Double(1.0))
+    );
 
     let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
     assert!(root.is_defined()?);
@@ -57,21 +65,25 @@ fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(shared_scene_id),
             name: Some("Scene placement A".to_owned()),
+            transform: Default::default(),
         },
         SceneMember {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(shared_scene_id),
             name: Some("Scene placement B".to_owned()),
+            transform: Default::default(),
         },
         SceneMember {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Model(shared_model_id),
             name: Some("Model placement A".to_owned()),
+            transform: Default::default(),
         },
         SceneMember {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Model(shared_model_id),
             name: Some("Model placement B".to_owned()),
+            transform: Default::default(),
         },
     ];
 
@@ -99,6 +111,7 @@ fn self_scene_placement_is_rejected_before_publication() {
         id: SceneMemberId::new_v4(),
         target: SceneMemberTarget::Scene(scene_id),
         name: None,
+        transform: Default::default(),
     };
 
     assert!(

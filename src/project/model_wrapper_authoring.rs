@@ -60,6 +60,7 @@ pub(super) fn author_model_wrapper(
     model_id: usd_project::ModelId,
     source_path: &str,
     source_default_prim: &str,
+    spatial: &usd_project::SourceSpatialConvention,
 ) -> Result<()> {
     let stage = Stage::builder().in_memory(format!("model-{model_id}.usda"))?;
     stage
@@ -79,7 +80,8 @@ pub(super) fn author_model_wrapper(
             ])),
         )?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
-    stage
+    crate::project::spatial::author_canonical_stage(&stage)?;
+    let source_prim = stage
         .define_prim(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
         .set_type_name("Xform")?
         .set_metadata(
@@ -90,6 +92,7 @@ pub(super) fn author_model_wrapper(
                 ..Default::default()
             }])),
         )?;
+    crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -97,7 +100,11 @@ pub(super) fn author_model_wrapper(
     Ok(())
 }
 
-pub(super) fn validate_model_wrapper(path: &Path, model_id: usd_project::ModelId) -> Result<()> {
+pub(super) fn validate_model_wrapper(
+    path: &Path,
+    model_id: usd_project::ModelId,
+    spatial: &usd_project::SourceSpatialConvention,
+) -> Result<()> {
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::builder()
         .load(InitialLoadSet::LoadNone)
@@ -130,9 +137,15 @@ pub(super) fn validate_model_wrapper(path: &Path, model_id: usd_project::ModelId
     ensure!(
         stage
             .root_layer()
-            .prim(source_path)
+            .prim(&source_path)
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "stable Model wrapper must reference its source"
+    );
+    let source_prim = stage.prim(source_path.as_str());
+    ensure!(
+        crate::project::spatial::read_source_normalization(&source_prim)?
+            == crate::project::spatial::source_normalization_transform(spatial),
+        "stable Model wrapper spatial normalization does not match the inspected source"
     );
     Ok(())
 }

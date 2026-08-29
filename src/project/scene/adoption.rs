@@ -144,8 +144,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 scene_id,
                 request.source,
                 &default_prim,
+                &request.inspection.spatial,
             )?;
-            adoption_authoring::validate_scene_wrapper(&temporary_scene_path, scene_id)?;
+            adoption_authoring::validate_scene_wrapper(
+                &temporary_scene_path,
+                scene_id,
+                &request.inspection.spatial,
+            )?;
             ensure!(
                 !final_scene_path.exists(),
                 "new Project Scene canonical layer already exists"
@@ -251,6 +256,7 @@ pub(crate) fn propose_scene_placement(
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(target_scene_id),
             name: None,
+            transform: Default::default(),
         },
     ))
 }

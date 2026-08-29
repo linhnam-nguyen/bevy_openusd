@@ -41,7 +41,7 @@ impl ProjectSceneInspectionCommand {
 
 /// The operation identity is returned with both success and typed failure so
 /// the UI can discard stale or superseded results without guessing.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectSceneInspectionResult {
     pub operation_id: String,
     pub generation: u64,
@@ -49,7 +49,7 @@ pub struct ProjectSceneInspectionResult {
     pub inspection: Result<CompositionInspection, ProjectWriteError>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProjectSceneInspectionReply {
     pub protocol_version: u16,
     pub result: Result<ProjectSceneInspectionResult, ProjectWriteError>,

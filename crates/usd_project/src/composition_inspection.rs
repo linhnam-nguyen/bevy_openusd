@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::SourceSpatialConvention;
+
 /// Product-level meaning suggested by a composed USD source.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CompositionClassification {
@@ -49,7 +51,7 @@ pub struct CompositionDiagnostic {
 /// Immutable inspection result used by later Scene adoption and Model import
 /// flows. It intentionally contains no Stage, renderer, Git, or filesystem
 /// objects.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompositionInspection {
     pub classification: CompositionClassification,
     pub dependencies: Vec<DependencyInspection>,
@@ -58,4 +60,5 @@ pub struct CompositionInspection {
     pub has_payloads: bool,
     pub has_references: bool,
     pub has_sublayers: bool,
+    pub spatial: SourceSpatialConvention,
 }

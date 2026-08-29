@@ -164,6 +164,7 @@ mod tests {
                     has_payloads: false,
                     has_references: true,
                     has_sublayers: false,
+                    spatial: Default::default(),
                 },
                 operation_id: "adoption-1".to_owned(),
                 generation: 11,

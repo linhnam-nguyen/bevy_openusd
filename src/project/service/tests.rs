@@ -280,6 +280,7 @@ fn tree_projection_keeps_authored_model_placement_identity() {
             id: member_id,
             target: SceneMemberTarget::Model(model_id),
             name: Some("Placed model".to_owned()),
+            transform: Default::default(),
         }],
     )
     .unwrap();
