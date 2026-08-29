@@ -37,6 +37,31 @@ pub(crate) fn activate_stage_with_cache_context(
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
 ) -> Result<(), String> {
+    activate_stage_with_cache_context_inner(world, path, cache_context, || {})
+}
+
+#[cfg(test)]
+fn activate_stage_with_cache_context_for_test<F>(
+    world: &mut World,
+    path: std::path::PathBuf,
+    cache_context: Option<ActiveProjectCacheContext>,
+    before_open: F,
+) -> Result<(), String>
+where
+    F: FnOnce(),
+{
+    activate_stage_with_cache_context_inner(world, path, cache_context, before_open)
+}
+
+fn activate_stage_with_cache_context_inner<F>(
+    world: &mut World,
+    path: std::path::PathBuf,
+    cache_context: Option<ActiveProjectCacheContext>,
+    before_open: F,
+) -> Result<(), String>
+where
+    F: FnOnce(),
+{
     let root = path
         .parent()
         .map(std::path::Path::to_path_buf)
@@ -47,10 +72,37 @@ pub(crate) fn activate_stage_with_cache_context(
         .ok_or_else(|| "resolved Project stage has no valid filename".to_owned())?
         .to_owned();
     let path_string = path.to_string_lossy().into_owned();
+    before_open();
     let stage = Stage::open(&path_string).map_err(|error| {
         error!("failed to open Project stage {}: {error:#}", path.display());
         PROJECT_STAGE_OPEN_FAILURE.to_owned()
     })?;
+
+    let cache_context = cache_context.and_then(|context| {
+        let current = crate::project::cache::ProjectCacheIdentity::for_project(
+            &context.project_root,
+            context.identity.target.clone(),
+            context.identity.profile,
+            context.identity.config_hash,
+        );
+        match current {
+            Ok(identity) if identity == context.identity => Some(context),
+            Ok(_) => {
+                bevy::log::warn!(
+                    "[project-cache] source changed across Stage::open for {}; using source projection",
+                    path.display()
+                );
+                None
+            }
+            Err(error) => {
+                bevy::log::warn!(
+                    "[project-cache] could not revalidate source across Stage::open for {}; using source projection: {error:#}",
+                    path.display()
+                );
+                None
+            }
+        }
+    });
 
     if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
         seed.clear();
