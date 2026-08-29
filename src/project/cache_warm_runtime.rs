@@ -15,7 +15,7 @@ use crate::project::blob_store::{
 };
 use crate::project::ghost_cache::prepare_render_blobs;
 use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
-use crate::project::runtime_payload::{PreparedRuntimeBlob, prepare_runtime_payloads};
+use crate::project::runtime_payload::PreparedRuntimeBlob;
 
 pub(super) fn build_runtime_cache(
     project_root: &Path,
@@ -44,7 +44,11 @@ pub(super) fn build_runtime_cache(
         let mut prim_entities = usd_bevy::PrimEntities::default();
         usd_bevy::project_stage(world, &live, &mut prim_entities);
         let prepared_meshes = prepare_render_blobs(world, &mut snapshot);
-        let prepared_runtime_payloads = prepare_runtime_payloads(world, &snapshot);
+        let prepared_runtime_payloads = super::runtime_payload::prepare_runtime_payloads_for_stage(
+            world,
+            &live.stage,
+            &snapshot,
+        );
         (prepared_meshes, prepared_runtime_payloads)
     };
     ensure!(

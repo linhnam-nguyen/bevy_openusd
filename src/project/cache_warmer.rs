@@ -19,8 +19,10 @@ use crate::project::{
     catalog::manifest_store::ManifestStore, model_wrapper::model_wrapper_path,
     scene::authoring::scene_path,
 };
-#[cfg(test)]
-use std::time::{Duration, Instant};
+
+#[path = "cache_preparation.rs"]
+mod preparation;
+pub(crate) use preparation::ProjectCachePreparation;
 
 const WARM_QUEUE_CAPACITY: usize = 2;
 struct WarmTarget {
@@ -188,33 +190,6 @@ impl ProjectCacheWarmQueue {
                 );
                 false
             }
-        }
-    }
-
-    #[cfg(test)]
-    fn wait_for(
-        &self,
-        project_root: &Path,
-        target: &ProjectCacheTarget,
-    ) -> Result<Option<ProjectCacheDescriptor>> {
-        let identity = ProjectCacheIdentity::for_project(
-            project_root,
-            target.clone(),
-            RuntimeProfile::NativeMedium,
-            SemanticConfig::default().hash(),
-        )?;
-        let store = ProjectCacheStore::new(project_root);
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
-            if let Some(descriptor) = store.load(&identity)? {
-                if descriptor.state != ProjectCacheState::Building {
-                    return Ok(Some(descriptor));
-                }
-            }
-            if Instant::now() >= deadline {
-                return Ok(None);
-            }
-            std::thread::sleep(Duration::from_millis(5));
         }
     }
 }
@@ -394,6 +369,9 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
     Ok(Some(path))
 }
 
+#[cfg(test)]
+#[path = "cache_warmer_closure_tests.rs"]
+mod closure_tests;
 #[cfg(test)]
 #[path = "cache_warmer_tests.rs"]
 mod tests;

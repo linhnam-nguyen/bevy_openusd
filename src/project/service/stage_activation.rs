@@ -4,7 +4,9 @@ use project_protocol::{ProjectReadError, ProjectReadErrorCode, ProjectStageTarge
 use usd_project::ProjectId;
 
 use super::ProjectApplicationService;
-use crate::project::scene::authoring::scene_path;
+use crate::project::{
+    cache::ProjectCacheTarget, cache_warmer::ProjectCachePreparation, scene::authoring::scene_path,
+};
 
 /// Backend-only canonical stage target resolved from a Project identity.
 ///
@@ -78,6 +80,25 @@ impl ProjectApplicationService {
             project_root,
             path,
         }))
+    }
+
+    /// Prepare the resolved target's derived cache before the render host
+    /// opens it. The wait remains on the activation preparation worker.
+    pub(crate) fn prepare_cache_for_activation(
+        &self,
+        target: &ProjectStageActivationTarget,
+    ) -> ProjectCachePreparation {
+        let cache_target = match target.target {
+            ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
+            ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
+                id: scene_id.to_string(),
+            },
+            ProjectStageTarget::Model(model_id) => ProjectCacheTarget::Model {
+                id: model_id.to_string(),
+            },
+        };
+        self.cache_warm
+            .prepare_for_activation(&target.project_root, cache_target)
     }
 }
 

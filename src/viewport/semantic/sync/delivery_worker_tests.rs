@@ -6,6 +6,7 @@ use usd_model::{HashDigest, SnapshotId, SnapshotSource};
 use super::*;
 use crate::project::cache::{ProjectCacheState, ProjectCacheStore, ProjectCacheTarget};
 use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::catalog::manifest_store::ManifestStore;
 
 fn work(revision: u64) -> DeliveryWork {
     DeliveryWork {
@@ -137,6 +138,14 @@ fn delivery_result_backpressure_preserves_latest_completion() {
 fn complete_delivery_publishes_a_ready_descriptor_for_the_active_identity() {
     let project = tempdir().expect("temporary Project root");
     usd_git::Repository::init(project.path()).expect("Project repository");
+    let manifest = usd_project::ProjectManifestV1::new(
+        usd_project::ProjectId::new_v4(),
+        "Delivery cache fixture",
+        usd_project::ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(project.path(), &manifest).expect("Project manifest");
     let context = ActiveProjectCacheContext::new(
         project.path().to_path_buf(),
         ProjectCacheTarget::ProjectRoot,

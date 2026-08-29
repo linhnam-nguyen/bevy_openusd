@@ -122,9 +122,29 @@ fn resolve_project_activation(
     };
     let service = ProjectApplicationService::open(registry_path.to_path_buf())
         .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
-    service
+    let target = service
         .resolve_stage_activation(request.command.project_id, request.command.target.clone())
-        .map_err(|error| format!("Project stage activation was rejected: {error}"))
+        .map_err(|error| format!("Project stage activation was rejected: {error}"))?;
+    if let Some(target) = target.as_ref() {
+        let cache_preparation = service.prepare_cache_for_activation(target);
+        match cache_preparation {
+            crate::project::cache_warmer::ProjectCachePreparation::Ready => {}
+            crate::project::cache_warmer::ProjectCachePreparation::Empty => {
+                bevy::log::debug!("[project-cache] activation target is empty")
+            }
+            crate::project::cache_warmer::ProjectCachePreparation::FallbackRequired => {
+                bevy::log::debug!(
+                    "[project-cache] activation cache unavailable; canonical source fallback remains active"
+                )
+            }
+            crate::project::cache_warmer::ProjectCachePreparation::TimedOut => {
+                bevy::log::warn!(
+                    "[project-cache] activation cache preparation timed out; canonical source fallback remains active"
+                )
+            }
+        }
+    }
+    Ok(target)
 }
 
 pub(super) fn install(app: &mut App) {
@@ -323,3 +343,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "project_activation_cache_tests.rs"]
+mod cache_tests;

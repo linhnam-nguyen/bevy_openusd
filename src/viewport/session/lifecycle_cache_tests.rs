@@ -10,11 +10,21 @@ use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget};
 use crate::project::cache_hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
+use crate::project::catalog::manifest_store::ManifestStore;
 
 #[test]
 fn corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage() {
     let project = tempdir().expect("temporary Project repository");
     usd_git::Repository::init(project.path()).expect("initialize Git repository");
+    let manifest = usd_project::ProjectManifestV1::new(
+        usd_project::ProjectId::new_v4(),
+        "Cache fallback fixture",
+        usd_project::ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(project.path(), &manifest)
+        .expect("write Project manifest");
     let stage_path = project.path().join("stage.usda");
     fs::write(&stage_path, "#usda 1.0\n\ndef Xform \"World\" {}\n").expect("write canonical stage");
     let context = ActiveProjectCacheContext::new(

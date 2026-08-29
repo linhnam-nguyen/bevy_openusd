@@ -93,6 +93,30 @@ fn collect_target_files(
                 .with_context(|| format!("Scene cache target {id} is not in the manifest"))?;
             let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
             collect_one_file(project_root, &path, files)?;
+            let imported_directory = project_root
+                .join(PROJECT_METADATA_DIRECTORY)
+                .join("imports")
+                .join("scenes")
+                .join(id);
+            match fs::symlink_metadata(&imported_directory) {
+                Ok(metadata) => {
+                    ensure!(
+                        metadata.is_dir() && !metadata.file_type().is_symlink(),
+                        "Project imported Scene closure must be a regular directory: {}",
+                        imported_directory.display()
+                    );
+                    collect_files(project_root, &imported_directory, files)?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!(
+                            "read imported Scene closure {}",
+                            imported_directory.display()
+                        )
+                    });
+                }
+            }
             for member in crate::project::scene::authoring::read_scene_members(&path, scene.id)? {
                 let child = match member.target {
                     usd_project::SceneMemberTarget::Scene(child) => ProjectCacheTarget::Scene {

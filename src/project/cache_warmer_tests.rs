@@ -4,6 +4,7 @@ use image::RgbaImage;
 use tempfile::tempdir;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};
 
+use super::preparation::wait_for;
 use super::*;
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::model_import::{ModelImportRequest, ModelImporter, UsdModelImporter};
@@ -27,9 +28,8 @@ fn empty_project_is_warmed_without_a_stage_open_failure() -> Result<()> {
     let target = ProjectCacheTarget::ProjectRoot;
 
     assert!(queue.enqueue(directory.path(), target.clone()));
-    let descriptor = queue
-        .wait_for(directory.path(), &target)?
-        .expect("empty Project warm completes");
+    let descriptor =
+        wait_for(&queue, directory.path(), &target)?.expect("empty Project warm completes");
     assert_eq!(descriptor.state, ProjectCacheState::Empty);
     Ok(())
 }
@@ -121,8 +121,7 @@ def Xform "World"
             id: model_id.to_string(),
         },
     ] {
-        let descriptor = queue
-            .wait_for(directory.path(), &target)?
+        let descriptor = wait_for(&queue, directory.path(), &target)?
             .expect("fresh Project target warm completes");
         assert_eq!(descriptor.state, ProjectCacheState::Ready);
         let runtime = descriptor.runtime.expect("Ready runtime manifest");
