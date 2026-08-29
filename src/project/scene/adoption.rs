@@ -118,6 +118,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         manifest_candidate.scenes.push(SceneManifestEntry {
             id: scene_id,
             storage_key,
+            display_name: scene_name.to_owned(),
         });
     }
     if request.set_as_root {

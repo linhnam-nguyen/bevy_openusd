@@ -52,11 +52,11 @@ pub(super) fn project_tree(
     let mut nodes = Vec::with_capacity(scenes.len() + models.len());
     nodes.extend(scenes.iter().map(|scene| ProjectContentNode::Scene {
         scene_id: scene.id,
-        name: scene.storage_key.to_string(),
+        name: scene.display_name.clone(),
     }));
     nodes.extend(models.iter().map(|model| ProjectContentNode::Model {
         model_id: model.id,
-        name: model.storage_key.to_string(),
+        name: model.display_name.clone(),
         source: ModelSourceSummary {
             kind: model.source_kind.clone(),
         },

@@ -151,6 +151,7 @@ fn create_scene_rejects_model_root_and_invalid_names_without_mutation() {
         id: model_id,
         source_kind: usd_project::ModelSourceKind::Usd,
         storage_key: usd_project::StorageKey::new("model").unwrap(),
+        display_name: "Model".to_owned(),
     });
     model_root.root = usd_project::ProjectRoot::Model(model_id);
     ManifestStore::write_manifest_atomic(&project_root, &model_root).unwrap();

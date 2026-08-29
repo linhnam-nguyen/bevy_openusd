@@ -15,11 +15,13 @@ fn stage_activation_resolves_a_registered_model_to_its_canonical_wrapper() {
         vec![SceneManifestEntry {
             id: scene_id,
             storage_key: StorageKey::new("scene").unwrap(),
+            display_name: "Scene".to_owned(),
         }],
         vec![ModelManifestEntry {
             id: model_id,
             source_kind: ModelSourceKind::Usd,
             storage_key: StorageKey::new("model").unwrap(),
+            display_name: "Model".to_owned(),
         }],
     );
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();

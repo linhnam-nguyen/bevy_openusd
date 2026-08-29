@@ -22,6 +22,11 @@ pub(crate) fn ensure_protected_root_scene_atomic(
     project_root: &Path,
     base_manifest: &ProjectManifestV1,
 ) -> Result<ProjectManifestV1> {
+    let migrated_base = base_manifest
+        .clone()
+        .migrate_legacy()
+        .context("migrate base Project manifest before Root Scene migration")?;
+    let base_manifest = &migrated_base;
     base_manifest
         .validate()
         .context("validate base Project manifest before Root Scene migration")?;
@@ -37,6 +42,7 @@ pub(crate) fn ensure_protected_root_scene_atomic(
     let mut next_manifest = base_manifest.clone();
     next_manifest.scenes.push(SceneManifestEntry {
         id: root_scene_id,
+        display_name: base_manifest.name.clone(),
         storage_key: protected_root_storage_key(base_manifest, root_scene_id)?,
     });
     next_manifest.root = ProjectRoot::Scene(root_scene_id);
@@ -101,7 +107,7 @@ fn legacy_root_members(
             Some(SceneMember {
                 id: SceneMemberId::new_v4(),
                 target: SceneMemberTarget::Scene(scene_id),
-                name: Some(scene.storage_key.to_string()),
+                name: Some(scene.display_name.clone()),
                 transform: Default::default(),
             })
         }
@@ -118,7 +124,7 @@ fn legacy_root_members(
             Some(SceneMember {
                 id: SceneMemberId::new_v4(),
                 target: SceneMemberTarget::Model(model_id),
-                name: Some(model.storage_key.to_string()),
+                name: Some(model.display_name.clone()),
                 transform: Default::default(),
             })
         }
@@ -200,6 +206,7 @@ mod tests {
             vec![SceneManifestEntry {
                 id: scene_id,
                 storage_key: StorageKey::new("Existing Scene").unwrap(),
+                display_name: "Existing Scene".to_owned(),
             }],
             Vec::new(),
         );
@@ -235,6 +242,7 @@ mod tests {
                 id: model_id,
                 source_kind: ModelSourceKind::Usd,
                 storage_key: StorageKey::new("Existing Model").unwrap(),
+                display_name: "Existing Model".to_owned(),
             }],
         );
         let wrapper = model_wrapper_path(directory.path(), model_id);

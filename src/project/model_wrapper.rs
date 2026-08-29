@@ -155,6 +155,7 @@ pub(crate) fn publish_model_wrapper_atomic(
         id: request.prepared.id,
         source_kind: request.prepared.source_kind.clone(),
         storage_key,
+        display_name: model_name.clone(),
     });
     if request.set_as_root {
         manifest_candidate.root = ProjectRoot::Model(request.prepared.id);

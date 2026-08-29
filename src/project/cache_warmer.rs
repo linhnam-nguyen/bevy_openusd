@@ -378,3 +378,7 @@ mod closure_tests;
 #[cfg(test)]
 #[path = "cache_warmer_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cache_warmer_c1_tests.rs"]
+mod c1_tests;

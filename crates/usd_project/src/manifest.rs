@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{ModelId, ModelSourceKind, ProjectRoot, SceneId};
 
-pub const PROJECT_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const PROJECT_MANIFEST_SCHEMA_VERSION: u32 = 2;
 
 /// Errors raised by the versioned Project manifest contract.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -16,6 +16,8 @@ pub enum ProjectManifestError {
     UnsupportedSchemaVersion { expected: u32, actual: u32 },
     #[error("Project name must not be empty")]
     EmptyProjectName,
+    #[error("Project content display name must not be empty")]
+    EmptyDisplayName,
     #[error("invalid storage key: {value}")]
     InvalidStorageKey { value: String },
     #[error("duplicate SceneId in Project manifest: {id}")]
@@ -123,6 +125,27 @@ impl ProjectManifestV1 {
         Ok(())
     }
 
+    /// Upgrades the pre-display-name manifest without changing stable IDs or
+    /// storage keys. Legacy storage keys were the only human label available,
+    /// so they are the deterministic migration source.
+    pub fn migrate_legacy(mut self) -> Result<Self, ProjectManifestError> {
+        if self.schema_version == 1 {
+            for scene in &mut self.scenes {
+                if scene.display_name.trim().is_empty() {
+                    scene.display_name = scene.storage_key.to_string();
+                }
+            }
+            for model in &mut self.models {
+                if model.display_name.trim().is_empty() {
+                    model.display_name = model.storage_key.to_string();
+                }
+            }
+            self.schema_version = PROJECT_MANIFEST_SCHEMA_VERSION;
+        }
+        self.validate_schema_version()?;
+        Ok(self)
+    }
+
     /// Returns a value whose sequence fields have stable ID ordering.
     pub fn canonicalized(&self) -> Self {
         let mut canonical = self.clone();
@@ -150,6 +173,9 @@ impl ProjectManifestV1 {
                     value: scene.storage_key.to_string(),
                 });
             }
+            if scene.display_name.trim().is_empty() {
+                return Err(ProjectManifestError::EmptyDisplayName);
+            }
         }
 
         for model in &self.models {
@@ -160,6 +186,9 @@ impl ProjectManifestV1 {
                 return Err(ProjectManifestError::DuplicateStorageKey {
                     value: model.storage_key.to_string(),
                 });
+            }
+            if model.display_name.trim().is_empty() {
+                return Err(ProjectManifestError::EmptyDisplayName);
             }
             if model.source_kind.validate().is_err() {
                 return Err(ProjectManifestError::InvalidModelSourceKind);
@@ -247,6 +276,8 @@ impl TryFrom<ProjectManifestV1> for ValidatedProjectManifest {
 pub struct SceneManifestEntry {
     pub id: SceneId,
     pub storage_key: StorageKey,
+    #[serde(default)]
+    pub display_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -254,86 +285,10 @@ pub struct ModelManifestEntry {
     pub id: ModelId,
     pub source_kind: ModelSourceKind,
     pub storage_key: StorageKey,
+    #[serde(default)]
+    pub display_name: String,
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{ModelId, ProjectId};
-
-    fn storage_key(value: &str) -> StorageKey {
-        StorageKey::new(value).unwrap()
-    }
-
-    #[test]
-    fn canonical_json_is_independent_of_insertion_order() {
-        let scene_a = SceneManifestEntry {
-            id: SceneId::new_v4(),
-            storage_key: storage_key("scene-a"),
-        };
-        let scene_b = SceneManifestEntry {
-            id: SceneId::new_v4(),
-            storage_key: storage_key("scene-b"),
-        };
-        let model_a = ModelManifestEntry {
-            id: ModelId::new_v4(),
-            source_kind: ModelSourceKind::Usd,
-            storage_key: storage_key("model-a"),
-        };
-        let left = ProjectManifestV1::new(
-            ProjectId::new_v4(),
-            "Project",
-            ProjectRoot::Empty,
-            vec![scene_a.clone(), scene_b.clone()],
-            vec![model_a.clone()],
-        );
-        let right = ProjectManifestV1::new(
-            left.project_id,
-            left.name.clone(),
-            ProjectRoot::Empty,
-            vec![scene_b, scene_a],
-            vec![model_a],
-        );
-
-        let left_json = serde_json::to_string_pretty(&left.canonicalized()).unwrap();
-        let right_json = serde_json::to_string_pretty(&right.canonicalized()).unwrap();
-
-        assert_eq!(left_json, right_json);
-    }
-
-    #[test]
-    fn unsafe_storage_keys_are_rejected() {
-        for value in [
-            "",
-            ".",
-            "..",
-            "/absolute",
-            "\\absolute",
-            "nested/key",
-            "C:drive",
-            "nul\0",
-        ] {
-            assert!(
-                StorageKey::new(value).is_err(),
-                "accepted unsafe key {value:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn schema_version_must_be_exactly_one() {
-        let mut manifest = ProjectManifestV1::new(
-            ProjectId::new_v4(),
-            "Project",
-            ProjectRoot::Empty,
-            Vec::new(),
-            Vec::new(),
-        );
-        manifest.schema_version = 2;
-
-        assert!(matches!(
-            manifest.validate_schema_version(),
-            Err(ProjectManifestError::UnsupportedSchemaVersion { actual: 2, .. })
-        ));
-    }
-}
+#[path = "manifest_tests.rs"]
+mod tests;

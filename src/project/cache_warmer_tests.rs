@@ -47,6 +47,7 @@ fn fresh_project_import_warms_root_scene_and_model_to_ready() -> Result<()> {
         vec![usd_project::SceneManifestEntry {
             id: scene_id,
             storage_key: usd_project::StorageKey::new("scene").unwrap(),
+            display_name: "Scene".to_owned(),
         }],
         Vec::new(),
     );
@@ -177,10 +178,12 @@ fn affected_scene_targets_include_composed_ancestors_and_root() -> Result<()> {
             usd_project::SceneManifestEntry {
                 id: root_scene,
                 storage_key: usd_project::StorageKey::new("root").unwrap(),
+                display_name: "Root".to_owned(),
             },
             usd_project::SceneManifestEntry {
                 id: child_scene,
                 storage_key: usd_project::StorageKey::new("child").unwrap(),
+                display_name: "Child".to_owned(),
             },
         ],
         Vec::new(),
@@ -240,20 +243,24 @@ fn affected_model_targets_include_composed_scene_ancestors_but_not_siblings() ->
             usd_project::SceneManifestEntry {
                 id: root_scene,
                 storage_key: usd_project::StorageKey::new("root").unwrap(),
+                display_name: "Root".to_owned(),
             },
             usd_project::SceneManifestEntry {
                 id: child_scene,
                 storage_key: usd_project::StorageKey::new("child").unwrap(),
+                display_name: "Child".to_owned(),
             },
             usd_project::SceneManifestEntry {
                 id: sibling_scene,
                 storage_key: usd_project::StorageKey::new("sibling").unwrap(),
+                display_name: "Sibling".to_owned(),
             },
         ],
         vec![usd_project::ModelManifestEntry {
             id: model_id,
             source_kind: usd_project::ModelSourceKind::Usd,
             storage_key: usd_project::StorageKey::new("model").unwrap(),
+            display_name: "Model".to_owned(),
         }],
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
@@ -317,6 +324,7 @@ fn target_content_warm_keys_change_with_target_content() -> Result<()> {
         vec![usd_project::SceneManifestEntry {
             id: scene_id,
             storage_key: usd_project::StorageKey::new("scene").unwrap(),
+            display_name: "Scene".to_owned(),
         }],
         Vec::new(),
     );
@@ -339,62 +347,5 @@ fn target_content_warm_keys_change_with_target_content() -> Result<()> {
         SemanticConfig::default().hash(),
     )?;
     assert_ne!(identity_key(&first), identity_key(&second));
-    Ok(())
-}
-
-#[test]
-fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> {
-    let directory = tempdir()?;
-    usd_git::Repository::init(directory.path())?;
-    let manifest = ProjectManifestV1::new(
-        ProjectId::new_v4(),
-        "Warm Project",
-        ProjectRoot::Empty,
-        vec![
-            usd_project::SceneManifestEntry {
-                id: SceneId::new_v4(),
-                storage_key: usd_project::StorageKey::new("first").unwrap(),
-            },
-            usd_project::SceneManifestEntry {
-                id: SceneId::new_v4(),
-                storage_key: usd_project::StorageKey::new("second").unwrap(),
-            },
-        ],
-        Vec::new(),
-    );
-    let first_scene = manifest.scenes[0].id;
-    let second_scene = manifest.scenes[1].id;
-    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    let first_path =
-        crate::project::scene::authoring::author_scene_atomic(directory.path(), first_scene)?;
-    let second_path =
-        crate::project::scene::authoring::author_scene_atomic(directory.path(), second_scene)?;
-    let first_identity = ProjectCacheIdentity::for_project(
-        directory.path(),
-        ProjectCacheTarget::Scene {
-            id: first_scene.to_string(),
-        },
-        RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
-    )?;
-    let store = ProjectCacheStore::new(directory.path());
-    store.publish(&ProjectCacheDescriptor::new(
-        first_identity.clone(),
-        ProjectCacheState::Partial,
-        None,
-    )?)?;
-
-    fs::write(second_path, b"unrelated sibling edit")?;
-    let unchanged_identity = ProjectCacheIdentity::for_project(
-        directory.path(),
-        ProjectCacheTarget::Scene {
-            id: first_scene.to_string(),
-        },
-        RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
-    )?;
-    assert_eq!(first_identity, unchanged_identity);
-    assert!(store.load(&unchanged_identity)?.is_some());
-    assert!(first_path.is_file());
     Ok(())
 }

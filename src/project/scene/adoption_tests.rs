@@ -18,6 +18,7 @@ fn scene_manifest(scene_id: SceneId) -> SceneManifestEntry {
     SceneManifestEntry {
         id: scene_id,
         storage_key: StorageKey::new(scene_id.to_string()).unwrap(),
+        display_name: scene_id.to_string(),
     }
 }
 

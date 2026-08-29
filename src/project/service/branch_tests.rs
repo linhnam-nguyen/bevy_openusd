@@ -102,6 +102,7 @@ fn switching_to_a_legacy_scene_branch_migrates_and_composes_content() {
         vec![SceneManifestEntry {
             id: scene_id,
             storage_key: StorageKey::new("Legacy Scene").unwrap(),
+            display_name: "Legacy Scene".to_owned(),
         }],
         Vec::new(),
     );
@@ -294,6 +295,7 @@ fn invalid_target_scene_projection_reports_repository_truth_after_checkout() {
         vec![SceneManifestEntry {
             id: scene_id,
             storage_key: StorageKey::new("root-scene").unwrap(),
+            display_name: "Root Scene".to_owned(),
         }],
         Vec::new(),
     );

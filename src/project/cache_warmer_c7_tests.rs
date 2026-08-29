@@ -20,6 +20,7 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
         vec![usd_project::SceneManifestEntry {
             id: scene_id,
             storage_key: usd_project::StorageKey::new("Legacy Scene")?,
+            display_name: "Legacy Scene".to_owned(),
         }],
         Vec::new(),
     );

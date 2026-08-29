@@ -24,10 +24,12 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
             usd_project::SceneManifestEntry {
                 id: scene_a,
                 storage_key: StorageKey::new("scene-a")?,
+                display_name: "Scene A".to_owned(),
             },
             usd_project::SceneManifestEntry {
                 id: scene_b,
                 storage_key: StorageKey::new("scene-b")?,
+                display_name: "Scene B".to_owned(),
             },
         ],
         Vec::new(),
@@ -131,6 +133,7 @@ fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<(
             id: model_id,
             source_kind: ModelSourceKind::Usd,
             storage_key: StorageKey::new("model")?,
+            display_name: "Model".to_owned(),
         }],
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;

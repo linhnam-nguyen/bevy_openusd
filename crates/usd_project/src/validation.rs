@@ -61,10 +61,12 @@ mod tests {
                 SceneManifestEntry {
                     id: scene_id,
                     storage_key: storage_key("scene-a"),
+                    display_name: "Scene A".to_owned(),
                 },
                 SceneManifestEntry {
                     id: scene_id,
                     storage_key: storage_key("scene-b"),
+                    display_name: "Scene B".to_owned(),
                 },
             ],
             Vec::new(),
@@ -82,11 +84,13 @@ mod tests {
             vec![SceneManifestEntry {
                 id: SceneId::new_v4(),
                 storage_key: shared_key.clone(),
+                display_name: "Scene".to_owned(),
             }],
             vec![ModelManifestEntry {
                 id: ModelId::new_v4(),
                 source_kind: ModelSourceKind::Usd,
                 storage_key: shared_key,
+                display_name: "Model".to_owned(),
             }],
         );
         assert!(matches!(
@@ -134,11 +138,13 @@ mod tests {
             vec![SceneManifestEntry {
                 id: scene_id,
                 storage_key: storage_key("scene"),
+                display_name: "Scene".to_owned(),
             }],
             vec![ModelManifestEntry {
                 id: model_id,
                 source_kind: ModelSourceKind::Usd,
                 storage_key: storage_key("model"),
+                display_name: "Model".to_owned(),
             }],
         );
 

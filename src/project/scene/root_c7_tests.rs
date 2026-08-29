@@ -20,6 +20,7 @@ fn migrated_legacy_scene_composes_content_and_is_idempotent() -> anyhow::Result<
         vec![SceneManifestEntry {
             id: scene_id,
             storage_key: StorageKey::new("Existing Scene")?,
+            display_name: "Existing Scene".to_owned(),
         }],
         Vec::new(),
     );
@@ -89,6 +90,7 @@ fn migrated_legacy_model_composes_content_and_is_idempotent() -> anyhow::Result<
             id: model_id,
             source_kind: ModelSourceKind::Usd,
             storage_key: StorageKey::new("Existing Model")?,
+            display_name: "Existing Model".to_owned(),
         }],
     );
     let wrapper = model_wrapper_path(directory.path(), model_id);

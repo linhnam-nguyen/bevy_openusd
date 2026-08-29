@@ -75,6 +75,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
     let mut manifest = request.base_manifest.clone();
     manifest.scenes.push(SceneManifestEntry {
         id: scene_id,
+        display_name: request.storage_key.to_string(),
         storage_key: request.storage_key,
     });
     if request.set_as_root {
