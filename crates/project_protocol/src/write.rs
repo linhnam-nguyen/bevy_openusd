@@ -64,6 +64,7 @@ pub enum ProjectWriteErrorCode {
     ProjectDeleteCleanupFailed,
     ProjectRemoveFailed,
     SceneNotFound,
+    ProtectedRootScene,
     SceneInUse,
     SceneDeleteFailed,
     SceneDeleteCleanupFailed,

@@ -1,8 +1,45 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 use tempfile::tempdir;
+use usd_project::{ProjectManifestV1, ProjectRoot};
 
 use super::*;
+use crate::project::catalog::{
+    manifest_store::ManifestStore, workspace_registry::WorkspaceRegistry,
+};
+
+#[test]
+fn opening_the_workspace_migrates_a_legacy_empty_project_root() {
+    let directory = tempdir().unwrap();
+    let project_root = directory.path().join("legacy");
+    usd_git::Repository::init(&project_root).unwrap();
+    let project_id = usd_project::ProjectId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        project_id,
+        "Legacy Project",
+        ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(&project_root, &manifest).unwrap();
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &project_root, None).unwrap();
+
+    let _service = ProjectApplicationService::open(&registry_path).unwrap();
+    let migrated = ManifestStore::read_validated(&project_root).unwrap();
+    let ProjectRoot::Scene(root_scene_id) = migrated.raw().root else {
+        panic!("legacy Project must migrate to a protected Root Scene");
+    };
+    assert!(
+        crate::project::scene::root::is_protected_root_scene(
+            &crate::project::scene::authoring::scene_path(&project_root, root_scene_id),
+            root_scene_id,
+        )
+        .unwrap()
+    );
+}
 
 #[test]
 fn tracked_derived_state_changes_invalidate_an_old_import_inspection() {

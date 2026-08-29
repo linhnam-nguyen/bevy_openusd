@@ -20,13 +20,18 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     );
 
     let project_id = ProjectId::new_v4();
-    let manifest = ProjectManifestV1::new(
+    let base_manifest = ProjectManifestV1::new(
         project_id,
         "Branch Project",
         ProjectRoot::Empty,
         Vec::new(),
         Vec::new(),
     );
+    let manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &repository,
+        &base_manifest,
+    )
+    .unwrap();
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
     fs::write(repository.join("branch.txt"), b"main").unwrap();
     run_git(&repository, &["add", "."]);
@@ -86,13 +91,18 @@ fn service_branch_switch_reports_typed_invalid_and_missing_branch_failures() {
     );
 
     let project_id = ProjectId::new_v4();
-    let manifest = ProjectManifestV1::new(
+    let base_manifest = ProjectManifestV1::new(
         project_id,
         "Branch Project",
         ProjectRoot::Empty,
         Vec::new(),
         Vec::new(),
     );
+    let manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &repository,
+        &base_manifest,
+    )
+    .unwrap();
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
     fs::write(repository.join("branch.txt"), b"main").unwrap();
     run_git(&repository, &["add", "."]);
@@ -130,13 +140,18 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
     );
 
     let project_id = ProjectId::new_v4();
-    let manifest = ProjectManifestV1::new(
+    let base_manifest = ProjectManifestV1::new(
         project_id,
         "Branch Project",
         ProjectRoot::Empty,
         Vec::new(),
         Vec::new(),
     );
+    let manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &repository,
+        &base_manifest,
+    )
+    .unwrap();
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main Project"]);
@@ -202,8 +217,14 @@ fn invalid_target_scene_projection_reports_repository_truth_after_checkout() {
         Vec::new(),
     );
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
-    crate::project::scene::authoring::author_scene_atomic_with_members(&repository, scene_id, &[])
-        .unwrap();
+    crate::project::scene::authoring::author_scene_atomic_with_graph_and_protection(
+        &repository,
+        scene_id,
+        &usd_project::SceneCompositionGraph::default(),
+        &[],
+        true,
+    )
+    .unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main Project"]);
     run_git(&repository, &["branch", "broken-scene"]);

@@ -48,9 +48,8 @@ pub(super) fn create_scene(
     let parent_scene_id = match target {
         ProjectWriteTarget::Project(target_project_id) if target_project_id == project_id => {
             match validated.raw().root {
-                ProjectRoot::Empty => None,
                 ProjectRoot::Scene(scene_id) => Some(scene_id),
-                ProjectRoot::Model(_) => {
+                ProjectRoot::Empty | ProjectRoot::Model(_) => {
                     return Err(ProjectWriteError::Invalid {
                         code: ProjectWriteErrorCode::InvalidRootForComposition,
                     });

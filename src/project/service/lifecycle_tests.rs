@@ -254,7 +254,7 @@ fn native_project_with_deleted_local_state_remains_importable() {
     assert_eq!(inspection.display_name, summary.name);
     assert_eq!(
         fs::read_dir(project_root.join(".usdhub")).unwrap().count(),
-        1
+        2
     );
 
     service.import_project(&project_root, &inspection).unwrap();

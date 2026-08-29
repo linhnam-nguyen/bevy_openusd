@@ -8,13 +8,14 @@ use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
 
 #[test]
-fn create_scene_promotes_an_empty_project_without_a_fake_placement() {
+fn create_scene_places_under_the_protected_project_root() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
     let registry_path = directory.path().join("workspace.json");
     let mut service = ProjectApplicationService::open(registry_path).unwrap();
     let project = service.create_project(&parent, "Scene Project").unwrap();
+    let project_root = parent.join("Scene Project");
 
     let created = service
         .create_scene(
@@ -24,11 +25,13 @@ fn create_scene_promotes_an_empty_project_without_a_fake_placement() {
         )
         .unwrap();
 
-    assert_eq!(created.placement_id, None);
-    assert!(matches!(
-        created.project.root,
-        usd_project::ProjectRoot::Scene(scene_id) if scene_id == created.scene_id
-    ));
+    let protected_root = match project.root {
+        usd_project::ProjectRoot::Scene(scene_id) => scene_id,
+        _ => panic!("new Project must have a protected Root Scene"),
+    };
+    assert!(created.placement_id.is_some());
+    assert_eq!(created.project.root, project.root);
+    assert_ne!(protected_root, created.scene_id);
     assert!(
         parent
             .join("Scene Project/.usdhub/scenes")
@@ -36,10 +39,18 @@ fn create_scene_promotes_an_empty_project_without_a_fake_placement() {
             .is_file()
     );
     let manifest = ManifestStore::read_validated(&parent.join("Scene Project")).unwrap();
-    assert_eq!(manifest.scenes().len(), 1);
+    assert_eq!(manifest.scenes().len(), 2);
     assert_eq!(manifest.raw().root, created.project.root);
+    let members = crate::project::scene::authoring::read_scene_members(
+        &crate::project::scene::authoring::scene_path(&project_root, protected_root),
+        protected_root,
+    )
+    .unwrap();
+    assert!(members.iter().any(|member| {
+        member.target == usd_project::SceneMemberTarget::Scene(created.scene_id)
+    }));
     assert!(
-        !parent
+        parent
             .join("Scene Project/.usdhub/cache/project-stage-mutations")
             .exists()
     );
@@ -99,7 +110,7 @@ fn create_scene_adds_one_identity_preserving_child_placement() {
             .unwrap()
             .scenes()
             .len(),
-        2
+        3
     );
 }
 

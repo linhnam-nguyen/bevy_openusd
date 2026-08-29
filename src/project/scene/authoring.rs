@@ -25,6 +25,7 @@ const MEMBER_ID_METADATA: &str = "usdhub:memberId";
 const MEMBER_TARGET_KIND_METADATA: &str = "usdhub:targetKind";
 const MEMBER_TARGET_ID_METADATA: &str = "usdhub:targetId";
 const MEMBER_NAME_METADATA: &str = "usdhub:name";
+const PROTECTED_ROOT_METADATA: &str = "usdhub:protectedRoot";
 const SCENE_SCHEMA_VERSION: i32 = 1;
 
 pub(crate) fn author_scene_atomic(project_root: &Path, scene_id: SceneId) -> Result<PathBuf> {
@@ -46,6 +47,16 @@ pub(crate) fn author_scene_atomic_with_graph(
     graph: &SceneCompositionGraph,
     members: &[SceneMember],
 ) -> Result<PathBuf> {
+    author_scene_atomic_with_graph_and_protection(project_root, scene_id, graph, members, false)
+}
+
+pub(crate) fn author_scene_atomic_with_graph_and_protection(
+    project_root: &Path,
+    scene_id: SceneId,
+    graph: &SceneCompositionGraph,
+    members: &[SceneMember],
+    protected_root: bool,
+) -> Result<PathBuf> {
     validate_member_ids(members)?;
     validate_scene_targets(graph, scene_id, members)?;
     let scene_directory = project_root
@@ -58,7 +69,7 @@ pub(crate) fn author_scene_atomic_with_graph(
     let mut temporary_created = false;
 
     let result = (|| {
-        let stage = new_scene_stage(scene_id, members)?;
+        let stage = new_scene_stage_with_protection(scene_id, members, protected_root)?;
         let temporary_path_string = temporary_path.to_string_lossy().into_owned();
         temporary_created = true;
         stage
@@ -91,8 +102,16 @@ pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
 }
 
 pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> {
+    new_scene_stage_with_protection(scene_id, members, false)
+}
+
+fn new_scene_stage_with_protection(
+    scene_id: SceneId,
+    members: &[SceneMember],
+    protected_root: bool,
+) -> Result<Stage> {
     let stage = Stage::builder().in_memory(format!("scene-{scene_id}.usda"))?;
-    let custom_data = scene_custom_data(scene_id);
+    let custom_data = scene_custom_data(scene_id, protected_root);
 
     stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
@@ -173,8 +192,8 @@ pub(crate) fn validate_scene_file(
     Ok(())
 }
 
-fn scene_custom_data(scene_id: SceneId) -> HashMap<String, Value> {
-    HashMap::from([
+fn scene_custom_data(scene_id: SceneId, protected_root: bool) -> HashMap<String, Value> {
+    let mut custom_data = HashMap::from([
         (
             SCENE_ID_METADATA.to_owned(),
             Value::String(scene_id.to_string()),
@@ -183,7 +202,11 @@ fn scene_custom_data(scene_id: SceneId) -> HashMap<String, Value> {
             SCHEMA_VERSION_METADATA.to_owned(),
             Value::Int(SCENE_SCHEMA_VERSION),
         ),
-    ])
+    ]);
+    if protected_root {
+        custom_data.insert(PROTECTED_ROOT_METADATA.to_owned(), Value::Bool(true));
+    }
+    custom_data
 }
 
 pub(crate) fn member_custom_data(member: &SceneMember) -> HashMap<String, Value> {

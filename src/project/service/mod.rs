@@ -122,17 +122,19 @@ impl ProjectApplicationService {
         stage_mutations: ProjectStageMutationQueue,
         progress: ProjectImportProgressStore,
     ) -> Result<Self, ProjectReadError> {
-        WorkspaceRegistry::load(registry_path)
-            .map(|registry| Self {
-                registry,
-                publication_coordinator,
-                stage_mutations,
-                progress,
-                cache_warm: ProjectCacheWarmQueue::default(),
-            })
-            .map_err(|_| ProjectReadError::HostUnavailable {
+        let registry = WorkspaceRegistry::load(registry_path).map_err(|_| {
+            ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,
-            })
+            }
+        })?;
+        migrate_registered_project_roots(&registry);
+        Ok(Self {
+            registry,
+            publication_coordinator,
+            stage_mutations,
+            progress,
+            cache_warm: ProjectCacheWarmQueue::default(),
+        })
     }
 
     /// Open with a shared LiveStage handoff queue and default publication
@@ -213,6 +215,24 @@ impl ProjectApplicationService {
             });
         }
         Ok((entry, manifest))
+    }
+}
+
+fn migrate_registered_project_roots(registry: &WorkspaceRegistry) {
+    for entry in registry.entries() {
+        let project_root = entry.repository_locator();
+        let Ok(manifest) = ManifestStore::read_validated(project_root) else {
+            continue;
+        };
+        if let Err(error) = crate::project::scene::root::ensure_protected_root_scene_atomic(
+            project_root,
+            manifest.raw(),
+        ) {
+            log::warn!(
+                "Project Root Scene migration skipped for {}: {error:#}",
+                project_root.display()
+            );
+        }
     }
 }
 

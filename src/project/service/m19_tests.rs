@@ -49,7 +49,8 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
         )
         .expect("create nested Scene");
     assert!(child.placement_id.is_some());
-    assert!(matches!(root.project.root, ProjectRoot::Scene(id) if id == root.scene_id));
+    assert_eq!(root.project.root, created.root);
+    assert_ne!(root.project.root, ProjectRoot::Scene(root.scene_id));
 
     let model_source = directory.path().join("assembly.usda");
     fs::write(
@@ -78,7 +79,7 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
     let ProjectReadResponse::ProjectTree { nodes, counts, .. } = tree.result.unwrap() else {
         panic!("Project tree read must succeed");
     };
-    assert_eq!(counts.scenes, 2);
+    assert_eq!(counts.scenes, 3);
     assert_eq!(counts.models, 1);
     assert_eq!(counts.model_placements, 1);
     assert!(nodes.iter().any(|node| matches!(

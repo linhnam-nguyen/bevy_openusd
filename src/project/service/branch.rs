@@ -69,6 +69,18 @@ fn switch_branch(
         Ok(manifest) => manifest,
         Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
     };
+    if crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &project_root,
+        manifest.raw(),
+    )
+    .is_err()
+    {
+        return Err(branch_project_invalid(project_id, &project_root));
+    }
+    let manifest = match validated_branch_manifest(project_id, &project_root) {
+        Ok(manifest) => manifest,
+        Err(_) => return Err(branch_project_invalid(project_id, &project_root)),
+    };
     let (nodes, counts) = match super::project_tree(&project_root, &manifest) {
         Ok(projection) => projection,
         Err(_) => return Err(branch_project_invalid(project_id, &project_root)),

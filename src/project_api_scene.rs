@@ -10,3 +10,5 @@ pub(crate) mod create;
 pub(crate) mod inspection;
 #[path = "project/scene/placement_transform.rs"]
 mod placement_transform;
+#[path = "project/scene/root.rs"]
+pub(crate) mod root;

@@ -52,12 +52,14 @@ pub(super) fn create_project(
                 code: ProjectWriteErrorCode::FilesystemFailure,
             })?;
         let project_id = usd_project::ProjectId::new_v4();
-        let manifest =
+        let base_manifest =
             ProjectManifestV1::new(project_id, name, ProjectRoot::Empty, Vec::new(), Vec::new());
-        ManifestStore::write_manifest_atomic(&project_root, &manifest).map_err(|_| {
-            ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::ManifestUnavailable,
-            }
+        crate::project::scene::root::ensure_protected_root_scene_atomic(
+            &project_root,
+            &base_manifest,
+        )
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::ManifestUnavailable,
         })?;
 
         let reopened =
@@ -143,11 +145,18 @@ pub(super) fn import_project(
                     code: ProjectWriteErrorCode::FilesystemFailure,
                 });
             }
-            let summary = super::inspection::project_summary(manifest.raw(), project_root)?;
+            let manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+                project_root,
+                manifest.raw(),
+            )
+            .map_err(|_| ProjectWriteError::Failed {
+                code: ProjectWriteErrorCode::ManifestUnavailable,
+            })?;
+            let summary = super::inspection::project_summary(&manifest, project_root)?;
             let _ = service.cache_warm.enqueue_project_targets(project_root);
             service
                 .registry
-                .register(manifest.raw().project_id, project_root, None)
+                .register(manifest.project_id, project_root, None)
                 .map_err(|_| ProjectWriteError::RegistrationFailed {
                     project_created: true,
                 })?;
@@ -169,6 +178,7 @@ fn adopt_git_project(
 ) -> Result<ProjectSummary, ProjectWriteError> {
     let layout = ProjectStorageLayout::new(project_root);
     let had_manifest = layout.manifest_path().exists();
+    let had_scenes = layout.scenes_dir().exists();
     let had_cache = layout.cache_dir().exists();
     let had_recovery = layout.recovery_dir().exists();
     let ignore = install_managed_ignore(project_root).map_err(|error| {
@@ -183,24 +193,33 @@ fn adopt_git_project(
         }
     })?;
     let project_id = usd_project::ProjectId::new_v4();
-    let manifest = ProjectManifestV1::new(
+    let base_manifest = ProjectManifestV1::new(
         project_id,
         &inspection.display_name,
         ProjectRoot::Empty,
         Vec::new(),
         Vec::new(),
     );
+    let mut created_root_scene = None;
     let result = (|| {
-        ManifestStore::write_manifest_atomic(project_root, &manifest).map_err(|_| {
-            ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::ManifestUnavailable,
-            }
-        })?;
         layout
             .ensure_local_state_roots()
             .map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::FilesystemFailure,
             })?;
+        let migrated_manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+            project_root,
+            &base_manifest,
+        )
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::ManifestUnavailable,
+        })?;
+        if let ProjectRoot::Scene(scene_id) = migrated_manifest.root {
+            created_root_scene = Some(crate::project::scene::authoring::scene_path(
+                project_root,
+                scene_id,
+            ));
+        }
         let validated =
             ManifestStore::read_validated(project_root).map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::ManifestUnavailable,
@@ -219,6 +238,12 @@ fn adopt_git_project(
     if result.is_err() && !matches!(&result, Err(ProjectWriteError::RegistrationFailed { .. })) {
         if !had_manifest {
             let _ = fs::remove_file(layout.manifest_path());
+        }
+        if let Some(root_scene_path) = created_root_scene {
+            let _ = fs::remove_file(root_scene_path);
+        }
+        if !had_scenes {
+            let _ = fs::remove_dir(layout.scenes_dir());
         }
         if !had_cache {
             let _ = fs::remove_dir(layout.cache_dir());

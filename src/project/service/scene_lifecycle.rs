@@ -49,6 +49,16 @@ impl ProjectApplicationService {
                 code: ProjectWriteErrorCode::ScenePlacementNotFound,
             });
         }
+        if let ProjectRoot::Scene(root_scene_id) = validated.raw().root
+            && members.iter().any(|member| {
+                member.id == request.placement_id
+                    && member.target == SceneMemberTarget::Scene(root_scene_id)
+            })
+        {
+            return Err(ProjectWriteError::Invalid {
+                code: ProjectWriteErrorCode::ProtectedRootScene,
+            });
+        }
         self.stage_mutations.ensure_capacity(project_root)?;
         crate::project::scene::authoring::remove_scene_member_atomic(
             &parent_path,
@@ -98,6 +108,11 @@ impl ProjectApplicationService {
                 code: ProjectWriteErrorCode::SceneNotFound,
             });
         }
+        if validated.raw().root == ProjectRoot::Scene(request.scene_id) {
+            return Err(ProjectWriteError::Invalid {
+                code: ProjectWriteErrorCode::ProtectedRootScene,
+            });
+        }
         let project_root = entry.repository_locator();
         for scene in validated.scenes() {
             let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
@@ -132,9 +147,6 @@ impl ProjectApplicationService {
         next_manifest
             .scenes
             .retain(|scene| scene.id != request.scene_id);
-        if next_manifest.root == ProjectRoot::Scene(request.scene_id) {
-            next_manifest.root = ProjectRoot::Empty;
-        }
         if crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
             project_root,
             &next_manifest,
@@ -186,9 +198,7 @@ impl ProjectApplicationService {
 mod tests {
     use std::fs;
 
-    use project_protocol::{
-        ProjectReadCommand, ProjectReadRequest, ProjectReadResponse, ProjectWriteTarget,
-    };
+    use project_protocol::ProjectWriteTarget;
     use tempfile::tempdir;
     use usd_project::ProjectRoot;
 
@@ -294,39 +304,29 @@ mod tests {
     }
 
     #[test]
-    fn delete_unreferenced_root_scene_makes_project_empty() {
+    fn protected_root_scene_cannot_be_deleted() {
         let directory = tempdir().unwrap();
         let parent = directory.path().join("projects");
         fs::create_dir(&parent).unwrap();
         let mut service =
             ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
         let summary = service.create_project(&parent, "Project").unwrap();
-        let root = parent.join("Project");
-        let scene = service
-            .create_scene(summary.id, ProjectWriteTarget::Project(summary.id), "Root")
-            .unwrap();
+        let project_root = parent.join("Project");
+        let root_scene_id = match summary.root {
+            ProjectRoot::Scene(scene_id) => scene_id,
+            _ => panic!("new Project must have a protected Root Scene"),
+        };
 
-        service
-            .delete_scene(ProjectDeleteSceneRequest {
+        assert_eq!(
+            service.delete_scene(ProjectDeleteSceneRequest {
                 project_id: summary.id,
-                scene_id: scene.scene_id,
+                scene_id: root_scene_id,
+            }),
+            Err(ProjectWriteError::Invalid {
+                code: ProjectWriteErrorCode::ProtectedRootScene
             })
-            .unwrap();
-
-        assert!(!scene_path(&root, scene.scene_id).exists());
-        let reopened =
-            ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
-        let response = reopened
-            .execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects))
-            .result
-            .unwrap();
-        let ProjectReadResponse::Projects(items) = response else {
-            panic!("Project list response expected");
-        };
-        let project_protocol::ProjectListItem::Available(summary) = &items[0] else {
-            panic!("available Project expected");
-        };
-        assert_eq!(summary.root, ProjectRoot::Empty);
+        );
+        assert!(scene_path(&project_root, root_scene_id).is_file());
     }
 
     #[test]

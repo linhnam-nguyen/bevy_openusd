@@ -176,10 +176,10 @@ fn stage_activation_resolves_project_and_standalone_scene_targets_without_flatte
         )
         .unwrap();
 
-    let project_root = service
+    let project_stage = service
         .resolve_stage_activation(
             project.id,
-            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root.scene_id)),
+            ProjectStageTarget::ProjectRoot(project.root.clone()),
         )
         .unwrap()
         .unwrap();
@@ -192,10 +192,10 @@ fn stage_activation_resolves_project_and_standalone_scene_targets_without_flatte
         .unwrap()
         .unwrap();
 
-    assert_eq!(project_root.path, standalone_root.path);
+    assert_ne!(project_stage.path, standalone_root.path);
     assert_eq!(
-        project_root.target,
-        ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root.scene_id))
+        project_stage.target,
+        ProjectStageTarget::ProjectRoot(project.root.clone())
     );
     assert_eq!(
         standalone_root.target,
@@ -231,7 +231,7 @@ fn stage_activation_resolves_project_and_standalone_scene_targets_without_flatte
 }
 
 #[test]
-fn empty_project_root_has_no_stage_activation_target() {
+fn new_project_root_has_a_stage_activation_target() {
     let directory = tempdir().unwrap();
     let projects = directory.path().join("projects");
     fs::create_dir(&projects).unwrap();
@@ -241,15 +241,14 @@ fn empty_project_root_has_no_stage_activation_target() {
         .create_project(&projects, "Empty Activation")
         .unwrap();
 
-    assert_eq!(
-        service
-            .resolve_stage_activation(
-                project.id,
-                ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
-            )
-            .unwrap(),
-        None
-    );
+    let target = service
+        .resolve_stage_activation(
+            project.id,
+            ProjectStageTarget::ProjectRoot(project.root.clone()),
+        )
+        .unwrap()
+        .expect("new Project must resolve its protected Root Scene");
+    assert!(target.path.is_file());
 }
 
 #[test]

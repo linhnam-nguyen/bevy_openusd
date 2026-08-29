@@ -77,9 +77,8 @@ fn publish_model_inner(
     let (parent_scene_id, set_as_root) = match target {
         ProjectWriteTarget::Project(target_project_id) if target_project_id == project_id => {
             match validated.raw().root {
-                ProjectRoot::Empty => (None, true),
                 ProjectRoot::Scene(scene_id) => (Some(scene_id), false),
-                ProjectRoot::Model(_) => {
+                ProjectRoot::Empty | ProjectRoot::Model(_) => {
                     return Err(ProjectWriteError::Invalid {
                         code: ProjectWriteErrorCode::InvalidRootForComposition,
                     });
@@ -193,7 +192,7 @@ mod tests {
 
     use openusd::usd::Stage;
     use tempfile::tempdir;
-    use usd_project::{ProjectRoot, SceneMemberTarget};
+    use usd_project::SceneMemberTarget;
 
     use super::*;
 
@@ -219,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_project_model_import_becomes_root_without_a_placement() {
+    fn project_level_model_import_places_under_the_protected_root() {
         let directory = tempdir().unwrap();
         let (mut service, project) = service_with_project(directory.path());
         let source = model_source(directory.path());
@@ -238,11 +237,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(response.placement_id.is_none());
-        assert_eq!(response.project.root, ProjectRoot::Model(response.model_id));
+        assert!(response.placement_id.is_some());
+        assert_eq!(response.project.root, project.root);
         assert_eq!(response.project.counts.models, 1);
         assert!(
-            !directory
+            directory
                 .path()
                 .join("projects/Project/.usdhub/cache/project-stage-mutations")
                 .exists()
@@ -298,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn model_root_rejects_a_second_model_import_before_consuming_preparation() {
+    fn project_level_model_imports_share_the_protected_root() {
         let directory = tempdir().unwrap();
         let (mut service, project) = service_with_project(directory.path());
         let source = model_source(directory.path());
@@ -314,10 +313,11 @@ mod tests {
             1,
         )
         .unwrap();
-        assert_eq!(first.project.root, ProjectRoot::Model(first.model_id));
+        assert!(first.placement_id.is_some());
+        assert_eq!(first.project.root, project.root);
 
         queue.prepare("second".to_owned(), 2, source.clone());
-        let error = publish_model(
+        let second = publish_model(
             &mut service,
             &queue,
             project.id,
@@ -326,12 +326,9 @@ mod tests {
             "second".to_owned(),
             2,
         )
-        .unwrap_err();
-        assert_eq!(
-            error,
-            ProjectWriteError::Invalid {
-                code: ProjectWriteErrorCode::InvalidRootForComposition
-            }
-        );
+        .unwrap();
+        assert!(second.placement_id.is_some());
+        assert_eq!(second.project.root, project.root);
+        assert_eq!(second.project.counts.models, 2);
     }
 }

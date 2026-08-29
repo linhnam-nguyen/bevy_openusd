@@ -74,9 +74,8 @@ fn adopt_scene_inner(
     let (parent_scene_id, set_as_root) = match target {
         ProjectWriteTarget::Project(target_project_id) if target_project_id == project_id => {
             match validated.raw().root {
-                ProjectRoot::Empty => (None, true),
                 ProjectRoot::Scene(scene_id) => (Some(scene_id), false),
-                ProjectRoot::Model(_) => {
+                ProjectRoot::Empty | ProjectRoot::Model(_) => {
                     return Err(ProjectWriteError::Invalid {
                         code: ProjectWriteErrorCode::InvalidRootForComposition,
                     });
@@ -183,17 +182,15 @@ fn adopt_scene_inner(
 mod tests {
     use std::fs;
 
-    use tempfile::tempdir;
-    use usd_project::ProjectRoot;
-
     use super::*;
     use crate::project::{
         scene::inspection::inspect_composition,
         service::{ProjectApplicationService, ProjectImportProgressStore},
     };
+    use tempfile::tempdir;
 
     #[test]
-    fn empty_project_adoption_returns_no_placement_and_publishes_scene() {
+    fn project_level_adoption_places_scene_under_the_protected_root() {
         let directory = tempdir().unwrap();
         let parent = directory.path().join("projects");
         fs::create_dir(&parent).unwrap();
@@ -218,9 +215,9 @@ mod tests {
                 1,
             )
             .unwrap();
-        assert!(adopted.placement_id.is_none());
+        assert!(adopted.placement_id.is_some());
         assert_eq!(adopted.operation_id, "operation-1");
-        assert!(matches!(adopted.project.root, ProjectRoot::Scene(_)));
+        assert_eq!(adopted.project.root, summary.root);
         assert_eq!(adopted.progress.operation_id, "operation-1");
         assert_eq!(adopted.progress.generation, 1);
         assert_eq!(adopted.progress.phase, ProjectImportPhase::Completed);

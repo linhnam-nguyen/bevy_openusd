@@ -4,3 +4,4 @@ pub(crate) mod authoring;
 pub(crate) mod create;
 pub(crate) mod inspection;
 mod placement_transform;
+pub(crate) mod root;
