@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     collections::HashMap,
     fs,
     path::Path,
@@ -132,6 +133,36 @@ fn worker_resolves_the_older_property_change_from_real_git_history() {
         Some(CanonicalValue::Text("door".to_owned()))
     );
     assert_eq!(provenance.history_head, head.id().to_string());
+}
+
+#[test]
+fn worker_cancels_a_started_job_when_its_generation_is_superseded() {
+    let repository_dir = tempfile::tempdir().expect("create provenance repository");
+    configure_repository(repository_dir.path());
+    write_stage(repository_dir.path(), "wall", "Initial Mark");
+    commit_repository(repository_dir.path(), "initial BIM property");
+    write_stage(repository_dir.path(), "door", "Change Mark");
+    commit_repository(repository_dir.path(), "change BIM property");
+
+    let repository = Repository::open(repository_dir.path()).expect("open provenance repository");
+    let head = repository
+        .head()
+        .expect("read repository head")
+        .expect("repository has a head");
+    let job = BimProvenanceJob {
+        request_id: "provenance-stale".to_owned(),
+        target: SceneAnchor::active_session("/World/Door"),
+        property: "bim:Mark".to_owned(),
+        entity_key: EntityKey::from("/World/Door"),
+        history_head: head.id().clone(),
+        stage_path: repository_dir.path().join("model.usda"),
+        generation: 1,
+    };
+    let first_check = Cell::new(true);
+
+    let outcome = resolve_job(&job, || first_check.replace(false));
+
+    assert!(matches!(outcome, ResolveOutcome::Cancelled));
 }
 
 fn configure_repository(directory: &Path) {
