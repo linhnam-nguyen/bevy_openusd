@@ -23,6 +23,9 @@ mod classification_real_fixture_tests;
 mod m8_performance_tests;
 
 #[cfg(test)]
+mod m8_failure_tests;
+
+#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
