@@ -7,6 +7,7 @@ pub enum ProjectLocationKind {
     CreateProject,
     ImportProject,
     ImportScene,
+    LinkScene,
     ImportModel,
 }
 

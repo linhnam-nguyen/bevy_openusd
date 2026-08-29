@@ -9,15 +9,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{adoption_authoring, authoring, inspection::inspect_composition};
+use super::{adoption_authoring, adoption_support, authoring};
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::source_closure::materialize_source_closure;
 use anyhow::{Context, Result, bail, ensure};
-use openusd::usd::{InitialLoadSet, Stage};
 use usd_project::{
     CompositionClassification, CompositionInspection, ProjectManifestV1, ProjectRoot,
-    SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMember, SceneMemberId,
-    SceneMemberTarget, ScenePlacementTransform, StorageKey,
+    SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMember, ScenePlacementTransform,
+    StorageKey,
 };
 use uuid::Uuid;
 
@@ -40,6 +39,8 @@ pub(crate) struct SceneAdoptionRequest<'a> {
     pub target_scene_id: Option<SceneId>,
     pub set_as_root: bool,
     pub placement: ScenePlacementTransform,
+    /// When set, publish a private source binding for the synchronized copy.
+    pub linked_source: Option<&'a Path>,
 }
 
 /// The identities and manifest proposed by a successful adoption.
@@ -57,10 +58,10 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .base_manifest
         .validate()
         .context("validate base Project manifest")?;
-    ensure_adoptable(request.inspection)?;
-    ensure_current_manifest(request.project_root, request.base_manifest)?;
+    adoption_support::ensure_adoptable(request.inspection)?;
+    adoption_support::ensure_current_manifest(request.project_root, request.base_manifest)?;
 
-    let default_prim = revalidate_source(request.source, request.inspection)?;
+    let default_prim = adoption_support::revalidate_source(request.source, request.inspection)?;
     let scene_name = request.name.trim();
     ensure!(
         !scene_name.is_empty(),
@@ -101,7 +102,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 .any(|entry| entry.id == parent_scene_id),
             "parent Scene is not registered in the Project manifest"
         );
-        let (_, member) = propose_scene_placement_with_name(
+        let (_, member) = adoption_support::propose_scene_placement_with_name(
             request.graph,
             parent_scene_id,
             scene_id,
@@ -143,6 +144,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .join("imports")
         .join(SCENES_DIRECTORY)
         .join(scene_id.to_string());
+    let temporary_binding_path = transaction_directory.join("linked-source.json");
     let final_scene_path = authoring::scene_path(request.project_root, scene_id);
     let final_source_directory = request
         .project_root
@@ -161,6 +163,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     let mut scene_published = false;
     let mut source_published = false;
     let mut parent_backup_created = false;
+    let mut binding_published = false;
+    let final_binding_path = crate::project::link::binding_path(request.project_root, scene_id);
 
     let result = (|| {
         if scene_is_new {
@@ -186,6 +190,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 !final_scene_path.exists(),
                 "new Project Scene canonical layer already exists"
             );
+            if let Some(linked_source) = request.linked_source {
+                crate::project::link::prepare_binding(
+                    &temporary_binding_path,
+                    scene_id,
+                    linked_source,
+                )?;
+            }
         }
 
         if let (Some(parent_scene_path), Some(temporary_parent_path), Some(parent_members)) = (
@@ -246,6 +257,19 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             scene_published = true;
         }
 
+        if request.linked_source.is_some() {
+            ensure!(
+                !final_binding_path.exists(),
+                "canonical linked source binding already exists"
+            );
+            if let Some(parent) = final_binding_path.parent() {
+                fs::create_dir_all(parent).context("create linked source binding directory")?;
+            }
+            fs::rename(&temporary_binding_path, &final_binding_path)
+                .context("publish linked source binding")?;
+            binding_published = true;
+        }
+
         if manifest_candidate != request.base_manifest.canonicalized() {
             ManifestStore::write_manifest_atomic(request.project_root, &manifest_candidate)
                 .context("publish adopted Project manifest")?;
@@ -261,7 +285,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             manifest: manifest_candidate,
         }),
         Err(error) => {
-            if let Err(rollback_error) = rollback_publication(
+            if let Err(rollback_error) = adoption_support::rollback_publication(
                 parent_scene_path.as_deref(),
                 &parent_backup_path,
                 parent_backup_created,
@@ -270,6 +294,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 scene_published,
                 &final_source_directory,
                 source_published,
+                &final_binding_path,
+                binding_published,
             ) {
                 Err(error.context(format!(
                     "rollback Scene adoption publication: {rollback_error}"
@@ -289,119 +315,13 @@ pub(crate) fn propose_scene_placement(
     parent_scene_id: SceneId,
     target_scene_id: SceneId,
 ) -> Result<(SceneCompositionGraph, SceneMember)> {
-    propose_scene_placement_with_name(
+    adoption_support::propose_scene_placement_with_name(
         graph,
         parent_scene_id,
         target_scene_id,
         "",
         ScenePlacementTransform::IDENTITY,
     )
-}
-
-fn propose_scene_placement_with_name(
-    graph: &SceneCompositionGraph,
-    parent_scene_id: SceneId,
-    target_scene_id: SceneId,
-    name: &str,
-    transform: ScenePlacementTransform,
-) -> Result<(SceneCompositionGraph, SceneMember)> {
-    let mut proposed_graph = graph.clone();
-    proposed_graph
-        .add_placement(parent_scene_id, target_scene_id)
-        .context("validate proposed Scene placement")?;
-    Ok((
-        proposed_graph,
-        SceneMember {
-            id: SceneMemberId::new_v4(),
-            target: SceneMemberTarget::Scene(target_scene_id),
-            name: (!name.is_empty()).then(|| name.to_owned()),
-            transform,
-        },
-    ))
-}
-
-fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()> {
-    ensure!(
-        matches!(
-            inspection.classification,
-            CompositionClassification::NativeUsdHubScene | CompositionClassification::SceneLike
-        ),
-        "USD source is not an eligible Scene adoption candidate"
-    );
-    ensure!(
-        inspection.dependencies.iter().all(|dependency| {
-            !matches!(
-                dependency.classification,
-                usd_project::DependencyClassification::Missing
-                    | usd_project::DependencyClassification::Unsupported
-            )
-        }),
-        "USD source has unresolved or unsupported composition dependencies"
-    );
-    Ok(())
-}
-
-fn ensure_current_manifest(project_root: &Path, expected: &ProjectManifestV1) -> Result<()> {
-    let current = ManifestStore::read_validated(project_root)
-        .context("read current Project manifest before Scene adoption")?;
-    ensure!(
-        current.raw() == &expected.canonicalized(),
-        "Project manifest changed after the adoption candidate was inspected"
-    );
-    Ok(())
-}
-
-fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<String> {
-    ensure!(
-        source.is_file(),
-        "Scene adoption source disappeared or is not a file"
-    );
-    let actual = inspect_composition(source).context("reinspect Scene adoption source")?;
-    ensure!(
-        &actual == expected,
-        "Scene adoption source changed after inspection"
-    );
-    ensure_adoptable(&actual)?;
-
-    let source_string = source
-        .to_str()
-        .context("Scene adoption source path must be valid UTF-8")?;
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(source_string)
-        .context("reopen Scene adoption source")?;
-    stage
-        .default_prim()
-        .map(|token| token.as_str().to_owned())
-        .context("Scene adoption source has no defaultPrim")
-}
-
-fn rollback_publication(
-    parent_path: Option<&Path>,
-    backup_path: &Path,
-    backup_created: bool,
-    parent_published: bool,
-    scene_path: &Path,
-    scene_published: bool,
-    source_path: &Path,
-    source_published: bool,
-) -> Result<()> {
-    if scene_published {
-        fs::remove_file(scene_path).context("remove newly published Scene layer")?;
-    }
-    if source_published {
-        fs::remove_dir_all(source_path).context("remove newly published Scene source closure")?;
-    }
-    if parent_published {
-        let parent_path = parent_path.context("published parent Scene path is missing")?;
-        if backup_created {
-            fs::remove_file(parent_path).context("remove replaced parent Scene layer")?;
-            fs::rename(backup_path, parent_path).context("restore parent Scene layer backup")?;
-        } else {
-            fs::remove_file(parent_path).context("remove newly published parent Scene layer")?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

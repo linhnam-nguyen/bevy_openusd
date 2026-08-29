@@ -68,6 +68,7 @@ fn request<'a>(
         target_scene_id: None,
         set_as_root: true,
         placement: ScenePlacementTransform::IDENTITY,
+        linked_source: None,
     }
 }
 

@@ -8,6 +8,7 @@ pub(crate) mod cache_warmer;
 pub(crate) mod catalog;
 pub(crate) mod commit;
 pub(crate) mod ghost_cache;
+pub(crate) mod link;
 pub(crate) mod model_import;
 pub(crate) mod model_wrapper;
 pub(crate) mod recovery;

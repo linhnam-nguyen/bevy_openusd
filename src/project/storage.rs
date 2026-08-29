@@ -13,6 +13,7 @@ pub(crate) const SCENES_DIRECTORY: &str = "scenes";
 pub(crate) const MODELS_DIRECTORY: &str = "models";
 pub(crate) const CACHE_DIRECTORY: &str = "cache";
 pub(crate) const RECOVERY_DIRECTORY: &str = "recovery";
+pub(crate) const LINKS_DIRECTORY: &str = "links";
 pub(crate) const CACHE_OBJECTS_RELATIVE_PATH: &str = ".usdhub/cache/objects";
 pub(crate) const PROJECT_MANIFEST_FILE: &str = "project.json";
 
@@ -23,6 +24,7 @@ const MANAGED_IGNORE_BLOCK: &str = concat!(
     "# BEGIN USDHub managed local state\n",
     ".usdhub/cache/\n",
     ".usdhub/recovery/\n",
+    ".usdhub/links/\n",
     "# END USDHub managed local state\n",
 );
 
@@ -67,6 +69,10 @@ impl ProjectStorageLayout {
 
     pub(crate) fn recovery_dir(&self) -> PathBuf {
         self.metadata_dir().join(RECOVERY_DIRECTORY)
+    }
+
+    pub(crate) fn links_dir(&self) -> PathBuf {
+        self.metadata_dir().join(LINKS_DIRECTORY)
     }
 
     /// Bootstrap only the local-state roots; object/session children stay lazy.

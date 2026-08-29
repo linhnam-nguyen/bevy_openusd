@@ -2,6 +2,8 @@
 pub(crate) mod adoption;
 #[path = "project/scene/adoption_authoring.rs"]
 pub(crate) mod adoption_authoring;
+#[path = "project/scene/adoption_support.rs"]
+mod adoption_support;
 #[path = "project/scene/authoring.rs"]
 pub(crate) mod authoring;
 #[path = "project/scene/create.rs"]

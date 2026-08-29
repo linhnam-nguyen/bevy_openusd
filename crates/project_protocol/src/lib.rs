@@ -43,11 +43,11 @@ pub use write::{
     ProjectBranchSwitchResponse, ProjectCreateRequest, ProjectCreateSceneRequest,
     ProjectDeleteSceneRequest, ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
     ProjectInspectionClassification, ProjectInspectionWarning, ProjectLifecycleRequest,
-    ProjectLifecycleResponse, ProjectModelWriteResponse, ProjectRemoveScenePlacementRequest,
-    ProjectRenameRequest, ProjectRenameResponse, ProjectSceneAdoptionResponse,
-    ProjectSceneLifecycleResponse, ProjectSceneWriteResponse, ProjectWriteCommand,
-    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
-    ProjectWriteResponse, ProjectWriteTarget,
+    ProjectLifecycleResponse, ProjectLinkSceneRequest, ProjectModelWriteResponse,
+    ProjectRemoveScenePlacementRequest, ProjectRenameRequest, ProjectRenameResponse,
+    ProjectSceneAdoptionResponse, ProjectSceneLifecycleResponse, ProjectSceneWriteResponse,
+    ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply,
+    ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]

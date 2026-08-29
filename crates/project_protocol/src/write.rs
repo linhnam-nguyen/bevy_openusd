@@ -7,7 +7,7 @@ use usd_project::{
 use crate::{LocalSelectionToken, PlacementSpec, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
-pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 5;
+pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 6;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -152,6 +152,18 @@ pub struct ProjectAdoptSceneRequest {
     pub placement: PlacementSpec,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ProjectLinkSceneRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectWriteTarget,
+    pub source: LocalSelectionToken,
+    pub inspection: CompositionInspection,
+    pub name: String,
+    pub operation_id: String,
+    pub generation: u64,
+    pub placement: PlacementSpec,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectSceneAdoptionResponse {
     pub project: ProjectSummary,
@@ -234,6 +246,7 @@ pub enum ProjectWriteRequest {
     CreateScene(ProjectCreateSceneRequest),
     Rename(ProjectRenameRequest),
     AdoptScene(ProjectAdoptSceneRequest),
+    LinkScene(ProjectLinkSceneRequest),
     ImportModel(ProjectImportModelRequest),
     SwitchBranch(ProjectBranchSwitchRequest),
     RemoveProject(ProjectLifecycleRequest),
@@ -249,6 +262,7 @@ pub enum ProjectWriteResponse {
     Scene(ProjectSceneWriteResponse),
     Renamed(ProjectRenameResponse),
     SceneAdopted(ProjectSceneAdoptionResponse),
+    SceneLinked(ProjectSceneAdoptionResponse),
     ModelImported(ProjectModelWriteResponse),
     BranchSwitched(ProjectBranchSwitchResponse),
     ProjectRemoved(ProjectLifecycleResponse),

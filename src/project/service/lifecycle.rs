@@ -126,6 +126,30 @@ impl ProjectApplicationService {
         )
     }
 
+    pub fn link_scene(
+        &mut self,
+        project_id: usd_project::ProjectId,
+        target: project_protocol::ProjectWriteTarget,
+        source: &Path,
+        inspection: &usd_project::CompositionInspection,
+        name: String,
+        operation_id: String,
+        generation: u64,
+        placement: project_protocol::PlacementSpec,
+    ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
+        super::scene_adoption::link_scene(
+            self,
+            project_id,
+            target,
+            source,
+            inspection,
+            name,
+            operation_id,
+            generation,
+            placement,
+        )
+    }
+
     pub fn publish_model(
         &mut self,
         preparation: &super::ProjectModelPreparationQueue,
