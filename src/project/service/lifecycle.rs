@@ -111,6 +111,7 @@ impl ProjectApplicationService {
         name: String,
         operation_id: String,
         generation: u64,
+        placement: project_protocol::PlacementSpec,
     ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
         super::scene_adoption::adopt_scene(
             self,
@@ -121,6 +122,7 @@ impl ProjectApplicationService {
             name,
             operation_id,
             generation,
+            placement,
         )
     }
 
@@ -132,6 +134,7 @@ impl ProjectApplicationService {
         source: &std::path::Path,
         operation_id: String,
         generation: u64,
+        placement: project_protocol::PlacementSpec,
     ) -> Result<project_protocol::ProjectModelWriteResponse, ProjectWriteError> {
         super::model::publish_model(
             self,
@@ -141,6 +144,7 @@ impl ProjectApplicationService {
             source,
             operation_id,
             generation,
+            placement,
         )
     }
 }

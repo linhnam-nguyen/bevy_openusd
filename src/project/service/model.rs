@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use project_protocol::{
-    ProjectImportPhase, ProjectImportProgress, ProjectModelWriteResponse, ProjectWriteError,
-    ProjectWriteErrorCode, ProjectWriteTarget,
+    PlacementSpec, ProjectImportPhase, ProjectImportProgress, ProjectModelWriteResponse,
+    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
 use usd_project::ProjectRoot;
 
@@ -21,6 +21,7 @@ pub(super) fn publish_model(
     source: &Path,
     operation_id: String,
     generation: u64,
+    placement_spec: PlacementSpec,
 ) -> Result<ProjectModelWriteResponse, ProjectWriteError> {
     service.progress.publish(ProjectImportProgress {
         operation_id: operation_id.clone(),
@@ -35,6 +36,7 @@ pub(super) fn publish_model(
         source,
         operation_id.clone(),
         generation,
+        placement_spec,
     );
     service.progress.publish(ProjectImportProgress {
         operation_id,
@@ -56,7 +58,13 @@ fn publish_model_inner(
     source: &Path,
     operation_id: String,
     generation: u64,
+    placement_spec: PlacementSpec,
 ) -> Result<ProjectModelWriteResponse, ProjectWriteError> {
+    let placement_transform = placement_spec
+        .resolve()
+        .map_err(|_| ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::InvalidPlacement,
+        })?;
     let publisher = service.publication_coordinator.publisher(project_id);
     let _publication = publisher
         .lock()
@@ -137,6 +145,7 @@ fn publish_model_inner(
     let placement = parent_scene_id.map(|parent_scene_id| ModelPlacement {
         parent_scene_id,
         parent_members: &parent_members,
+        transform: placement_transform,
     });
     service.progress.publish(ProjectImportProgress {
         operation_id: operation_id.clone(),
@@ -234,6 +243,7 @@ mod tests {
             &source,
             "model-root".to_owned(),
             1,
+            PlacementSpec::Default,
         )
         .unwrap();
 
@@ -267,6 +277,7 @@ mod tests {
             &source,
             "model-scene".to_owned(),
             2,
+            PlacementSpec::Default,
         )
         .unwrap();
 
@@ -312,6 +323,7 @@ mod tests {
             &source,
             "first".to_owned(),
             1,
+            PlacementSpec::Default,
         )
         .unwrap();
         assert!(first.placement_id.is_some());
@@ -326,6 +338,7 @@ mod tests {
             &source,
             "second".to_owned(),
             2,
+            PlacementSpec::Default,
         )
         .unwrap();
         assert!(second.placement_id.is_some());

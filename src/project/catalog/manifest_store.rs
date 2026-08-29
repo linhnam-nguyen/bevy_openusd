@@ -33,7 +33,8 @@ impl ManifestStore {
         let migrated = manifest
             .clone()
             .migrate_legacy()
-            .context("migrate Project manifest")?;
+            .context("migrate Project manifest")?
+            .canonicalized();
         if migrated != manifest {
             Self::write_manifest_atomic(project_root, &migrated)
                 .context("persist migrated Project manifest")?;

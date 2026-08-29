@@ -9,6 +9,7 @@ mod command;
 mod error;
 mod location;
 mod model_preparation;
+mod placement;
 mod progress;
 mod read;
 mod scene_inspection;
@@ -27,6 +28,7 @@ pub use model_preparation::{
     PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION, ProjectModelPreparationCommand,
     ProjectModelPreparationReply, ProjectModelPreparationRequest, ProjectModelPreparationResult,
 };
+pub use placement::{PlacementSpec, PlacementValidationError};
 pub use progress::{
     PROJECT_IMPORT_PROGRESS_PROTOCOL_VERSION, ProjectImportPhase, ProjectImportProgress,
     ProjectImportProgressCommand, ProjectImportProgressReply, ProjectImportProgressRequest,
@@ -234,6 +236,7 @@ mod tests {
                 name: "Assembly".to_owned(),
                 operation_id: "adoption-1".to_owned(),
                 generation: 11,
+                placement: PlacementSpec::Default,
             }));
 
         let encoded = serde_json::to_string(&command).unwrap();

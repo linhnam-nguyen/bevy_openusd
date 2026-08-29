@@ -5,7 +5,7 @@ use openusd::{sdf::Value, usd::Stage};
 use tempfile::tempdir;
 use usd_project::{
     ProjectId, ProjectManifestV1, ProjectRoot, SceneCompositionGraph, SceneId, SceneManifestEntry,
-    SceneMemberTarget, StorageKey,
+    SceneMemberTarget, ScenePlacementTransform, StorageKey,
 };
 
 use super::*;
@@ -67,6 +67,7 @@ fn request<'a>(
         parent_members: &[],
         target_scene_id: None,
         set_as_root: true,
+        placement: ScenePlacementTransform::IDENTITY,
     }
 }
 

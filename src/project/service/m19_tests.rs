@@ -69,6 +69,7 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
             &model_source,
             "m19-model".to_owned(),
             1,
+            project_protocol::PlacementSpec::Default,
         )
         .expect("publish Model into nested Scene");
     assert!(model.placement_id.is_some());

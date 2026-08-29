@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use project_protocol::{
-    ProjectImportPhase, ProjectImportProgress, ProjectSceneAdoptionResponse, ProjectWriteError,
-    ProjectWriteErrorCode, ProjectWriteTarget,
+    PlacementSpec, ProjectImportPhase, ProjectImportProgress, ProjectSceneAdoptionResponse,
+    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
 use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 
@@ -19,6 +19,7 @@ pub(super) fn adopt_scene(
     name: String,
     operation_id: String,
     generation: u64,
+    placement: PlacementSpec,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
     service.progress.publish(ProjectImportProgress {
         operation_id: operation_id.clone(),
@@ -39,6 +40,7 @@ pub(super) fn adopt_scene(
         name,
         operation_id.clone(),
         generation,
+        placement,
     );
     service.progress.publish(ProjectImportProgress {
         operation_id,
@@ -61,7 +63,13 @@ fn adopt_scene_inner(
     name: String,
     operation_id: String,
     generation: u64,
+    placement: PlacementSpec,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
+    let placement = placement
+        .resolve()
+        .map_err(|_| ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::InvalidPlacement,
+        })?;
     let (entry, validated) =
         service
             .validated_project(project_id)
@@ -144,6 +152,7 @@ fn adopt_scene_inner(
             parent_members: &parent_members,
             target_scene_id: None,
             set_as_root,
+            placement,
         },
     )
     .map_err(|_| ProjectWriteError::Failed {
@@ -218,6 +227,7 @@ mod tests {
                 "Assembly".to_owned(),
                 "operation-1".to_owned(),
                 1,
+                project_protocol::PlacementSpec::Default,
             )
             .unwrap();
         assert!(adopted.placement_id.is_some());
@@ -254,6 +264,7 @@ mod tests {
                 "Assembly".to_owned(),
                 "operation-root".to_owned(),
                 1,
+                project_protocol::PlacementSpec::Default,
             )
             .unwrap();
         let nested = service
@@ -265,6 +276,9 @@ mod tests {
                 "Nested Assembly".to_owned(),
                 "operation-nested".to_owned(),
                 2,
+                project_protocol::PlacementSpec::Matrix(
+                    "1 0 0 0\n0 1 0 0\n0 0 1 0\n3 4 5 1".to_owned(),
+                ),
             )
             .unwrap();
 
@@ -278,6 +292,8 @@ mod tests {
         assert!(members.iter().any(|member| {
             member.id == placement_id
                 && member.target == usd_project::SceneMemberTarget::Scene(nested.scene_id)
+                && member.transform
+                    == usd_project::ScenePlacementTransform::from_translation([3.0, 4.0, 5.0])
         }));
     }
 
@@ -312,6 +328,7 @@ mod tests {
                 "Assembly".to_owned(),
                 "adoption-progress".to_owned(),
                 5,
+                project_protocol::PlacementSpec::Default,
             )
             .unwrap();
 

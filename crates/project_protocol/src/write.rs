@@ -4,10 +4,10 @@ use usd_project::{
     ProjectSummary, RepositorySummary, SceneId, SceneMemberId,
 };
 
-use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
+use crate::{LocalSelectionToken, PlacementSpec, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
-pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 4;
+pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 5;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,6 +42,7 @@ pub enum ProjectWriteErrorCode {
     InvalidProjectName,
     InvalidSceneName,
     InvalidModelName,
+    InvalidPlacement,
     SelectionUnavailable,
     InvalidSelection,
     InvalidRootForComposition,
@@ -148,6 +149,7 @@ pub struct ProjectAdoptSceneRequest {
     pub name: String,
     pub operation_id: String,
     pub generation: u64,
+    pub placement: PlacementSpec,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -167,6 +169,7 @@ pub struct ProjectImportModelRequest {
     pub source: LocalSelectionToken,
     pub operation_id: String,
     pub generation: u64,
+    pub placement: PlacementSpec,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

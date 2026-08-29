@@ -12,7 +12,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use usd_project::{
     ModelManifestEntry, ProjectManifestV1, ProjectRoot, SceneId, SceneMember, SceneMemberTarget,
-    StorageKey,
+    ScenePlacementTransform, StorageKey,
 };
 use uuid::Uuid;
 
@@ -57,6 +57,7 @@ pub(crate) struct ModelWrapperRequest<'a> {
 pub(crate) struct ModelPlacement<'a> {
     pub parent_scene_id: SceneId,
     pub parent_members: &'a [SceneMember],
+    pub transform: ScenePlacementTransform,
 }
 
 /// Published Model identity and canonical wrapper location.
@@ -133,12 +134,15 @@ pub(crate) fn publish_model_wrapper_atomic(
         "canonical Model wrapper directory already exists"
     );
 
-    let placement = request.placement.as_ref().map(|_| SceneMember {
-        id: usd_project::SceneMemberId::new_v4(),
-        target: SceneMemberTarget::Model(request.prepared.id),
-        name: Some(model_name.clone()),
-        transform: Default::default(),
-    });
+    let placement = request
+        .placement
+        .as_ref()
+        .map(|placement_request| SceneMember {
+            id: usd_project::SceneMemberId::new_v4(),
+            target: SceneMemberTarget::Model(request.prepared.id),
+            name: Some(model_name.clone()),
+            transform: placement_request.transform,
+        });
     let parent_members = request.placement.as_ref().map(|placement_request| {
         let mut members = placement_request.parent_members.to_vec();
         members.push(

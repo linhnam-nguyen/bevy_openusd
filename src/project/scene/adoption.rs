@@ -17,7 +17,7 @@ use openusd::usd::{InitialLoadSet, Stage};
 use usd_project::{
     CompositionClassification, CompositionInspection, ProjectManifestV1, ProjectRoot,
     SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMember, SceneMemberId,
-    SceneMemberTarget, StorageKey,
+    SceneMemberTarget, ScenePlacementTransform, StorageKey,
 };
 use uuid::Uuid;
 
@@ -39,6 +39,7 @@ pub(crate) struct SceneAdoptionRequest<'a> {
     /// When set, place an existing Scene identity instead of allocating one.
     pub target_scene_id: Option<SceneId>,
     pub set_as_root: bool,
+    pub placement: ScenePlacementTransform,
 }
 
 /// The identities and manifest proposed by a successful adoption.
@@ -105,6 +106,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             parent_scene_id,
             scene_id,
             scene_name,
+            request.placement,
         )?;
         let mut parent_members = request.parent_members.to_vec();
         parent_members.push(member.clone());
@@ -287,7 +289,13 @@ pub(crate) fn propose_scene_placement(
     parent_scene_id: SceneId,
     target_scene_id: SceneId,
 ) -> Result<(SceneCompositionGraph, SceneMember)> {
-    propose_scene_placement_with_name(graph, parent_scene_id, target_scene_id, "")
+    propose_scene_placement_with_name(
+        graph,
+        parent_scene_id,
+        target_scene_id,
+        "",
+        ScenePlacementTransform::IDENTITY,
+    )
 }
 
 fn propose_scene_placement_with_name(
@@ -295,6 +303,7 @@ fn propose_scene_placement_with_name(
     parent_scene_id: SceneId,
     target_scene_id: SceneId,
     name: &str,
+    transform: ScenePlacementTransform,
 ) -> Result<(SceneCompositionGraph, SceneMember)> {
     let mut proposed_graph = graph.clone();
     proposed_graph
@@ -306,7 +315,7 @@ fn propose_scene_placement_with_name(
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(target_scene_id),
             name: (!name.is_empty()).then(|| name.to_owned()),
-            transform: Default::default(),
+            transform,
         },
     ))
 }

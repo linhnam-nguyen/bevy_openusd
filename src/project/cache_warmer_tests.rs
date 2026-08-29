@@ -109,6 +109,7 @@ def Xform "World"
         placement: Some(ModelPlacement {
             parent_scene_id: scene_id,
             parent_members: &[],
+            transform: Default::default(),
         }),
     })?;
 
