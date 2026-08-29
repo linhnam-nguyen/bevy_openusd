@@ -1,10 +1,21 @@
 use serde::{Deserialize, Serialize};
-use usd_project::{ProjectId, ProjectRoot};
+use usd_project::{ProjectId, ProjectRoot, SceneId};
 
 /// Version of the Project-to-render-host stage activation contract.
-pub const PROJECT_ACTIVATION_PROTOCOL_VERSION: u16 = 1;
+pub const PROJECT_ACTIVATION_PROTOCOL_VERSION: u16 = 2;
 
-/// Project/root identity requested by the active Project coordinator.
+/// The identity a Project activation request asks the render host to load.
+///
+/// `ProjectRoot` means the root declared by the Project manifest. `Scene`
+/// deliberately represents a standalone Scene target and is not a Project
+/// root, even when both variants resolve to the same canonical Scene layer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ProjectStageTarget {
+    ProjectRoot(ProjectRoot),
+    Scene(SceneId),
+}
+
+/// Project/stage identity requested by the active Project coordinator.
 ///
 /// The request deliberately contains no repository locator or filesystem
 /// path. The render host resolves the identity through its private Project
@@ -15,7 +26,7 @@ pub struct ProjectActivationCommand {
     pub request_id: String,
     pub generation: u64,
     pub project_id: ProjectId,
-    pub root: ProjectRoot,
+    pub target: ProjectStageTarget,
 }
 
 impl ProjectActivationCommand {
@@ -23,14 +34,14 @@ impl ProjectActivationCommand {
         request_id: impl Into<String>,
         generation: u64,
         project_id: ProjectId,
-        root: ProjectRoot,
+        target: ProjectStageTarget,
     ) -> Self {
         Self {
             protocol_version: PROJECT_ACTIVATION_PROTOCOL_VERSION,
             request_id: request_id.into(),
             generation,
             project_id,
-            root,
+            target,
         }
     }
 
@@ -63,18 +74,18 @@ pub enum ProjectActivationError {
 }
 
 /// Result emitted by the render host after it has admitted and opened the
-/// requested Project root through the existing stage lifecycle.
+/// requested Project stage target through the existing stage lifecycle.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectActivationResult {
     Activated {
         generation: u64,
         project_id: ProjectId,
-        root: ProjectRoot,
+        target: ProjectStageTarget,
     },
     Failed {
         generation: u64,
         project_id: ProjectId,
-        root: ProjectRoot,
+        target: ProjectStageTarget,
         message: String,
     },
 }
@@ -96,7 +107,7 @@ impl ProjectActivationReply {
             result: ProjectActivationResult::Activated {
                 generation: command.generation,
                 project_id: command.project_id,
-                root: command.root.clone(),
+                target: command.target.clone(),
             },
         }
     }
@@ -108,7 +119,7 @@ impl ProjectActivationReply {
             result: ProjectActivationResult::Failed {
                 generation: command.generation,
                 project_id: command.project_id,
-                root: command.root.clone(),
+                target: command.target.clone(),
                 message: message.into(),
             },
         }
@@ -127,17 +138,17 @@ impl ProjectActivationReply {
             ProjectActivationResult::Activated {
                 generation,
                 project_id,
-                root,
+                target,
             }
             | ProjectActivationResult::Failed {
                 generation,
                 project_id,
-                root,
+                target,
                 ..
             } => {
                 *generation == command.generation
                     && *project_id == command.project_id
-                    && root == &command.root
+                    && target == &command.target
             }
         }
     }
@@ -154,7 +165,7 @@ mod tests {
             "activation-1",
             4,
             ProjectId::new_v4(),
-            ProjectRoot::Scene(SceneId::new_v4()),
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(SceneId::new_v4())),
         );
         command.validate().unwrap();
 
@@ -172,7 +183,7 @@ mod tests {
             "activation-1",
             4,
             ProjectId::new_v4(),
-            ProjectRoot::Scene(SceneId::new_v4()),
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(SceneId::new_v4())),
         );
         let mut reply = ProjectActivationReply::activated(&command);
         assert!(reply.matches_command(&command));
@@ -180,6 +191,24 @@ mod tests {
         if let ProjectActivationResult::Activated { generation, .. } = &mut reply.result {
             *generation += 1;
         }
+        assert!(!reply.matches_command(&command));
+    }
+
+    #[test]
+    fn activation_reply_rejects_a_different_stage_target() {
+        let command = ProjectActivationCommand::new(
+            "activation-1",
+            4,
+            ProjectId::new_v4(),
+            ProjectStageTarget::Scene(SceneId::new_v4()),
+        );
+        let mut reply = ProjectActivationReply::activated(&command);
+        reply.result = ProjectActivationResult::Activated {
+            generation: command.generation,
+            project_id: command.project_id,
+            target: ProjectStageTarget::Scene(SceneId::new_v4()),
+        };
+
         assert!(!reply.matches_command(&command));
     }
 }

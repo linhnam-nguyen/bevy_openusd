@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
-use project_protocol::{ProjectReadError, ProjectReadErrorCode};
-use usd_project::{ProjectId, ProjectRoot};
+use project_protocol::{ProjectReadError, ProjectReadErrorCode, ProjectStageTarget};
+use usd_project::ProjectId;
 
 use super::ProjectApplicationService;
 use crate::project::scene::authoring::scene_path;
@@ -14,12 +14,12 @@ use crate::project::scene::authoring::scene_path;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectStageActivationTarget {
     pub project_id: ProjectId,
-    pub root: ProjectRoot,
+    pub target: ProjectStageTarget,
     pub path: PathBuf,
 }
 
 impl ProjectApplicationService {
-    /// Resolve the canonical stage file for the registered Project root.
+    /// Resolve the canonical stage file for a registered Project stage target.
     ///
     /// Registry identity and manifest/root membership are validated before a
     /// path is returned. Empty Projects intentionally return `None` because
@@ -27,39 +27,50 @@ impl ProjectApplicationService {
     pub fn resolve_stage_activation(
         &self,
         project_id: ProjectId,
-        root: ProjectRoot,
+        target: ProjectStageTarget,
     ) -> Result<Option<ProjectStageActivationTarget>, ProjectReadError> {
         let (entry, manifest) = self.validated_project(project_id)?;
-        if manifest.raw().root != root {
-            return Err(ProjectReadError::Unavailable {
-                project_id,
-                code: ProjectReadErrorCode::InvalidProjectData,
-            });
-        }
-
-        let path = match root {
-            ProjectRoot::Empty => return Ok(None),
-            ProjectRoot::Scene(scene_id) => scene_path(entry.repository_locator(), scene_id),
-            ProjectRoot::Model(model_id) => crate::project::model_wrapper::model_wrapper_path(
-                entry.repository_locator(),
-                model_id,
-            ),
+        let path = match &target {
+            ProjectStageTarget::ProjectRoot(root) => {
+                if &manifest.raw().root != root {
+                    return Err(invalid_project_data(project_id));
+                }
+                match root {
+                    usd_project::ProjectRoot::Empty => return Ok(None),
+                    usd_project::ProjectRoot::Scene(scene_id) => {
+                        scene_path(entry.repository_locator(), *scene_id)
+                    }
+                    usd_project::ProjectRoot::Model(model_id) => {
+                        crate::project::model_wrapper::model_wrapper_path(
+                            entry.repository_locator(),
+                            *model_id,
+                        )
+                    }
+                }
+            }
+            ProjectStageTarget::Scene(scene_id) => {
+                if manifest.scene(*scene_id).is_none() {
+                    return Err(invalid_project_data(project_id));
+                }
+                scene_path(entry.repository_locator(), *scene_id)
+            }
         };
-        let path = fs::canonicalize(&path).map_err(|_| ProjectReadError::Unavailable {
-            project_id,
-            code: ProjectReadErrorCode::InvalidProjectData,
-        })?;
+        let path = fs::canonicalize(&path).map_err(|_| invalid_project_data(project_id))?;
         if !path.is_file() {
-            return Err(ProjectReadError::Unavailable {
-                project_id,
-                code: ProjectReadErrorCode::InvalidProjectData,
-            });
+            return Err(invalid_project_data(project_id));
         }
 
         Ok(Some(ProjectStageActivationTarget {
             project_id,
-            root,
+            target,
             path,
         }))
+    }
+}
+
+fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {
+    ProjectReadError::Unavailable {
+        project_id,
+        code: ProjectReadErrorCode::InvalidProjectData,
     }
 }

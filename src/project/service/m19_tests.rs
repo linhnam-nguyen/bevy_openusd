@@ -2,7 +2,7 @@ use std::fs;
 
 use project_protocol::{
     ProjectListItem, ProjectReadCommand, ProjectReadRequest, ProjectReadResponse,
-    ProjectWriteTarget,
+    ProjectStageTarget, ProjectWriteTarget,
 };
 use tempfile::tempdir;
 use usd_git::GitRepository;
@@ -88,7 +88,10 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
     )));
 
     let stage_target = service
-        .resolve_stage_activation(created.id, model.project.root)
+        .resolve_stage_activation(
+            created.id,
+            ProjectStageTarget::ProjectRoot(model.project.root),
+        )
         .expect("resolve canonical active root")
         .expect("non-empty Project has a stage target");
     assert!(stage_target.path.is_file());

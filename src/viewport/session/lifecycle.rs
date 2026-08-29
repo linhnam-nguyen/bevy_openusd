@@ -208,7 +208,7 @@ fn clear_projected_stage(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use project_protocol::{ProjectActivationCommand, ProjectActivationReply};
+    use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
     use usd_project::{ProjectId, ProjectRoot};
 
     fn fixture_path(file_name: &str) -> std::path::PathBuf {
@@ -276,7 +276,7 @@ mod tests {
             "activation-failed",
             2,
             ProjectId::new_v4(),
-            ProjectRoot::Empty,
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
         );
         let encoded =
             serde_json::to_string(&ProjectActivationReply::failed(&command, error)).unwrap();

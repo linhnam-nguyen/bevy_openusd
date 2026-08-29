@@ -5,6 +5,7 @@ use std::{
 
 use project_protocol::{
     ProjectListItem, ProjectReadCommand, ProjectReadError, ProjectReadRequest, ProjectReadResponse,
+    ProjectStageTarget,
 };
 use tempfile::tempdir;
 use usd_project::{
@@ -131,14 +132,121 @@ fn stage_activation_resolves_the_registered_project_root_to_a_canonical_stage() 
         .unwrap();
 
     let target = service
-        .resolve_stage_activation(project.id, created.project.root.clone())
+        .resolve_stage_activation(
+            project.id,
+            ProjectStageTarget::ProjectRoot(created.project.root.clone()),
+        )
         .unwrap()
         .expect("a non-empty Project root must resolve to a stage");
 
     assert_eq!(target.project_id, project.id);
-    assert_eq!(target.root, created.project.root);
+    assert_eq!(
+        target.target,
+        ProjectStageTarget::ProjectRoot(created.project.root)
+    );
     assert_eq!(target.path, fs::canonicalize(target.path.clone()).unwrap());
     assert!(target.path.is_file());
+}
+
+#[test]
+fn stage_activation_resolves_project_and_standalone_scene_targets_without_flattening() {
+    let directory = tempdir().unwrap();
+    let projects = directory.path().join("projects");
+    fs::create_dir(&projects).unwrap();
+    let registry_path = directory.path().join("workspace.json");
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+    let project = service
+        .create_project(&projects, "Activation Targets")
+        .unwrap();
+    let root = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Project(project.id),
+            "Root Scene",
+        )
+        .unwrap();
+    let nested = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Scene(root.scene_id),
+            "Nested Scene",
+        )
+        .unwrap();
+
+    let project_root = service
+        .resolve_stage_activation(
+            project.id,
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root.scene_id)),
+        )
+        .unwrap()
+        .unwrap();
+    let standalone_root = service
+        .resolve_stage_activation(project.id, ProjectStageTarget::Scene(root.scene_id))
+        .unwrap()
+        .unwrap();
+    let standalone_nested = service
+        .resolve_stage_activation(project.id, ProjectStageTarget::Scene(nested.scene_id))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(project_root.path, standalone_root.path);
+    assert_eq!(
+        project_root.target,
+        ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root.scene_id))
+    );
+    assert_eq!(
+        standalone_root.target,
+        ProjectStageTarget::Scene(root.scene_id)
+    );
+    assert_eq!(
+        standalone_nested.target,
+        ProjectStageTarget::Scene(nested.scene_id)
+    );
+    assert_ne!(standalone_root.path, standalone_nested.path);
+
+    assert_eq!(
+        service
+            .resolve_stage_activation(
+                project.id,
+                ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(nested.scene_id)),
+            )
+            .unwrap_err(),
+        ProjectReadError::Unavailable {
+            project_id: project.id,
+            code: project_protocol::ProjectReadErrorCode::InvalidProjectData,
+        }
+    );
+    assert_eq!(
+        service
+            .resolve_stage_activation(project.id, ProjectStageTarget::Scene(SceneId::new_v4()))
+            .unwrap_err(),
+        ProjectReadError::Unavailable {
+            project_id: project.id,
+            code: project_protocol::ProjectReadErrorCode::InvalidProjectData,
+        }
+    );
+}
+
+#[test]
+fn empty_project_root_has_no_stage_activation_target() {
+    let directory = tempdir().unwrap();
+    let projects = directory.path().join("projects");
+    fs::create_dir(&projects).unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let project = service
+        .create_project(&projects, "Empty Activation")
+        .unwrap();
+
+    assert_eq!(
+        service
+            .resolve_stage_activation(
+                project.id,
+                ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
+            )
+            .unwrap(),
+        None
+    );
 }
 
 #[test]

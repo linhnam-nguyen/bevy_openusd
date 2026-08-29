@@ -16,7 +16,7 @@ mod write;
 
 pub use activation::{
     PROJECT_ACTIVATION_PROTOCOL_VERSION, ProjectActivationCommand, ProjectActivationError,
-    ProjectActivationReply, ProjectActivationResult,
+    ProjectActivationReply, ProjectActivationResult, ProjectStageTarget,
 };
 pub use command::{PROJECT_READ_PROTOCOL_VERSION, ProjectReadCommand, ProjectReadReply};
 pub use error::{ProjectReadError, ProjectReadErrorCode};

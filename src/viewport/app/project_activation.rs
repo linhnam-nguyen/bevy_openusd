@@ -119,8 +119,8 @@ fn resolve_project_activation(
     let service = ProjectApplicationService::open(registry_path.to_path_buf())
         .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
     service
-        .resolve_stage_activation(request.command.project_id, request.command.root.clone())
-        .map_err(|error| format!("Project root activation was rejected: {error}"))
+        .resolve_stage_activation(request.command.project_id, request.command.target.clone())
+        .map_err(|error| format!("Project stage activation was rejected: {error}"))
 }
 
 pub(super) fn install(app: &mut App) {
@@ -210,7 +210,7 @@ fn publish_activation_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use project_protocol::{ProjectActivationCommand, ProjectActivationReply};
+    use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
     use usd_project::{ProjectId, ProjectRoot, SceneId};
     use viewport_protocol::SessionId;
 
@@ -221,7 +221,7 @@ mod tests {
             "activation-b",
             7,
             project_id,
-            ProjectRoot::Scene(SceneId::new_v4()),
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(SceneId::new_v4())),
         );
         let reply = ProjectActivationReply::activated(&command);
         let encoded = serde_json::to_string(&reply).unwrap();
@@ -235,8 +235,12 @@ mod tests {
     fn activation_requests_are_routed_to_the_requesting_session() {
         let interface = RenderServerInterface::default();
         let project_id = ProjectId::new_v4();
-        let command =
-            ProjectActivationCommand::new("activation-a", 1, project_id, ProjectRoot::Empty);
+        let command = ProjectActivationCommand::new(
+            "activation-a",
+            1,
+            project_id,
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
+        );
         interface
             .submit_project_activation(ProjectActivationRequest {
                 session_id: SessionId::new("session-a"),
@@ -265,7 +269,7 @@ mod tests {
             "activation-preparation-failure",
             4,
             ProjectId::new_v4(),
-            ProjectRoot::Empty,
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
         );
         let request = ProjectActivationRequest {
             session_id: SessionId::new("session-preparation"),
