@@ -91,6 +91,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
         scene_id,
         source.to_str().expect("source path"),
         "World",
+        "Stage open identity race fixture",
         &spatial,
     )
     .expect("write Scene wrapper A");
