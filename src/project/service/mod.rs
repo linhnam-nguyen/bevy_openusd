@@ -58,6 +58,8 @@ impl ProjectPublicationCoordinator {
 
 mod branch;
 #[cfg(test)]
+mod branch_projection_tests;
+#[cfg(test)]
 mod branch_tests;
 mod commit;
 #[cfg(test)]
