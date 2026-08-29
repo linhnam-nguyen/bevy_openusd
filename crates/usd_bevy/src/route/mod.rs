@@ -35,12 +35,14 @@ pub mod physics;
 pub mod points;
 pub mod profile;
 mod projection_dirty;
+mod projection_seed;
 pub mod reflect;
 pub mod shapes;
 pub mod skel;
 pub mod xform;
 
 pub use projection_dirty::{MeshProjectionConsumers, RenderProjectionDirtySet};
+pub use projection_seed::ProjectionSeed;
 
 use std::sync::Arc;
 

@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, Result, ensure};
 use openusd::usd::{InitialLoadSet, Stage};
-use usd_model::HashDigest;
+use usd_semantic::SemanticConfig;
 use viewport_protocol::RuntimeProfile;
 
 use super::cache::{
@@ -24,8 +24,6 @@ use crate::project::{
 use std::time::{Duration, Instant};
 
 const WARM_QUEUE_CAPACITY: usize = 2;
-const DEFAULT_CACHE_CONFIG_HASH: HashDigest = HashDigest::new([0; HashDigest::BYTE_LEN]);
-
 struct WarmJob {
     project_root: PathBuf,
     target: ProjectCacheTarget,
@@ -88,7 +86,7 @@ impl ProjectCacheWarmQueue {
             project_root,
             target.clone(),
             RuntimeProfile::NativeMedium,
-            DEFAULT_CACHE_CONFIG_HASH,
+            SemanticConfig::default().hash(),
         )?;
         let store = ProjectCacheStore::new(project_root);
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -128,7 +126,7 @@ fn warm_job(project_root: &Path, target: &ProjectCacheTarget) -> Result<()> {
         project_root,
         target.clone(),
         RuntimeProfile::NativeMedium,
-        DEFAULT_CACHE_CONFIG_HASH,
+        SemanticConfig::default().hash(),
     )?;
     let store = ProjectCacheStore::new(project_root);
     store.publish(&ProjectCacheDescriptor::new(

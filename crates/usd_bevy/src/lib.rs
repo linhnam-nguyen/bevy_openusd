@@ -46,7 +46,7 @@ pub use route::profile::{
 pub use route::skel::{SkinRoute, UsdBlendShapeBinding, UsdSkelAnimDriver};
 pub use route::{DisplayPurposes, PrimRoute, RouteCtx, SchemaRegistry, StageTime};
 pub use route::{FallbackMaterialColor, set_fallback_material_color};
-pub use route::{MeshProjectionConsumers, RenderProjectionDirtySet};
+pub use route::{MeshProjectionConsumers, ProjectionSeed, RenderProjectionDirtySet};
 pub use snippet::UsdSnippet;
 /// The inline-USD macro (see [`snippet::UsdSnippet`]).
 pub use usd_macro::usd;
@@ -72,6 +72,9 @@ impl Plugin for UsdPlugin {
         }
         // Intern projected meshes so identical prims share one GPU asset (6d).
         app.init_resource::<route::cache::ProjectionCache>();
+        // Application-owned persistent assets may seed the normal projection
+        // routes; the renderer only sees path-keyed Bevy handles.
+        app.init_resource::<route::ProjectionSeed>();
         app.init_resource::<route::instancer::PointInstancerStats>();
         app.init_resource::<route::instancer::PointInstancerSelection>();
         app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();

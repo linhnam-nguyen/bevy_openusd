@@ -5,6 +5,7 @@ use usd_bevy::{LiveRevision, LiveStage, ProgressiveProjectionState, ProjectionRe
 use usd_model::SemanticSnapshot;
 
 use crate::project::blob_store::PreparedMeshBlob;
+use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::ghost_cache::{
     PreparedRenderPayloads, prepare_render_blobs, prepare_render_blobs_for_entities,
     prepare_runtime_payloads,
@@ -35,6 +36,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
     let projection_generation = world
         .get_resource::<ProgressiveProjectionState>()
         .map_or(0, ProgressiveProjectionState::generation);
+    let cache_context = world.get_resource::<ActiveProjectCacheContext>().cloned();
     if let Some(mut runtime) = world.get_resource_mut::<RuntimeDeliveryRuntime>() {
         runtime.replace_pending(PendingRuntimeDelivery {
             identity: RuntimeDeliveryIdentity {
@@ -45,6 +47,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
             snapshot: snapshot.clone(),
             prepared_blobs,
             prepared_runtime_payloads,
+            cache_context,
         });
     }
     if let Some(interface) = world.get_resource::<RenderServerInterface>() {
@@ -66,6 +69,12 @@ pub(crate) fn flush_pending_runtime_delivery(world: &mut World) {
         return;
     }
 
+    let cache_context = world.get_resource::<ActiveProjectCacheContext>().cloned();
+    let project_root = cache_context
+        .as_ref()
+        .map(|context| context.project_root.clone())
+        .unwrap_or_else(|| settings.project_root.clone());
+
     let current_stage = world
         .get_non_send::<LiveStage>()
         .map(|live| (live.session_id(), live.current_revision()));
@@ -86,7 +95,7 @@ pub(crate) fn flush_pending_runtime_delivery(world: &mut World) {
         pending.identity.projection_generation = generation;
     }
     let started = Instant::now();
-    let submitted = runtime.submit_pending(&settings.project_root);
+    let submitted = runtime.submit_pending(&project_root, cache_context);
     if let Some(mut counters) =
         world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
     {
@@ -162,6 +171,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
                     // The retry only rebuilds the complete manifest/hierarchy.
                     prepared_blobs: Vec::new(),
                     prepared_runtime_payloads: result.prepared_runtime_payloads,
+                    cache_context: result.cache_context,
                 });
                 if let Some(mut counters) = world
                     .get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()

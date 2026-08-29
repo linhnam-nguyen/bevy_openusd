@@ -2,8 +2,8 @@ use bevy::asset::{Assets, RenderAssetUsages};
 use bevy::mesh::{Mesh, PrimitiveTopology};
 use bevy::prelude::*;
 
-use super::super::cache::ProjectionCache;
-use super::super::cache::{MAX_INTERNED, remember_source_mesh};
+use super::super::ProjectionSeed;
+use super::super::cache::{MAX_INTERNED, ProjectionCache, remember_source_mesh};
 use super::super::cache_key::source_mesh_key;
 use super::{MeshPatchAction, MeshRoute, UsdLocalExtent, mesh_patch_action};
 use crate::read::geom::{Interpolation, MeshPrimvar, read_mesh};
@@ -152,6 +152,45 @@ fn repeated_source_content_reuses_mesh_before_conversion() {
         Some(1)
     );
     assert_eq!(world.resource::<ProjectionCache>().stats().hits, 1);
+}
+
+#[test]
+fn persistent_mesh_seed_is_consumed_by_the_normal_route() {
+    let (stage, path) = mesh_stage();
+    let ctx = RouteCtx::new(&stage, &path);
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<ProjectionSeed>();
+    let mut seeded = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
+    seeded.insert_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
+    );
+    seeded.insert_indices(bevy::mesh::Indices::U32(vec![0, 1, 2]));
+    let handle = world.resource_mut::<Assets<Mesh>>().add(seeded);
+    world.resource_mut::<ProjectionSeed>().insert_mesh(
+        path.as_str(),
+        handle.clone(),
+        Some(([0.0; 3], [2.0, 2.0, 0.0])),
+    );
+    let entity = world.spawn_empty().id();
+
+    MeshRoute.project(&ctx, &mut world, entity);
+
+    assert_eq!(world.get::<Mesh3d>(entity).expect("seeded mesh").0, handle);
+    assert_eq!(world.resource::<ProjectionSeed>().pending_meshes(), 0);
+    assert_eq!(world.resource::<Assets<Mesh>>().len(), 1);
+    assert_eq!(
+        world.get::<UsdLocalExtent>(entity),
+        Some(&UsdLocalExtent {
+            min: [0.0, 0.0, 0.0],
+            max: [2.0, 2.0, 0.0],
+        })
+    );
 }
 
 #[test]

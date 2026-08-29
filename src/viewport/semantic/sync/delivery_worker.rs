@@ -13,6 +13,7 @@ use viewport_protocol::RuntimeProfile;
 use crate::project::blob_store::{
     BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob,
 };
+use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::runtime_delivery::{
     RuntimeDeliveryBundle, build_runtime_delivery_with_payloads,
 };
@@ -34,6 +35,7 @@ pub(crate) struct PendingRuntimeDelivery {
     pub(crate) snapshot: SemanticSnapshot,
     pub(crate) prepared_blobs: Vec<PreparedMeshBlob>,
     pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
+    pub(crate) cache_context: Option<ActiveProjectCacheContext>,
 }
 
 #[derive(Debug)]
@@ -44,6 +46,7 @@ struct DeliveryWork {
     prepared_blobs: Vec<PreparedMeshBlob>,
     prepared_runtime_payloads: PreparedRuntimePayloads,
     profile: RuntimeProfile,
+    cache_context: Option<ActiveProjectCacheContext>,
 }
 
 #[derive(Debug)]
@@ -54,6 +57,7 @@ pub(crate) struct DeliveryResult {
     pub(crate) blob_reads: u64,
     pub(crate) bytes: u64,
     pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
+    pub(crate) cache_context: Option<ActiveProjectCacheContext>,
 }
 
 #[derive(Debug, Default)]
@@ -165,7 +169,11 @@ impl RuntimeDeliveryRuntime {
         self.pending = Some(pending);
     }
 
-    pub(crate) fn submit_pending(&mut self, project_root: &Path) -> bool {
+    pub(crate) fn submit_pending(
+        &mut self,
+        project_root: &Path,
+        cache_context: Option<ActiveProjectCacheContext>,
+    ) -> bool {
         let Some(pending) = self.pending.take() else {
             return false;
         };
@@ -176,6 +184,7 @@ impl RuntimeDeliveryRuntime {
             prepared_blobs: pending.prepared_blobs,
             prepared_runtime_payloads: pending.prepared_runtime_payloads,
             profile: RuntimeProfile::NativeMedium,
+            cache_context,
         };
         match self.queue.submit(work) {
             Ok(()) => true,
@@ -186,6 +195,7 @@ impl RuntimeDeliveryRuntime {
                     snapshot: work.snapshot,
                     prepared_blobs: work.prepared_blobs,
                     prepared_runtime_payloads: work.prepared_runtime_payloads,
+                    cache_context: work.cache_context,
                 });
                 false
             }
@@ -233,6 +243,7 @@ fn delivery_worker(
             blob_reads,
             bytes,
             prepared_runtime_payloads: work.prepared_runtime_payloads,
+            cache_context: work.cache_context,
         };
         if !send_delivery_result(&results, result, &result_backpressure) {
             break;
@@ -282,12 +293,44 @@ fn build_delivery(work: &DeliveryWork) -> anyhow::Result<RuntimeDeliveryBundle> 
     {
         persist_runtime_blob(&store, prepared, &mut persisted)?;
     }
-    build_runtime_delivery_with_payloads(
+    let bundle = build_runtime_delivery_with_payloads(
         &store,
         &work.snapshot,
         work.profile,
         &work.prepared_runtime_payloads,
-    )
+    )?;
+    if let Some(context) = &work.cache_context {
+        if work.prepared_runtime_payloads.complete {
+            let current_identity = crate::project::cache::ProjectCacheIdentity::for_project(
+                &context.project_root,
+                context.identity.target.clone(),
+                context.identity.profile,
+                context.identity.config_hash,
+            )?;
+            if current_identity == context.identity {
+                let descriptor = crate::project::cache::ProjectCacheDescriptor::new(
+                    context.identity.clone(),
+                    crate::project::cache::ProjectCacheState::Ready,
+                    Some(bundle.manifest.clone()),
+                )?;
+                if let Err(error) =
+                    crate::project::cache::ProjectCacheStore::new(&context.project_root)
+                        .publish(&descriptor)
+                {
+                    bevy::log::warn!("[project-cache] ready descriptor publish failed: {error:#}");
+                }
+            } else {
+                bevy::log::debug!(
+                    "[project-cache] source changed while delivery was building; ready descriptor suppressed"
+                );
+            }
+        } else {
+            bevy::log::debug!(
+                "[project-cache] runtime payload coverage is incomplete; ready descriptor suppressed"
+            );
+        }
+    }
+    Ok(bundle)
 }
 
 fn persist_runtime_blob(
@@ -309,134 +352,5 @@ fn persist_runtime_blob(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use usd_model::{HashDigest, SnapshotId, SnapshotSource};
-
-    use super::*;
-
-    fn work(revision: u64) -> DeliveryWork {
-        DeliveryWork {
-            identity: RuntimeDeliveryIdentity {
-                session_id: 7,
-                live_revision: LiveRevision(revision),
-                projection_generation: 3,
-            },
-            project_root: PathBuf::from("/tmp/h1-delivery-test"),
-            snapshot: SemanticSnapshot {
-                snapshot_id: SnapshotId(format!("h1-{revision}")),
-                source: SnapshotSource::Working {
-                    session: "h1-test".to_owned(),
-                    live_revision: revision,
-                },
-                config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
-                entities: HashMap::new(),
-            },
-            prepared_blobs: Vec::new(),
-            prepared_runtime_payloads: PreparedRuntimePayloads::default(),
-            profile: RuntimeProfile::NativeMedium,
-        }
-    }
-
-    #[test]
-    fn delivery_queue_is_bounded_and_keeps_latest_pending_revision() {
-        let queue = DeliveryQueue::new();
-        for revision in 1..=5 {
-            assert!(queue.submit(work(revision)).is_ok());
-        }
-        let (pending, high_water, coalesced) = queue.stats();
-        assert_eq!(pending, DELIVERY_QUEUE_CAPACITY as u64);
-        assert_eq!(high_water, DELIVERY_QUEUE_CAPACITY as u64);
-        assert_eq!(coalesced, 1);
-
-        let mut revisions = Vec::new();
-        for _ in 0..DELIVERY_QUEUE_CAPACITY {
-            revisions.push(
-                queue
-                    .pop()
-                    .expect("queued delivery")
-                    .identity
-                    .live_revision
-                    .0,
-            );
-        }
-        assert_eq!(revisions, vec![2, 3, 4, 5]);
-    }
-
-    #[test]
-    fn delivery_result_backpressure_preserves_latest_completion() {
-        let (sender, receiver) = mpsc::sync_channel(DELIVERY_RESULT_CAPACITY);
-        let result_backpressure = Arc::new(AtomicU64::new(0));
-        let completed = Arc::new(AtomicU64::new(0));
-        let worker_backpressure = Arc::clone(&result_backpressure);
-        let worker_completed = Arc::clone(&completed);
-        let worker = std::thread::spawn(move || {
-            for revision in 1..=(DELIVERY_RESULT_CAPACITY as u64 + 1) {
-                assert!(send_delivery_result(
-                    &sender,
-                    DeliveryResult {
-                        identity: RuntimeDeliveryIdentity {
-                            session_id: 7,
-                            live_revision: LiveRevision(revision),
-                            projection_generation: 3,
-                        },
-                        bundle: Err(format!("test-{revision}")),
-                        worker_ms: 0.0,
-                        blob_reads: 0,
-                        bytes: 0,
-                        prepared_runtime_payloads: PreparedRuntimePayloads::default(),
-                    },
-                    &worker_backpressure,
-                ));
-                worker_completed.fetch_add(1, Ordering::Release);
-            }
-        });
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while completed.load(Ordering::Acquire) < DELIVERY_RESULT_CAPACITY as u64
-            && std::time::Instant::now() < deadline
-        {
-            std::thread::yield_now();
-        }
-        assert_eq!(
-            completed.load(Ordering::Acquire),
-            DELIVERY_RESULT_CAPACITY as u64,
-            "worker must block on a full result queue, not drop the completion"
-        );
-
-        for revision in 1..=DELIVERY_RESULT_CAPACITY as u64 {
-            assert_eq!(
-                receiver
-                    .recv()
-                    .expect("runtime delivery result")
-                    .identity
-                    .live_revision
-                    .0,
-                revision
-            );
-        }
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while completed.load(Ordering::Acquire) < DELIVERY_RESULT_CAPACITY as u64 + 1
-            && std::time::Instant::now() < deadline
-        {
-            std::thread::yield_now();
-        }
-        assert_eq!(
-            completed.load(Ordering::Acquire),
-            DELIVERY_RESULT_CAPACITY as u64 + 1
-        );
-        assert_eq!(result_backpressure.load(Ordering::Acquire), 1);
-        assert_eq!(
-            receiver
-                .recv()
-                .expect("latest runtime delivery result")
-                .identity
-                .live_revision
-                .0,
-            DELIVERY_RESULT_CAPACITY as u64 + 1
-        );
-        worker.join().expect("delivery result sender remains alive");
-    }
-}
+#[path = "delivery_worker_tests.rs"]
+mod tests;

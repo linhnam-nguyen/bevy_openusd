@@ -5,7 +5,7 @@ use crate::read::shade::{
     read_preview_material,
 };
 
-use super::super::{PrimRoute, RouteCtx, mark_render_projection_dirty};
+use super::super::{PrimRoute, ProjectionSeed, RouteCtx, mark_render_projection_dirty};
 use super::consumers::MaterialConsumerIndex;
 use super::material_cache::intern_material;
 use super::texture_cache::resolve_texture;
@@ -49,6 +49,15 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     );
 
     let material = binding_path.as_ref().and_then(|binding_path| {
+        if let Some(handle) = world
+            .get_resource_mut::<ProjectionSeed>()
+            .and_then(|mut seeds| seeds.take_material(ctx.prim_str()))
+            && world
+                .resource::<Assets<StandardMaterial>>()
+                .contains(&handle)
+        {
+            return Some(handle);
+        }
         super::record_descriptor_read(world);
         let descriptor = read_preview_material(ctx.stage, binding_path)
             .ok()

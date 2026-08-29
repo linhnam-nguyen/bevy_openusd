@@ -15,6 +15,7 @@ use crate::project::scene::authoring::scene_path;
 pub struct ProjectStageActivationTarget {
     pub project_id: ProjectId,
     pub target: ProjectStageTarget,
+    pub project_root: PathBuf,
     pub path: PathBuf,
 }
 
@@ -30,6 +31,8 @@ impl ProjectApplicationService {
         target: ProjectStageTarget,
     ) -> Result<Option<ProjectStageActivationTarget>, ProjectReadError> {
         let (entry, manifest) = self.validated_project(project_id)?;
+        let project_root = fs::canonicalize(entry.repository_locator())
+            .map_err(|_| invalid_project_data(project_id))?;
         let path = match &target {
             ProjectStageTarget::ProjectRoot(root) => {
                 if &manifest.raw().root != root {
@@ -63,6 +66,7 @@ impl ProjectApplicationService {
         Ok(Some(ProjectStageActivationTarget {
             project_id,
             target,
+            project_root,
             path,
         }))
     }

@@ -4,6 +4,8 @@ use bevy::prelude::*;
 use openusd::usd::{PrimPredicate, Stage};
 use usd_bevy::{AnimatedPrims, LiveStage, PrimEntities};
 
+use crate::project::cache_hydration::{ActiveProjectCacheContext, hydrate_project_cache};
+
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageCameraData, StageCameraInfo,
     StageCameraProjection, StageHandle, StageInfo, VariantSetInfo,
@@ -24,6 +26,17 @@ pub(crate) fn load_stage(world: &mut World) {
 /// candidate cannot be opened. The caller owns identity resolution; this
 /// function remains only a stage/lifecycle operation.
 pub(crate) fn activate_stage(world: &mut World, path: std::path::PathBuf) -> Result<(), String> {
+    activate_stage_with_cache_context(world, path, None)
+}
+
+/// Opens a canonical Project stage and opportunistically hydrates its exact
+/// persistent runtime cache. Cache misses/corruption never prevent source
+/// projection; the candidate Stage has already been opened successfully.
+pub(crate) fn activate_stage_with_cache_context(
+    world: &mut World,
+    path: std::path::PathBuf,
+    cache_context: Option<ActiveProjectCacheContext>,
+) -> Result<(), String> {
     let root = path
         .parent()
         .map(std::path::Path::to_path_buf)
@@ -39,6 +52,28 @@ pub(crate) fn activate_stage(world: &mut World, path: std::path::PathBuf) -> Res
         PROJECT_STAGE_OPEN_FAILURE.to_owned()
     })?;
 
+    if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
+        seed.clear();
+    }
+    if let Some(context) = cache_context.as_ref() {
+        match hydrate_project_cache(world, context) {
+            Ok(true) => info!("hydrated Project runtime cache for {}", path.display()),
+            Ok(false) => bevy::log::debug!(
+                "[project-cache] no ready cache for {}; continuing with source projection",
+                path.display()
+            ),
+            Err(error) => {
+                bevy::log::warn!(
+                    "[project-cache] cache hydration failed for {}; continuing with source projection: {error:#}",
+                    path.display()
+                );
+                if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
+                    seed.clear();
+                }
+            }
+        }
+    }
+
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
         && !cache.archive_paths.contains(&path)
     {
@@ -52,6 +87,11 @@ pub(crate) fn activate_stage(world: &mut World, path: std::path::PathBuf) -> Res
     });
     world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
     world.resource_mut::<Spawned>().0 = false;
+    if let Some(context) = cache_context {
+        world.insert_resource(context);
+    } else {
+        world.remove_resource::<ActiveProjectCacheContext>();
+    }
     world.insert_non_send(LiveStage::new(stage));
     info!("activated Project USD stage: {}", path.display());
     Ok(())

@@ -5,6 +5,7 @@
 use bevy::prelude::*;
 use std::time::Instant;
 
+use super::ProjectionSeed;
 use super::cache::{
     ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,
 };
@@ -174,6 +175,38 @@ fn update_extent(ctx: &RouteCtx, world: &mut World, entity: Entity) {
 impl MeshRoute {
     /// Bake + attach; returns whether a `Mesh3d` was inserted.
     fn attach(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) -> bool {
+        if world.get_resource::<Assets<Mesh>>().is_none()
+            || world.get_resource::<Assets<StandardMaterial>>().is_none()
+        {
+            bevy::log::warn!(
+                target: "usd_bevy::route::geom",
+                "{}: has a mesh but render Assets are absent — not attached",
+                ctx.prim_str()
+            );
+            return false;
+        }
+        if let Some(seed) = world
+            .get_resource_mut::<ProjectionSeed>()
+            .and_then(|mut seeds| seeds.take_mesh(ctx.prim_str()))
+            && world.resource::<Assets<Mesh>>().contains(&seed.handle)
+        {
+            let material = super::fallback_material(world);
+            let attached = if let Ok(mut e) = world.get_entity_mut(entity) {
+                if let Some((min, max)) = seed.local_extent {
+                    e.insert(UsdLocalExtent { min, max });
+                } else {
+                    e.remove::<UsdLocalExtent>();
+                }
+                e.insert((Mesh3d(seed.handle.clone()), MeshMaterial3d(material)));
+                true
+            } else {
+                false
+            };
+            if attached {
+                track_mesh_projection(world, entity, &seed.handle);
+            }
+            return attached;
+        }
         let profile_enabled = world
             .get_resource::<GeometryProfile>()
             .is_some_and(|profile| profile.enabled);
@@ -185,16 +218,6 @@ impl MeshRoute {
         let Ok(Some(read)) = read_result else {
             return false;
         };
-        if world.get_resource::<Assets<Mesh>>().is_none()
-            || world.get_resource::<Assets<StandardMaterial>>().is_none()
-        {
-            bevy::log::warn!(
-                target: "usd_bevy::route::geom",
-                "{}: has a mesh but render Assets are absent — not attached",
-                ctx.prim_str()
-            );
-            return false;
-        }
         bevy::log::trace!(
             target: "usd_bevy::route::geom",
             "{}: mesh {} points -> Mesh3d",

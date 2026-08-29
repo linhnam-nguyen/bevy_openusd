@@ -7,6 +7,7 @@ use openusd::gf::Vec3f;
 use openusd::sdf::Value;
 use openusd::usd::Stage;
 
+use crate::ProjectionSeed;
 use crate::UsdPlugin;
 use crate::live::{
     LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
@@ -42,6 +43,39 @@ fn build_app_for(fixture: &str) -> App {
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
     app
+}
+
+#[test]
+fn persistent_material_seed_is_consumed_before_usd_decode() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/stages")
+        .join("materials.usda");
+    let stage = Stage::open(path.to_str().expect("fixture path is valid"))
+        .expect("materials fixture opens");
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    let seeded = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color: Color::srgb(0.12, 0.34, 0.56),
+            ..Default::default()
+        });
+    app.world_mut()
+        .resource_mut::<ProjectionSeed>()
+        .insert_material(RED_BOX, seeded.clone());
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+
+    assert_eq!(material_handle(&app, RED_BOX), seeded);
+    assert_eq!(
+        app.world().resource::<ProjectionSeed>().pending_materials(),
+        0
+    );
 }
 
 fn entity(app: &App, path: &str) -> Entity {

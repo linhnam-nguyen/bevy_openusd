@@ -79,7 +79,7 @@ impl Default for SemanticConfig {
 }
 
 impl SemanticConfig {
-    pub(crate) fn hash(&self) -> HashDigest {
+    pub fn hash(&self) -> HashDigest {
         let mut bytes = Vec::new();
         for value in [
             self.translation_mm_per_unit,

@@ -130,11 +130,23 @@ pub(crate) struct PreparedRuntimeBlob {
 }
 
 /// Payloads prepared from one complete projected snapshot.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct PreparedRuntimePayloads {
     pub(crate) material_by_entity: BTreeMap<String, String>,
     pub(crate) materials: Vec<PreparedRuntimeBlob>,
     pub(crate) textures: Vec<PreparedRuntimeBlob>,
+    pub(crate) complete: bool,
+}
+
+impl Default for PreparedRuntimePayloads {
+    fn default() -> Self {
+        Self {
+            material_by_entity: BTreeMap::new(),
+            materials: Vec::new(),
+            textures: Vec::new(),
+            complete: true,
+        }
+    }
 }
 
 /// Capture material and texture assets after the existing USD material route
@@ -160,18 +172,29 @@ pub(crate) fn prepare_runtime_payloads(
             .collect::<Vec<_>>()
     };
     let Some(materials) = world.get_resource::<Assets<StandardMaterial>>() else {
-        return PreparedRuntimePayloads::default();
+        return PreparedRuntimePayloads {
+            complete: bindings.is_empty(),
+            ..Default::default()
+        };
     };
     let Some(images) = world.get_resource::<Assets<Image>>() else {
-        return PreparedRuntimePayloads::default();
+        return PreparedRuntimePayloads {
+            complete: bindings.is_empty(),
+            ..Default::default()
+        };
     };
 
-    let mut prepared = PreparedRuntimePayloads::default();
+    let mut prepared = PreparedRuntimePayloads {
+        complete: true,
+        ..Default::default()
+    };
     for (entity_path, handle) in bindings {
         let Some(material) = materials.get(&handle) else {
+            prepared.complete = false;
             continue;
         };
         let Some((textures, texture_payloads)) = collect_material_textures(material, images) else {
+            prepared.complete = false;
             continue;
         };
         let descriptor = RuntimeMaterialBlob {
@@ -209,6 +232,7 @@ pub(crate) fn prepare_runtime_payloads(
             textures,
         };
         if descriptor.validate().is_err() {
+            prepared.complete = false;
             continue;
         }
         let Ok(bytes) = serde_json::to_vec(&descriptor) else {

@@ -19,9 +19,13 @@ use viewport_streaming::{
     ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
 };
 
+use crate::project::cache::ProjectCacheTarget;
+use crate::project::cache_hydration::{
+    ActiveProjectCacheContext, default_project_cache_config_hash,
+};
 use crate::project::service::ProjectApplicationService;
 use crate::viewport::api::RenderServerInterface;
-use crate::viewport::session::activate_stage;
+use crate::viewport::session::activate_stage_with_cache_context;
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
 const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
@@ -184,13 +188,41 @@ fn publish_prepared_result(
     let command = prepared.request.command.clone();
     let reply = match prepared.target {
         Ok(None) => ProjectActivationReply::activated(&command),
-        Ok(Some(target)) => match activate_stage(world, target.path) {
-            Ok(()) => ProjectActivationReply::activated(&command),
-            Err(error) => ProjectActivationReply::failed(&command, error),
-        },
+        Ok(Some(target)) => {
+            let cache_context = cache_context_for(&target);
+            match activate_stage_with_cache_context(world, target.path, cache_context) {
+                Ok(()) => ProjectActivationReply::activated(&command),
+                Err(error) => ProjectActivationReply::failed(&command, error),
+            }
+        }
         Err(error) => ProjectActivationReply::failed(&command, error),
     };
     publish_activation_result(interface, prepared.request, reply);
+}
+
+fn cache_context_for(
+    target: &crate::project::service::ProjectStageActivationTarget,
+) -> Option<ActiveProjectCacheContext> {
+    let cache_target = match target.target {
+        project_protocol::ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
+        project_protocol::ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        },
+    };
+    match ActiveProjectCacheContext::new(
+        target.project_root.clone(),
+        cache_target,
+        viewport_protocol::RuntimeProfile::NativeMedium,
+        default_project_cache_config_hash(),
+    ) {
+        Ok(context) => Some(context),
+        Err(error) => {
+            bevy::log::warn!(
+                "[project-cache] could not establish activation identity; using source projection: {error:#}"
+            );
+            None
+        }
+    }
 }
 
 fn publish_activation_result(

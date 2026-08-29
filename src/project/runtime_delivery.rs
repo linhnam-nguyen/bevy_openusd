@@ -16,7 +16,7 @@ use viewport_protocol::{
 use super::blob_store::BlobStore;
 use super::runtime_payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
 
-const RUNTIME_HIERARCHY_VERSION: u16 = 2;
+pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 2;
 const RUNTIME_MESH_VERSION: u16 = 1;
 
 /// A complete server-owned manifest and the verified bytes it references.
