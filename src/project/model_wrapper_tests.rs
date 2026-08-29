@@ -65,6 +65,10 @@ fn stable_wrapper_survives_original_source_rename() -> Result<()> {
     fs::rename(&original, project.path().join("renamed-original.usda"))?;
     assert_eq!(published.id, model_id);
     assert_eq!(published.manifest.models[0].id, model_id);
+    assert_eq!(
+        published.manifest.models[0].storage_key.as_str(),
+        "original"
+    );
     assert!(published.wrapper_path.exists());
     let wrapper = Stage::open(&published.wrapper_path.to_string_lossy())?;
     assert!(wrapper.prim("/ModelRoot/Source").is_defined()?);
@@ -126,5 +130,6 @@ fn composed_model_source_remains_one_opaque_product_model() -> Result<()> {
     assert_eq!(published.manifest.models.len(), 1);
     assert_eq!(published.manifest.root, ProjectRoot::Model(prepared.id));
     assert_eq!(published.manifest.models[0].id, prepared.id);
+    assert_eq!(published.manifest.models[0].storage_key.as_str(), "opaque");
     Ok(())
 }

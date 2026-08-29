@@ -282,6 +282,7 @@ mod tests {
         assert!(members.iter().any(|member| {
             member.id == placement_id
                 && member.target == SceneMemberTarget::Model(response.model_id)
+                && member.name.as_deref() == Some("asset")
         }));
         let parent_stage = Stage::open(
             &crate::project::scene::authoring::scene_path(

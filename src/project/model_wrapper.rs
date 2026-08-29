@@ -87,6 +87,13 @@ pub(crate) fn publish_model_wrapper_atomic(
         request.prepared.source.is_file(),
         "prepared Model source disappeared or is not a file"
     );
+    let model_name = request.prepared.name.trim();
+    ensure!(
+        !model_name.is_empty(),
+        "published Model name must not be empty"
+    );
+    let storage_key = next_model_storage_key(request.base_manifest, model_name)?;
+    let model_name = storage_key.as_str().to_owned();
     let revalidated = importer.inspect(&request.prepared.source)?;
     ensure!(
         revalidated == request.prepared.inspection,
@@ -129,7 +136,7 @@ pub(crate) fn publish_model_wrapper_atomic(
     let placement = request.placement.as_ref().map(|_| SceneMember {
         id: usd_project::SceneMemberId::new_v4(),
         target: SceneMemberTarget::Model(request.prepared.id),
-        name: None,
+        name: Some(model_name.clone()),
         transform: Default::default(),
     });
     let parent_members = request.placement.as_ref().map(|placement_request| {
@@ -147,7 +154,7 @@ pub(crate) fn publish_model_wrapper_atomic(
     manifest_candidate.models.push(ModelManifestEntry {
         id: request.prepared.id,
         source_kind: request.prepared.source_kind.clone(),
-        storage_key: StorageKey::new(request.prepared.id.to_string())?,
+        storage_key,
     });
     if request.set_as_root {
         manifest_candidate.root = ProjectRoot::Model(request.prepared.id);
@@ -215,6 +222,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             request.prepared.id,
             &published_source_path,
             &source_default_prim,
+            &model_name,
             &request.prepared.inspection.composition.spatial,
         )?;
         wrapper_authoring::validate_model_wrapper(
@@ -315,6 +323,29 @@ pub(crate) fn publish_model_wrapper_atomic(
     };
     let _ = fs::remove_dir_all(&transaction_directory);
     final_result
+}
+
+fn next_model_storage_key(manifest: &ProjectManifestV1, name: &str) -> Result<StorageKey> {
+    for ordinal in 1_u32.. {
+        let candidate = if ordinal == 1 {
+            name.to_owned()
+        } else {
+            format!("{name} ({ordinal})")
+        };
+        let storage_key = StorageKey::new(candidate)?;
+        let already_used = manifest
+            .scenes
+            .iter()
+            .any(|entry| entry.storage_key == storage_key)
+            || manifest
+                .models
+                .iter()
+                .any(|entry| entry.storage_key == storage_key);
+        if !already_used {
+            return Ok(storage_key);
+        }
+    }
+    unreachable!("u32 storage-key suffix space exhausted")
 }
 
 fn ensure_current_manifest(project_root: &Path, expected: &ProjectManifestV1) -> Result<()> {

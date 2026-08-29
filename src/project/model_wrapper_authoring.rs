@@ -33,6 +33,7 @@ pub(super) fn author_model_wrapper(
     model_id: usd_project::ModelId,
     source_path: &str,
     source_default_prim: &str,
+    model_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
 ) -> Result<()> {
     let stage = Stage::builder().in_memory(format!("model-{model_id}.usda"))?;
@@ -52,6 +53,9 @@ pub(super) fn author_model_wrapper(
                 ),
             ])),
         )?;
+    stage
+        .prim(format!("/{MODEL_ROOT_PRIM}").as_str())
+        .set_metadata("ui:displayName", Value::String(model_name.to_owned()))?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
     crate::project::spatial::author_canonical_stage(&stage)?;
     let source_prim = stage

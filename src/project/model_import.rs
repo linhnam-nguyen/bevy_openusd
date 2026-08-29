@@ -26,6 +26,7 @@ pub(crate) struct ModelImportRequest {
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedModel {
     pub id: ModelId,
+    pub name: String,
     pub source_kind: ModelSourceKind,
     pub source: PathBuf,
     pub inspection: ModelImportInspection,
@@ -64,8 +65,17 @@ impl ModelImporter for UsdModelImporter {
             revalidated == request.inspection,
             "USD Model source changed after inspection"
         );
+        let name = request
+            .source
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::trim)
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or("Imported Model")
+            .to_owned();
         Ok(PreparedModel {
             id: ModelId::new_v4(),
+            name,
             source_kind: self.kind(),
             source: request.source,
             inspection: revalidated,
@@ -80,6 +90,14 @@ pub(crate) struct ModelImporterRegistry {
 }
 
 impl ModelImporterRegistry {
+    pub(crate) const fn supported_extensions(&self) -> &'static [&'static str] {
+        &["usd", "usda", "usdc", "usdz"]
+    }
+
+    pub(crate) const fn has_non_usd_importer(&self) -> bool {
+        false
+    }
+
     pub(crate) fn importer_for(&self, kind: &ModelSourceKind) -> Option<&dyn ModelImporter> {
         match kind {
             ModelSourceKind::Usd => Some(&self.usd),
@@ -151,6 +169,22 @@ def Xform "Asset" (
     }
 
     #[test]
+    fn registry_exposes_only_current_backend_capability() {
+        let registry = ModelImporterRegistry::default();
+
+        assert_eq!(
+            registry.supported_extensions(),
+            &["usd", "usda", "usdc", "usdz"]
+        );
+        assert!(!registry.has_non_usd_importer());
+        assert!(
+            registry
+                .importer_for(&ModelSourceKind::External("glb".to_owned()))
+                .is_none()
+        );
+    }
+
+    #[test]
     fn scene_like_source_can_be_prepared_as_one_opaque_model() -> Result<()> {
         let directory = tempdir()?;
         let source = directory.path().join("assembly.usda");
@@ -177,6 +211,7 @@ def Xform "Assembly" (
         let prepared = importer.prepare(ModelImportRequest { source, inspection })?;
 
         assert_eq!(prepared.source_kind, ModelSourceKind::Usd);
+        assert_eq!(prepared.name, "assembly");
         assert!(!prepared.id.as_uuid().is_nil());
         Ok(())
     }
@@ -200,6 +235,7 @@ def Xform "Assembly" (
         assert_ne!(first.id, second.id);
         assert_eq!(first.source_kind, ModelSourceKind::Usd);
         assert_eq!(first.source, source);
+        assert_eq!(first.name, "asset");
         Ok(())
     }
 
