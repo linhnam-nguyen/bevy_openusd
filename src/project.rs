@@ -3,6 +3,7 @@
 pub(crate) mod blob_store;
 pub(crate) mod cache;
 pub(crate) mod cache_hydration;
+pub(crate) mod cache_warm_runtime;
 pub(crate) mod cache_warmer;
 pub(crate) mod catalog;
 pub(crate) mod commit;

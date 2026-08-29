@@ -8,7 +8,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::usd::{InitialLoadSet, Stage};
 use usd_semantic::SemanticConfig;
 use viewport_protocol::RuntimeProfile;
 
@@ -24,10 +23,14 @@ use crate::project::{
 use std::time::{Duration, Instant};
 
 const WARM_QUEUE_CAPACITY: usize = 2;
-struct WarmJob {
-    project_root: PathBuf,
+struct WarmTarget {
     target: ProjectCacheTarget,
     identity: ProjectCacheIdentity,
+}
+
+struct WarmJob {
+    project_root: PathBuf,
+    targets: Vec<WarmTarget>,
     key: (PathBuf, String),
 }
 
@@ -56,23 +59,46 @@ impl ProjectCacheWarmQueue {
     /// Try to schedule one canonical Project target without blocking the
     /// caller that just published authoritative Project state.
     pub fn enqueue(&self, project_root: &Path, target: ProjectCacheTarget) -> bool {
+        self.enqueue_targets(project_root, vec![target])
+    }
+
+    /// Try to schedule one bounded batch of canonical targets. One import may
+    /// therefore warm every Stage-bearing target without filling the queue
+    /// with one unbounded request per Scene or Model.
+    pub fn enqueue_targets(&self, project_root: &Path, targets: Vec<ProjectCacheTarget>) -> bool {
         let project_root = project_root.to_path_buf();
-        let identity = match ProjectCacheIdentity::for_project(
-            &project_root,
-            target.clone(),
-            RuntimeProfile::NativeMedium,
-            SemanticConfig::default().hash(),
-        ) {
-            Ok(identity) => identity,
-            Err(error) => {
-                log::warn!(
-                    "Project cache warm identity could not be established for {}: {error:#}",
-                    project_root.display()
-                );
-                return false;
-            }
-        };
-        let key = (project_root.clone(), identity_key(&identity));
+        let mut targets = targets;
+        targets.sort_by_key(ProjectCacheTarget::key);
+        targets.dedup_by_key(|target| target.key());
+        let config_hash = SemanticConfig::default().hash();
+        let mut warm_targets = Vec::with_capacity(targets.len());
+        for target in targets {
+            let identity = match ProjectCacheIdentity::for_project(
+                &project_root,
+                target.clone(),
+                RuntimeProfile::NativeMedium,
+                config_hash,
+            ) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    log::warn!(
+                        "Project cache warm identity could not be established for {}: {error:#}",
+                        project_root.display()
+                    );
+                    return false;
+                }
+            };
+            warm_targets.push(WarmTarget { target, identity });
+        }
+        if warm_targets.is_empty() {
+            return true;
+        }
+        let batch_key = warm_targets
+            .iter()
+            .map(|target| identity_key(&target.identity))
+            .collect::<Vec<_>>()
+            .join(",");
+        let key = (project_root.clone(), format!("batch:{batch_key}"));
         let mut pending = self
             .pending
             .lock()
@@ -82,8 +108,7 @@ impl ProjectCacheWarmQueue {
         }
         let job = WarmJob {
             project_root,
-            target,
-            identity,
+            targets: warm_targets,
             key: key.clone(),
         };
         if self.sender.try_send(job).is_err() {
@@ -107,9 +132,43 @@ impl ProjectCacheWarmQueue {
                 vec![target]
             }
         };
-        targets.into_iter().fold(true, |accepted, target| {
-            self.enqueue(project_root, target) && accepted
-        })
+        self.enqueue_targets(project_root, targets)
+    }
+
+    /// Enqueue every Stage-bearing target registered by a freshly imported
+    /// Project, including its Project root when one is configured.
+    pub fn enqueue_project_targets(&self, project_root: &Path) -> bool {
+        let manifest = match ManifestStore::read_validated(project_root) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                log::warn!(
+                    "Project cache import target discovery failed for {}: {error:#}",
+                    project_root.display()
+                );
+                return false;
+            }
+        };
+        let mut targets = Vec::with_capacity(manifest.scenes().len() + manifest.models().len() + 1);
+        if !matches!(manifest.raw().root, usd_project::ProjectRoot::Empty) {
+            targets.push(ProjectCacheTarget::ProjectRoot);
+        }
+        targets.extend(
+            manifest
+                .scenes()
+                .iter()
+                .map(|scene| ProjectCacheTarget::Scene {
+                    id: scene.id.to_string(),
+                }),
+        );
+        targets.extend(
+            manifest
+                .models()
+                .iter()
+                .map(|model| ProjectCacheTarget::Model {
+                    id: model.id.to_string(),
+                }),
+        );
+        self.enqueue_targets(project_root, targets)
     }
 
     /// Remove descriptors for a deleted target. Payload objects are immutable
@@ -162,14 +221,7 @@ impl ProjectCacheWarmQueue {
 
 fn worker_loop(receiver: mpsc::Receiver<WarmJob>, pending: Arc<Mutex<HashSet<(PathBuf, String)>>>) {
     while let Ok(job) = receiver.recv() {
-        let result = warm_job(&job);
-        if let Err(error) = result {
-            log::warn!(
-                "Project cache warm failed for {} ({}): {error:#}",
-                job.project_root.display(),
-                job.target.key()
-            );
-        }
+        let _ = warm_job(&job);
         pending
             .lock()
             .expect("Project cache warm state is not poisoned")
@@ -178,53 +230,70 @@ fn worker_loop(receiver: mpsc::Receiver<WarmJob>, pending: Arc<Mutex<HashSet<(Pa
 }
 
 fn warm_job(job: &WarmJob) -> Result<()> {
+    for target in &job.targets {
+        if let Err(error) = warm_target(&job.project_root, target) {
+            log::warn!(
+                "Project cache warm failed for {} ({}): {error:#}",
+                job.project_root.display(),
+                target.target.key()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
     let current_identity = ProjectCacheIdentity::for_project(
-        &job.project_root,
-        job.target.clone(),
+        project_root,
+        target.target.clone(),
         RuntimeProfile::NativeMedium,
         SemanticConfig::default().hash(),
     )?;
-    if current_identity != job.identity {
+    if current_identity != target.identity {
         return Ok(());
     }
-    let store = ProjectCacheStore::new(&job.project_root);
+    let store = ProjectCacheStore::new(project_root);
     if store
-        .load(&job.identity)?
+        .load(&target.identity)?
         .is_some_and(|descriptor| descriptor.state == ProjectCacheState::Ready)
     {
         return Ok(());
     }
     store.publish(&ProjectCacheDescriptor::new(
-        job.identity.clone(),
+        target.identity.clone(),
         ProjectCacheState::Building,
         None,
     )?)?;
 
-    let state = match target_stage_path(&job.project_root, &job.target) {
-        Ok(None) => ProjectCacheState::Empty,
-        Ok(Some(path)) => match open_stage_without_payloads(&path) {
-            Ok(()) => ProjectCacheState::Partial,
+    let (state, runtime) = match target_stage_path(project_root, &target.target) {
+        Ok(None) => (ProjectCacheState::Empty, None),
+        Ok(Some(path)) => match super::cache_warm_runtime::build_runtime_cache(
+            project_root,
+            &path,
+            &target.identity,
+        ) {
+            Ok(manifest) => (ProjectCacheState::Ready, Some(manifest)),
             Err(error) => {
-                log::warn!("canonical Project stage could not be warmed: {error:#}");
-                ProjectCacheState::FallbackRequired
+                log::warn!("canonical Project stage could not be fully warmed: {error:#}");
+                (ProjectCacheState::FallbackRequired, None)
             }
         },
         Err(error) => {
             log::warn!("canonical Project target could not be resolved: {error:#}");
-            ProjectCacheState::FallbackRequired
+            (ProjectCacheState::FallbackRequired, None)
         }
     };
     let latest_identity = ProjectCacheIdentity::for_project(
-        &job.project_root,
-        job.target.clone(),
+        project_root,
+        target.target.clone(),
         RuntimeProfile::NativeMedium,
         SemanticConfig::default().hash(),
     )?;
-    if latest_identity == job.identity {
+    if latest_identity == target.identity {
         store.publish(&ProjectCacheDescriptor::new(
-            job.identity.clone(),
+            target.identity.clone(),
             state,
-            None,
+            runtime,
         )?)?;
     }
     Ok(())
@@ -323,17 +392,6 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
         .with_context(|| format!("canonicalize Project cache target {}", path.display()))?;
     ensure!(path.is_file(), "Project cache target is not a file");
     Ok(Some(path))
-}
-
-fn open_stage_without_payloads(path: &Path) -> Result<()> {
-    let path = path
-        .to_str()
-        .context("canonical Project stage path must be valid UTF-8")?;
-    Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(path)
-        .context("open canonical Project stage for cache warm")?;
-    Ok(())
 }
 
 #[cfg(test)]

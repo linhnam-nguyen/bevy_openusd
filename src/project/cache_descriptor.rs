@@ -1,4 +1,4 @@
-//! Atomic, revision-aware Project runtime-cache descriptors.
+//! Atomic, target-aware Project runtime-cache descriptors.
 
 use std::{
     fs,
@@ -11,10 +11,10 @@ use usd_model::HashDigest;
 use uuid::Uuid;
 use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 
-use super::{ProjectCacheSourceStamp, inspect_git_baseline};
+use super::target_content_hash;
 use crate::project::{catalog::manifest_store::write_bytes_atomic, storage::ProjectStorageLayout};
 
-pub(crate) const PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 1;
+pub(crate) const PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 2;
 const DESCRIPTORS_DIRECTORY: &str = "descriptors";
 
 /// Stable Project content target used in a cache identity.
@@ -39,8 +39,8 @@ impl ProjectCacheTarget {
 /// reusable.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct ProjectCacheIdentity {
-    pub(crate) source: ProjectCacheSourceStamp,
     pub(crate) target: ProjectCacheTarget,
+    pub(crate) target_content_hash: HashDigest,
     pub(crate) profile: RuntimeProfile,
     pub(crate) config_hash: HashDigest,
 }
@@ -52,9 +52,10 @@ impl ProjectCacheIdentity {
         profile: RuntimeProfile,
         config_hash: HashDigest,
     ) -> Result<Self> {
+        let target_content_hash = target_content_hash(project_root, &target)?;
         Ok(Self {
-            source: inspect_git_baseline(project_root)?.source,
-            target,
+            target: target.clone(),
+            target_content_hash,
             profile,
             config_hash,
         })
@@ -221,22 +222,21 @@ mod tests {
 
     use super::*;
 
-    fn make_identity(directory: &Path, id: &str) -> ProjectCacheIdentity {
-        ProjectCacheIdentity::for_project(
-            directory,
-            ProjectCacheTarget::Scene { id: id.to_owned() },
-            RuntimeProfile::NativeMedium,
-            HashDigest::new([7; HashDigest::BYTE_LEN]),
-        )
-        .unwrap()
+    fn make_identity(id: &str) -> ProjectCacheIdentity {
+        ProjectCacheIdentity {
+            target: ProjectCacheTarget::Scene { id: id.to_owned() },
+            target_content_hash: HashDigest::new([6; HashDigest::BYTE_LEN]),
+            profile: RuntimeProfile::NativeMedium,
+            config_hash: HashDigest::new([7; HashDigest::BYTE_LEN]),
+        }
     }
 
     #[test]
-    fn descriptor_round_trip_is_atomic_and_revision_specific() -> Result<()> {
+    fn descriptor_round_trip_is_atomic_and_target_specific() -> Result<()> {
         let directory = tempdir()?;
         usd_git::Repository::init(directory.path())?;
         let store = ProjectCacheStore::new(directory.path());
-        let identity = make_identity(directory.path(), "scene-a");
+        let identity = make_identity("scene-a");
         let descriptor =
             ProjectCacheDescriptor::new(identity.clone(), ProjectCacheState::Partial, None)?;
 
@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(store.load(&identity)?, Some(descriptor));
         assert_eq!(fs::read_dir(path.parent().unwrap())?.count(), 1);
 
-        let other = make_identity(directory.path(), "scene-b");
+        let other = make_identity("scene-b");
         assert_ne!(
             store.descriptor_path(&identity)?,
             store.descriptor_path(&other)?
@@ -258,7 +258,7 @@ mod tests {
         let directory = tempdir()?;
         usd_git::Repository::init(directory.path())?;
         let store = ProjectCacheStore::new(directory.path());
-        let identity = make_identity(directory.path(), "scene-a");
+        let identity = make_identity("scene-a");
         let path = store.descriptor_path(&identity)?;
         fs::create_dir_all(path.parent().unwrap())?;
         fs::write(&path, b"not-json")?;
@@ -272,7 +272,7 @@ mod tests {
         let directory = tempdir()?;
         usd_git::Repository::init(directory.path())?;
         let store = ProjectCacheStore::new(directory.path());
-        let identity = make_identity(directory.path(), "scene-a");
+        let identity = make_identity("scene-a");
         let descriptor =
             ProjectCacheDescriptor::new(identity.clone(), ProjectCacheState::Partial, None)?;
         let path = store.publish(&descriptor)?;
@@ -292,22 +292,17 @@ mod tests {
     }
 
     #[test]
-    fn a_descriptor_from_another_git_revision_is_not_reused() -> Result<()> {
+    fn descriptors_reuse_when_target_content_is_unchanged() -> Result<()> {
         let directory = tempdir()?;
         let store = ProjectCacheStore::new(directory.path());
         let target = ProjectCacheTarget::ProjectRoot;
         let identity_a = ProjectCacheIdentity {
-            source: ProjectCacheSourceStamp::GitCommit {
-                oid: "revision-a".to_owned(),
-            },
             target: target.clone(),
+            target_content_hash: HashDigest::new([9; HashDigest::BYTE_LEN]),
             profile: RuntimeProfile::NativeMedium,
             config_hash: HashDigest::new([7; HashDigest::BYTE_LEN]),
         };
         let identity_b = ProjectCacheIdentity {
-            source: ProjectCacheSourceStamp::GitCommit {
-                oid: "revision-b".to_owned(),
-            },
             ..identity_a.clone()
         };
         store.publish(&ProjectCacheDescriptor::new(
@@ -317,8 +312,8 @@ mod tests {
         )?)?;
 
         assert!(store.load(&identity_a)?.is_some());
-        assert!(store.load(&identity_b)?.is_none());
-        assert_ne!(
+        assert!(store.load(&identity_b)?.is_some());
+        assert_eq!(
             store.descriptor_path(&identity_a)?,
             store.descriptor_path(&identity_b)?
         );
@@ -333,12 +328,12 @@ mod tests {
         let target = ProjectCacheTarget::Scene {
             id: "scene-a".to_owned(),
         };
-        let identity = ProjectCacheIdentity::for_project(
-            directory.path(),
-            target.clone(),
-            RuntimeProfile::NativeMedium,
-            HashDigest::new([1; HashDigest::BYTE_LEN]),
-        )?;
+        let identity = ProjectCacheIdentity {
+            target_content_hash: HashDigest::new([1; HashDigest::BYTE_LEN]),
+            target: target.clone(),
+            profile: RuntimeProfile::NativeMedium,
+            config_hash: HashDigest::new([2; HashDigest::BYTE_LEN]),
+        };
         store.publish(&ProjectCacheDescriptor::new(
             identity.clone(),
             ProjectCacheState::Partial,

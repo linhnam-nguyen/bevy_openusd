@@ -4,6 +4,9 @@
 //! src/project.rs. The native host only links this smaller application
 //! boundary so read commands do not pull the viewer composition root.
 
+#[path = "project/blob_store.rs"]
+pub(crate) mod blob_store;
+
 #[path = "project_api_catalog.rs"]
 pub(crate) mod catalog;
 
@@ -12,12 +15,24 @@ pub(crate) mod scene;
 
 #[path = "project/cache.rs"]
 pub(crate) mod cache;
+#[path = "project/cache_hydration.rs"]
+pub(crate) mod cache_hydration;
+#[path = "project/cache_warm_runtime.rs"]
+pub(crate) mod cache_warm_runtime;
 #[path = "project/cache_warmer.rs"]
 pub(crate) mod cache_warmer;
+#[path = "project/ghost_cache/mod.rs"]
+pub(crate) mod ghost_cache;
 #[path = "project/model_import.rs"]
 pub(crate) mod model_import;
 #[path = "project/model_wrapper.rs"]
 pub(crate) mod model_wrapper;
+#[path = "project/recovery.rs"]
+pub(crate) mod recovery;
+#[path = "project/runtime_delivery.rs"]
+pub(crate) mod runtime_delivery;
+#[path = "project/runtime_payload.rs"]
+pub(crate) mod runtime_payload;
 #[path = "project/source_closure.rs"]
 pub(crate) mod source_closure;
 #[path = "project/spatial.rs"]

@@ -1,13 +1,13 @@
 //! Project-owned runtime-cache identity primitives.
 //!
-//! Cache state is derived acceleration data.  A clean repository therefore
-//! uses its Git commit as the source stamp, while an unborn or dirty
-//! worktree uses a deterministic content fingerprint.  Disposable cache and
-//! recovery files are deliberately excluded from that fingerprint.
+//! Cache state is derived acceleration data. Reuse is keyed by the canonical
+//! composition closure of the requested Project target. Git baseline facts
+//! remain available for diagnostics, while disposable cache and recovery
+//! files are excluded from the broader working-tree fingerprint.
 
-use std::{fs, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use usd_git::GitRepository;
 
@@ -17,9 +17,132 @@ use super::storage::{CACHE_DIRECTORY, PROJECT_METADATA_DIRECTORY, RECOVERY_DIREC
 mod descriptor;
 
 pub(crate) use descriptor::{
-    PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION, ProjectCacheDescriptor, ProjectCacheIdentity,
-    ProjectCacheState, ProjectCacheStore, ProjectCacheTarget,
+    ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
+    ProjectCacheTarget,
 };
+
+/// Hash only the canonical files that compose one Project target.
+///
+/// This is deliberately narrower than [`fingerprint_project`]. A Scene cache
+/// includes its authored Scene layer and recursively referenced Scene/Model
+/// targets; a Model cache includes its wrapper and materialized source
+/// closure. Unrelated siblings therefore keep their reusable descriptors.
+pub(crate) fn target_content_hash(
+    project_root: &Path,
+    target: &ProjectCacheTarget,
+) -> Result<usd_model::HashDigest> {
+    let manifest =
+        crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)
+            .context("read Project manifest for target cache identity")?;
+    let root = fs::canonicalize(project_root)
+        .with_context(|| format!("canonicalize Project root {}", project_root.display()))?;
+    let mut files = Vec::new();
+    let mut visited = HashSet::new();
+    collect_target_files(&root, &manifest, target, &mut visited, &mut files)?;
+    files.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"usdhub-project-target-closure-v1");
+    for (relative, kind, bytes) in files {
+        hasher.update(kind.as_bytes());
+        hasher.update(relative.as_bytes());
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    Ok(usd_model::HashDigest::new(*hasher.finalize().as_bytes()))
+}
+
+fn collect_target_files(
+    project_root: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    target: &ProjectCacheTarget,
+    visited: &mut HashSet<String>,
+    files: &mut Vec<(String, String, Vec<u8>)>,
+) -> Result<()> {
+    if !visited.insert(target.key()) {
+        return Ok(());
+    }
+    files.push((
+        format!("@target/{}", target.key()),
+        "target".to_owned(),
+        Vec::new(),
+    ));
+    match target {
+        ProjectCacheTarget::ProjectRoot => match &manifest.raw().root {
+            usd_project::ProjectRoot::Empty => {}
+            usd_project::ProjectRoot::Scene(id) => collect_target_files(
+                project_root,
+                manifest,
+                &ProjectCacheTarget::Scene { id: id.to_string() },
+                visited,
+                files,
+            )?,
+            usd_project::ProjectRoot::Model(id) => collect_target_files(
+                project_root,
+                manifest,
+                &ProjectCacheTarget::Model { id: id.to_string() },
+                visited,
+                files,
+            )?,
+        },
+        ProjectCacheTarget::Scene { id } => {
+            let scene = manifest
+                .scenes()
+                .iter()
+                .find(|scene| scene.id.to_string() == *id)
+                .with_context(|| format!("Scene cache target {id} is not in the manifest"))?;
+            let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
+            collect_one_file(project_root, &path, files)?;
+            for member in crate::project::scene::authoring::read_scene_members(&path, scene.id)? {
+                let child = match member.target {
+                    usd_project::SceneMemberTarget::Scene(child) => ProjectCacheTarget::Scene {
+                        id: child.to_string(),
+                    },
+                    usd_project::SceneMemberTarget::Model(model) => ProjectCacheTarget::Model {
+                        id: model.to_string(),
+                    },
+                };
+                collect_target_files(project_root, manifest, &child, visited, files)?;
+            }
+        }
+        ProjectCacheTarget::Model { id } => {
+            let model = manifest
+                .models()
+                .iter()
+                .find(|model| model.id.to_string() == *id)
+                .with_context(|| format!("Model cache target {id} is not in the manifest"))?;
+            let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model.id);
+            let directory = wrapper
+                .parent()
+                .context("canonical Model wrapper has no parent directory")?;
+            collect_files(project_root, directory, files)?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_one_file(
+    project_root: &Path,
+    path: &Path,
+    files: &mut Vec<(String, String, Vec<u8>)>,
+) -> Result<()> {
+    let metadata = fs::symlink_metadata(path)
+        .with_context(|| format!("read Project target metadata {}", path.display()))?;
+    ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink(),
+        "Project target must be a regular non-symlink file: {}",
+        path.display()
+    );
+    let relative = path
+        .strip_prefix(project_root)
+        .with_context(|| format!("relativize Project target {}", path.display()))?;
+    files.push((
+        relative.to_string_lossy().replace('\\', "/"),
+        "file".to_owned(),
+        fs::read(path).with_context(|| format!("read Project target {}", path.display()))?,
+    ));
+    Ok(())
+}
 
 /// Source identity used by a Project runtime-cache descriptor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -153,10 +276,8 @@ fn is_disposable_path(relative: &Path) -> bool {
 mod tests {
     use std::fs;
 
-    use tempfile::tempdir;
-    use usd_git::GitRepository;
-
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn unborn_repository_uses_working_tree_fingerprint() -> Result<()> {
