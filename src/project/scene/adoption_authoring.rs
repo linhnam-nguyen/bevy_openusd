@@ -15,7 +15,7 @@ const REFERENCES_FIELD: &str = "references";
 pub(crate) fn author_scene_wrapper_to_path(
     path: &Path,
     scene_id: SceneId,
-    source: &Path,
+    source_asset_path: &str,
     default_prim: &str,
     spatial: &usd_project::SourceSpatialConvention,
 ) -> Result<()> {
@@ -27,10 +27,7 @@ pub(crate) fn author_scene_wrapper_to_path(
         .set_metadata(
             REFERENCES_FIELD,
             Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
-                asset_path: source
-                    .to_str()
-                    .context("Scene adoption source path must be valid UTF-8")?
-                    .to_owned(),
+                asset_path: source_asset_path.to_owned(),
                 prim_path: sdf::path(format!("/{default_prim}"))?,
                 ..Default::default()
             }])),

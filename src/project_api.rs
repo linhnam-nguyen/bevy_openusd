@@ -14,6 +14,8 @@ pub(crate) mod scene;
 pub(crate) mod model_import;
 #[path = "project/model_wrapper.rs"]
 pub(crate) mod model_wrapper;
+#[path = "project/source_closure.rs"]
+pub(crate) mod source_closure;
 #[path = "project/spatial.rs"]
 pub(crate) mod spatial;
 

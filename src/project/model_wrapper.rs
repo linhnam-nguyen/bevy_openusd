@@ -20,6 +20,7 @@ use super::model_import::{ModelImporter, UsdModelImporter};
 use crate::project::{
     catalog::manifest_store::ManifestStore,
     scene::{adoption_authoring, authoring},
+    source_closure::materialize_source_closure,
 };
 
 #[path = "model_wrapper_authoring.rs"]
@@ -188,25 +189,26 @@ pub(crate) fn publish_model_wrapper_atomic(
     }
 
     let result = (|| {
-        let copy_source = request
+        let copy_dependency_directory = !request
             .prepared
             .inspection
             .composition
             .dependencies
             .is_empty();
-        let published_source_path = if copy_source {
-            fs::create_dir_all(&temporary_source_directory)
-                .context("create controlled Model source directory")?;
-            wrapper_authoring::copy_file_synced(&request.prepared.source, &temporary_source_path)?;
-            "./source/model.usda".to_owned()
-        } else {
-            request
-                .prepared
-                .source
-                .to_str()
-                .context("Model source path must be valid UTF-8")?
-                .to_owned()
-        };
+        let mut source_name = materialize_source_closure(
+            &request.prepared.source,
+            &temporary_source_directory,
+            copy_dependency_directory,
+        )?;
+        if !copy_dependency_directory && source_name != "model.usda" {
+            fs::rename(
+                temporary_source_directory.join(&source_name),
+                &temporary_source_path,
+            )
+            .context("normalize controlled Model source filename")?;
+            source_name = "model.usda".to_owned();
+        }
+        let published_source_path = format!("./source/{source_name}");
 
         wrapper_authoring::author_model_wrapper(
             &temporary_wrapper_path,

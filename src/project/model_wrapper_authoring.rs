@@ -1,11 +1,6 @@
 //! USD authoring and validation helpers for stable Model wrappers.
 
-use std::{
-    collections::HashMap,
-    fs::{File, OpenOptions},
-    io::{Read, Write},
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::{Context, Result, ensure};
 use openusd::{
@@ -31,28 +26,6 @@ pub(super) fn source_default_prim(source: &Path) -> Result<String> {
         .default_prim()
         .map(|token| token.as_str().to_owned())
         .context("prepared Model source has no defaultPrim")
-}
-
-pub(super) fn copy_file_synced(source: &Path, destination: &Path) -> Result<()> {
-    let mut input = File::open(source)
-        .with_context(|| format!("open controlled Model source {}", source.display()))?;
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .with_context(|| format!("create controlled Model source {}", destination.display()))?;
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = input.read(&mut buffer).context("read Model source")?;
-        if count == 0 {
-            break;
-        }
-        output
-            .write_all(&buffer[..count])
-            .context("copy Model source")?;
-    }
-    output.sync_all().context("sync controlled Model source")?;
-    Ok(())
 }
 
 pub(super) fn author_model_wrapper(

@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use openusd::usd::{InitialLoadSet, Stage};
 use usd_project::{
     CompositionClassification, CompositionInspection, ProjectManifestV1, ProjectRoot,
@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use super::{adoption_authoring, authoring, inspection::inspect_composition};
 use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::source_closure::materialize_source_closure;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
@@ -125,7 +126,17 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .context("create Scene adoption transaction directory")?;
 
     let temporary_scene_path = temporary_scene_directory.join(format!("{scene_id}.usda"));
+    let temporary_source_directory = transaction_directory
+        .join("imports")
+        .join(SCENES_DIRECTORY)
+        .join(scene_id.to_string());
     let final_scene_path = authoring::scene_path(request.project_root, scene_id);
+    let final_source_directory = request
+        .project_root
+        .join(PROJECT_METADATA_DIRECTORY)
+        .join("imports")
+        .join(SCENES_DIRECTORY)
+        .join(scene_id.to_string());
     let parent_scene_path = request
         .parent_scene_id
         .map(|parent| authoring::scene_path(request.project_root, parent));
@@ -135,14 +146,20 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     let parent_backup_path = transaction_directory.join("parent-backup.usda");
     let mut parent_published = false;
     let mut scene_published = false;
+    let mut source_published = false;
     let mut parent_backup_created = false;
 
     let result = (|| {
         if scene_is_new {
+            let source_name = materialize_source_closure(
+                request.source,
+                &temporary_source_directory,
+                !request.inspection.dependencies.is_empty(),
+            )?;
             adoption_authoring::author_scene_wrapper_to_path(
                 &temporary_scene_path,
                 scene_id,
-                request.source,
+                &format!("../imports/{SCENES_DIRECTORY}/{scene_id}/{source_name}"),
                 &default_prim,
                 &request.inspection.spatial,
             )?;
@@ -197,6 +214,16 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         }
 
         if scene_is_new {
+            if final_source_directory.exists() {
+                bail!("canonical Project Scene source directory already exists");
+            }
+            if let Some(parent) = final_source_directory.parent() {
+                fs::create_dir_all(parent)
+                    .context("create canonical Project Scene source directory")?;
+            }
+            fs::rename(&temporary_source_directory, &final_source_directory)
+                .context("publish adopted Project Scene source closure")?;
+            source_published = true;
             if let Some(parent) = final_scene_path.parent() {
                 fs::create_dir_all(parent).context("create canonical Project Scene directory")?;
             }
@@ -227,6 +254,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 parent_published,
                 &final_scene_path,
                 scene_published,
+                &final_source_directory,
+                source_published,
             ) {
                 Err(error.context(format!(
                     "rollback Scene adoption publication: {rollback_error}"
@@ -324,9 +353,14 @@ fn rollback_publication(
     parent_published: bool,
     scene_path: &Path,
     scene_published: bool,
+    source_path: &Path,
+    source_published: bool,
 ) -> Result<()> {
     if scene_published {
         fs::remove_file(scene_path).context("remove newly published Scene layer")?;
+    }
+    if source_published {
+        fs::remove_dir_all(source_path).context("remove newly published Scene source closure")?;
     }
     if parent_published {
         let parent_path = parent_path.context("published parent Scene path is missing")?;
