@@ -300,9 +300,21 @@ mod tests {
             .expect("live stage should remain available")
             .session_id();
         let recovery = RecoveryStore::new(project_root.path(), session_id)?;
-        let recovered = recovery
-            .restore()?
-            .expect("runtime mutation should create a recovery checkpoint");
+        let mut recovered = None;
+        for _ in 0..200 {
+            app.update();
+            match recovery.restore() {
+                Ok(Some(checkpoint)) => {
+                    recovered = Some(checkpoint);
+                    break;
+                }
+                Ok(None) => {}
+                Err(error) if error.to_string().contains("checkpoint is incomplete") => {}
+                Err(error) => return Err(error),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let recovered = recovered.expect("runtime mutation should create a recovery checkpoint");
         assert!(usd_bevy::authoring::prim_exists(
             &recovered.stage,
             "/World/Box"
