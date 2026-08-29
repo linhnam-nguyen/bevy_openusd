@@ -1,14 +1,17 @@
 //! Transactional adoption of a composed USD source as a Project Scene.
 //!
 //! The adapter keeps the source layer untouched. It authors a small USDHub
-//! wrapper that references the source, validates the wrapper before publish,
-//! and publishes the manifest only after all new Scene files are ready.
+//! wrapper that references the source, validates it before publish, and
+//! publishes the manifest only after all new Scene files are ready.
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+use super::{adoption_authoring, authoring, inspection::inspect_composition};
+use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::source_closure::materialize_source_closure;
 use anyhow::{Context, Result, bail, ensure};
 use openusd::usd::{InitialLoadSet, Stage};
 use usd_project::{
@@ -17,10 +20,6 @@ use usd_project::{
     SceneMemberTarget, StorageKey,
 };
 use uuid::Uuid;
-
-use super::{adoption_authoring, authoring, inspection::inspect_composition};
-use crate::project::catalog::manifest_store::ManifestStore;
-use crate::project::source_closure::materialize_source_closure;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
@@ -92,7 +91,6 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             "parent members require a parent Scene"
         );
     }
-
     let (parent_members, member) = if let Some(parent_scene_id) = request.parent_scene_id {
         ensure!(
             request
