@@ -236,4 +236,34 @@ mod tests {
             serde_json::from_str::<ProjectWriteCommand>(&encoded).unwrap()
         );
     }
+
+    #[test]
+    fn lifecycle_commands_round_trip_without_filesystem_paths() {
+        let project_id = ProjectId::new_v4();
+        let parent_scene_id = usd_project::SceneId::new_v4();
+        let placement_id = usd_project::SceneMemberId::new_v4();
+        let requests = [
+            ProjectWriteRequest::RemoveProject(ProjectLifecycleRequest { project_id }),
+            ProjectWriteRequest::DeleteProject(ProjectLifecycleRequest { project_id }),
+            ProjectWriteRequest::RemoveScenePlacement(ProjectRemoveScenePlacementRequest {
+                project_id,
+                parent_scene_id,
+                placement_id,
+            }),
+            ProjectWriteRequest::DeleteScene(ProjectDeleteSceneRequest {
+                project_id,
+                scene_id: parent_scene_id,
+            }),
+        ];
+
+        for request in requests {
+            let command = ProjectWriteCommand::new(request);
+            let encoded = serde_json::to_string(&command).unwrap();
+            assert!(!encoded.contains("/Users/"));
+            assert_eq!(
+                command,
+                serde_json::from_str::<ProjectWriteCommand>(&encoded).unwrap()
+            );
+        }
+    }
 }

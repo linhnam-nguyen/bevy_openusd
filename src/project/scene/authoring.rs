@@ -5,12 +5,15 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{gf::Matrix4d, sdf::Value, usd::Stage};
+use openusd::{sdf::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
-    ScenePlacementTransform,
 };
 use uuid::Uuid;
+
+use super::placement_transform;
+
+pub(crate) use super::placement_transform::author_scene_member_transform;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const SCENES_DIRECTORY: &str = "scenes";
@@ -108,7 +111,10 @@ pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Res
             .define_prim(member_path.as_str())?
             .set_type_name("Xform")?
             .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?;
-        author_scene_member_transform(&stage.prim(member_path.as_str()), member.transform)?;
+        placement_transform::author_scene_member_transform(
+            &stage.prim(member_path.as_str()),
+            member.transform,
+        )?;
     }
     Ok(stage)
 }
@@ -236,43 +242,8 @@ fn read_scene_member(stage: &Stage, member_id: SceneMemberId) -> Result<SceneMem
         id: member_id,
         target,
         name,
-        transform: read_scene_member_transform(&member)?,
+        transform: placement_transform::read_scene_member_transform(&member)?,
     })
-}
-
-pub(crate) fn author_scene_member_transform(
-    member_prim: &openusd::usd::Prim,
-    transform: ScenePlacementTransform,
-) -> Result<()> {
-    member_prim
-        .create_attribute("xformOp:transform", "matrix4d")?
-        .set_custom(false)?
-        .set(Value::Matrix4d(Matrix4d(transform.0)))?;
-    member_prim
-        .create_attribute("xformOpOrder", "token[]")?
-        .set_custom(false)?
-        .set(Value::TokenVec(vec!["xformOp:transform".into()]))?;
-    Ok(())
-}
-
-fn read_scene_member_transform(
-    member_prim: &openusd::usd::Prim,
-) -> Result<ScenePlacementTransform> {
-    let Some(value) = member_prim.attribute("xformOp:transform").get::<Value>()? else {
-        return Ok(ScenePlacementTransform::IDENTITY);
-    };
-    let Value::Matrix4d(matrix) = value else {
-        bail!("Project Scene placement transform must be matrix4d");
-    };
-    let order = member_prim
-        .attribute("xformOpOrder")
-        .get::<Value>()?
-        .context("Project Scene placement is missing xformOpOrder")?;
-    ensure!(
-        order == Value::TokenVec(vec!["xformOp:transform".into()]),
-        "Project Scene placement must use only xformOp:transform"
-    );
-    Ok(ScenePlacementTransform(matrix.0))
 }
 
 /// Read the authored placement records from one validated Project Scene.

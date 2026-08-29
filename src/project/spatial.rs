@@ -186,6 +186,49 @@ mod tests {
         assert_close(transform_point(transform, z), [0.0, 1.0, 0.0]);
     }
 
+    #[test]
+    fn asymmetric_fixture_preserves_axis_lengths_after_z_up_centimeter_normalization() {
+        let transform = source_normalization_transform(&SourceSpatialConvention {
+            up_axis: StageUpAxis::Z,
+            meters_per_unit: 0.01,
+            up_axis_was_authored: true,
+            meters_per_unit_was_authored: true,
+        });
+        let x_arm = [1.0, 0.0, 0.0, 1.0];
+        let y_arm = [0.0, 2.0, 0.0, 1.0];
+        let z_arm = [0.0, 0.0, 3.0, 1.0];
+
+        assert_close(transform_point(transform, x_arm), [0.01, 0.0, 0.0]);
+        assert_close(transform_point(transform, y_arm), [0.0, 0.0, -0.02]);
+        assert_close(transform_point(transform, z_arm), [0.0, 0.03, 0.0]);
+    }
+
+    #[test]
+    fn canonical_stage_is_explicit_and_native_source_needs_no_second_correction() -> Result<()> {
+        let stage = Stage::builder().in_memory("canonical-spatial.usda")?;
+        author_canonical_stage(&stage)?;
+
+        assert_eq!(
+            inspect_stage(&stage)?,
+            SourceSpatialConvention {
+                up_axis: StageUpAxis::Y,
+                meters_per_unit: 1.0,
+                up_axis_was_authored: true,
+                meters_per_unit_was_authored: true,
+            }
+        );
+        assert_eq!(
+            source_normalization_transform(&SourceSpatialConvention {
+                up_axis: USDHUB_UP_AXIS,
+                meters_per_unit: USDHUB_METERS_PER_UNIT,
+                up_axis_was_authored: true,
+                meters_per_unit_was_authored: true,
+            }),
+            Matrix4d::IDENTITY
+        );
+        Ok(())
+    }
+
     fn transform_point(matrix: Matrix4d, point: [f64; 4]) -> [f64; 3] {
         [
             point[0] * matrix.0[0]

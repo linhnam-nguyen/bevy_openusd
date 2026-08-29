@@ -73,6 +73,7 @@ mod lifecycle;
 mod model;
 mod model_preparation;
 mod progress;
+mod project_registration;
 mod scene;
 mod scene_adoption;
 mod scene_lifecycle;
@@ -84,7 +85,6 @@ pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::ProjectStageActivationTarget;
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
-
 impl ProjectApplicationService {
     /// Open the host-owned workspace registry without exposing its locator.
     pub fn open(registry_path: impl Into<PathBuf>) -> Result<Self, ProjectReadError> {
