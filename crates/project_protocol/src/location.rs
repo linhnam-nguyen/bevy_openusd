@@ -9,6 +9,7 @@ pub enum ProjectLocationKind {
     ImportScene,
     LinkScene,
     ImportModel,
+    ExportScene,
 }
 
 /// Opaque process/session-local handle for a host-selected directory.

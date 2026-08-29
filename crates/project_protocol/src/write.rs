@@ -75,6 +75,8 @@ pub enum ProjectWriteErrorCode {
     CommitMessageInvalid,
     NothingToCommit,
     CommitFailed,
+    ExportDestinationInvalid,
+    ExportFailed,
 }
 
 /// Typed write failures safe to return through the native host.
@@ -232,6 +234,20 @@ pub struct ProjectCommitResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectExportSceneRequest {
+    pub project_id: ProjectId,
+    pub scene_id: SceneId,
+    pub destination: LocalSelectionToken,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectSceneExportResponse {
+    pub project_id: ProjectId,
+    pub scene_id: SceneId,
+    pub file_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectRemoveScenePlacementRequest {
     pub project_id: ProjectId,
     pub parent_scene_id: SceneId,
@@ -292,6 +308,7 @@ pub enum ProjectWriteRequest {
     DeleteModel(ProjectDeleteModelRequest),
     CommitProject(ProjectCommitRequest),
     CommitScene(ProjectCommitRequest),
+    ExportScene(ProjectExportSceneRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -310,6 +327,7 @@ pub enum ProjectWriteResponse {
     SceneDeleted(ProjectSceneLifecycleResponse),
     ModelDeleted(ProjectModelLifecycleResponse),
     Committed(ProjectCommitResponse),
+    SceneExported(ProjectSceneExportResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

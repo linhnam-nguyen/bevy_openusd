@@ -67,6 +67,9 @@ mod deletion;
 #[path = "deletion_tests.rs"]
 mod deletion_tests;
 mod error;
+mod export;
+#[cfg(test)]
+mod export_tests;
 mod inspection;
 mod lifecycle;
 mod model;

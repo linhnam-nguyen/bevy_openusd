@@ -4,8 +4,8 @@ use std::{
 };
 
 use project_protocol::{
-    ProjectCommitRequest, ProjectCommitResponse, ProjectInspection, ProjectWriteError,
-    ProjectWriteErrorCode,
+    ProjectCommitRequest, ProjectCommitResponse, ProjectExportSceneRequest, ProjectInspection,
+    ProjectSceneExportResponse, ProjectWriteError, ProjectWriteErrorCode,
 };
 use usd_project::ProjectSummary;
 use uuid::Uuid;
@@ -19,6 +19,14 @@ impl ProjectApplicationService {
         request: ProjectCommitRequest,
     ) -> Result<ProjectCommitResponse, ProjectWriteError> {
         super::commit::commit(self, request)
+    }
+
+    pub fn export_scene(
+        &mut self,
+        request: ProjectExportSceneRequest,
+        destination: &Path,
+    ) -> Result<ProjectSceneExportResponse, ProjectWriteError> {
+        super::export::export_scene(self, request, destination)
     }
 
     pub fn inspect_project(
