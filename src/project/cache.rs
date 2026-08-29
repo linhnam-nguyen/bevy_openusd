@@ -5,13 +5,21 @@
 //! worktree uses a deterministic content fingerprint.  Disposable cache and
 //! recovery files are deliberately excluded from that fingerprint.
 
-use std::{cmp::Ordering, fs, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use usd_git::GitRepository;
 
 use super::storage::{CACHE_DIRECTORY, PROJECT_METADATA_DIRECTORY, RECOVERY_DIRECTORY};
+
+#[path = "cache_descriptor.rs"]
+mod descriptor;
+
+pub(crate) use descriptor::{
+    PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION, ProjectCacheDescriptor, ProjectCacheIdentity,
+    ProjectCacheState, ProjectCacheStore, ProjectCacheTarget,
+};
 
 /// Source identity used by a Project runtime-cache descriptor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -72,12 +80,7 @@ pub(crate) fn fingerprint_project(project_root: &Path) -> Result<String> {
         .with_context(|| format!("canonicalize Project root {}", project_root.display()))?;
     let mut files = Vec::new();
     collect_files(&root, &root, &mut files)?;
-    files.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-            .then(Ordering::Equal)
-    });
+    files.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
 
     let mut hasher = blake3::Hasher::new();
     for (relative, kind, bytes) in files {
