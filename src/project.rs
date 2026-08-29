@@ -11,6 +11,7 @@ pub(crate) mod model_wrapper;
 pub(crate) mod recovery;
 pub(crate) mod recovery_worker;
 pub(crate) mod runtime_delivery;
+pub(crate) mod runtime_payload;
 pub(crate) mod scene;
 pub(crate) mod semantic_store;
 pub mod service;

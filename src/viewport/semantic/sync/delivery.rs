@@ -5,7 +5,10 @@ use usd_bevy::{LiveRevision, LiveStage, ProgressiveProjectionState, ProjectionRe
 use usd_model::SemanticSnapshot;
 
 use crate::project::blob_store::PreparedMeshBlob;
-use crate::project::ghost_cache::{prepare_render_blobs, prepare_render_blobs_for_entities};
+use crate::project::ghost_cache::{
+    PreparedRenderPayloads, prepare_render_blobs, prepare_render_blobs_for_entities,
+    prepare_runtime_payloads,
+};
 use crate::project::recovery::RecoverySettings;
 use crate::viewport::api::RenderServerInterface;
 
@@ -21,6 +24,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
     live_revision: LiveRevision,
     snapshot: &SemanticSnapshot,
     prepared_blobs: Vec<PreparedMeshBlob>,
+    prepared_runtime_payloads: crate::project::runtime_payload::PreparedRuntimePayloads,
 ) {
     if world.get_resource::<RenderServerInterface>().is_none() {
         return;
@@ -40,6 +44,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
             },
             snapshot: snapshot.clone(),
             prepared_blobs,
+            prepared_runtime_payloads,
         });
     }
     if let Some(interface) = world.get_resource::<RenderServerInterface>() {
@@ -156,6 +161,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
                     // The stale worker already persisted its prepared bytes.
                     // The retry only rebuilds the complete manifest/hierarchy.
                     prepared_blobs: Vec::new(),
+                    prepared_runtime_payloads: result.prepared_runtime_payloads,
                 });
                 if let Some(mut counters) = world
                     .get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
@@ -193,8 +199,8 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
     action: &mut SemanticSyncAction,
     live_revision: LiveRevision,
     root_count: usize,
-) -> Vec<PreparedMeshBlob> {
-    match action {
+) -> PreparedRenderPayloads {
+    let meshes = match action {
         SemanticSyncAction::Replace(snapshot) => prepare_render_blobs(world, snapshot),
         SemanticSyncAction::Delta(update) => {
             let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
@@ -211,7 +217,10 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                         *upsert = enriched.clone();
                     }
                 }
-                return prepared;
+                return PreparedRenderPayloads {
+                    meshes: prepared,
+                    runtime: prepare_runtime_payloads(world, &update.snapshot),
+                };
             };
 
             // Partial index corruption: PrimEntities exists, but an affected geometry prim has no index mapping
@@ -237,7 +246,10 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                         *upsert = enriched.clone();
                     }
                 }
-                return prepared;
+                return PreparedRenderPayloads {
+                    meshes: prepared,
+                    runtime: prepare_runtime_payloads(world, &update.snapshot),
+                };
             }
 
             // Enrich only affected upserted semantic entities
@@ -250,5 +262,10 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
             }
             prepared
         }
-    }
+    };
+    let runtime = match action {
+        SemanticSyncAction::Replace(snapshot) => prepare_runtime_payloads(world, snapshot),
+        SemanticSyncAction::Delta(update) => prepare_runtime_payloads(world, &update.snapshot),
+    };
+    PreparedRenderPayloads { meshes, runtime }
 }

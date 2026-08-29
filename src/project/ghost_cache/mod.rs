@@ -17,6 +17,8 @@ use super::blob_store::{
     FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob, prepare_mesh_payload, put_mesh,
 };
 use super::recovery::RecoverySettings;
+use super::runtime_payload::PreparedRuntimePayloads;
+pub(crate) use super::runtime_payload::prepare_runtime_payloads;
 
 /// Runtime counters for historical geometry capture.
 ///
@@ -32,6 +34,12 @@ pub(crate) struct HistoricalGeometryCache {
     pub(crate) ghost_load_failures: u64,
     pub(crate) mesh_handles_scanned: u64,
     pub(crate) semantic_entities_scanned: u64,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PreparedRenderPayloads {
+    pub(crate) meshes: Vec<PreparedMeshBlob>,
+    pub(crate) runtime: PreparedRuntimePayloads,
 }
 
 /// Attach persistent render-blob identities to the semantic snapshot's mesh

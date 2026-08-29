@@ -13,7 +13,10 @@ use viewport_protocol::RuntimeProfile;
 use crate::project::blob_store::{
     BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob,
 };
-use crate::project::runtime_delivery::{RuntimeDeliveryBundle, build_runtime_delivery};
+use crate::project::runtime_delivery::{
+    RuntimeDeliveryBundle, build_runtime_delivery_with_payloads,
+};
+use crate::project::runtime_payload::{PreparedRuntimeBlob, PreparedRuntimePayloads};
 
 pub(crate) const DELIVERY_QUEUE_CAPACITY: usize = 4;
 pub(crate) const DELIVERY_RESULT_CAPACITY: usize = 4;
@@ -30,6 +33,7 @@ pub(crate) struct PendingRuntimeDelivery {
     pub(crate) identity: RuntimeDeliveryIdentity,
     pub(crate) snapshot: SemanticSnapshot,
     pub(crate) prepared_blobs: Vec<PreparedMeshBlob>,
+    pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
 }
 
 #[derive(Debug)]
@@ -38,6 +42,7 @@ struct DeliveryWork {
     project_root: PathBuf,
     snapshot: SemanticSnapshot,
     prepared_blobs: Vec<PreparedMeshBlob>,
+    prepared_runtime_payloads: PreparedRuntimePayloads,
     profile: RuntimeProfile,
 }
 
@@ -48,6 +53,7 @@ pub(crate) struct DeliveryResult {
     pub(crate) worker_ms: f64,
     pub(crate) blob_reads: u64,
     pub(crate) bytes: u64,
+    pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
 }
 
 #[derive(Debug, Default)]
@@ -168,6 +174,7 @@ impl RuntimeDeliveryRuntime {
             project_root: project_root.to_path_buf(),
             snapshot: pending.snapshot,
             prepared_blobs: pending.prepared_blobs,
+            prepared_runtime_payloads: pending.prepared_runtime_payloads,
             profile: RuntimeProfile::NativeMedium,
         };
         match self.queue.submit(work) {
@@ -178,6 +185,7 @@ impl RuntimeDeliveryRuntime {
                     identity: work.identity,
                     snapshot: work.snapshot,
                     prepared_blobs: work.prepared_blobs,
+                    prepared_runtime_payloads: work.prepared_runtime_payloads,
                 });
                 false
             }
@@ -224,6 +232,7 @@ fn delivery_worker(
             worker_ms: started.elapsed().as_secs_f64() * 1000.0,
             blob_reads,
             bytes,
+            prepared_runtime_payloads: work.prepared_runtime_payloads,
         };
         if !send_delivery_result(&results, result, &result_backpressure) {
             break;
@@ -248,7 +257,11 @@ fn send_delivery_result(
 
 fn build_delivery(work: &DeliveryWork) -> anyhow::Result<RuntimeDeliveryBundle> {
     let store = FilesystemBlobStore::new(work.project_root.join(OBJECTS_DIRECTORY))?;
-    let mut persisted = HashSet::with_capacity(work.prepared_blobs.len());
+    let mut persisted = HashSet::with_capacity(
+        work.prepared_blobs.len()
+            + work.prepared_runtime_payloads.materials.len()
+            + work.prepared_runtime_payloads.textures.len(),
+    );
     for prepared in &work.prepared_blobs {
         if !persisted.insert(prepared.blob_id.0.clone()) {
             continue;
@@ -261,7 +274,38 @@ fn build_delivery(work: &DeliveryWork) -> anyhow::Result<RuntimeDeliveryBundle> 
             stored.0
         );
     }
-    build_runtime_delivery(&store, &work.snapshot, work.profile)
+    for prepared in work
+        .prepared_runtime_payloads
+        .materials
+        .iter()
+        .chain(work.prepared_runtime_payloads.textures.iter())
+    {
+        persist_runtime_blob(&store, prepared, &mut persisted)?;
+    }
+    build_runtime_delivery_with_payloads(
+        &store,
+        &work.snapshot,
+        work.profile,
+        &work.prepared_runtime_payloads,
+    )
+}
+
+fn persist_runtime_blob(
+    store: &FilesystemBlobStore,
+    prepared: &PreparedRuntimeBlob,
+    persisted: &mut HashSet<String>,
+) -> anyhow::Result<()> {
+    if !persisted.insert(prepared.blob_id.0.clone()) {
+        return Ok(());
+    }
+    let stored = store.put(&prepared.bytes)?;
+    anyhow::ensure!(
+        stored == prepared.blob_id,
+        "prepared runtime digest {} was stored as {}",
+        prepared.blob_id.0,
+        stored.0
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -290,6 +334,7 @@ mod tests {
                 entities: HashMap::new(),
             },
             prepared_blobs: Vec::new(),
+            prepared_runtime_payloads: PreparedRuntimePayloads::default(),
             profile: RuntimeProfile::NativeMedium,
         }
     }
@@ -340,6 +385,7 @@ mod tests {
                         worker_ms: 0.0,
                         blob_reads: 0,
                         bytes: 0,
+                        prepared_runtime_payloads: PreparedRuntimePayloads::default(),
                     },
                     &worker_backpressure,
                 ));

@@ -313,7 +313,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         return;
     };
     let render_blob_started = Instant::now();
-    let prepared_blobs =
+    let prepared_payloads =
         attach_render_blobs_to_action(world, &mut update, live_revision, root_count);
     if let Some(mut counters) =
         world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
@@ -328,7 +328,14 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot(request_id, snapshot.clone());
             if submitted {
-                queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
+                queue_runtime_delivery(
+                    world,
+                    session_id,
+                    live_revision,
+                    &snapshot,
+                    prepared_payloads.meshes,
+                    prepared_payloads.runtime,
+                );
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
@@ -342,7 +349,14 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 .resource::<SemanticWorkingStore>()
                 .submit_delta_with_snapshot(request_id, update.request, &snapshot);
             if submitted {
-                queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
+                queue_runtime_delivery(
+                    world,
+                    session_id,
+                    live_revision,
+                    &snapshot,
+                    prepared_payloads.meshes,
+                    prepared_payloads.runtime,
+                );
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);

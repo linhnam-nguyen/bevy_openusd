@@ -1,6 +1,9 @@
 use bevy::asset::RenderAssetUsages;
+use bevy::image::Image;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::Assets;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use tempfile::tempdir;
 use usd_model::{
     Bounds3, CanonicalValue, EntityKey, EntitySnapshot, GeometrySignature, HashDigest,
@@ -9,6 +12,8 @@ use usd_model::{
 };
 
 use crate::project::blob_store::BlobStore;
+use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
+use crate::project::runtime_payload::{RuntimeTextureBlob, RuntimeTextureColorSpace};
 
 use super::*;
 
@@ -280,5 +285,88 @@ fn attach_render_blobs_for_entities_scans_only_affected_entities_and_handles() -
         .expect("blob reference attached");
     let store = FilesystemBlobStore::new(project.path().join(OBJECTS_DIRECTORY))?;
     assert!(store.contains(blob_id)?);
+    Ok(())
+}
+
+#[test]
+fn runtime_payloads_persist_materials_and_distinguish_texture_color_spaces() -> anyhow::Result<()> {
+    let project = tempdir()?;
+    let mut world = World::new();
+    world.insert_resource(Assets::<Image>::default());
+    world.insert_resource(Assets::<StandardMaterial>::default());
+
+    let pixels = vec![255, 128, 0, 255];
+    let srgb = world.resource_mut::<Assets<Image>>().add(Image::new(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels.clone(),
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    ));
+    let linear = world.resource_mut::<Assets<Image>>().add(Image::new(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::default(),
+    ));
+    let material = world
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial {
+            base_color_texture: Some(srgb),
+            normal_map_texture: Some(linear),
+            ..Default::default()
+        });
+    world.spawn((UsdPrimRef::new("/World/Triangle"), MeshMaterial3d(material)));
+
+    let prepared = prepare_runtime_payloads(&mut world, &snapshot());
+    assert_eq!(prepared.material_by_entity.len(), 1);
+    assert_eq!(prepared.materials.len(), 1);
+    assert_eq!(prepared.textures.len(), 2);
+    let color_spaces = prepared
+        .textures
+        .iter()
+        .map(|payload| {
+            serde_json::from_slice::<RuntimeTextureBlob>(&payload.bytes)
+                .map(|blob| blob.color_space)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    assert!(color_spaces.contains(&RuntimeTextureColorSpace::Srgb));
+    assert!(color_spaces.contains(&RuntimeTextureColorSpace::Linear));
+    assert_ne!(
+        prepared.textures[0].blob_id, prepared.textures[1].blob_id,
+        "color-space interpretation must be part of the texture identity"
+    );
+
+    let store = FilesystemBlobStore::new(project.path().join(OBJECTS_DIRECTORY))?;
+    for payload in prepared.materials.iter().chain(prepared.textures.iter()) {
+        assert_eq!(store.put(&payload.bytes)?, payload.blob_id);
+    }
+    let bundle = build_runtime_delivery_with_payloads(
+        &store,
+        &snapshot(),
+        viewport_protocol::RuntimeProfile::NativeMedium,
+        &prepared,
+    )?;
+    assert_eq!(bundle.manifest.materials.len(), 1);
+    assert_eq!(bundle.manifest.textures.len(), 2);
+    let hierarchy = bundle
+        .blobs
+        .iter()
+        .find(|(id, _)| id == &bundle.manifest.hierarchy.blob_id)
+        .map(|(_, bytes)| {
+            serde_json::from_slice::<crate::project::runtime_delivery::RuntimeHierarchyBlob>(bytes)
+        })
+        .transpose()?
+        .expect("hierarchy blob is present");
+    assert!(hierarchy.entities[0].material_blob_id.is_some());
     Ok(())
 }

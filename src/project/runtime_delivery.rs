@@ -14,8 +14,9 @@ use viewport_protocol::{
 };
 
 use super::blob_store::BlobStore;
+use super::runtime_payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
 
-const RUNTIME_HIERARCHY_VERSION: u16 = 1;
+const RUNTIME_HIERARCHY_VERSION: u16 = 2;
 const RUNTIME_MESH_VERSION: u16 = 1;
 
 /// A complete server-owned manifest and the verified bytes it references.
@@ -35,13 +36,35 @@ pub(crate) fn build_runtime_delivery(
     snapshot: &SemanticSnapshot,
     profile: RuntimeProfile,
 ) -> Result<RuntimeDeliveryBundle> {
+    build_runtime_delivery_with_payloads(
+        store,
+        snapshot,
+        profile,
+        &PreparedRuntimePayloads::default(),
+    )
+}
+
+/// Build a runtime bundle with payloads prepared from the same authoritative
+/// projection. The old helper remains useful for mesh-only fallback tests.
+pub(crate) fn build_runtime_delivery_with_payloads(
+    store: &impl BlobStore,
+    snapshot: &SemanticSnapshot,
+    profile: RuntimeProfile,
+    prepared: &PreparedRuntimePayloads,
+) -> Result<RuntimeDeliveryBundle> {
     let mut entities = snapshot.entities.values().collect::<Vec<_>>();
     entities.sort_by(|left, right| left.key.cmp(&right.key));
 
     let mut mesh_ids = BTreeSet::new();
     let hierarchy_entities = entities
         .iter()
-        .map(|entity| hierarchy_entity(entity, &mut mesh_ids))
+        .map(|entity| {
+            hierarchy_entity(
+                entity,
+                &mut mesh_ids,
+                prepared.material_by_entity.get(&entity.prim_path).cloned(),
+            )
+        })
         .collect::<Vec<_>>();
     let hierarchy = RuntimeHierarchyBlob {
         version: RUNTIME_HIERARCHY_VERSION,
@@ -74,6 +97,46 @@ pub(crate) fn build_runtime_delivery(
         });
     }
 
+    let mut material_references = Vec::with_capacity(prepared.materials.len());
+    for payload in &prepared.materials {
+        let material_id = payload.blob_id.0.clone();
+        let bytes = store
+            .get(&payload.blob_id)
+            .with_context(|| format!("read runtime material blob {material_id}"))?
+            .ok_or_else(|| anyhow::anyhow!("runtime material blob {material_id} is missing"))?;
+        let descriptor: RuntimeMaterialBlob = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decode runtime material blob {material_id}"))?;
+        descriptor.validate()?;
+        let byte_size = bytes.len() as u64;
+        blobs.push((material_id.clone(), bytes));
+        material_references.push(RuntimeBlobReference {
+            blob_id: material_id,
+            payload_kind: RuntimePayloadKind::Material,
+            payload_version: descriptor.version,
+            byte_size,
+        });
+    }
+
+    let mut texture_references = Vec::with_capacity(prepared.textures.len());
+    for payload in &prepared.textures {
+        let texture_id = payload.blob_id.0.clone();
+        let bytes = store
+            .get(&payload.blob_id)
+            .with_context(|| format!("read runtime texture blob {texture_id}"))?
+            .ok_or_else(|| anyhow::anyhow!("runtime texture blob {texture_id} is missing"))?;
+        let descriptor: RuntimeTextureBlob = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decode runtime texture blob {texture_id}"))?;
+        descriptor.validate()?;
+        let byte_size = bytes.len() as u64;
+        blobs.push((texture_id.clone(), bytes));
+        texture_references.push(RuntimeBlobReference {
+            blob_id: texture_id,
+            payload_kind: RuntimePayloadKind::Texture,
+            payload_version: descriptor.version,
+            byte_size,
+        });
+    }
+
     Ok(RuntimeDeliveryBundle {
         manifest: RuntimeManifest {
             revision: snapshot.snapshot_id.0.clone(),
@@ -85,8 +148,8 @@ pub(crate) fn build_runtime_delivery(
                 byte_size: blobs[0].1.len() as u64,
             },
             meshes: mesh_references,
-            materials: Vec::new(),
-            textures: Vec::new(),
+            materials: material_references,
+            textures: texture_references,
         },
         blobs,
     })
@@ -95,6 +158,7 @@ pub(crate) fn build_runtime_delivery(
 fn hierarchy_entity(
     entity: &EntitySnapshot,
     mesh_ids: &mut BTreeSet<String>,
+    material_blob_id: Option<String>,
 ) -> RuntimeHierarchyEntity {
     let geometry = entity.geometry.as_ref().and_then(|geometry| {
         let blob_id = geometry.render_blob.as_ref()?.0.clone();
@@ -112,6 +176,7 @@ fn hierarchy_entity(
         prim_path: entity.prim_path.clone(),
         transform: entity.transform.clone(),
         geometry,
+        material_blob_id,
     }
 }
 
@@ -128,6 +193,8 @@ pub(crate) struct RuntimeHierarchyEntity {
     pub(crate) prim_path: String,
     pub(crate) transform: TransformSignature,
     pub(crate) geometry: Option<RuntimeHierarchyGeometry>,
+    #[serde(default)]
+    pub(crate) material_blob_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
