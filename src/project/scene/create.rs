@@ -111,7 +111,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             !final_scene_path.exists(),
             "new Project Scene canonical layer already exists"
         );
-        let stage = authoring::new_scene_stage(scene_id, &[])?;
+        let stage = authoring::new_scene_stage(scene_id)?;
         stage
             .root_layer()
             .export(temporary_scene_path.to_string_lossy().as_ref())

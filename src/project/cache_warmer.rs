@@ -370,6 +370,9 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
 }
 
 #[cfg(test)]
+#[path = "cache_warmer_c7_tests.rs"]
+mod c7_tests;
+#[cfg(test)]
 #[path = "cache_warmer_closure_tests.rs"]
 mod closure_tests;
 #[cfg(test)]

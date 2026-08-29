@@ -1,5 +1,6 @@
 use std::fs;
 
+use anyhow::Result;
 use image::RgbaImage;
 use tempfile::tempdir;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};

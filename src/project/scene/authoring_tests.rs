@@ -175,7 +175,7 @@ fn legacy_scene_placement_without_transform_defaults_to_identity() -> Result<()>
     };
     let path = scene_path(project_directory.path(), scene_id);
     fs::create_dir_all(path.parent().expect("Scene directory"))?;
-    let stage = new_scene_stage(scene_id, &[])?;
+    let stage = new_scene_stage(scene_id)?;
     stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
         .set_type_name("Xform")?;

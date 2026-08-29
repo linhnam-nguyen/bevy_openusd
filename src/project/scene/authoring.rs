@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{sdf, sdf::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
 };
@@ -13,7 +13,9 @@ use uuid::Uuid;
 
 use super::placement_transform;
 
-pub(crate) use super::placement_transform::author_scene_member_transform;
+#[path = "member_authoring.rs"]
+mod member_authoring;
+pub(crate) use member_authoring::author_scene_member;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const SCENES_DIRECTORY: &str = "scenes";
@@ -25,6 +27,7 @@ const MEMBER_ID_METADATA: &str = "usdhub:memberId";
 const MEMBER_TARGET_KIND_METADATA: &str = "usdhub:targetKind";
 const MEMBER_TARGET_ID_METADATA: &str = "usdhub:targetId";
 const MEMBER_NAME_METADATA: &str = "usdhub:name";
+const REFERENCES_FIELD: &str = "references";
 const PROTECTED_ROOT_METADATA: &str = "usdhub:protectedRoot";
 const SCENE_SCHEMA_VERSION: i32 = 1;
 
@@ -69,7 +72,10 @@ pub(crate) fn author_scene_atomic_with_graph_and_protection(
     let mut temporary_created = false;
 
     let result = (|| {
-        let stage = new_scene_stage_with_protection(scene_id, members, protected_root)?;
+        let stage = new_scene_stage_with_protection(scene_id, protected_root)?;
+        for member in members {
+            author_scene_member(&stage, project_root, member)?;
+        }
         let temporary_path_string = temporary_path.to_string_lossy().into_owned();
         temporary_created = true;
         stage
@@ -101,15 +107,11 @@ pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
         .join(format!("{scene_id}.usda"))
 }
 
-pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Result<Stage> {
-    new_scene_stage_with_protection(scene_id, members, false)
+pub(crate) fn new_scene_stage(scene_id: SceneId) -> Result<Stage> {
+    new_scene_stage_with_protection(scene_id, false)
 }
 
-fn new_scene_stage_with_protection(
-    scene_id: SceneId,
-    members: &[SceneMember],
-    protected_root: bool,
-) -> Result<Stage> {
+fn new_scene_stage_with_protection(scene_id: SceneId, protected_root: bool) -> Result<Stage> {
     let stage = Stage::builder().in_memory(format!("scene-{scene_id}.usda"))?;
     let custom_data = scene_custom_data(scene_id, protected_root);
 
@@ -119,27 +121,6 @@ fn new_scene_stage_with_protection(
         .set_metadata("customData", Value::Dictionary(custom_data))?;
     stage.set_default_prim(SCENE_ROOT_PRIM)?;
     crate::project::spatial::author_canonical_stage(&stage)?;
-    if !members.is_empty() {
-        stage
-            .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
-            .set_type_name("Xform")?;
-    }
-    for member in members {
-        let member_path = scene_member_path(member.id);
-        stage
-            .define_prim(member_path.as_str())?
-            .set_type_name("Xform")?
-            .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?;
-        if let Some(name) = &member.name {
-            stage
-                .prim(member_path.as_str())
-                .set_metadata("ui:displayName", Value::String(name.clone()))?;
-        }
-        placement_transform::author_scene_member_transform(
-            &stage.prim(member_path.as_str()),
-            member.transform,
-        )?;
-    }
     Ok(stage)
 }
 
@@ -188,6 +169,14 @@ pub(crate) fn validate_scene_file(
         ensure!(
             member.is_defined()?,
             "Project Scene member prim must be defined"
+        );
+        let member_spec_path = sdf::path(member_path.as_str())?;
+        ensure!(
+            stage
+                .root_layer()
+                .prim(&member_spec_path)
+                .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
+            "Project Scene member prim must contain a target reference"
         );
         ensure!(
             read_scene_member(&stage, expected_member.id)? == *expected_member,

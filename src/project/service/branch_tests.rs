@@ -1,9 +1,12 @@
 use std::{fs, path::Path, process::Command};
 
+use openusd::usd::Stage;
 use project_protocol::{ProjectWriteError, ProjectWriteErrorCode};
 use tempfile::tempdir;
 use usd_git::GitRepository;
-use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
+use usd_project::{
+    ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, SceneMemberTarget, StorageKey,
+};
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
 
@@ -75,6 +78,84 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     assert_eq!(
         fs::read(repository.join("branch.txt")).unwrap(),
         b"local edit"
+    );
+}
+
+#[test]
+fn switching_to_a_legacy_scene_branch_migrates_and_composes_content() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("project");
+    fs::create_dir_all(&repository).unwrap();
+    run_git(&repository, &["init", "-b", "main"]);
+    run_git(&repository, &["config", "user.name", "USDHub Test"]);
+    run_git(
+        &repository,
+        &["config", "user.email", "test@usdhub.invalid"],
+    );
+
+    let project_id = ProjectId::new_v4();
+    let scene_id = usd_project::SceneId::new_v4();
+    let legacy_manifest = ProjectManifestV1::new(
+        project_id,
+        "Branch Project",
+        ProjectRoot::Scene(scene_id),
+        vec![SceneManifestEntry {
+            id: scene_id,
+            storage_key: StorageKey::new("Legacy Scene").unwrap(),
+        }],
+        Vec::new(),
+    );
+    crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
+        &repository,
+        &legacy_manifest,
+    )
+    .unwrap();
+    write_legacy_scene_layer(&repository, scene_id);
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "legacy Project"]);
+    run_git(&repository, &["branch", "legacy-scene"]);
+
+    let migrated_main = crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &repository,
+        &legacy_manifest,
+    )
+    .unwrap();
+    assert!(matches!(migrated_main.root, ProjectRoot::Scene(root) if root != scene_id));
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "protected main Project"]);
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &repository, None).unwrap();
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+
+    let response = service
+        .switch_branch(project_id, "legacy-scene")
+        .expect("legacy branch migration should succeed");
+    assert_eq!(
+        response.repository.active_branch.as_deref(),
+        Some("legacy-scene")
+    );
+
+    let migrated = ManifestStore::read_validated(&repository).unwrap();
+    let ProjectRoot::Scene(root_id) = migrated.raw().root else {
+        panic!("legacy branch must migrate to a protected Root Scene");
+    };
+    let root_path = crate::project::scene::authoring::scene_path(&repository, root_id);
+    let member = crate::project::scene::authoring::read_scene_members(&root_path, root_id)
+        .unwrap()
+        .into_iter()
+        .find(|member| member.target == SceneMemberTarget::Scene(scene_id))
+        .expect("legacy branch Scene placement");
+    let root_stage = Stage::open(root_path.to_string_lossy().as_ref()).unwrap();
+    let member_path = crate::project::scene::authoring::scene_member_path(member.id);
+    assert!(
+        root_stage
+            .prim(member_path.as_str())
+            .child_names()
+            .unwrap()
+            .iter()
+            .any(|name| name.as_str() == "LegacyBranch")
     );
 }
 
@@ -276,4 +357,20 @@ fn run_git(directory: &Path, args: &[&str]) {
         output.status,
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn write_legacy_scene_layer(repository: &Path, scene_id: usd_project::SceneId) {
+    let path = crate::project::scene::authoring::scene_path(repository, scene_id);
+    crate::project::scene::authoring::author_scene_atomic(repository, scene_id).unwrap();
+    let stage = Stage::open(path.to_string_lossy().as_ref()).unwrap();
+    stage
+        .define_prim("/SceneRoot/LegacyBranch/Content")
+        .unwrap()
+        .set_type_name("Xform")
+        .unwrap();
+    stage.set_default_prim("SceneRoot").unwrap();
+    stage
+        .root_layer()
+        .export(path.to_string_lossy().as_ref())
+        .unwrap();
 }

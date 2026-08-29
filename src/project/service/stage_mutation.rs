@@ -256,7 +256,7 @@ fn apply_mutation(
         // activation. There is no SceneMember to patch into the new root.
         return Ok(());
     };
-    crate::project::scene::adoption_authoring::author_scene_member(
+    crate::project::scene::authoring::author_scene_member(
         &live.stage,
         project_root,
         &SceneMember {

@@ -257,3 +257,7 @@ mod tests {
         }));
     }
 }
+
+#[cfg(test)]
+#[path = "root_c7_tests.rs"]
+mod c7_tests;
