@@ -123,6 +123,12 @@ pub(super) fn create_scene(
             },
         )?;
     }
+    let _ = service.cache_warm.enqueue(
+        project_root,
+        crate::project::cache::ProjectCacheTarget::Scene {
+            id: created.scene_id.to_string(),
+        },
+    );
     Ok(ProjectSceneWriteResponse {
         project: summary,
         scene_id: created.scene_id,

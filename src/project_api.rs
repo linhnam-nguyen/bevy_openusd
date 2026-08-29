@@ -12,6 +12,8 @@ pub(crate) mod scene;
 
 #[path = "project/cache.rs"]
 pub(crate) mod cache;
+#[path = "project/cache_warmer.rs"]
+pub(crate) mod cache_warmer;
 #[path = "project/model_import.rs"]
 pub(crate) mod model_import;
 #[path = "project/model_wrapper.rs"]

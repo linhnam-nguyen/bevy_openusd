@@ -20,6 +20,7 @@ use usd_project::{
     RepositorySummary, RevisionSummary,
 };
 
+use crate::project::cache_warmer::ProjectCacheWarmQueue;
 use crate::project::{
     catalog::{
         catalogue::{
@@ -40,6 +41,7 @@ pub struct ProjectApplicationService {
     pub(super) publication_coordinator: ProjectPublicationCoordinator,
     pub(super) stage_mutations: ProjectStageMutationQueue,
     pub(super) progress: ProjectImportProgressStore,
+    pub(super) cache_warm: ProjectCacheWarmQueue,
 }
 
 /// Shared admission state for non-idempotent publication mutations.
@@ -134,6 +136,7 @@ impl ProjectApplicationService {
                 publication_coordinator,
                 stage_mutations,
                 progress,
+                cache_warm: ProjectCacheWarmQueue::default(),
             })
             .map_err(|_| ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,

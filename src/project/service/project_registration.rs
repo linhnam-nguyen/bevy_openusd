@@ -144,6 +144,10 @@ pub(super) fn import_project(
                 });
             }
             let summary = super::inspection::project_summary(manifest.raw(), project_root)?;
+            let _ = service.cache_warm.enqueue(
+                project_root,
+                crate::project::cache::ProjectCacheTarget::ProjectRoot,
+            );
             service
                 .registry
                 .register(manifest.raw().project_id, project_root, None)
@@ -211,6 +215,10 @@ fn adopt_git_project(
             .map_err(|_| ProjectWriteError::RegistrationFailed {
                 project_created: true,
             })?;
+        let _ = service.cache_warm.enqueue(
+            project_root,
+            crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        );
         Ok(summary)
     })();
 

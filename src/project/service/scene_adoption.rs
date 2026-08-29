@@ -158,6 +158,12 @@ fn adopt_scene_inner(
             },
         )?;
     }
+    let _ = service.cache_warm.enqueue(
+        project_root,
+        crate::project::cache::ProjectCacheTarget::Scene {
+            id: adopted.scene_id.to_string(),
+        },
+    );
 
     Ok(ProjectSceneAdoptionResponse {
         project,

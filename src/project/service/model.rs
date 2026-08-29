@@ -166,6 +166,12 @@ fn publish_model_inner(
             },
         )?;
     }
+    let _ = service.cache_warm.enqueue(
+        project_root,
+        crate::project::cache::ProjectCacheTarget::Model {
+            id: published.id.to_string(),
+        },
+    );
 
     Ok(ProjectModelWriteResponse {
         project,
