@@ -14,9 +14,8 @@ use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::source_closure::materialize_source_closure;
 use anyhow::{Context, Result, bail, ensure};
 use usd_project::{
-    CompositionClassification, CompositionInspection, ProjectManifestV1, ProjectRoot,
-    SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMember, ScenePlacementTransform,
-    StorageKey,
+    CompositionInspection, ProjectManifestV1, ProjectRoot, SceneCompositionGraph, SceneId,
+    SceneManifestEntry, SceneMember, ScenePlacementTransform, StorageKey,
 };
 use uuid::Uuid;
 

@@ -41,9 +41,10 @@ pub use scene_inspection::{
 pub use write::{
     PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectBranchSwitchRequest,
     ProjectBranchSwitchResponse, ProjectCreateRequest, ProjectCreateSceneRequest,
-    ProjectDeleteSceneRequest, ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
-    ProjectInspectionClassification, ProjectInspectionWarning, ProjectLifecycleRequest,
-    ProjectLifecycleResponse, ProjectLinkSceneRequest, ProjectModelWriteResponse,
+    ProjectDeleteModelRequest, ProjectDeleteSceneRequest, ProjectImportModelRequest,
+    ProjectImportRequest, ProjectInspection, ProjectInspectionClassification,
+    ProjectInspectionWarning, ProjectLifecycleRequest, ProjectLifecycleResponse,
+    ProjectLinkSceneRequest, ProjectModelLifecycleResponse, ProjectModelWriteResponse,
     ProjectRemoveScenePlacementRequest, ProjectRenameRequest, ProjectRenameResponse,
     ProjectSceneAdoptionResponse, ProjectSceneLifecycleResponse, ProjectSceneWriteResponse,
     ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply,
@@ -322,6 +323,10 @@ mod tests {
             ProjectWriteRequest::DeleteScene(ProjectDeleteSceneRequest {
                 project_id,
                 scene_id: parent_scene_id,
+            }),
+            ProjectWriteRequest::DeleteModel(ProjectDeleteModelRequest {
+                project_id,
+                model_id: usd_project::ModelId::new_v4(),
             }),
         ];
 

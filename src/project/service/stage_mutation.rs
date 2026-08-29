@@ -53,6 +53,10 @@ pub enum ProjectStageMutation {
         project_id: ProjectId,
         scene_id: SceneId,
     },
+    DeleteModel {
+        project_id: ProjectId,
+        model_id: ModelId,
+    },
     Rename {
         project_id: ProjectId,
         target: ProjectWriteTarget,
@@ -79,12 +83,21 @@ impl ProjectStageMutationQueue {
     /// successful disk mutation from being reported as failed because its
     /// stage handoff was discovered to be full afterward.
     pub fn ensure_capacity(&self, project_root: &Path) -> Result<(), ProjectWriteError> {
+        self.ensure_capacity_for(project_root, 1)
+    }
+
+    /// Check capacity for a bounded batch before canonical files are changed.
+    pub fn ensure_capacity_for(
+        &self,
+        project_root: &Path,
+        additional: usize,
+    ) -> Result<(), ProjectWriteError> {
         let _guard = self
             .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
         let pending = read_pending(&outbox_path(project_root))?;
-        if pending.len() >= STAGE_MUTATION_CAPACITY {
+        if pending.len().saturating_add(additional) > STAGE_MUTATION_CAPACITY {
             return Err(busy_error());
         }
         Ok(())
@@ -193,6 +206,7 @@ impl ProjectStageMutation {
             | Self::PublishModel { project_id, .. }
             | Self::RemoveScenePlacement { project_id, .. }
             | Self::DeleteScene { project_id, .. }
+            | Self::DeleteModel { project_id, .. }
             | Self::Rename { project_id, .. } => *project_id,
         }
     }
@@ -212,13 +226,13 @@ impl ProjectStageMutation {
                 parent_scene_id, ..
             } => Some(*parent_scene_id),
             Self::DeleteScene { scene_id, .. } => Some(*scene_id),
-            Self::Rename { .. } => None,
+            Self::DeleteModel { .. } | Self::Rename { .. } => None,
         }
     }
 
     fn can_be_consumed_for_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
         match self {
-            Self::DeleteScene { .. } | Self::Rename { .. } => true,
+            Self::DeleteScene { .. } | Self::DeleteModel { .. } | Self::Rename { .. } => true,
             _ => self.parent_scene_id() == active_scene_id,
         }
     }
@@ -231,6 +245,11 @@ fn apply_mutation(
 ) -> Result<(), ProjectWriteError> {
     if let ProjectStageMutation::DeleteScene { .. } = mutation {
         usd_bevy::authoring::remove_prim(&live.stage, "/SceneRoot")
+            .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::DeleteModel { .. } = mutation {
+        usd_bevy::authoring::remove_prim(&live.stage, "/ModelRoot")
             .map_err(|_| filesystem_error())?;
         return Ok(());
     }
@@ -264,6 +283,7 @@ fn apply_mutation(
         } => (*placement_id, SceneMemberTarget::Model(*model_id)),
         ProjectStageMutation::RemoveScenePlacement { .. }
         | ProjectStageMutation::DeleteScene { .. }
+        | ProjectStageMutation::DeleteModel { .. }
         | ProjectStageMutation::Rename { .. } => unreachable!("handled above"),
     };
     let Some(placement_id) = placement_id else {

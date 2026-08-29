@@ -1,13 +1,10 @@
 //! Application service for conservative Scene lifecycle mutations.
 
-use std::fs;
-
 use project_protocol::{
     ProjectDeleteSceneRequest, ProjectRemoveScenePlacementRequest, ProjectSceneLifecycleResponse,
     ProjectWriteError, ProjectWriteErrorCode,
 };
 use usd_project::{ProjectRoot, SceneMemberTarget};
-use uuid::Uuid;
 
 use super::ProjectApplicationService;
 
@@ -93,104 +90,7 @@ impl ProjectApplicationService {
         &mut self,
         request: ProjectDeleteSceneRequest,
     ) -> Result<ProjectSceneLifecycleResponse, ProjectWriteError> {
-        let (entry, validated) = self
-            .validated_project(request.project_id)
-            .map_err(|error| ProjectWriteError::Failed {
-                code: match error {
-                    project_protocol::ProjectReadError::NotFound { .. } => {
-                        ProjectWriteErrorCode::ProjectNotFound
-                    }
-                    _ => ProjectWriteErrorCode::SceneDeleteFailed,
-                },
-            })?;
-        if validated.scene(request.scene_id).is_none() {
-            return Err(ProjectWriteError::Invalid {
-                code: ProjectWriteErrorCode::SceneNotFound,
-            });
-        }
-        if validated.raw().root == ProjectRoot::Scene(request.scene_id) {
-            return Err(ProjectWriteError::Invalid {
-                code: ProjectWriteErrorCode::ProtectedRootScene,
-            });
-        }
-        let project_root = entry.repository_locator();
-        for scene in validated.scenes() {
-            let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
-            let members = crate::project::scene::authoring::read_scene_members(&path, scene.id)
-                .map_err(|_| ProjectWriteError::Failed {
-                    code: ProjectWriteErrorCode::SceneDeleteFailed,
-                })?;
-            if members
-                .iter()
-                .any(|member| member.target == SceneMemberTarget::Scene(request.scene_id))
-            {
-                return Err(ProjectWriteError::Invalid {
-                    code: ProjectWriteErrorCode::SceneInUse,
-                });
-            }
-        }
-
-        self.stage_mutations.ensure_capacity(project_root)?;
-        let scene_path =
-            crate::project::scene::authoring::scene_path(project_root, request.scene_id);
-        let tombstone = scene_path.with_file_name(format!(
-            ".{}.delete-{}.usda",
-            request.scene_id,
-            Uuid::new_v4()
-        ));
-        fs::rename(&scene_path, &tombstone).map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::SceneDeleteFailed,
-        })?;
-
-        let previous_manifest = validated.raw().clone();
-        let mut next_manifest = previous_manifest.clone();
-        next_manifest
-            .scenes
-            .retain(|scene| scene.id != request.scene_id);
-        if crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
-            project_root,
-            &next_manifest,
-        )
-        .is_err()
-        {
-            let _ = fs::rename(&tombstone, &scene_path);
-            return Err(ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::SceneDeleteFailed,
-            });
-        }
-        if let Err(error) = self.stage_mutations.submit_for_project(
-            project_root,
-            super::ProjectStageMutation::DeleteScene {
-                project_id: request.project_id,
-                scene_id: request.scene_id,
-            },
-        ) {
-            let _ = crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
-                project_root,
-                &previous_manifest,
-            );
-            let _ = fs::rename(&tombstone, &scene_path);
-            return Err(error);
-        }
-        fs::remove_file(&tombstone).map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::SceneDeleteCleanupFailed,
-        })?;
-        let deleted_target = crate::project::cache::ProjectCacheTarget::Scene {
-            id: request.scene_id.to_string(),
-        };
-        let _ = self
-            .cache_warm
-            .remove_target_descriptors(project_root, &deleted_target);
-        let _ = self.cache_warm.enqueue_affected(
-            project_root,
-            crate::project::cache::ProjectCacheTarget::ProjectRoot,
-        );
-
-        Ok(ProjectSceneLifecycleResponse {
-            project_id: request.project_id,
-            scene_id: request.scene_id,
-            placement_id: None,
-        })
+        super::deletion::delete_scene(self, request)
     }
 }
 
@@ -330,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn referenced_scene_is_rejected_without_deleting_definition() {
+    fn referenced_scene_deletion_removes_all_incoming_placements() {
         let directory = tempdir().unwrap();
         let parent = directory.path().join("projects");
         fs::create_dir(&parent).unwrap();
@@ -349,15 +249,17 @@ mod tests {
             )
             .unwrap();
 
-        assert!(matches!(
-            service.delete_scene(ProjectDeleteSceneRequest {
+        service
+            .delete_scene(ProjectDeleteSceneRequest {
                 project_id: summary.id,
                 scene_id: child.scene_id,
-            }),
-            Err(ProjectWriteError::Invalid {
-                code: ProjectWriteErrorCode::SceneInUse
             })
-        ));
-        assert!(scene_path(&root, child.scene_id).is_file());
+            .unwrap();
+        assert!(!scene_path(&root, child.scene_id).exists());
+        assert!(
+            read_scene_members(&scene_path(&root, root_scene.scene_id), root_scene.scene_id)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

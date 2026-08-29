@@ -171,6 +171,13 @@ impl ProjectApplicationService {
             placement,
         )
     }
+
+    pub fn delete_model(
+        &mut self,
+        request: project_protocol::ProjectDeleteModelRequest,
+    ) -> Result<project_protocol::ProjectModelLifecycleResponse, ProjectWriteError> {
+        super::deletion::delete_model(self, request)
+    }
 }
 
 impl ProjectApplicationService {

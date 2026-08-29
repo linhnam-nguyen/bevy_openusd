@@ -222,10 +222,23 @@ pub struct ProjectDeleteSceneRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectDeleteModelRequest {
+    pub project_id: ProjectId,
+    pub model_id: ModelId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectSceneLifecycleResponse {
     pub project_id: ProjectId,
     pub scene_id: SceneId,
     pub placement_id: Option<SceneMemberId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectModelLifecycleResponse {
+    pub project_id: ProjectId,
+    pub model_id: ModelId,
+    pub placement_ids: Vec<SceneMemberId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -253,6 +266,7 @@ pub enum ProjectWriteRequest {
     DeleteProject(ProjectLifecycleRequest),
     RemoveScenePlacement(ProjectRemoveScenePlacementRequest),
     DeleteScene(ProjectDeleteSceneRequest),
+    DeleteModel(ProjectDeleteModelRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -269,6 +283,7 @@ pub enum ProjectWriteResponse {
     ProjectDeleted(ProjectLifecycleResponse),
     ScenePlacementRemoved(ProjectSceneLifecycleResponse),
     SceneDeleted(ProjectSceneLifecycleResponse),
+    ModelDeleted(ProjectModelLifecycleResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

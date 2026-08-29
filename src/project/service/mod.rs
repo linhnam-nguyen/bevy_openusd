@@ -59,6 +59,10 @@ impl ProjectPublicationCoordinator {
 mod branch;
 #[cfg(test)]
 mod branch_tests;
+mod deletion;
+#[cfg(test)]
+#[path = "deletion_tests.rs"]
+mod deletion_tests;
 mod error;
 mod inspection;
 mod lifecycle;
