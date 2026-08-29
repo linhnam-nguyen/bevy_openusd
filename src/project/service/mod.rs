@@ -75,6 +75,7 @@ mod model_preparation;
 mod progress;
 mod scene;
 mod scene_adoption;
+mod scene_lifecycle;
 mod stage_activation;
 mod stage_mutation;
 pub use model_preparation::ProjectModelPreparationQueue;

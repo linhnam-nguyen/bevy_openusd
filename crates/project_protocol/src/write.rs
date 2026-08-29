@@ -62,6 +62,11 @@ pub enum ProjectWriteErrorCode {
     ProtectedProjectPath,
     ProjectDeleteFailed,
     ProjectRemoveFailed,
+    SceneNotFound,
+    SceneInUse,
+    SceneDeleteFailed,
+    ScenePlacementNotFound,
+    ScenePlacementRemoveFailed,
 }
 
 /// Typed write failures safe to return through the native host.
@@ -171,6 +176,26 @@ pub struct ProjectLifecycleResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectRemoveScenePlacementRequest {
+    pub project_id: ProjectId,
+    pub parent_scene_id: SceneId,
+    pub placement_id: SceneMemberId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectDeleteSceneRequest {
+    pub project_id: ProjectId,
+    pub scene_id: SceneId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectSceneLifecycleResponse {
+    pub project_id: ProjectId,
+    pub scene_id: SceneId,
+    pub placement_id: Option<SceneMemberId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectModelWriteResponse {
     pub project: ProjectSummary,
     pub model_id: ModelId,
@@ -191,6 +216,8 @@ pub enum ProjectWriteRequest {
     SwitchBranch(ProjectBranchSwitchRequest),
     RemoveProject(ProjectLifecycleRequest),
     DeleteProject(ProjectLifecycleRequest),
+    RemoveScenePlacement(ProjectRemoveScenePlacementRequest),
+    DeleteScene(ProjectDeleteSceneRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -203,6 +230,8 @@ pub enum ProjectWriteResponse {
     BranchSwitched(ProjectBranchSwitchResponse),
     ProjectRemoved(ProjectLifecycleResponse),
     ProjectDeleted(ProjectLifecycleResponse),
+    ScenePlacementRemoved(ProjectSceneLifecycleResponse),
+    SceneDeleted(ProjectSceneLifecycleResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

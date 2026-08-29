@@ -39,11 +39,12 @@ pub use scene_inspection::{
 pub use write::{
     PROJECT_WRITE_PROTOCOL_VERSION, ProjectAdoptSceneRequest, ProjectBranchSwitchRequest,
     ProjectBranchSwitchResponse, ProjectCreateRequest, ProjectCreateSceneRequest,
-    ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
+    ProjectDeleteSceneRequest, ProjectImportModelRequest, ProjectImportRequest, ProjectInspection,
     ProjectInspectionClassification, ProjectInspectionWarning, ProjectLifecycleRequest,
-    ProjectLifecycleResponse, ProjectModelWriteResponse, ProjectSceneAdoptionResponse,
-    ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode,
-    ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
+    ProjectLifecycleResponse, ProjectModelWriteResponse, ProjectRemoveScenePlacementRequest,
+    ProjectSceneAdoptionResponse, ProjectSceneLifecycleResponse, ProjectSceneWriteResponse,
+    ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply,
+    ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]

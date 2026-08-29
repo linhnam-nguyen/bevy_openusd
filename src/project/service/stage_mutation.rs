@@ -41,6 +41,15 @@ pub enum ProjectStageMutation {
         parent_scene_id: Option<SceneId>,
         placement_id: Option<SceneMemberId>,
     },
+    RemoveScenePlacement {
+        project_id: ProjectId,
+        parent_scene_id: SceneId,
+        placement_id: SceneMemberId,
+    },
+    DeleteScene {
+        project_id: ProjectId,
+        scene_id: SceneId,
+    },
 }
 
 const STAGE_MUTATION_CAPACITY: usize = 128;
@@ -128,7 +137,7 @@ impl ProjectStageMutationQueue {
         let mut first_error = None;
         for (mutation_path, mutation) in pending {
             if mutation.project_id() != active_project_id
-                || mutation.parent_scene_id() != active_scene_id
+                || !mutation.applies_to_active_scene(active_scene_id)
             {
                 continue;
             }
@@ -165,7 +174,9 @@ impl ProjectStageMutation {
         match self {
             Self::CreateScene { project_id, .. }
             | Self::AdoptScene { project_id, .. }
-            | Self::PublishModel { project_id, .. } => *project_id,
+            | Self::PublishModel { project_id, .. }
+            | Self::RemoveScenePlacement { project_id, .. }
+            | Self::DeleteScene { project_id, .. } => *project_id,
         }
     }
 
@@ -180,6 +191,17 @@ impl ProjectStageMutation {
             | Self::PublishModel {
                 parent_scene_id, ..
             } => *parent_scene_id,
+            Self::RemoveScenePlacement {
+                parent_scene_id, ..
+            } => Some(*parent_scene_id),
+            Self::DeleteScene { scene_id, .. } => Some(*scene_id),
+        }
+    }
+
+    fn applies_to_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
+        match self {
+            Self::DeleteScene { scene_id, .. } => active_scene_id == Some(*scene_id),
+            _ => self.parent_scene_id() == active_scene_id,
         }
     }
 }
@@ -189,6 +211,19 @@ fn apply_mutation(
     project_root: &Path,
     mutation: &ProjectStageMutation,
 ) -> Result<(), ProjectWriteError> {
+    if let ProjectStageMutation::DeleteScene { .. } = mutation {
+        usd_bevy::authoring::remove_prim(&live.stage, "/SceneRoot")
+            .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::RemoveScenePlacement { placement_id, .. } = mutation {
+        usd_bevy::authoring::remove_prim(
+            &live.stage,
+            crate::project::scene::authoring::scene_member_path(*placement_id).as_str(),
+        )
+        .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
     let (placement_id, target) = match mutation {
         ProjectStageMutation::CreateScene {
             scene_id,
@@ -205,6 +240,8 @@ fn apply_mutation(
             placement_id,
             ..
         } => (*placement_id, SceneMemberTarget::Model(*model_id)),
+        ProjectStageMutation::RemoveScenePlacement { .. }
+        | ProjectStageMutation::DeleteScene { .. } => unreachable!("handled above"),
     };
     let Some(placement_id) = placement_id else {
         // Empty -> root transitions are completed by normal root-stage
