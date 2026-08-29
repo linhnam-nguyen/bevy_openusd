@@ -1,18 +1,19 @@
 use serde::{Deserialize, Serialize};
-use usd_project::{ProjectId, ProjectRoot, SceneId};
+use usd_project::{ModelId, ProjectId, ProjectRoot, SceneId};
 
 /// Version of the Project-to-render-host stage activation contract.
-pub const PROJECT_ACTIVATION_PROTOCOL_VERSION: u16 = 2;
+pub const PROJECT_ACTIVATION_PROTOCOL_VERSION: u16 = 3;
 
 /// The identity a Project activation request asks the render host to load.
 ///
-/// `ProjectRoot` means the root declared by the Project manifest. `Scene`
-/// deliberately represents a standalone Scene target and is not a Project
-/// root, even when both variants resolve to the same canonical Scene layer.
+/// `ProjectRoot` means the root declared by the Project manifest. `Scene` and
+/// `Model` deliberately represent standalone content targets and are not
+/// Project roots, even when a root happens to resolve to the same layer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectStageTarget {
     ProjectRoot(ProjectRoot),
     Scene(SceneId),
+    Model(ModelId),
 }
 
 /// Project/stage identity requested by the active Project coordinator.
@@ -210,5 +211,28 @@ mod tests {
         };
 
         assert!(!reply.matches_command(&command));
+    }
+
+    #[test]
+    fn activation_command_decodes_old_v2_payload_then_rejects_it() {
+        let command = ProjectActivationCommand::new(
+            "activation-v2",
+            7,
+            ProjectId::new_v4(),
+            ProjectStageTarget::Model(ModelId::new_v4()),
+        );
+        let mut encoded = serde_json::to_value(&command).unwrap();
+        encoded["protocol_version"] = serde_json::json!(2);
+
+        let decoded: ProjectActivationCommand = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(decoded.protocol_version, 2);
+        assert_eq!(
+            decoded.validate(),
+            Err(ProjectActivationError::UnsupportedProtocolVersion {
+                expected: PROJECT_ACTIVATION_PROTOCOL_VERSION,
+                actual: 2,
+            })
+        );
     }
 }

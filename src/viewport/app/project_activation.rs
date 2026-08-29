@@ -208,6 +208,9 @@ fn cache_context_for(
         project_protocol::ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
             id: scene_id.to_string(),
         },
+        project_protocol::ProjectStageTarget::Model(model_id) => ProjectCacheTarget::Model {
+            id: model_id.to_string(),
+        },
     };
     match ActiveProjectCacheContext::new(
         target.project_root.clone(),

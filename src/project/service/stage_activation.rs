@@ -57,6 +57,15 @@ impl ProjectApplicationService {
                 }
                 scene_path(entry.repository_locator(), *scene_id)
             }
+            ProjectStageTarget::Model(model_id) => {
+                if manifest.model(*model_id).is_none() {
+                    return Err(invalid_project_data(project_id));
+                }
+                crate::project::model_wrapper::model_wrapper_path(
+                    entry.repository_locator(),
+                    *model_id,
+                )
+            }
         };
         let path = fs::canonicalize(&path).map_err(|_| invalid_project_data(project_id))?;
         if !path.is_file() {
