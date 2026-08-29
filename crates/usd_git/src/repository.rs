@@ -267,6 +267,10 @@ impl GitRepository for Repository {
             .inner
             .commit("HEAD", message, tree_id, parents)
             .map_err(Error::git)?;
+        let mut index = self.inner.index_from_tree(&tree_id).map_err(Error::git)?;
+        index
+            .write(gix::index::write::Options::default())
+            .map_err(Error::git)?;
         Ok(RevisionId::new(commit_id.to_string()))
     }
 }

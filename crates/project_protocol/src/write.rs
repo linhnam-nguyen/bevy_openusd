@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use usd_project::{
     CompositionInspection, ModelId, ProjectContentCounts, ProjectContentNode, ProjectId,
-    ProjectSummary, RepositorySummary, SceneId, SceneMemberId,
+    ProjectSummary, RepositorySummary, RevisionSummary, SceneId, SceneMemberId,
 };
 
 use crate::{LocalSelectionToken, PlacementSpec, ProjectImportProgress, ProjectReadError};
@@ -72,6 +72,9 @@ pub enum ProjectWriteErrorCode {
     SceneDeleteCleanupFailed,
     ScenePlacementNotFound,
     ScenePlacementRemoveFailed,
+    CommitMessageInvalid,
+    NothingToCommit,
+    CommitFailed,
 }
 
 /// Typed write failures safe to return through the native host.
@@ -209,6 +212,26 @@ pub struct ProjectLifecycleResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ProjectCommitTarget {
+    Project,
+    Scene(SceneId),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectCommitRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectCommitTarget,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectCommitResponse {
+    pub project: ProjectSummary,
+    pub repository: RepositorySummary,
+    pub revision: RevisionSummary,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectRemoveScenePlacementRequest {
     pub project_id: ProjectId,
     pub parent_scene_id: SceneId,
@@ -267,6 +290,8 @@ pub enum ProjectWriteRequest {
     RemoveScenePlacement(ProjectRemoveScenePlacementRequest),
     DeleteScene(ProjectDeleteSceneRequest),
     DeleteModel(ProjectDeleteModelRequest),
+    CommitProject(ProjectCommitRequest),
+    CommitScene(ProjectCommitRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -284,6 +309,7 @@ pub enum ProjectWriteResponse {
     ScenePlacementRemoved(ProjectSceneLifecycleResponse),
     SceneDeleted(ProjectSceneLifecycleResponse),
     ModelDeleted(ProjectModelLifecycleResponse),
+    Committed(ProjectCommitResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

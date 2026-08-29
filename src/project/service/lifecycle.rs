@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use project_protocol::{ProjectInspection, ProjectWriteError, ProjectWriteErrorCode};
+use project_protocol::{
+    ProjectCommitRequest, ProjectCommitResponse, ProjectInspection, ProjectWriteError,
+    ProjectWriteErrorCode,
+};
 use usd_project::ProjectSummary;
 use uuid::Uuid;
 
@@ -11,6 +14,13 @@ use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
 
 impl ProjectApplicationService {
+    pub fn commit(
+        &mut self,
+        request: ProjectCommitRequest,
+    ) -> Result<ProjectCommitResponse, ProjectWriteError> {
+        super::commit::commit(self, request)
+    }
+
     pub fn inspect_project(
         &self,
         project_root: &Path,
