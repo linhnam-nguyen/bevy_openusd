@@ -11,6 +11,8 @@
 mod glacial;
 mod navigation;
 mod state;
+#[cfg(test)]
+mod zoom_tests;
 
 use bevy::camera::Projection;
 use bevy::prelude::*;
@@ -24,9 +26,12 @@ use crate::viewport::input::{
 };
 
 pub(crate) use glacial::sync_chase_camera;
-pub(crate) use navigation::{apply_fly_to, fit_camera_once, follow_mounted_camera};
+pub(crate) use navigation::{
+    apply_fly_to, fit_camera_once, follow_mounted_camera, sync_adaptive_camera_clipping,
+};
 pub(crate) use state::{
-    CameraBookmark, CameraBookmarks, CameraMount, CameraOrientationState, FlyTo,
+    CameraBookmark, CameraBookmarks, CameraMount, CameraNavigationConfig, CameraOrientationState,
+    FlyTo,
 };
 
 pub struct ArcballCameraPlugin;
@@ -43,6 +48,7 @@ impl Plugin for ArcballCameraPlugin {
         // to the Cameras tab (so a mounted USD camera isn't fought by
         // orbit/pan input). Tiny run-condition saves a lot of confusion.
         app.init_resource::<ViewportNavigationInput>()
+            .init_resource::<CameraNavigationConfig>()
             .init_resource::<CameraOrientationState>()
             .configure_sets(
                 Update,
@@ -61,6 +67,12 @@ impl Plugin for ArcballCameraPlugin {
                     .run_if(arcball_is_active)
                     .in_set(ArcballCameraSet::ApplyInput),
             )
+            .add_systems(
+                Update,
+                sync_adaptive_camera_clipping
+                    .after(crate::viewport::scene::extent::compute_extent)
+                    .after(ArcballCameraSet::ApplyInput),
+            )
             .add_systems(PostUpdate, publish_camera_orientation);
     }
 }
@@ -77,11 +89,8 @@ pub struct ArcballCamera {
     pub elevation: f32,
     pub distance: f32,
     pub zoom_target: f64,
-    pub min_distance: f32,
-    pub max_distance: f32,
     pub pan_sensitivity: f32,
     pub orbit_speed: f32,
-    pub zoom_step: f64,
     pub zoom_smoothing: f64,
 }
 
@@ -93,11 +102,8 @@ impl Default for ArcballCamera {
             elevation: 25f32.to_radians(),
             distance: 4.0,
             zoom_target: 4.0,
-            min_distance: 0.001,
-            max_distance: 60.0,
             pan_sensitivity: 1.15,
             orbit_speed: 0.005,
-            zoom_step: 0.12,
             zoom_smoothing: 18.0,
         }
     }
@@ -160,47 +166,88 @@ fn screen_space_pan_delta(
         _ => core::f32::consts::FRAC_PI_4,
     };
     let world_units_per_pixel =
-        2.0 * cam.distance.max(cam.min_distance) * (fov * 0.5).tan() / window_height;
+        2.0 * cam.distance.max(f32::MIN_POSITIVE) * (fov * 0.5).tan() / window_height;
     let right = tr.rotation * Vec3::X;
     let up = tr.rotation * Vec3::Y;
     (-right * pan_delta.x + up * pan_delta.y) * world_units_per_pixel * cam.pan_sensitivity
 }
 
-/// Applies logarithmic, smoothed scroll-wheel zoom within configured bounds.
+/// Applies multiplicative, smoothed scroll-wheel zoom without user-scale
+/// bounds. Numeric guards only keep the finite camera state representable.
 fn drive_arcball_zoom(
     time: Res<Time>,
     input: Res<ViewportNavigationInput>,
+    config: Res<CameraNavigationConfig>,
     mut cameras: Query<(&mut Transform, &mut ArcballCamera)>,
 ) {
     let scroll_delta = input.wheel_delta.y as f64;
 
     for (mut tr, mut cam) in cameras.iter_mut() {
-        let min = cam.min_distance as f64;
-        let max = cam.max_distance as f64;
-        let mut target = cam.zoom_target;
+        let mut target = finite_positive_distance(cam.zoom_target, f64::from(cam.distance));
 
         if scroll_delta != 0.0 {
-            let log_target = target.max(0.01).log10();
-            let new_log = log_target - scroll_delta * cam.zoom_step;
-            target = 10f64.powf(new_log).clamp(min, max);
-        } else if target < min || target > max {
-            target = target.clamp(min, max);
+            target = zoom_target_after_scroll(target, scroll_delta, config.zoom_speed);
         }
 
         cam.zoom_target = target;
 
         let dt = time.delta_secs_f64();
-        let log_current = (cam.distance as f64).max(0.01).ln();
-        let log_target = target.max(0.01).ln();
+        let log_current =
+            finite_positive_distance(f64::from(cam.distance), f64::from(f32::MIN_POSITIVE)).ln();
+        let log_target = target.ln();
         let log_diff = log_target - log_current;
         if log_diff.abs() > 1e-4 {
             let new_log = log_current + log_diff * (cam.zoom_smoothing * dt).min(0.9);
-            cam.distance = new_log.exp() as f32;
+            cam.distance = distance_as_f32(new_log.exp());
             apply_rig(&cam, &mut tr);
         } else if log_diff.abs() > 1e-5 {
-            cam.distance = target as f32;
+            cam.distance = distance_as_f32(target);
             apply_rig(&cam, &mut tr);
         }
+    }
+}
+
+fn finite_positive_distance(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() && value > 0.0 {
+        value
+    } else if value.is_sign_positive() {
+        f64::MAX
+    } else {
+        fallback.max(f64::from(f32::MIN_POSITIVE))
+    }
+}
+
+fn distance_as_f32(value: f64) -> f32 {
+    let candidate = if value.is_finite() && value > 0.0 {
+        value
+    } else if value.is_sign_positive() {
+        f64::from(f32::MAX)
+    } else {
+        f64::from(f32::MIN_POSITIVE)
+    };
+    let distance = candidate as f32;
+    if distance.is_finite() && distance > 0.0 {
+        distance
+    } else if candidate.is_sign_positive() {
+        f32::MAX
+    } else {
+        f32::MIN_POSITIVE
+    }
+}
+
+fn zoom_target_after_scroll(target: f64, scroll_delta: f64, zoom_speed: f64) -> f64 {
+    let current = finite_positive_distance(target, 1.0);
+    let exponent = -scroll_delta * zoom_speed;
+    let next_log = current.ln() + exponent;
+    if next_log.is_nan() {
+        return current;
+    }
+    if next_log > f64::MAX.ln() {
+        f64::MAX
+    } else if next_log < f64::MIN_POSITIVE.ln() {
+        f64::MIN_POSITIVE
+    } else {
+        next_log.exp()
     }
 }
 

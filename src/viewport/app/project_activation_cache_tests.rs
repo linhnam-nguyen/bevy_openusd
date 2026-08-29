@@ -34,6 +34,7 @@ fn immediate_activation_waits_for_an_inflight_cache_warm() {
         vec![SceneManifestEntry {
             id: scene_id,
             storage_key: StorageKey::new("scene").expect("Scene storage key"),
+            display_name: "Immediate Cache Activation".to_owned(),
         }],
         Vec::new(),
     );

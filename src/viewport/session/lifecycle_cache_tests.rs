@@ -72,6 +72,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
         vec![usd_project::SceneManifestEntry {
             id: scene_id,
             storage_key: usd_project::StorageKey::new("scene").expect("Scene storage key"),
+            display_name: "Stage open identity race fixture".to_owned(),
         }],
         Vec::new(),
     );

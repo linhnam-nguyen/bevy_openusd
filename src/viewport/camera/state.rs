@@ -3,6 +3,37 @@
 use bevy::prelude::{Quat, Resource, Vec3};
 use viewport_protocol::CameraOrientationReadModel;
 
+/// Renderer-owned ratios and safe empty-scene fallbacks for camera
+/// navigation. User dolly has no scene-scale clamp; the finite values here
+/// only keep projection math valid when no authored bounds are available.
+#[derive(Resource, Debug, Clone, Copy, PartialEq)]
+pub struct CameraNavigationConfig {
+    /// Exponential wheel response applied to the browser/native wheel delta.
+    pub zoom_speed: f64,
+    /// Near-plane contribution derived from the loaded scene scale.
+    pub near_scene_scale_ratio: f64,
+    /// Near-plane contribution derived from the camera-to-focus distance.
+    pub near_focus_distance_ratio: f64,
+    /// Extra far-plane coverage expressed as a ratio of the scene radius.
+    pub far_safety_ratio: f64,
+    /// Documented bounds used only while the active Scene is empty.
+    pub empty_scene_radius: f64,
+    pub empty_scene_distance: f64,
+}
+
+impl Default for CameraNavigationConfig {
+    fn default() -> Self {
+        Self {
+            zoom_speed: 0.01,
+            near_scene_scale_ratio: 1.0e-5,
+            near_focus_distance_ratio: 1.0e-5,
+            far_safety_ratio: 0.1,
+            empty_scene_radius: 1.0,
+            empty_scene_distance: 4.0,
+        }
+    }
+}
+
 /// An in-flight camera tween. `remaining` counts down by `delta_time` every
 /// frame until zero, at which point the camera settles at the target.
 #[derive(Resource, Default, Debug, Clone, Copy)]

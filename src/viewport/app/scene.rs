@@ -70,10 +70,8 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
-            // The default 10cm near plane made close inspection feel like
-            // "zoom stopped early" on small robotics/USD details. Keep it
-            // tight so the arcball can dolly into millimetre-scale features.
-            near: 0.0001,
+            // The camera plugin replaces near/far with bounds-derived values
+            // once the active Stage extent is available.
             ..default()
         }),
         #[cfg(feature = "solari")]

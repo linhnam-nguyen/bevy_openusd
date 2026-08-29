@@ -203,13 +203,13 @@ fn fit_params_for_entity(
         let center = (min + max) * 0.5;
         let size = (max - min).abs();
         let maximum_dimension = size.x.max(size.y).max(size.z).max(0.05);
-        Some((center, (maximum_dimension * 1.6).clamp(0.2, 10_000.0)))
+        Some((center, maximum_dimension * 1.6))
     } else if mesh_bounds_pending {
         None
     } else if transforms.get(root).is_ok() {
         Some((
             world_matrix(root, transforms, child_of)?.transform_point3(Vec3::ZERO),
-            current_camera_distance.clamp(0.2, 10_000.0),
+            current_camera_distance,
         ))
     } else {
         None
