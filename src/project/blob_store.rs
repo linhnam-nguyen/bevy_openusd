@@ -20,7 +20,6 @@ use usd_model::BlobId;
 use super::storage::CACHE_OBJECTS_RELATIVE_PATH;
 
 pub(crate) const OBJECTS_DIRECTORY: &str = CACHE_OBJECTS_RELATIVE_PATH;
-
 /// Storage interface for content-addressed derived payloads.
 pub(crate) trait BlobStore {
     fn put(&self, bytes: &[u8]) -> Result<BlobId>;
@@ -395,3 +394,6 @@ mod tests {
         Ok(())
     }
 }
+#[cfg(test)]
+#[path = "blob_store_c8_tests.rs"]
+mod c8_tests;

@@ -246,6 +246,10 @@ fn clear_projected_stage(world: &mut World) {
 }
 
 #[cfg(test)]
+#[path = "lifecycle_cache_tests.rs"]
+mod cache_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};

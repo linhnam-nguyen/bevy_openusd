@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use tempfile::tempdir;
@@ -195,5 +197,49 @@ fn corrupt_cache_is_rejected_before_seeds_are_published() -> Result<()> {
     assert_eq!(world.resource::<ProjectionSeed>().pending_meshes(), 0);
     assert_eq!(world.resource::<ProjectionSeed>().pending_materials(), 0);
     assert_eq!(manifest.revision, "cache-revision");
+    Ok(())
+}
+
+#[test]
+fn missing_ready_descriptor_is_a_normal_cache_miss() -> Result<()> {
+    let project = tempdir()?;
+    usd_git::Repository::init(project.path())?;
+    let context = ActiveProjectCacheContext::new(
+        project.path().to_path_buf(),
+        ProjectCacheTarget::ProjectRoot,
+        RuntimeProfile::NativeMedium,
+        default_project_cache_config_hash(),
+    )?;
+
+    let mut world = World::new();
+    assert!(!hydrate_project_cache(&mut world, &context)?);
+    Ok(())
+}
+
+#[test]
+fn persistent_cache_timing_evidence_records_repeated_hydration_without_thresholds() -> Result<()> {
+    let (project, context, _manifest, _mesh_id, _material_id) = fixture()?;
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<Image>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<ProjectionSeed>();
+
+    let cold_start = Instant::now();
+    assert!(hydrate_project_cache(&mut world, &context)?);
+    let cold_ms = cold_start.elapsed().as_secs_f64() * 1_000.0;
+
+    let repeated_start = Instant::now();
+    for _ in 0..3 {
+        assert!(hydrate_project_cache(&mut world, &context)?);
+    }
+    let repeated_ms = repeated_start.elapsed().as_secs_f64() * 1_000.0;
+    eprintln!(
+        "[owner-review-3-c8] persistent-cache hydration: cold_ms={cold_ms:.3}, repeated_ms={repeated_ms:.3}, meshes={}, materials={}, textures={}",
+        world.resource::<Assets<Mesh>>().len(),
+        world.resource::<Assets<StandardMaterial>>().len(),
+        world.resource::<Assets<Image>>().len(),
+    );
+    drop(project);
     Ok(())
 }
