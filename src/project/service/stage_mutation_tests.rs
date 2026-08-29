@@ -155,6 +155,43 @@ fn inactive_scene_outbox_remains_pending_until_that_scene_is_active() {
 }
 
 #[test]
+fn deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_root = directory.path().join("Project");
+    fs::create_dir_all(&project_root).unwrap();
+    let project_id = ProjectId::new_v4();
+    let deleted_scene_id = SceneId::new_v4();
+    let active_scene_id = SceneId::new_v4();
+    let queue = ProjectStageMutationQueue::default();
+    queue
+        .submit_for_project(
+            &project_root,
+            ProjectStageMutation::DeleteScene {
+                project_id,
+                scene_id: deleted_scene_id,
+            },
+        )
+        .unwrap();
+
+    let live = stage();
+    assert_eq!(
+        queue
+            .apply_for_active_scene(&live, &project_root, project_id, Some(active_scene_id))
+            .unwrap(),
+        1
+    );
+    assert_eq!(queue.pending_len_for_project(&project_root), 0);
+    assert!(
+        !live
+            .stage
+            .root_layer()
+            .export_to_string()
+            .unwrap()
+            .contains("SceneRoot")
+    );
+}
+
+#[test]
 fn root_transition_never_patches_the_active_scene() {
     let directory = tempfile::tempdir().unwrap();
     let project_root = directory.path().join("Project");

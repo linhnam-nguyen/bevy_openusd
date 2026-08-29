@@ -86,12 +86,8 @@ impl ProjectApplicationService {
             });
         }
         if fs::remove_dir_all(&tombstone).is_err() {
-            let restored = fs::rename(&tombstone, &project_root).is_ok();
-            if restored {
-                let _ = self.registry.register(project_id, &project_root, None);
-            }
             return Err(ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::ProjectDeleteFailed,
+                code: ProjectWriteErrorCode::ProjectDeleteCleanupFailed,
             });
         }
         Ok(project_protocol::ProjectLifecycleResponse { project_id })

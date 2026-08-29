@@ -7,7 +7,7 @@ use usd_project::{
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
-pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 1;
+pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,10 +61,12 @@ pub enum ProjectWriteErrorCode {
     ProjectNotFound,
     ProtectedProjectPath,
     ProjectDeleteFailed,
+    ProjectDeleteCleanupFailed,
     ProjectRemoveFailed,
     SceneNotFound,
     SceneInUse,
     SceneDeleteFailed,
+    SceneDeleteCleanupFailed,
     ScenePlacementNotFound,
     ScenePlacementRemoveFailed,
 }

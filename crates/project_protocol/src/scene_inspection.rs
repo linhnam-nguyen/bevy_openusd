@@ -4,7 +4,7 @@ use usd_project::CompositionInspection;
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectWriteError};
 
 /// Version of the bounded composed-Scene inspection command boundary.
-pub const PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION: u16 = 1;
+pub const PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION: u16 = 2;
 
 /// An opaque frontend request for a host-resolved USD source inspection.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -149,6 +149,70 @@ mod tests {
     }
 
     #[test]
+    fn previous_write_protocol_version_is_rejected_after_json_deserialization() {
+        let mut encoded = serde_json::to_value(ProjectWriteCommand::new(
+            ProjectWriteRequest::DeleteProject(ProjectLifecycleRequest {
+                project_id: ProjectId::new_v4(),
+            }),
+        ))
+        .unwrap();
+        encoded["protocol_version"] = serde_json::json!(1);
+        let command: ProjectWriteCommand = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(
+            command.validate().unwrap_err(),
+            ProjectWriteError::UnsupportedProtocolVersion {
+                expected: PROJECT_WRITE_PROTOCOL_VERSION,
+                actual: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn previous_scene_inspection_protocol_version_is_rejected_after_json_deserialization() {
+        let mut encoded = serde_json::to_value(ProjectSceneInspectionCommand::new(
+            ProjectSceneInspectionRequest {
+                source: LocalSelectionToken::new("scene-source"),
+                operation_id: "inspection-legacy".to_owned(),
+                generation: 1,
+            },
+        ))
+        .unwrap();
+        encoded["protocol_version"] = serde_json::json!(1);
+        let command: ProjectSceneInspectionCommand = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(
+            command.validate().unwrap_err(),
+            ProjectWriteError::UnsupportedProtocolVersion {
+                expected: PROJECT_SCENE_INSPECTION_PROTOCOL_VERSION,
+                actual: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn previous_model_preparation_protocol_version_is_rejected_after_json_deserialization() {
+        let mut encoded = serde_json::to_value(ProjectModelPreparationCommand::new(
+            ProjectModelPreparationRequest {
+                source: LocalSelectionToken::new("model-source"),
+                operation_id: "preparation-legacy".to_owned(),
+                generation: 1,
+            },
+        ))
+        .unwrap();
+        encoded["protocol_version"] = serde_json::json!(1);
+        let command: ProjectModelPreparationCommand = serde_json::from_value(encoded).unwrap();
+
+        assert_eq!(
+            command.validate().unwrap_err(),
+            ProjectWriteError::UnsupportedProtocolVersion {
+                expected: PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION,
+                actual: 1,
+            }
+        );
+    }
+
+    #[test]
     fn scene_adoption_command_round_trips_typed_target_and_preview_identity() {
         let project_id = ProjectId::new_v4();
         let command =

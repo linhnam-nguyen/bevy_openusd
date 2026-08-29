@@ -3,7 +3,7 @@ use usd_project::CompositionInspection;
 
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectWriteError};
 
-pub const PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION: u16 = 1;
+pub const PROJECT_MODEL_PREPARATION_PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectModelPreparationRequest {

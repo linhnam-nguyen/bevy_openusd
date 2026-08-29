@@ -1,7 +1,7 @@
 use std::fs;
 
 use anyhow::Result;
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{gf::Vec3f, sdf::Value, usd::Stage};
 use tempfile::tempdir;
 use usd_project::ScenePlacementTransform;
 
@@ -112,18 +112,55 @@ fn non_identity_scene_placement_round_trips_through_usd() -> Result<()> {
         id: SceneMemberId::new_v4(),
         target: SceneMemberTarget::Model(ModelId::new_v4()),
         name: Some("Translated model placement".to_owned()),
-        transform: ScenePlacementTransform([
-            1.0, 0.0, 0.0, 10.0, // +X translation
-            0.0, 2.0, 0.0, 20.0, 0.0, 0.0, 3.0, 30.0, 0.0, 0.0, 0.0, 1.0,
-        ]),
+        transform: ScenePlacementTransform::from_translation([10.0, 20.0, 30.0]),
     };
 
     let path =
         author_scene_atomic_with_members(project_directory.path(), scene_id, &[member.clone()])?;
     let reopened = read_scene_members(&path, scene_id)?;
 
-    assert_eq!(reopened, vec![member]);
+    assert_eq!(reopened, vec![member.clone()]);
+    let stage = Stage::open(path.to_string_lossy().as_ref())?;
+    let value = stage
+        .prim(scene_member_path(member.id).as_str())
+        .attribute("xformOp:transform")
+        .get::<Value>()?
+        .expect("authored placement matrix");
+    let Value::Matrix4d(matrix) = value else {
+        panic!("placement transform should be matrix4d");
+    };
+    let origin = matrix.transform_point(Vec3f {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
+    assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
     Ok(())
+}
+
+#[test]
+fn asymmetric_trs_placement_preserves_row_vector_rotation_and_scale() {
+    let transform = ScenePlacementTransform::from_trs(
+        [7.0, -3.0, 11.0],
+        [
+            std::f64::consts::FRAC_1_SQRT_2,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+        ],
+        [2.0, 3.0, 5.0],
+    );
+    let matrix = openusd::gf::Matrix4d(transform.0);
+    let transformed = matrix.transform_point(Vec3f {
+        x: 1.0,
+        y: 2.0,
+        z: 0.0,
+    });
+
+    assert!((transformed.x - 1.0).abs() < 1e-5);
+    assert!((transformed.y + 1.0).abs() < 1e-5);
+    assert!((transformed.z - 11.0).abs() < 1e-5);
+    assert_eq!(transform.0[12..15], [7.0, -3.0, 11.0]);
 }
 
 #[test]

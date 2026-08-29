@@ -155,7 +155,7 @@ impl ProjectApplicationService {
             return Err(error);
         }
         fs::remove_file(&tombstone).map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::SceneDeleteFailed,
+            code: ProjectWriteErrorCode::SceneDeleteCleanupFailed,
         })?;
 
         Ok(ProjectSceneLifecycleResponse {

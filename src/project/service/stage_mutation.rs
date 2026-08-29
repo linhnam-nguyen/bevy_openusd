@@ -137,11 +137,19 @@ impl ProjectStageMutationQueue {
         let mut first_error = None;
         for (mutation_path, mutation) in pending {
             if mutation.project_id() != active_project_id
-                || !mutation.applies_to_active_scene(active_scene_id)
+                || !mutation.can_be_consumed_for_active_scene(active_scene_id)
             {
                 continue;
             }
-            match apply_mutation(live, project_root, &mutation) {
+            let result = match mutation {
+                ProjectStageMutation::DeleteScene { scene_id, .. }
+                    if active_scene_id != Some(scene_id) =>
+                {
+                    Ok(())
+                }
+                mutation => apply_mutation(live, project_root, &mutation),
+            };
+            match result {
                 Ok(()) => match fs::remove_file(&mutation_path) {
                     Ok(()) => applied += 1,
                     Err(_) => {
@@ -198,9 +206,9 @@ impl ProjectStageMutation {
         }
     }
 
-    fn applies_to_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
+    fn can_be_consumed_for_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
         match self {
-            Self::DeleteScene { scene_id, .. } => active_scene_id == Some(*scene_id),
+            Self::DeleteScene { .. } => true,
             _ => self.parent_scene_id() == active_scene_id,
         }
     }
