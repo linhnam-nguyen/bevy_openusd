@@ -7,6 +7,7 @@ mod commands_test;
 mod hierarchy_search_test;
 mod m3_integration_support;
 mod m3_integration_test;
+mod m8_failure_test;
 mod m8_semantic_consistency_test;
 mod mutations_test;
 mod renderer_commands_test;
