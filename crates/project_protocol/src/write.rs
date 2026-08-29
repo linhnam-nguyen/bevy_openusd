@@ -7,7 +7,7 @@ use usd_project::{
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
-pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 3;
+pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,6 +41,7 @@ pub struct ProjectInspection {
 pub enum ProjectWriteErrorCode {
     InvalidProjectName,
     InvalidSceneName,
+    InvalidModelName,
     SelectionUnavailable,
     InvalidSelection,
     InvalidRootForComposition,
@@ -116,6 +117,19 @@ pub struct ProjectCreateSceneRequest {
     pub project_id: ProjectId,
     pub target: ProjectWriteTarget,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectRenameRequest {
+    pub project_id: ProjectId,
+    pub target: ProjectWriteTarget,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectRenameResponse {
+    pub project: ProjectSummary,
+    pub target: ProjectWriteTarget,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -215,6 +229,7 @@ pub enum ProjectWriteRequest {
     Create(ProjectCreateRequest),
     Import(ProjectImportRequest),
     CreateScene(ProjectCreateSceneRequest),
+    Rename(ProjectRenameRequest),
     AdoptScene(ProjectAdoptSceneRequest),
     ImportModel(ProjectImportModelRequest),
     SwitchBranch(ProjectBranchSwitchRequest),
@@ -229,6 +244,7 @@ pub enum ProjectWriteResponse {
     Inspection(ProjectInspection),
     Project(ProjectSummary),
     Scene(ProjectSceneWriteResponse),
+    Renamed(ProjectRenameResponse),
     SceneAdopted(ProjectSceneAdoptionResponse),
     ModelImported(ProjectModelWriteResponse),
     BranchSwitched(ProjectBranchSwitchResponse),

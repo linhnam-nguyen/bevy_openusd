@@ -55,12 +55,13 @@ pub(crate) fn ensure_protected_root_scene_atomic(
         !root_path.exists(),
         "generated protected Root Scene path already exists"
     );
-    authoring::author_scene_atomic_with_graph_and_protection(
+    authoring::author_scene_atomic_with_graph_and_protection_and_name(
         project_root,
         root_scene_id,
         &SceneCompositionGraph::default(),
         &members,
         true,
+        Some(&base_manifest.name),
     )?;
 
     if let Err(error) = ManifestStore::write_manifest_atomic(project_root, &next_manifest) {

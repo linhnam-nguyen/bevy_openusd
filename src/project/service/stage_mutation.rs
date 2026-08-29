@@ -12,10 +12,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use project_protocol::ProjectWriteError;
+use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use serde::{Deserialize, Serialize};
 use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId, SceneMemberTarget};
 use uuid::Uuid;
+
+#[path = "stage_rename.rs"]
+mod stage_rename;
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///
@@ -49,6 +52,11 @@ pub enum ProjectStageMutation {
     DeleteScene {
         project_id: ProjectId,
         scene_id: SceneId,
+    },
+    Rename {
+        project_id: ProjectId,
+        target: ProjectWriteTarget,
+        name: String,
     },
 }
 
@@ -184,7 +192,8 @@ impl ProjectStageMutation {
             | Self::AdoptScene { project_id, .. }
             | Self::PublishModel { project_id, .. }
             | Self::RemoveScenePlacement { project_id, .. }
-            | Self::DeleteScene { project_id, .. } => *project_id,
+            | Self::DeleteScene { project_id, .. }
+            | Self::Rename { project_id, .. } => *project_id,
         }
     }
 
@@ -203,12 +212,13 @@ impl ProjectStageMutation {
                 parent_scene_id, ..
             } => Some(*parent_scene_id),
             Self::DeleteScene { scene_id, .. } => Some(*scene_id),
+            Self::Rename { .. } => None,
         }
     }
 
     fn can_be_consumed_for_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
         match self {
-            Self::DeleteScene { .. } => true,
+            Self::DeleteScene { .. } | Self::Rename { .. } => true,
             _ => self.parent_scene_id() == active_scene_id,
         }
     }
@@ -232,6 +242,10 @@ fn apply_mutation(
         .map_err(|_| filesystem_error())?;
         return Ok(());
     }
+    if let ProjectStageMutation::Rename { target, name, .. } = mutation {
+        stage_rename::apply_rename_to_live_stage(live, target, name)?;
+        return Ok(());
+    }
     let (placement_id, target) = match mutation {
         ProjectStageMutation::CreateScene {
             scene_id,
@@ -249,7 +263,8 @@ fn apply_mutation(
             ..
         } => (*placement_id, SceneMemberTarget::Model(*model_id)),
         ProjectStageMutation::RemoveScenePlacement { .. }
-        | ProjectStageMutation::DeleteScene { .. } => unreachable!("handled above"),
+        | ProjectStageMutation::DeleteScene { .. }
+        | ProjectStageMutation::Rename { .. } => unreachable!("handled above"),
     };
     let Some(placement_id) = placement_id else {
         // Empty -> root transitions are completed by normal root-stage
@@ -310,7 +325,7 @@ fn busy_error() -> ProjectWriteError {
     }
 }
 
-fn filesystem_error() -> ProjectWriteError {
+pub(super) fn filesystem_error() -> ProjectWriteError {
     ProjectWriteError::Failed {
         code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
     }

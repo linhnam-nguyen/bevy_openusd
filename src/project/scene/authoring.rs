@@ -16,6 +16,14 @@ use super::placement_transform;
 #[path = "member_authoring.rs"]
 mod member_authoring;
 pub(crate) use member_authoring::author_scene_member;
+#[path = "display_name_authoring.rs"]
+mod display_name_authoring;
+pub(crate) use display_name_authoring::{
+    update_display_name_atomic, update_member_display_name_atomic,
+};
+#[path = "member_lifecycle.rs"]
+mod member_lifecycle;
+pub(crate) use member_lifecycle::remove_scene_member_atomic;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const SCENES_DIRECTORY: &str = "scenes";
@@ -60,6 +68,24 @@ pub(crate) fn author_scene_atomic_with_graph_and_protection(
     members: &[SceneMember],
     protected_root: bool,
 ) -> Result<PathBuf> {
+    author_scene_atomic_with_graph_and_protection_and_name(
+        project_root,
+        scene_id,
+        graph,
+        members,
+        protected_root,
+        None,
+    )
+}
+
+pub(crate) fn author_scene_atomic_with_graph_and_protection_and_name(
+    project_root: &Path,
+    scene_id: SceneId,
+    graph: &SceneCompositionGraph,
+    members: &[SceneMember],
+    protected_root: bool,
+    display_name: Option<&str>,
+) -> Result<PathBuf> {
     validate_member_ids(members)?;
     validate_scene_targets(graph, scene_id, members)?;
     let scene_directory = project_root
@@ -72,7 +98,8 @@ pub(crate) fn author_scene_atomic_with_graph_and_protection(
     let mut temporary_created = false;
 
     let result = (|| {
-        let stage = new_scene_stage_with_protection(scene_id, protected_root)?;
+        let stage =
+            new_scene_stage_with_name_and_protection(scene_id, display_name, protected_root)?;
         for member in members {
             author_scene_member(&stage, project_root, member)?;
         }
@@ -112,13 +139,28 @@ pub(crate) fn new_scene_stage(scene_id: SceneId) -> Result<Stage> {
 }
 
 fn new_scene_stage_with_protection(scene_id: SceneId, protected_root: bool) -> Result<Stage> {
+    new_scene_stage_with_name_and_protection(scene_id, None, protected_root)
+}
+
+pub(crate) fn new_scene_stage_with_name(scene_id: SceneId, display_name: &str) -> Result<Stage> {
+    new_scene_stage_with_name_and_protection(scene_id, Some(display_name), false)
+}
+
+pub(crate) fn new_scene_stage_with_name_and_protection(
+    scene_id: SceneId,
+    display_name: Option<&str>,
+    protected_root: bool,
+) -> Result<Stage> {
     let stage = Stage::builder().in_memory(format!("scene-{scene_id}.usda"))?;
     let custom_data = scene_custom_data(scene_id, protected_root);
 
-    stage
+    let root = stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
         .set_type_name("Xform")?
         .set_metadata("customData", Value::Dictionary(custom_data))?;
+    if let Some(display_name) = display_name {
+        root.set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;
+    }
     stage.set_default_prim(SCENE_ROOT_PRIM)?;
     crate::project::spatial::author_canonical_stage(&stage)?;
     Ok(stage)
@@ -288,51 +330,6 @@ pub(crate) fn read_scene_members(
     Ok(members)
 }
 
-/// Remove one authored placement while preserving the remaining parent Scene
-/// layer and publishing the result atomically.
-pub(crate) fn remove_scene_member_atomic(
-    path: &Path,
-    expected_scene_id: SceneId,
-    member_id: SceneMemberId,
-) -> Result<()> {
-    let members = read_scene_members(path, expected_scene_id)?;
-    ensure!(
-        members.iter().any(|member| member.id == member_id),
-        "Project Scene placement does not exist"
-    );
-    let remaining = members
-        .iter()
-        .filter(|member| member.id != member_id)
-        .cloned()
-        .collect::<Vec<_>>();
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::open(&path_string).context("open parent Scene for placement removal")?;
-    ensure!(
-        stage.remove_prim(scene_member_path(member_id).as_str())?,
-        "Project Scene placement was not authored in the parent layer"
-    );
-    let temporary_path = path.with_file_name(format!(
-        ".{}.remove-{}.tmp.usda",
-        expected_scene_id, member_id
-    ));
-    let temporary_string = temporary_path.to_string_lossy().into_owned();
-    let result = (|| {
-        stage
-            .root_layer()
-            .export(&temporary_string)
-            .context("export parent Scene after placement removal")?;
-        validate_scene_file(&temporary_path, expected_scene_id, &remaining)?;
-        fs::rename(&temporary_path, path)
-            .context("publish parent Scene after placement removal")?;
-        sync_parent_best_effort(path.parent());
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary_path);
-    }
-    result
-}
-
 fn metadata_string<'a>(data: &'a HashMap<String, Value>, key: &str) -> Result<&'a str> {
     let value = data
         .get(key)
@@ -375,7 +372,7 @@ fn validate_scene_targets(
     Ok(())
 }
 
-fn sync_parent_best_effort(parent: Option<&Path>) {
+pub(super) fn sync_parent_best_effort(parent: Option<&Path>) {
     let Some(parent) = parent else {
         return;
     };

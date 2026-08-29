@@ -67,6 +67,7 @@ mod model_preparation;
 mod progress;
 mod project_registration;
 mod read;
+mod rename;
 mod scene;
 mod scene_adoption;
 mod scene_lifecycle;

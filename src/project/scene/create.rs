@@ -46,6 +46,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
     }
 
     let scene_id = SceneId::new_v4();
+    let display_name = request.storage_key.to_string();
     let (parent_members, member) = if let Some(parent_scene_id) = request.parent_scene_id {
         ensure!(
             request
@@ -62,7 +63,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
         let member = SceneMember {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(scene_id),
-            name: Some(request.storage_key.to_string()),
+            name: Some(display_name.clone()),
             transform: Default::default(),
         };
         let mut parent_members = request.parent_members.to_vec();
@@ -75,7 +76,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
     let mut manifest = request.base_manifest.clone();
     manifest.scenes.push(SceneManifestEntry {
         id: scene_id,
-        display_name: request.storage_key.to_string(),
+        display_name: display_name.clone(),
         storage_key: request.storage_key,
     });
     if request.set_as_root {
@@ -112,7 +113,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             !final_scene_path.exists(),
             "new Project Scene canonical layer already exists"
         );
-        let stage = authoring::new_scene_stage(scene_id)?;
+        let stage = authoring::new_scene_stage_with_name(scene_id, &display_name)?;
         stage
             .root_layer()
             .export(temporary_scene_path.to_string_lossy().as_ref())

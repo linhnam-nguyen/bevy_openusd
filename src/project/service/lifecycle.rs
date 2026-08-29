@@ -43,6 +43,15 @@ impl ProjectApplicationService {
         super::scene::create_scene(self, project_id, target, name)
     }
 
+    pub fn rename(
+        &mut self,
+        project_id: usd_project::ProjectId,
+        target: project_protocol::ProjectWriteTarget,
+        name: &str,
+    ) -> Result<project_protocol::ProjectRenameResponse, ProjectWriteError> {
+        super::rename::rename(self, project_id, target, name)
+    }
+
     pub fn remove_project(
         &mut self,
         project_id: usd_project::ProjectId,
