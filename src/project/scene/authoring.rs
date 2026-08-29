@@ -108,6 +108,7 @@ pub(crate) fn new_scene_stage(scene_id: SceneId, members: &[SceneMember]) -> Res
             .define_prim(member_path.as_str())?
             .set_type_name("Xform")?
             .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?;
+        author_scene_member_transform(&stage.prim(member_path.as_str()), member.transform)?;
     }
     Ok(stage)
 }

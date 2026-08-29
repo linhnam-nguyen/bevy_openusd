@@ -3,6 +3,7 @@ use std::fs;
 use anyhow::Result;
 use openusd::{sdf::Value, usd::Stage};
 use tempfile::tempdir;
+use usd_project::ScenePlacementTransform;
 
 use super::*;
 
@@ -100,6 +101,54 @@ fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
     assert_ne!(members[2].id, members[3].id);
     assert_eq!(members[0].target, members[1].target);
     assert_eq!(members[2].target, members[3].target);
+    Ok(())
+}
+
+#[test]
+fn non_identity_scene_placement_round_trips_through_usd() -> Result<()> {
+    let project_directory = tempdir()?;
+    let scene_id = SceneId::new_v4();
+    let member = SceneMember {
+        id: SceneMemberId::new_v4(),
+        target: SceneMemberTarget::Model(ModelId::new_v4()),
+        name: Some("Translated model placement".to_owned()),
+        transform: ScenePlacementTransform([
+            1.0, 0.0, 0.0, 10.0, // +X translation
+            0.0, 2.0, 0.0, 20.0, 0.0, 0.0, 3.0, 30.0, 0.0, 0.0, 0.0, 1.0,
+        ]),
+    };
+
+    let path =
+        author_scene_atomic_with_members(project_directory.path(), scene_id, &[member.clone()])?;
+    let reopened = read_scene_members(&path, scene_id)?;
+
+    assert_eq!(reopened, vec![member]);
+    Ok(())
+}
+
+#[test]
+fn legacy_scene_placement_without_transform_defaults_to_identity() -> Result<()> {
+    let project_directory = tempdir()?;
+    let scene_id = SceneId::new_v4();
+    let member = SceneMember {
+        id: SceneMemberId::new_v4(),
+        target: SceneMemberTarget::Model(ModelId::new_v4()),
+        name: None,
+        transform: Default::default(),
+    };
+    let path = scene_path(project_directory.path(), scene_id);
+    fs::create_dir_all(path.parent().expect("Scene directory"))?;
+    let stage = new_scene_stage(scene_id, &[])?;
+    stage
+        .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
+        .set_type_name("Xform")?;
+    stage
+        .define_prim(scene_member_path(member.id).as_str())?
+        .set_type_name("Xform")?
+        .set_metadata("customData", Value::Dictionary(member_custom_data(&member)))?;
+    stage.root_layer().export(path.to_string_lossy().as_ref())?;
+
+    assert_eq!(read_scene_members(&path, scene_id)?, vec![member]);
     Ok(())
 }
 
