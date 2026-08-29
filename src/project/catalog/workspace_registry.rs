@@ -83,6 +83,10 @@ impl WorkspaceRegistry {
         &self.entries
     }
 
+    pub(crate) fn registry_path(&self) -> &Path {
+        &self.file_path
+    }
+
     pub(crate) fn get(&self, project_id: ProjectId) -> Option<&WorkspaceProjectEntry> {
         self.index
             .get(&project_id)

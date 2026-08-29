@@ -58,6 +58,10 @@ pub enum ProjectWriteErrorCode {
     DirtyWorkingTree,
     BranchProjectInvalid,
     BranchSwitchFailed,
+    ProjectNotFound,
+    ProtectedProjectPath,
+    ProjectDeleteFailed,
+    ProjectRemoveFailed,
 }
 
 /// Typed write failures safe to return through the native host.
@@ -157,6 +161,16 @@ pub struct ProjectBranchSwitchResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectLifecycleRequest {
+    pub project_id: ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectLifecycleResponse {
+    pub project_id: ProjectId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectModelWriteResponse {
     pub project: ProjectSummary,
     pub model_id: ModelId,
@@ -175,6 +189,8 @@ pub enum ProjectWriteRequest {
     AdoptScene(ProjectAdoptSceneRequest),
     ImportModel(ProjectImportModelRequest),
     SwitchBranch(ProjectBranchSwitchRequest),
+    RemoveProject(ProjectLifecycleRequest),
+    DeleteProject(ProjectLifecycleRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -185,6 +201,8 @@ pub enum ProjectWriteResponse {
     SceneAdopted(ProjectSceneAdoptionResponse),
     ModelImported(ProjectModelWriteResponse),
     BranchSwitched(ProjectBranchSwitchResponse),
+    ProjectRemoved(ProjectLifecycleResponse),
+    ProjectDeleted(ProjectLifecycleResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

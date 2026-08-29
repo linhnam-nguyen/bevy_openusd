@@ -47,6 +47,139 @@ fn create_project_keeps_head_unborn_and_registers_last() {
 }
 
 #[test]
+fn remove_project_unregisters_without_touching_the_repository() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("config/workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let summary = service.create_project(&parent, "Removable").unwrap();
+    let project_root = parent.join("Removable");
+    let marker = project_root.join("user.usda");
+    fs::write(&marker, b"#usda 1.0\n").unwrap();
+
+    service.remove_project(summary.id).unwrap();
+
+    assert!(project_root.is_dir());
+    assert_eq!(fs::read(&marker).unwrap(), b"#usda 1.0\n");
+    assert!(
+        WorkspaceRegistry::load(&registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_none()
+    );
+    assert!(usd_git::Repository::open(&project_root).is_ok());
+}
+
+#[test]
+fn delete_project_removes_registered_repository_and_survives_restart() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("config/workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let summary = service.create_project(&parent, "Deletable").unwrap();
+    let project_root = parent.join("Deletable");
+
+    service.delete_project(summary.id).unwrap();
+
+    assert!(!project_root.exists());
+    assert!(
+        WorkspaceRegistry::load(&registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_none()
+    );
+    assert!(
+        ProjectApplicationService::open(&registry_path)
+            .unwrap()
+            .remove_project(summary.id)
+            .is_err()
+    );
+}
+
+#[test]
+fn delete_project_rejects_manifest_identity_mismatch_without_touching_folder() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let project_root = parent.join("Mismatched");
+    usd_git::Repository::init(&project_root).unwrap();
+    let actual_id = usd_project::ProjectId::new_v4();
+    let requested_id = usd_project::ProjectId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        actual_id,
+        "Mismatched",
+        ProjectRoot::Empty,
+        Vec::new(),
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(&project_root, &manifest).unwrap();
+    let marker = project_root.join("keep.usda");
+    fs::write(&marker, b"keep").unwrap();
+    let registry_path = directory.path().join("config/workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry
+        .register(requested_id, &project_root, None)
+        .unwrap();
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+
+    assert!(matches!(
+        service.delete_project(requested_id),
+        Err(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::ProjectDeleteFailed
+        })
+    ));
+    assert!(project_root.is_dir());
+    assert_eq!(fs::read(&marker).unwrap(), b"keep");
+    assert!(
+        WorkspaceRegistry::load(&registry_path)
+            .unwrap()
+            .get(requested_id)
+            .is_some()
+    );
+}
+
+#[test]
+fn delete_project_restores_folder_when_registry_persistence_fails() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let registry_path = directory.path().join("config/workspace.json");
+    let mut service = ProjectApplicationService::open(&registry_path).unwrap();
+    let summary = service.create_project(&parent, "Rollback").unwrap();
+    let project_root = parent.join("Rollback");
+    let registry_bytes = fs::read(&registry_path).unwrap();
+
+    fs::remove_file(&registry_path).unwrap();
+    fs::create_dir(&registry_path).unwrap();
+    let result = service.delete_project(summary.id);
+
+    assert!(matches!(
+        result,
+        Err(ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::ProjectDeleteFailed
+        })
+    ));
+    assert!(project_root.is_dir());
+    assert!(!parent.read_dir().unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("usdhub-delete")
+    }));
+    fs::remove_dir(&registry_path).unwrap();
+    fs::write(&registry_path, registry_bytes).unwrap();
+    assert!(
+        WorkspaceRegistry::load(&registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_some()
+    );
+}
+
+#[test]
 fn create_project_rejects_unsafe_names_without_touching_parent() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
