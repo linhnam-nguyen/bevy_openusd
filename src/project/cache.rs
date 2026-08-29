@@ -133,13 +133,18 @@ fn collect_files(
 
 fn is_disposable_path(relative: &Path) -> bool {
     let mut components = relative.components();
+    let Some(std::path::Component::Normal(first)) = components.next() else {
+        return false;
+    };
+    if first == ".git" {
+        return true;
+    }
     matches!(
-        (components.next(), components.next(), components.next()),
+        (components.next(), components.next()),
         (
-            Some(std::path::Component::Normal(metadata)),
             Some(std::path::Component::Normal(child)),
             _
-        ) if metadata == PROJECT_METADATA_DIRECTORY
+        ) if first == PROJECT_METADATA_DIRECTORY
             && (child == CACHE_DIRECTORY || child == RECOVERY_DIRECTORY)
     )
 }

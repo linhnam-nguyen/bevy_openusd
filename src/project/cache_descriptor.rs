@@ -175,6 +175,43 @@ impl ProjectCacheStore {
         descriptor.validate()?;
         Ok(Some(descriptor))
     }
+
+    /// Remove every derived descriptor for one deleted Project target while
+    /// leaving content-addressed payload objects available for reuse.
+    pub(crate) fn remove_target(&self, target: &ProjectCacheTarget) -> Result<usize> {
+        let entries = match fs::read_dir(&self.descriptors) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "read Project cache descriptors {}",
+                        self.descriptors.display()
+                    )
+                });
+            }
+        };
+        let mut removed = 0;
+        for entry in entries {
+            let path = entry?.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(_) => continue,
+            };
+            let descriptor: ProjectCacheDescriptor = match serde_json::from_slice(&bytes) {
+                Ok(descriptor) => descriptor,
+                Err(_) => continue,
+            };
+            if descriptor.identity.target == *target {
+                fs::remove_file(path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +264,30 @@ mod tests {
         fs::write(&path, b"not-json")?;
 
         assert!(store.load(&identity).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_a_target_drops_descriptors_but_keeps_the_object_store() -> Result<()> {
+        let directory = tempdir()?;
+        usd_git::Repository::init(directory.path())?;
+        let store = ProjectCacheStore::new(directory.path());
+        let target = ProjectCacheTarget::Scene {
+            id: "scene-a".to_owned(),
+        };
+        let identity = ProjectCacheIdentity::for_project(
+            directory.path(),
+            target.clone(),
+            RuntimeProfile::NativeMedium,
+            HashDigest::new([1; HashDigest::BYTE_LEN]),
+        )?;
+        store.publish(&ProjectCacheDescriptor::new(
+            identity.clone(),
+            ProjectCacheState::Partial,
+            None,
+        )?)?;
+        assert_eq!(store.remove_target(&target)?, 1);
+        assert!(store.load(&identity)?.is_none());
         Ok(())
     }
 }

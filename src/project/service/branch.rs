@@ -83,6 +83,10 @@ fn switch_branch(
     };
     project.repository = repository_summary.clone();
     project.counts = counts;
+    let _ = service.cache_warm.enqueue_affected(
+        &project_root,
+        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+    );
     Ok(ProjectBranchSwitchResponse {
         project,
         repository: repository_summary,

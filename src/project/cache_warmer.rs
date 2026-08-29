@@ -27,6 +27,7 @@ const WARM_QUEUE_CAPACITY: usize = 2;
 struct WarmJob {
     project_root: PathBuf,
     target: ProjectCacheTarget,
+    identity: ProjectCacheIdentity,
     key: (PathBuf, String),
 }
 
@@ -56,7 +57,22 @@ impl ProjectCacheWarmQueue {
     /// caller that just published authoritative Project state.
     pub fn enqueue(&self, project_root: &Path, target: ProjectCacheTarget) -> bool {
         let project_root = project_root.to_path_buf();
-        let key = (project_root.clone(), target.key());
+        let identity = match ProjectCacheIdentity::for_project(
+            &project_root,
+            target.clone(),
+            RuntimeProfile::NativeMedium,
+            SemanticConfig::default().hash(),
+        ) {
+            Ok(identity) => identity,
+            Err(error) => {
+                log::warn!(
+                    "Project cache warm identity could not be established for {}: {error:#}",
+                    project_root.display()
+                );
+                return false;
+            }
+        };
+        let key = (project_root.clone(), identity_key(&identity));
         let mut pending = self
             .pending
             .lock()
@@ -67,6 +83,7 @@ impl ProjectCacheWarmQueue {
         let job = WarmJob {
             project_root,
             target,
+            identity,
             key: key.clone(),
         };
         if self.sender.try_send(job).is_err() {
@@ -74,6 +91,45 @@ impl ProjectCacheWarmQueue {
             return false;
         }
         true
+    }
+
+    /// Enqueue the changed target and every composed ancestor up to the
+    /// Project root. This keeps reusable Scene composition cache identities
+    /// source-specific without synchronously rebuilding any descriptor.
+    pub fn enqueue_affected(&self, project_root: &Path, target: ProjectCacheTarget) -> bool {
+        let targets = match affected_targets(project_root, &target) {
+            Ok(targets) => targets,
+            Err(error) => {
+                log::warn!(
+                    "Project cache affected-target discovery failed for {}: {error:#}",
+                    project_root.display()
+                );
+                vec![target]
+            }
+        };
+        targets.into_iter().fold(true, |accepted, target| {
+            self.enqueue(project_root, target) && accepted
+        })
+    }
+
+    /// Remove descriptors for a deleted target. Payload objects are immutable
+    /// and intentionally remain available for later content-addressed reuse.
+    pub fn remove_target_descriptors(
+        &self,
+        project_root: &Path,
+        target: &ProjectCacheTarget,
+    ) -> bool {
+        match ProjectCacheStore::new(project_root).remove_target(target) {
+            Ok(_) => true,
+            Err(error) => {
+                log::warn!(
+                    "Project cache descriptor cleanup failed for {} ({}): {error:#}",
+                    project_root.display(),
+                    target.key()
+                );
+                false
+            }
+        }
     }
 
     #[cfg(test)]
@@ -106,7 +162,7 @@ impl ProjectCacheWarmQueue {
 
 fn worker_loop(receiver: mpsc::Receiver<WarmJob>, pending: Arc<Mutex<HashSet<(PathBuf, String)>>>) {
     while let Ok(job) = receiver.recv() {
-        let result = warm_job(&job.project_root, &job.target);
+        let result = warm_job(&job);
         if let Err(error) = result {
             log::warn!(
                 "Project cache warm failed for {} ({}): {error:#}",
@@ -121,21 +177,30 @@ fn worker_loop(receiver: mpsc::Receiver<WarmJob>, pending: Arc<Mutex<HashSet<(Pa
     }
 }
 
-fn warm_job(project_root: &Path, target: &ProjectCacheTarget) -> Result<()> {
-    let identity = ProjectCacheIdentity::for_project(
-        project_root,
-        target.clone(),
+fn warm_job(job: &WarmJob) -> Result<()> {
+    let current_identity = ProjectCacheIdentity::for_project(
+        &job.project_root,
+        job.target.clone(),
         RuntimeProfile::NativeMedium,
         SemanticConfig::default().hash(),
     )?;
-    let store = ProjectCacheStore::new(project_root);
+    if current_identity != job.identity {
+        return Ok(());
+    }
+    let store = ProjectCacheStore::new(&job.project_root);
+    if store
+        .load(&job.identity)?
+        .is_some_and(|descriptor| descriptor.state == ProjectCacheState::Ready)
+    {
+        return Ok(());
+    }
     store.publish(&ProjectCacheDescriptor::new(
-        identity.clone(),
+        job.identity.clone(),
         ProjectCacheState::Building,
         None,
     )?)?;
 
-    let state = match target_stage_path(project_root, target) {
+    let state = match target_stage_path(&job.project_root, &job.target) {
         Ok(None) => ProjectCacheState::Empty,
         Ok(Some(path)) => match open_stage_without_payloads(&path) {
             Ok(()) => ProjectCacheState::Partial,
@@ -149,8 +214,83 @@ fn warm_job(project_root: &Path, target: &ProjectCacheTarget) -> Result<()> {
             ProjectCacheState::FallbackRequired
         }
     };
-    store.publish(&ProjectCacheDescriptor::new(identity, state, None)?)?;
+    let latest_identity = ProjectCacheIdentity::for_project(
+        &job.project_root,
+        job.target.clone(),
+        RuntimeProfile::NativeMedium,
+        SemanticConfig::default().hash(),
+    )?;
+    if latest_identity == job.identity {
+        store.publish(&ProjectCacheDescriptor::new(
+            job.identity.clone(),
+            state,
+            None,
+        )?)?;
+    }
     Ok(())
+}
+
+fn identity_key(identity: &ProjectCacheIdentity) -> String {
+    let bytes = serde_json::to_vec(identity).expect("Project cache identity is serializable");
+    blake3::hash(&bytes).to_hex().to_string()
+}
+
+fn affected_targets(
+    project_root: &Path,
+    target: &ProjectCacheTarget,
+) -> Result<Vec<ProjectCacheTarget>> {
+    let manifest = ManifestStore::read_validated(project_root)
+        .context("read Project manifest for affected cache targets")?;
+    let mut scene_ids = HashSet::new();
+    let mut model_id = None;
+    match target {
+        ProjectCacheTarget::ProjectRoot => {}
+        ProjectCacheTarget::Scene { id } => {
+            scene_ids.insert(id.clone());
+        }
+        ProjectCacheTarget::Model { id } => {
+            model_id = Some(id.as_str());
+        }
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for scene in manifest.scenes() {
+            let members = crate::project::scene::authoring::read_scene_members(
+                &scene_path(project_root, scene.id),
+                scene.id,
+            )?;
+            let contains_changed_model = model_id.is_some_and(|id| {
+                members.iter().any(|member| {
+                    matches!(member.target, usd_project::SceneMemberTarget::Model(model) if model.to_string() == id)
+                })
+            });
+            let contains_changed_scene = members.iter().any(|member| {
+                matches!(member.target, usd_project::SceneMemberTarget::Scene(child) if scene_ids.contains(&child.to_string()))
+            });
+            if contains_changed_model || contains_changed_scene {
+                changed |= scene_ids.insert(scene.id.to_string());
+            }
+        }
+    }
+
+    let mut targets = vec![target.clone()];
+    let mut ancestor_ids = scene_ids;
+    if let ProjectCacheTarget::Scene { id } = target {
+        ancestor_ids.remove(id);
+    }
+    let mut ancestors = ancestor_ids
+        .into_iter()
+        .map(|id| ProjectCacheTarget::Scene { id })
+        .collect::<Vec<_>>();
+    ancestors.sort_by_key(ProjectCacheTarget::key);
+    targets.extend(ancestors);
+    if !matches!(target, ProjectCacheTarget::ProjectRoot) {
+        targets.push(ProjectCacheTarget::ProjectRoot);
+    }
+    targets.dedup_by_key(|target| target.key());
+    Ok(targets)
 }
 
 fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result<Option<PathBuf>> {
@@ -247,6 +387,89 @@ mod tests {
 
         assert!(queue.enqueue(directory.path(), target.clone()));
         assert!(queue.enqueue(directory.path(), target));
+        Ok(())
+    }
+
+    #[test]
+    fn affected_scene_targets_include_composed_ancestors_and_root() -> Result<()> {
+        let directory = tempdir()?;
+        usd_git::Repository::init(directory.path())?;
+        let project_id = usd_project::ProjectId::new_v4();
+        let root_scene = usd_project::SceneId::new_v4();
+        let child_scene = usd_project::SceneId::new_v4();
+        let manifest = usd_project::ProjectManifestV1::new(
+            project_id,
+            "Warm Project",
+            usd_project::ProjectRoot::Scene(root_scene),
+            vec![
+                usd_project::SceneManifestEntry {
+                    id: root_scene,
+                    storage_key: usd_project::StorageKey::new("root").unwrap(),
+                },
+                usd_project::SceneManifestEntry {
+                    id: child_scene,
+                    storage_key: usd_project::StorageKey::new("child").unwrap(),
+                },
+            ],
+            Vec::new(),
+        );
+        ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+        crate::project::scene::authoring::author_scene_atomic_with_members(
+            directory.path(),
+            root_scene,
+            &[usd_project::SceneMember {
+                id: usd_project::SceneMemberId::new_v4(),
+                target: usd_project::SceneMemberTarget::Scene(child_scene),
+                name: None,
+                transform: Default::default(),
+            }],
+        )?;
+        crate::project::scene::authoring::author_scene_atomic_with_members(
+            directory.path(),
+            child_scene,
+            &[],
+        )?;
+
+        let targets = affected_targets(
+            directory.path(),
+            &ProjectCacheTarget::Scene {
+                id: child_scene.to_string(),
+            },
+        )?;
+        let keys = targets
+            .into_iter()
+            .map(|target| target.key())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            vec![
+                format!("scene:{child_scene}"),
+                format!("scene:{root_scene}"),
+                "project".to_owned(),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn source_stamped_warm_keys_change_with_working_content() -> Result<()> {
+        let directory = tempdir()?;
+        usd_git::Repository::init(directory.path())?;
+        fs::write(directory.path().join("stage.usda"), b"first")?;
+        let first = ProjectCacheIdentity::for_project(
+            directory.path(),
+            ProjectCacheTarget::ProjectRoot,
+            RuntimeProfile::NativeMedium,
+            SemanticConfig::default().hash(),
+        )?;
+        fs::write(directory.path().join("stage.usda"), b"second")?;
+        let second = ProjectCacheIdentity::for_project(
+            directory.path(),
+            ProjectCacheTarget::ProjectRoot,
+            RuntimeProfile::NativeMedium,
+            SemanticConfig::default().hash(),
+        )?;
+        assert_ne!(identity_key(&first), identity_key(&second));
         Ok(())
     }
 }

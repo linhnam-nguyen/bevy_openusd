@@ -66,6 +66,12 @@ impl ProjectApplicationService {
                 placement_id: request.placement_id,
             },
         )?;
+        let _ = self.cache_warm.enqueue_affected(
+            project_root,
+            crate::project::cache::ProjectCacheTarget::Scene {
+                id: request.parent_scene_id.to_string(),
+            },
+        );
         Ok(ProjectSceneLifecycleResponse {
             project_id: request.project_id,
             scene_id: request.parent_scene_id,
@@ -157,6 +163,16 @@ impl ProjectApplicationService {
         fs::remove_file(&tombstone).map_err(|_| ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::SceneDeleteCleanupFailed,
         })?;
+        let deleted_target = crate::project::cache::ProjectCacheTarget::Scene {
+            id: request.scene_id.to_string(),
+        };
+        let _ = self
+            .cache_warm
+            .remove_target_descriptors(project_root, &deleted_target);
+        let _ = self.cache_warm.enqueue_affected(
+            project_root,
+            crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        );
 
         Ok(ProjectSceneLifecycleResponse {
             project_id: request.project_id,
