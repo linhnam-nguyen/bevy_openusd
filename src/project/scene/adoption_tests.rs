@@ -59,6 +59,7 @@ fn request<'a>(
         project_root,
         source,
         inspection,
+        name: "Imported Scene",
         base_manifest,
         graph,
         parent_scene_id: None,
@@ -95,6 +96,17 @@ fn empty_project_candidate_can_become_root() -> Result<()> {
             .iter()
             .any(|entry| entry.id == adopted.scene_id)
     );
+    assert_eq!(
+        adopted
+            .manifest
+            .scenes
+            .iter()
+            .find(|entry| entry.id == adopted.scene_id)
+            .expect("adopted Scene is registered")
+            .storage_key
+            .as_str(),
+        "Imported Scene"
+    );
     assert!(adopted.scene_path.exists());
     assert_eq!(
         ManifestStore::read_validated(project.path())?.raw(),
@@ -125,6 +137,7 @@ fn nested_adoption_publishes_one_distinct_parent_placement() -> Result<()> {
         .member
         .expect("nested adoption should return a placement");
     assert_eq!(member.target, SceneMemberTarget::Scene(adopted.scene_id));
+    assert_eq!(member.name.as_deref(), Some("Imported Scene"));
     let parent_path = crate::project::scene::authoring::scene_path(project.path(), parent_id);
     let parent_stage = Stage::open(&parent_path.to_string_lossy())?;
     let member_path = crate::project::scene::authoring::scene_member_path(member.id);

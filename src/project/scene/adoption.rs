@@ -31,6 +31,7 @@ pub(crate) struct SceneAdoptionRequest<'a> {
     pub project_root: &'a Path,
     pub source: &'a Path,
     pub inspection: &'a CompositionInspection,
+    pub name: &'a str,
     pub base_manifest: &'a ProjectManifestV1,
     pub graph: &'a SceneCompositionGraph,
     pub parent_scene_id: Option<SceneId>,
@@ -60,6 +61,12 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     ensure_current_manifest(request.project_root, request.base_manifest)?;
 
     let default_prim = revalidate_source(request.source, request.inspection)?;
+    let scene_name = request.name.trim();
+    ensure!(
+        !scene_name.is_empty(),
+        "adopted Scene name must not be empty"
+    );
+    let storage_key = StorageKey::new(scene_name.to_owned())?;
     let (scene_id, scene_is_new) = match request.target_scene_id {
         Some(scene_id) => {
             ensure!(
@@ -95,7 +102,12 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 .any(|entry| entry.id == parent_scene_id),
             "parent Scene is not registered in the Project manifest"
         );
-        let (_, member) = propose_scene_placement(request.graph, parent_scene_id, scene_id)?;
+        let (_, member) = propose_scene_placement_with_name(
+            request.graph,
+            parent_scene_id,
+            scene_id,
+            scene_name,
+        )?;
         let mut parent_members = request.parent_members.to_vec();
         parent_members.push(member.clone());
         (Some(parent_members), Some(member))
@@ -107,7 +119,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     if scene_is_new {
         manifest_candidate.scenes.push(SceneManifestEntry {
             id: scene_id,
-            storage_key: StorageKey::new(scene_id.to_string())?,
+            storage_key,
         });
     }
     if request.set_as_root {
@@ -161,6 +173,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 scene_id,
                 &format!("../imports/{SCENES_DIRECTORY}/{scene_id}/{source_name}"),
                 &default_prim,
+                scene_name,
                 &request.inspection.spatial,
             )?;
             adoption_authoring::validate_scene_wrapper(
@@ -275,6 +288,15 @@ pub(crate) fn propose_scene_placement(
     parent_scene_id: SceneId,
     target_scene_id: SceneId,
 ) -> Result<(SceneCompositionGraph, SceneMember)> {
+    propose_scene_placement_with_name(graph, parent_scene_id, target_scene_id, "")
+}
+
+fn propose_scene_placement_with_name(
+    graph: &SceneCompositionGraph,
+    parent_scene_id: SceneId,
+    target_scene_id: SceneId,
+    name: &str,
+) -> Result<(SceneCompositionGraph, SceneMember)> {
     let mut proposed_graph = graph.clone();
     proposed_graph
         .add_placement(parent_scene_id, target_scene_id)
@@ -284,7 +306,7 @@ pub(crate) fn propose_scene_placement(
         SceneMember {
             id: SceneMemberId::new_v4(),
             target: SceneMemberTarget::Scene(target_scene_id),
-            name: None,
+            name: (!name.is_empty()).then(|| name.to_owned()),
             transform: Default::default(),
         },
     ))

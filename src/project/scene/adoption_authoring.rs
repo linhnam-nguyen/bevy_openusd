@@ -17,9 +17,13 @@ pub(crate) fn author_scene_wrapper_to_path(
     scene_id: SceneId,
     source_asset_path: &str,
     default_prim: &str,
+    scene_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
 ) -> Result<()> {
     let stage = authoring::new_scene_stage(scene_id, &[])?;
+    stage
+        .prim("/SceneRoot")
+        .set_metadata("ui:displayName", Value::String(scene_name.to_owned()))?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
     let source_prim = stage
         .define_prim(source_path.as_str())?

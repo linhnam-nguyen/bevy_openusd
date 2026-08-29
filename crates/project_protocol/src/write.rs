@@ -7,7 +7,7 @@ use usd_project::{
 use crate::{LocalSelectionToken, ProjectImportProgress, ProjectReadError};
 
 /// Version of the shared Project write command boundary.
-pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 2;
+pub const PROJECT_WRITE_PROTOCOL_VERSION: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,6 +131,7 @@ pub struct ProjectAdoptSceneRequest {
     pub target: ProjectWriteTarget,
     pub source: LocalSelectionToken,
     pub inspection: CompositionInspection,
+    pub name: String,
     pub operation_id: String,
     pub generation: u64,
 }

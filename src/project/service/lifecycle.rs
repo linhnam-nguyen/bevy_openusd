@@ -99,6 +99,7 @@ impl ProjectApplicationService {
         target: project_protocol::ProjectWriteTarget,
         source: &Path,
         inspection: &usd_project::CompositionInspection,
+        name: String,
         operation_id: String,
         generation: u64,
     ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
@@ -108,6 +109,7 @@ impl ProjectApplicationService {
             target,
             source,
             inspection,
+            name,
             operation_id,
             generation,
         )

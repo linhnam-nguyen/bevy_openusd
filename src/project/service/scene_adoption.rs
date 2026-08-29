@@ -16,6 +16,7 @@ pub(super) fn adopt_scene(
     target: ProjectWriteTarget,
     source: &Path,
     inspection: &CompositionInspection,
+    name: String,
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
@@ -35,6 +36,7 @@ pub(super) fn adopt_scene(
         target,
         source,
         inspection,
+        name,
         operation_id.clone(),
         generation,
     );
@@ -56,6 +58,7 @@ fn adopt_scene_inner(
     target: ProjectWriteTarget,
     source: &Path,
     inspection: &CompositionInspection,
+    name: String,
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
@@ -134,6 +137,7 @@ fn adopt_scene_inner(
             project_root,
             source,
             inspection,
+            name: &name,
             base_manifest: validated.raw(),
             graph: &graph,
             parent_scene_id,
@@ -211,6 +215,7 @@ mod tests {
                 ProjectWriteTarget::Project(summary.id),
                 &source,
                 &inspection,
+                "Assembly".to_owned(),
                 "operation-1".to_owned(),
                 1,
             )
@@ -246,6 +251,7 @@ mod tests {
                 ProjectWriteTarget::Project(summary.id),
                 &source,
                 &inspection,
+                "Assembly".to_owned(),
                 "operation-root".to_owned(),
                 1,
             )
@@ -256,6 +262,7 @@ mod tests {
                 ProjectWriteTarget::Scene(first.scene_id),
                 &source,
                 &inspection,
+                "Nested Assembly".to_owned(),
                 "operation-nested".to_owned(),
                 2,
             )
@@ -302,6 +309,7 @@ mod tests {
                 ProjectWriteTarget::Project(project.id),
                 &source,
                 &inspection,
+                "Assembly".to_owned(),
                 "adoption-progress".to_owned(),
                 5,
             )

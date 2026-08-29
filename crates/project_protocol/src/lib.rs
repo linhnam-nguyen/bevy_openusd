@@ -230,6 +230,7 @@ mod tests {
                     has_sublayers: false,
                     spatial: Default::default(),
                 },
+                name: "Assembly".to_owned(),
                 operation_id: "adoption-1".to_owned(),
                 generation: 11,
             }));
