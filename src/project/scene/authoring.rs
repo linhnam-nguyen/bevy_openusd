@@ -130,6 +130,11 @@ fn new_scene_stage_with_protection(
             .define_prim(member_path.as_str())?
             .set_type_name("Xform")?
             .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?;
+        if let Some(name) = &member.name {
+            stage
+                .prim(member_path.as_str())
+                .set_metadata("ui:displayName", Value::String(name.clone()))?;
+        }
         placement_transform::author_scene_member_transform(
             &stage.prim(member_path.as_str()),
             member.transform,

@@ -147,7 +147,10 @@ impl SceneAnchorIndex {
         Some(SceneSearchMatch {
             anchor: node.anchor.clone(),
             parent: node.parent.clone(),
-            label: node.label.clone(),
+            label: node
+                .display_name
+                .clone()
+                .unwrap_or_else(|| node.label.clone()),
             breadcrumb: node.anchor.prim_path.clone(),
             visible: node.visible,
             has_children: node.has_children,

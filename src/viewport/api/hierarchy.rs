@@ -58,7 +58,10 @@ impl HierarchyReadModel {
                         .parent
                         .as_ref()
                         .and_then(|parent| ids.get(parent).cloned()),
-                    name: node.label.clone(),
+                    name: node
+                        .display_name
+                        .clone()
+                        .unwrap_or_else(|| node.label.clone()),
                     breadcrumb: node.anchor.prim_path.clone(),
                     prim_path: Some(node.anchor.prim_path.clone()),
                     anchor: Some(node.anchor.clone()),
