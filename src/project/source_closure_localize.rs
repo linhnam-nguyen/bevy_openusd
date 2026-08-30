@@ -42,7 +42,12 @@ pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> R
             fs::create_dir_all(parent)
                 .with_context(|| format!("create source closure {}", parent.display()))?;
         }
-        if layer_set.contains(&original) {
+        if report.layers.is_empty() && original == report.root_asset {
+            // A USDZ package is already an atomic exact closure. Keeping the
+            // archive intact preserves package-relative internal layer and
+            // asset identifiers without copying neighboring filesystem data.
+            copy_file_synced(&original, target)?;
+        } else if layer_set.contains(&original) {
             localize_layer(&original, target, &mapping)?;
         } else {
             copy_file_synced(&original, target)?;

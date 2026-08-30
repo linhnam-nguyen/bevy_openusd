@@ -20,6 +20,9 @@ pub(crate) struct LocalizedDependencyReport {
 
 pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
     let root_asset = regular_file(source).context("validate USD source")?;
+    if is_usdz_path(&root_asset) {
+        return discover_usdz(root_asset);
+    }
     let mut state = DiscoveryState {
         root_asset: root_asset.clone(),
         layers: BTreeSet::new(),
@@ -75,6 +78,47 @@ pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
         non_layer_assets: state.non_layer_assets.into_iter().collect(),
         unresolved: state.unresolved.into_iter().collect(),
     })
+}
+
+fn discover_usdz(root_asset: PathBuf) -> Result<LocalizedDependencyReport> {
+    let mut unresolved = BTreeSet::new();
+    let path_string = root_asset
+        .to_str()
+        .context("USDZ dependency path must be valid UTF-8")?;
+    match Stage::builder()
+        .load(InitialLoadSet::LoadNone)
+        .open(path_string)
+    {
+        Ok(stage) => {
+            if let Err(error) = force_reachable_layers(&stage) {
+                unresolved.insert(format!(
+                    "{}: unable to traverse package: {error}",
+                    root_asset.display()
+                ));
+            }
+            for error in stage.composition_errors() {
+                unresolved.insert(format!("composition: {error}"));
+            }
+        }
+        Err(error) => {
+            unresolved.insert(format!(
+                "{}: unable to open dependency: {error}",
+                root_asset.display()
+            ));
+        }
+    }
+    Ok(LocalizedDependencyReport {
+        root_asset,
+        layers: Vec::new(),
+        non_layer_assets: Vec::new(),
+        unresolved: unresolved.into_iter().collect(),
+    })
+}
+
+fn is_usdz_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
 }
 
 pub(crate) fn regular_file(path: &Path) -> Result<PathBuf> {

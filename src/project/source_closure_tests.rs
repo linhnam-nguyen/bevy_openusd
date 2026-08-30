@@ -5,7 +5,10 @@ use std::{
 };
 
 use anyhow::Result;
-use openusd::usd::{InitialLoadSet, Stage};
+use openusd::{
+    usd::{InitialLoadSet, Stage},
+    usdz::ArchiveWriter,
+};
 use tempfile::tempdir;
 
 use super::{discovery, materialize_source_closure, source_closure_fingerprint};
@@ -175,5 +178,27 @@ fn existing_destination_is_a_collision() -> Result<()> {
     fs::write(destination.join("existing"), b"collision")?;
 
     assert!(materialize_source_closure(&source, &destination).is_err());
+    Ok(())
+}
+
+#[test]
+fn usd_z_package_is_preserved_as_one_exact_closure() -> Result<()> {
+    let source_directory = tempdir()?;
+    let source = source_directory.path().join("package.usdz");
+    let mut archive = ArchiveWriter::create(&source)?;
+    archive.add_layer(
+        "root.usda",
+        b"#usda 1.0\n(defaultPrim = \"Root\")\ndef Xform \"Root\" (references = @./inner.usda@</Inner>) {}\n",
+    )?;
+    archive.add_layer("inner.usda", b"#usda 1.0\ndef Xform \"Inner\" {}\n")?;
+    archive.finish()?;
+
+    let destination_parent = tempdir()?;
+    let destination = destination_parent.path().join("closure");
+    let source_name = materialize_source_closure(&source, &destination)?;
+
+    assert_eq!(source_name, "package.usdz");
+    assert!(destination.join("package.usdz").is_file());
+    assert_localized_root_is_composed(&destination.join(source_name))?;
     Ok(())
 }
