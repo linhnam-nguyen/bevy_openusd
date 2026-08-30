@@ -188,11 +188,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 &default_prim,
                 scene_name,
                 &request.inspection.spatial,
+                request.linked_source.is_some(),
             )?;
             adoption_authoring::validate_scene_wrapper(
                 &temporary_scene_path,
                 scene_id,
                 &request.inspection.spatial,
+                request.linked_source.is_some(),
             )?;
             ensure!(
                 !final_scene_path.exists(),

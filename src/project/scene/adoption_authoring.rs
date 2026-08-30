@@ -21,6 +21,7 @@ pub(crate) fn author_scene_wrapper_to_path(
     default_prim: &str,
     scene_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
+    linked_source: bool,
 ) -> Result<()> {
     let stage = authoring::new_scene_stage(scene_id)?;
     stage
@@ -45,6 +46,7 @@ pub(crate) fn author_scene_wrapper_to_path(
         )?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
+    crate::project::spatial::author_source_binding_role(&source_prim, linked_source)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -56,6 +58,7 @@ pub(crate) fn validate_scene_wrapper(
     path: &Path,
     scene_id: SceneId,
     spatial: &usd_project::SourceSpatialConvention,
+    linked_source: bool,
 ) -> Result<()> {
     authoring::validate_scene_file(path, scene_id, &[])?;
     let path_string = path.to_string_lossy().into_owned();
@@ -91,6 +94,11 @@ pub(crate) fn validate_scene_wrapper(
             .as_deref()
             == Some(crate::project::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
         "adopted Scene wrapper source must carry the transparent hierarchy role"
+    );
+    ensure!(
+        crate::project::spatial::source_binding_is_linked(&stage.prim(source_path.as_str()))?
+            == linked_source,
+        "adopted Scene wrapper linked-source provenance does not match the request"
     );
     let references = {
         let root_layer = stage.root_layer();

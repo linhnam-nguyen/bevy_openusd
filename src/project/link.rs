@@ -11,12 +11,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use openusd::usd::Stage;
 use serde::{Deserialize, Serialize};
 use usd_project::SceneId;
 
 use super::storage::ProjectStorageLayout;
 
 const BINDING_SCHEMA_VERSION: u32 = 2;
+const SCENE_SOURCE_PRIM: &str = "/SceneRoot/Source";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSourceBinding {
@@ -72,6 +74,27 @@ pub(crate) fn status(project_root: &Path, scene_id: SceneId) -> Result<LinkedSou
     )
 }
 
+/// Return the optional linked-source status used by the Project tree.
+///
+/// A linked Scene keeps its binding outside Git, so a cloned Project has no
+/// binding file even though its canonical snapshot remains usable. The
+/// canonical wrapper marker distinguishes that case from an ordinary import.
+pub(crate) fn status_for_scene(
+    project_root: &Path,
+    scene_path: &Path,
+    scene_id: SceneId,
+) -> Result<Option<LinkedSourceStatus>> {
+    let linked = scene_wrapper_is_linked(scene_path)?;
+    if !binding_path(project_root, scene_id).is_file() {
+        return Ok(linked.then_some(LinkedSourceStatus::SourceUnavailable));
+    }
+    match status(project_root, scene_id) {
+        Ok(status) => Ok(Some(status)),
+        Err(_error) if linked => Ok(Some(LinkedSourceStatus::SourceUnavailable)),
+        Err(error) => Err(error),
+    }
+}
+
 /// Resolve the authoritative source for a linked Scene. The caller supplies
 /// only Project and Scene identities; source paths never come from the UI.
 pub(crate) fn resolve_source(project_root: &Path, scene_id: SceneId) -> Result<PathBuf> {
@@ -95,6 +118,14 @@ fn read_binding(project_root: &Path, scene_id: SceneId) -> Result<LinkedSourceBi
     Ok(binding)
 }
 
+fn scene_wrapper_is_linked(scene_path: &Path) -> Result<bool> {
+    let path = scene_path.to_string_lossy();
+    let stage = Stage::open(path.as_ref()).context("open Scene wrapper for link status")?;
+    Ok(crate::project::spatial::source_binding_is_linked(
+        &stage.prim(SCENE_SOURCE_PRIM),
+    )?)
+}
+
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {
     super::source_closure::source_closure_fingerprint(source)
 }
@@ -113,6 +144,8 @@ fn canonical_source(source: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::scene::adoption_authoring::author_scene_wrapper_to_path;
+    use crate::project::spatial::inspect_source;
     use tempfile::tempdir;
 
     #[test]
@@ -173,6 +206,55 @@ mod tests {
         assert_eq!(
             status(project.path(), scene_id).unwrap(),
             LinkedSourceStatus::OutOfSync
+        );
+    }
+
+    #[test]
+    fn missing_binding_is_unavailable_only_for_linked_scene_wrappers() {
+        let project = tempdir().unwrap();
+        let source = project.path().join("source.usda");
+        fs::write(
+            &source,
+            "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" {}\n",
+        )
+        .unwrap();
+        let spatial = inspect_source(&source).unwrap();
+        let linked_id = SceneId::new_v4();
+        let linked_path = project.path().join("linked.usda");
+        author_scene_wrapper_to_path(
+            &linked_path,
+            project.path(),
+            &linked_path,
+            linked_id,
+            &source,
+            "Assembly",
+            "Linked",
+            &spatial,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            status_for_scene(project.path(), &linked_path, linked_id).unwrap(),
+            Some(LinkedSourceStatus::SourceUnavailable)
+        );
+
+        let imported_id = SceneId::new_v4();
+        let imported_path = project.path().join("imported.usda");
+        author_scene_wrapper_to_path(
+            &imported_path,
+            project.path(),
+            &imported_path,
+            imported_id,
+            &source,
+            "Assembly",
+            "Imported",
+            &spatial,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            status_for_scene(project.path(), &imported_path, imported_id).unwrap(),
+            None
         );
     }
 }

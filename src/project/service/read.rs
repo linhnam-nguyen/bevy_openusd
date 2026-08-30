@@ -51,22 +51,27 @@ pub(super) fn project_tree(
     };
     let mut nodes = Vec::with_capacity(scenes.len() + models.len());
     nodes.extend(scenes.iter().map(|scene| {
+        let scene_path =
+            ProjectStorageLayout::new(project_root).readable_scene_path(manifest.raw(), scene);
         ProjectContentNode::Scene {
             scene_id: scene.id,
             name: scene.display_name.clone(),
-            link_status: crate::project::link::status(project_root, scene.id)
-                .ok()
-                .map(|status| match status {
-                    crate::project::link::LinkedSourceStatus::InSync => {
-                        ProjectSceneLinkStatus::InSync
-                    }
-                    crate::project::link::LinkedSourceStatus::SourceUnavailable => {
-                        ProjectSceneLinkStatus::SourceUnavailable
-                    }
-                    crate::project::link::LinkedSourceStatus::OutOfSync => {
-                        ProjectSceneLinkStatus::OutOfSync
-                    }
-                }),
+            link_status: crate::project::link::status_for_scene(
+                project_root,
+                &scene_path,
+                scene.id,
+            )
+            .ok()
+            .flatten()
+            .map(|status| match status {
+                crate::project::link::LinkedSourceStatus::InSync => ProjectSceneLinkStatus::InSync,
+                crate::project::link::LinkedSourceStatus::SourceUnavailable => {
+                    ProjectSceneLinkStatus::SourceUnavailable
+                }
+                crate::project::link::LinkedSourceStatus::OutOfSync => {
+                    ProjectSceneLinkStatus::OutOfSync
+                }
+            }),
         }
     }));
     nodes.extend(models.iter().map(|model| ProjectContentNode::Model {

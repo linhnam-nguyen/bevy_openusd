@@ -161,6 +161,14 @@ fn moved_project_reopens_after_source_and_local_state_removal() -> anyhow::Resul
         node,
         ProjectContentNode::Scene { name, .. } if name == "Linked Scene"
     )));
+    assert!(nodes.iter().any(|node| matches!(
+        node,
+        ProjectContentNode::Scene {
+            scene_id,
+            link_status: Some(usd_project::ProjectSceneLinkStatus::SourceUnavailable),
+            ..
+        } if *scene_id == linked.scene_id
+    )));
     Ok(())
 }
 

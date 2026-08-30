@@ -15,6 +15,8 @@ pub(crate) const USDHUB_UP_AXIS: StageUpAxis = StageUpAxis::Y;
 pub(crate) const USDHUB_METERS_PER_UNIT: f64 = 1.0;
 pub(crate) const USDHUB_HIERARCHY_ROLE_METADATA: &str = usd_bevy::USDHUB_HIERARCHY_ROLE_METADATA;
 pub(crate) const USDHUB_TRANSPARENT_SOURCE_ROLE: &str = usd_bevy::USDHUB_TRANSPARENT_SOURCE_ROLE;
+pub(crate) const USDHUB_SOURCE_BINDING_METADATA: &str = "usdhub:sourceBinding";
+pub(crate) const USDHUB_LINKED_SOURCE_BINDING: &str = "linked";
 const OPENUSD_UNAUTHORED_METERS_PER_UNIT: f64 = 0.01;
 
 /// Read composed Stage metrics without carrying a Stage handle across a
@@ -130,6 +132,42 @@ pub(crate) fn author_source_hierarchy_role(source_prim: &Prim) -> Result<()> {
         .clone()
         .set_metadata("customData", Value::Dictionary(custom_data))?;
     Ok(())
+}
+
+/// Mark whether the Project-owned source wrapper has a machine-local linked
+/// source binding. This provenance is canonical and contains no external
+/// path, allowing a cloned Project to report a missing local binding without
+/// confusing it with an ordinary imported Scene.
+pub(crate) fn author_source_binding_role(source_prim: &Prim, linked: bool) -> Result<()> {
+    let mut custom_data = match source_prim.custom_data()? {
+        Some(Value::Dictionary(data)) => data,
+        _ => HashMap::new(),
+    };
+    if linked {
+        custom_data.insert(
+            USDHUB_SOURCE_BINDING_METADATA.to_owned(),
+            Value::String(USDHUB_LINKED_SOURCE_BINDING.to_owned()),
+        );
+    } else {
+        custom_data.remove(USDHUB_SOURCE_BINDING_METADATA);
+    }
+    source_prim
+        .clone()
+        .set_metadata("customData", Value::Dictionary(custom_data))?;
+    Ok(())
+}
+
+pub(crate) fn source_binding_is_linked(source_prim: &Prim) -> Result<bool> {
+    Ok(source_prim
+        .custom_data()?
+        .and_then(|value| match value {
+            Value::Dictionary(data) => data
+                .get(USDHUB_SOURCE_BINDING_METADATA)
+                .and_then(Value::as_str)
+                .map(|value| value == USDHUB_LINKED_SOURCE_BINDING),
+            _ => None,
+        })
+        .unwrap_or(false))
 }
 
 pub(crate) fn read_source_normalization(source_prim: &Prim) -> Result<Matrix4d> {

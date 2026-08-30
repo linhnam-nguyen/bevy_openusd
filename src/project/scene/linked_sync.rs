@@ -170,11 +170,13 @@ pub(crate) fn sync_linked_scene_atomic(
             &default_prim,
             scene_name,
             &request.inspection.spatial,
+            true,
         )?;
         adoption_authoring::validate_scene_wrapper(
             &temporary_scene_path,
             request.scene_id,
             &request.inspection.spatial,
+            true,
         )?;
         crate::project::link::prepare_binding(
             &temporary_binding_path,
