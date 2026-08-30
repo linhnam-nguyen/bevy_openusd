@@ -21,7 +21,6 @@ use deletion_graph::{
 };
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
-const SCENE_SOURCES_DIRECTORY: &str = "imports/scenes";
 
 struct Tombstone {
     original: PathBuf,
@@ -192,10 +191,8 @@ fn delete_definition(
                 &transaction_directory,
                 &format!("scene-{scene_id}.usda"),
             )?);
-            let source_directory = project_root
-                .join(PROJECT_METADATA_DIRECTORY)
-                .join(SCENE_SOURCES_DIRECTORY)
-                .join(scene_id.to_string());
+            let source_directory = crate::project::storage::ProjectStorageLayout::new(project_root)
+                .readable_scene_import_dir(*scene_id);
             move_optional_to_tombstone(
                 &source_directory,
                 &transaction_directory,

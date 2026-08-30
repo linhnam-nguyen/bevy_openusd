@@ -203,6 +203,46 @@ fn deleting_model_removes_all_placements_but_not_external_source() {
 }
 
 #[test]
+fn deleting_linked_scene_removes_its_canonical_snapshot() {
+    let directory = tempdir().unwrap();
+    let (mut service, project) = service_with_project(directory.path());
+    let project_root = directory.path().join("projects/Project");
+    let source = directory.path().join("linked-scene.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
+    )
+    .unwrap();
+    let inspection = crate::project::scene::inspection::inspect_composition(&source).unwrap();
+    let linked = service
+        .link_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            &source,
+            &inspection,
+            "Linked Scene".to_owned(),
+            "delete-linked-scene".to_owned(),
+            1,
+            PlacementSpec::Default,
+        )
+        .unwrap();
+    let layout = crate::project::storage::ProjectStorageLayout::new(&project_root);
+    let canonical_snapshot = layout.canonical_scene_import_dir(linked.scene_id);
+    assert!(canonical_snapshot.is_dir());
+    assert!(!layout.legacy_scene_import_dir(linked.scene_id).exists());
+
+    service
+        .delete_scene(ProjectDeleteSceneRequest {
+            project_id: project.id,
+            scene_id: linked.scene_id,
+        })
+        .unwrap();
+
+    assert!(!canonical_snapshot.exists());
+    assert!(!crate::project::scene::authoring::scene_path(&project_root, linked.scene_id).exists());
+}
+
+#[test]
 fn failed_delete_restores_manifest_files_and_stage_outbox() {
     let directory = tempfile::tempdir().unwrap();
     let parent_directory = directory.path().join("projects");
