@@ -8,7 +8,7 @@ use super::*;
 use crate::project::{
     catalog::manifest_store::ManifestStore,
     scene::authoring::{read_scene_members, scene_path},
-    service::ProjectApplicationService,
+    service::{ProjectApplicationService, ProjectStageMutationQueue},
 };
 
 #[test]
@@ -79,4 +79,56 @@ fn project_rename_updates_the_protected_root_manifest_name() {
         manifest.scene(root_id).unwrap().display_name,
         "Renamed Project"
     );
+}
+
+#[test]
+fn failed_rename_restores_all_canonical_files_and_stage_outbox() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let queue = ProjectStageMutationQueue::default();
+    let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
+        directory.path().join("workspace.json"),
+        queue.clone(),
+    )
+    .unwrap();
+    let project = service.create_project(&parent, "Project").unwrap();
+    let project_root = parent.join("Project");
+    let scene = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "Architecture",
+        )
+        .unwrap();
+    let scene_path = scene_path(&project_root, scene.scene_id);
+    let manifest_path = crate::project::catalog::manifest_store::manifest_path(&project_root);
+    let scene_before = fs::read(&scene_path).unwrap();
+    let manifest_before = fs::read(&manifest_path).unwrap();
+    let pending_before = stage_outbox_count(&project_root);
+    queue.fail_before_batch_index(0);
+
+    assert!(
+        service
+            .rename(
+                project.id,
+                ProjectWriteTarget::Scene(scene.scene_id),
+                "Architecture Revised",
+            )
+            .is_err()
+    );
+
+    assert_eq!(fs::read(scene_path).unwrap(), scene_before);
+    assert_eq!(fs::read(manifest_path).unwrap(), manifest_before);
+    assert_eq!(stage_outbox_count(&project_root), pending_before);
+}
+
+fn stage_outbox_count(project_root: &std::path::Path) -> usize {
+    let path = project_root
+        .join(".usdhub")
+        .join("cache")
+        .join("project-stage-mutations");
+    path.read_dir()
+        .map(|entries| entries.count())
+        .unwrap_or_default()
 }

@@ -1,4 +1,5 @@
 use project_protocol::{ProjectCommitRequest, ProjectCommitTarget, ProjectWriteTarget};
+use std::fs;
 use tempfile::tempdir;
 use usd_git::GitRepository;
 
@@ -76,6 +77,131 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
     assert_eq!(response.repository.head.unwrap().id, response.revision.id);
     assert!(!response.repository.dirty);
     assert_eq!(response.revision.id.len(), 40);
+}
+
+#[test]
+fn scene_commit_uses_fixed_point_ancestors_and_preserves_unrelated_dirty_manifest() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let project = service.create_project(&parent, "Closure Project").unwrap();
+    let project_root = parent.join("Closure Project");
+    let first = service
+        .create_scene(project.id, ProjectWriteTarget::Project(project.id), "First")
+        .unwrap();
+    let target = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Scene(first.scene_id),
+            "Target",
+        )
+        .unwrap();
+    let unrelated = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "Unrelated",
+        )
+        .unwrap();
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "baseline closure".to_owned(),
+        })
+        .unwrap();
+
+    let root_scene_id =
+        match crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
+            .unwrap()
+            .raw()
+            .root
+        {
+            usd_project::ProjectRoot::Scene(scene_id) => scene_id,
+            usd_project::ProjectRoot::Empty | usd_project::ProjectRoot::Model(_) => {
+                panic!("project has a protected root scene")
+            }
+        };
+    add_scene_marker(&project_root, root_scene_id, "ChangedRoot");
+    add_scene_marker(&project_root, first.scene_id, "ChangedFirst");
+    add_scene_marker(&project_root, target.scene_id, "ChangedTarget");
+    let mut manifest =
+        crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
+            .unwrap()
+            .raw()
+            .clone();
+    manifest
+        .scenes
+        .iter_mut()
+        .find(|scene| scene.id == unrelated.scene_id)
+        .unwrap()
+        .display_name = "Unrelated Renamed".to_owned();
+    crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
+        &project_root,
+        &manifest,
+    )
+    .unwrap();
+
+    let response = service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Scene(target.scene_id),
+            message: "target closure".to_owned(),
+        })
+        .unwrap();
+    let repository = usd_git::Repository::open(&project_root).unwrap();
+    let materialized = tempdir().unwrap();
+    repository
+        .materialize_revision(
+            &usd_git::RevisionId::new(response.revision.id.clone()),
+            materialized.path(),
+        )
+        .unwrap();
+
+    for (scene_id, marker) in [
+        (root_scene_id, "ChangedRoot"),
+        (first.scene_id, "ChangedFirst"),
+        (target.scene_id, "ChangedTarget"),
+    ] {
+        let path = materialized
+            .path()
+            .join(".usdhub/scenes")
+            .join(format!("{}.usda", scene_id));
+        let content = fs::read_to_string(path).unwrap();
+        assert!(
+            content.contains(marker),
+            "closure omitted {scene_id}: {marker}"
+        );
+    }
+    let staged_manifest: usd_project::ProjectManifestV1 = serde_json::from_slice(
+        &fs::read(materialized.path().join(".usdhub/project.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        staged_manifest
+            .scenes
+            .iter()
+            .find(|scene| scene.id == unrelated.scene_id)
+            .unwrap()
+            .display_name,
+        "Unrelated"
+    );
+    assert!(repository.working_tree_status().unwrap().dirty);
+    assert!(response.repository.dirty);
+}
+
+fn add_scene_marker(project_root: &std::path::Path, scene_id: usd_project::SceneId, name: &str) {
+    let path = crate::project::scene::authoring::scene_path(project_root, scene_id);
+    let stage = openusd::usd::Stage::open(path.to_string_lossy().as_ref()).unwrap();
+    usd_bevy::authoring::define_prim(&stage, &format!("/SceneRoot/{name}"), "Xform").unwrap();
+    let temporary = path.with_file_name(format!(".{}.{}.tmp.usda", scene_id, name));
+    stage
+        .root_layer()
+        .export(temporary.to_string_lossy().as_ref())
+        .unwrap();
+    fs::rename(temporary, path).unwrap();
 }
 
 #[test]

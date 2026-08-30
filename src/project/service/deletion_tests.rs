@@ -6,7 +6,7 @@ use project_protocol::{
 use tempfile::tempdir;
 use usd_project::{SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform};
 
-use super::{ProjectApplicationService, ProjectModelPreparationQueue};
+use super::{ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageMutationQueue};
 
 fn service_with_project(
     directory: &std::path::Path,
@@ -200,4 +200,67 @@ fn deleting_model_removes_all_placements_but_not_external_source() {
             .iter()
             .any(|model| model.id == published.model_id)
     );
+}
+
+#[test]
+fn failed_delete_restores_manifest_files_and_stage_outbox() {
+    let directory = tempfile::tempdir().unwrap();
+    let parent_directory = directory.path().join("projects");
+    fs::create_dir(&parent_directory).unwrap();
+    let queue = ProjectStageMutationQueue::default();
+    let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
+        directory.path().join("workspace.json"),
+        queue.clone(),
+    )
+    .unwrap();
+    let project = service
+        .create_project(&parent_directory, "Delete Rollback")
+        .unwrap();
+    let project_root = parent_directory.join("Delete Rollback");
+    let parent = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "Parent",
+        )
+        .unwrap();
+    let child = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Scene(parent.scene_id),
+            "Child",
+        )
+        .unwrap();
+    let parent_path = crate::project::scene::authoring::scene_path(&project_root, parent.scene_id);
+    let child_path = crate::project::scene::authoring::scene_path(&project_root, child.scene_id);
+    let manifest_path = crate::project::catalog::manifest_store::manifest_path(&project_root);
+    let parent_before = fs::read(&parent_path).unwrap();
+    let child_before = fs::read(&child_path).unwrap();
+    let manifest_before = fs::read(&manifest_path).unwrap();
+    let pending_before = stage_outbox_count(&project_root);
+    queue.fail_before_batch_index(1);
+
+    assert!(
+        service
+            .delete_scene(ProjectDeleteSceneRequest {
+                project_id: project.id,
+                scene_id: parent.scene_id,
+            })
+            .is_err()
+    );
+
+    assert_eq!(fs::read(parent_path).unwrap(), parent_before);
+    assert_eq!(fs::read(child_path).unwrap(), child_before);
+    assert_eq!(fs::read(manifest_path).unwrap(), manifest_before);
+    assert_eq!(stage_outbox_count(&project_root), pending_before);
+}
+
+fn stage_outbox_count(project_root: &std::path::Path) -> usize {
+    let path = project_root
+        .join(".usdhub")
+        .join("cache")
+        .join("project-stage-mutations");
+    path.read_dir()
+        .map(|entries| entries.count())
+        .unwrap_or_default()
 }

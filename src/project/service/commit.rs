@@ -11,7 +11,7 @@ use project_protocol::{
     ProjectWriteError, ProjectWriteErrorCode,
 };
 use usd_git::{CommitRequest, GitRepository, Repository};
-use usd_project::{SceneId, SceneMemberTarget};
+use usd_project::{ProjectManifestV1, SceneId, SceneMemberTarget};
 
 use super::ProjectApplicationService;
 
@@ -125,7 +125,7 @@ fn synchronize_scene_scope(
     let mut pending = vec![root_scene];
     while let Some(scene_id) = pending.pop() {
         for member in members.get(&scene_id).into_iter().flatten() {
-            match member.target {
+            match member.target.clone() {
                 SceneMemberTarget::Scene(child) if scenes.insert(child) => pending.push(child),
                 SceneMemberTarget::Model(model_id) => {
                     models.insert(model_id);
@@ -134,14 +134,25 @@ fn synchronize_scene_scope(
             }
         }
     }
+
+    let mut parents = HashMap::<SceneId, Vec<SceneId>>::new();
     for (parent, scene_members) in &members {
-        if scene_members.iter().any(|member| {
-            matches!(member.target, SceneMemberTarget::Scene(child) if scenes.contains(&child))
-        }) {
-            scenes.insert(*parent);
+        for member in scene_members {
+            if let SceneMemberTarget::Scene(child) = member.target.clone() {
+                parents.entry(child).or_default().push(*parent);
+            }
         }
     }
-    synchronize_path(project_root, staging, Path::new(MANIFEST_RELATIVE_PATH))?;
+    let mut reverse_pending = scenes.iter().copied().collect::<Vec<_>>();
+    while let Some(child) = reverse_pending.pop() {
+        for parent in parents.get(&child).into_iter().flatten().copied() {
+            if scenes.insert(parent) {
+                reverse_pending.push(parent);
+            }
+        }
+    }
+
+    synchronize_manifest_scope(staging, manifest, &scenes, &models)?;
     for scene_id in scenes {
         synchronize_path(
             project_root,
@@ -161,6 +172,46 @@ fn synchronize_scene_scope(
             &PathBuf::from(MODELS_RELATIVE_DIRECTORY).join(model_id.to_string()),
         )?;
     }
+    Ok(())
+}
+
+fn synchronize_manifest_scope(
+    staging: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    scenes: &HashSet<SceneId>,
+    models: &HashSet<usd_project::ModelId>,
+) -> Result<(), ProjectWriteError> {
+    let manifest_path = staging.join(MANIFEST_RELATIVE_PATH);
+    let bytes = fs::read(&manifest_path).map_err(|_| commit_error())?;
+    let mut staged: ProjectManifestV1 =
+        serde_json::from_slice(&bytes).map_err(|_| commit_error())?;
+    let current = manifest.raw();
+
+    for scene in current
+        .scenes
+        .iter()
+        .filter(|scene| scenes.contains(&scene.id))
+    {
+        if let Some(staged_scene) = staged.scenes.iter_mut().find(|entry| entry.id == scene.id) {
+            *staged_scene = scene.clone();
+        } else {
+            staged.scenes.push(scene.clone());
+        }
+    }
+    for model in current
+        .models
+        .iter()
+        .filter(|model| models.contains(&model.id))
+    {
+        if let Some(staged_model) = staged.models.iter_mut().find(|entry| entry.id == model.id) {
+            *staged_model = model.clone();
+        } else {
+            staged.models.push(model.clone());
+        }
+    }
+    staged.validate().map_err(|_| commit_error())?;
+    let encoded = serde_json::to_vec_pretty(&staged.canonicalized()).map_err(|_| commit_error())?;
+    fs::write(&manifest_path, encoded).map_err(|_| commit_error())?;
     Ok(())
 }
 

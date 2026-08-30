@@ -276,3 +276,24 @@ fn stage_handoff_outbox_is_under_the_approved_cache_root() {
             .join("project-stage-mutations")
     );
 }
+
+#[test]
+fn injected_batch_failure_leaves_no_partial_stage_mutations() {
+    let directory = tempfile::tempdir().unwrap();
+    let project_root = directory.path().join("Project");
+    fs::create_dir_all(&project_root).unwrap();
+    let project_id = ProjectId::new_v4();
+    let mutations = [
+        ProjectStageMutation::DeleteModel {
+            project_id,
+            model_id: ModelId::new_v4(),
+        },
+        ProjectStageMutation::DeleteScene {
+            project_id,
+            scene_id: SceneId::new_v4(),
+        },
+    ];
+
+    assert!(submit_batch_locked_with_failure(&project_root, &mutations, Some(1)).is_err());
+    assert_eq!(outbox_path(&project_root).read_dir().unwrap().count(), 0);
+}

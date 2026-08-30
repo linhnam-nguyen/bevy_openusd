@@ -14,10 +14,14 @@ use project_protocol::{
     ProjectExportSceneRequest, ProjectReadError, ProjectSceneExportResponse, ProjectWriteError,
     ProjectWriteErrorCode,
 };
-use usd_project::{SceneId, SceneMember, SceneMemberTarget};
+use usd_project::{SceneId, SceneMemberTarget};
 use uuid::Uuid;
 
 use super::ProjectApplicationService;
+
+#[path = "live_export.rs"]
+mod live_export;
+pub(crate) use live_export::write_live_stage_archive;
 
 const SCENES_DIRECTORY: &str = "scenes";
 const MODELS_DIRECTORY: &str = "models";
@@ -103,19 +107,29 @@ fn write_archive(
     root_scene: SceneId,
     destination: &Path,
 ) -> Result<(), ProjectWriteError> {
+    write_archive_with_root_source(project_root, manifest, root_scene, destination, None)
+}
+
+fn write_archive_with_root_source(
+    project_root: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    root_scene: SceneId,
+    destination: &Path,
+    root_source_override: Option<&Path>,
+) -> Result<(), ProjectWriteError> {
     let (scenes, models) = dependency_closure(project_root, manifest, root_scene)?;
     let entries = export_entries(project_root, manifest, &scenes, &models)?;
     let root_source = scene_path(project_root, root_scene);
-    let root_entry = entries
-        .iter()
-        .find(|entry| entry.source == root_source)
-        .ok_or_else(export_error)?;
+    if !entries.iter().any(|entry| entry.source == root_source) {
+        return Err(export_error());
+    }
+    let root_read_source = root_source_override.unwrap_or(&root_source);
     let mut archive = ArchiveWriter::create(destination).map_err(|_| export_error())?;
     let mapping = entries
         .iter()
         .map(|entry| (entry.source.clone(), entry.archive.clone()))
         .collect::<HashMap<_, _>>();
-    let root_bytes = read_export_bytes(&root_entry.source, "scene.usda", &mapping)?;
+    let root_bytes = read_export_bytes(root_read_source, "scene.usda", &mapping)?;
     archive
         .add_layer("scene.usda", &root_bytes)
         .map_err(|_| export_error())?;

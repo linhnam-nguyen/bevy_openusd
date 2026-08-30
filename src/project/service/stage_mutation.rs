@@ -6,19 +6,20 @@
 //! the LiveStage thread. OpenUSD and Bevy state never cross this boundary.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-    path::{Path, PathBuf},
+    fs,
+    path::Path,
     sync::{Arc, Mutex},
 };
 
 use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use serde::{Deserialize, Serialize};
 use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
-use uuid::Uuid;
 
+#[path = "stage_mutation_outbox.rs"]
+mod outbox;
 #[path = "stage_rename.rs"]
 mod stage_rename;
+use outbox::{filesystem_error, outbox_path, read_pending, submit_batch_locked_with_failure};
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///
@@ -76,6 +77,8 @@ const OUTBOX_DIRECTORY: &str = "project-stage-mutations";
 #[derive(Clone, Default)]
 pub struct ProjectStageMutationQueue {
     file_lock: Arc<Mutex<()>>,
+    #[cfg(test)]
+    test_fail_before_index: Arc<Mutex<Option<usize>>>,
 }
 
 impl ProjectStageMutationQueue {
@@ -113,7 +116,11 @@ impl ProjectStageMutationQueue {
             .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
-        submit_batch_locked(project_root, std::slice::from_ref(&mutation))
+        submit_batch_locked_with_failure(
+            project_root,
+            std::slice::from_ref(&mutation),
+            outbox::take_failure(self),
+        )
     }
 
     /// Publish a typed mutation batch atomically into the private Project
@@ -128,7 +135,7 @@ impl ProjectStageMutationQueue {
             .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
-        submit_batch_locked(project_root, mutations)
+        submit_batch_locked_with_failure(project_root, mutations, outbox::take_failure(self))
     }
 
     /// Consume mutations for the active Scene on the actual LiveStage owner
@@ -192,6 +199,14 @@ impl ProjectStageMutationQueue {
     #[cfg(test)]
     fn pending_len_for_project(&self, project_root: &Path) -> usize {
         read_pending(&outbox_path(project_root)).unwrap().len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_before_batch_index(&self, index: usize) {
+        *self
+            .test_fail_before_index
+            .lock()
+            .expect("Project stage mutation queue test hook is not poisoned") = Some(index);
     }
 }
 
@@ -278,102 +293,6 @@ fn apply_mutation(
     };
     crate::project::scene::authoring::author_scene_member(&live.stage, project_root, placement)
         .map_err(|_| filesystem_error())
-}
-
-fn outbox_path(project_root: &Path) -> PathBuf {
-    project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(CACHE_DIRECTORY)
-        .join(OUTBOX_DIRECTORY)
-}
-
-fn submit_batch_locked(
-    project_root: &Path,
-    mutations: &[ProjectStageMutation],
-) -> Result<(), ProjectWriteError> {
-    if mutations.is_empty() {
-        return Ok(());
-    }
-    let path = outbox_path(project_root);
-    let pending = read_pending(&path)?;
-    if pending.len().saturating_add(mutations.len()) > STAGE_MUTATION_CAPACITY {
-        return Err(busy_error());
-    }
-    fs::create_dir_all(&path).map_err(|_| filesystem_error())?;
-
-    let mut temporary_paths = Vec::with_capacity(mutations.len());
-    let mut final_paths = Vec::with_capacity(mutations.len());
-    let result = (|| {
-        for mutation in mutations {
-            let id = Uuid::new_v4();
-            let temporary = path.join(format!(".{id}.tmp"));
-            let final_path = path.join(format!("{id}.json"));
-            let encoded = serde_json::to_vec(mutation).map_err(|_| filesystem_error())?;
-            temporary_paths.push(temporary.clone());
-            final_paths.push(final_path.clone());
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)
-                .map_err(|_| filesystem_error())?;
-            file.write_all(&encoded).map_err(|_| filesystem_error())?;
-            file.sync_all().map_err(|_| filesystem_error())?;
-        }
-        for (temporary, final_path) in temporary_paths.iter().zip(&final_paths) {
-            fs::rename(temporary, final_path).map_err(|_| filesystem_error())?;
-        }
-        Ok(())
-    })();
-
-    if result.is_err() {
-        for temporary in &temporary_paths {
-            let _ = fs::remove_file(temporary);
-        }
-        for final_path in &final_paths {
-            let _ = fs::remove_file(final_path);
-        }
-    }
-    result
-}
-
-fn read_pending(path: &Path) -> Result<Vec<(PathBuf, ProjectStageMutation)>, ProjectWriteError> {
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(_) => return Err(filesystem_error()),
-    };
-    let mut paths = entries
-        .map(|entry| {
-            entry
-                .map(|entry| entry.path())
-                .map_err(|_| filesystem_error())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    paths.retain(|path| {
-        path.extension()
-            .is_some_and(|extension| extension == "json")
-    });
-    paths.sort();
-    paths
-        .into_iter()
-        .map(|path| {
-            let bytes = fs::read(&path).map_err(|_| filesystem_error())?;
-            let mutation = serde_json::from_slice(&bytes).map_err(|_| filesystem_error())?;
-            Ok((path, mutation))
-        })
-        .collect()
-}
-
-fn busy_error() -> ProjectWriteError {
-    ProjectWriteError::Failed {
-        code: project_protocol::ProjectWriteErrorCode::Busy,
-    }
-}
-
-pub(super) fn filesystem_error() -> ProjectWriteError {
-    ProjectWriteError::Failed {
-        code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
-    }
 }
 
 #[cfg(test)]

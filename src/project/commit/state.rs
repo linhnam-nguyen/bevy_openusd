@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use std::path::Path;
+use usd_bevy::LiveRevision;
 use usd_git::RevisionId;
 use usd_model::SemanticSnapshot;
 
@@ -37,6 +38,54 @@ impl CommitState {
         }
         self.dirty = true;
         Ok(())
+    }
+
+    pub(crate) fn acquire_lease(
+        &mut self,
+        expected_live_revision: LiveRevision,
+    ) -> Result<CommitLease> {
+        if self.committing {
+            bail!("a commit is already in progress")
+        }
+        if !self.dirty {
+            bail!("cannot commit a clean runtime state")
+        }
+        self.committing = true;
+        Ok(CommitLease {
+            expected_live_revision,
+            finalized: false,
+        })
+    }
+
+    fn finalize_git_commit(&mut self, lease: &mut CommitLease, revision: RevisionId) {
+        self.base_revision = Some(revision);
+        self.dirty = false;
+        lease.finalized = true;
+    }
+
+    pub(super) fn release_lease(&mut self) {
+        self.committing = false;
+    }
+}
+
+/// Exclusive authority token for one frozen LiveStage commit attempt.
+///
+/// The lease is acquired before staging, the LiveStage revision is checked
+/// again immediately before Git creates its OID, and Git success is finalized
+/// before any derived Turso persistence is attempted.
+#[derive(Debug)]
+pub(crate) struct CommitLease {
+    expected_live_revision: LiveRevision,
+    finalized: bool,
+}
+
+impl CommitLease {
+    pub(crate) fn expected_live_revision(&self) -> LiveRevision {
+        self.expected_live_revision
+    }
+
+    pub(crate) fn finalize_git_commit(&mut self, state: &mut CommitState, revision: RevisionId) {
+        state.finalize_git_commit(self, revision);
     }
 }
 

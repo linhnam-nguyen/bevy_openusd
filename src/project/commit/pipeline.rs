@@ -24,12 +24,6 @@ pub(crate) async fn commit_live_stage(
     config: SemanticConfig,
     semantic_store: &mut impl SemanticStore,
 ) -> Result<CommitOutcome> {
-    if state.committing {
-        bail!("a commit is already in progress")
-    }
-    if !state.dirty {
-        bail!("cannot commit a clean runtime state")
-    }
     validate_relative_stage_path(stage_relative_path)?;
     if live_stage.current_revision() != expected_live_revision {
         bail!(
@@ -38,10 +32,11 @@ pub(crate) async fn commit_live_stage(
             live_stage.current_revision().0
         );
     }
-    state.committing = true;
+    let lease = state.acquire_lease(expected_live_revision)?;
 
     let result = commit_live_stage_inner(
         state,
+        lease,
         live_stage,
         repository_path,
         stage_relative_path,
@@ -50,12 +45,13 @@ pub(crate) async fn commit_live_stage(
         semantic_store,
     )
     .await;
-    state.committing = false;
+    state.release_lease();
     result
 }
 
 async fn commit_live_stage_inner(
     state: &mut CommitState,
+    mut lease: super::state::CommitLease,
     live_stage: &LiveStage,
     repository_path: &Path,
     stage_relative_path: &Path,
@@ -100,12 +96,19 @@ async fn commit_live_stage_inner(
         .traverse(PrimPredicate::DEFAULT, |_| {})
         .context("validating staged USD composition")?;
 
+    if live_stage.current_revision() != lease.expected_live_revision() {
+        bail!(
+            "live stage revision changed while commit was staged: expected {}, found {}",
+            lease.expected_live_revision().0,
+            live_stage.current_revision().0
+        );
+    }
+
     let revision = repository
         .create_commit(CommitRequest::new(message, staging.path()))
         .context("creating Git commit from staged USD tree")?;
 
-    state.base_revision = Some(revision.clone());
-    state.dirty = false;
+    lease.finalize_git_commit(state, revision.clone());
 
     let snapshot_result = SemanticExtractor::new(config).extract(
         &validated_stage,
