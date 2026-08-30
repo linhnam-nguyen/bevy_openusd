@@ -1,14 +1,18 @@
 use bevy::asset::{Assets, RenderAssetUsages};
 use bevy::mesh::{Mesh, PrimitiveTopology};
 use bevy::prelude::*;
+use std::collections::HashMap;
 
 use super::super::ProjectionSeed;
 use super::super::cache::{MAX_INTERNED, ProjectionCache, remember_source_mesh};
 use super::super::cache_key::source_mesh_key;
-use super::{MeshPatchAction, MeshRoute, UsdLocalExtent, mesh_patch_action};
+use super::{MeshPatchAction, MeshRoute, UsdDisplayName, UsdLocalExtent, mesh_patch_action};
 use crate::read::geom::{Interpolation, MeshPrimvar, read_mesh};
 use crate::route::{PrimRoute, RouteCtx};
 use crate::snippet::UsdSnippet;
+use crate::{
+    USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE, UsdTransparentHierarchyNode,
+};
 
 fn mesh_stage() -> (openusd::usd::Stage, openusd::sdf::Path) {
     let stage = UsdSnippet::new(
@@ -191,6 +195,42 @@ fn persistent_mesh_seed_is_consumed_by_the_normal_route() {
             max: [2.0, 2.0, 0.0],
         })
     );
+}
+
+#[test]
+fn hierarchy_metadata_route_projects_display_name_and_explicit_source_role() -> anyhow::Result<()> {
+    let stage = openusd::usd::Stage::builder().in_memory("hierarchy-metadata.usda")?;
+    let prim = stage
+        .define_prim("/World/Source")?
+        .set_type_name("Xform")?
+        .set_metadata(
+            "ui:displayName",
+            openusd::sdf::Value::String("Friendly Source".to_owned()),
+        )?
+        .set_metadata(
+            "customData",
+            openusd::sdf::Value::Dictionary(HashMap::from([(
+                USDHUB_HIERARCHY_ROLE_METADATA.to_owned(),
+                openusd::sdf::Value::String(USDHUB_TRANSPARENT_SOURCE_ROLE.to_owned()),
+            )])),
+        )?;
+    let path = openusd::sdf::path("/World/Source")?;
+    let ctx = RouteCtx::new(&stage, &path);
+    let mut world = World::new();
+    let entity = world.spawn_empty().id();
+
+    super::VisibilityRoute.project(&ctx, &mut world, entity);
+
+    assert_eq!(
+        world.get::<UsdDisplayName>(entity),
+        Some(&UsdDisplayName("Friendly Source".to_owned()))
+    );
+    assert_eq!(
+        world.get::<UsdTransparentHierarchyNode>(entity),
+        Some(&UsdTransparentHierarchyNode)
+    );
+    let _ = prim;
+    Ok(())
 }
 
 #[test]

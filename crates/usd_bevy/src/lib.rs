@@ -28,7 +28,10 @@ pub use live::{
     current_transform, is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of,
     project_stage, property_of, validate_prim_path,
 };
-pub use prim_ref::{SemanticEntityIndex, UsdEntityKey, UsdPrimRef};
+pub use prim_ref::{
+    SemanticEntityIndex, USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE,
+    UsdEntityKey, UsdPrimRef, UsdTransparentHierarchyNode,
+};
 pub use route::audio::UsdSpatialAudio;
 pub use route::camera::{Projection, UsdCamera};
 pub use route::coverage::UsdProcedural;

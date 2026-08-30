@@ -77,6 +77,7 @@ pub(super) fn author_model_wrapper(
             }])),
         )?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -124,6 +125,21 @@ pub(super) fn validate_model_wrapper(
             .prim(&source_path)
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "stable Model wrapper must reference its source"
+    );
+    ensure!(
+        stage
+            .prim(source_path.as_str())
+            .custom_data()?
+            .and_then(|value| match value {
+                Value::Dictionary(data) => data
+                    .get(crate::project::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                _ => None,
+            })
+            .as_deref()
+            == Some(crate::project::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
+        "stable Model wrapper source must carry the transparent hierarchy role"
     );
     let references = {
         let root_layer = stage.root_layer();

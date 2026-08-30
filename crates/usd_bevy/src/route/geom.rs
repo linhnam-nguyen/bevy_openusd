@@ -5,6 +5,9 @@
 use bevy::prelude::*;
 use std::time::Instant;
 
+#[path = "hierarchy.rs"]
+mod hierarchy;
+
 use super::ProjectionSeed;
 use super::cache::{
     ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,
@@ -58,6 +61,7 @@ fn apply(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     if let Ok(mut e) = world.get_entity_mut(entity) {
         e.insert((vis, UsdPurpose(purpose)));
     }
+    hierarchy::apply_metadata(ctx, world, entity);
 }
 
 impl PrimRoute for VisibilityRoute {
@@ -70,12 +74,21 @@ impl PrimRoute for VisibilityRoute {
     }
 
     fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
-        let touches =
-            changed.is_empty() || changed.contains(&"visibility") || changed.contains(&"purpose");
-        if !touches {
-            return;
+        if changed.is_empty() || changed.contains(&"visibility") || changed.contains(&"purpose") {
+            let (vis, purpose) = resolve(ctx, world);
+            if let Ok(mut e) = world.get_entity_mut(entity) {
+                e.insert((vis, UsdPurpose(purpose)));
+            }
         }
-        apply(ctx, world, entity);
+        if changed.is_empty()
+            || changed.contains(&"ui:displayName")
+            || changed.contains(&"customData")
+            || changed
+                .iter()
+                .any(|property| property.starts_with("customData:"))
+        {
+            hierarchy::apply_metadata(ctx, world, entity);
+        }
     }
 }
 

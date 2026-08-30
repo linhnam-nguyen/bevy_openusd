@@ -1,7 +1,7 @@
 //! Canonical USDHub spatial metadata and source-wrapper normalization.
 
-use std::f64::consts::FRAC_PI_2;
 use std::path::Path;
+use std::{collections::HashMap, f64::consts::FRAC_PI_2};
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{
@@ -13,6 +13,8 @@ use usd_project::{SourceSpatialConvention, StageUpAxis};
 
 pub(crate) const USDHUB_UP_AXIS: StageUpAxis = StageUpAxis::Y;
 pub(crate) const USDHUB_METERS_PER_UNIT: f64 = 1.0;
+pub(crate) const USDHUB_HIERARCHY_ROLE_METADATA: &str = usd_bevy::USDHUB_HIERARCHY_ROLE_METADATA;
+pub(crate) const USDHUB_TRANSPARENT_SOURCE_ROLE: &str = usd_bevy::USDHUB_TRANSPARENT_SOURCE_ROLE;
 const OPENUSD_UNAUTHORED_METERS_PER_UNIT: f64 = 0.01;
 
 /// Read composed Stage metrics without carrying a Stage handle across a
@@ -109,6 +111,24 @@ pub(crate) fn author_source_normalization(
         .create_attribute("xformOpOrder", "token[]")?
         .set_custom(false)?
         .set(Value::TokenVec(vec!["xformOp:transform".into()]))?;
+    Ok(())
+}
+
+/// Mark the wrapper's physical source anchor as transparent in USDHub's
+/// semantic hierarchy. The marker is explicit metadata, so imported content
+/// merely named `Source` or `Members` is never hidden by convention.
+pub(crate) fn author_source_hierarchy_role(source_prim: &Prim) -> Result<()> {
+    let mut custom_data = match source_prim.custom_data()? {
+        Some(Value::Dictionary(data)) => data,
+        _ => HashMap::new(),
+    };
+    custom_data.insert(
+        USDHUB_HIERARCHY_ROLE_METADATA.to_owned(),
+        Value::String(USDHUB_TRANSPARENT_SOURCE_ROLE.to_owned()),
+    );
+    source_prim
+        .clone()
+        .set_metadata("customData", Value::Dictionary(custom_data))?;
     Ok(())
 }
 

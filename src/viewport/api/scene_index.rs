@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdPrimRef};
+use usd_bevy::{UsdDisplayName, UsdPrimRef, UsdTransparentHierarchyNode};
 use viewport_protocol::{
     DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
     SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
@@ -178,6 +178,7 @@ impl SceneAnchorIndex {
             Entity,
             &UsdPrimRef,
             Option<&UsdDisplayName>,
+            Option<&UsdTransparentHierarchyNode>,
             Option<&Visibility>,
             Option<&Children>,
         )>,
@@ -188,6 +189,7 @@ impl SceneAnchorIndex {
             path: String,
             name: String,
             display_name: Option<String>,
+            transparent: bool,
             visible: bool,
             children: Vec<Entity>,
         }
@@ -200,30 +202,61 @@ impl SceneAnchorIndex {
         let mut candidates: Vec<Candidate> = prims
             .iter()
             .filter(|(_, prim, ..)| prim.path != "/")
-            .map(|(entity, prim, display_name, visibility, children)| {
-                let display_name = display_name.map(|display_name| display_name.0.clone());
-                Candidate {
-                    entity,
-                    path: prim.path.clone(),
-                    name: prim_name(&prim.path).to_owned(),
-                    display_name,
-                    visible: !matches!(visibility, Some(Visibility::Hidden)),
-                    children: children
-                        .map(|children| {
-                            children
-                                .iter()
-                                .filter(|child| prim_entities.contains(child))
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                }
-            })
+            .map(
+                |(entity, prim, display_name, transparent, visibility, children)| {
+                    let display_name = display_name.map(|display_name| display_name.0.clone());
+                    Candidate {
+                        entity,
+                        path: prim.path.clone(),
+                        name: prim_name(&prim.path).to_owned(),
+                        display_name,
+                        transparent: transparent.is_some(),
+                        visible: !matches!(visibility, Some(Visibility::Hidden)),
+                        children: children
+                            .map(|children| {
+                                children
+                                    .iter()
+                                    .filter(|child| prim_entities.contains(child))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    }
+                },
+            )
             .collect();
 
         let mut parent_by_child = HashMap::new();
         for candidate in &candidates {
             for child in &candidate.children {
                 parent_by_child.insert(*child, candidate.entity);
+            }
+        }
+
+        let transparent_by_entity: HashMap<Entity, bool> = candidates
+            .iter()
+            .map(|candidate| (candidate.entity, candidate.transparent))
+            .collect();
+        let visual_parent = |entity: Entity| {
+            let mut parent = parent_by_child.get(&entity).copied();
+            while let Some(candidate) = parent {
+                if !transparent_by_entity
+                    .get(&candidate)
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                parent = parent_by_child.get(&candidate).copied();
+            }
+            parent
+        };
+        let mut visual_child_counts: HashMap<Entity, usize> = HashMap::new();
+        for candidate in &candidates {
+            if candidate.transparent {
+                continue;
+            }
+            if let Some(parent) = visual_parent(candidate.entity) {
+                *visual_child_counts.entry(parent).or_default() += 1;
             }
         }
 
@@ -262,10 +295,12 @@ impl SceneAnchorIndex {
         let mut nodes: Vec<PrimNodeReadModel> = candidates
             .into_iter()
             .filter_map(|candidate| {
+                if candidate.transparent {
+                    return None;
+                }
                 let anchor = by_entity.get(&candidate.entity)?.clone();
-                let parent = parent_by_child
-                    .get(&candidate.entity)
-                    .and_then(|entity| by_entity.get(entity))
+                let parent = visual_parent(candidate.entity)
+                    .and_then(|entity| by_entity.get(&entity))
                     .cloned();
                 Some(PrimNodeReadModel {
                     anchor,
@@ -273,7 +308,11 @@ impl SceneAnchorIndex {
                     label: candidate.name,
                     display_name: candidate.display_name,
                     visible: candidate.visible,
-                    has_children: !candidate.children.is_empty(),
+                    has_children: visual_child_counts
+                        .get(&candidate.entity)
+                        .copied()
+                        .unwrap_or_default()
+                        > 0,
                 })
             })
             .collect();
@@ -309,6 +348,8 @@ pub(crate) fn refresh_scene_anchor_index(
                 Added<UsdPrimRef>,
                 Changed<UsdPrimRef>,
                 Changed<UsdDisplayName>,
+                Added<UsdTransparentHierarchyNode>,
+                Changed<UsdTransparentHierarchyNode>,
                 Changed<Visibility>,
                 Changed<Children>,
             )>,
@@ -318,18 +359,22 @@ pub(crate) fn refresh_scene_anchor_index(
         Entity,
         &UsdPrimRef,
         Option<&UsdDisplayName>,
+        Option<&UsdTransparentHierarchyNode>,
         Option<&Visibility>,
         Option<&Children>,
     )>,
     mut removed_prims: RemovedComponents<UsdPrimRef>,
+    mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
     // ScenePatch materialization can happen across a frame boundary after
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
     // trigger as well; otherwise a static stage can publish an empty tree
     // before its projected prim entities are visible to this query.
-    let changed =
-        spawned.is_changed() || !changed_prims.is_empty() || removed_prims.read().next().is_some();
+    let changed = spawned.is_changed()
+        || !changed_prims.is_empty()
+        || removed_prims.read().next().is_some()
+        || removed_transparent.read().next().is_some();
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
         return;

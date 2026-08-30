@@ -63,3 +63,100 @@ fn hierarchy_snapshot_reuses_cached_projection() {
 
     assert!(std::sync::Arc::ptr_eq(&first, &second));
 }
+
+#[test]
+fn explicit_source_role_flattens_only_usdhub_wrappers_and_preserves_anchors() {
+    let mut world = World::new();
+    let stage_root = world.spawn(UsdPrimRef::new("/")).id();
+    let scene_root = world
+        .spawn((
+            UsdPrimRef::new("/SceneRoot"),
+            UsdDisplayName("Pro2".to_owned()),
+            ChildOf(stage_root),
+        ))
+        .id();
+    let member = world
+        .spawn((
+            UsdPrimRef::new("/SceneRoot/Member_member"),
+            UsdDisplayName("Lv1".to_owned()),
+            ChildOf(scene_root),
+        ))
+        .id();
+    let wrapped_source = world
+        .spawn((
+            UsdPrimRef::new("/SceneRoot/Member_member/Source"),
+            UsdTransparentHierarchyNode,
+            ChildOf(member),
+        ))
+        .id();
+    world.spawn((
+        UsdPrimRef::new("/SceneRoot/Member_member/SourceAsset"),
+        ChildOf(wrapped_source),
+    ));
+    world.spawn((UsdPrimRef::new("/SceneRoot/Members"), ChildOf(scene_root)));
+    world.spawn((UsdPrimRef::new("/SceneRoot/Source"), ChildOf(scene_root)));
+
+    let mut index = SceneAnchorIndex::default();
+    let mut prims = world.query::<(
+        Entity,
+        &UsdPrimRef,
+        Option<&UsdDisplayName>,
+        Option<&UsdTransparentHierarchyNode>,
+        Option<&Visibility>,
+        Option<&Children>,
+    )>();
+    let prims = prims.query(&world);
+    index.rebuild(&prims);
+
+    let mut paths: Vec<_> = index
+        .nodes
+        .iter()
+        .map(|node| node.anchor.prim_path.as_str())
+        .collect();
+    paths.sort_unstable();
+    assert_eq!(
+        paths,
+        vec![
+            "/SceneRoot",
+            "/SceneRoot/Member_member",
+            "/SceneRoot/Member_member/SourceAsset",
+            "/SceneRoot/Members",
+            "/SceneRoot/Source",
+        ]
+    );
+    let member_node = index
+        .nodes
+        .iter()
+        .find(|node| node.anchor.prim_path == "/SceneRoot/Member_member")
+        .expect("managed member remains in the hierarchy");
+    assert_eq!(member_node.display_name.as_deref(), Some("Lv1"));
+    assert!(member_node.has_children);
+    let source_asset = index
+        .nodes
+        .iter()
+        .find(|node| node.anchor.prim_path.ends_with("/SourceAsset"))
+        .expect("wrapped source content remains visible");
+    assert_eq!(
+        source_asset
+            .parent
+            .as_ref()
+            .map(|anchor| anchor.prim_path.as_str()),
+        Some("/SceneRoot/Member_member")
+    );
+    assert_eq!(
+        index
+            .nodes
+            .iter()
+            .find(|node| node.anchor.prim_path == "/SceneRoot")
+            .and_then(|node| node.display_name.as_deref()),
+        Some("Pro2")
+    );
+    assert!(
+        index
+            .resolve(&SceneAnchor::active_session(
+                "/SceneRoot/Member_member/Source"
+            ))
+            .is_some(),
+        "physical wrapper anchor remains selectable even when omitted from the tree"
+    );
+}

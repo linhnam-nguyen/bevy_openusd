@@ -92,6 +92,7 @@ fn fixture() -> Result<(
         entities: vec![RuntimeHierarchyEntity {
             entity_key: "/World/Triangle".to_owned(),
             prim_path: "/World/Triangle".to_owned(),
+            display_name: None,
             transform: TransformSignature {
                 translation_mm: [0; 3],
                 rotation_quantized: [0, 0, 0, 10_000],

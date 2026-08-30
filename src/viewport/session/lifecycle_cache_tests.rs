@@ -86,11 +86,15 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
         .expect("create Scene directory");
     let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/stages/mesh_correctness.usda");
+    let project_source = project.path().join("source-a.usda");
+    fs::copy(&source, &project_source).expect("copy source into Project");
     let spatial = crate::project::spatial::inspect_source(&source).expect("inspect source A");
     crate::project::scene::adoption_authoring::author_scene_wrapper_to_path(
         &scene_path,
+        project.path(),
+        &scene_path,
         scene_id,
-        source.to_str().expect("source path"),
+        &project_source,
         "World",
         "Stage open identity race fixture",
         &spatial,

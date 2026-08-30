@@ -16,7 +16,7 @@ use viewport_protocol::{
 use super::blob_store::BlobStore;
 use super::runtime_payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
 
-pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 2;
+pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 3;
 const RUNTIME_MESH_VERSION: u16 = 1;
 
 /// A complete server-owned manifest and the verified bytes it references.
@@ -174,6 +174,7 @@ fn hierarchy_entity(
     RuntimeHierarchyEntity {
         entity_key: entity.key.0.clone(),
         prim_path: entity.prim_path.clone(),
+        display_name: entity.semantic.display_name.clone(),
         transform: entity.transform.clone(),
         geometry,
         material_blob_id,
@@ -191,6 +192,8 @@ pub(crate) struct RuntimeHierarchyBlob {
 pub(crate) struct RuntimeHierarchyEntity {
     pub(crate) entity_key: String,
     pub(crate) prim_path: String,
+    #[serde(default)]
+    pub(crate) display_name: Option<String>,
     pub(crate) transform: TransformSignature,
     pub(crate) geometry: Option<RuntimeHierarchyGeometry>,
     #[serde(default)]
@@ -323,6 +326,29 @@ mod tests {
         let bundle = build_runtime_delivery(&store, &snapshot(None), RuntimeProfile::NativeMedium)?;
         assert!(bundle.manifest.meshes.is_empty());
         assert_eq!(bundle.blobs.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn hierarchy_payload_preserves_semantic_display_name_without_using_raw_path() -> Result<()> {
+        let directory = tempdir()?;
+        let store = FilesystemBlobStore::new(directory.path().join("objects"))?;
+        let mut semantic_snapshot = snapshot(None);
+        semantic_snapshot
+            .entities
+            .get_mut(&EntityKey::from("/World/Box"))
+            .expect("fixture entity")
+            .semantic
+            .display_name = Some("Friendly Box".to_owned());
+
+        let bundle =
+            build_runtime_delivery(&store, &semantic_snapshot, RuntimeProfile::NativeMedium)?;
+        let hierarchy: RuntimeHierarchyBlob = serde_json::from_slice(&bundle.blobs[0].1)?;
+        assert_eq!(hierarchy.entities[0].prim_path, "/World/Box");
+        assert_eq!(
+            hierarchy.entities[0].display_name.as_deref(),
+            Some("Friendly Box")
+        );
         Ok(())
     }
 }

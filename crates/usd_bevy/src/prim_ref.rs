@@ -10,6 +10,12 @@ use bevy::prelude::{Entity, Resource};
 use bevy::reflect::{Reflect, std_traits::ReflectDefault};
 use usd_model::EntityKey;
 
+/// USDHub customData key used to classify implementation-only hierarchy
+/// wrappers. The value is intentionally explicit: a prim named `Source` or
+/// `Members` without this metadata remains a normal visible user prim.
+pub const USDHUB_HIERARCHY_ROLE_METADATA: &str = "usdhub:hierarchyRole";
+pub const USDHUB_TRANSPARENT_SOURCE_ROLE: &str = "transparentSource";
+
 /// The composed absolute prim path an entity was projected from
 /// (e.g. `"/World/ChildA"`).
 #[derive(Component, Reflect, Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -17,6 +23,11 @@ use usd_model::EntityKey;
 pub struct UsdPrimRef {
     pub path: String,
 }
+
+/// Marks a USDHub source wrapper that is transparent in the semantic
+/// hierarchy while remaining a real physical prim for selection and paths.
+#[derive(Component, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UsdTransparentHierarchyNode;
 
 impl UsdPrimRef {
     pub fn new(path: impl Into<String>) -> Self {

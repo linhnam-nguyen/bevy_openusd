@@ -44,6 +44,7 @@ pub(crate) fn author_scene_wrapper_to_path(
             }])),
         )?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -75,6 +76,21 @@ pub(crate) fn validate_scene_wrapper(
             .prim(&source_path)
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "adopted Scene wrapper must preserve the source as a reference"
+    );
+    ensure!(
+        stage
+            .prim(source_path.as_str())
+            .custom_data()?
+            .and_then(|value| match value {
+                Value::Dictionary(data) => data
+                    .get(crate::project::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                _ => None,
+            })
+            .as_deref()
+            == Some(crate::project::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
+        "adopted Scene wrapper source must carry the transparent hierarchy role"
     );
     let references = {
         let root_layer = stage.root_layer();
