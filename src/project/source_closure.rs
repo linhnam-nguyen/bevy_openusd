@@ -74,6 +74,38 @@ pub(crate) fn materialize_source_closure(
     Ok(source_name)
 }
 
+/// Fingerprint the exact source closure used by composed-source materialization.
+///
+/// Materialization preserves the source directory for composed imports so
+/// relative sidecars and assets remain addressable; the fingerprint therefore
+/// covers every regular file in that source directory with a deterministic
+/// relative path. This is intentionally conservative when an importer cannot
+/// expose a dependency through the USD layer stack.
+pub(crate) fn source_closure_fingerprint(source: &Path) -> Result<String> {
+    let source = validate_source(source)?;
+    let source_parent = source
+        .parent()
+        .context("USD source has no parent directory")?
+        .to_path_buf();
+    let _ = validate_layer_paths(&source, &source_parent)?;
+    let mut files = Vec::new();
+    collect_regular_files(&source_parent, &source_parent, &mut files)?;
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"USDHub source closure fingerprint v1\0");
+    for (relative, path) in files {
+        let bytes = fs::read(&path)
+            .with_context(|| format!("read source closure file {}", path.display()))?;
+        let relative = relative.as_bytes();
+        hasher.update(&(relative.len() as u64).to_le_bytes());
+        hasher.update(relative);
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 fn validate_source(source: &Path) -> Result<PathBuf> {
     let metadata = fs::symlink_metadata(source)
         .with_context(|| format!("read USD source metadata {}", source.display()))?;
@@ -83,6 +115,46 @@ fn validate_source(source: &Path) -> Result<PathBuf> {
     );
     fs::canonicalize(source)
         .with_context(|| format!("canonicalize USD source {}", source.display()))
+}
+
+fn collect_regular_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<(String, PathBuf)>,
+) -> Result<()> {
+    let mut entries = fs::read_dir(directory)
+        .with_context(|| format!("read source closure {}", directory.display()))?
+        .collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if matches!(entry.file_name().to_str(), Some(".usdhub" | ".git")) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)
+            .with_context(|| format!("read source closure metadata {}", path.display()))?;
+        ensure!(
+            !metadata.file_type().is_symlink(),
+            "source closure rejects symlink {}",
+            path.display()
+        );
+        if metadata.is_dir() {
+            collect_regular_files(root, &path, files)?;
+        } else if metadata.is_file() {
+            let relative = path
+                .strip_prefix(root)
+                .with_context(|| format!("relativize source closure {}", path.display()))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            files.push((relative, path));
+        } else {
+            bail!(
+                "source closure contains unsupported entry {}",
+                path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn validate_layer_paths(source: &Path, source_parent: &Path) -> Result<Vec<PathBuf>> {
@@ -226,6 +298,20 @@ mod tests {
         assert_eq!(fs::read(destination.join("texture.bin"))?, b"texture");
         drop(source_directory);
         assert!(Stage::open(&destination.join(source_name).to_string_lossy()).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn closure_fingerprint_changes_when_a_dependency_changes() -> Result<()> {
+        let source_directory = tempdir()?;
+        let source = write_composed_source(source_directory.path());
+        let before = source_closure_fingerprint(&source)?;
+        fs::write(
+            source_directory.path().join("dependency.usda"),
+            b"#usda 1.0\n# changed\n",
+        )?;
+        let after = source_closure_fingerprint(&source)?;
+        assert_ne!(before, after);
         Ok(())
     }
 

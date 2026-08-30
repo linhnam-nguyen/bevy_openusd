@@ -168,6 +168,28 @@ impl ProjectApplicationService {
         )
     }
 
+    pub fn sync_linked_scene(
+        &mut self,
+        project_id: usd_project::ProjectId,
+        scene_id: usd_project::SceneId,
+        source: &Path,
+        inspection: &usd_project::CompositionInspection,
+        name: String,
+        operation_id: String,
+        generation: u64,
+    ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
+        super::scene_adoption::sync_linked_scene(
+            self,
+            project_id,
+            scene_id,
+            source,
+            inspection,
+            name,
+            operation_id,
+            generation,
+        )
+    }
+
     pub fn publish_model(
         &mut self,
         preparation: &super::ProjectModelPreparationQueue,

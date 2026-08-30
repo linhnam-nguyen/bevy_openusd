@@ -8,9 +8,7 @@ use usd_project::{
 use super::*;
 
 fn stage(scene_id: SceneId) -> usd_bevy::LiveStage {
-    usd_bevy::LiveStage::new(
-        crate::project::scene::authoring::new_scene_stage(scene_id).unwrap(),
-    )
+    usd_bevy::LiveStage::new(crate::project::scene::authoring::new_scene_stage(scene_id).unwrap())
 }
 
 #[test]
@@ -80,11 +78,9 @@ fn canonical_project_mutations_reach_live_stage_as_real_references() {
         .root_layer()
         .export(active_stage_path.to_string_lossy().as_ref())
         .unwrap();
-    let active_members = crate::project::scene::authoring::read_scene_members(
-        &active_stage_path,
-        parent_scene_id,
-    )
-    .unwrap();
+    let active_members =
+        crate::project::scene::authoring::read_scene_members(&active_stage_path, parent_scene_id)
+            .unwrap();
     let adopted_member = active_members
         .iter()
         .find(|member| member.id == placement_id)

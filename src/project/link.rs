@@ -16,7 +16,7 @@ use usd_project::SceneId;
 
 use super::storage::ProjectStorageLayout;
 
-const BINDING_SCHEMA_VERSION: u32 = 1;
+const BINDING_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSourceBinding {
@@ -84,14 +84,7 @@ pub(crate) fn status(project_root: &Path, scene_id: SceneId) -> Result<LinkedSou
 }
 
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {
-    let source_path = canonical_source(source)?;
-    let bytes = fs::read(&source_path)
-        .with_context(|| format!("read linked source {}", source_path.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"USDHub linked source fingerprint v1\0");
-    hasher.update(&(bytes.len() as u64).to_le_bytes());
-    hasher.update(&bytes);
-    Ok(hasher.finalize().to_hex().to_string())
+    super::source_closure::source_closure_fingerprint(source)
 }
 
 fn canonical_source(source: &Path) -> Result<PathBuf> {
@@ -135,6 +128,39 @@ mod tests {
         assert_eq!(
             status(project.path(), scene_id).unwrap(),
             LinkedSourceStatus::SourceUnavailable
+        );
+    }
+
+    #[test]
+    fn status_detects_dependency_closure_change() {
+        let project = tempdir().unwrap();
+        let dependency = project.path().join("dependency.usda");
+        fs::write(&dependency, "#usda 1.0\ndef Xform \"Asset\" {}\n").unwrap();
+        let source = project.path().join("assembly.usda");
+        fs::write(
+            &source,
+            "#usda 1.0\ndef Xform \"Assembly\" (references = @./dependency.usda@</Asset>) {}\n",
+        )
+        .unwrap();
+        let scene_id = SceneId::new_v4();
+        let binding_directory = tempdir().unwrap();
+        let temporary = binding_directory.path().join("binding.tmp");
+        prepare_binding(&temporary, scene_id, &source).unwrap();
+        fs::create_dir_all(ProjectStorageLayout::new(project.path()).links_dir()).unwrap();
+        fs::rename(&temporary, binding_path(project.path(), scene_id)).unwrap();
+        assert_eq!(
+            status(project.path(), scene_id).unwrap(),
+            LinkedSourceStatus::InSync
+        );
+
+        fs::write(
+            &dependency,
+            "#usda 1.0\ndef Xform \"Asset\" { int changed = 1 }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            status(project.path(), scene_id).unwrap(),
+            LinkedSourceStatus::OutOfSync
         );
     }
 }

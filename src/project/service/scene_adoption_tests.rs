@@ -94,6 +94,77 @@ fn linked_scene_keeps_snapshot_when_external_source_disappears() {
 }
 
 #[test]
+fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let source = directory.path().join("external.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
+    )
+    .unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let summary = service.create_project(&parent, "Project").unwrap();
+    let inspection = inspect_composition(&source).unwrap();
+    let linked = service
+        .link_scene(
+            summary.id,
+            ProjectWriteTarget::Project(summary.id),
+            &source,
+            &inspection,
+            "External Assembly".to_owned(),
+            "link-operation".to_owned(),
+            1,
+            PlacementSpec::Default,
+        )
+        .unwrap();
+    let project_root = parent.join("Project");
+    let before = fs::read(
+        project_root
+            .join(".usdhub/imports/scenes")
+            .join(linked.scene_id.to_string())
+            .join("external.usda"),
+    )
+    .unwrap();
+
+    fs::write(
+        &source,
+        "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") { string version = \"updated\" }\n",
+    )
+    .unwrap();
+    let refreshed_inspection = inspect_composition(&source).unwrap();
+    let synced = service
+        .sync_linked_scene(
+            summary.id,
+            linked.scene_id,
+            &source,
+            &refreshed_inspection,
+            "External Assembly".to_owned(),
+            "sync-operation".to_owned(),
+            2,
+        )
+        .unwrap();
+
+    assert_eq!(synced.scene_id, linked.scene_id);
+    assert_ne!(
+        fs::read(
+            project_root
+                .join(".usdhub/imports/scenes")
+                .join(linked.scene_id.to_string())
+                .join("external.usda"),
+        )
+        .unwrap(),
+        before
+    );
+    assert_eq!(
+        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::link::LinkedSourceStatus::InSync
+    );
+}
+
+#[test]
 fn nested_adoption_adds_one_identity_preserving_parent_placement() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");

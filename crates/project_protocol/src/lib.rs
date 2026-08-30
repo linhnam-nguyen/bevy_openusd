@@ -48,8 +48,9 @@ pub use write::{
     ProjectLinkSceneRequest, ProjectModelLifecycleResponse, ProjectModelWriteResponse,
     ProjectRemoveScenePlacementRequest, ProjectRenameRequest, ProjectRenameResponse,
     ProjectSceneAdoptionResponse, ProjectSceneExportResponse, ProjectSceneLifecycleResponse,
-    ProjectSceneWriteResponse, ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode,
-    ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
+    ProjectSceneWriteResponse, ProjectSyncLinkedSceneRequest, ProjectWriteCommand,
+    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
+    ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]
