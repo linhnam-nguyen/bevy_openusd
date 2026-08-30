@@ -119,3 +119,52 @@ fn generic_projection_keeps_snapshot_acquisition_constant_time() {
         snapshot_elapsed.as_secs_f64() * 1_000_000.0,
     );
 }
+
+#[test]
+fn native_instance_selection_resolves_scene_proxy_paths_only() {
+    let frame_a = Entity::from_bits(101);
+    let frame_b = Entity::from_bits(102);
+    let index = SceneAnchorIndex {
+        by_anchor: [
+            (
+                SceneAnchor::active_session("/World/Window_A/Frame"),
+                frame_a,
+            ),
+            (
+                SceneAnchor::active_session("/World/Window_B/Frame"),
+                frame_b,
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        by_entity: [(
+            frame_a,
+            SceneAnchor::active_session("/World/Window_A/Frame"),
+        )]
+        .into_iter()
+        .chain(std::iter::once((
+            frame_b,
+            SceneAnchor::active_session("/World/Window_B/Frame"),
+        )))
+        .collect(),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        index.resolve(&SceneAnchor::active_session("/World/Window_A/Frame")),
+        Some(frame_a)
+    );
+    assert_eq!(
+        index.resolve(&SceneAnchor::active_session("/World/Window_B/Frame")),
+        Some(frame_b)
+    );
+    assert_eq!(
+        index.anchor_for(frame_a).unwrap().prim_path,
+        "/World/Window_A/Frame"
+    );
+    assert_eq!(
+        index.resolve(&SceneAnchor::active_session("/__Prototype_1/Frame")),
+        None,
+        "prototype paths are not selectable scene identities"
+    );
+}
