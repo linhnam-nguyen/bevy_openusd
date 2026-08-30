@@ -158,16 +158,17 @@ pub(crate) fn author_source_binding_role(source_prim: &Prim, linked: bool) -> Re
 }
 
 pub(crate) fn source_binding_is_linked(source_prim: &Prim) -> Result<bool> {
-    Ok(source_prim
-        .custom_data()?
-        .and_then(|value| match value {
-            Value::Dictionary(data) => data
-                .get(USDHUB_SOURCE_BINDING_METADATA)
-                .and_then(Value::as_str)
-                .map(|value| value == USDHUB_LINKED_SOURCE_BINDING),
-            _ => None,
-        })
-        .unwrap_or(false))
+    Ok(source_binding_marker(source_prim)?.as_deref() == Some(USDHUB_LINKED_SOURCE_BINDING))
+}
+
+pub(crate) fn source_binding_marker(source_prim: &Prim) -> Result<Option<String>> {
+    Ok(source_prim.custom_data()?.and_then(|value| match value {
+        Value::Dictionary(data) => data
+            .get(USDHUB_SOURCE_BINDING_METADATA)
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        _ => None,
+    }))
 }
 
 pub(crate) fn read_source_normalization(source_prim: &Prim) -> Result<Matrix4d> {

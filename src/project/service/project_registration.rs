@@ -152,6 +152,14 @@ pub(super) fn import_project(
             .map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::ManifestUnavailable,
             })?;
+            if let Err(error) =
+                crate::project::link::migrate_linked_source_provenance(project_root, &manifest)
+            {
+                log::warn!(
+                    "Linked Scene provenance migration skipped for {}: {error:#}",
+                    project_root.display()
+                );
+            }
             let summary = super::inspection::project_summary(&manifest, project_root)?;
             let _ = service.cache_warm.enqueue_project_targets(project_root);
             service

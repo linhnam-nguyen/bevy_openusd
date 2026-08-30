@@ -11,9 +11,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::usd::Stage;
+use openusd::usd::{InitialLoadSet, Stage};
 use serde::{Deserialize, Serialize};
-use usd_project::SceneId;
+use usd_project::{ProjectManifestV1, SceneId};
+use uuid::Uuid;
 
 use super::storage::ProjectStorageLayout;
 
@@ -84,15 +85,41 @@ pub(crate) fn status_for_scene(
     scene_path: &Path,
     scene_id: SceneId,
 ) -> Result<Option<LinkedSourceStatus>> {
+    if binding_path(project_root, scene_id).is_file() {
+        return match status(project_root, scene_id) {
+            Ok(status) => Ok(Some(status)),
+            Err(error) => {
+                let linked = scene_wrapper_is_linked(scene_path)?;
+                if linked {
+                    Ok(Some(LinkedSourceStatus::SourceUnavailable))
+                } else {
+                    Err(error)
+                }
+            }
+        };
+    }
     let linked = scene_wrapper_is_linked(scene_path)?;
-    if !binding_path(project_root, scene_id).is_file() {
-        return Ok(linked.then_some(LinkedSourceStatus::SourceUnavailable));
+    Ok(linked.then_some(LinkedSourceStatus::SourceUnavailable))
+}
+
+/// Backfill the canonical linked-source marker for legacy wrappers while the
+/// machine-local binding still proves that the Scene is linked. This is an
+/// explicit project migration, never a read-path repair.
+pub(crate) fn migrate_linked_source_provenance(
+    project_root: &Path,
+    manifest: &ProjectManifestV1,
+) -> Result<()> {
+    let layout = ProjectStorageLayout::new(project_root);
+    for scene in &manifest.scenes {
+        if !binding_path(project_root, scene.id).is_file() {
+            continue;
+        }
+        let scene_path = layout.readable_scene_path(manifest, scene);
+        if scene_path.is_file() {
+            migrate_scene_wrapper_marker(&scene_path)?;
+        }
     }
-    match status(project_root, scene_id) {
-        Ok(status) => Ok(Some(status)),
-        Err(_error) if linked => Ok(Some(LinkedSourceStatus::SourceUnavailable)),
-        Err(error) => Err(error),
-    }
+    Ok(())
 }
 
 /// Resolve the authoritative source for a linked Scene. The caller supplies
@@ -120,10 +147,50 @@ fn read_binding(project_root: &Path, scene_id: SceneId) -> Result<LinkedSourceBi
 
 fn scene_wrapper_is_linked(scene_path: &Path) -> Result<bool> {
     let path = scene_path.to_string_lossy();
-    let stage = Stage::open(path.as_ref()).context("open Scene wrapper for link status")?;
+    let stage = Stage::builder()
+        .load(InitialLoadSet::LoadNone)
+        .open(path.as_ref())
+        .context("open Scene wrapper for link status")?;
     Ok(crate::project::spatial::source_binding_is_linked(
         &stage.prim(SCENE_SOURCE_PRIM),
     )?)
+}
+
+fn migrate_scene_wrapper_marker(scene_path: &Path) -> Result<()> {
+    let path = scene_path.to_string_lossy().into_owned();
+    let stage = Stage::builder()
+        .load(InitialLoadSet::LoadNone)
+        .open(&path)
+        .context("open legacy Scene wrapper for link migration")?;
+    let source_prim = stage.prim(SCENE_SOURCE_PRIM);
+    ensure!(
+        source_prim.is_defined()?,
+        "legacy linked Scene wrapper source prim must be defined"
+    );
+    if crate::project::spatial::source_binding_marker(&source_prim)?.is_some() {
+        return Ok(());
+    }
+
+    crate::project::spatial::author_source_binding_role(&source_prim, true)?;
+    let temporary_path = scene_path.with_file_name(format!(
+        ".{}.linked-source-migration-{}.tmp.usda",
+        scene_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("scene"),
+        Uuid::new_v4()
+    ));
+    let result = stage
+        .root_layer()
+        .export(temporary_path.to_string_lossy().as_ref())
+        .context("export migrated linked Scene wrapper")
+        .and_then(|_| {
+            fs::rename(&temporary_path, scene_path).context("publish migrated linked Scene wrapper")
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
 }
 
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {
@@ -142,119 +209,5 @@ fn canonical_source(source: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::project::scene::adoption_authoring::author_scene_wrapper_to_path;
-    use crate::project::spatial::inspect_source;
-    use tempfile::tempdir;
-
-    #[test]
-    fn status_distinguishes_sync_change_and_source_removal() {
-        let project = tempdir().unwrap();
-        let source = project.path().join("source.usda");
-        fs::write(&source, b"#usda 1.0\n").unwrap();
-        let temporary = project.path().join("binding.tmp");
-        let scene_id = SceneId::new_v4();
-        prepare_binding(&temporary, scene_id, &source).unwrap();
-        fs::create_dir_all(ProjectStorageLayout::new(project.path()).links_dir()).unwrap();
-        fs::rename(&temporary, binding_path(project.path(), scene_id)).unwrap();
-        assert_eq!(
-            status(project.path(), scene_id).unwrap(),
-            LinkedSourceStatus::InSync
-        );
-
-        fs::write(&source, b"#usda 1.0\n# changed\n").unwrap();
-        assert_eq!(
-            status(project.path(), scene_id).unwrap(),
-            LinkedSourceStatus::OutOfSync
-        );
-
-        fs::remove_file(&source).unwrap();
-        assert_eq!(
-            status(project.path(), scene_id).unwrap(),
-            LinkedSourceStatus::SourceUnavailable
-        );
-    }
-
-    #[test]
-    fn status_detects_dependency_closure_change() {
-        let project = tempdir().unwrap();
-        let dependency = project.path().join("dependency.usda");
-        fs::write(&dependency, "#usda 1.0\ndef Xform \"Asset\" {}\n").unwrap();
-        let source = project.path().join("assembly.usda");
-        fs::write(
-            &source,
-            "#usda 1.0\ndef Xform \"Assembly\" (references = @./dependency.usda@</Asset>) {}\n",
-        )
-        .unwrap();
-        let scene_id = SceneId::new_v4();
-        let binding_directory = tempdir().unwrap();
-        let temporary = binding_directory.path().join("binding.tmp");
-        prepare_binding(&temporary, scene_id, &source).unwrap();
-        fs::create_dir_all(ProjectStorageLayout::new(project.path()).links_dir()).unwrap();
-        fs::rename(&temporary, binding_path(project.path(), scene_id)).unwrap();
-        assert_eq!(
-            status(project.path(), scene_id).unwrap(),
-            LinkedSourceStatus::InSync
-        );
-
-        fs::write(
-            &dependency,
-            "#usda 1.0\ndef Xform \"Asset\" { int changed = 1 }\n",
-        )
-        .unwrap();
-        assert_eq!(
-            status(project.path(), scene_id).unwrap(),
-            LinkedSourceStatus::OutOfSync
-        );
-    }
-
-    #[test]
-    fn missing_binding_is_unavailable_only_for_linked_scene_wrappers() {
-        let project = tempdir().unwrap();
-        let source = project.path().join("source.usda");
-        fs::write(
-            &source,
-            "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" {}\n",
-        )
-        .unwrap();
-        let spatial = inspect_source(&source).unwrap();
-        let linked_id = SceneId::new_v4();
-        let linked_path = project.path().join("linked.usda");
-        author_scene_wrapper_to_path(
-            &linked_path,
-            project.path(),
-            &linked_path,
-            linked_id,
-            &source,
-            "Assembly",
-            "Linked",
-            &spatial,
-            true,
-        )
-        .unwrap();
-        assert_eq!(
-            status_for_scene(project.path(), &linked_path, linked_id).unwrap(),
-            Some(LinkedSourceStatus::SourceUnavailable)
-        );
-
-        let imported_id = SceneId::new_v4();
-        let imported_path = project.path().join("imported.usda");
-        author_scene_wrapper_to_path(
-            &imported_path,
-            project.path(),
-            &imported_path,
-            imported_id,
-            &source,
-            "Assembly",
-            "Imported",
-            &spatial,
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-            status_for_scene(project.path(), &imported_path, imported_id).unwrap(),
-            None
-        );
-    }
-}
+#[path = "link_tests.rs"]
+mod tests;

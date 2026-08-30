@@ -273,6 +273,14 @@ fn migrate_registered_project_roots(registry: &WorkspaceRegistry) {
         let Ok(manifest) = ManifestStore::read_validated(project_root) else {
             continue;
         };
+        if let Err(error) =
+            crate::project::link::migrate_linked_source_provenance(project_root, manifest.raw())
+        {
+            log::warn!(
+                "Linked Scene provenance migration skipped for {}: {error:#}",
+                project_root.display()
+            );
+        }
         if let Err(error) = crate::project::scene::root::ensure_protected_root_scene_atomic(
             project_root,
             manifest.raw(),
