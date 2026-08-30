@@ -31,6 +31,15 @@ impl ManifestStore {
             fs::read(&path).with_context(|| format!("read Project manifest {}", path.display()))?;
         let manifest: ProjectManifestV1 = serde_json::from_slice(&bytes)
             .with_context(|| format!("decode Project manifest {}", path.display()))?;
+        if path == layout.legacy_manifest_path() && !layout.canonical_manifest_path().exists() {
+            let migrated = manifest
+                .clone()
+                .migrate_legacy()
+                .context("prepare legacy Project storage migration")?;
+            crate::project::storage::migrate_legacy_project(project_root, &migrated)
+                .context("migrate legacy Project storage")?;
+            return Self::read_validated(project_root);
+        }
         let migrated = manifest
             .clone()
             .migrate_legacy()

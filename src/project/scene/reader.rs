@@ -120,9 +120,6 @@ pub(crate) fn member_custom_data(member: &SceneMember) -> HashMap<String, Value>
             Value::String(target_id),
         ),
     ]);
-    if let Some(name) = &member.name {
-        data.insert(MEMBER_NAME_METADATA.to_owned(), Value::String(name.clone()));
-    }
     data
 }
 
@@ -272,11 +269,40 @@ pub(crate) fn scene_member_path_for_stage(
 
 pub(crate) fn prepare_scene_for_direct_members(stage: &Stage) -> Result<()> {
     let legacy_members_path = format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}");
-    if stage.prim(legacy_members_path.as_str()).is_defined()? {
-        ensure!(
-            stage.remove_prim(legacy_members_path.as_str())?,
-            "Project Scene legacy Members scaffold could not be removed"
-        );
+    let legacy_member_paths = stage
+        .prim(legacy_members_path.as_str())
+        .children()?
+        .into_iter()
+        .map(|child| child.path().as_str().to_owned())
+        .collect::<Vec<_>>();
+    if !legacy_member_paths.is_empty() {
+        let member_moves = legacy_member_paths
+            .iter()
+            .map(|member_path| {
+                let member_name = member_path
+                    .rsplit('/')
+                    .next()
+                    .expect("legacy Project Scene member path has a name");
+                Ok((
+                    sdf::path(member_path)?,
+                    sdf::path(format!("/{SCENE_ROOT_PRIM}/{member_name}"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let root_layer_identifier = stage.root_layer().identifier().to_owned();
+        stage
+            .batch_edit(&[root_layer_identifier.as_str()], |edits| {
+                let edit = edits
+                    .first_mut()
+                    .expect("Project Scene root layer edit exists");
+                for (source_path, target_path) in &member_moves {
+                    openusd::sdf::copy_spec_within(edit.data_mut(), source_path, target_path)?;
+                    edit.remove_spec(source_path)?;
+                }
+                edit.remove_spec(&sdf::path(&legacy_members_path)?)?;
+                Ok(())
+            })
+            .context("move legacy Project Scene members to direct paths")?;
     }
     let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
     let mut custom_data = match root.custom_data()? {

@@ -58,15 +58,21 @@ pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, 
 
     let (classification, display_name) = match fs::read(&manifest_path) {
         Ok(bytes) => match serde_json::from_slice::<ProjectManifestV1>(&bytes) {
+            Ok(manifest)
+                if manifest
+                    .clone()
+                    .migrate_legacy()
+                    .and_then(|manifest| manifest.validate())
+                    .is_ok() =>
+            {
+                (ProjectInspectionClassification::NativeUsdHub, manifest.name)
+            }
             Ok(manifest) if manifest.validate_schema_version().is_err() => {
                 warnings.push(ProjectInspectionWarning::UnsupportedManifestVersion);
                 (
                     ProjectInspectionClassification::Incompatible,
                     project_display_name(project_root),
                 )
-            }
-            Ok(manifest) if manifest.validate().is_ok() => {
-                (ProjectInspectionClassification::NativeUsdHub, manifest.name)
             }
             _ => {
                 warnings.push(ProjectInspectionWarning::MalformedManifest);
