@@ -137,6 +137,71 @@ fn binding_status_does_not_open_the_scene_wrapper() {
 
 #[test]
 fn legacy_linked_wrapper_is_marked_before_binding_is_removed() {
+    let (project, manifest, scene_id, scene_path, source) = legacy_wrapper_fixture();
+    write_binding(project.path(), scene_id, &source);
+    fs::remove_file(&source).unwrap();
+
+    migrate_linked_source_provenance(project.path(), &manifest).unwrap();
+    fs::remove_file(binding_path(project.path(), scene_id)).unwrap();
+
+    assert_eq!(
+        status_for_scene(project.path(), &scene_path, scene_id).unwrap(),
+        Some(LinkedSourceStatus::SourceUnavailable)
+    );
+}
+
+#[test]
+fn invalid_binding_evidence_does_not_mark_legacy_wrapper() {
+    let (project, manifest, scene_id, scene_path, source) = legacy_wrapper_fixture();
+    let mismatched_id = SceneId::new_v4();
+    let invalid_bindings = [
+        ("malformed", b"{".to_vec()),
+        (
+            "wrong scene id",
+            serde_json::to_vec(&LinkedSourceBinding {
+                schema_version: BINDING_SCHEMA_VERSION,
+                scene_id: mismatched_id,
+                source_path: source.clone(),
+                source_fingerprint: "unused".to_owned(),
+            })
+            .unwrap(),
+        ),
+        (
+            "unsupported schema",
+            serde_json::to_vec(&LinkedSourceBinding {
+                schema_version: BINDING_SCHEMA_VERSION + 1,
+                scene_id,
+                source_path: source.clone(),
+                source_fingerprint: "unused".to_owned(),
+            })
+            .unwrap(),
+        ),
+    ];
+
+    fs::create_dir_all(ProjectStorageLayout::new(project.path()).links_dir()).unwrap();
+    for (label, bytes) in invalid_bindings {
+        fs::write(binding_path(project.path(), scene_id), bytes).unwrap();
+        migrate_linked_source_provenance(project.path(), &manifest).unwrap();
+
+        let stage = Stage::builder()
+            .load(InitialLoadSet::LoadNone)
+            .open(scene_path.to_string_lossy().as_ref())
+            .unwrap();
+        assert_eq!(
+            crate::project::spatial::source_binding_marker(&stage.prim(SCENE_SOURCE_PRIM)).unwrap(),
+            None,
+            "invalid {label} binding must not backfill provenance"
+        );
+    }
+}
+
+fn legacy_wrapper_fixture() -> (
+    tempfile::TempDir,
+    ProjectManifestV1,
+    SceneId,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
     let project = tempdir().unwrap();
     let source = project.path().join("source.usda");
     fs::write(
@@ -173,16 +238,12 @@ fn legacy_linked_wrapper_is_marked_before_binding_is_removed() {
         false,
     )
     .unwrap();
-    let temporary = project.path().join("binding.tmp");
-    prepare_binding(&temporary, scene_id, &source).unwrap();
-    fs::create_dir_all(ProjectStorageLayout::new(project.path()).links_dir()).unwrap();
-    fs::rename(&temporary, binding_path(project.path(), scene_id)).unwrap();
+    (project, manifest, scene_id, scene_path, source)
+}
 
-    migrate_linked_source_provenance(project.path(), &manifest).unwrap();
-    fs::remove_file(binding_path(project.path(), scene_id)).unwrap();
-
-    assert_eq!(
-        status_for_scene(project.path(), &scene_path, scene_id).unwrap(),
-        Some(LinkedSourceStatus::SourceUnavailable)
-    );
+fn write_binding(project_root: &std::path::Path, scene_id: SceneId, source: &std::path::Path) {
+    let temporary = project_root.join("binding.tmp");
+    prepare_binding(&temporary, scene_id, source).unwrap();
+    fs::create_dir_all(ProjectStorageLayout::new(project_root).links_dir()).unwrap();
+    fs::rename(&temporary, binding_path(project_root, scene_id)).unwrap();
 }

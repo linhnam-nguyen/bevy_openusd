@@ -114,6 +114,13 @@ pub(crate) fn migrate_linked_source_provenance(
         if !binding_path(project_root, scene.id).is_file() {
             continue;
         }
+        if let Err(error) = read_binding(project_root, scene.id) {
+            log::warn!(
+                "Skipping linked Scene provenance migration for {}: invalid local binding: {error:#}",
+                scene.id
+            );
+            continue;
+        }
         let scene_path = layout.readable_scene_path(manifest, scene);
         if scene_path.is_file() {
             migrate_scene_wrapper_marker(&scene_path)?;
