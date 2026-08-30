@@ -5,6 +5,7 @@ mod indexes;
 mod material_patch;
 mod mesh_patch;
 mod native_instance;
+mod native_instance_audit;
 mod paths;
 mod payload;
 mod progressive;
