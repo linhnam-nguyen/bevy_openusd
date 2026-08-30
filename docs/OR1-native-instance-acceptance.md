@@ -2,9 +2,11 @@
 
 Status: `IMPLEMENTED / REVIEW REQUIRED`
 
-Branch: `develop/panel-BIMData` at the appended OR1 tip. The pre-existing
-panel-BIMData history ends at `6301427`; OR1 was appended without rewriting
-that history.
+Branch continuity: OR1 continues the current `panel-BIMData` branches. The
+backend is `develop/panel-BIMData` at the appended OR1 tip; the sibling UI
+workspace remains on `panel-BIMData`. The pre-existing backend history ends at
+`6301427`; OR1 was appended without rewriting that history, and no separate
+OR1 branch is retained.
 
 Review boundary: Owner Review 1. No follow-up milestone is started by this
 packet.
