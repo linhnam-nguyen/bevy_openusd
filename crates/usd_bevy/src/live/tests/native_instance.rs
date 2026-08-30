@@ -59,7 +59,7 @@ fn native_instance_exposes_shared_prototype_and_proxy_meshes() -> Result<()> {
 }
 
 #[test]
-fn current_projection_plan_characterizes_the_instance_boundary() -> Result<()> {
+fn projection_plan_includes_scene_scoped_instance_proxies() -> Result<()> {
     let stage = characterization_stage();
     let plan = ProjectionPlan::from_stage(&stage)?;
     let paths = plan.paths().map(str::to_owned).collect::<Vec<_>>();
@@ -67,7 +67,16 @@ fn current_projection_plan_characterizes_the_instance_boundary() -> Result<()> {
     assert!(paths.iter().any(|path| path == "/World/Window_A"));
     assert!(paths.iter().any(|path| path == "/World/Window_B"));
     assert!(paths.iter().any(|path| path == "/World/Control/Mesh"));
-    assert!(!paths.iter().any(|path| path == "/World/Window_A/Frame"));
-    assert!(!paths.iter().any(|path| path == "/World/Window_A/Glass"));
+    assert!(paths.iter().any(|path| path == "/World/Window_A/Frame"));
+    assert!(paths.iter().any(|path| path == "/World/Window_A/Glass"));
+    let frame_index = paths
+        .iter()
+        .position(|path| path == "/World/Window_A/Frame")
+        .expect("frame proxy is planned");
+    let window_index = paths
+        .iter()
+        .position(|path| path == "/World/Window_A")
+        .expect("instance root is planned");
+    assert!(window_index < frame_index);
     Ok(())
 }

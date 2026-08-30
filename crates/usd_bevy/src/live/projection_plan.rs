@@ -89,9 +89,6 @@ impl ProjectionPlanBuilder {
             return Ok(true);
         };
         let parent = self.stage.prim(openusd::sdf::path(&parent_path)?);
-        if parent_path != "/" && parent.is_instance()? {
-            return Ok(self.pending.is_empty());
-        }
         let mut children = parent.children()?;
         children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
         for child in children {
@@ -121,8 +118,8 @@ impl ProjectionPlanBuilder {
 }
 
 impl ProjectionPlan {
-    /// Build a plan using the same active/defined/non-abstract predicate as
-    /// ordinary live projection and subtree reconciliation.
+    /// Build a plan using the same proxy-aware active/defined/non-abstract
+    /// predicate as ordinary live projection and subtree reconciliation.
     pub fn from_stage(stage: &Stage) -> Result<Self> {
         let mut builder = ProjectionPlanBuilder::new(stage);
         while !builder.is_finished() {

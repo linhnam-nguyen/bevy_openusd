@@ -35,24 +35,26 @@ pub(super) fn stage_up_axis(stage: &Stage) -> Quat {
     }
 }
 
-/// The traversal predicate for projection: active + defined + non-abstract, but
-/// **not** requiring `LOADED` (unlike `PrimPredicate::default()`). This projects
-/// a prim whose payload is *unloaded* as a placeholder (its payloaded children
-/// stay absent until [`LiveStage::load_payload`]). For fully-loaded stages this
-/// is identical to the default predicate.
+/// The traversal predicate for projection: active + defined + non-abstract,
+/// descending through native instance proxies, but **not** requiring `LOADED`
+/// (unlike `PrimPredicate::default()`). This projects a prim whose payload is
+/// *unloaded* as a placeholder (its payloaded children stay absent until
+/// [`LiveStage::load_payload`]). For fully-loaded stages this is the default
+/// predicate with instance proxies enabled.
 pub(super) fn traverse_predicate() -> openusd::usd::PrimPredicate {
     use openusd::usd::PrimStatus;
     openusd::usd::PrimPredicate::new(
         PrimStatus::ACTIVE.union(PrimStatus::DEFINED),
         PrimStatus::ABSTRACT,
     )
+    .with_instance_proxies(true)
 }
 
 /// Collects all valid, projected prim paths within a subtree rooted at `root`.
 ///
-/// Uses the canonical projection predicate (`ACTIVE | DEFINED & ~ABSTRACT`) so
-/// that subtree reconciliation and semantic extraction see exactly the prims
-/// that the renderer projects.
+/// Uses the canonical proxy-aware projection predicate (`ACTIVE | DEFINED &
+/// ~ABSTRACT`) so subtree reconciliation and semantic extraction see exactly
+/// the scene-scoped prims that the renderer projects.
 pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> Result<Vec<String>> {
     let normalized_root = validate_prim_path(root)?;
     let mut collected = Vec::new();
