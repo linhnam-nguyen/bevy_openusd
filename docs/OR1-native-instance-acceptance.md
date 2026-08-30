@@ -2,6 +2,10 @@
 
 Status: `IMPLEMENTED / REVIEW REQUIRED`
 
+Branch: `develop/panel-BIMData` at the appended OR1 tip. The pre-existing
+panel-BIMData history ends at `6301427`; OR1 was appended without rewriting
+that history.
+
 Review boundary: Owner Review 1. No follow-up milestone is started by this
 packet.
 
@@ -22,14 +26,16 @@ remains transparent by authored opacity; the opaque frame remains renderable.
 
 | Checkpoint | Commit | Evidence |
 | --- | --- | --- |
-| OR1-C1 characterization | `12faa56` | Real composition-arc fixture proves instance/prototype/proxy behavior. |
-| OR1-C2 proxy-aware plan | `2f4c2c7` | Scene proxy paths are planned parent-before-child. |
-| OR1-C3 shared mesh projection | `acfbf49` | Proxy mesh entities share mesh and material handles. |
-| OR1-C4 presentation semantics | `f8be706` | Transforms, visibility, purpose, frame opacity, and glass transparency are covered. |
-| OR1-C5 reconciliation | `21c3155` | Prototype/source edits fan out through the native dependency index. |
-| OR1-C6 nested instances | `704baea` | Nested instance roots and leaf proxies project without synthetic identity paths. |
-| OR1-C7 selection identity | `9335c40` | Scene proxy anchors resolve; prototype paths do not resolve to selectable entities. |
-| OR1-C8 Revit/performance audit | `6bfba21` | Local `Projet1.usdc` and generated 1,000-instance audits pass. |
+| OR1-C1 characterization | `1dea77b` | Real composition-arc fixture proves instance/prototype/proxy behavior. |
+| OR1-C2 proxy-aware plan | `6f03bb1` | Scene proxy paths are planned parent-before-child. |
+| OR1-C3 shared mesh projection | `4744828` | Proxy mesh entities share mesh and material handles. |
+| OR1-C4 presentation semantics | `6a47ecb` | Transforms, visibility, purpose, frame opacity, and glass transparency are covered. |
+| OR1-C5 reconciliation | `ee1ef72` | Prototype/source edits fan out through the native dependency index; panel suppression export is retained. |
+| OR1-C6 nested instances | `aab450e` | Nested instance roots and leaf proxies project without synthetic identity paths. |
+| OR1-C7 selection identity | `9b3cc2f` | Scene proxy anchors resolve; prototype paths do not resolve to selectable entities; panel hierarchy tests are retained. |
+| OR1-C8 Revit/performance audit | `d92d497` | Local `Projet1.usdc` and generated 1,000-instance audits pass. |
+| OR1-C9 final acceptance packet | `a728c15` | Required gates and evidence are recorded for Owner Review 1. |
+| OR1-C9+ panel branch alignment | `d39389b` | Rustfmt-only merge hygiene after appending OR1 to panel-BIMData. |
 
 ## C8 evidence
 
@@ -39,8 +45,9 @@ The explicit local audit command was:
 cargo test -p usd_bevy --lib native_instance_audit::projet1_usdc_windows_project_to_scene_proxy_meshes -- --ignored --nocapture
 ```
 
-Observed result: 5 Revit window instance roots, 10 instance-proxy meshes, and
-10 projected `Mesh3d` entities. The generated structural audit covers 1,000
+Observed result on `develop/panel-BIMData`: 5 Revit window instance roots, 10
+instance-proxy meshes, and 10 projected `Mesh3d` entities (`projection_ms`
+varied by host load). The generated structural audit covers 1,000
 instance leaves, 1,000 dependency-index entries, and one shared mesh asset.
 
 Changed-info reconciliation queries the native dependency index and patches
