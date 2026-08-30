@@ -65,6 +65,12 @@ pub(super) fn read_properties<'snapshot>(
         let property = project_property(key, &values, policy);
         grouped.entry(property.group_id).or_default().push(property);
     }
+    if grouped.values().map(Vec::len).sum::<usize>() > viewport_protocol::MAX_BIM_PROPERTY_COUNT {
+        return Err(BimQueryError::TooManyResults {
+            kind: "properties",
+            limit: viewport_protocol::MAX_BIM_PROPERTY_COUNT,
+        });
+    }
     let groups = grouped
         .into_iter()
         .map(|(id, properties)| BimPropertyGroupReadModel {

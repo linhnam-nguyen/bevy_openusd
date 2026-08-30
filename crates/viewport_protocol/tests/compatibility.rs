@@ -13,7 +13,7 @@ fn viewport_command_fixture_uses_the_current_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"command\",\"payload\":{\"protocol_version\":6,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
+        "{\"type\":\"command\",\"payload\":{\"protocol_version\":7,\"request_id\":\"fixture-command\",\"command\":{\"kind\":\"request_snapshot\"}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
@@ -30,13 +30,13 @@ fn viewport_event_fixture_uses_the_current_json_shape() {
 
     assert_eq!(
         line,
-        "{\"type\":\"event\",\"payload\":{\"protocol_version\":6,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":6}}}}\n"
+        "{\"type\":\"event\",\"payload\":{\"protocol_version\":7,\"request_id\":null,\"event\":{\"kind\":\"ready\",\"payload\":{\"protocol_version\":7}}}}\n"
     );
     assert_eq!(decode_json_line(&line).unwrap(), message);
 }
 
 #[test]
-fn selection_delta_event_round_trips_through_the_v6_wire_shape() {
+fn selection_delta_event_round_trips_through_the_v7_wire_shape() {
     let target = viewport_protocol::SceneAnchor::active_session("/World/Cube");
     let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
         Some("selection-delta".into()),
@@ -100,7 +100,7 @@ fn a_version_two_command_envelope_is_rejected_by_the_current_contract() {
         Err(
             viewport_protocol::ProtocolValidationError::UnsupportedProtocolVersion {
                 received: 2,
-                expected: 6,
+                expected: 7,
             }
         )
     ));
@@ -115,7 +115,7 @@ fn previous_protocol_version_is_rejected_after_hierarchy_wire_bump() {
         Err(
             viewport_protocol::ProtocolValidationError::UnsupportedProtocolVersion {
                 received: 5,
-                expected: 6,
+                expected: 7,
             }
         )
     ));

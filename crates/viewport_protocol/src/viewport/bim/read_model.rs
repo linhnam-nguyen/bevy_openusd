@@ -36,7 +36,9 @@ fn default_unit_scale() -> f64 {
 /// `SourceFallback` is reserved for validated source properties that are not
 /// part of the normalized semantic property set. It is intentionally distinct
 /// from `Semantic` so a client cannot silently merge provenance groups.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BimPropertyGroupId {
     #[default]
@@ -100,6 +102,44 @@ pub struct BimPropertiesReadModel {
     #[serde(default)]
     pub selection_revision: u64,
     pub groups: Vec<BimPropertyGroupReadModel>,
+}
+
+/// One bounded transport page of an authoritative BIM property result.
+///
+/// `targets` and `diff` are carried only on the first page by the server. The
+/// client must assemble pages by `page_index`, never by arrival count.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BimPropertiesPage {
+    pub selection_revision: u64,
+    pub page_index: u32,
+    pub page_count: u32,
+    pub total_properties: u32,
+    #[serde(default)]
+    pub targets: Vec<SceneAnchor>,
+    pub groups: Vec<BimPropertyGroupReadModel>,
+    #[serde(default)]
+    pub diff: Option<super::diff::BimPropertyDiffReadModel>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BimPropertiesDeliveryErrorKind {
+    OversizedPropertyValue,
+    OversizedMetadata,
+    TooManyProperties,
+}
+
+/// Explicit failure for a property result that cannot be represented by the
+/// bounded application transport. The server must emit this instead of
+/// silently dropping the result.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BimPropertiesDeliveryError {
+    pub selection_revision: u64,
+    pub kind: BimPropertiesDeliveryErrorKind,
+    #[serde(default)]
+    pub property: Option<String>,
+    pub encoded_bytes: u32,
+    pub max_bytes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

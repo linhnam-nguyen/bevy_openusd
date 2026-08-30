@@ -1,6 +1,7 @@
 use log::warn;
 use viewport_protocol::{ServerEvent, SessionEvent, ViewportEvent, ViewportReadModel};
 
+use super::bim_properties::queue_bim_properties;
 use super::chunks::{queue_runtime_blob, queue_runtime_manifest, queue_snapshot};
 use super::constants::MAX_APPLICATION_MESSAGE_BYTES;
 use super::dispatch::{encoded_size, next_server_envelope};
@@ -29,6 +30,9 @@ pub(super) fn queue_server_event_for_request(
         }
         ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) => {
             queue_scene_children_page(state, request_id, page);
+        }
+        ServerEvent::Viewport(ViewportEvent::BimPropertiesRead { properties, diff }) => {
+            queue_bim_properties(state, request_id, properties, diff);
         }
         ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }) => {
             queue_runtime_manifest(state, request_id.as_deref(), manifest);
