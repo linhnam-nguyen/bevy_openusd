@@ -1,0 +1,48 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def Xform "WindowPrototype"
+    {
+        def Mesh "Frame"
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-1, 0, 0), (1, 0, 0), (1, 2, 0), (-1, 2, 0)]
+        }
+
+        def Mesh "Glass"
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-0.8, 0.2, 0), (0.8, 0.2, 0), (0.8, 1.8, 0), (-0.8, 1.8, 0)]
+        }
+    }
+
+    def Xform "Window_A" (
+        instanceable = true
+        references = </World/WindowPrototype>
+    )
+    {
+    }
+
+    def Xform "Window_B" (
+        instanceable = true
+        references = </World/WindowPrototype>
+    )
+    {
+    }
+
+    def Xform "Control"
+    {
+        def Mesh "Mesh"
+        {
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-1, 0, 0), (1, 0, 0), (1, 1, 0), (-1, 1, 0)]
+        }
+    }
+}

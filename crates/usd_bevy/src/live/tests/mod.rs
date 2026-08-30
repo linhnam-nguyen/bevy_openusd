@@ -4,6 +4,7 @@ mod fallback;
 mod indexes;
 mod material_patch;
 mod mesh_patch;
+mod native_instance;
 mod paths;
 mod payload;
 mod progressive;
