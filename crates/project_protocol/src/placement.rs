@@ -25,7 +25,7 @@ pub enum PlacementValidationError {
     Number { value: String },
     #[error("placement matrix contains a non-finite value")]
     NonFinite,
-    #[error("placement matrix must be affine with a final row of 0 0 0 1")]
+    #[error("placement matrix must be affine with a final column of 0 0 0 1")]
     NonAffine,
     #[error("placement matrix has a singular 3x3 linear component")]
     Singular,

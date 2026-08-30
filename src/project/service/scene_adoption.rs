@@ -209,7 +209,7 @@ fn adopt_scene_inner(
                 project_id,
                 scene_id: adopted.scene_id,
                 parent_scene_id: Some(parent_scene_id),
-                placement_id: adopted.member.as_ref().map(|member| member.id),
+                placement: adopted.member.clone(),
             },
         )?;
     }

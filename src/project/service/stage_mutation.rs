@@ -14,7 +14,7 @@ use std::{
 
 use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use serde::{Deserialize, Serialize};
-use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId, SceneMemberTarget};
+use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
 use uuid::Uuid;
 
 #[path = "stage_rename.rs"]
@@ -24,25 +24,25 @@ mod stage_rename;
 ///
 /// This DTO contains only stable Project identities. The OpenUSD Stage and
 /// Bevy entities remain owned by the active-stage thread.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum ProjectStageMutation {
     CreateScene {
         project_id: ProjectId,
         scene_id: SceneId,
         parent_scene_id: Option<SceneId>,
-        placement_id: Option<SceneMemberId>,
+        placement: Option<SceneMember>,
     },
     AdoptScene {
         project_id: ProjectId,
         scene_id: SceneId,
         parent_scene_id: Option<SceneId>,
-        placement_id: Option<SceneMemberId>,
+        placement: Option<SceneMember>,
     },
     PublishModel {
         project_id: ProjectId,
         model_id: ModelId,
         parent_scene_id: Option<SceneId>,
-        placement_id: Option<SceneMemberId>,
+        placement: Option<SceneMember>,
     },
     RemoveScenePlacement {
         project_id: ProjectId,
@@ -265,43 +265,22 @@ fn apply_mutation(
         stage_rename::apply_rename_to_live_stage(live, target, name)?;
         return Ok(());
     }
-    let (placement_id, target) = match mutation {
-        ProjectStageMutation::CreateScene {
-            scene_id,
-            placement_id,
-            ..
-        }
-        | ProjectStageMutation::AdoptScene {
-            scene_id,
-            placement_id,
-            ..
-        } => (*placement_id, SceneMemberTarget::Scene(*scene_id)),
-        ProjectStageMutation::PublishModel {
-            model_id,
-            placement_id,
-            ..
-        } => (*placement_id, SceneMemberTarget::Model(*model_id)),
+    let placement = match mutation {
+        ProjectStageMutation::CreateScene { placement, .. }
+        | ProjectStageMutation::AdoptScene { placement, .. }
+        | ProjectStageMutation::PublishModel { placement, .. } => placement,
         ProjectStageMutation::RemoveScenePlacement { .. }
         | ProjectStageMutation::DeleteScene { .. }
         | ProjectStageMutation::DeleteModel { .. }
         | ProjectStageMutation::Rename { .. } => unreachable!("handled above"),
     };
-    let Some(placement_id) = placement_id else {
+    let Some(placement) = placement else {
         // Empty -> root transitions are completed by normal root-stage
         // activation. There is no SceneMember to patch into the new root.
         return Ok(());
     };
-    crate::project::scene::authoring::author_scene_member(
-        &live.stage,
-        project_root,
-        &SceneMember {
-            id: placement_id,
-            target,
-            name: None,
-            transform: Default::default(),
-        },
-    )
-    .map_err(|_| filesystem_error())
+    crate::project::scene::authoring::author_scene_member(&live.stage, project_root, placement)
+        .map_err(|_| filesystem_error())
 }
 
 fn outbox_path(project_root: &Path) -> PathBuf {

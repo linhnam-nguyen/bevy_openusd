@@ -118,7 +118,7 @@ pub(super) fn create_scene(
                 project_id,
                 scene_id: created.scene_id,
                 parent_scene_id: Some(parent_scene_id),
-                placement_id: created.member.as_ref().map(|member| member.id),
+                placement: created.member.clone(),
             },
         )?;
     }

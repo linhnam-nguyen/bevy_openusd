@@ -170,7 +170,7 @@ fn publish_model_inner(
                 project_id,
                 model_id: published.id,
                 parent_scene_id: Some(parent_scene_id),
-                placement_id: published.placement.as_ref().map(|member| member.id),
+                placement: published.placement.clone(),
             },
         )?;
     }
