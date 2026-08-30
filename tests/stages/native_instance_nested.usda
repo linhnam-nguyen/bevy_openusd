@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "Outer_A"
+)
+
+def Xform "InnerPrototype"
+{
+    def Mesh "Leaf"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+}
+
+def Xform "OuterPrototype"
+{
+    def Xform "Nested" (
+        instanceable = true
+        references = </InnerPrototype>
+    )
+    {
+    }
+}
+
+def Xform "Outer_A" (
+    instanceable = true
+    references = </OuterPrototype>
+)
+{
+}
+
+def Xform "Outer_B" (
+    instanceable = true
+    references = </OuterPrototype>
+)
+{
+}

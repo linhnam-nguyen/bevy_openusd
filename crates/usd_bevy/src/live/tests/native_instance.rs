@@ -14,23 +14,32 @@ use openusd::sdf;
 use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
 use openusd::{gf::Vec3f, sdf::Value};
 
-fn characterization_stage() -> Stage {
+fn fixture_stage(fixture: &str) -> Stage {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages/native_instance_characterization.usda");
+        .join("../../tests/stages")
+        .join(fixture);
     Stage::open(path.to_str().expect("fixture path is valid"))
         .expect("native instance fixture opens")
 }
 
-fn projected_app() -> App {
+fn characterization_stage() -> Stage {
+    fixture_stage("native_instance_characterization.usda")
+}
+
+fn projected_app_for(fixture: &str) -> App {
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
     app.world_mut()
-        .insert_non_send(LiveStage::new(characterization_stage()));
+        .insert_non_send(LiveStage::new(fixture_stage(fixture)));
     app.update();
     app
+}
+
+fn projected_app() -> App {
+    projected_app_for("native_instance_characterization.usda")
 }
 
 fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
@@ -278,5 +287,56 @@ fn shared_prototype_change_patches_only_scene_consumers() {
         app.world().resource::<ReconcileStats>().patched_entities,
         3,
         "source plus two scene proxies are patched without a stage scan"
+    );
+}
+
+#[test]
+fn nested_native_instances_project_scene_paths_and_shared_leaf_meshes() {
+    let stage = fixture_stage("native_instance_nested.usda");
+    let outer_a = stage.prim(sdf::path("/Outer_A").unwrap());
+    let outer_b = stage.prim(sdf::path("/Outer_B").unwrap());
+    let nested_a = stage.prim(sdf::path("/Outer_A/Nested").unwrap());
+    let nested_b = stage.prim(sdf::path("/Outer_B/Nested").unwrap());
+    let leaf_a = stage.prim(sdf::path("/Outer_A/Nested/Leaf").unwrap());
+
+    assert!(outer_a.is_instance().unwrap());
+    assert!(outer_b.is_instance().unwrap());
+    assert!(nested_a.is_instance().unwrap());
+    assert!(nested_b.is_instance().unwrap());
+    assert_ne!(outer_a.prototype().unwrap(), nested_a.prototype().unwrap());
+    assert!(leaf_a.is_instance_proxy().unwrap());
+
+    let app = projected_app_for("native_instance_nested.usda");
+    let leaf_a_entity = projected_entity(&app, "/Outer_A/Nested/Leaf");
+    let leaf_b_entity = projected_entity(&app, "/Outer_B/Nested/Leaf");
+    assert_eq!(
+        app.world().get::<Mesh3d>(leaf_a_entity).unwrap().0,
+        app.world().get::<Mesh3d>(leaf_b_entity).unwrap().0,
+        "nested instance proxies share their leaf mesh"
+    );
+    let plan = ProjectionPlan::from_stage(&stage).unwrap();
+    let paths = plan.paths().map(str::to_owned).collect::<Vec<_>>();
+    let nested_index = paths
+        .iter()
+        .position(|path| path == "/Outer_A/Nested")
+        .unwrap();
+    let leaf_index = paths
+        .iter()
+        .position(|path| path == "/Outer_A/Nested/Leaf")
+        .unwrap();
+    assert!(nested_index < leaf_index);
+    assert!(
+        app.world()
+            .resource::<PrimEntities>()
+            .iter()
+            .all(|(path, _)| !path.starts_with("/__Prototype")),
+        "synthetic prototype paths stay out of the projected identity map"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<NativeInstanceDependencyIndex>()
+            .len(),
+        5,
+        "nested proxy roots and leaves are indexed"
     );
 }
