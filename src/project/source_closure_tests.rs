@@ -98,6 +98,56 @@ fn materialization_rewrites_exact_closure_and_survives_source_removal() -> Resul
 }
 
 #[test]
+fn clean_import_ignores_a_large_unrelated_neighbor_set() -> Result<()> {
+    let source_directory = tempdir()?;
+    let source = write_composed_source(source_directory.path());
+    for index in 0..100 {
+        fs::write(
+            source_directory
+                .path()
+                .join(format!("unrelated-{index}.txt")),
+            format!("unrelated {index}"),
+        )?;
+    }
+    let destination_parent = tempdir()?;
+    let destination = destination_parent.path().join("closure");
+
+    materialize_source_closure(&source, &destination)?;
+
+    let copied_files = fs::read_dir(&destination)?.count();
+    assert_eq!(copied_files, 4, "only the exact USD closure is copied");
+    assert!(!destination.join("unrelated-99.txt").exists());
+    Ok(())
+}
+
+#[test]
+fn canonical_project_dependency_report_rejects_external_resolution() -> Result<()> {
+    let project = tempdir()?;
+    let inside = project.path().join("inside.usda");
+    fs::write(&inside, "#usda 1.0\ndef Xform \"Inside\" {}\n")?;
+    let root = project.path().join("root.usda");
+    fs::write(
+        &root,
+        "#usda 1.0\ndef Xform \"Root\" (references = @./inside.usda@</Inside>) {}\n",
+    )?;
+    let report = super::dependency_containment_report(project.path(), &root)?;
+    assert!(report.unresolved.is_empty());
+
+    let outside_directory = tempdir()?;
+    let outside = outside_directory.path().join("outside.usda");
+    fs::write(&outside, "#usda 1.0\ndef Xform \"Outside\" {}\n")?;
+    fs::write(
+        &root,
+        format!(
+            "#usda 1.0\ndef Xform \"Root\" (references = @{}@</Outside>) {{}}\n",
+            outside.display()
+        ),
+    )?;
+    assert!(super::dependency_containment_report(project.path(), &root).is_err());
+    Ok(())
+}
+
+#[test]
 fn external_dependency_is_localized_without_copying_its_neighbor_directory() -> Result<()> {
     let source_directory = tempdir()?;
     let external_directory = tempdir()?;

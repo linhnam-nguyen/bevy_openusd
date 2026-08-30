@@ -5,6 +5,10 @@ mod layout;
 #[path = "storage/migration.rs"]
 mod migration;
 
+#[cfg(test)]
+#[path = "storage/portability_tests.rs"]
+mod portability_tests;
+
 pub(crate) use ignore::{
     IgnoreChange, has_broad_usdhub_ignore, install_managed_ignore, read_gitignore,
     restore_gitignore,
