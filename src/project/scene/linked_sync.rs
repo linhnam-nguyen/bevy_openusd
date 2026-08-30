@@ -160,11 +160,7 @@ pub(crate) fn sync_linked_scene_atomic(
     )?;
 
     let result = (|| {
-        let source_name = materialize_source_closure(
-            request.source,
-            &temporary_source_directory,
-            !request.inspection.dependencies.is_empty(),
-        )?;
+        let source_name = materialize_source_closure(request.source, &temporary_source_directory)?;
         adoption_authoring::author_scene_wrapper_to_path(
             &temporary_scene_path,
             request.project_root,

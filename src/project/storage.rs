@@ -11,6 +11,6 @@ pub(crate) use ignore::{
 };
 pub(crate) use layout::{
     CACHE_DIRECTORY, CACHE_OBJECTS_RELATIVE_PATH, PROJECT_METADATA_DIRECTORY, ProjectStorageLayout,
-    RECOVERY_DIRECTORY, authored_relative_project_asset_path,
+    RECOVERY_DIRECTORY, authored_relative_asset_path, authored_relative_project_asset_path,
 };
 pub(crate) use migration::migrate_legacy_project;

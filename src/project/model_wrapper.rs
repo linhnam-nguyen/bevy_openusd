@@ -211,18 +211,16 @@ pub(crate) fn publish_model_wrapper_atomic(
     }
 
     let result = (|| {
-        let copy_dependency_directory = !request
+        let mut source_name =
+            materialize_source_closure(&request.prepared.source, &temporary_source_directory)?;
+        if request
             .prepared
             .inspection
             .composition
             .dependencies
-            .is_empty();
-        let mut source_name = materialize_source_closure(
-            &request.prepared.source,
-            &temporary_source_directory,
-            copy_dependency_directory,
-        )?;
-        if !copy_dependency_directory && source_name != "model.usda" {
+            .is_empty()
+            && source_name != "model.usda"
+        {
             fs::rename(
                 temporary_source_directory.join(&source_name),
                 &temporary_source_path,

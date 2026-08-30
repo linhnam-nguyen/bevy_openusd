@@ -177,11 +177,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
 
     let result = (|| {
         if scene_is_new {
-            let source_name = materialize_source_closure(
-                request.source,
-                &temporary_source_directory,
-                !request.inspection.dependencies.is_empty(),
-            )?;
+            let source_name =
+                materialize_source_closure(request.source, &temporary_source_directory)?;
             adoption_authoring::author_scene_wrapper_to_path(
                 &temporary_scene_path,
                 request.project_root,
