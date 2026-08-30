@@ -106,6 +106,8 @@ mod read;
 mod rename;
 mod runtime_authority;
 #[cfg(test)]
+mod runtime_authority_owner_review5_tests;
+#[cfg(test)]
 mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
@@ -118,7 +120,10 @@ pub use progress::ProjectImportProgressStore;
 pub use runtime_authority::{
     ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
 };
-pub(crate) use runtime_authority::{ProjectRuntimeRequest, ProjectRuntimeResponse};
+pub(crate) use runtime_authority::{
+    ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse,
+    registered_project_roots, unix_time_ms,
+};
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::ProjectStageActivationTarget;
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};

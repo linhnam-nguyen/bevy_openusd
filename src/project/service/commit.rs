@@ -110,16 +110,18 @@ pub(super) fn commit(
         ) {
             log::warn!("committed LiveStage semantic persistence was deferred: {error:#}");
         }
-        if let Err(error) = runtime_authority.finish_commit(
+        match runtime_authority.finish_commit(
             &project_root,
             project_id,
             &snapshot.lease_id,
             &revision.to_string(),
             snapshot.live_revision,
         ) {
-            log::warn!("LiveStage commit finalization was deferred: {error}");
+            Ok(()) => runtime_lease.clear(),
+            Err(error) => {
+                log::warn!("LiveStage commit finalization was deferred: {error}");
+            }
         }
-        runtime_lease.clear();
     }
     let committed_manifest = super::ManifestStore::read_validated(&project_root).map_err(|_| {
         ProjectWriteError::Failed {

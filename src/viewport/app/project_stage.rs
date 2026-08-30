@@ -31,7 +31,10 @@ struct ActiveProjectRuntimeLease {
     lease_id: String,
     session_id: u64,
     live_revision: u64,
+    expires_at_ms: u128,
 }
+
+const RUNTIME_LEASE_TTL_MS: u128 = 30_000;
 
 #[derive(Resource, Clone)]
 pub(super) struct ProjectRuntimeAuthorityRuntime {
@@ -109,12 +112,7 @@ fn runtime_finish_response(
 ) -> ProjectRuntimeResponse {
     match runtime_revision_response(world, request_id, project_id, lease_id, expected_revision) {
         ProjectRuntimeResponse::Validated { .. } => {
-            if let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() {
-                live.unfreeze_authoring();
-            }
-            world
-                .resource_mut::<ProjectRuntimeAuthorityRuntime>()
-                .active_lease = None;
+            clear_runtime_lease(world, project_id, lease_id);
             ProjectRuntimeResponse::Finished {
                 request_id: request_id.to_owned(),
             }
@@ -164,6 +162,7 @@ fn runtime_snapshot_response(
         lease_id: lease_id.clone(),
         session_id,
         live_revision,
+        expires_at_ms: crate::project::service::unix_time_ms().saturating_add(RUNTIME_LEASE_TTL_MS),
     });
     ProjectRuntimeResponse::Ready {
         request_id: request_id.to_owned(),
@@ -210,6 +209,18 @@ fn clear_runtime_lease(world: &mut World, project_id: ProjectId, lease_id: &str)
     world
         .resource_mut::<ProjectRuntimeAuthorityRuntime>()
         .active_lease = None;
+}
+
+pub(super) fn expire_runtime_lease(world: &mut World) {
+    let expired = world
+        .resource::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease
+        .as_ref()
+        .filter(|lease| lease.expires_at_ms <= crate::project::service::unix_time_ms())
+        .map(|lease| (lease.project_id, lease.lease_id.clone()));
+    if let Some((project_id, lease_id)) = expired {
+        clear_runtime_lease(world, project_id, &lease_id);
+    }
 }
 
 fn runtime_failed(

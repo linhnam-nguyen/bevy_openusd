@@ -143,6 +143,16 @@ fn runtime_timeout_is_busy_instead_of_disk_fallback() {
             code: project_protocol::ProjectWriteErrorCode::Busy
         })
     ));
+    assert!(
+        std::fs::read_dir(
+            directory
+                .path()
+                .join(".usdhub/cache/project-runtime-authority/requests")
+        )
+        .unwrap()
+        .next()
+        .is_none()
+    );
 }
 
 #[test]

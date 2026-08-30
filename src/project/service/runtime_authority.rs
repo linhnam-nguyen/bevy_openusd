@@ -20,7 +20,10 @@ use uuid::Uuid;
 
 #[path = "runtime_authority_protocol.rs"]
 mod protocol;
-pub(crate) use protocol::{ProjectRuntimeRequest, ProjectRuntimeResponse};
+#[path = "runtime_authority_registry.rs"]
+mod registry;
+pub(crate) use protocol::{ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse};
+pub(crate) use registry::{register_project_root, registered_project_roots, unix_time_ms};
 
 const RUNTIME_DIRECTORY: &str = ".usdhub/cache/project-runtime-authority";
 const REQUESTS_DIRECTORY: &str = "requests";
@@ -121,6 +124,7 @@ impl ProjectRuntimeAuthority for NoopProjectRuntimeAuthority {
 pub struct ProjectRuntimeAuthorityQueue {
     file_lock: Arc<Mutex<()>>,
     timeout: Duration,
+    request_ttl: Duration,
 }
 
 impl Default for ProjectRuntimeAuthorityQueue {
@@ -128,6 +132,7 @@ impl Default for ProjectRuntimeAuthorityQueue {
         Self {
             file_lock: Arc::new(Mutex::new(())),
             timeout: RESPONSE_TIMEOUT,
+            request_ttl: RESPONSE_TIMEOUT.saturating_add(Duration::from_millis(250)),
         }
     }
 }
@@ -138,13 +143,14 @@ impl ProjectRuntimeAuthorityQueue {
         Self {
             file_lock: Arc::new(Mutex::new(())),
             timeout,
+            request_ttl: timeout,
         }
     }
 
     pub(crate) fn consume_pending(
         &self,
         project_root: &Path,
-    ) -> Result<Vec<ProjectRuntimeRequest>, ProjectWriteError> {
+    ) -> Result<Vec<ProjectRuntimeEnvelope>, ProjectWriteError> {
         let _guard = self
             .file_lock
             .lock()
@@ -165,9 +171,9 @@ impl ProjectRuntimeAuthorityQueue {
                 continue;
             }
             let bytes = fs::read(&path).map_err(|_| runtime_error())?;
-            let request = serde_json::from_slice(&bytes).map_err(|_| runtime_error())?;
+            let envelope = serde_json::from_slice(&bytes).map_err(|_| runtime_error())?;
             fs::remove_file(path).map_err(|_| runtime_error())?;
-            requests.push(request);
+            requests.push(envelope);
         }
         Ok(requests)
     }
@@ -199,13 +205,18 @@ impl ProjectRuntimeAuthorityQueue {
         request: ProjectRuntimeRequest,
     ) -> Result<Option<ProjectRuntimeResponse>, ProjectWriteError> {
         let request_id = request.request_id().to_owned();
+        register_project_root(request.project_id(), project_root);
         let directory = runtime_root(project_root).join(REQUESTS_DIRECTORY);
         fs::create_dir_all(&directory).map_err(|_| runtime_error())?;
         let path = directory.join(format!("{request_id}.json"));
         let temporary = directory.join(format!("{request_id}.{}.tmp", Uuid::new_v4()));
-        let bytes = serde_json::to_vec(&request).map_err(|_| runtime_error())?;
+        let envelope = ProjectRuntimeEnvelope::new(
+            request,
+            unix_time_ms().saturating_add(self.request_ttl.as_millis()),
+        );
+        let bytes = serde_json::to_vec(&envelope).map_err(|_| runtime_error())?;
         fs::write(&temporary, bytes).map_err(|_| runtime_error())?;
-        fs::rename(temporary, path).map_err(|_| runtime_error())?;
+        fs::rename(temporary, &path).map_err(|_| runtime_error())?;
 
         let response_path = runtime_root(project_root)
             .join(RESPONSES_DIRECTORY)
@@ -219,6 +230,11 @@ impl ProjectRuntimeAuthorityQueue {
                 return Ok(Some(response));
             }
             if Instant::now() >= deadline {
+                let _guard = self
+                    .file_lock
+                    .lock()
+                    .expect("Project runtime authority queue is not poisoned");
+                let _ = fs::remove_file(&path);
                 return Err(runtime_error());
             }
             thread::sleep(Duration::from_millis(5));

@@ -3,6 +3,29 @@ use serde::{Deserialize, Serialize};
 use usd_project::{ProjectId, SceneId};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct ProjectRuntimeEnvelope {
+    request: ProjectRuntimeRequest,
+    expires_at_ms: u128,
+}
+
+impl ProjectRuntimeEnvelope {
+    pub(crate) fn new(request: ProjectRuntimeRequest, expires_at_ms: u128) -> Self {
+        Self {
+            request,
+            expires_at_ms,
+        }
+    }
+
+    pub(crate) fn is_expired(&self, now_ms: u128) -> bool {
+        now_ms >= self.expires_at_ms
+    }
+
+    pub(crate) fn into_request(self) -> ProjectRuntimeRequest {
+        self.request
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) enum ProjectRuntimeRequest {
     BeginCommit {
         request_id: String,
@@ -42,6 +65,16 @@ impl ProjectRuntimeRequest {
             | Self::ValidateCommit { request_id, .. }
             | Self::AbortCommit { request_id, .. }
             | Self::ExportScene { request_id, .. } => request_id,
+        }
+    }
+
+    pub(crate) fn project_id(&self) -> ProjectId {
+        match self {
+            Self::BeginCommit { project_id, .. }
+            | Self::FinishCommit { project_id, .. }
+            | Self::ValidateCommit { project_id, .. }
+            | Self::AbortCommit { project_id, .. }
+            | Self::ExportScene { project_id, .. } => *project_id,
         }
     }
 }

@@ -1,5 +1,9 @@
 //! Runtime-owned Project commit staging and derived semantic persistence.
 
+#[cfg(test)]
+#[path = "commit_runtime_owner_review5_tests.rs"]
+mod owner_review5_tests;
+
 use std::{
     fs,
     path::{Path, PathBuf},
