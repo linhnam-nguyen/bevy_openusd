@@ -5,9 +5,7 @@ use openusd::{sdf::Value, usd::Stage};
 use usd_project::{SceneId, SceneMemberId};
 use uuid::Uuid;
 
-use super::{
-    MEMBER_NAME_METADATA, read_scene_members, scene_member_path_for_stage, sync_parent_best_effort,
-};
+use super::{read_scene_members, scene_member_path_for_stage, sync_parent_best_effort};
 
 /// Update descriptive metadata without changing a managed prim's stable path.
 pub(crate) fn update_display_name_atomic(
@@ -44,8 +42,9 @@ pub(crate) fn update_display_name_atomic(
     result
 }
 
-/// Update one placement's mirrored label while preserving its reference and
-/// transform. The custom-data mirror remains compatible with older files.
+/// Update one placement's descriptive label while preserving its reference and
+/// transform. Legacy custom-data names remain read-compatible but are not
+/// authored on new writes.
 pub(crate) fn update_member_display_name_atomic(
     path: &Path,
     expected_scene_id: SceneId,
@@ -64,15 +63,6 @@ pub(crate) fn update_member_display_name_atomic(
     member
         .clone()
         .set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;
-    let mut custom_data = match member.custom_data()? {
-        Some(Value::Dictionary(data)) => data,
-        _ => std::collections::HashMap::new(),
-    };
-    custom_data.insert(
-        MEMBER_NAME_METADATA.to_owned(),
-        Value::String(display_name.to_owned()),
-    );
-    member.set_metadata("customData", Value::Dictionary(custom_data))?;
     let temporary_path = path.with_file_name(format!(
         ".{}.rename-{}.tmp.usda",
         expected_scene_id,

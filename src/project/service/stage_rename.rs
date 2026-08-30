@@ -99,14 +99,6 @@ pub(super) fn apply_rename_to_live_stage(
                         openusd::sdf::Value::String(name.to_owned()),
                     )
                     .map_err(|_| filesystem_error())?;
-                let mut custom_data = data;
-                custom_data.insert(
-                    "usdhub:name".to_owned(),
-                    openusd::sdf::Value::String(name.to_owned()),
-                );
-                member
-                    .set_metadata("customData", openusd::sdf::Value::Dictionary(custom_data))
-                    .map_err(|_| filesystem_error())?;
                 renamed = true;
             }
         }

@@ -5,6 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use project_protocol::{
     ProjectRenameResponse, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
@@ -13,6 +16,26 @@ use uuid::Uuid;
 
 use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_AFTER_PLACEMENT: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+#[cfg(test)]
+fn set_test_failure_after_placement(index: usize) {
+    FAIL_AFTER_PLACEMENT.with(|failure| failure.set(Some(index)));
+}
+
+#[cfg(test)]
+fn clear_test_failure_after_placement() {
+    FAIL_AFTER_PLACEMENT.with(|failure| failure.set(None));
+}
+
+#[cfg(test)]
+fn should_fail_after_placement(index: usize) -> bool {
+    FAIL_AFTER_PLACEMENT.with(|failure| failure.get() == Some(index))
+}
 
 pub(super) fn rename(
     service: &mut ProjectApplicationService,
@@ -221,10 +244,18 @@ pub(super) fn rename(
         let _ = fs::remove_dir_all(&transaction_directory);
         return Err(error);
     }
-    let _ = service.cache_warm.enqueue_affected(
-        project_root,
-        crate::project::cache::ProjectCacheTarget::ProjectRoot,
-    );
+    let cache_target = match &target {
+        ProjectWriteTarget::Project(_) => crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        ProjectWriteTarget::Scene(id) => {
+            crate::project::cache::ProjectCacheTarget::Scene { id: id.to_string() }
+        }
+        ProjectWriteTarget::Model(id) => {
+            crate::project::cache::ProjectCacheTarget::Model { id: id.to_string() }
+        }
+    };
+    let _ = service
+        .cache_warm
+        .enqueue_affected(project_root, cache_target);
     let _ = fs::remove_dir_all(&transaction_directory);
     Ok(ProjectRenameResponse { project, target })
 }
@@ -235,6 +266,8 @@ fn update_placements(
     target: &ProjectWriteTarget,
     name: &str,
 ) -> Result<(), ProjectWriteError> {
+    #[cfg(test)]
+    let mut rewritten = 0;
     for scene in manifest.scenes() {
         let scene_path = crate::project::scene::authoring::scene_path(project_root, scene.id);
         let members = crate::project::scene::authoring::read_scene_members(&scene_path, scene.id)
@@ -250,6 +283,12 @@ fn update_placements(
                 _ => false,
             };
             if matches {
+                #[cfg(test)]
+                {
+                    if should_fail_after_placement(rewritten) {
+                        return Err(filesystem_error());
+                    }
+                }
                 crate::project::scene::authoring::update_member_display_name_atomic(
                     &scene_path,
                     scene.id,
@@ -257,6 +296,10 @@ fn update_placements(
                     name,
                 )
                 .map_err(|_| filesystem_error())?;
+                #[cfg(test)]
+                {
+                    rewritten += 1;
+                }
             }
         }
     }
