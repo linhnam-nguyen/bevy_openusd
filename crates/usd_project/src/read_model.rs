@@ -85,12 +85,24 @@ pub struct ProjectContentCounts {
     pub model_placements: u64,
 }
 
+/// Derived status of a linked Scene source. This is never used as Project
+/// authority; it is a read-only indication for the Projects view.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectSceneLinkStatus {
+    InSync,
+    SourceUnavailable,
+    OutOfSync,
+}
+
 /// A safe, flat Project content node suitable for paging or tree projection.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProjectContentNode {
     Scene {
         scene_id: SceneId,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link_status: Option<ProjectSceneLinkStatus>,
     },
     Model {
         model_id: ModelId,

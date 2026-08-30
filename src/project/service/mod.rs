@@ -24,6 +24,7 @@ use crate::project::catalog::{
 };
 
 use self::error::project_read_error_code;
+use self::runtime_authority::NoopProjectRuntimeAuthority;
 
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
@@ -40,12 +41,24 @@ pub struct ProjectApplicationService {
 /// this coordinator must outlive an individual request. The map lock is held
 /// only while resolving a Project-specific lock; publication work is serialized
 /// by the returned lock and never by one global Project mutex.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ProjectPublicationCoordinator {
     publishers: Arc<Mutex<HashMap<ProjectId, Arc<Mutex<()>>>>>,
+    runtime_authority: Arc<dyn ProjectRuntimeAuthority>,
 }
 
 impl ProjectPublicationCoordinator {
+    pub fn with_runtime_authority(runtime_authority: Arc<dyn ProjectRuntimeAuthority>) -> Self {
+        Self {
+            publishers: Arc::new(Mutex::new(HashMap::new())),
+            runtime_authority,
+        }
+    }
+
+    pub fn with_runtime_authority_queue() -> Self {
+        Self::with_runtime_authority(Arc::new(ProjectRuntimeAuthorityQueue::default()))
+    }
+
     pub fn publisher(&self, project_id: ProjectId) -> Arc<Mutex<()>> {
         self.publishers
             .lock()
@@ -53,6 +66,16 @@ impl ProjectPublicationCoordinator {
             .entry(project_id)
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
+    }
+
+    pub(crate) fn runtime_authority_arc(&self) -> Arc<dyn ProjectRuntimeAuthority> {
+        self.runtime_authority.clone()
+    }
+}
+
+impl Default for ProjectPublicationCoordinator {
+    fn default() -> Self {
+        Self::with_runtime_authority(Arc::new(NoopProjectRuntimeAuthority))
     }
 }
 
@@ -62,6 +85,7 @@ mod branch_projection_tests;
 #[cfg(test)]
 mod branch_tests;
 mod commit;
+mod commit_runtime;
 #[cfg(test)]
 mod commit_tests;
 mod deletion;
@@ -80,6 +104,9 @@ mod progress;
 mod project_registration;
 mod read;
 mod rename;
+mod runtime_authority;
+#[cfg(test)]
+mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
 mod scene_lifecycle;
@@ -87,6 +114,10 @@ mod stage_activation;
 mod stage_mutation;
 pub use model_preparation::ProjectModelPreparationQueue;
 pub use progress::ProjectImportProgressStore;
+pub use runtime_authority::{
+    ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
+};
+pub(crate) use runtime_authority::{ProjectRuntimeRequest, ProjectRuntimeResponse};
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::ProjectStageActivationTarget;
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};

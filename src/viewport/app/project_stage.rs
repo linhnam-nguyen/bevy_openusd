@@ -3,10 +3,17 @@
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
+use project_protocol::ProjectCommitTarget;
 use usd_project::{ProjectId, SceneId};
 
 use crate::{
-    project::{catalog::manifest_store::ManifestStore, service::ProjectStageMutationQueue},
+    project::{
+        catalog::manifest_store::ManifestStore,
+        service::{
+            ProjectRuntimeAuthorityQueue, ProjectRuntimeRequest, ProjectRuntimeResponse,
+            ProjectStageMutationQueue,
+        },
+    },
     viewport::session::StageHandle,
 };
 
@@ -14,6 +21,158 @@ use crate::{
 /// records are read from the active Project's private cache outbox.
 #[derive(Resource, Clone, Default)]
 pub(super) struct ProjectStageMutationRuntime(pub(super) ProjectStageMutationQueue);
+
+#[derive(Resource, Clone, Default)]
+pub(super) struct ProjectRuntimeAuthorityRuntime(pub(super) ProjectRuntimeAuthorityQueue);
+
+pub(super) fn install(app: &mut App) {
+    app.insert_resource(ProjectStageMutationRuntime::default())
+        .insert_resource(ProjectRuntimeAuthorityRuntime::default())
+        .add_systems(
+            Update,
+            (
+                consume_project_runtime_authority,
+                consume_project_stage_mutations,
+            )
+                .in_set(usd_bevy::LiveStageSet::Project),
+        );
+}
+
+/// Answer host-side Commit/Export requests from the exact LiveStage owner.
+pub(super) fn consume_project_runtime_authority(world: &mut World) {
+    let Some(stage_path) = world
+        .get_resource::<StageHandle>()
+        .map(|handle| handle.path.clone())
+    else {
+        return;
+    };
+    let Some(project_root) = project_root_for_stage(&stage_path) else {
+        return;
+    };
+    let Ok(manifest) = ManifestStore::read_validated(&project_root) else {
+        return;
+    };
+    let project_id = manifest.raw().project_id;
+    let Some(active_scene_id) = active_scene_id_for_stage(&stage_path, &project_root) else {
+        return;
+    };
+    let queue = world.resource::<ProjectRuntimeAuthorityRuntime>().0.clone();
+    let Ok(requests) = queue.consume_pending(&project_root) else {
+        return;
+    };
+    for request in requests {
+        let request_id = request.request_id().to_owned();
+        let response = match request {
+            ProjectRuntimeRequest::BeginCommit {
+                project_id: request_project_id,
+                target,
+                ..
+            } if request_project_id == project_id => {
+                let allowed = match target {
+                    ProjectCommitTarget::Project => true,
+                    ProjectCommitTarget::Scene(scene_id) => scene_id == active_scene_id,
+                };
+                if !allowed {
+                    ProjectRuntimeResponse::Inactive { request_id }
+                } else {
+                    runtime_snapshot_response(world, &request_id, active_scene_id)
+                }
+            }
+            ProjectRuntimeRequest::ExportScene {
+                project_id: request_project_id,
+                scene_id,
+                ..
+            } if request_project_id == project_id && scene_id == active_scene_id => {
+                runtime_snapshot_response(world, &request_id, active_scene_id)
+            }
+            ProjectRuntimeRequest::ValidateCommit {
+                project_id: request_project_id,
+                live_revision,
+                ..
+            } if request_project_id == project_id => {
+                runtime_revision_response(world, &request_id, live_revision)
+            }
+            ProjectRuntimeRequest::FinishCommit {
+                project_id: request_project_id,
+                live_revision,
+                ..
+            } if request_project_id == project_id => {
+                runtime_finish_response(world, &request_id, live_revision)
+            }
+            ProjectRuntimeRequest::AbortCommit {
+                project_id: request_project_id,
+                ..
+            } if request_project_id == project_id => {
+                ProjectRuntimeResponse::Finished { request_id }
+            }
+            _ => ProjectRuntimeResponse::Inactive { request_id },
+        };
+        if let Err(error) = queue.publish_response(&project_root, &response) {
+            bevy::log::warn!("Project runtime authority response failed: {error:?}");
+        }
+    }
+}
+
+fn runtime_revision_response(
+    world: &World,
+    request_id: &str,
+    expected_revision: u64,
+) -> ProjectRuntimeResponse {
+    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
+        return ProjectRuntimeResponse::Failed {
+            request_id: request_id.to_owned(),
+            code: project_protocol::ProjectWriteErrorCode::Busy,
+        };
+    };
+    if live.current_revision().0 != expected_revision {
+        return ProjectRuntimeResponse::Failed {
+            request_id: request_id.to_owned(),
+            code: project_protocol::ProjectWriteErrorCode::ConcurrentChange,
+        };
+    }
+    ProjectRuntimeResponse::Validated {
+        request_id: request_id.to_owned(),
+    }
+}
+
+fn runtime_finish_response(
+    world: &World,
+    request_id: &str,
+    expected_revision: u64,
+) -> ProjectRuntimeResponse {
+    match runtime_revision_response(world, request_id, expected_revision) {
+        ProjectRuntimeResponse::Validated { .. } => ProjectRuntimeResponse::Finished {
+            request_id: request_id.to_owned(),
+        },
+        response => response,
+    }
+}
+
+fn runtime_snapshot_response(
+    world: &World,
+    request_id: &str,
+    active_scene_id: SceneId,
+) -> ProjectRuntimeResponse {
+    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
+        return ProjectRuntimeResponse::Failed {
+            request_id: request_id.to_owned(),
+            code: project_protocol::ProjectWriteErrorCode::Busy,
+        };
+    };
+    let Ok(root_layer) = live.stage.root_layer().export_to_string() else {
+        return ProjectRuntimeResponse::Failed {
+            request_id: request_id.to_owned(),
+            code: project_protocol::ProjectWriteErrorCode::ExportFailed,
+        };
+    };
+    ProjectRuntimeResponse::Ready {
+        request_id: request_id.to_owned(),
+        lease_id: uuid::Uuid::new_v4().to_string(),
+        scene_id: active_scene_id,
+        live_revision: live.current_revision().0,
+        root_layer: root_layer.into_bytes(),
+    }
+}
 
 /// Apply canonical Project composition changes on the thread that owns the
 /// actual LiveStage. The normal LiveStage drain/reconcile systems then observe
@@ -35,12 +194,12 @@ pub(super) fn consume_project_stage_mutations(world: &mut World) {
     let Some(active_scene_id) = active_scene_id_for_stage(&stage_path, &project_root) else {
         return;
     };
-    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
+    let queue = world.resource::<ProjectStageMutationRuntime>().0.clone();
+    let Some(mut live) = world.get_non_send_mut::<usd_bevy::LiveStage>() else {
         return;
     };
-    let queue = world.resource::<ProjectStageMutationRuntime>().0.clone();
     if let Err(error) = queue.apply_for_active_scene(
-        live,
+        &mut *live,
         &project_root,
         active_project_id,
         Some(active_scene_id),

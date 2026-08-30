@@ -10,6 +10,8 @@ pub(crate) mod authoring;
 pub(crate) mod create;
 #[path = "project/scene/inspection.rs"]
 pub(crate) mod inspection;
+#[path = "project/scene/linked_sync.rs"]
+pub(crate) mod linked_sync;
 #[path = "project/scene/placement_transform.rs"]
 mod placement_transform;
 #[path = "project/scene/root.rs"]

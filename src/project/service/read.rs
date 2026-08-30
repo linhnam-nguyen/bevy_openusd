@@ -3,7 +3,7 @@ use std::path::Path;
 use project_protocol::{ProjectListItem, ProjectReadError, ProjectReadErrorCode};
 use usd_project::{
     BranchSummary, CommitSummary, ModelSourceSummary, ProjectContentNode, ProjectId,
-    RepositorySummary, RevisionSummary,
+    ProjectSceneLinkStatus, RepositorySummary, RevisionSummary,
 };
 
 use crate::project::catalog::catalogue::{ProjectCatalogueItem, ProjectCatalogueUnavailableReason};
@@ -50,9 +50,24 @@ pub(super) fn project_tree(
         ..Default::default()
     };
     let mut nodes = Vec::with_capacity(scenes.len() + models.len());
-    nodes.extend(scenes.iter().map(|scene| ProjectContentNode::Scene {
-        scene_id: scene.id,
-        name: scene.display_name.clone(),
+    nodes.extend(scenes.iter().map(|scene| {
+        ProjectContentNode::Scene {
+            scene_id: scene.id,
+            name: scene.display_name.clone(),
+            link_status: crate::project::link::status(project_root, scene.id)
+                .ok()
+                .map(|status| match status {
+                    crate::project::link::LinkedSourceStatus::InSync => {
+                        ProjectSceneLinkStatus::InSync
+                    }
+                    crate::project::link::LinkedSourceStatus::SourceUnavailable => {
+                        ProjectSceneLinkStatus::SourceUnavailable
+                    }
+                    crate::project::link::LinkedSourceStatus::OutOfSync => {
+                        ProjectSceneLinkStatus::OutOfSync
+                    }
+                }),
+        }
     }));
     nodes.extend(models.iter().map(|model| ProjectContentNode::Model {
         model_id: model.id,

@@ -58,6 +58,36 @@ impl LiveStage {
         }
     }
 
+    /// Replace the owned USD stage with a freshly synchronized canonical
+    /// snapshot. The LiveStage identity remains stable, while its hierarchy
+    /// generation starts with one root resync for the new composition.
+    pub fn replace_stage(&mut self, stage: Stage) {
+        if let Some(id) = self.sink.take() {
+            self.stage.remove_sink(id);
+        }
+        let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
+        let q = queue.clone();
+        let sink = stage.add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
+            q.borrow_mut().push(StageChange {
+                resynced: change
+                    .resynced
+                    .iter()
+                    .map(|p| p.as_str().to_string())
+                    .collect(),
+                changed_info: change
+                    .changed_info_only
+                    .iter()
+                    .map(|p| p.as_str().to_string())
+                    .collect(),
+            });
+        });
+        self.stage = stage;
+        self.queue = queue;
+        self.suppressed = Rc::new(RefCell::new(HashSet::new()));
+        self.sink = Some(sink);
+        self.enqueue_resync("/");
+    }
+
     /// Take and clear all changes recorded since the last drain.
     ///
     /// A non-empty drain advances the live revision exactly once. Callers

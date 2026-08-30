@@ -53,12 +53,35 @@ pub(super) fn export_scene(
     })?;
 
     let project_root = entry.repository_locator();
+    let runtime_snapshot = service
+        .publication_coordinator
+        .runtime_authority_arc()
+        .snapshot_for_export(&project_root, project_id, request.scene_id)?;
+    if runtime_snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.scene_id != request.scene_id)
+    {
+        return Err(export_error());
+    }
     let parent = destination.parent().ok_or(ProjectWriteError::Invalid {
         code: ProjectWriteErrorCode::ExportDestinationInvalid,
     })?;
     let temporary = parent.join(format!(".{file_name}.{}.usdz", Uuid::new_v4()));
     let result: std::result::Result<(), ProjectWriteError> = (|| {
-        write_archive(project_root, &manifest, request.scene_id, &temporary)?;
+        if let Some(snapshot) = runtime_snapshot.as_ref() {
+            let live_root = tempfile::tempdir().map_err(|_| export_error())?;
+            let live_root_path = live_root.path().join("active-root.usda");
+            fs::write(&live_root_path, &snapshot.root_layer).map_err(|_| export_error())?;
+            write_archive_with_root_source(
+                project_root,
+                &manifest,
+                request.scene_id,
+                &temporary,
+                Some(&live_root_path),
+            )?;
+        } else {
+            write_archive(project_root, &manifest, request.scene_id, &temporary)?;
+        }
         validate_archive(&temporary)?;
         fs::rename(&temporary, destination).map_err(|_| export_error())?;
         Ok(())

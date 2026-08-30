@@ -65,6 +65,10 @@ pub enum ProjectStageMutation {
         target: ProjectWriteTarget,
         name: String,
     },
+    RefreshSceneDefinition {
+        project_id: ProjectId,
+        scene_id: SceneId,
+    },
 }
 
 const STAGE_MUTATION_CAPACITY: usize = 128;
@@ -145,7 +149,7 @@ impl ProjectStageMutationQueue {
     /// in the outbox for a later retry.
     pub fn apply_for_active_scene(
         &self,
-        live: &usd_bevy::LiveStage,
+        live: &mut usd_bevy::LiveStage,
         project_root: &Path,
         active_project_id: ProjectId,
         active_scene_id: Option<SceneId>,
@@ -221,7 +225,8 @@ impl ProjectStageMutation {
             | Self::RemoveScenePlacement { project_id, .. }
             | Self::DeleteScene { project_id, .. }
             | Self::DeleteModel { project_id, .. }
-            | Self::Rename { project_id, .. } => *project_id,
+            | Self::Rename { project_id, .. }
+            | Self::RefreshSceneDefinition { project_id, .. } => *project_id,
         }
     }
 
@@ -241,6 +246,7 @@ impl ProjectStageMutation {
             } => Some(*parent_scene_id),
             Self::DeleteScene { scene_id, .. } => Some(*scene_id),
             Self::DeleteModel { .. } | Self::Rename { .. } => None,
+            Self::RefreshSceneDefinition { scene_id, .. } => Some(*scene_id),
         }
     }
 
@@ -253,7 +259,7 @@ impl ProjectStageMutation {
 }
 
 fn apply_mutation(
-    live: &usd_bevy::LiveStage,
+    live: &mut usd_bevy::LiveStage,
     project_root: &Path,
     mutation: &ProjectStageMutation,
 ) -> Result<(), ProjectWriteError> {
@@ -279,6 +285,13 @@ fn apply_mutation(
         stage_rename::apply_rename_to_live_stage(live, target, name)?;
         return Ok(());
     }
+    if let ProjectStageMutation::RefreshSceneDefinition { scene_id, .. } = mutation {
+        let path = crate::project::scene::authoring::scene_path(project_root, *scene_id);
+        let path_string = path.to_string_lossy().into_owned();
+        let stage = openusd::usd::Stage::open(&path_string).map_err(|_| filesystem_error())?;
+        live.replace_stage(stage);
+        return Ok(());
+    }
     let placement = match mutation {
         ProjectStageMutation::CreateScene { placement, .. }
         | ProjectStageMutation::AdoptScene { placement, .. }
@@ -286,7 +299,10 @@ fn apply_mutation(
         ProjectStageMutation::RemoveScenePlacement { .. }
         | ProjectStageMutation::DeleteScene { .. }
         | ProjectStageMutation::DeleteModel { .. }
-        | ProjectStageMutation::Rename { .. } => unreachable!("handled above"),
+        | ProjectStageMutation::Rename { .. }
+        | ProjectStageMutation::RefreshSceneDefinition { .. } => {
+            unreachable!("handled above")
+        }
     };
     let Some(placement) = placement else {
         // Empty -> root transitions are completed by normal root-stage

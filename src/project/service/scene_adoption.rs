@@ -6,7 +6,7 @@ use project_protocol::{
     PlacementSpec, ProjectImportPhase, ProjectImportProgress, ProjectSceneAdoptionResponse,
     ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
-use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
+use usd_project::{CompositionInspection, ProjectRoot, SceneMember, StorageKey};
 
 use super::ProjectApplicationService;
 
@@ -111,6 +111,12 @@ pub(super) fn sync_linked_scene(
         phase: ProjectImportPhase::Queued,
     });
     let result = (|| {
+        // Keep validating the public request shape for callers that still
+        // provide a proposed name, but never apply it: Sync preserves the
+        // authoritative Scene display name and storage identity.
+        StorageKey::new(name.trim().to_owned()).map_err(|_| ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::InvalidSceneName,
+        })?;
         service.progress.publish(ProjectImportProgress {
             operation_id: operation_id.clone(),
             generation,
@@ -128,22 +134,18 @@ pub(super) fn sync_linked_scene(
                     },
                 })?;
         let project_root = entry.repository_locator();
-        let current = validated
+        validated
             .scene(scene_id)
             .ok_or(ProjectWriteError::Invalid {
                 code: ProjectWriteErrorCode::SceneNotFound,
             })?;
+        service.stage_mutations.ensure_capacity(project_root)?;
         let project = crate::project::scene::adoption::sync_linked_scene_atomic(
             crate::project::scene::adoption::LinkedSceneSyncRequest {
                 project_root,
                 source,
                 inspection,
                 scene_id,
-                name: if name.trim().is_empty() {
-                    current.display_name.as_str()
-                } else {
-                    name.trim()
-                },
                 base_manifest: validated.raw(),
             },
         )
@@ -157,6 +159,13 @@ pub(super) fn sync_linked_scene(
                 id: scene_id.to_string(),
             },
         );
+        service.stage_mutations.submit_for_project(
+            project_root,
+            super::ProjectStageMutation::RefreshSceneDefinition {
+                project_id,
+                scene_id,
+            },
+        )?;
         Ok(ProjectSceneAdoptionResponse {
             project: summary,
             scene_id,

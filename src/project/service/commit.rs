@@ -14,6 +14,9 @@ use usd_git::{CommitRequest, GitRepository, Repository};
 use usd_project::{ProjectManifestV1, SceneId, SceneMemberTarget};
 
 use super::ProjectApplicationService;
+use super::commit_runtime::{
+    RuntimeLeaseGuard, overlay_runtime_snapshot, persist_semantic_snapshot,
+};
 
 const MANIFEST_RELATIVE_PATH: &str = ".usdhub/project.json";
 const SCENES_RELATIVE_DIRECTORY: &str = ".usdhub/scenes";
@@ -40,11 +43,21 @@ pub(super) fn commit(
     let _guard = publisher.lock().map_err(|_| ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::Busy,
     })?;
+    let runtime_authority = service.publication_coordinator.runtime_authority_arc();
+    let runtime_snapshot =
+        runtime_authority.begin_commit(&project_root, project_id, &request.target)?;
+    let mut runtime_lease = RuntimeLeaseGuard::new(
+        runtime_authority.clone(),
+        project_root.clone(),
+        project_id,
+        runtime_snapshot.as_ref(),
+    );
     let mut repository = Repository::open(&project_root).map_err(|_| repository_error())?;
     if !repository
         .working_tree_status()
         .map_err(|_| repository_error())?
         .dirty
+        && runtime_snapshot.is_none()
     {
         return Err(ProjectWriteError::Invalid {
             code: ProjectWriteErrorCode::NothingToCommit,
@@ -65,9 +78,38 @@ pub(super) fn commit(
             synchronize_scene_scope(&project_root, staging.path(), &manifest, scene_id)?;
         }
     }
+    if let Some(snapshot) = runtime_snapshot.as_ref() {
+        runtime_authority.validate_commit(
+            &project_root,
+            project_id,
+            &snapshot.lease_id,
+            snapshot.live_revision,
+        )?;
+        overlay_runtime_snapshot(staging.path(), &manifest, &request.target, snapshot)?;
+    }
     let revision = repository
         .create_commit(CommitRequest::new(request.message.trim(), staging.path()))
         .map_err(|_| commit_error())?;
+    if let Some(snapshot) = runtime_snapshot.as_ref() {
+        if let Err(error) = persist_semantic_snapshot(
+            &project_root,
+            staging.path(),
+            snapshot.scene_id,
+            &revision.to_string(),
+        ) {
+            log::warn!("committed LiveStage semantic persistence was deferred: {error:#}");
+        }
+        if let Err(error) = runtime_authority.finish_commit(
+            &project_root,
+            project_id,
+            &snapshot.lease_id,
+            &revision.to_string(),
+            snapshot.live_revision,
+        ) {
+            log::warn!("LiveStage commit finalization was deferred: {error}");
+        }
+        runtime_lease.clear();
+    }
     let committed_manifest = super::ManifestStore::read_validated(&project_root).map_err(|_| {
         ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::ManifestUnavailable,

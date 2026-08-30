@@ -35,6 +35,8 @@ pub(crate) mod recovery;
 pub(crate) mod runtime_delivery;
 #[path = "project/runtime_payload.rs"]
 pub(crate) mod runtime_payload;
+#[path = "project/semantic_store/mod.rs"]
+pub(crate) mod semantic_store;
 #[path = "project/source_closure.rs"]
 pub(crate) mod source_closure;
 #[path = "project/spatial.rs"]

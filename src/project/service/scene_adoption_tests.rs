@@ -2,8 +2,9 @@ use std::fs;
 
 use super::*;
 use crate::project::{
+    catalog::manifest_store::ManifestStore,
     scene::inspection::inspect_composition,
-    service::{ProjectApplicationService, ProjectImportProgressStore},
+    service::{ProjectApplicationService, ProjectImportProgressStore, ProjectStageMutationQueue},
 };
 use tempfile::tempdir;
 
@@ -55,8 +56,13 @@ fn linked_scene_keeps_snapshot_when_external_source_disappears() {
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
     )
     .unwrap();
-    let mut service =
-        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let stage_mutations = ProjectStageMutationQueue::default();
+    let mut service = ProjectApplicationService::open_with_project_state(
+        directory.path().join("workspace.json"),
+        Default::default(),
+        stage_mutations.clone(),
+    )
+    .unwrap();
     let summary = service.create_project(&parent, "Project").unwrap();
     let inspection = inspect_composition(&source).unwrap();
 
@@ -98,14 +104,19 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
+    let stage_mutations = ProjectStageMutationQueue::default();
     let source = directory.path().join("external.usda");
     fs::write(
         &source,
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
     )
     .unwrap();
-    let mut service =
-        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let mut service = ProjectApplicationService::open_with_project_state(
+        directory.path().join("workspace.json"),
+        Default::default(),
+        stage_mutations.clone(),
+    )
+    .unwrap();
     let summary = service.create_project(&parent, "Project").unwrap();
     let inspection = inspect_composition(&source).unwrap();
     let linked = service
@@ -121,6 +132,10 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
         )
         .unwrap();
     let project_root = parent.join("Project");
+    let scene_path = crate::project::scene::authoring::scene_path(&project_root, linked.scene_id);
+    let mut live = usd_bevy::LiveStage::new(
+        openusd::usd::Stage::open(scene_path.to_string_lossy().as_ref()).unwrap(),
+    );
     let before = fs::read(
         project_root
             .join(".usdhub/imports/scenes")
@@ -145,7 +160,7 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
             linked.scene_id,
             &source,
             &refreshed_inspection,
-            "External Assembly".to_owned(),
+            "Stale client rename must be ignored".to_owned(),
             "sync-operation".to_owned(),
             2,
         )
@@ -165,6 +180,30 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     assert_eq!(
         crate::project::link::status(&project_root, linked.scene_id).unwrap(),
         crate::project::link::LinkedSourceStatus::InSync
+    );
+    let manifest = ManifestStore::read_validated(&project_root).unwrap();
+    assert_eq!(
+        manifest.scene(linked.scene_id).unwrap().display_name,
+        "External Assembly",
+        "linked Sync must not rename the existing Scene"
+    );
+    assert_eq!(
+        stage_mutations
+            .apply_for_active_scene(&mut live, &project_root, summary.id, Some(linked.scene_id),)
+            .unwrap(),
+        1,
+        "successful linked Sync should refresh an already-active LiveStage"
+    );
+    let refresh = live.drain_change_batch().expect("stage refresh batch");
+    assert!(refresh.has_resync());
+    let updated = live.stage.prim("/SceneRoot/Source");
+    assert!(updated.is_defined().unwrap());
+    assert_eq!(
+        updated
+            .attribute("version")
+            .get::<openusd::sdf::Value>()
+            .unwrap(),
+        Some(openusd::sdf::Value::String("updated".to_owned()))
     );
 }
 

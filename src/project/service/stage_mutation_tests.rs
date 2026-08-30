@@ -56,10 +56,10 @@ fn canonical_project_mutations_reach_live_stage_as_real_references() {
         )
         .unwrap();
 
-    let live = stage(parent_scene_id);
+    let mut live = stage(parent_scene_id);
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, Some(parent_scene_id))
+            .apply_for_active_scene(&mut live, &project_root, project_id, Some(parent_scene_id))
             .unwrap(),
         2
     );
@@ -93,7 +93,7 @@ fn canonical_project_mutations_reach_live_stage_as_real_references() {
     assert_eq!(queue.pending_len_for_project(&project_root), 0);
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, Some(parent_scene_id))
+            .apply_for_active_scene(&mut live, &project_root, project_id, Some(parent_scene_id))
             .unwrap(),
         0
     );
@@ -130,9 +130,9 @@ fn inactive_project_outbox_remains_isolated() {
             .unwrap();
     }
 
-    let live = stage(first_parent);
+    let mut live = stage(first_parent);
     queue
-        .apply_for_active_scene(&live, &first_root, first, Some(first_parent))
+        .apply_for_active_scene(&mut live, &first_root, first, Some(first_parent))
         .unwrap();
     assert_eq!(queue.pending_len_for_project(&first_root), 0);
     assert_eq!(queue.pending_len_for_project(&second_root), 1);
@@ -165,10 +165,15 @@ fn inactive_scene_outbox_remains_pending_until_that_scene_is_active() {
         )
         .unwrap();
 
-    let live = stage(expected_parent);
+    let mut live = stage(expected_parent);
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, Some(SceneId::new_v4()),)
+            .apply_for_active_scene(
+                &mut live,
+                &project_root,
+                project_id,
+                Some(SceneId::new_v4()),
+            )
             .unwrap(),
         0
     );
@@ -184,7 +189,7 @@ fn inactive_scene_outbox_remains_pending_until_that_scene_is_active() {
 
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, Some(expected_parent))
+            .apply_for_active_scene(&mut live, &project_root, project_id, Some(expected_parent))
             .unwrap(),
         1
     );
@@ -210,10 +215,10 @@ fn deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage() {
         )
         .unwrap();
 
-    let live = stage(active_scene_id);
+    let mut live = stage(active_scene_id);
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, Some(active_scene_id))
+            .apply_for_active_scene(&mut live, &project_root, project_id, Some(active_scene_id))
             .unwrap(),
         1
     );
@@ -247,10 +252,10 @@ fn root_transition_never_patches_the_active_scene() {
         )
         .unwrap();
 
-    let live = stage(SceneId::new_v4());
+    let mut live = stage(SceneId::new_v4());
     assert_eq!(
         queue
-            .apply_for_active_scene(&live, &project_root, project_id, None)
+            .apply_for_active_scene(&mut live, &project_root, project_id, None)
             .unwrap(),
         1
     );
