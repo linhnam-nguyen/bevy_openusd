@@ -1,9 +1,13 @@
 use bevy::prelude::*;
 
 use super::index::PrimEntities;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use crate::prim_ref::SemanticEntityIndex;
 
 pub(super) fn clear_projection(world: &mut World, map: &mut PrimEntities) {
+    if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {
+        dependencies.clear();
+    }
     let mut entities: Vec<(String, Entity)> = map
         .iter()
         .map(|(path, entity)| (path.to_string(), entity))

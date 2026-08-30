@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::change::LiveRevision;
 use super::super::index::PrimEntities;
+use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::{is_descendant_or_self, parent_path};
 use super::super::projection::{collect_stage_subtree_paths, registry_of};
 use super::super::stage::LiveStage;
@@ -118,6 +119,9 @@ pub(super) fn reconcile_subtrees(
         remove_mesh_projection_consumer(world, entity);
         world.despawn(entity);
         map.remove_path(&path);
+        if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {
+            dependencies.remove_proxy(&path);
+        }
     }
 
     // 3. Spawn new prims (current_paths - old_paths), shallowest first
@@ -175,6 +179,13 @@ pub(super) fn reconcile_subtrees(
             {
                 animated_res.0.insert(path.clone());
             }
+        }
+    }
+
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {
+        for path in &current_paths {
+            dependencies.refresh_path(stage, path);
         }
     }
 

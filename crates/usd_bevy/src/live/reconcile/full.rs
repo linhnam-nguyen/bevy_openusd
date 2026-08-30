@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::index::PrimEntities;
+use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::parent_path;
 use super::super::projection::{registry_of, stage_up_axis, traverse_predicate};
 use super::super::stage::LiveStage;
@@ -47,6 +48,9 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         remove_mesh_projection_consumer(world, entity);
         world.despawn(entity);
         map.remove_path(&path);
+        if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {
+            dependencies.remove_proxy(&path);
+        }
     }
 
     let root = map.entity("/").unwrap_or_else(|| {
@@ -97,4 +101,11 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         spawned_entities: spawned_count,
         despawned_entities: despawned_count,
     });
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    if let Err(error) = world
+        .resource_mut::<NativeInstanceDependencyIndex>()
+        .rebuild(stage)
+    {
+        bevy::log::warn!("[reconcile_full] native instance dependency rebuild failed: {error:#}");
+    }
 }

@@ -1,4 +1,8 @@
-use crate::live::ProjectionPlan;
+use crate::live::reconcile::ReconcileStats;
+use crate::live::{
+    LiveRevision, NativeInstanceDependencyIndex, ProjectionPlan, StageChange, StageChangeBatch,
+    apply_change_batch,
+};
 use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin, UsdPurpose};
 use anyhow::Result;
 use bevy::asset::Assets;
@@ -7,7 +11,8 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{App, Transform, Vec3, Visibility};
 use openusd::sdf;
-use openusd::usd::{PrimPredicate, Stage};
+use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
+use openusd::{gf::Vec3f, sdf::Value};
 
 fn characterization_stage() -> Stage {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -200,4 +205,78 @@ fn native_instance_proxy_preserves_presentation_semantics() {
         .expect("glass material asset");
     assert_eq!(glass.alpha_mode, AlphaMode::Blend);
     assert_eq!(glass.base_color.to_srgba().alpha, 0.0);
+}
+
+#[test]
+fn native_instance_reference_target_maps_proxy_to_source_path() -> Result<()> {
+    let stage = characterization_stage();
+    let instance = stage.prim(sdf::path("/World/Window_A")?);
+    let proxy = stage.prim(sdf::path("/World/Window_A/Frame")?);
+    let target = instance.edit_target_for_arc(EditTargetArc::Reference)?;
+    assert_eq!(
+        target
+            .map_to_spec_path(proxy.path())
+            .expect("reference target maps proxy"),
+        sdf::path("/World/WindowPrototype/Frame")?
+    );
+
+    let mut index = NativeInstanceDependencyIndex::default();
+    index.rebuild(&stage)?;
+    assert_eq!(index.len(), 4, "all native proxy meshes are indexed");
+    assert_eq!(
+        index.dependents_for_path("/World/WindowPrototype/Frame"),
+        std::collections::HashSet::from([
+            "/World/Window_A/Frame".to_string(),
+            "/World/Window_B/Frame".to_string(),
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn shared_prototype_change_patches_only_scene_consumers() {
+    let mut app = projected_app();
+    let frame_a = projected_entity(&app, "/World/Window_A/Frame");
+    let frame_b = projected_entity(&app, "/World/Window_B/Frame");
+    let before = app.world().get::<Mesh3d>(frame_a).unwrap().0.clone();
+
+    let live = app
+        .world_mut()
+        .remove_non_send::<LiveStage>()
+        .expect("live stage exists");
+    live.stage
+        .prim(sdf::path("/World/WindowPrototype/Frame").unwrap())
+        .attribute("points")
+        .set(Value::Vec3fVec(vec![
+            Vec3f::from([-1.5, 0.0, 0.0]),
+            Vec3f::from([1.5, 0.0, 0.0]),
+            Vec3f::from([1.5, 2.0, 0.0]),
+            Vec3f::from([-1.5, 2.0, 0.0]),
+        ]))
+        .expect("prototype edit succeeds");
+    let _ = live.drain_change_batch();
+    let mut map = app
+        .world_mut()
+        .remove_resource::<PrimEntities>()
+        .expect("prim map exists");
+    let batch = StageChangeBatch {
+        revision: LiveRevision(2),
+        changes: vec![StageChange {
+            resynced: Vec::new(),
+            changed_info: vec!["/World/WindowPrototype/Frame.points".to_string()],
+        }],
+    };
+    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    app.world_mut().insert_resource(map);
+    app.world_mut().insert_non_send(live);
+
+    let updated_a = app.world().get::<Mesh3d>(frame_a).unwrap().0.clone();
+    let updated_b = app.world().get::<Mesh3d>(frame_b).unwrap().0.clone();
+    assert_ne!(updated_a, before);
+    assert_eq!(updated_a, updated_b);
+    assert_eq!(
+        app.world().resource::<ReconcileStats>().patched_entities,
+        3,
+        "source plus two scene proxies are patched without a stage scan"
+    );
 }

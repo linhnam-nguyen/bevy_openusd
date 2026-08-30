@@ -4,6 +4,7 @@ mod animation;
 mod author;
 mod change;
 mod index;
+mod native_instance_dependency;
 mod path;
 mod progressive;
 mod progressive_cleanup;
@@ -19,6 +20,7 @@ pub use animation::AnimatedPrims;
 pub use author::{TransformHistory, author_transform, current_transform};
 pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatch};
 pub use index::PrimEntities;
+pub use native_instance_dependency::NativeInstanceDependencyIndex;
 pub use path::{
     is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
     validate_prim_path,
@@ -70,6 +72,7 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<ReconcileStats>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
+            .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()

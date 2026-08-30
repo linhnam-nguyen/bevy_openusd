@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
 use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
@@ -137,6 +138,13 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         normal_generation_ms: None,
         material_resolve_ms: None,
     });
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    if let Err(error) = world
+        .resource_mut::<NativeInstanceDependencyIndex>()
+        .rebuild(stage)
+    {
+        bevy::log::warn!("[projection] native instance dependency index rebuild failed: {error:#}");
+    }
     let _ = live.drain_change_batch();
 }
 

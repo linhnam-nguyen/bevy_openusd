@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::progressive_cleanup::clear_projection;
 use super::progressive_resident::resident_projection;
 use super::progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
@@ -280,6 +281,15 @@ fn finish_if_ready(world: &mut World, live: &LiveStage) {
         )
     };
     if ready {
+        world.init_resource::<NativeInstanceDependencyIndex>();
+        if let Err(error) = world
+            .resource_mut::<NativeInstanceDependencyIndex>()
+            .rebuild(&live.stage)
+        {
+            bevy::log::warn!(
+                "[progressive] native instance dependency index rebuild failed: {error:#}"
+            );
+        }
         world.insert_resource(AnimatedPrims(animated));
         if let Some(mut stats) = world.get_resource_mut::<ProjectionStats>() {
             stats.initial_projection_ms = duration_ms;

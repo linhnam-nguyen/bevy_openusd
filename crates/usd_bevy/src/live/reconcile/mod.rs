@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::change::StageChangeBatch;
 use super::index::PrimEntities;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::path::{prim_of, property_of, validate_prim_path};
 use super::projection::registry_of;
 use super::stage::LiveStage;
@@ -49,15 +50,31 @@ pub(super) fn apply_sparse_changed_info(
     let registry = registry_of(world);
     let suppressed = live.take_suppressed();
     let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
+    let mut native_dependents: HashMap<String, Vec<String>> = HashMap::new();
     let mut dependent_instancers = HashSet::new();
     for prop_path in changed_info {
         let prim = prim_of(prop_path);
+        if suppressed.contains(prim) {
+            continue;
+        }
         let entry = per_prim.entry(prim.to_string()).or_default();
         if let Some(prop) = property_of(prop_path) {
             entry.push(prop.to_string());
         }
         if let Some(index) = world.get_resource::<PointInstancerDependencyIndex>() {
             dependent_instancers.extend(index.dependents_for_path(prim));
+        }
+        if let Some(index) = world.get_resource::<NativeInstanceDependencyIndex>() {
+            for dependent in index.dependents_for_path(prim) {
+                if let Some(property) = property_of(prop_path) {
+                    native_dependents
+                        .entry(dependent)
+                        .or_default()
+                        .push(property.to_string());
+                } else {
+                    native_dependents.entry(dependent).or_default();
+                }
+            }
         }
     }
 
@@ -78,6 +95,8 @@ pub(super) fn apply_sparse_changed_info(
     }
     patched_count +=
         apply_prototype_dependents(world, &live.stage, map, &registry, dependent_instancers);
+    patched_count +=
+        apply_native_instance_dependents(world, &live.stage, map, &registry, native_dependents);
     world.insert_resource(ReconcileStats {
         visited_stage_prims: patched_count,
         patched_entities: patched_count,
@@ -101,6 +120,28 @@ fn apply_prototype_dependents(
             continue;
         };
         registry.patch_prim(stage, &path, world, entity, &["prototype_dependency"]);
+        patched += 1;
+    }
+    patched
+}
+
+fn apply_native_instance_dependents(
+    world: &mut World,
+    stage: &openusd::usd::Stage,
+    map: &PrimEntities,
+    registry: &crate::route::SchemaRegistry,
+    dependents: HashMap<String, Vec<String>>,
+) -> usize {
+    let mut patched = 0;
+    for (proxy, properties) in dependents {
+        let Some(entity) = map.entity(&proxy) else {
+            continue;
+        };
+        let Ok(path) = openusd::sdf::path(&proxy) else {
+            continue;
+        };
+        let property_refs: Vec<&str> = properties.iter().map(String::as_str).collect();
+        registry.patch_prim(stage, &path, world, entity, &property_refs);
         patched += 1;
     }
     patched
@@ -163,7 +204,7 @@ pub fn apply_change_batch(
             .map(String::as_str)
             .collect::<Vec<_>>();
         if !resynced_paths.is_empty() {
-            let dependencies = world
+            let instancer_dependencies = world
                 .get_resource::<PointInstancerDependencyIndex>()
                 .map(|index| {
                     resynced_paths
@@ -172,8 +213,25 @@ pub fn apply_change_batch(
                         .collect::<HashSet<_>>()
                 })
                 .unwrap_or_default();
+            let native_dependencies = world
+                .get_resource::<NativeInstanceDependencyIndex>()
+                .map(|index| {
+                    resynced_paths
+                        .iter()
+                        .flat_map(|path| index.dependents_for_resync_root(path))
+                        .map(|proxy| (proxy, Vec::new()))
+                        .collect::<HashMap<_, _>>()
+                })
+                .unwrap_or_default();
             let registry = registry_of(world);
-            apply_prototype_dependents(world, &live.stage, map, &registry, dependencies);
+            apply_prototype_dependents(world, &live.stage, map, &registry, instancer_dependencies);
+            apply_native_instance_dependents(
+                world,
+                &live.stage,
+                map,
+                &registry,
+                native_dependencies,
+            );
         }
         cleanup_retired_materials(world);
         return;
