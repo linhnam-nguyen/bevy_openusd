@@ -56,6 +56,87 @@ fn authored_scene_reopens_with_default_prim_and_registry_identity() -> Result<()
 }
 
 #[test]
+fn schema_v2_authors_direct_members_and_relative_project_references() -> Result<()> {
+    let project_directory = tempdir()?;
+    let scene_id = SceneId::new_v4();
+    let scene_path = project_directory.path().join("scenes/Parent.usda");
+    let child_scene_path = project_directory.path().join("Child.usda");
+    let model_path = project_directory.path().join("models/Chair/model.usda");
+    let members = vec![
+        SceneMember {
+            id: SceneMemberId::new_v4(),
+            target: SceneMemberTarget::Scene(SceneId::new_v4()),
+            name: Some("Child scene".to_owned()),
+            transform: Default::default(),
+        },
+        SceneMember {
+            id: SceneMemberId::new_v4(),
+            target: SceneMemberTarget::Model(ModelId::new_v4()),
+            name: Some("Chair".to_owned()),
+            transform: Default::default(),
+        },
+    ];
+
+    let stage = new_scene_stage(scene_id)?;
+    author_scene_member_at_path(
+        &stage,
+        project_directory.path(),
+        &scene_path,
+        &members[0],
+        Some(&child_scene_path),
+    )?;
+    author_scene_member_at_path(
+        &stage,
+        project_directory.path(),
+        &scene_path,
+        &members[1],
+        Some(&model_path),
+    )?;
+    fs::create_dir_all(scene_path.parent().expect("Scene directory"))?;
+    stage
+        .root_layer()
+        .export(scene_path.to_string_lossy().as_ref())?;
+
+    let reopened = Stage::open(scene_path.to_string_lossy().as_ref())?;
+    assert!(!reopened.prim("/SceneRoot/Members").is_defined()?);
+    assert!(
+        reopened
+            .prim(scene_member_path(members[0].id).as_str())
+            .is_defined()?
+    );
+    assert!(
+        reopened
+            .prim(scene_member_path(members[1].id).as_str())
+            .is_defined()?
+    );
+    let mut expected_members = members.clone();
+    expected_members.sort_by_key(|member| member.id);
+    assert_eq!(read_scene_members(&scene_path, scene_id)?, expected_members);
+
+    for (member, expected_asset) in [
+        (&members[0], "../Child.usda"),
+        (&members[1], "../models/Chair/model.usda"),
+    ] {
+        let spec_path = sdf::path(scene_member_path(member.id).as_str())?;
+        let root_layer = reopened.root_layer();
+        let spec = root_layer.prim(&spec_path).expect("member spec");
+        let Some(Value::ReferenceListOp(references)) = spec.field(REFERENCES_FIELD)? else {
+            panic!("direct member reference list should be authored");
+        };
+        assert_eq!(
+            references
+                .iter()
+                .next()
+                .expect("member reference")
+                .asset_path,
+            expected_asset
+        );
+    }
+    validate_scene_file(&scene_path, scene_id, &members)?;
+    Ok(())
+}
+
+#[test]
 fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
     let project_directory = tempdir()?;
     let scene_id = SceneId::new_v4();
@@ -176,11 +257,21 @@ fn legacy_scene_placement_without_transform_defaults_to_identity() -> Result<()>
     let path = scene_path(project_directory.path(), scene_id);
     fs::create_dir_all(path.parent().expect("Scene directory"))?;
     let stage = new_scene_stage(scene_id)?;
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
+    let mut root_data = match root.custom_data()? {
+        Some(Value::Dictionary(data)) => data,
+        _ => panic!("SceneRoot customData should be authored"),
+    };
+    root_data.insert(
+        SCHEMA_VERSION_METADATA.to_owned(),
+        Value::Int(LEGACY_SCENE_SCHEMA_VERSION),
+    );
+    root.set_metadata("customData", Value::Dictionary(root_data))?;
     stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
         .set_type_name("Xform")?;
     stage
-        .define_prim(scene_member_path(member.id).as_str())?
+        .define_prim(legacy_scene_member_path(member.id).as_str())?
         .set_type_name("Xform")?
         .set_metadata("customData", Value::Dictionary(member_custom_data(&member)))?;
     stage.root_layer().export(path.to_string_lossy().as_ref())?;

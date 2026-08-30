@@ -14,8 +14,10 @@ const REFERENCES_FIELD: &str = "references";
 
 pub(crate) fn author_scene_wrapper_to_path(
     path: &Path,
+    project_root: &Path,
+    authored_layer_path: &Path,
     scene_id: SceneId,
-    source_asset_path: &str,
+    source_asset_path: &Path,
     default_prim: &str,
     scene_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
@@ -25,13 +27,18 @@ pub(crate) fn author_scene_wrapper_to_path(
         .prim("/SceneRoot")
         .set_metadata("ui:displayName", Value::String(scene_name.to_owned()))?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
+    let source_asset_path = crate::project::storage::authored_relative_project_asset_path(
+        project_root,
+        authored_layer_path,
+        source_asset_path,
+    )?;
     let source_prim = stage
         .define_prim(source_path.as_str())?
         .set_type_name("Xform")?
         .set_metadata(
             REFERENCES_FIELD,
             Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
-                asset_path: source_asset_path.to_owned(),
+                asset_path: source_asset_path,
                 prim_path: sdf::path(format!("/{default_prim}"))?,
                 ..Default::default()
             }])),
@@ -69,6 +76,22 @@ pub(crate) fn validate_scene_wrapper(
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "adopted Scene wrapper must preserve the source as a reference"
     );
+    let references = {
+        let root_layer = stage.root_layer();
+        let source_spec = root_layer
+            .prim(&source_path)
+            .context("adopted Scene wrapper source spec is missing")?;
+        let Some(Value::ReferenceListOp(references)) = source_spec.field(REFERENCES_FIELD)? else {
+            anyhow::bail!("adopted Scene wrapper source reference list is missing");
+        };
+        references
+    };
+    for reference in references.iter() {
+        ensure!(
+            !reference.asset_path.is_empty() && !Path::new(&reference.asset_path).is_absolute(),
+            "adopted Scene wrapper source asset path must be relative"
+        );
+    }
     let source_prim = stage.prim(source_path.as_str());
     ensure!(
         crate::project::spatial::read_source_normalization(&source_prim)?
@@ -151,6 +174,7 @@ fn prepare_parent_layer_inner(
     } else {
         authoring::new_scene_stage(parent_scene_id)?
     };
+    authoring::prepare_scene_for_direct_members(&stage)?;
     for member in members {
         let target_path = match (&member.target, model_target) {
             (SceneMemberTarget::Scene(member_scene_id), _)
@@ -165,7 +189,13 @@ fn prepare_parent_layer_inner(
             }
             _ => None,
         };
-        authoring::author_scene_member_with_target_path(&stage, project_root, member, target_path)?;
+        authoring::author_scene_member_at_path(
+            &stage,
+            project_root,
+            existing_path,
+            member,
+            target_path,
+        )?;
     }
     stage
         .root_layer()

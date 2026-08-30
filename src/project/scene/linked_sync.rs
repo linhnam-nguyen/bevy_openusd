@@ -167,11 +167,10 @@ pub(crate) fn sync_linked_scene_atomic(
         )?;
         adoption_authoring::author_scene_wrapper_to_path(
             &temporary_scene_path,
+            request.project_root,
+            &final_scene_path,
             request.scene_id,
-            &format!(
-                "../imports/{SCENES_DIRECTORY}/{}/{source_name}",
-                request.scene_id
-            ),
+            &final_source_directory.join(&source_name),
             &default_prim,
             scene_name,
             &request.inspection.spatial,

@@ -230,15 +230,12 @@ pub(crate) fn publish_model_wrapper_atomic(
             .context("normalize controlled Model source filename")?;
             source_name = "model.usda".to_owned();
         }
-        let published_source_path = format!(
-            "../../imports/{MODELS_DIRECTORY}/{}/{source_name}",
-            request.prepared.id
-        );
-
         wrapper_authoring::author_model_wrapper(
             &temporary_wrapper_path,
+            request.project_root,
+            &model_directory.join("model.usda"),
             request.prepared.id,
-            &published_source_path,
+            &source_directory.join(&source_name),
             &source_default_prim,
             &model_name,
             &request.prepared.inspection.composition.spatial,

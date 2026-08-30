@@ -5,7 +5,9 @@ use openusd::{sdf::Value, usd::Stage};
 use usd_project::{SceneId, SceneMemberId};
 use uuid::Uuid;
 
-use super::{MEMBER_NAME_METADATA, read_scene_members, scene_member_path, sync_parent_best_effort};
+use super::{
+    MEMBER_NAME_METADATA, read_scene_members, scene_member_path_for_stage, sync_parent_best_effort,
+};
 
 /// Update descriptive metadata without changing a managed prim's stable path.
 pub(crate) fn update_display_name_atomic(
@@ -57,7 +59,8 @@ pub(crate) fn update_member_display_name_atomic(
     );
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open parent Scene for display-name update")?;
-    let member = stage.prim(scene_member_path(member_id).as_str());
+    let member_path = scene_member_path_for_stage(&stage, member_id)?;
+    let member = stage.prim(member_path.as_str());
     member
         .clone()
         .set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;

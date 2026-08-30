@@ -61,44 +61,54 @@ pub(super) fn apply_rename_to_live_stage(
         ProjectWriteTarget::Model(id) => Some(("model", id.to_string())),
         ProjectWriteTarget::Project(_) => None,
     };
-    let members_root = live.stage.prim("/SceneRoot/Members");
-    if members_root.is_defined().map_err(|_| filesystem_error())? {
-        for member in members_root.children().map_err(|_| filesystem_error())? {
-            let Some(openusd::sdf::Value::Dictionary(data)) =
-                member.custom_data().map_err(|_| filesystem_error())?
-            else {
-                continue;
-            };
-            let Some((expected_kind, expected_id)) = target_metadata.as_ref() else {
-                continue;
-            };
-            if data
-                .get("usdhub:targetKind")
-                .and_then(openusd::sdf::Value::as_str)
-                != Some(expected_kind)
-                || data
-                    .get("usdhub:targetId")
-                    .and_then(openusd::sdf::Value::as_str)
-                    != Some(expected_id.as_str())
-            {
+    let direct_members_root = live.stage.prim("/SceneRoot");
+    let legacy_members_root = live.stage.prim("/SceneRoot/Members");
+    let mut member_roots = vec![direct_members_root];
+    if legacy_members_root
+        .is_defined()
+        .map_err(|_| filesystem_error())?
+    {
+        member_roots.push(legacy_members_root);
+    }
+    if let Some((expected_kind, expected_id)) = target_metadata.as_ref() {
+        for members_root in member_roots {
+            if !members_root.is_defined().map_err(|_| filesystem_error())? {
                 continue;
             }
-            member
-                .clone()
-                .set_metadata(
-                    "ui:displayName",
+            for member in members_root.children().map_err(|_| filesystem_error())? {
+                let Some(openusd::sdf::Value::Dictionary(data)) =
+                    member.custom_data().map_err(|_| filesystem_error())?
+                else {
+                    continue;
+                };
+                if data
+                    .get("usdhub:targetKind")
+                    .and_then(openusd::sdf::Value::as_str)
+                    != Some(expected_kind)
+                    || data
+                        .get("usdhub:targetId")
+                        .and_then(openusd::sdf::Value::as_str)
+                        != Some(expected_id.as_str())
+                {
+                    continue;
+                }
+                member
+                    .clone()
+                    .set_metadata(
+                        "ui:displayName",
+                        openusd::sdf::Value::String(name.to_owned()),
+                    )
+                    .map_err(|_| filesystem_error())?;
+                let mut custom_data = data;
+                custom_data.insert(
+                    "usdhub:name".to_owned(),
                     openusd::sdf::Value::String(name.to_owned()),
-                )
-                .map_err(|_| filesystem_error())?;
-            let mut custom_data = data;
-            custom_data.insert(
-                "usdhub:name".to_owned(),
-                openusd::sdf::Value::String(name.to_owned()),
-            );
-            member
-                .set_metadata("customData", openusd::sdf::Value::Dictionary(custom_data))
-                .map_err(|_| filesystem_error())?;
-            renamed = true;
+                );
+                member
+                    .set_metadata("customData", openusd::sdf::Value::Dictionary(custom_data))
+                    .map_err(|_| filesystem_error())?;
+                renamed = true;
+            }
         }
     }
     let _ = renamed;

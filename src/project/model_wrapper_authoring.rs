@@ -30,8 +30,10 @@ pub(super) fn source_default_prim(source: &Path) -> Result<String> {
 
 pub(super) fn author_model_wrapper(
     path: &Path,
+    project_root: &Path,
+    authored_layer_path: &Path,
     model_id: usd_project::ModelId,
-    source_path: &str,
+    source_path: &Path,
     source_default_prim: &str,
     model_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
@@ -58,6 +60,11 @@ pub(super) fn author_model_wrapper(
         .set_metadata("ui:displayName", Value::String(model_name.to_owned()))?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
     crate::project::spatial::author_canonical_stage(&stage)?;
+    let source_path = crate::project::storage::authored_relative_project_asset_path(
+        project_root,
+        authored_layer_path,
+        source_path,
+    )?;
     let source_prim = stage
         .define_prim(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
         .set_type_name("Xform")?
@@ -118,6 +125,22 @@ pub(super) fn validate_model_wrapper(
             .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
         "stable Model wrapper must reference its source"
     );
+    let references = {
+        let root_layer = stage.root_layer();
+        let source_spec = root_layer
+            .prim(&source_path)
+            .context("stable Model wrapper source spec is missing")?;
+        let Some(Value::ReferenceListOp(references)) = source_spec.field(REFERENCES_FIELD)? else {
+            anyhow::bail!("stable Model wrapper source reference list is missing");
+        };
+        references
+    };
+    for reference in references.iter() {
+        ensure!(
+            !reference.asset_path.is_empty() && !Path::new(&reference.asset_path).is_absolute(),
+            "stable Model wrapper source asset path must be relative"
+        );
+    }
     let source_prim = stage.prim(source_path.as_str());
     ensure!(
         crate::project::spatial::read_source_normalization(&source_prim)?

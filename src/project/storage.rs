@@ -9,5 +9,5 @@ pub(crate) use ignore::{
 };
 pub(crate) use layout::{
     CACHE_DIRECTORY, CACHE_OBJECTS_RELATIVE_PATH, PROJECT_METADATA_DIRECTORY, ProjectStorageLayout,
-    RECOVERY_DIRECTORY,
+    RECOVERY_DIRECTORY, authored_relative_project_asset_path,
 };

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, ensure};
 use openusd::{sdf, sdf::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
@@ -14,7 +14,14 @@ use super::placement_transform;
 
 #[path = "member_authoring.rs"]
 mod member_authoring;
-pub(crate) use member_authoring::{author_scene_member, author_scene_member_with_target_path};
+pub(crate) use member_authoring::{author_scene_member, author_scene_member_at_path};
+#[path = "reader.rs"]
+mod reader;
+pub(crate) use reader::{
+    legacy_scene_member_path, member_custom_data, prepare_scene_for_direct_members,
+    read_scene_member, read_scene_members, scene_member_path, scene_member_path_for_stage,
+    validate_scene_file,
+};
 #[path = "display_name_authoring.rs"]
 mod display_name_authoring;
 pub(crate) use display_name_authoring::{
@@ -37,7 +44,8 @@ const MEMBER_TARGET_ID_METADATA: &str = "usdhub:targetId";
 const MEMBER_NAME_METADATA: &str = "usdhub:name";
 const REFERENCES_FIELD: &str = "references";
 const PROTECTED_ROOT_METADATA: &str = "usdhub:protectedRoot";
-const SCENE_SCHEMA_VERSION: i32 = 1;
+const SCENE_SCHEMA_VERSION: i32 = 2;
+const LEGACY_SCENE_SCHEMA_VERSION: i32 = 1;
 
 pub(crate) fn author_scene_atomic(project_root: &Path, scene_id: SceneId) -> Result<PathBuf> {
     author_scene_atomic_with_members(project_root, scene_id, &[])
@@ -130,68 +138,6 @@ pub(crate) fn new_scene_stage_with_name_and_protection(
     Ok(stage)
 }
 
-pub(crate) fn validate_scene_file(
-    path: &Path,
-    expected_scene_id: SceneId,
-    expected_members: &[SceneMember],
-) -> Result<()> {
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::open(&path_string).context("reopen exported Project Scene layer")?;
-    let default_prim = stage.default_prim();
-    ensure!(
-        default_prim
-            .as_ref()
-            .is_some_and(|token| token.as_str() == SCENE_ROOT_PRIM),
-        "Project Scene defaultPrim must be /{SCENE_ROOT_PRIM}"
-    );
-
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
-    ensure!(
-        root.is_defined()?,
-        "Project Scene root prim must be defined"
-    );
-    let Some(Value::Dictionary(custom_data)) = root.custom_data()? else {
-        bail!("Project Scene root prim is missing customData");
-    };
-
-    let Some(scene_id_value) = custom_data.get(SCENE_ID_METADATA) else {
-        bail!("Project Scene root prim is missing {SCENE_ID_METADATA}");
-    };
-    let Some(scene_id_text) = scene_id_value.as_str() else {
-        bail!("Project Scene {SCENE_ID_METADATA} must be a string");
-    };
-    ensure!(
-        SceneId::parse(scene_id_text)? == expected_scene_id,
-        "Project Scene metadata identity does not match the registry identity"
-    );
-
-    ensure!(
-        custom_data.get(SCHEMA_VERSION_METADATA) == Some(&Value::Int(SCENE_SCHEMA_VERSION)),
-        "Project Scene schema version is unsupported or missing"
-    );
-    for expected_member in expected_members {
-        let member_path = scene_member_path(expected_member.id);
-        let member = stage.prim(member_path.as_str());
-        ensure!(
-            member.is_defined()?,
-            "Project Scene member prim must be defined"
-        );
-        let member_spec_path = sdf::path(member_path.as_str())?;
-        ensure!(
-            stage
-                .root_layer()
-                .prim(&member_spec_path)
-                .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
-            "Project Scene member prim must contain a target reference"
-        );
-        ensure!(
-            read_scene_member(&stage, expected_member.id)? == *expected_member,
-            "Project Scene member metadata does not match the authored placement"
-        );
-    }
-    Ok(())
-}
-
 fn scene_custom_data(scene_id: SceneId, protected_root: bool) -> HashMap<String, Value> {
     let mut custom_data = HashMap::from([
         (
@@ -207,105 +153,6 @@ fn scene_custom_data(scene_id: SceneId, protected_root: bool) -> HashMap<String,
         custom_data.insert(PROTECTED_ROOT_METADATA.to_owned(), Value::Bool(true));
     }
     custom_data
-}
-
-pub(crate) fn member_custom_data(member: &SceneMember) -> HashMap<String, Value> {
-    let (target_kind, target_id) = match member.target {
-        SceneMemberTarget::Scene(id) => ("scene", id.to_string()),
-        SceneMemberTarget::Model(id) => ("model", id.to_string()),
-    };
-    let mut data = HashMap::from([
-        (
-            MEMBER_ID_METADATA.to_owned(),
-            Value::String(member.id.to_string()),
-        ),
-        (
-            MEMBER_TARGET_KIND_METADATA.to_owned(),
-            Value::String(target_kind.to_owned()),
-        ),
-        (
-            MEMBER_TARGET_ID_METADATA.to_owned(),
-            Value::String(target_id),
-        ),
-    ]);
-    if let Some(name) = &member.name {
-        data.insert(MEMBER_NAME_METADATA.to_owned(), Value::String(name.clone()));
-    }
-    data
-}
-
-fn read_scene_member(stage: &Stage, member_id: SceneMemberId) -> Result<SceneMember> {
-    let member_path = scene_member_path(member_id);
-    let member = stage.prim(member_path.as_str());
-    let Some(Value::Dictionary(data)) = member.custom_data()? else {
-        bail!("Project Scene member is missing customData");
-    };
-    let encoded_id = metadata_string(&data, MEMBER_ID_METADATA)?;
-    ensure!(
-        SceneMemberId::parse(encoded_id)? == member_id,
-        "Project Scene member metadata identity does not match its prim path"
-    );
-    let target_kind = metadata_string(&data, MEMBER_TARGET_KIND_METADATA)?;
-    let target_id = metadata_string(&data, MEMBER_TARGET_ID_METADATA)?;
-    let target = match target_kind {
-        "scene" => SceneMemberTarget::Scene(SceneId::parse(target_id)?),
-        "model" => SceneMemberTarget::Model(ModelId::parse(target_id)?),
-        other => bail!("unsupported Project Scene member target kind {other:?}"),
-    };
-    let name = data
-        .get(MEMBER_NAME_METADATA)
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .context("Project Scene member name must be a string")
-        })
-        .transpose()?;
-    Ok(SceneMember {
-        id: member_id,
-        target,
-        name,
-        transform: placement_transform::read_scene_member_transform(&member)?,
-    })
-}
-
-/// Read the authored placement records from one validated Project Scene.
-pub(crate) fn read_scene_members(
-    path: &Path,
-    expected_scene_id: SceneId,
-) -> Result<Vec<SceneMember>> {
-    validate_scene_file(path, expected_scene_id, &[])?;
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::open(&path_string).context("open Project Scene for read projection")?;
-    let members_root = stage.prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str());
-    if !members_root.is_defined()? {
-        return Ok(Vec::new());
-    }
-
-    let mut members = Vec::new();
-    for child in members_root.children()? {
-        let Some(Value::Dictionary(data)) = child.custom_data()? else {
-            bail!("Project Scene member is missing customData");
-        };
-        let member_id = SceneMemberId::parse(metadata_string(&data, MEMBER_ID_METADATA)?)?;
-        members.push(read_scene_member(&stage, member_id)?);
-    }
-    members.sort_by_key(|member| member.id);
-    Ok(members)
-}
-
-fn metadata_string<'a>(data: &'a HashMap<String, Value>, key: &str) -> Result<&'a str> {
-    let value = data
-        .get(key)
-        .with_context(|| format!("Project Scene member is missing {key}"))?;
-    value
-        .as_str()
-        .with_context(|| format!("Project Scene member {key} must be a string"))
-}
-
-pub(crate) fn scene_member_path(member_id: SceneMemberId) -> String {
-    let path_id = member_id.to_string().replace('-', "");
-    format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}/Member_{path_id}")
 }
 
 fn validate_member_ids(members: &[SceneMember]) -> Result<()> {

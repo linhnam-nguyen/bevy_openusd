@@ -179,7 +179,7 @@ fn native_usdhub_scene(root: &openusd::usd::Prim) -> Result<bool> {
         .is_some();
     let schema_is_current = data
         .get(SCHEMA_VERSION_METADATA)
-        .is_some_and(|value| value == &Value::Int(1));
+        .is_some_and(|value| matches!(value, Value::Int(1 | 2)));
     Ok(root.path().as_str() == format!("/{SCENE_ROOT_PRIM}")
         && scene_id_is_string
         && schema_is_current)

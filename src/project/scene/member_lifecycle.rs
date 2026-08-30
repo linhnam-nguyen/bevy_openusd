@@ -4,7 +4,10 @@ use anyhow::{Context, Result, ensure};
 use openusd::usd::Stage;
 use usd_project::{SceneId, SceneMember};
 
-use super::{read_scene_members, scene_member_path};
+use super::{
+    author_scene_member_at_path, prepare_scene_for_direct_members, read_scene_members,
+    scene_member_path,
+};
 
 /// Replace all authored placements in one Scene with the supplied set.
 pub(crate) fn replace_scene_members_atomic(
@@ -16,14 +19,20 @@ pub(crate) fn replace_scene_members_atomic(
     let existing = read_scene_members(path, expected_scene_id)?;
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open Scene for placement replacement")?;
+    prepare_scene_for_direct_members(&stage)?;
     for member in existing {
-        ensure!(
-            stage.remove_prim(scene_member_path(member.id).as_str())?,
-            "Project Scene placement was not authored in the parent layer"
-        );
+        if stage
+            .prim(scene_member_path(member.id).as_str())
+            .is_defined()?
+        {
+            ensure!(
+                stage.remove_prim(scene_member_path(member.id).as_str())?,
+                "Project Scene placement was not authored in the parent layer"
+            );
+        }
     }
     for member in members {
-        super::member_authoring::author_scene_member(&stage, project_root, member)?;
+        author_scene_member_at_path(&stage, project_root, path, member, None)?;
     }
     let temporary_path = path.with_file_name(format!(
         ".{}.replace-{}.tmp.usda",

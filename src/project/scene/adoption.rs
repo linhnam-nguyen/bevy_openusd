@@ -184,8 +184,10 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             )?;
             adoption_authoring::author_scene_wrapper_to_path(
                 &temporary_scene_path,
+                request.project_root,
+                &final_scene_path,
                 scene_id,
-                &format!("../imports/{SCENES_DIRECTORY}/{scene_id}/{source_name}"),
+                &final_source_directory.join(&source_name),
                 &default_prim,
                 scene_name,
                 &request.inspection.spatial,

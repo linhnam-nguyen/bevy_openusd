@@ -8,7 +8,7 @@ use usd_project::{SceneCompositionGraph, SceneId, SceneManifestEntry, SceneMembe
 use uuid::Uuid;
 
 use super::{
-    author_scene_member, validate_member_ids, validate_scene_file, validate_scene_targets,
+    author_scene_member_at_path, validate_member_ids, validate_scene_file, validate_scene_targets,
 };
 use crate::project::{catalog::manifest_store::ManifestStore, storage::ProjectStorageLayout};
 
@@ -37,7 +37,7 @@ pub(crate) fn author_scene_atomic_at_path(
             protected_root,
         )?;
         for member in members {
-            author_scene_member(&stage, project_root, member)?;
+            author_scene_member_at_path(&stage, project_root, final_path, member, None)?;
         }
         let temporary_path_string = temporary_path.to_string_lossy().into_owned();
         temporary_created = true;
