@@ -1,10 +1,11 @@
 use crate::live::ProjectionPlan;
-use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin};
+use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin, UsdPurpose};
 use anyhow::Result;
 use bevy::asset::Assets;
+use bevy::material::AlphaMode;
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
-use bevy::prelude::App;
+use bevy::prelude::{App, Transform, Vec3, Visibility};
 use openusd::sdf;
 use openusd::usd::{PrimPredicate, Stage};
 
@@ -130,4 +131,73 @@ fn native_instance_proxy_meshes_share_render_handles() {
         3,
         "prototype frame, glass, and control geometry are interned"
     );
+}
+
+#[test]
+fn native_instance_proxy_preserves_presentation_semantics() {
+    let app = projected_app();
+    let window_a = projected_entity(&app, "/World/Window_A");
+    let window_b = projected_entity(&app, "/World/Window_B");
+    let frame_a = projected_entity(&app, "/World/Window_A/Frame");
+    let frame_b = projected_entity(&app, "/World/Window_B/Frame");
+    let glass_b = projected_entity(&app, "/World/Window_B/Glass");
+
+    assert_eq!(
+        app.world().get::<Transform>(window_a).unwrap().translation,
+        Vec3::new(-3.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        app.world().get::<Transform>(window_b).unwrap().translation,
+        Vec3::new(3.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        app.world().get::<Visibility>(window_a),
+        Some(&Visibility::Hidden)
+    );
+    assert_eq!(
+        app.world().get::<Visibility>(frame_a),
+        Some(&Visibility::Inherited)
+    );
+    assert_eq!(
+        app.world().get::<Visibility>(frame_b),
+        Some(&Visibility::Inherited)
+    );
+
+    for path in ["/World/Window_B/Frame", "/World/Window_B/Glass"] {
+        let entity = projected_entity(&app, path);
+        assert_eq!(
+            app.world()
+                .get::<UsdPurpose>(entity)
+                .map(|purpose| purpose.0.as_str()),
+            Some("proxy")
+        );
+    }
+
+    let frame_material = app
+        .world()
+        .get::<MeshMaterial3d<StandardMaterial>>(frame_b)
+        .expect("frame material")
+        .0
+        .clone();
+    let frame = app
+        .world()
+        .resource::<Assets<StandardMaterial>>()
+        .get(&frame_material)
+        .expect("frame material asset");
+    assert_eq!(frame.alpha_mode, AlphaMode::Opaque);
+    assert_eq!(frame.base_color.to_srgba().alpha, 1.0);
+
+    let glass_material = app
+        .world()
+        .get::<MeshMaterial3d<StandardMaterial>>(glass_b)
+        .expect("glass material")
+        .0
+        .clone();
+    let glass = app
+        .world()
+        .resource::<Assets<StandardMaterial>>()
+        .get(&glass_material)
+        .expect("glass material asset");
+    assert_eq!(glass.alpha_mode, AlphaMode::Blend);
+    assert_eq!(glass.base_color.to_srgba().alpha, 0.0);
 }

@@ -5,12 +5,44 @@
 
 def Xform "World"
 {
+    def Scope "Materials"
+    {
+        def Material "Frame"
+        {
+            token outputs:surface.connect = </World/Materials/Frame/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.1, 0.1, 0.1)
+                float inputs:opacity = 1.0
+                token outputs:surface
+            }
+        }
+
+        def Material "Glass"
+        {
+            token outputs:surface.connect = </World/Materials/Glass/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.7, 0.9)
+                float inputs:opacity = 0.0
+                token outputs:surface
+            }
+        }
+    }
+
     def Xform "WindowPrototype"
     {
+        token purpose = "proxy"
+
         def Mesh "Frame"
         {
             int[] faceVertexCounts = [4]
             int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </World/Materials/Frame>
             point3f[] points = [(-1, 0, 0), (1, 0, 0), (1, 2, 0), (-1, 2, 0)]
         }
 
@@ -18,6 +50,7 @@ def Xform "World"
         {
             int[] faceVertexCounts = [4]
             int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </World/Materials/Glass>
             point3f[] points = [(-0.8, 0.2, 0), (0.8, 0.2, 0), (0.8, 1.8, 0), (-0.8, 1.8, 0)]
         }
     }
@@ -27,6 +60,9 @@ def Xform "World"
         references = </World/WindowPrototype>
     )
     {
+        uniform token visibility = "invisible"
+        double3 xformOp:translate = (-3, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
     def Xform "Window_B" (
@@ -34,6 +70,8 @@ def Xform "World"
         references = </World/WindowPrototype>
     )
     {
+        double3 xformOp:translate = (3, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
     def Xform "Control"
