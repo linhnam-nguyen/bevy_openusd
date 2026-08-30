@@ -32,15 +32,17 @@ fn create_scene_places_under_the_protected_project_root() {
     assert!(created.placement_id.is_some());
     assert_eq!(created.project.root, project.root);
     assert_ne!(protected_root, created.scene_id);
-    assert!(
-        parent
-            .join("Scene Project/.usdhub/scenes")
-            .join(format!("{}.usda", created.scene_id))
-            .is_file()
-    );
     let manifest = ManifestStore::read_validated(&parent.join("Scene Project")).unwrap();
     assert_eq!(manifest.scenes().len(), 2);
     assert_eq!(manifest.raw().root, created.project.root);
+    let created_scene = manifest.scene(created.scene_id).unwrap();
+    assert!(
+        project_root
+            .join("scenes")
+            .join(format!("{}.usda", created_scene.storage_key))
+            .is_file()
+    );
+    assert!(!project_root.join(".usdhub/scenes").exists());
     let members = crate::project::scene::authoring::read_scene_members(
         &crate::project::scene::authoring::scene_path(&project_root, protected_root),
         protected_root,

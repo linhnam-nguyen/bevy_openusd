@@ -97,9 +97,7 @@ fn failed_finish_on_commit_path_aborts_runtime_lease() {
         )
         .unwrap();
     let project_root = parent.join("Finish Failure");
-    let scene_path = project_root
-        .join(".usdhub/scenes")
-        .join(format!("{}.usda", scene.scene_id));
+    let scene_path = crate::project::scene::authoring::scene_path(&project_root, scene.scene_id);
     authority.set_snapshot(ProjectRuntimeSnapshot {
         lease_id: "lease-finish-failure".to_owned(),
         session_id: 1,

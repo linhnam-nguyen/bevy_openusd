@@ -9,9 +9,7 @@ pub(crate) const MANAGED_IGNORE_END: &str = "# END USDHub managed local state";
 
 const MANAGED_IGNORE_BLOCK: &str = concat!(
     "# BEGIN USDHub managed local state\n",
-    ".usdhub/cache/\n",
-    ".usdhub/recovery/\n",
-    ".usdhub/links/\n",
+    ".usdhub/\n",
     "# END USDHub managed local state\n",
 );
 
@@ -39,10 +37,6 @@ pub(crate) fn install_managed_ignore(root: &Path) -> Result<IgnoreChange> {
     let path = root.join(".gitignore");
     let original = read_gitignore(root)?;
     let existing = original.as_deref().unwrap_or_default();
-    if has_broad_usdhub_ignore(existing)? {
-        bail!("IgnoreConflict: a broad .usdhub rule hides canonical Project metadata");
-    }
-
     let merged = merge_managed_ignore(existing)?;
     if merged == existing {
         return Ok(IgnoreChange {
@@ -160,7 +154,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first.starts_with(existing));
-        assert_eq!(first.iter().filter(|byte| **byte == b'\n').count(), 6);
+        assert_eq!(first.iter().filter(|byte| **byte == b'\n').count(), 5);
     }
 
     #[test]
@@ -169,7 +163,7 @@ mod tests {
         let merged = merge_managed_ignore(existing).unwrap();
         assert_eq!(
             String::from_utf8(merged).unwrap(),
-            "keep-before\n# BEGIN USDHub managed local state\n.usdhub/cache/\n.usdhub/recovery/\n.usdhub/links/\n# END USDHub managed local state\nkeep-after\n"
+            "keep-before\n# BEGIN USDHub managed local state\n.usdhub/\n# END USDHub managed local state\nkeep-after\n"
         );
     }
 

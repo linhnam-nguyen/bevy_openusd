@@ -198,7 +198,7 @@ fn source_disappearance_leaves_manifest_and_scene_catalogue_unchanged() -> Resul
         ))?,
         before
     );
-    let scenes_directory = project.path().join(".usdhub/scenes");
+    let scenes_directory = project.path().join("imports/scenes");
     assert!(!scenes_directory.exists() || fs::read_dir(scenes_directory)?.next().is_none());
     Ok(())
 }

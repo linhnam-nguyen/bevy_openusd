@@ -1,5 +1,6 @@
-use std::sync::atomic::AtomicBool;
+use std::{collections::HashSet, fs, path::PathBuf, sync::atomic::AtomicBool};
 
+use gix::bstr::ByteSlice;
 use gix::refs::transaction::{Change, PreviousValue, RefEdit};
 use gix::refs::{FullName, Target};
 
@@ -83,11 +84,24 @@ pub(super) fn switch_branch(
     let target_commit = target.peel_to_commit().map_err(Error::git)?;
     let target_tree = target_commit.tree_id().map_err(Error::git)?;
     let workdir = repository.inner.workdir().ok_or(Error::MissingWorktree)?;
+    let current_index = repository.inner.index_or_empty().map_err(Error::git)?;
+    let current_paths = current_index
+        .entries_with_paths_by_filter_map(|path, _| {
+            std::str::from_utf8(path.as_bytes()).ok().map(PathBuf::from)
+        })
+        .map(|(_, path)| path)
+        .collect::<Vec<_>>();
 
     let mut index = repository
         .inner
         .index_from_tree(&target_tree)
         .map_err(Error::git)?;
+    let target_paths = index
+        .entries_with_paths_by_filter_map(|path, _| {
+            std::str::from_utf8(path.as_bytes()).ok().map(PathBuf::from)
+        })
+        .map(|(_, path)| path)
+        .collect::<HashSet<_>>();
     let (mut index_state, index_path) = index.into_parts();
     let mut options = repository
         .inner
@@ -116,6 +130,17 @@ pub(super) fn switch_branch(
             outcome.collisions.len(),
             outcome.errors.len()
         )));
+    }
+
+    for path in current_paths {
+        if !target_paths.contains(&path) {
+            let path = workdir.join(path);
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(Error::git(error)),
+            }
+        }
     }
 
     index = gix::index::File::from_state(index_state, index_path);

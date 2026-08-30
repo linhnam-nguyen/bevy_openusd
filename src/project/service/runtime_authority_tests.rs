@@ -197,12 +197,10 @@ fn public_commit_uses_live_snapshot_and_persists_semantic_cache() {
             materialized.path(),
         )
         .unwrap();
-    let committed_scene = std::fs::read_to_string(
-        materialized
-            .path()
-            .join(".usdhub/scenes")
-            .join(format!("{}.usda", scene.scene_id)),
-    )
+    let committed_scene = std::fs::read_to_string(crate::project::scene::authoring::scene_path(
+        materialized.path(),
+        scene.scene_id,
+    ))
     .unwrap();
     assert!(committed_scene.contains("LiveOnlyPublicCommit"));
     assert_eq!(authority.begin_calls.load(Ordering::Relaxed), 1);
@@ -315,12 +313,10 @@ fn scene_commit_includes_dirty_active_ancestor_snapshot() {
             materialized.path(),
         )
         .unwrap();
-    let ancestor_layer = std::fs::read_to_string(
-        materialized
-            .path()
-            .join(".usdhub/scenes")
-            .join(format!("{}.usda", ancestor.scene_id)),
-    )
+    let ancestor_layer = std::fs::read_to_string(crate::project::scene::authoring::scene_path(
+        materialized.path(),
+        ancestor.scene_id,
+    ))
     .unwrap();
     assert!(ancestor_layer.contains("DirtyActiveAncestor"));
 }

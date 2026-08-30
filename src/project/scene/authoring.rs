@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File},
+    fs::File,
     path::{Path, PathBuf},
 };
 
@@ -9,13 +9,12 @@ use openusd::{sdf, sdf::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
 };
-use uuid::Uuid;
 
 use super::placement_transform;
 
 #[path = "member_authoring.rs"]
 mod member_authoring;
-pub(crate) use member_authoring::author_scene_member;
+pub(crate) use member_authoring::{author_scene_member, author_scene_member_with_target_path};
 #[path = "display_name_authoring.rs"]
 mod display_name_authoring;
 pub(crate) use display_name_authoring::{
@@ -24,9 +23,10 @@ pub(crate) use display_name_authoring::{
 #[path = "member_lifecycle.rs"]
 mod member_lifecycle;
 pub(crate) use member_lifecycle::replace_scene_members_atomic;
+#[path = "publication.rs"]
+mod publication;
+pub(crate) use publication::{author_scene_atomic_at_path, scene_path, scene_path_for_entry};
 
-const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
-const SCENES_DIRECTORY: &str = "scenes";
 const SCENE_ROOT_PRIM: &str = "SceneRoot";
 const SCENE_MEMBERS_PRIM: &str = "Members";
 const SCENE_ID_METADATA: &str = "usdhub:sceneId";
@@ -86,52 +86,16 @@ pub(crate) fn author_scene_atomic_with_graph_and_protection_and_name(
     protected_root: bool,
     display_name: Option<&str>,
 ) -> Result<PathBuf> {
-    validate_member_ids(members)?;
-    validate_scene_targets(graph, scene_id, members)?;
-    let scene_directory = project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(SCENES_DIRECTORY);
-    fs::create_dir_all(&scene_directory).context("create Project Scene directory")?;
-
     let final_path = scene_path(project_root, scene_id);
-    let temporary_path = scene_directory.join(format!(".{scene_id}.{}.tmp.usda", Uuid::new_v4()));
-    let mut temporary_created = false;
-
-    let result = (|| {
-        let stage =
-            new_scene_stage_with_name_and_protection(scene_id, display_name, protected_root)?;
-        for member in members {
-            author_scene_member(&stage, project_root, member)?;
-        }
-        let temporary_path_string = temporary_path.to_string_lossy().into_owned();
-        temporary_created = true;
-        stage
-            .root_layer()
-            .export(&temporary_path_string)
-            .context("export temporary Project Scene layer")?;
-        validate_scene_file(&temporary_path, scene_id, members)?;
-        fs::rename(&temporary_path, &final_path).with_context(|| {
-            format!(
-                "publish temporary Project Scene {} as {}",
-                temporary_path.display(),
-                final_path.display()
-            )
-        })?;
-        sync_parent_best_effort(final_path.parent());
-        Ok(final_path.clone())
-    })();
-
-    if result.is_err() && temporary_created {
-        let _ = fs::remove_file(&temporary_path);
-    }
-    result
-}
-
-pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
-    project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(SCENES_DIRECTORY)
-        .join(format!("{scene_id}.usda"))
+    author_scene_atomic_at_path(
+        project_root,
+        &final_path,
+        scene_id,
+        graph,
+        members,
+        protected_root,
+        display_name,
+    )
 }
 
 pub(crate) fn new_scene_stage(scene_id: SceneId) -> Result<Stage> {

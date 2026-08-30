@@ -21,6 +21,7 @@ use crate::project::{
     catalog::manifest_store::ManifestStore,
     scene::{adoption_authoring, authoring},
     source_closure::materialize_source_closure,
+    storage::ProjectStorageLayout,
 };
 
 #[path = "model_wrapper_authoring.rs"]
@@ -37,11 +38,16 @@ const MODEL_SCHEMA_VERSION: i32 = 1;
 const REFERENCES_FIELD: &str = "references";
 
 pub(crate) fn model_wrapper_path(project_root: &Path, model_id: usd_project::ModelId) -> PathBuf {
-    project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(MODELS_DIRECTORY)
-        .join(model_id.to_string())
-        .join("model.usda")
+    let layout = ProjectStorageLayout::new(project_root);
+    if let Ok(manifest) = ManifestStore::read_validated(project_root)
+        && let Some(model) = manifest.model(model_id)
+    {
+        let canonical = layout.canonical_model_wrapper_path(model);
+        if canonical.is_file() {
+            return canonical;
+        }
+    }
+    layout.legacy_model_wrapper_path(model_id)
 }
 
 /// Inputs for publishing one stable Model wrapper.
@@ -124,11 +130,9 @@ pub(crate) fn publish_model_wrapper_atomic(
     }
 
     let source_default_prim = wrapper_authoring::source_default_prim(&request.prepared.source)?;
-    let model_directory = request
-        .project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join(MODELS_DIRECTORY)
-        .join(request.prepared.id.to_string());
+    let model_directory = ProjectStorageLayout::new(request.project_root)
+        .canonical_models_dir()
+        .join(model_name.as_str());
     ensure!(
         !model_directory.exists(),
         "canonical Model wrapper directory already exists"
@@ -174,13 +178,18 @@ pub(crate) fn publish_model_wrapper_atomic(
         .join(TRANSACTIONS_DIRECTORY)
         .join(Uuid::new_v4().to_string());
     let temporary_model_directory = transaction_directory
-        .join(MODELS_DIRECTORY)
+        .join("models")
         .join(request.prepared.id.to_string());
     fs::create_dir_all(&temporary_model_directory)
         .context("create Model wrapper transaction directory")?;
-    let temporary_source_directory = temporary_model_directory.join("source");
+    let temporary_source_directory = transaction_directory
+        .join("imports")
+        .join(MODELS_DIRECTORY)
+        .join(request.prepared.id.to_string());
     let temporary_source_path = temporary_source_directory.join("model.usda");
     let temporary_wrapper_path = temporary_model_directory.join("model.usda");
+    let source_directory = ProjectStorageLayout::new(request.project_root)
+        .canonical_model_import_dir(request.prepared.id);
     let parent_scene_path = request
         .placement
         .as_ref()
@@ -194,6 +203,7 @@ pub(crate) fn publish_model_wrapper_atomic(
     let mut parent_published = false;
     let mut parent_backup_created = false;
     let mut model_published = false;
+    let mut source_published = false;
 
     if let Some(path) = temporary_parent_path.as_ref() {
         fs::create_dir_all(path.parent().expect("temporary parent path has a parent"))
@@ -220,7 +230,10 @@ pub(crate) fn publish_model_wrapper_atomic(
             .context("normalize controlled Model source filename")?;
             source_name = "model.usda".to_owned();
         }
-        let published_source_path = format!("./source/{source_name}");
+        let published_source_path = format!(
+            "../../imports/{MODELS_DIRECTORY}/{}/{source_name}",
+            request.prepared.id
+        );
 
         wrapper_authoring::author_model_wrapper(
             &temporary_wrapper_path,
@@ -241,7 +254,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            adoption_authoring::prepare_parent_layer(
+            adoption_authoring::prepare_parent_layer_with_model_path(
                 parent_path,
                 temporary_parent_path,
                 request.project_root,
@@ -251,6 +264,8 @@ pub(crate) fn publish_model_wrapper_atomic(
                     .expect("parent path implies Model placement")
                     .parent_scene_id,
                 parent_members,
+                request.prepared.id,
+                &model_directory.join("model.usda"),
             )?;
             authoring::validate_scene_file(
                 temporary_parent_path,
@@ -284,6 +299,14 @@ pub(crate) fn publish_model_wrapper_atomic(
         let models_directory = model_directory
             .parent()
             .context("canonical Model directory has no parent")?;
+        let imports_directory = source_directory
+            .parent()
+            .context("canonical Model import directory has no parent")?;
+        fs::create_dir_all(imports_directory)
+            .context("create canonical Model imports directory")?;
+        fs::rename(&temporary_source_directory, &source_directory)
+            .context("publish canonical Model import closure")?;
+        source_published = true;
         fs::create_dir_all(models_directory).context("create canonical Model directory")?;
         fs::rename(&temporary_model_directory, &model_directory)
             .context("publish canonical Model wrapper directory")?;
@@ -305,6 +328,9 @@ pub(crate) fn publish_model_wrapper_atomic(
         Err(error) => {
             if model_published && model_directory.exists() {
                 let _ = fs::remove_dir_all(&model_directory);
+            }
+            if source_published && source_directory.exists() {
+                let _ = fs::remove_dir_all(&source_directory);
             }
             if parent_published {
                 if parent_backup_created {

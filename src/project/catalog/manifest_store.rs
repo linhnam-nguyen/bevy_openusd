@@ -16,7 +16,7 @@ impl ManifestStore {
         manifest.validate().context("validate Project manifest")?;
         let bytes = serde_json::to_vec_pretty(&manifest.canonicalized())
             .context("serialize canonical Project manifest")?;
-        let directory = ProjectStorageLayout::new(project_root).metadata_dir();
+        let directory = ProjectStorageLayout::new(project_root).root().to_owned();
         fs::create_dir_all(&directory).context("create Project metadata directory")?;
 
         let temporary_path = directory.join(format!(".project.{}.tmp", Uuid::new_v4()));
@@ -25,7 +25,8 @@ impl ManifestStore {
     }
 
     pub(crate) fn read_validated(project_root: &Path) -> Result<ValidatedProjectManifest> {
-        let path = manifest_path(project_root);
+        let layout = ProjectStorageLayout::new(project_root);
+        let path = layout.readable_manifest_path();
         let bytes =
             fs::read(&path).with_context(|| format!("read Project manifest {}", path.display()))?;
         let manifest: ProjectManifestV1 = serde_json::from_slice(&bytes)
@@ -35,7 +36,7 @@ impl ManifestStore {
             .migrate_legacy()
             .context("migrate Project manifest")?
             .canonicalized();
-        if migrated != manifest {
+        if migrated != manifest && path == layout.canonical_manifest_path() {
             Self::write_manifest_atomic(project_root, &migrated)
                 .context("persist migrated Project manifest")?;
         }
@@ -46,7 +47,7 @@ impl ManifestStore {
 }
 
 pub(crate) fn manifest_path(project_root: &Path) -> std::path::PathBuf {
-    ProjectStorageLayout::new(project_root).manifest_path()
+    ProjectStorageLayout::new(project_root).canonical_manifest_path()
 }
 
 pub(crate) fn write_bytes_atomic(
@@ -95,7 +96,7 @@ fn sync_parent_best_effort(parent: Option<&Path>) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::HashSet, fs};
 
     use tempfile::tempdir;
     use usd_project::{
@@ -175,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn reading_a_legacy_manifest_persists_deterministic_display_names() {
+    fn reading_a_manifest_persists_deterministic_display_names() {
         let directory = tempdir().unwrap();
         let manifest = manifest();
         let path = super::manifest_path(directory.path());
@@ -201,7 +202,10 @@ mod tests {
             .iter()
             .map(|scene| scene.display_name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(scene_names, ["scene-b", "scene-a"]);
+        assert_eq!(
+            scene_names.into_iter().collect::<HashSet<_>>(),
+            HashSet::from(["scene-a", "scene-b"])
+        );
         assert_eq!(validated.raw().models[0].display_name, "model");
         let persisted: ProjectManifestV1 =
             serde_json::from_slice(&fs::read(path).unwrap()).unwrap();

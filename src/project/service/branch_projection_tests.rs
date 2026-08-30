@@ -37,12 +37,8 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
     run_git(&repository, &["commit", "-m", "main Project"]);
     run_git(&repository, &["branch", "broken-feature"]);
     run_git(&repository, &["checkout", "broken-feature"]);
-    fs::write(
-        repository.join(".usdhub/project.json"),
-        b"not a Project manifest",
-    )
-    .unwrap();
-    run_git(&repository, &["add", ".usdhub/project.json"]);
+    fs::write(repository.join("project.json"), b"not a Project manifest").unwrap();
+    run_git(&repository, &["add", "project.json"]);
     run_git(&repository, &["commit", "-m", "break Project metadata"]);
     run_git(&repository, &["checkout", "main"]);
 

@@ -18,6 +18,7 @@ use usd_project::SceneId;
 use uuid::Uuid;
 
 use super::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard};
+use crate::project::{model_wrapper::model_wrapper_path, storage::ProjectStorageLayout};
 
 #[path = "live_export.rs"]
 mod live_export;
@@ -194,10 +195,8 @@ fn export_entries(
             source: scene_path(project_root, scene_id),
             archive: format!("{SCENES_DIRECTORY}/{scene_id}.usda"),
         });
-        let source_directory = project_root
-            .join(".usdhub")
-            .join(SCENE_SOURCES_DIRECTORY)
-            .join(scene_id.to_string());
+        let source_directory =
+            ProjectStorageLayout::new(project_root).readable_scene_import_dir(scene_id);
         add_directory_entries(
             &source_directory,
             &format!("{SCENE_SOURCES_DIRECTORY}/{scene_id}"),
@@ -210,18 +209,16 @@ fn export_entries(
         if manifest.model(model_id).is_none() {
             return Err(export_error());
         }
-        let model_directory = project_root
-            .join(".usdhub")
-            .join(MODELS_DIRECTORY)
-            .join(model_id.to_string());
-        let wrapper = model_directory.join("model.usda");
+        let wrapper = model_wrapper_path(project_root, model_id);
         entries.push(ExportEntry {
             source: wrapper,
             archive: format!("{MODELS_DIRECTORY}/{model_id}/model.usda"),
         });
+        let source_directory =
+            ProjectStorageLayout::new(project_root).readable_model_import_dir(model_id);
         add_directory_entries(
-            &model_directory.join("source"),
-            &format!("{MODELS_DIRECTORY}/{model_id}/source"),
+            &source_directory,
+            &format!("imports/models/{model_id}"),
             &mut entries,
         )?;
     }

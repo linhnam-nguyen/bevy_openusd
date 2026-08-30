@@ -32,14 +32,15 @@ fn create_project_keeps_head_unborn_and_registers_last() {
     );
     assert!(repository.head().unwrap().is_none());
     assert!(project_root.join(".git").is_dir());
-    assert!(project_root.join(".usdhub/project.json").is_file());
+    assert!(project_root.join("project.json").is_file());
+    assert!(!project_root.join(".usdhub/project.json").is_file());
     assert!(project_root.join(".usdhub/cache").is_dir());
     assert!(project_root.join(".usdhub/recovery").is_dir());
     assert_eq!(fs::read(parent.join("keep.txt")).unwrap(), b"user data");
     assert!(
         fs::read_to_string(project_root.join(".gitignore"))
             .unwrap()
-            .contains(".usdhub/cache/")
+            .contains(".usdhub/\n")
     );
     assert_eq!(
         WorkspaceRegistry::load(registry_path)
@@ -254,7 +255,7 @@ fn native_project_with_deleted_local_state_remains_importable() {
     assert_eq!(inspection.display_name, summary.name);
     assert_eq!(
         fs::read_dir(project_root.join(".usdhub")).unwrap().count(),
-        2
+        0
     );
 
     service.import_project(&project_root, &inspection).unwrap();
@@ -282,7 +283,7 @@ fn confirmed_adoption_adds_metadata_without_rewriting_git_history() {
     assert_eq!(summary.name, "adopted");
     assert!(repository.head().unwrap().is_none());
     assert!(project_root.join("user.usda").is_file());
-    assert!(project_root.join(".usdhub/project.json").is_file());
+    assert!(project_root.join("project.json").is_file());
     assert!(project_root.join(".usdhub/cache").is_dir());
     assert!(
         WorkspaceRegistry::load(registry_path)
@@ -293,28 +294,29 @@ fn confirmed_adoption_adds_metadata_without_rewriting_git_history() {
 }
 
 #[test]
-fn broad_ignore_conflict_is_reported_without_mutation() {
+fn broad_ignore_is_compatible_with_canonical_project_metadata() {
     let directory = tempdir().unwrap();
     let project_root = directory.path().join("conflict");
     usd_git::Repository::init(&project_root).unwrap();
     fs::write(project_root.join(".gitignore"), b".usdhub/\nkeep\n").unwrap();
-    let before = super::import_tests::snapshot(&project_root);
     let registry_path = directory.path().join("workspace.json");
     let mut service = ProjectApplicationService::open(&registry_path).unwrap();
     let inspection = service.inspect_project(&project_root).unwrap();
 
     assert!(
-        inspection
+        !inspection
             .warnings
             .contains(&ProjectInspectionWarning::BroadUsdHubIgnore)
     );
-    assert!(matches!(
-        service.import_project(&project_root, &inspection),
-        Err(ProjectWriteError::Invalid {
-            code: ProjectWriteErrorCode::IgnoreConflict
-        })
-    ));
-    assert_eq!(before, super::import_tests::snapshot(&project_root));
+    let summary = service.import_project(&project_root, &inspection).unwrap();
+    assert!(project_root.join("project.json").is_file());
+    assert!(!project_root.join(".usdhub/project.json").exists());
+    assert!(
+        WorkspaceRegistry::load(registry_path)
+            .unwrap()
+            .get(summary.id)
+            .is_some()
+    );
 }
 
 #[test]
@@ -364,7 +366,7 @@ fn adoption_failure_restores_a_pre_existing_gitignore_byte_for_byte() {
         fs::read(project_root.join(".gitignore")).unwrap(),
         original_ignore
     );
-    assert!(!project_root.join(".usdhub/project.json").exists());
+    assert!(!project_root.join("project.json").exists());
     assert_eq!(
         fs::read(project_root.join(".usdhub/cache")).unwrap(),
         b"user data"

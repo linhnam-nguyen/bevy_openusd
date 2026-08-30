@@ -16,13 +16,29 @@ pub(crate) fn author_scene_member(
     project_root: &Path,
     member: &SceneMember,
 ) -> Result<()> {
+    author_scene_member_with_target_path(stage, project_root, member, None)
+}
+
+pub(crate) fn author_scene_member_with_target_path(
+    stage: &Stage,
+    project_root: &Path,
+    member: &SceneMember,
+    target_path: Option<&Path>,
+) -> Result<()> {
     stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
         .set_type_name("Xform")?;
     let (asset_path, referenced_prim) = match member.target {
-        SceneMemberTarget::Scene(scene_id) => (scene_path(project_root, scene_id), SCENE_ROOT_PRIM),
+        SceneMemberTarget::Scene(scene_id) => (
+            target_path
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| scene_path(project_root, scene_id)),
+            SCENE_ROOT_PRIM,
+        ),
         SceneMemberTarget::Model(model_id) => (
-            crate::project::model_wrapper::model_wrapper_path(project_root, model_id),
+            target_path.map(Path::to_path_buf).unwrap_or_else(|| {
+                crate::project::model_wrapper::model_wrapper_path(project_root, model_id)
+            }),
             "ModelRoot",
         ),
     };

@@ -19,13 +19,12 @@ use anyhow::{Context, Result};
 use openusd::usd::{PrimPredicate, Stage};
 use project_protocol::{ProjectCommitTarget, ProjectWriteError, ProjectWriteErrorCode};
 use usd_model::SnapshotSource;
-use usd_project::{ProjectId, SceneId};
+use usd_project::{ProjectId, ProjectRoot, SceneId};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::{ProjectRuntimeAuthority, ProjectRuntimeSnapshot};
 use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
 
-const SCENES_RELATIVE_DIRECTORY: &str = ".usdhub/scenes";
 const SEMANTIC_CACHE_RELATIVE_PATH: &str = ".usdhub/cache/semantic-snapshots.db";
 const RUNTIME_LEASE_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -159,9 +158,16 @@ pub(super) fn overlay_runtime_snapshot(
             code: ProjectWriteErrorCode::SceneNotFound,
         });
     }
-    let path = staging
-        .join(SCENES_RELATIVE_DIRECTORY)
-        .join(format!("{}.usda", snapshot.scene_id));
+    let scene = manifest
+        .scene(snapshot.scene_id)
+        .ok_or(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::SceneNotFound,
+        })?;
+    let path = crate::project::scene::authoring::scene_path_for_entry(
+        staging,
+        scene,
+        manifest.raw().root == ProjectRoot::Scene(snapshot.scene_id),
+    );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|_| commit_error())?;
     }
@@ -182,9 +188,17 @@ pub(super) fn persist_semantic_snapshot(
     scene_id: SceneId,
     revision: &str,
 ) -> Result<()> {
-    let stage_path = staging
-        .join(SCENES_RELATIVE_DIRECTORY)
-        .join(format!("{scene_id}.usda"));
+    let staged_manifest =
+        crate::project::catalog::manifest_store::ManifestStore::read_validated(staging)
+            .context("read staged Project manifest for semantic persistence")?;
+    let scene = staged_manifest
+        .scene(scene_id)
+        .context("staged semantic Scene is not registered")?;
+    let stage_path = crate::project::scene::authoring::scene_path_for_entry(
+        staging,
+        scene,
+        staged_manifest.raw().root == ProjectRoot::Scene(scene_id),
+    );
     let stage_path_string = stage_path.to_string_lossy().into_owned();
     let stage = Stage::open(&stage_path_string)
         .with_context(|| format!("open committed runtime Scene {}", stage_path.display()))?;

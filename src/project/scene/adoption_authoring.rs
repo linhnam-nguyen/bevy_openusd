@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use openusd::{sdf, sdf::Value, usd::Stage};
-use usd_project::{SceneId, SceneMember};
+use usd_project::{ModelId, SceneId, SceneMember, SceneMemberTarget};
 
 use super::authoring;
 
@@ -85,17 +85,87 @@ pub(crate) fn prepare_parent_layer(
     parent_scene_id: SceneId,
     members: &[SceneMember],
 ) -> Result<()> {
+    prepare_parent_layer_inner(
+        existing_path,
+        temporary_path,
+        project_root,
+        parent_scene_id,
+        members,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn prepare_parent_layer_with_scene_path(
+    existing_path: &Path,
+    temporary_path: &Path,
+    project_root: &Path,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+    scene_id: SceneId,
+    scene_path: &Path,
+) -> Result<()> {
+    prepare_parent_layer_inner(
+        existing_path,
+        temporary_path,
+        project_root,
+        parent_scene_id,
+        members,
+        Some((scene_id, scene_path)),
+        None,
+    )
+}
+
+pub(crate) fn prepare_parent_layer_with_model_path(
+    existing_path: &Path,
+    temporary_path: &Path,
+    project_root: &Path,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+    model_id: ModelId,
+    model_path: &Path,
+) -> Result<()> {
+    prepare_parent_layer_inner(
+        existing_path,
+        temporary_path,
+        project_root,
+        parent_scene_id,
+        members,
+        None,
+        Some((model_id, model_path)),
+    )
+}
+
+fn prepare_parent_layer_inner(
+    existing_path: &Path,
+    temporary_path: &Path,
+    project_root: &Path,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+    scene_target: Option<(SceneId, &Path)>,
+    model_target: Option<(ModelId, &Path)>,
+) -> Result<()> {
     let stage = if existing_path.exists() {
         let path_string = existing_path.to_string_lossy().into_owned();
         Stage::open(&path_string).context("open existing parent Scene layer")?
     } else {
         authoring::new_scene_stage(parent_scene_id)?
     };
-    stage
-        .define_prim(format!("/{SCENE_ROOT_PRIM}/Members").as_str())?
-        .set_type_name("Xform")?;
     for member in members {
-        authoring::author_scene_member(&stage, project_root, member)?;
+        let target_path = match (&member.target, model_target) {
+            (SceneMemberTarget::Scene(member_scene_id), _)
+                if scene_target.is_some_and(|(scene_id, _)| *member_scene_id == scene_id) =>
+            {
+                scene_target.map(|(_, path)| path)
+            }
+            (SceneMemberTarget::Model(member_model_id), Some((model_id, path)))
+                if *member_model_id == model_id =>
+            {
+                Some(path)
+            }
+            _ => None,
+        };
+        authoring::author_scene_member_with_target_path(&stage, project_root, member, target_path)?;
     }
     stage
         .root_layer()

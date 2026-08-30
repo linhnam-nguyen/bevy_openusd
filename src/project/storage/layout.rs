@@ -4,7 +4,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use usd_project::{ModelId, ModelManifestEntry, SceneId, SceneManifestEntry, StorageKey};
+use usd_project::{
+    ModelId, ModelManifestEntry, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry,
+    StorageKey,
+};
 
 pub(crate) const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 pub(crate) const SCENES_DIRECTORY: &str = "scenes";
@@ -48,9 +51,16 @@ impl ProjectStorageLayout {
         self.metadata_dir().join(PROJECT_MANIFEST_FILE)
     }
 
-    /// Existing callers remain on the legacy location until C1 switches them.
     pub(crate) fn manifest_path(&self) -> PathBuf {
-        self.legacy_manifest_path()
+        self.canonical_manifest_path()
+    }
+
+    pub(crate) fn readable_manifest_path(&self) -> PathBuf {
+        if self.canonical_manifest_path().is_file() {
+            self.canonical_manifest_path()
+        } else {
+            self.legacy_manifest_path()
+        }
     }
 
     pub(crate) fn scenes_dir(&self) -> PathBuf {
@@ -72,6 +82,29 @@ impl ProjectStorageLayout {
 
     pub(crate) fn scene_path(&self, scene: &SceneManifestEntry) -> PathBuf {
         self.canonical_scene_path(&scene.storage_key)
+    }
+
+    pub(crate) fn readable_scene_path(
+        &self,
+        manifest: &ProjectManifestV1,
+        scene: &SceneManifestEntry,
+    ) -> PathBuf {
+        let canonical = if manifest.root == ProjectRoot::Scene(scene.id) {
+            self.canonical_root_scene_path(&scene.storage_key)
+        } else {
+            self.canonical_scene_path(&scene.storage_key)
+        };
+        if canonical.is_file() {
+            canonical
+        } else if manifest.root != ProjectRoot::Scene(scene.id)
+            && self.canonical_root_scene_path(&scene.storage_key).is_file()
+        {
+            // Transitional compatibility for a pre-C3 root Scene that was
+            // already named by StorageKey but has not yet moved under scenes/.
+            self.canonical_root_scene_path(&scene.storage_key)
+        } else {
+            self.legacy_scene_path(scene.id)
+        }
     }
 
     pub(crate) fn legacy_scene_path(&self, scene_id: SceneId) -> PathBuf {
@@ -108,10 +141,28 @@ impl ProjectStorageLayout {
             .join(scene_id.to_string())
     }
 
+    pub(crate) fn readable_scene_import_dir(&self, scene_id: SceneId) -> PathBuf {
+        let canonical = self.canonical_scene_import_dir(scene_id);
+        if canonical.exists() {
+            canonical
+        } else {
+            self.legacy_scene_import_dir(scene_id)
+        }
+    }
+
     pub(crate) fn canonical_model_import_dir(&self, model_id: ModelId) -> PathBuf {
         self.imports_dir()
             .join(MODELS_DIRECTORY)
             .join(model_id.to_string())
+    }
+
+    pub(crate) fn readable_model_import_dir(&self, model_id: ModelId) -> PathBuf {
+        let canonical = self.canonical_model_import_dir(model_id);
+        if canonical.exists() {
+            canonical
+        } else {
+            self.legacy_model_import_dir(model_id)
+        }
     }
 
     pub(crate) fn legacy_scene_import_dir(&self, scene_id: SceneId) -> PathBuf {
@@ -312,11 +363,11 @@ mod tests {
         let layout = ProjectStorageLayout::new("project");
         assert_eq!(
             layout.manifest_path(),
-            PathBuf::from("project/.usdhub/project.json")
+            PathBuf::from("project/project.json")
         );
         assert_eq!(
-            layout.canonical_manifest_path(),
-            PathBuf::from("project/project.json")
+            layout.legacy_manifest_path(),
+            PathBuf::from("project/.usdhub/project.json")
         );
     }
 }

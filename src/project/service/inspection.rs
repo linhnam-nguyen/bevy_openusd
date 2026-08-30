@@ -5,7 +5,7 @@ use project_protocol::{
     ProjectWriteError, ProjectWriteErrorCode,
 };
 use usd_git::GitRepository;
-use usd_project::{ProjectCapabilities, ProjectContentCounts, ProjectManifestV1, ProjectSummary};
+use usd_project::{ProjectCapabilities, ProjectManifestV1, ProjectSummary};
 
 use super::repository_summary;
 use crate::project::storage::{ProjectStorageLayout, has_broad_usdhub_ignore, read_gitignore};
@@ -27,11 +27,16 @@ pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, 
     let ignore = read_gitignore(project_root).map_err(|_| ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
-    if has_broad_usdhub_ignore(ignore.as_deref().unwrap_or_default()).map_err(|_| {
-        ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::FilesystemFailure,
-        }
-    })? {
+    let manifest_path = layout.readable_manifest_path();
+    let legacy_manifest =
+        layout.legacy_manifest_path().is_file() && !layout.canonical_manifest_path().is_file();
+    if legacy_manifest
+        && has_broad_usdhub_ignore(ignore.as_deref().unwrap_or_default()).map_err(|_| {
+            ProjectWriteError::Failed {
+                code: ProjectWriteErrorCode::FilesystemFailure,
+            }
+        })?
+    {
         warnings.push(ProjectInspectionWarning::BroadUsdHubIgnore);
     }
     if !layout.cache_dir().is_dir() || !layout.recovery_dir().is_dir() {
@@ -51,7 +56,6 @@ pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, 
         warnings.push(ProjectInspectionWarning::TrackedDerivedLocalState);
     }
 
-    let manifest_path = layout.manifest_path();
     let (classification, display_name) = match fs::read(&manifest_path) {
         Ok(bytes) => match serde_json::from_slice::<ProjectManifestV1>(&bytes) {
             Ok(manifest) if manifest.validate_schema_version().is_err() => {
@@ -94,7 +98,7 @@ pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, 
 
 fn unopened_fingerprint(project_root: &Path) -> String {
     let mut hasher = blake3::Hasher::new();
-    for relative in [".gitignore", ".usdhub/project.json"] {
+    for relative in [".gitignore", "project.json", ".usdhub/project.json"] {
         hasher.update(relative.as_bytes());
         hasher.update(&fs::read(project_root.join(relative)).unwrap_or_default());
     }
@@ -106,7 +110,7 @@ fn repository_fingerprint(
     layout: &ProjectStorageLayout,
 ) -> Result<String, ProjectWriteError> {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(&fs::read(layout.manifest_path()).unwrap_or_default());
+    hasher.update(&fs::read(layout.readable_manifest_path()).unwrap_or_default());
     hasher.update(&fs::read(layout.root().join(".gitignore")).unwrap_or_default());
     hasher.update(
         repository

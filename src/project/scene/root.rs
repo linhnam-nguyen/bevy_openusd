@@ -14,7 +14,10 @@ use usd_project::{
 };
 
 use super::authoring;
-use crate::project::{catalog::manifest_store::ManifestStore, model_wrapper::model_wrapper_path};
+use crate::project::{
+    catalog::manifest_store::ManifestStore, model_wrapper::model_wrapper_path,
+    storage::ProjectStorageLayout,
+};
 
 /// Create the protected Root Scene when a Project is first published, or
 /// migrate a legacy Empty/Scene/Model root without changing existing IDs.
@@ -32,7 +35,10 @@ pub(crate) fn ensure_protected_root_scene_atomic(
         .context("validate base Project manifest before Root Scene migration")?;
 
     if let ProjectRoot::Scene(scene_id) = base_manifest.root
-        && is_protected_root_scene(&authoring::scene_path(project_root, scene_id), scene_id)?
+        && is_protected_root_scene(
+            &protected_root_path(project_root, base_manifest, scene_id),
+            scene_id,
+        )?
     {
         return Ok(base_manifest.clone());
     }
@@ -50,13 +56,19 @@ pub(crate) fn ensure_protected_root_scene_atomic(
         .validate()
         .context("validate migrated Project Root Scene manifest")?;
 
-    let root_path = authoring::scene_path(project_root, root_scene_id);
+    let root_entry = next_manifest
+        .scenes
+        .iter()
+        .find(|scene| scene.id == root_scene_id)
+        .expect("new protected Root Scene entry exists");
+    let root_path = authoring::scene_path_for_entry(project_root, root_entry, true);
     ensure!(
         !root_path.exists(),
         "generated protected Root Scene path already exists"
     );
-    authoring::author_scene_atomic_with_graph_and_protection_and_name(
+    authoring::author_scene_atomic_at_path(
         project_root,
+        &root_path,
         root_scene_id,
         &SceneCompositionGraph::default(),
         &members,
@@ -70,6 +82,23 @@ pub(crate) fn ensure_protected_root_scene_atomic(
     }
 
     Ok(next_manifest)
+}
+
+fn protected_root_path(
+    project_root: &Path,
+    manifest: &ProjectManifestV1,
+    scene_id: SceneId,
+) -> std::path::PathBuf {
+    let layout = ProjectStorageLayout::new(project_root);
+    let Some(scene) = manifest.scenes.iter().find(|scene| scene.id == scene_id) else {
+        return layout.legacy_scene_path(scene_id);
+    };
+    let canonical = layout.canonical_root_scene_path(&scene.storage_key);
+    if canonical.exists() || !layout.legacy_scene_path(scene_id).exists() {
+        canonical
+    } else {
+        layout.legacy_scene_path(scene_id)
+    }
 }
 
 pub(crate) fn is_protected_root_scene(path: &Path, expected_scene_id: SceneId) -> Result<bool> {
@@ -102,7 +131,9 @@ fn legacy_root_members(
                 .find(|entry| entry.id == scene_id)
                 .with_context(|| format!("legacy root Scene {scene_id} is not registered"))?;
             ensure!(
-                authoring::scene_path(project_root, scene_id).is_file(),
+                ProjectStorageLayout::new(project_root)
+                    .readable_scene_path(manifest, scene)
+                    .is_file(),
                 "legacy root Scene layer is missing"
             );
             Some(SceneMember {

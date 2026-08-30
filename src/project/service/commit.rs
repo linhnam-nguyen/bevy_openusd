@@ -1,10 +1,6 @@
 //! Git-authoritative Project and Scene commit transactions.
 
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashSet, fs, path::Path};
 
 use project_protocol::{
     ProjectCommitRequest, ProjectCommitResponse, ProjectCommitTarget, ProjectReadError,
@@ -18,10 +14,7 @@ use super::commit_runtime::{
     RuntimeLeaseGuard, overlay_runtime_snapshot, persist_semantic_snapshot,
 };
 
-const MANIFEST_RELATIVE_PATH: &str = ".usdhub/project.json";
-const SCENES_RELATIVE_DIRECTORY: &str = ".usdhub/scenes";
-const MODELS_RELATIVE_DIRECTORY: &str = ".usdhub/models";
-const SCENE_SOURCES_RELATIVE_DIRECTORY: &str = ".usdhub/imports/scenes";
+const MANIFEST_RELATIVE_PATH: &str = "project.json";
 
 pub(super) fn commit(
     service: &mut ProjectApplicationService,
@@ -174,25 +167,32 @@ fn synchronize_scene_scope(
 
     synchronize_manifest_scope(staging, manifest, &scenes, &models)?;
     for scene_id in scenes {
-        synchronize_path(
-            project_root,
-            staging,
-            &PathBuf::from(SCENES_RELATIVE_DIRECTORY).join(format!("{scene_id}.usda")),
-        )?;
-        synchronize_path(
-            project_root,
-            staging,
-            &PathBuf::from(SCENE_SOURCES_RELATIVE_DIRECTORY).join(scene_id.to_string()),
-        )?;
+        let scene_path = crate::project::scene::authoring::scene_path(project_root, scene_id);
+        synchronize_absolute_path(project_root, staging, &scene_path)?;
+        let imports = crate::project::storage::ProjectStorageLayout::new(project_root)
+            .readable_scene_import_dir(scene_id);
+        synchronize_absolute_path(project_root, staging, &imports)?;
     }
     for model_id in models {
-        synchronize_path(
-            project_root,
-            staging,
-            &PathBuf::from(MODELS_RELATIVE_DIRECTORY).join(model_id.to_string()),
-        )?;
+        let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model_id);
+        let model_directory = wrapper.parent().ok_or_else(commit_error)?;
+        synchronize_absolute_path(project_root, staging, model_directory)?;
+        let imports = crate::project::storage::ProjectStorageLayout::new(project_root)
+            .readable_model_import_dir(model_id);
+        synchronize_absolute_path(project_root, staging, &imports)?;
     }
     Ok(())
+}
+
+fn synchronize_absolute_path(
+    source_root: &Path,
+    destination_root: &Path,
+    absolute: &Path,
+) -> Result<(), ProjectWriteError> {
+    let relative = absolute
+        .strip_prefix(source_root)
+        .map_err(|_| commit_error())?;
+    synchronize_path(source_root, destination_root, relative)
 }
 
 fn synchronize_manifest_scope(

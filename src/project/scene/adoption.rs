@@ -12,6 +12,7 @@ use std::{
 use super::{adoption_authoring, adoption_support, authoring};
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::source_closure::materialize_source_closure;
+use crate::project::storage::ProjectStorageLayout;
 use anyhow::{Context, Result, bail, ensure};
 use usd_project::{
     CompositionInspection, ProjectManifestV1, ProjectRoot, SceneCompositionGraph, SceneId,
@@ -144,13 +145,22 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .join(SCENES_DIRECTORY)
         .join(scene_id.to_string());
     let temporary_binding_path = transaction_directory.join("linked-source.json");
-    let final_scene_path = authoring::scene_path(request.project_root, scene_id);
-    let final_source_directory = request
-        .project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join("imports")
-        .join(SCENES_DIRECTORY)
-        .join(scene_id.to_string());
+    let final_scene_path = if scene_is_new {
+        let scene = manifest_candidate
+            .scenes
+            .iter()
+            .find(|entry| entry.id == scene_id)
+            .expect("new Scene manifest entry exists");
+        authoring::scene_path_for_entry(
+            request.project_root,
+            scene,
+            manifest_candidate.root == ProjectRoot::Scene(scene_id),
+        )
+    } else {
+        authoring::scene_path(request.project_root, scene_id)
+    };
+    let final_source_directory =
+        ProjectStorageLayout::new(request.project_root).canonical_scene_import_dir(scene_id);
     let parent_scene_path = request
         .parent_scene_id
         .map(|parent| authoring::scene_path(request.project_root, parent));
@@ -203,15 +213,29 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            adoption_authoring::prepare_parent_layer(
-                parent_scene_path,
-                temporary_parent_path,
-                request.project_root,
-                request
-                    .parent_scene_id
-                    .expect("parent path implies parent identity"),
-                parent_members,
-            )?;
+            if scene_is_new {
+                adoption_authoring::prepare_parent_layer_with_scene_path(
+                    parent_scene_path,
+                    temporary_parent_path,
+                    request.project_root,
+                    request
+                        .parent_scene_id
+                        .expect("parent path implies parent identity"),
+                    parent_members,
+                    scene_id,
+                    &final_scene_path,
+                )?;
+            } else {
+                adoption_authoring::prepare_parent_layer(
+                    parent_scene_path,
+                    temporary_parent_path,
+                    request.project_root,
+                    request
+                        .parent_scene_id
+                        .expect("parent path implies parent identity"),
+                    parent_members,
+                )?;
+            }
             authoring::validate_scene_file(
                 temporary_parent_path,
                 request

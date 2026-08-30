@@ -7,7 +7,7 @@ use usd_project::{
 };
 
 use crate::project::catalog::catalogue::{ProjectCatalogueItem, ProjectCatalogueUnavailableReason};
-use crate::project::scene::authoring::{read_scene_members, scene_path};
+use crate::project::{scene::authoring::read_scene_members, storage::ProjectStorageLayout};
 
 pub(super) fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
     match item {
@@ -78,13 +78,14 @@ pub(super) fn project_tree(
     }));
 
     for scene in scenes {
-        let members =
-            read_scene_members(&scene_path(project_root, scene.id), scene.id).map_err(|_| {
-                ProjectReadError::Unavailable {
-                    project_id: manifest.raw().project_id,
-                    code: ProjectReadErrorCode::InvalidProjectData,
-                }
-            })?;
+        let scene_path =
+            ProjectStorageLayout::new(project_root).readable_scene_path(manifest.raw(), &scene);
+        let members = read_scene_members(&scene_path, scene.id).map_err(|_| {
+            ProjectReadError::Unavailable {
+                project_id: manifest.raw().project_id,
+                code: ProjectReadErrorCode::InvalidProjectData,
+            }
+        })?;
         for member in members {
             match member.target {
                 usd_project::SceneMemberTarget::Scene(target) => {

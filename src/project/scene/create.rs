@@ -96,7 +96,16 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
         .context("create Scene creation transaction directory")?;
 
     let temporary_scene_path = temporary_scene_directory.join(format!("{scene_id}.usda"));
-    let final_scene_path = authoring::scene_path(request.project_root, scene_id);
+    let scene_entry = manifest
+        .scenes
+        .iter()
+        .find(|entry| entry.id == scene_id)
+        .expect("new Scene manifest entry exists");
+    let final_scene_path = crate::project::scene::authoring::scene_path_for_entry(
+        request.project_root,
+        scene_entry,
+        manifest.root == ProjectRoot::Scene(scene_id),
+    );
     let parent_scene_path = request
         .parent_scene_id
         .map(|parent| authoring::scene_path(request.project_root, parent));
@@ -125,7 +134,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            adoption_authoring::prepare_parent_layer(
+            adoption_authoring::prepare_parent_layer_with_scene_path(
                 parent_path,
                 temporary_parent_path,
                 request.project_root,
@@ -133,6 +142,8 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
                     .parent_scene_id
                     .expect("parent path implies parent identity"),
                 parent_members,
+                scene_id,
+                &final_scene_path,
             )?;
             authoring::validate_scene_file(
                 temporary_parent_path,

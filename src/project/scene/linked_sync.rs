@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::{adoption, adoption_authoring, adoption_support, authoring};
 use crate::project::source_closure::materialize_source_closure;
+use crate::project::storage::ProjectStorageLayout;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
@@ -121,12 +122,8 @@ pub(crate) fn sync_linked_scene_atomic(
         final_scene_path.is_file(),
         "linked Scene target has no canonical Scene layer"
     );
-    let final_source_directory = request
-        .project_root
-        .join(PROJECT_METADATA_DIRECTORY)
-        .join("imports")
-        .join(SCENES_DIRECTORY)
-        .join(request.scene_id.to_string());
+    let final_source_directory = ProjectStorageLayout::new(request.project_root)
+        .canonical_scene_import_dir(request.scene_id);
     let final_binding_path =
         crate::project::link::binding_path(request.project_root, request.scene_id);
     ensure!(

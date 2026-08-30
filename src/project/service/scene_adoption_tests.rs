@@ -42,7 +42,12 @@ fn project_level_adoption_places_scene_under_the_protected_root() {
     assert_eq!(adopted.progress.operation_id, "operation-1");
     assert_eq!(adopted.progress.generation, 1);
     assert_eq!(adopted.progress.phase, ProjectImportPhase::Completed);
-    assert!(project_root.join(".usdhub/scenes").is_dir());
+    assert!(
+        project_root
+            .join("imports/scenes")
+            .join(adopted.scene_id.to_string())
+            .is_dir()
+    );
 }
 
 #[test]
@@ -138,7 +143,7 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     );
     let before = fs::read(
         project_root
-            .join(".usdhub/imports/scenes")
+            .join("imports/scenes")
             .join(linked.scene_id.to_string())
             .join("external.usda"),
     )
@@ -161,7 +166,7 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     assert_ne!(
         fs::read(
             project_root
-                .join(".usdhub/imports/scenes")
+                .join("imports/scenes")
                 .join(linked.scene_id.to_string())
                 .join("external.usda"),
         )
@@ -234,7 +239,7 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
     let scene_path = crate::project::scene::authoring::scene_path(&project_root, linked.scene_id);
     let binding_path = crate::project::link::binding_path(&project_root, linked.scene_id);
     let source_snapshot = project_root
-        .join(".usdhub/imports/scenes")
+        .join("imports/scenes")
         .join(linked.scene_id.to_string())
         .join("external.usda");
     let scene_before = fs::read(&scene_path).unwrap();

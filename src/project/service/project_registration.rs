@@ -177,7 +177,7 @@ fn adopt_git_project(
     inspection: &ProjectInspection,
 ) -> Result<ProjectSummary, ProjectWriteError> {
     let layout = ProjectStorageLayout::new(project_root);
-    let had_manifest = layout.manifest_path().exists();
+    let had_manifest = layout.readable_manifest_path().is_file();
     let had_scenes = layout.scenes_dir().exists();
     let had_cache = layout.cache_dir().exists();
     let had_recovery = layout.recovery_dir().exists();
@@ -215,10 +215,13 @@ fn adopt_git_project(
             code: ProjectWriteErrorCode::ManifestUnavailable,
         })?;
         if let ProjectRoot::Scene(scene_id) = migrated_manifest.root {
-            created_root_scene = Some(crate::project::scene::authoring::scene_path(
-                project_root,
-                scene_id,
-            ));
+            if let Some(scene) = migrated_manifest
+                .scenes
+                .iter()
+                .find(|scene| scene.id == scene_id)
+            {
+                created_root_scene = Some(layout.canonical_root_scene_path(&scene.storage_key));
+            }
         }
         let validated =
             ManifestStore::read_validated(project_root).map_err(|_| ProjectWriteError::Failed {

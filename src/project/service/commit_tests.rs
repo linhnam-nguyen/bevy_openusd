@@ -160,25 +160,32 @@ fn scene_commit_uses_fixed_point_ancestors_and_preserves_unrelated_dirty_manifes
         )
         .unwrap();
 
+    let committed_manifest =
+        crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
+            .unwrap();
     for (scene_id, marker) in [
         (root_scene_id, "ChangedRoot"),
         (first.scene_id, "ChangedFirst"),
         (target.scene_id, "ChangedTarget"),
     ] {
-        let path = materialized
-            .path()
-            .join(".usdhub/scenes")
-            .join(format!("{}.usda", scene_id));
+        let path = if scene_id == root_scene_id {
+            materialized.path().join("Closure Project.usda")
+        } else {
+            let scene = committed_manifest.scene(scene_id).unwrap();
+            materialized
+                .path()
+                .join("scenes")
+                .join(format!("{}.usda", scene.storage_key))
+        };
         let content = fs::read_to_string(path).unwrap();
         assert!(
             content.contains(marker),
             "closure omitted {scene_id}: {marker}"
         );
     }
-    let staged_manifest: usd_project::ProjectManifestV1 = serde_json::from_slice(
-        &fs::read(materialized.path().join(".usdhub/project.json")).unwrap(),
-    )
-    .unwrap();
+    let staged_manifest: usd_project::ProjectManifestV1 =
+        serde_json::from_slice(&fs::read(materialized.path().join("project.json")).unwrap())
+            .unwrap();
     assert_eq!(
         staged_manifest
             .scenes

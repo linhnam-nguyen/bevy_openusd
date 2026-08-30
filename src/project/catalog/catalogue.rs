@@ -5,9 +5,10 @@ use usd_project::{
 };
 
 use super::{
-    manifest_store::{ManifestStore, manifest_path},
+    manifest_store::ManifestStore,
     workspace_registry::{WorkspaceProjectEntry, WorkspaceRegistry},
 };
+use crate::project::storage::ProjectStorageLayout;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProjectCatalogueUnavailableReason {
@@ -87,7 +88,7 @@ pub(crate) fn unavailable_reason(
         }
         Err(_) => ProjectCatalogueUnavailableReason::ManifestUnavailable,
         Ok(metadata) if !metadata.is_dir() => ProjectCatalogueUnavailableReason::InvalidManifest,
-        Ok(_) => match fs::metadata(manifest_path(root)) {
+        Ok(_) => match fs::metadata(ProjectStorageLayout::new(root).readable_manifest_path()) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 ProjectCatalogueUnavailableReason::ManifestUnavailable
             }

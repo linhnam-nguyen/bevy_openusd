@@ -125,7 +125,7 @@ fn phase2_freeze_matrix_covers_native_and_adopted_imports_and_missing_locations(
     let adopted = service
         .import_project(&adopted_root, &inspection)
         .expect("adopt generic Git repository");
-    assert!(adopted_root.join(".usdhub/project.json").is_file());
+    assert!(adopted_root.join("project.json").is_file());
     assert!(
         service
             .execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects))

@@ -75,7 +75,9 @@ fn stable_wrapper_survives_original_source_rename() -> Result<()> {
     assert!(
         project
             .path()
-            .join(format!(".usdhub/models/{model_id}/source/model.usda"))
+            .join("imports/models")
+            .join(model_id.to_string())
+            .join("model.usda")
             .exists()
     );
     Ok(())
