@@ -9,7 +9,7 @@ use project_protocol::{
     ProjectDeleteModelRequest, ProjectDeleteSceneRequest, ProjectModelLifecycleResponse,
     ProjectSceneLifecycleResponse, ProjectWriteError, ProjectWriteErrorCode,
 };
-use usd_project::{ModelId, ProjectId, SceneId, SceneMemberId};
+use usd_project::{ProjectId, SceneMemberId};
 use uuid::Uuid;
 
 use super::{ProjectApplicationService, ProjectStageMutation};
@@ -17,7 +17,7 @@ use super::{ProjectApplicationService, ProjectStageMutation};
 #[path = "deletion_graph.rs"]
 mod deletion_graph;
 use deletion_graph::{
-    DeleteTarget, DeletionPlan, build_plan, changed_parents, is_deleted_target, read_composition,
+    DeleteTarget, build_plan, changed_parents, is_deleted_target, read_composition,
 };
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
@@ -109,6 +109,7 @@ fn delete_definition(
     }
 
     let project_root = entry.repository_locator();
+    let previous_manifest = validated.raw().clone();
     let index = read_composition(project_root, &validated)?;
     let plan = build_plan(&index, target);
     let mutation_count = plan.removed_placements.len() + plan.scenes.len() + plan.models.len();
@@ -123,6 +124,34 @@ fn delete_definition(
     fs::create_dir_all(&transaction_directory).map_err(|_| delete_error())?;
     let mut backups = Vec::new();
     let mut tombstones = Vec::new();
+    let mut mutations = Vec::with_capacity(mutation_count);
+    mutations.extend(
+        plan.removed_placements
+            .iter()
+            .map(
+                |(parent_scene_id, placement_id)| ProjectStageMutation::RemoveScenePlacement {
+                    project_id,
+                    parent_scene_id: *parent_scene_id,
+                    placement_id: *placement_id,
+                },
+            ),
+    );
+    mutations.extend(
+        plan.scenes
+            .iter()
+            .map(|scene_id| ProjectStageMutation::DeleteScene {
+                project_id,
+                scene_id: *scene_id,
+            }),
+    );
+    mutations.extend(
+        plan.models
+            .iter()
+            .map(|model_id| ProjectStageMutation::DeleteModel {
+                project_id,
+                model_id: *model_id,
+            }),
+    );
     let result = (|| {
         let changed_parents = changed_parents(&index, &plan);
         for (ordinal, parent_scene_id) in changed_parents.iter().enumerate() {
@@ -194,7 +223,6 @@ fn delete_definition(
             )?);
         }
 
-        let previous_manifest = validated.raw().clone();
         let mut next_manifest = previous_manifest.clone();
         next_manifest
             .scenes
@@ -208,38 +236,17 @@ fn delete_definition(
         )
         .map_err(|_| delete_error())?;
 
-        for (parent_scene_id, placement_id) in &plan.removed_placements {
-            service.stage_mutations.submit_for_project(
-                project_root,
-                ProjectStageMutation::RemoveScenePlacement {
-                    project_id,
-                    parent_scene_id: *parent_scene_id,
-                    placement_id: *placement_id,
-                },
-            )?;
-        }
-        for scene_id in &plan.scenes {
-            service.stage_mutations.submit_for_project(
-                project_root,
-                ProjectStageMutation::DeleteScene {
-                    project_id,
-                    scene_id: *scene_id,
-                },
-            )?;
-        }
-        for model_id in &plan.models {
-            service.stage_mutations.submit_for_project(
-                project_root,
-                ProjectStageMutation::DeleteModel {
-                    project_id,
-                    model_id: *model_id,
-                },
-            )?;
-        }
+        service
+            .stage_mutations
+            .submit_batch_for_project(project_root, &mutations)?;
         Ok(())
     })();
 
     if let Err(error) = result {
+        let _ = crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
+            project_root,
+            &previous_manifest,
+        );
         restore_backups(&backups);
         restore_tombstones(&tombstones);
         let _ = fs::remove_dir_all(&transaction_directory);

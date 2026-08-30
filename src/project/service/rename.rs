@@ -1,9 +1,15 @@
 //! Authoritative rename transactions for Project-managed content.
 
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use project_protocol::{
     ProjectRenameResponse, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
 use usd_project::{ProjectRoot, SceneMemberTarget};
+use uuid::Uuid;
 
 use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
@@ -42,6 +48,7 @@ pub(super) fn rename(
             })?;
     let project_root = entry.repository_locator();
     let mut next_manifest = validated.raw().clone();
+    let mut placement_paths = Vec::new();
 
     match target {
         ProjectWriteTarget::Project(target_project_id) if target_project_id == project_id => {
@@ -59,12 +66,10 @@ pub(super) fn rename(
                     code: ProjectWriteErrorCode::ProtectedRootScene,
                 })?;
             root_entry.display_name = name.to_owned();
-            crate::project::scene::authoring::update_display_name_atomic(
-                &crate::project::scene::authoring::scene_path(project_root, root_scene_id),
-                "/SceneRoot",
-                name,
-            )
-            .map_err(|_| filesystem_error())?;
+            placement_paths.push(crate::project::scene::authoring::scene_path(
+                project_root,
+                root_scene_id,
+            ));
         }
         ProjectWriteTarget::Project(_) => {
             return Err(ProjectWriteError::Invalid {
@@ -85,13 +90,15 @@ pub(super) fn rename(
                     code: ProjectWriteErrorCode::SceneNotFound,
                 })?;
             scene.display_name = name.to_owned();
-            crate::project::scene::authoring::update_display_name_atomic(
-                &crate::project::scene::authoring::scene_path(project_root, scene_id),
-                "/SceneRoot",
-                name,
-            )
-            .map_err(|_| filesystem_error())?;
-            update_placements(service, project_root, &validated, &target, name)?;
+            placement_paths.push(crate::project::scene::authoring::scene_path(
+                project_root,
+                scene_id,
+            ));
+            placement_paths.extend(placement_paths_for_target(
+                project_root,
+                &validated,
+                &target,
+            )?);
         }
         ProjectWriteTarget::Model(model_id) => {
             let model = next_manifest
@@ -102,13 +109,15 @@ pub(super) fn rename(
                     code: ProjectWriteErrorCode::InvalidSelection,
                 })?;
             model.display_name = name.to_owned();
-            crate::project::scene::authoring::update_display_name_atomic(
-                &crate::project::model_wrapper::model_wrapper_path(project_root, model_id),
-                "/ModelRoot",
-                name,
-            )
-            .map_err(|_| filesystem_error())?;
-            update_placements(service, project_root, &validated, &target, name)?;
+            placement_paths.push(crate::project::model_wrapper::model_wrapper_path(
+                project_root,
+                model_id,
+            ));
+            placement_paths.extend(placement_paths_for_target(
+                project_root,
+                &validated,
+                &target,
+            )?);
         }
     }
 
@@ -117,26 +126,110 @@ pub(super) fn rename(
         .map_err(|_| ProjectWriteError::Invalid {
             code: ProjectWriteErrorCode::InvalidSelection,
         })?;
-    ManifestStore::write_manifest_atomic(project_root, &next_manifest)
-        .map_err(|_| filesystem_error())?;
-    service.stage_mutations.submit_for_project(
+    placement_paths.push(crate::project::catalog::manifest_store::manifest_path(
+        project_root,
+    ));
+    placement_paths.sort();
+    placement_paths.dedup();
+
+    service.stage_mutations.ensure_capacity(project_root)?;
+    let transaction_directory = project_root
+        .join(".usdhub")
+        .join(".transactions")
+        .join(format!("rename-{}", Uuid::new_v4()));
+    fs::create_dir_all(&transaction_directory).map_err(|_| filesystem_error())?;
+    let mut backups = Vec::new();
+    let result = (|| {
+        for (ordinal, original) in placement_paths.iter().enumerate() {
+            let backup = transaction_directory
+                .join("files")
+                .join(format!("{ordinal}.backup"));
+            if let Some(parent) = backup.parent() {
+                fs::create_dir_all(parent).map_err(|_| filesystem_error())?;
+            }
+            fs::copy(original, &backup).map_err(|_| filesystem_error())?;
+            backups.push(FileBackup {
+                original: original.clone(),
+                backup,
+            });
+        }
+
+        match target {
+            ProjectWriteTarget::Project(_) => {
+                let root_scene_id = match next_manifest.root {
+                    ProjectRoot::Scene(root_scene_id) => root_scene_id,
+                    ProjectRoot::Empty | ProjectRoot::Model(_) => {
+                        return Err(ProjectWriteError::Invalid {
+                            code: ProjectWriteErrorCode::InvalidRootForComposition,
+                        });
+                    }
+                };
+                crate::project::scene::authoring::update_display_name_atomic(
+                    &crate::project::scene::authoring::scene_path(project_root, root_scene_id),
+                    "/SceneRoot",
+                    name,
+                )
+                .map_err(|_| filesystem_error())?;
+            }
+            ProjectWriteTarget::Scene(scene_id) => {
+                crate::project::scene::authoring::update_display_name_atomic(
+                    &crate::project::scene::authoring::scene_path(project_root, scene_id),
+                    "/SceneRoot",
+                    name,
+                )
+                .map_err(|_| filesystem_error())?;
+                update_placements(project_root, &validated, &target, name)?;
+            }
+            ProjectWriteTarget::Model(model_id) => {
+                crate::project::scene::authoring::update_display_name_atomic(
+                    &crate::project::model_wrapper::model_wrapper_path(project_root, model_id),
+                    "/ModelRoot",
+                    name,
+                )
+                .map_err(|_| filesystem_error())?;
+                update_placements(project_root, &validated, &target, name)?;
+            }
+        }
+
+        ManifestStore::write_manifest_atomic(project_root, &next_manifest)
+            .map_err(|_| filesystem_error())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        restore_file_backups(&backups);
+        let _ = fs::remove_dir_all(&transaction_directory);
+        return Err(error);
+    }
+
+    let project = match super::inspection::project_summary(&next_manifest, project_root) {
+        Ok(project) => project,
+        Err(error) => {
+            restore_file_backups(&backups);
+            let _ = fs::remove_dir_all(&transaction_directory);
+            return Err(error);
+        }
+    };
+    if let Err(error) = service.stage_mutations.submit_for_project(
         project_root,
         super::ProjectStageMutation::Rename {
             project_id,
             target: target.clone(),
             name: name.to_owned(),
         },
-    )?;
+    ) {
+        restore_file_backups(&backups);
+        let _ = fs::remove_dir_all(&transaction_directory);
+        return Err(error);
+    }
     let _ = service.cache_warm.enqueue_affected(
         project_root,
         crate::project::cache::ProjectCacheTarget::ProjectRoot,
     );
-    let project = super::inspection::project_summary(&next_manifest, project_root)?;
+    let _ = fs::remove_dir_all(&transaction_directory);
     Ok(ProjectRenameResponse { project, target })
 }
 
 fn update_placements(
-    _service: &ProjectApplicationService,
     project_root: &std::path::Path,
     manifest: &usd_project::ValidatedProjectManifest,
     target: &ProjectWriteTarget,
@@ -168,6 +261,46 @@ fn update_placements(
         }
     }
     Ok(())
+}
+
+fn placement_paths_for_target(
+    project_root: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    target: &ProjectWriteTarget,
+) -> Result<Vec<PathBuf>, ProjectWriteError> {
+    let mut paths = Vec::new();
+    for scene in manifest.scenes() {
+        let scene_path = crate::project::scene::authoring::scene_path(project_root, scene.id);
+        let members = crate::project::scene::authoring::read_scene_members(&scene_path, scene.id)
+            .map_err(|_| filesystem_error())?;
+        if members
+            .iter()
+            .any(|member| match (target, member.target.clone()) {
+                (ProjectWriteTarget::Scene(id), SceneMemberTarget::Scene(target_id)) => {
+                    *id == target_id
+                }
+                (ProjectWriteTarget::Model(id), SceneMemberTarget::Model(target_id)) => {
+                    *id == target_id
+                }
+                _ => false,
+            })
+        {
+            paths.push(scene_path);
+        }
+    }
+    Ok(paths)
+}
+
+struct FileBackup {
+    original: PathBuf,
+    backup: PathBuf,
+}
+
+fn restore_file_backups(backups: &[FileBackup]) {
+    for backup in backups.iter().rev() {
+        let _ = fs::remove_file(&backup.original);
+        let _ = fs::rename(&backup.backup, &backup.original);
+    }
 }
 
 fn filesystem_error() -> ProjectWriteError {

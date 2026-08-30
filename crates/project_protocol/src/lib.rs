@@ -46,11 +46,10 @@ pub use write::{
     ProjectImportRequest, ProjectInspection, ProjectInspectionClassification,
     ProjectInspectionWarning, ProjectLifecycleRequest, ProjectLifecycleResponse,
     ProjectLinkSceneRequest, ProjectModelLifecycleResponse, ProjectModelWriteResponse,
-    ProjectRemoveScenePlacementRequest, ProjectRenameRequest, ProjectRenameResponse,
-    ProjectSceneAdoptionResponse, ProjectSceneExportResponse, ProjectSceneLifecycleResponse,
-    ProjectSceneWriteResponse, ProjectSyncLinkedSceneRequest, ProjectWriteCommand,
-    ProjectWriteError, ProjectWriteErrorCode, ProjectWriteReply, ProjectWriteRequest,
-    ProjectWriteResponse, ProjectWriteTarget,
+    ProjectRenameRequest, ProjectRenameResponse, ProjectSceneAdoptionResponse,
+    ProjectSceneExportResponse, ProjectSceneLifecycleResponse, ProjectSceneWriteResponse,
+    ProjectSyncLinkedSceneRequest, ProjectWriteCommand, ProjectWriteError, ProjectWriteErrorCode,
+    ProjectWriteReply, ProjectWriteRequest, ProjectWriteResponse, ProjectWriteTarget,
 };
 
 #[cfg(test)]
@@ -313,15 +312,9 @@ mod tests {
     fn lifecycle_commands_round_trip_without_filesystem_paths() {
         let project_id = ProjectId::new_v4();
         let parent_scene_id = usd_project::SceneId::new_v4();
-        let placement_id = usd_project::SceneMemberId::new_v4();
         let requests = [
             ProjectWriteRequest::RemoveProject(ProjectLifecycleRequest { project_id }),
             ProjectWriteRequest::DeleteProject(ProjectLifecycleRequest { project_id }),
-            ProjectWriteRequest::RemoveScenePlacement(ProjectRemoveScenePlacementRequest {
-                project_id,
-                parent_scene_id,
-                placement_id,
-            }),
             ProjectWriteRequest::DeleteScene(ProjectDeleteSceneRequest {
                 project_id,
                 scene_id: parent_scene_id,

@@ -259,13 +259,6 @@ pub struct ProjectSceneExportResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ProjectRemoveScenePlacementRequest {
-    pub project_id: ProjectId,
-    pub parent_scene_id: SceneId,
-    pub placement_id: SceneMemberId,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectDeleteSceneRequest {
     pub project_id: ProjectId,
     pub scene_id: SceneId,
@@ -315,7 +308,6 @@ pub enum ProjectWriteRequest {
     SwitchBranch(ProjectBranchSwitchRequest),
     RemoveProject(ProjectLifecycleRequest),
     DeleteProject(ProjectLifecycleRequest),
-    RemoveScenePlacement(ProjectRemoveScenePlacementRequest),
     DeleteScene(ProjectDeleteSceneRequest),
     DeleteModel(ProjectDeleteModelRequest),
     CommitProject(ProjectCommitRequest),
@@ -336,7 +328,6 @@ pub enum ProjectWriteResponse {
     BranchSwitched(ProjectBranchSwitchResponse),
     ProjectRemoved(ProjectLifecycleResponse),
     ProjectDeleted(ProjectLifecycleResponse),
-    ScenePlacementRemoved(ProjectSceneLifecycleResponse),
     SceneDeleted(ProjectSceneLifecycleResponse),
     ModelDeleted(ProjectModelLifecycleResponse),
     Committed(ProjectCommitResponse),

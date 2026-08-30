@@ -23,7 +23,7 @@ pub(crate) use display_name_authoring::{
 };
 #[path = "member_lifecycle.rs"]
 mod member_lifecycle;
-pub(crate) use member_lifecycle::{remove_scene_member_atomic, replace_scene_members_atomic};
+pub(crate) use member_lifecycle::replace_scene_members_atomic;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const SCENES_DIRECTORY: &str = "scenes";
