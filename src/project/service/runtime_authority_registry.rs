@@ -18,6 +18,10 @@ pub(crate) fn registered_project_roots(registry_path: Option<&Path>) -> Vec<(Pro
     let Some(path) = path else {
         return Vec::new();
     };
+    load_project_roots(&path)
+}
+
+pub(crate) fn load_project_roots(path: &Path) -> Vec<(ProjectId, PathBuf)> {
     let Ok(registry) = crate::project::catalog::workspace_registry::WorkspaceRegistry::load(path)
     else {
         return Vec::new();

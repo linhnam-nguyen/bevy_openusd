@@ -20,6 +20,9 @@ fn active_runtime_stage_returns_ready_and_freezes_authoring() {
     let scene_id = usd_project::SceneId::new_v4();
     let mut world = World::new();
     let queue = crate::project::service::ProjectRuntimeAuthorityQueue::default();
+    queue
+        .prepare_request_claim(directory.path(), "active-request")
+        .expect("prepare runtime request claim");
     world.insert_resource(ProjectRuntimeAuthorityRuntime {
         queue: queue.clone(),
         active_lease: None,
@@ -55,7 +58,19 @@ fn active_runtime_stage_returns_ready_and_freezes_authoring() {
 fn timed_out_consumed_request_never_freezes_or_creates_a_lease() {
     let directory = tempfile::tempdir().expect("temporary runtime root");
     let project_id = usd_project::ProjectId::new_v4();
-    let queue = Arc::new(crate::project::service::ProjectRuntimeAuthorityQueue::default());
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry =
+        crate::project::catalog::workspace_registry::WorkspaceRegistry::load(&registry_path)
+            .expect("workspace registry");
+    registry
+        .register(project_id, directory.path(), None)
+        .expect("register project root");
+    let queue = Arc::new(
+        crate::project::service::ProjectRuntimeAuthorityQueue::with_timeout_and_registry_path(
+            Duration::from_millis(750),
+            &registry_path,
+        ),
+    );
     let caller_queue = queue.clone();
     let root = directory.path().to_path_buf();
     let caller = thread::spawn(move || {
@@ -82,7 +97,7 @@ fn timed_out_consumed_request_never_freezes_or_creates_a_lease() {
     }
     assert!(saw_request, "runtime request should be published");
     let requests = queue
-        .consume_pending(directory.path())
+        .consume_pending()
         .expect("consume request before timeout");
     assert_eq!(requests.len(), 1);
     let request_id = requests[0].clone().into_request().request_id().to_owned();
@@ -131,6 +146,75 @@ fn timed_out_consumed_request_never_freezes_or_creates_a_lease() {
             .active_lease
             .is_none()
     );
+}
+
+#[test]
+fn timeout_between_export_and_lease_claim_cannot_publish_ready() {
+    let directory = tempfile::tempdir().expect("temporary runtime root");
+    let project_id = usd_project::ProjectId::new_v4();
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry =
+        crate::project::catalog::workspace_registry::WorkspaceRegistry::load(&registry_path)
+            .expect("workspace registry");
+    registry
+        .register(project_id, directory.path(), None)
+        .expect("register project root");
+    let queue = crate::project::service::ProjectRuntimeAuthorityQueue::with_workspace_registry_path(
+        &registry_path,
+    );
+    queue
+        .prepare_request_claim(directory.path(), "race-request")
+        .expect("prepare runtime request claim");
+
+    let stage = openusd::usd::Stage::builder()
+        .in_memory("runtime-lease-race.usda")
+        .expect("in-memory stage");
+    let live = usd_bevy::LiveStage::new(stage);
+    let scene_id = usd_project::SceneId::new_v4();
+    let mut world = World::new();
+    world.insert_resource(ProjectRuntimeAuthorityRuntime {
+        queue: queue.clone(),
+        active_lease: None,
+    });
+    world.insert_non_send(live);
+    let cancel_after_export = || {
+        assert!(
+            queue
+                .cancel_request_for_test(directory.path(), "race-request")
+                .expect("cancel request after export")
+        );
+    };
+
+    let response = super::super::runtime_snapshot_response_with_claim_hook(
+        &mut world,
+        "race-request",
+        project_id,
+        scene_id,
+        &queue,
+        directory.path(),
+        &cancel_after_export,
+    );
+
+    assert!(matches!(
+        response,
+        crate::project::service::ProjectRuntimeResponse::Failed {
+            code: project_protocol::ProjectWriteErrorCode::Busy,
+            ..
+        }
+    ));
+    assert!(
+        !world
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage")
+            .is_authoring_frozen()
+    );
+    assert!(
+        world
+            .resource::<ProjectRuntimeAuthorityRuntime>()
+            .active_lease
+            .is_none()
+    );
+    assert!(queue.is_cancelled(directory.path(), "race-request"));
 }
 
 #[test]

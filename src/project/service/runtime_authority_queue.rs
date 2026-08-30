@@ -13,18 +13,21 @@ use uuid::Uuid;
 
 use super::{
     ProjectRuntimeAuthority, ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse,
-    ProjectRuntimeSnapshot, registry, runtime_error, unix_time_ms,
+    ProjectRuntimeSnapshot, runtime_error, unix_time_ms,
 };
 
-const RUNTIME_DIRECTORY: &str = ".usdhub/cache/project-runtime-authority";
-const REQUESTS_DIRECTORY: &str = "requests";
-const RESPONSES_DIRECTORY: &str = "responses";
-const CANCELLATIONS_DIRECTORY: &str = "cancellations";
+#[path = "runtime_authority_queue_storage.rs"]
+mod storage;
+use storage::{REQUESTS_DIRECTORY, RESPONSES_DIRECTORY, RegistryCache};
+
 const RESPONSE_TIMEOUT: Duration = Duration::from_millis(750);
+const CLAIM_RESPONSE_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct ProjectRuntimeAuthorityQueue {
     file_lock: Arc<Mutex<()>>,
+    registry_cache: Arc<Mutex<RegistryCache>>,
+    last_cleanup: Arc<Mutex<Option<Instant>>>,
     timeout: Duration,
     request_ttl: Duration,
     workspace_registry_path: Option<PathBuf>,
@@ -34,6 +37,8 @@ impl Default for ProjectRuntimeAuthorityQueue {
     fn default() -> Self {
         Self {
             file_lock: Arc::new(Mutex::new(())),
+            registry_cache: Arc::new(Mutex::new(RegistryCache::default())),
+            last_cleanup: Arc::new(Mutex::new(None)),
             timeout: RESPONSE_TIMEOUT,
             request_ttl: RESPONSE_TIMEOUT.saturating_add(Duration::from_millis(250)),
             workspace_registry_path: None,
@@ -42,13 +47,19 @@ impl Default for ProjectRuntimeAuthorityQueue {
 }
 
 impl ProjectRuntimeAuthorityQueue {
+    pub fn with_workspace_registry_path(registry_path: impl Into<PathBuf>) -> Self {
+        Self {
+            workspace_registry_path: Some(registry_path.into()),
+            ..Self::default()
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn with_timeout(timeout: Duration) -> Self {
         Self {
-            file_lock: Arc::new(Mutex::new(())),
             timeout,
             request_ttl: timeout,
-            workspace_registry_path: None,
+            ..Self::default()
         }
     }
 
@@ -59,81 +70,90 @@ impl ProjectRuntimeAuthorityQueue {
     ) -> Self {
         Self {
             file_lock: Arc::new(Mutex::new(())),
+            registry_cache: Arc::new(Mutex::new(RegistryCache::default())),
+            last_cleanup: Arc::new(Mutex::new(None)),
             timeout,
-            request_ttl: timeout,
+            request_ttl: timeout.saturating_add(Duration::from_millis(250)),
             workspace_registry_path: Some(registry_path.into()),
         }
     }
 
-    pub(crate) fn consume_pending(
-        &self,
-        project_root: &Path,
-    ) -> Result<Vec<ProjectRuntimeEnvelope>, ProjectWriteError> {
-        let _guard = self
-            .file_lock
-            .lock()
-            .expect("Project runtime authority queue is not poisoned");
-        let directory = runtime_root(project_root).join(REQUESTS_DIRECTORY);
-        if !directory.is_dir() {
-            return Ok(Vec::new());
-        }
-        let mut entries = fs::read_dir(directory)
-            .map_err(|_| runtime_error())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| runtime_error())?;
-        entries.sort_by_key(|entry| entry.file_name());
-        let mut requests = Vec::new();
-        for entry in entries {
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            let bytes = fs::read(&path).map_err(|_| runtime_error())?;
-            let envelope = serde_json::from_slice(&bytes).map_err(|_| runtime_error())?;
-            fs::remove_file(path).map_err(|_| runtime_error())?;
-            requests.push(envelope);
-        }
-        Ok(requests)
+    fn runtime_root(&self, project_root: &Path) -> PathBuf {
+        storage::runtime_root(self, project_root)
+    }
+
+    fn maybe_cleanup(&self, root: &Path) {
+        storage::maybe_cleanup(self, root);
+    }
+
+    pub(crate) fn consume_pending(&self) -> Result<Vec<ProjectRuntimeEnvelope>, ProjectWriteError> {
+        storage::consume_pending(self)
     }
 
     pub(crate) fn registered_project_roots(&self) -> Vec<(ProjectId, PathBuf)> {
-        registry::registered_project_roots(self.workspace_registry_path.as_deref())
+        storage::registered_project_roots(self)
     }
 
     pub(crate) fn is_cancelled(&self, project_root: &Path, request_id: &str) -> bool {
-        runtime_root(project_root)
-            .join(CANCELLATIONS_DIRECTORY)
-            .join(format!("{request_id}.json"))
-            .is_file()
+        storage::is_cancelled(self, project_root, request_id)
     }
 
-    pub(crate) fn clear_cancellation(&self, project_root: &Path, request_id: &str) {
-        let path = runtime_root(project_root)
-            .join(CANCELLATIONS_DIRECTORY)
-            .join(format!("{request_id}.json"));
-        let _ = fs::remove_file(path);
+    fn create_waiting_claim(
+        &self,
+        project_root: &Path,
+        request_id: &str,
+    ) -> Result<(), ProjectWriteError> {
+        storage::create_waiting_claim(self, project_root, request_id)
+    }
+
+    pub(crate) fn claim_request(
+        &self,
+        project_root: &Path,
+        request_id: &str,
+    ) -> Result<bool, ProjectWriteError> {
+        storage::claim_request(self, project_root, request_id)
+    }
+
+    fn cancel_waiting_request(
+        &self,
+        project_root: &Path,
+        request_id: &str,
+    ) -> Result<bool, ProjectWriteError> {
+        storage::cancel_waiting_request(self, project_root, request_id)
+    }
+
+    pub(crate) fn clear_request_state(&self, project_root: &Path, request_id: &str) {
+        storage::clear_request_state(self, project_root, request_id);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prepare_request_claim(
+        &self,
+        project_root: &Path,
+        request_id: &str,
+    ) -> Result<(), ProjectWriteError> {
+        self.create_waiting_claim(project_root, request_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cancel_request_for_test(
+        &self,
+        project_root: &Path,
+        request_id: &str,
+    ) -> Result<bool, ProjectWriteError> {
+        self.cancel_waiting_request(project_root, request_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cleanup_for_test(&self, project_root: &Path) {
+        storage::cleanup_for_test(self, project_root);
     }
 
     pub(crate) fn publish_response(
         &self,
-        project_root: &Path,
         response: &ProjectRuntimeResponse,
     ) -> Result<(), ProjectWriteError> {
-        let request_id = match response {
-            ProjectRuntimeResponse::Ready { request_id, .. }
-            | ProjectRuntimeResponse::Finished { request_id }
-            | ProjectRuntimeResponse::Validated { request_id }
-            | ProjectRuntimeResponse::Renewed { request_id }
-            | ProjectRuntimeResponse::Inactive { request_id }
-            | ProjectRuntimeResponse::Failed { request_id, .. } => request_id,
-        };
-        let directory = runtime_root(project_root).join(RESPONSES_DIRECTORY);
-        fs::create_dir_all(&directory).map_err(|_| runtime_error())?;
-        let path = directory.join(format!("{request_id}.json"));
-        let temporary = directory.join(format!("{request_id}.{}.tmp", Uuid::new_v4()));
-        let bytes = serde_json::to_vec(response).map_err(|_| runtime_error())?;
-        fs::write(&temporary, bytes).map_err(|_| runtime_error())?;
-        fs::rename(temporary, path).map_err(|_| runtime_error())
+        storage::publish_response(self, response)
     }
 
     fn submit_and_wait(
@@ -142,7 +162,10 @@ impl ProjectRuntimeAuthorityQueue {
         request: ProjectRuntimeRequest,
     ) -> Result<Option<ProjectRuntimeResponse>, ProjectWriteError> {
         let request_id = request.request_id().to_owned();
-        let directory = runtime_root(project_root).join(REQUESTS_DIRECTORY);
+        let root = self.runtime_root(project_root);
+        self.maybe_cleanup(&root);
+        self.create_waiting_claim(project_root, &request_id)?;
+        let directory = root.join(REQUESTS_DIRECTORY);
         fs::create_dir_all(&directory).map_err(|_| runtime_error())?;
         let path = directory.join(format!("{request_id}.json"));
         let temporary = directory.join(format!("{request_id}.{}.tmp", Uuid::new_v4()));
@@ -154,7 +177,7 @@ impl ProjectRuntimeAuthorityQueue {
         fs::write(&temporary, bytes).map_err(|_| runtime_error())?;
         fs::rename(temporary, &path).map_err(|_| runtime_error())?;
 
-        let response_path = runtime_root(project_root)
+        let response_path = root
             .join(RESPONSES_DIRECTORY)
             .join(format!("{request_id}.json"));
         let deadline = Instant::now() + self.timeout;
@@ -163,21 +186,29 @@ impl ProjectRuntimeAuthorityQueue {
                 let bytes = fs::read(&response_path).map_err(|_| runtime_error())?;
                 let response = serde_json::from_slice(&bytes).map_err(|_| runtime_error())?;
                 let _ = fs::remove_file(response_path);
+                self.clear_request_state(project_root, &request_id);
                 return Ok(Some(response));
             }
             if Instant::now() >= deadline {
-                let _guard = self
-                    .file_lock
-                    .lock()
-                    .expect("Project runtime authority queue is not poisoned");
-                let cancellation_directory =
-                    runtime_root(project_root).join(CANCELLATIONS_DIRECTORY);
-                fs::create_dir_all(&cancellation_directory).map_err(|_| runtime_error())?;
-                let cancellation_path = cancellation_directory.join(format!("{request_id}.json"));
-                let temporary =
-                    cancellation_directory.join(format!("{request_id}.{}.tmp", Uuid::new_v4()));
-                fs::write(&temporary, b"{\"cancelled\":true}").map_err(|_| runtime_error())?;
-                fs::rename(temporary, cancellation_path).map_err(|_| runtime_error())?;
+                if response_path.is_file() {
+                    continue;
+                }
+                if self.cancel_waiting_request(project_root, &request_id)? {
+                    let _ = fs::remove_file(&path);
+                    return Err(runtime_error());
+                }
+                let grace_deadline = Instant::now() + CLAIM_RESPONSE_GRACE;
+                while Instant::now() < grace_deadline {
+                    if response_path.is_file() {
+                        let bytes = fs::read(&response_path).map_err(|_| runtime_error())?;
+                        let response =
+                            serde_json::from_slice(&bytes).map_err(|_| runtime_error())?;
+                        let _ = fs::remove_file(&response_path);
+                        self.clear_request_state(project_root, &request_id);
+                        return Ok(Some(response));
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
                 let _ = fs::remove_file(&path);
                 return Err(runtime_error());
             }
@@ -357,8 +388,4 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
             None => Err(runtime_error()),
         }
     }
-}
-
-fn runtime_root(project_root: &Path) -> PathBuf {
-    project_root.join(RUNTIME_DIRECTORY)
 }
