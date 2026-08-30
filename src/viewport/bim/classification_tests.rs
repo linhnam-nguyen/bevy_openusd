@@ -72,6 +72,46 @@ fn classification_projection_reuses_the_cached_read_model_arc() {
 }
 
 #[test]
+fn classification_color_entries_are_deterministic_across_snapshot_map_order() {
+    let original = snapshot();
+    let mut reordered = original.clone();
+    reordered.entities = original
+        .entities
+        .values()
+        .cloned()
+        .rev()
+        .map(|entity| (entity.key.clone(), entity))
+        .collect();
+    let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
+        "category",
+        BimFieldKey::Category,
+    )]);
+    let intent = viewport_protocol::ClassificationColorIntent {
+        source: viewport_protocol::ClassificationColorSource::Auto,
+        active_level: Some("category".to_owned()),
+        generation: 0,
+    };
+
+    let mut first_service = BimReadService::new(&original);
+    let mut reordered_service = BimReadService::new(&reordered);
+    let first = first_service
+        .classification_color_entries(&recipe, &intent)
+        .expect("first deterministic color entries");
+    let second = reordered_service
+        .classification_color_entries(&recipe, &intent)
+        .expect("reordered deterministic color entries");
+
+    assert_eq!(first, second);
+    assert_eq!(
+        first
+            .iter()
+            .map(|entry| entry.anchor.prim_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["/World/EquipmentA", "/World/WallA", "/World/WallB"]
+    );
+}
+
+#[test]
 fn classification_uses_normalized_leaf_names_and_generic_projection() {
     let mut snapshot = snapshot();
     for (key, element_id) in [("wall-a", "184392"), ("wall-b", "184393")] {

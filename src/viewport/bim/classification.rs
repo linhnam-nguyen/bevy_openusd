@@ -72,6 +72,11 @@ impl ClassificationIndex {
             index.nodes[node_index].children = children;
             index.nodes[node_index].leaves.sort_unstable();
         }
+        index.color_groups.sort_unstable_by(|left, right| {
+            left.anchor
+                .cmp(&right.anchor)
+                .then_with(|| left.levels.cmp(&right.levels))
+        });
         index
     }
 
