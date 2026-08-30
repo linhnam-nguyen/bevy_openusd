@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{fs, sync::Arc, thread, time::Duration};
 
 use bevy::prelude::World;
 use project_protocol::ProjectCommitTarget;
@@ -7,6 +7,7 @@ use super::super::{
     ActiveProjectRuntimeLease, ProjectRuntimeAuthorityRuntime, runtime_renew_response,
     runtime_snapshot_response,
 };
+use super::consume_project_runtime_authority;
 use crate::project::service::ProjectRuntimeAuthority;
 
 #[test]
@@ -52,6 +53,50 @@ fn active_runtime_stage_returns_ready_and_freezes_authoring() {
             .active_lease
             .is_some()
     );
+}
+
+#[test]
+fn empty_inbox_skips_registry_resolution_for_any_project_count() {
+    for project_count in [1usize, 100, 10_000] {
+        let directory = tempfile::tempdir().expect("temporary runtime root");
+        let registry_path = directory.path().join("workspace.json");
+        let entries = (0..project_count)
+            .map(|index| {
+                serde_json::json!({
+                    "project_id": usd_project::ProjectId::new_v4().to_string(),
+                    "repository_locator": directory.path().join(format!("project-{index}")),
+                    "last_opened_ms": null,
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            &registry_path,
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "entries": entries,
+            }))
+            .expect("encode workspace registry"),
+        )
+        .expect("write workspace registry");
+
+        let queue =
+            crate::project::service::ProjectRuntimeAuthorityQueue::with_workspace_registry_path(
+                &registry_path,
+            );
+        let mut world = World::new();
+        world.insert_resource(ProjectRuntimeAuthorityRuntime {
+            queue: queue.clone(),
+            active_lease: None,
+        });
+
+        consume_project_runtime_authority(&mut world);
+
+        assert_eq!(
+            queue.registry_resolution_count(),
+            0,
+            "empty inbox should not resolve a {project_count}-Project registry"
+        );
+    }
 }
 
 #[test]

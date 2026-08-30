@@ -90,8 +90,17 @@ impl ProjectRuntimeAuthorityQueue {
         storage::consume_pending(self)
     }
 
-    pub(crate) fn registered_project_roots(&self) -> Vec<(ProjectId, PathBuf)> {
+    pub(crate) fn registered_project_roots(&self) -> std::collections::HashMap<ProjectId, PathBuf> {
         storage::registered_project_roots(self)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn registry_resolution_count(&self) -> usize {
+        self.registry_cache
+            .lock()
+            .expect("Project runtime registry cache is not poisoned")
+            .resolution_count
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn is_cancelled(&self, project_root: &Path, request_id: &str) -> bool {

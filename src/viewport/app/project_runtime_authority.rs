@@ -21,10 +21,13 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
         .resource::<ProjectRuntimeAuthorityRuntime>()
         .queue
         .clone();
-    let registered_project_roots = queue.registered_project_roots();
     let Ok(requests) = queue.consume_pending() else {
         return;
     };
+    if requests.is_empty() {
+        return;
+    }
+    let registered_project_roots = queue.registered_project_roots();
     let active = world.get_resource::<StageHandle>().and_then(|handle| {
         let project_root = project_root_for_stage(&handle.path)?;
         let manifest = ManifestStore::read_validated(&project_root).ok()?;
@@ -37,10 +40,10 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
         let expired = envelope.is_expired(crate::project::service::unix_time_ms());
         let request = envelope.into_request();
         let request_id = request.request_id().to_owned();
-        let Some((registered_project_id, project_root)) = registered_project_roots
-            .iter()
-            .find(|(project_id, _)| *project_id == request.project_id())
-            .map(|(project_id, project_root)| (*project_id, project_root.clone()))
+        let registered_project_id = request.project_id();
+        let Some(project_root) = registered_project_roots
+            .get(&registered_project_id)
+            .cloned()
         else {
             let response =
                 super::runtime_failed(&request_id, project_protocol::ProjectWriteErrorCode::Busy);

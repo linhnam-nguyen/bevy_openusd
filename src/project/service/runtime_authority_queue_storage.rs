@@ -1,10 +1,14 @@
 use std::{
+    collections::HashMap,
     env, fs,
     fs::OpenOptions,
     io::ErrorKind,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
+
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 
 use super::super::registry;
 use super::{
@@ -32,7 +36,9 @@ pub(super) struct RegistryStamp {
 pub(super) struct RegistryCache {
     pub(super) path: Option<PathBuf>,
     pub(super) stamp: Option<RegistryStamp>,
-    pub(super) roots: Vec<(ProjectId, PathBuf)>,
+    pub(super) roots: HashMap<ProjectId, PathBuf>,
+    #[cfg(test)]
+    pub(super) resolution_count: std::sync::atomic::AtomicUsize,
 }
 
 pub(super) fn registry_stamp(path: &Path) -> RegistryStamp {
@@ -146,21 +152,23 @@ pub(super) fn consume_pending(
 
 pub(super) fn registered_project_roots(
     queue: &ProjectRuntimeAuthorityQueue,
-) -> Vec<(ProjectId, PathBuf)> {
+) -> HashMap<ProjectId, PathBuf> {
     let Some(path) = registry_path(queue) else {
-        return Vec::new();
+        return HashMap::new();
     };
     let stamp = registry_stamp(&path);
     let mut cache = queue
         .registry_cache
         .lock()
         .expect("Project runtime registry cache is not poisoned");
+    #[cfg(test)]
+    cache.resolution_count.fetch_add(1, Ordering::Relaxed);
     if cache.path.as_deref() == Some(path.as_path()) && cache.stamp.as_ref() == Some(&stamp) {
         return cache.roots.clone();
     }
     cache.path = Some(path.clone());
     cache.stamp = Some(stamp);
-    cache.roots = registry::load_project_roots(&path);
+    cache.roots = registry::load_project_roots(&path).into_iter().collect();
     cache.roots.clone()
 }
 
