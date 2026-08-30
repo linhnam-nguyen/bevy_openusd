@@ -42,6 +42,17 @@ impl SceneAnchorIndex {
         self.by_anchor.get(anchor).copied()
     }
 
+    /// Resolves every current scene occurrence for a semantic prim path.
+    /// Semantic classification entries intentionally carry path identity only;
+    /// native-instance projection may expose the same path under multiple
+    /// scene-local instance contexts.
+    pub(crate) fn resolve_all_by_prim_path(&self, prim_path: &str) -> Vec<Entity> {
+        self.by_entity
+            .iter()
+            .filter_map(|(entity, anchor)| (anchor.prim_path == prim_path).then_some(*entity))
+            .collect()
+    }
+
     pub(crate) fn anchor_for(&self, entity: Entity) -> Option<SceneAnchor> {
         self.by_entity.get(&entity).cloned()
     }
@@ -108,6 +119,25 @@ impl SceneAnchorIndex {
         Self {
             by_anchor: HashMap::from([(anchor.clone(), entity)]),
             by_entity: HashMap::from([(entity, anchor)]),
+            initialized: true,
+            revision: 1,
+            ..Default::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_entities(entries: Vec<(SceneAnchor, Entity)>) -> Self {
+        let by_anchor = entries
+            .iter()
+            .cloned()
+            .collect::<HashMap<SceneAnchor, Entity>>();
+        let by_entity = entries
+            .into_iter()
+            .map(|(anchor, entity)| (entity, anchor))
+            .collect::<HashMap<Entity, SceneAnchor>>();
+        Self {
+            by_anchor,
+            by_entity,
             initialized: true,
             revision: 1,
             ..Default::default()

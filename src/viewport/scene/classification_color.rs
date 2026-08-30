@@ -79,13 +79,13 @@ pub(in crate::viewport) fn sync_classification_color_overrides(
 
     let mut desired = HashMap::<Entity, ColorRgb8>::new();
     for entry in plan.entries() {
-        let Some(root) = scene_index.resolve(&entry.anchor) else {
-            continue;
-        };
-        let mut meshes = HashSet::new();
-        collect_mesh_descendants(root, &mesh_hierarchy, &mut meshes);
-        for entity in meshes {
-            desired.entry(entity).or_insert(entry.color);
+        let roots = scene_index.resolve_all_by_prim_path(&entry.anchor.prim_path);
+        for root in roots {
+            let mut meshes = HashSet::new();
+            collect_mesh_descendants(root, &mesh_hierarchy, &mut meshes);
+            for entity in meshes {
+                desired.entry(entity).or_insert(entry.color);
+            }
         }
     }
 
