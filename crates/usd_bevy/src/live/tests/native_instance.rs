@@ -1,5 +1,10 @@
 use crate::live::ProjectionPlan;
+use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin};
 use anyhow::Result;
+use bevy::asset::Assets;
+use bevy::mesh::{Mesh, Mesh3d};
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
+use bevy::prelude::App;
 use openusd::sdf;
 use openusd::usd::{PrimPredicate, Stage};
 
@@ -8,6 +13,25 @@ fn characterization_stage() -> Stage {
         .join("../../tests/stages/native_instance_characterization.usda");
     Stage::open(path.to_str().expect("fixture path is valid"))
         .expect("native instance fixture opens")
+}
+
+fn projected_app() -> App {
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut()
+        .insert_non_send(LiveStage::new(characterization_stage()));
+    app.update();
+    app
+}
+
+fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
+    app.world()
+        .resource::<PrimEntities>()
+        .entity(path)
+        .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 
 #[test]
@@ -79,4 +103,31 @@ fn projection_plan_includes_scene_scoped_instance_proxies() -> Result<()> {
         .expect("instance root is planned");
     assert!(window_index < frame_index);
     Ok(())
+}
+
+#[test]
+fn native_instance_proxy_meshes_share_render_handles() {
+    let app = projected_app();
+    let frame_a = projected_entity(&app, "/World/Window_A/Frame");
+    let frame_b = projected_entity(&app, "/World/Window_B/Frame");
+
+    let mesh_a = app.world().get::<Mesh3d>(frame_a).expect("frame A mesh");
+    let mesh_b = app.world().get::<Mesh3d>(frame_b).expect("frame B mesh");
+    assert_eq!(mesh_a.0, mesh_b.0, "instance proxies share a mesh handle");
+    assert_eq!(
+        app.world()
+            .get::<MeshMaterial3d<StandardMaterial>>(frame_a)
+            .expect("frame A material")
+            .0,
+        app.world()
+            .get::<MeshMaterial3d<StandardMaterial>>(frame_b)
+            .expect("frame B material")
+            .0,
+        "instance proxies share a material handle"
+    );
+    assert_eq!(
+        app.world().resource::<Assets<Mesh>>().len(),
+        3,
+        "prototype frame, glass, and control geometry are interned"
+    );
 }
