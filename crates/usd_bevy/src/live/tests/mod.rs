@@ -6,6 +6,8 @@ mod material_patch;
 mod mesh_patch;
 mod native_instance;
 mod native_instance_audit;
+mod native_instance_presentation_review;
+mod native_instance_review;
 mod paths;
 mod payload;
 mod progressive;

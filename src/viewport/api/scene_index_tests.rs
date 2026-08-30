@@ -1,5 +1,10 @@
 use super::*;
 use crate::viewport::api::HierarchyPageIndex;
+use crate::viewport::session::Spawned;
+use bevy::asset::Assets;
+use bevy::mesh::Mesh;
+use bevy::pbr::StandardMaterial;
+use usd_bevy::{LiveStage, LiveStagePlugin, LiveStageSet, UsdPlugin};
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
@@ -120,44 +125,41 @@ fn generic_projection_keeps_snapshot_acquisition_constant_time() {
     );
 }
 
-#[test]
-fn native_instance_selection_resolves_scene_proxy_paths_only() {
-    let frame_a = Entity::from_bits(101);
-    let frame_b = Entity::from_bits(102);
-    let index = SceneAnchorIndex {
-        by_anchor: [
-            (
-                SceneAnchor::active_session("/World/Window_A/Frame"),
-                frame_a,
-            ),
-            (
-                SceneAnchor::active_session("/World/Window_B/Frame"),
-                frame_b,
-            ),
-        ]
-        .into_iter()
-        .collect(),
-        by_entity: [(
-            frame_a,
-            SceneAnchor::active_session("/World/Window_A/Frame"),
-        )]
-        .into_iter()
-        .chain(std::iter::once((
-            frame_b,
-            SceneAnchor::active_session("/World/Window_B/Frame"),
-        )))
-        .collect(),
-        ..Default::default()
-    };
+fn native_instance_scene_index_app() -> App {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/stages/native_instance_characterization.usda");
+    let stage = openusd::usd::Stage::open(path.to_str().expect("fixture path is valid"))
+        .expect("native instance fixture opens");
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(
+            Update,
+            refresh_scene_anchor_index.after(LiveStageSet::Reconcile),
+        );
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.world_mut().resource_mut::<Spawned>().0 = true;
+    app.update();
+    app
+}
 
-    assert_eq!(
-        index.resolve(&SceneAnchor::active_session("/World/Window_A/Frame")),
-        Some(frame_a)
-    );
-    assert_eq!(
-        index.resolve(&SceneAnchor::active_session("/World/Window_B/Frame")),
-        Some(frame_b)
-    );
+#[test]
+fn native_instance_selection_resolves_real_projected_scene_proxy_paths_only() {
+    let app = native_instance_scene_index_app();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    let frame_a = index
+        .resolve(&SceneAnchor::active_session("/World/Window_A/Frame"))
+        .expect("Window_A frame is indexed from the native projection");
+    let frame_b = index
+        .resolve(&SceneAnchor::active_session("/World/Window_B/Frame"))
+        .expect("Window_B frame is indexed from the native projection");
+    assert_ne!(frame_a, frame_b);
+
     assert_eq!(
         index.anchor_for(frame_a).unwrap().prim_path,
         "/World/Window_A/Frame"
