@@ -117,7 +117,7 @@ pub(super) fn read_pending(
         .collect()
 }
 
-fn busy_error() -> ProjectWriteError {
+pub(super) fn busy_error() -> ProjectWriteError {
     ProjectWriteError::Failed {
         code: project_protocol::ProjectWriteErrorCode::Busy,
     }

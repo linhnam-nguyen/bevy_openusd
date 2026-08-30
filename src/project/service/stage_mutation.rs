@@ -19,7 +19,9 @@ use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
 mod outbox;
 #[path = "stage_rename.rs"]
 mod stage_rename;
-use outbox::{filesystem_error, outbox_path, read_pending, submit_batch_locked_with_failure};
+use outbox::{
+    busy_error, filesystem_error, outbox_path, read_pending, submit_batch_locked_with_failure,
+};
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///

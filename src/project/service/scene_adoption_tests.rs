@@ -134,6 +134,10 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") { string version = \"updated\" }\n",
     )
     .unwrap();
+    assert_eq!(
+        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::link::LinkedSourceStatus::OutOfSync
+    );
     let refreshed_inspection = inspect_composition(&source).unwrap();
     let synced = service
         .sync_linked_scene(
@@ -162,6 +166,73 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
         crate::project::link::status(&project_root, linked.scene_id).unwrap(),
         crate::project::link::LinkedSourceStatus::InSync
     );
+}
+
+#[test]
+fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let source = directory.path().join("external.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
+    )
+    .unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let summary = service.create_project(&parent, "Project").unwrap();
+    let inspection = inspect_composition(&source).unwrap();
+    let linked = service
+        .link_scene(
+            summary.id,
+            ProjectWriteTarget::Project(summary.id),
+            &source,
+            &inspection,
+            "External Assembly".to_owned(),
+            "link-operation".to_owned(),
+            1,
+            PlacementSpec::Default,
+        )
+        .unwrap();
+    let project_root = parent.join("Project");
+    let scene_path = crate::project::scene::authoring::scene_path(&project_root, linked.scene_id);
+    let binding_path = crate::project::link::binding_path(&project_root, linked.scene_id);
+    let source_snapshot = project_root
+        .join(".usdhub/imports/scenes")
+        .join(linked.scene_id.to_string())
+        .join("external.usda");
+    let scene_before = fs::read(&scene_path).unwrap();
+    let binding_before = fs::read(&binding_path).unwrap();
+    let source_before = fs::read(&source_snapshot).unwrap();
+
+    fs::write(
+        &source,
+        "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") { string version = \"updated\" }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::link::LinkedSourceStatus::OutOfSync
+    );
+
+    assert!(
+        service
+            .sync_linked_scene(
+                summary.id,
+                linked.scene_id,
+                &source,
+                &inspection,
+                "invalid/name".to_owned(),
+                "failed-sync".to_owned(),
+                2,
+            )
+            .is_err()
+    );
+
+    assert_eq!(fs::read(scene_path).unwrap(), scene_before);
+    assert_eq!(fs::read(binding_path).unwrap(), binding_before);
+    assert_eq!(fs::read(source_snapshot).unwrap(), source_before);
 }
 
 #[test]
