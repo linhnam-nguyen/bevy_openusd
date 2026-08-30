@@ -6,10 +6,13 @@ use crate::{project::catalog::manifest_store::ManifestStore, viewport::session::
 
 use super::{
     ProjectRuntimeAuthorityRuntime, active_scene_id_for_stage, project_root_for_stage,
-    runtime_finish_response, runtime_revision_response, runtime_scene_is_allowed,
-    runtime_scene_is_in_export_closure, runtime_snapshot_response,
+    runtime_scene_is_allowed, runtime_scene_is_in_export_closure,
 };
 use crate::project::service::{ProjectRuntimeRequest, ProjectRuntimeResponse};
+
+#[cfg(test)]
+#[path = "project_runtime_authority_owner_review5_tests.rs"]
+mod owner_review5_tests;
 
 /// Answer host-side Commit/Export requests from the exact LiveStage owner.
 pub(super) fn consume_project_runtime_authority(world: &mut World) {
@@ -26,8 +29,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
         Some((project_root, project_id, active_scene_id, manifest))
     });
     let active_root = active.as_ref().map(|(root, ..)| root);
-    for (registered_project_id, project_root) in crate::project::service::registered_project_roots()
-    {
+    for (registered_project_id, project_root) in queue.registered_project_roots() {
         let Ok(requests) = queue.consume_pending(&project_root) else {
             continue;
         };
@@ -35,6 +37,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
             let expired = envelope.is_expired(crate::project::service::unix_time_ms());
             let request = envelope.into_request();
             let request_id = request.request_id().to_owned();
+            let cancelled = queue.is_cancelled(&project_root, &request_id);
             let active_request = active
                 .as_ref()
                 .and_then(|(_, project_id, scene_id, manifest)| {
@@ -46,7 +49,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
                         })
                         .map(|active_scene_id| (project_id, active_scene_id, manifest))
                 });
-            let response = if expired {
+            let response = if expired || cancelled {
                 super::runtime_failed(&request_id, project_protocol::ProjectWriteErrorCode::Busy)
             } else if let Some((project_id, active_scene_id, manifest)) = active_request {
                 match request {
@@ -62,9 +65,13 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
                                 &request_id,
                                 *project_id,
                                 active_scene_id,
+                                &queue,
+                                &project_root,
                             )
                         } else {
-                            ProjectRuntimeResponse::Inactive { request_id }
+                            ProjectRuntimeResponse::Inactive {
+                                request_id: request_id.clone(),
+                            }
                         }
                     }
                     ProjectRuntimeRequest::ExportScene { scene_id, .. } => {
@@ -79,9 +86,13 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
                                 &request_id,
                                 *project_id,
                                 active_scene_id,
+                                &queue,
+                                &project_root,
                             )
                         } else {
-                            ProjectRuntimeResponse::Inactive { request_id }
+                            ProjectRuntimeResponse::Inactive {
+                                request_id: request_id.clone(),
+                            }
                         }
                     }
                     ProjectRuntimeRequest::ValidateCommit {
@@ -106,12 +117,25 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
                         &lease_id,
                         live_revision,
                     ),
+                    ProjectRuntimeRequest::RenewCommitLease {
+                        lease_id,
+                        live_revision,
+                        ..
+                    } => super::runtime_renew_response(
+                        world,
+                        &request_id,
+                        *project_id,
+                        &lease_id,
+                        live_revision,
+                    ),
                     ProjectRuntimeRequest::AbortCommit { lease_id, .. } => {
                         super::runtime_abort_response(world, &request_id, *project_id, &lease_id)
                     }
                 }
             } else {
-                ProjectRuntimeResponse::Inactive { request_id }
+                ProjectRuntimeResponse::Inactive {
+                    request_id: request_id.clone(),
+                }
             };
             if let Err(error) = queue.publish_response(&project_root, &response) {
                 if let ProjectRuntimeResponse::Ready { lease_id, .. } = &response {
@@ -121,6 +145,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
                 }
                 bevy::log::warn!("Project runtime authority response failed: {error:?}");
             }
+            queue.clear_cancellation(&project_root, &request_id);
         }
     }
 }
@@ -174,9 +199,17 @@ mod tests {
     fn no_active_stage_answers_registered_requests_as_inactive() {
         let directory = tempfile::tempdir().expect("temporary runtime root");
         let project_id = usd_project::ProjectId::new_v4();
+        let registry_path = directory.path().join("workspace.json");
+        let mut registry =
+            crate::project::catalog::workspace_registry::WorkspaceRegistry::load(&registry_path)
+                .expect("workspace registry");
+        registry
+            .register(project_id, directory.path(), None)
+            .expect("register project root");
         let queue = Arc::new(
-            crate::project::service::ProjectRuntimeAuthorityQueue::with_timeout(
+            crate::project::service::ProjectRuntimeAuthorityQueue::with_timeout_and_registry_path(
                 Duration::from_millis(250),
+                registry_path,
             ),
         );
         let request_queue = queue.clone();

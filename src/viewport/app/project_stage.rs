@@ -10,8 +10,7 @@ use crate::{
     project::{
         catalog::manifest_store::ManifestStore,
         service::{
-            ProjectRuntimeAuthorityQueue, ProjectRuntimeRequest, ProjectRuntimeResponse,
-            ProjectStageMutationQueue,
+            ProjectRuntimeAuthorityQueue, ProjectRuntimeResponse, ProjectStageMutationQueue,
         },
     },
     viewport::session::StageHandle,
@@ -34,7 +33,9 @@ struct ActiveProjectRuntimeLease {
     expires_at_ms: u128,
 }
 
-const RUNTIME_LEASE_TTL_MS: u128 = 30_000;
+/// Time allowed after the last owner heartbeat before the render owner
+/// releases a stranded LiveStage lease. Healthy operations are renewable.
+const RUNTIME_LEASE_GRACE_MS: u128 = 30_000;
 
 #[derive(Resource, Clone)]
 pub(super) struct ProjectRuntimeAuthorityRuntime {
@@ -121,11 +122,40 @@ fn runtime_finish_response(
     }
 }
 
+fn runtime_renew_response(
+    world: &mut World,
+    request_id: &str,
+    project_id: ProjectId,
+    lease_id: &str,
+    expected_revision: u64,
+) -> ProjectRuntimeResponse {
+    match runtime_revision_response(world, request_id, project_id, lease_id, expected_revision) {
+        ProjectRuntimeResponse::Validated { .. } => {
+            let mut runtime = world.resource_mut::<ProjectRuntimeAuthorityRuntime>();
+            let Some(active_lease) = runtime
+                .active_lease
+                .as_mut()
+                .filter(|active| active.project_id == project_id && active.lease_id == lease_id)
+            else {
+                return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+            };
+            active_lease.expires_at_ms =
+                crate::project::service::unix_time_ms().saturating_add(RUNTIME_LEASE_GRACE_MS);
+            ProjectRuntimeResponse::Renewed {
+                request_id: request_id.to_owned(),
+            }
+        }
+        response => response,
+    }
+}
+
 fn runtime_snapshot_response(
     world: &mut World,
     request_id: &str,
     project_id: ProjectId,
     active_scene_id: SceneId,
+    queue: &ProjectRuntimeAuthorityQueue,
+    project_root: &Path,
 ) -> ProjectRuntimeResponse {
     if world
         .resource::<ProjectRuntimeAuthorityRuntime>()
@@ -134,11 +164,24 @@ fn runtime_snapshot_response(
     {
         return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
     }
+    if queue.is_cancelled(project_root, request_id) {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    }
     let (root_layer, lease_id, session_id, live_revision) = {
         let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
             return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
         };
+        // Revalidate the cross-process cancellation tombstone immediately
+        // before freezing. The host may have timed out after the envelope was
+        // consumed but before this render-owner operation was scheduled.
+        if queue.is_cancelled(project_root, request_id) {
+            return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+        }
         if !live.try_freeze_authoring() {
+            return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+        }
+        if queue.is_cancelled(project_root, request_id) {
+            live.unfreeze_authoring();
             return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
         }
         let Ok(root_layer) = live.stage.root_layer().export_to_string() else {
@@ -148,6 +191,10 @@ fn runtime_snapshot_response(
                 project_protocol::ProjectWriteErrorCode::ExportFailed,
             );
         };
+        if queue.is_cancelled(project_root, request_id) {
+            live.unfreeze_authoring();
+            return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+        }
         (
             root_layer,
             uuid::Uuid::new_v4().to_string(),
@@ -162,7 +209,8 @@ fn runtime_snapshot_response(
         lease_id: lease_id.clone(),
         session_id,
         live_revision,
-        expires_at_ms: crate::project::service::unix_time_ms().saturating_add(RUNTIME_LEASE_TTL_MS),
+        expires_at_ms: crate::project::service::unix_time_ms()
+            .saturating_add(RUNTIME_LEASE_GRACE_MS),
     });
     ProjectRuntimeResponse::Ready {
         request_id: request_id.to_owned(),
@@ -323,38 +371,5 @@ fn active_scene_id_for_stage(stage_path: &Path, project_root: &Path) -> Option<S
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn project_root_is_derived_only_for_a_project_scene_path() {
-        let path = Path::new("/tmp/Project/.usdhub/scenes/scene.usda");
-        assert_eq!(
-            project_root_for_stage(path),
-            Some(PathBuf::from("/tmp/Project"))
-        );
-        assert!(project_root_for_stage(Path::new("/tmp/scene.usda")).is_none());
-    }
-
-    #[test]
-    fn active_scene_identity_requires_the_canonical_scene_locator() {
-        let project_root = Path::new("/tmp/Project");
-        let scene_id = SceneId::new_v4();
-        let canonical = crate::project::scene::authoring::scene_path(project_root, scene_id);
-        assert_eq!(
-            active_scene_id_for_stage(&canonical, project_root),
-            Some(scene_id)
-        );
-        assert!(
-            active_scene_id_for_stage(
-                &project_root.join(".usdhub/scenes/scene.usda"),
-                project_root,
-            )
-            .is_none()
-        );
-        assert!(
-            active_scene_id_for_stage(&project_root.join(".usdhub/project.usda"), project_root,)
-                .is_none()
-        );
-    }
-}
+#[path = "project_stage_tests.rs"]
+mod tests;

@@ -1,11 +1,11 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{sync::Arc, thread};
 
 use project_protocol::{ProjectCommitTarget, ProjectWriteError, ProjectWriteErrorCode};
 
 use super::{ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, unix_time_ms};
 
 #[test]
-fn delayed_renderer_rejects_a_consumed_expired_request() {
+fn delayed_renderer_rejects_a_consumed_request_after_host_timeout() {
     let directory = tempfile::tempdir().expect("temporary runtime root");
     let project_id = usd_project::ProjectId::new_v4();
     let queue = Arc::new(ProjectRuntimeAuthorityQueue::default());
@@ -30,12 +30,13 @@ fn delayed_renderer_rejects_a_consumed_expired_request() {
         .consume_pending(directory.path())
         .expect("consume delayed request");
     assert_eq!(requests.len(), 1);
-    thread::sleep(Duration::from_millis(1_010));
-    assert!(requests[0].is_expired(unix_time_ms()));
+    let request_id = requests[0].clone().into_request().request_id().to_owned();
     assert!(matches!(
         caller.join().expect("authority caller"),
         Err(ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::Busy
         })
     ));
+    assert!(queue.is_cancelled(directory.path(), &request_id));
+    assert!(!requests[0].is_expired(unix_time_ms()));
 }

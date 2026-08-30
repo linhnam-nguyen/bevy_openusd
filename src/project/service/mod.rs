@@ -121,8 +121,7 @@ pub use runtime_authority::{
     ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
 };
 pub(crate) use runtime_authority::{
-    ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse,
-    registered_project_roots, unix_time_ms,
+    ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse, unix_time_ms,
 };
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::ProjectStageActivationTarget;

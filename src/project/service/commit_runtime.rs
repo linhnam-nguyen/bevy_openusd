@@ -7,7 +7,12 @@ mod owner_review5_tests;
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -22,6 +27,59 @@ use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
 
 const SCENES_RELATIVE_DIRECTORY: &str = ".usdhub/scenes";
 const SEMANTIC_CACHE_RELATIVE_PATH: &str = ".usdhub/cache/semantic-snapshots.db";
+const RUNTIME_LEASE_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+struct LeaseHeartbeat {
+    stop: Arc<AtomicBool>,
+    wake: thread::Thread,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl LeaseHeartbeat {
+    fn start(
+        authority: Arc<dyn ProjectRuntimeAuthority>,
+        project_root: PathBuf,
+        project_id: ProjectId,
+        lease_id: String,
+        live_revision: usd_bevy::LiveRevision,
+    ) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = stop.clone();
+        let handle = thread::Builder::new()
+            .name("project-runtime-lease-heartbeat".to_owned())
+            .spawn(move || {
+                while !thread_stop.load(Ordering::Acquire) {
+                    thread::park_timeout(RUNTIME_LEASE_HEARTBEAT_INTERVAL);
+                    if thread_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    if let Err(error) = authority.renew_commit_lease(
+                        &project_root,
+                        project_id,
+                        &lease_id,
+                        live_revision,
+                    ) {
+                        log::warn!("Project runtime lease heartbeat deferred: {error:?}");
+                    }
+                }
+            })
+            .expect("Project runtime lease heartbeat must start");
+        let wake = handle.thread().clone();
+        Self {
+            stop,
+            wake,
+            handle: Some(handle),
+        }
+    }
+
+    fn stop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.wake.unpark();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
 
 /// Keep a runtime lease alive until the Project commit either succeeds or
 /// unwinds. The render owner can therefore release its lease on failure.
@@ -30,6 +88,7 @@ pub(super) struct RuntimeLeaseGuard {
     project_root: PathBuf,
     project_id: ProjectId,
     lease_id: Option<String>,
+    heartbeat: Option<LeaseHeartbeat>,
 }
 
 impl RuntimeLeaseGuard {
@@ -39,21 +98,38 @@ impl RuntimeLeaseGuard {
         project_id: ProjectId,
         snapshot: Option<&ProjectRuntimeSnapshot>,
     ) -> Self {
+        let lease_id = snapshot.map(|snapshot| snapshot.lease_id.clone());
+        let heartbeat = snapshot.map(|snapshot| {
+            LeaseHeartbeat::start(
+                authority.clone(),
+                project_root.clone(),
+                project_id,
+                snapshot.lease_id.clone(),
+                snapshot.live_revision,
+            )
+        });
         Self {
             authority,
             project_root,
             project_id,
-            lease_id: snapshot.map(|snapshot| snapshot.lease_id.clone()),
+            lease_id,
+            heartbeat,
         }
     }
 
     pub(super) fn clear(&mut self) {
+        if let Some(mut heartbeat) = self.heartbeat.take() {
+            heartbeat.stop();
+        }
         self.lease_id = None;
     }
 }
 
 impl Drop for RuntimeLeaseGuard {
     fn drop(&mut self) {
+        if let Some(mut heartbeat) = self.heartbeat.take() {
+            heartbeat.stop();
+        }
         if let Some(lease_id) = self.lease_id.take() {
             self.authority
                 .abort_commit(&self.project_root, self.project_id, &lease_id);

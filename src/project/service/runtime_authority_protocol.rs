@@ -50,6 +50,12 @@ pub(crate) enum ProjectRuntimeRequest {
         project_id: ProjectId,
         lease_id: String,
     },
+    RenewCommitLease {
+        request_id: String,
+        project_id: ProjectId,
+        lease_id: String,
+        live_revision: u64,
+    },
     ExportScene {
         request_id: String,
         project_id: ProjectId,
@@ -64,6 +70,7 @@ impl ProjectRuntimeRequest {
             | Self::FinishCommit { request_id, .. }
             | Self::ValidateCommit { request_id, .. }
             | Self::AbortCommit { request_id, .. }
+            | Self::RenewCommitLease { request_id, .. }
             | Self::ExportScene { request_id, .. } => request_id,
         }
     }
@@ -74,6 +81,7 @@ impl ProjectRuntimeRequest {
             | Self::FinishCommit { project_id, .. }
             | Self::ValidateCommit { project_id, .. }
             | Self::AbortCommit { project_id, .. }
+            | Self::RenewCommitLease { project_id, .. }
             | Self::ExportScene { project_id, .. } => *project_id,
         }
     }
@@ -93,6 +101,9 @@ pub(crate) enum ProjectRuntimeResponse {
         request_id: String,
     },
     Validated {
+        request_id: String,
+    },
+    Renewed {
         request_id: String,
     },
     Inactive {
