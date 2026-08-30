@@ -24,7 +24,15 @@ pub(super) fn apply_editor_command(
     macro_rules! require_stage {
         () => {
             match stage {
-                Some(s) => s,
+                Some(s) if !s.is_authoring_frozen() => s,
+                Some(_) => {
+                    reject(
+                        outbox,
+                        request_id,
+                        "LiveStage authoring is leased by Project publication".to_owned(),
+                    );
+                    return true;
+                }
                 None => {
                     reject(outbox, request_id, "stage is not loaded".to_owned());
                     return true;

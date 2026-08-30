@@ -34,6 +34,6 @@ pub(crate) fn write_live_stage_archive(
         manifest,
         root_scene,
         destination,
-        Some(&root_source),
+        Some((&root_source, root_scene)),
     )
 }

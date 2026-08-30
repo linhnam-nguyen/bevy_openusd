@@ -20,6 +20,8 @@ pub struct LiveStage {
     session_id: u64,
     queue: Rc<RefCell<Vec<StageChange>>>,
     revision: Cell<LiveRevision>,
+    authoring_generation: Rc<Cell<LiveRevision>>,
+    authoring_frozen: Cell<bool>,
     // Prim paths whose *next* change was caused by our own author-back and
     // should be swallowed once (the echo guard, PLAN P2). Author-back writes
     // the value the component already holds, so a re-project would be a no-op
@@ -34,7 +36,15 @@ impl LiveStage {
     pub fn new(stage: Stage) -> Self {
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
         let q = queue.clone();
+        let authoring_generation = Rc::new(Cell::new(LiveRevision::default()));
+        let generation = authoring_generation.clone();
         let sink = stage.add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
+            let next = generation
+                .get()
+                .0
+                .checked_add(1)
+                .expect("live stage authoring generation exhausted");
+            generation.set(LiveRevision(next));
             q.borrow_mut().push(StageChange {
                 resynced: change
                     .resynced
@@ -53,6 +63,8 @@ impl LiveStage {
             session_id: NEXT_LIVE_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             queue,
             revision: Cell::new(LiveRevision::default()),
+            authoring_generation,
+            authoring_frozen: Cell::new(false),
             suppressed: Rc::new(RefCell::new(HashSet::new())),
             sink: Some(sink),
         }
@@ -67,7 +79,21 @@ impl LiveStage {
         }
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
         let q = queue.clone();
+        let authoring_generation = Rc::new(Cell::new(LiveRevision(
+            self.authoring_generation
+                .get()
+                .0
+                .checked_add(1)
+                .expect("live stage authoring generation exhausted"),
+        )));
+        let generation = authoring_generation.clone();
         let sink = stage.add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
+            let next = generation
+                .get()
+                .0
+                .checked_add(1)
+                .expect("live stage authoring generation exhausted");
+            generation.set(LiveRevision(next));
             q.borrow_mut().push(StageChange {
                 resynced: change
                     .resynced
@@ -83,6 +109,7 @@ impl LiveStage {
         });
         self.stage = stage;
         self.queue = queue;
+        self.authoring_generation = authoring_generation;
         self.suppressed = Rc::new(RefCell::new(HashSet::new()));
         self.sink = Some(sink);
         self.enqueue_resync("/");
@@ -112,6 +139,29 @@ impl LiveStage {
     /// The most recently drained live revision.
     pub fn current_revision(&self) -> LiveRevision {
         self.revision.get()
+    }
+
+    /// Synchronous authoring token. Unlike [`current_revision`], this changes
+    /// in the OpenUSD commit callback before the next frame drains notices.
+    pub fn authoring_generation(&self) -> LiveRevision {
+        self.authoring_generation.get()
+    }
+
+    /// Acquire the exclusive authoring lease used by Project Commit/Export.
+    pub fn try_freeze_authoring(&self) -> bool {
+        if self.authoring_frozen.replace(true) {
+            return false;
+        }
+        true
+    }
+
+    /// Release the exclusive authoring lease.
+    pub fn unfreeze_authoring(&self) {
+        self.authoring_frozen.set(false);
+    }
+
+    pub fn is_authoring_frozen(&self) -> bool {
+        self.authoring_frozen.get()
     }
 
     /// Stable identity for this live-stage lifetime, distinct across reloads.

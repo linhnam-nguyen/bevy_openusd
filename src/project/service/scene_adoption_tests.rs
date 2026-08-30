@@ -153,17 +153,8 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
         crate::project::link::status(&project_root, linked.scene_id).unwrap(),
         crate::project::link::LinkedSourceStatus::OutOfSync
     );
-    let refreshed_inspection = inspect_composition(&source).unwrap();
     let synced = service
-        .sync_linked_scene(
-            summary.id,
-            linked.scene_id,
-            &source,
-            &refreshed_inspection,
-            "Stale client rename must be ignored".to_owned(),
-            "sync-operation".to_owned(),
-            2,
-        )
+        .sync_linked_scene(summary.id, linked.scene_id, "sync-operation".to_owned(), 2)
         .unwrap();
 
     assert_eq!(synced.scene_id, linked.scene_id);
@@ -218,8 +209,13 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
     )
     .unwrap();
-    let mut service =
-        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let stage_mutations = ProjectStageMutationQueue::default();
+    let mut service = ProjectApplicationService::open_with_project_state(
+        directory.path().join("workspace.json"),
+        Default::default(),
+        stage_mutations.clone(),
+    )
+    .unwrap();
     let summary = service.create_project(&parent, "Project").unwrap();
     let inspection = inspect_composition(&source).unwrap();
     let linked = service
@@ -255,17 +251,10 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
         crate::project::link::LinkedSourceStatus::OutOfSync
     );
 
+    stage_mutations.fail_before_batch_index(0);
     assert!(
         service
-            .sync_linked_scene(
-                summary.id,
-                linked.scene_id,
-                &source,
-                &inspection,
-                "invalid/name".to_owned(),
-                "failed-sync".to_owned(),
-                2,
-            )
+            .sync_linked_scene(summary.id, linked.scene_id, "failed-sync".to_owned(), 2)
             .is_err()
     );
 

@@ -1,7 +1,7 @@
 //! Git-authoritative Project and Scene commit transactions.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -11,7 +11,7 @@ use project_protocol::{
     ProjectWriteError, ProjectWriteErrorCode,
 };
 use usd_git::{CommitRequest, GitRepository, Repository};
-use usd_project::{ProjectManifestV1, SceneId, SceneMemberTarget};
+use usd_project::{ProjectManifestV1, SceneId};
 
 use super::ProjectApplicationService;
 use super::commit_runtime::{
@@ -69,6 +69,11 @@ pub(super) fn commit(
         repository
             .materialize_revision(head.id(), staging.path())
             .map_err(|_| commit_error())?;
+    } else {
+        // A newly created Project has no Git baseline yet. Seed the first
+        // scoped commit from the complete canonical tree so its manifest and
+        // protected root are available before applying the closure overlay.
+        synchronize_tree(&project_root, staging.path(), Path::new(""))?;
     }
     match request.target {
         ProjectCommitTarget::Project => {
@@ -85,7 +90,13 @@ pub(super) fn commit(
             &snapshot.lease_id,
             snapshot.live_revision,
         )?;
-        overlay_runtime_snapshot(staging.path(), &manifest, &request.target, snapshot)?;
+        overlay_runtime_snapshot(
+            &project_root,
+            staging.path(),
+            &manifest,
+            &request.target,
+            snapshot,
+        )?;
     }
     let revision = repository
         .create_commit(CommitRequest::new(request.message.trim(), staging.path()))
@@ -155,44 +166,9 @@ fn synchronize_scene_scope(
     manifest: &usd_project::ValidatedProjectManifest,
     root_scene: SceneId,
 ) -> Result<(), ProjectWriteError> {
-    let mut members = HashMap::new();
-    for scene in manifest.scenes() {
-        let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
-        let value = crate::project::scene::authoring::read_scene_members(&path, scene.id)
+    let (scenes, models) =
+        super::scene_closure::scene_commit_closure(project_root, manifest.raw(), root_scene)
             .map_err(|_| commit_error())?;
-        members.insert(scene.id, value);
-    }
-    let mut scenes = HashSet::from([root_scene]);
-    let mut models = HashSet::new();
-    let mut pending = vec![root_scene];
-    while let Some(scene_id) = pending.pop() {
-        for member in members.get(&scene_id).into_iter().flatten() {
-            match member.target.clone() {
-                SceneMemberTarget::Scene(child) if scenes.insert(child) => pending.push(child),
-                SceneMemberTarget::Model(model_id) => {
-                    models.insert(model_id);
-                }
-                SceneMemberTarget::Scene(_) => {}
-            }
-        }
-    }
-
-    let mut parents = HashMap::<SceneId, Vec<SceneId>>::new();
-    for (parent, scene_members) in &members {
-        for member in scene_members {
-            if let SceneMemberTarget::Scene(child) = member.target.clone() {
-                parents.entry(child).or_default().push(*parent);
-            }
-        }
-    }
-    let mut reverse_pending = scenes.iter().copied().collect::<Vec<_>>();
-    while let Some(child) = reverse_pending.pop() {
-        for parent in parents.get(&child).into_iter().flatten().copied() {
-            if scenes.insert(parent) {
-                reverse_pending.push(parent);
-            }
-        }
-    }
 
     synchronize_manifest_scope(staging, manifest, &scenes, &models)?;
     for scene_id in scenes {

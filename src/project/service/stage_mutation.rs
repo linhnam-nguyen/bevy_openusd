@@ -166,9 +166,26 @@ impl ProjectStageMutationQueue {
 
         let mut applied = 0;
         let mut first_error = None;
+        let manifest = pending
+            .iter()
+            .any(|(_, mutation)| {
+                matches!(
+                    mutation,
+                    ProjectStageMutation::RefreshSceneDefinition { .. }
+                )
+            })
+            .then(|| {
+                crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)
+            })
+            .transpose()
+            .map_err(|_| filesystem_error())?;
         for (mutation_path, mutation) in pending {
             if mutation.project_id() != active_project_id
-                || !mutation.can_be_consumed_for_active_scene(active_scene_id)
+                || !mutation.can_be_consumed_for_active_scene(
+                    project_root,
+                    manifest.as_ref(),
+                    active_scene_id,
+                )
             {
                 continue;
             }
@@ -178,7 +195,10 @@ impl ProjectStageMutationQueue {
                 {
                     Ok(())
                 }
-                mutation => apply_mutation(live, project_root, &mutation),
+                ProjectStageMutation::RefreshSceneDefinition { .. } => {
+                    apply_mutation(live, project_root, &mutation, active_scene_id)
+                }
+                mutation => apply_mutation(live, project_root, &mutation, None),
             };
             match result {
                 Ok(()) => match fs::remove_file(&mutation_path) {
@@ -250,9 +270,27 @@ impl ProjectStageMutation {
         }
     }
 
-    fn can_be_consumed_for_active_scene(&self, active_scene_id: Option<SceneId>) -> bool {
+    fn can_be_consumed_for_active_scene(
+        &self,
+        project_root: &Path,
+        manifest: Option<&usd_project::ValidatedProjectManifest>,
+        active_scene_id: Option<SceneId>,
+    ) -> bool {
         match self {
             Self::DeleteScene { .. } | Self::DeleteModel { .. } | Self::Rename { .. } => true,
+            Self::RefreshSceneDefinition { scene_id, .. } => {
+                let Some(manifest) = manifest else {
+                    return false;
+                };
+                active_scene_id.is_some_and(|active| {
+                    crate::project::service::scene_closure::scene_dependency_closure(
+                        project_root,
+                        manifest.raw(),
+                        active,
+                    )
+                    .is_ok_and(|(scenes, _)| scenes.contains(scene_id))
+                })
+            }
             _ => self.parent_scene_id() == active_scene_id,
         }
     }
@@ -262,6 +300,7 @@ fn apply_mutation(
     live: &mut usd_bevy::LiveStage,
     project_root: &Path,
     mutation: &ProjectStageMutation,
+    active_scene_id: Option<SceneId>,
 ) -> Result<(), ProjectWriteError> {
     if let ProjectStageMutation::DeleteScene { .. } = mutation {
         usd_bevy::authoring::remove_prim(&live.stage, "/SceneRoot")
@@ -286,7 +325,8 @@ fn apply_mutation(
         return Ok(());
     }
     if let ProjectStageMutation::RefreshSceneDefinition { scene_id, .. } = mutation {
-        let path = crate::project::scene::authoring::scene_path(project_root, *scene_id);
+        let refresh_scene_id = active_scene_id.unwrap_or(*scene_id);
+        let path = crate::project::scene::authoring::scene_path(project_root, refresh_scene_id);
         let path_string = path.to_string_lossy().into_owned();
         let stage = openusd::usd::Stage::open(&path_string).map_err(|_| filesystem_error())?;
         live.replace_stage(stage);

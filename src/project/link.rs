@@ -59,6 +59,27 @@ pub(crate) fn prepare_binding(
 }
 
 pub(crate) fn status(project_root: &Path, scene_id: SceneId) -> Result<LinkedSourceStatus> {
+    let binding = read_binding(project_root, scene_id)?;
+    if !binding.source_path.is_file() {
+        return Ok(LinkedSourceStatus::SourceUnavailable);
+    }
+    Ok(
+        if source_fingerprint(&binding.source_path)? == binding.source_fingerprint {
+            LinkedSourceStatus::InSync
+        } else {
+            LinkedSourceStatus::OutOfSync
+        },
+    )
+}
+
+/// Resolve the authoritative source for a linked Scene. The caller supplies
+/// only Project and Scene identities; source paths never come from the UI.
+pub(crate) fn resolve_source(project_root: &Path, scene_id: SceneId) -> Result<PathBuf> {
+    let binding = read_binding(project_root, scene_id)?;
+    canonical_source(&binding.source_path)
+}
+
+fn read_binding(project_root: &Path, scene_id: SceneId) -> Result<LinkedSourceBinding> {
     let bytes =
         fs::read(binding_path(project_root, scene_id)).context("read linked source binding")?;
     let binding: LinkedSourceBinding =
@@ -71,16 +92,7 @@ pub(crate) fn status(project_root: &Path, scene_id: SceneId) -> Result<LinkedSou
         binding.scene_id == scene_id,
         "linked source binding identity mismatch"
     );
-    if !binding.source_path.is_file() {
-        return Ok(LinkedSourceStatus::SourceUnavailable);
-    }
-    Ok(
-        if source_fingerprint(&binding.source_path)? == binding.source_fingerprint {
-            LinkedSourceStatus::InSync
-        } else {
-            LinkedSourceStatus::OutOfSync
-        },
-    )
+    Ok(binding)
 }
 
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {

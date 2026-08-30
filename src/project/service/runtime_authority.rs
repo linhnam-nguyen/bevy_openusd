@@ -30,6 +30,7 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_millis(750);
 #[derive(Clone, Debug)]
 pub struct ProjectRuntimeSnapshot {
     pub lease_id: String,
+    pub session_id: u64,
     pub scene_id: SceneId,
     pub live_revision: LiveRevision,
     pub root_layer: Vec<u8>,
@@ -132,6 +133,14 @@ impl Default for ProjectRuntimeAuthorityQueue {
 }
 
 impl ProjectRuntimeAuthorityQueue {
+    #[cfg(test)]
+    pub(crate) fn with_timeout(timeout: Duration) -> Self {
+        Self {
+            file_lock: Arc::new(Mutex::new(())),
+            timeout,
+        }
+    }
+
     pub(crate) fn consume_pending(
         &self,
         project_root: &Path,
@@ -210,7 +219,7 @@ impl ProjectRuntimeAuthorityQueue {
                 return Ok(Some(response));
             }
             if Instant::now() >= deadline {
-                return Ok(None);
+                return Err(runtime_error());
             }
             thread::sleep(Duration::from_millis(5));
         }
@@ -235,21 +244,24 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
         )? {
             Some(ProjectRuntimeResponse::Ready {
                 lease_id,
+                session_id,
                 scene_id,
                 live_revision,
                 root_layer,
                 ..
             }) => Ok(Some(ProjectRuntimeSnapshot {
                 lease_id,
+                session_id,
                 scene_id,
                 live_revision: LiveRevision(live_revision),
                 root_layer,
             })),
-            Some(ProjectRuntimeResponse::Inactive { .. }) | None => Ok(None),
+            Some(ProjectRuntimeResponse::Inactive { .. }) => Ok(None),
             Some(ProjectRuntimeResponse::Failed { code, .. }) => {
                 Err(ProjectWriteError::Failed { code })
             }
             Some(_) => Err(runtime_error()),
+            None => Err(runtime_error()),
         }
     }
 
@@ -273,11 +285,12 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
             },
         )?;
         match response {
-            Some(ProjectRuntimeResponse::Finished { .. }) | None => Ok(()),
+            Some(ProjectRuntimeResponse::Finished { .. }) => Ok(()),
             Some(ProjectRuntimeResponse::Failed { code, .. }) => {
                 Err(ProjectWriteError::Failed { code })
             }
             Some(_) => Err(runtime_error()),
+            None => Err(runtime_error()),
         }
     }
 
@@ -337,21 +350,24 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
         )? {
             Some(ProjectRuntimeResponse::Ready {
                 lease_id,
+                session_id,
                 scene_id,
                 live_revision,
                 root_layer,
                 ..
             }) => Ok(Some(ProjectRuntimeSnapshot {
                 lease_id,
+                session_id,
                 scene_id,
                 live_revision: LiveRevision(live_revision),
                 root_layer,
             })),
-            Some(ProjectRuntimeResponse::Inactive { .. }) | None => Ok(None),
+            Some(ProjectRuntimeResponse::Inactive { .. }) => Ok(None),
             Some(ProjectRuntimeResponse::Failed { code, .. }) => {
                 Err(ProjectWriteError::Failed { code })
             }
             Some(_) => Err(runtime_error()),
+            None => Err(runtime_error()),
         }
     }
 }

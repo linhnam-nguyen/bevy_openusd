@@ -111,3 +111,22 @@ fn project_style_stage_authoring_feeds_one_shared_batch() {
     assert_eq!(live.current_revision(), LiveRevision(1));
     assert!(live.drain_change_batch().is_none());
 }
+
+#[test]
+fn authoring_generation_is_synchronous_and_freeze_is_exclusive() {
+    let stage = Stage::builder()
+        .in_memory("live-authoring-generation.usda")
+        .expect("in-memory stage");
+    let live = LiveStage::new(stage);
+    assert_eq!(live.authoring_generation(), LiveRevision(0));
+    assert!(live.try_freeze_authoring());
+    assert!(!live.try_freeze_authoring());
+    assert!(live.is_authoring_frozen());
+    live.unfreeze_authoring();
+    assert!(!live.is_authoring_frozen());
+
+    crate::authoring::define_prim(&live.stage, "/ProjectRoot", "Xform")
+        .expect("author Project root");
+    assert!(live.authoring_generation().0 > 0);
+    assert_eq!(live.current_revision(), LiveRevision(0));
+}

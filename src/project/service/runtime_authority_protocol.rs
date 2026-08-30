@@ -51,6 +51,7 @@ pub(crate) enum ProjectRuntimeResponse {
     Ready {
         request_id: String,
         lease_id: String,
+        session_id: u64,
         scene_id: SceneId,
         live_revision: u64,
         root_layer: Vec<u8>,

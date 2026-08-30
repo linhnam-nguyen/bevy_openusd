@@ -58,28 +58,30 @@ impl Drop for RuntimeLeaseGuard {
 }
 
 pub(super) fn overlay_runtime_snapshot(
+    project_root: &Path,
     staging: &Path,
     manifest: &usd_project::ValidatedProjectManifest,
     target: &ProjectCommitTarget,
     snapshot: &ProjectRuntimeSnapshot,
 ) -> Result<(), ProjectWriteError> {
-    let target_scene = match target {
-        ProjectCommitTarget::Project => snapshot.scene_id,
-        ProjectCommitTarget::Scene(scene_id) if *scene_id == snapshot.scene_id => *scene_id,
-        ProjectCommitTarget::Scene(_) => {
-            return Err(ProjectWriteError::Failed {
-                code: ProjectWriteErrorCode::ConcurrentChange,
-            });
+    let allowed = match target {
+        ProjectCommitTarget::Project => manifest.scenes().iter().map(|scene| scene.id).collect(),
+        ProjectCommitTarget::Scene(scene_id) => {
+            super::scene_closure::scene_commit_closure(project_root, manifest.raw(), *scene_id)
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::ConcurrentChange,
+                })?
+                .0
         }
     };
-    if manifest.scene(target_scene).is_none() {
+    if !allowed.contains(&snapshot.scene_id) {
         return Err(ProjectWriteError::Invalid {
             code: ProjectWriteErrorCode::SceneNotFound,
         });
     }
     let path = staging
         .join(SCENES_RELATIVE_DIRECTORY)
-        .join(format!("{target_scene}.usda"));
+        .join(format!("{}.usda", snapshot.scene_id));
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|_| commit_error())?;
     }

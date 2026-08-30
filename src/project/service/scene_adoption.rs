@@ -6,7 +6,7 @@ use project_protocol::{
     PlacementSpec, ProjectImportPhase, ProjectImportProgress, ProjectSceneAdoptionResponse,
     ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
-use usd_project::{CompositionInspection, ProjectRoot, SceneMember, StorageKey};
+use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 
 use super::ProjectApplicationService;
 
@@ -99,9 +99,6 @@ pub(super) fn sync_linked_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     scene_id: usd_project::SceneId,
-    source: &Path,
-    inspection: &CompositionInspection,
-    name: String,
     operation_id: String,
     generation: u64,
 ) -> Result<ProjectSceneAdoptionResponse, ProjectWriteError> {
@@ -110,75 +107,88 @@ pub(super) fn sync_linked_scene(
         generation,
         phase: ProjectImportPhase::Queued,
     });
-    let result = (|| {
-        // Keep validating the public request shape for callers that still
-        // provide a proposed name, but never apply it: Sync preserves the
-        // authoritative Scene display name and storage identity.
-        StorageKey::new(name.trim().to_owned()).map_err(|_| ProjectWriteError::Invalid {
-            code: ProjectWriteErrorCode::InvalidSceneName,
-        })?;
-        service.progress.publish(ProjectImportProgress {
-            operation_id: operation_id.clone(),
-            generation,
-            phase: ProjectImportPhase::Validating,
-        });
-        let (entry, validated) =
-            service
-                .validated_project(project_id)
-                .map_err(|error| ProjectWriteError::Failed {
+    let result =
+        (|| {
+            service.progress.publish(ProjectImportProgress {
+                operation_id: operation_id.clone(),
+                generation,
+                phase: ProjectImportPhase::Validating,
+            });
+            let (entry, validated) = service.validated_project(project_id).map_err(|error| {
+                ProjectWriteError::Failed {
                     code: match error {
                         project_protocol::ProjectReadError::NotFound { .. } => {
                             ProjectWriteErrorCode::SelectionUnavailable
                         }
                         _ => ProjectWriteErrorCode::ManifestUnavailable,
                     },
-                })?;
-        let project_root = entry.repository_locator();
-        validated
-            .scene(scene_id)
-            .ok_or(ProjectWriteError::Invalid {
-                code: ProjectWriteErrorCode::SceneNotFound,
+                }
             })?;
-        service.stage_mutations.ensure_capacity(project_root)?;
-        let project = crate::project::scene::adoption::sync_linked_scene_atomic(
-            crate::project::scene::adoption::LinkedSceneSyncRequest {
+            let project_root = entry.repository_locator();
+            validated
+                .scene(scene_id)
+                .ok_or(ProjectWriteError::Invalid {
+                    code: ProjectWriteErrorCode::SceneNotFound,
+                })?;
+            let source =
+                crate::project::link::resolve_source(project_root, scene_id).map_err(|_| {
+                    ProjectWriteError::Failed {
+                        code: ProjectWriteErrorCode::FilesystemFailure,
+                    }
+                })?;
+            let inspection = crate::project::scene::inspection::inspect_composition(&source)
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::FilesystemFailure,
+                })?;
+            service.stage_mutations.ensure_capacity(project_root)?;
+            let (project, mut publication) =
+                crate::project::scene::adoption::sync_linked_scene_atomic(
+                    crate::project::scene::adoption::LinkedSceneSyncRequest {
+                        project_root,
+                        source: &source,
+                        inspection: &inspection,
+                        scene_id,
+                        base_manifest: validated.raw(),
+                    },
+                )
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::FilesystemFailure,
+                })?;
+            if let Err(error) = service.stage_mutations.submit_for_project(
                 project_root,
-                source,
-                inspection,
+                super::ProjectStageMutation::RefreshSceneDefinition {
+                    project_id,
+                    scene_id,
+                },
+            ) {
+                let _ = publication.rollback();
+                return Err(error);
+            }
+            publication
+                .finalize()
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::FilesystemFailure,
+                })?;
+            let summary = super::inspection::project_summary(&project.manifest, project_root)?;
+            let _ = service.cache_warm.enqueue_affected(
+                project_root,
+                crate::project::cache::ProjectCacheTarget::Scene {
+                    id: scene_id.to_string(),
+                },
+            );
+            Ok(ProjectSceneAdoptionResponse {
+                project: summary,
                 scene_id,
-                base_manifest: validated.raw(),
-            },
-        )
-        .map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::FilesystemFailure,
-        })?;
-        let summary = super::inspection::project_summary(&project.manifest, project_root)?;
-        let _ = service.cache_warm.enqueue_affected(
-            project_root,
-            crate::project::cache::ProjectCacheTarget::Scene {
-                id: scene_id.to_string(),
-            },
-        );
-        service.stage_mutations.submit_for_project(
-            project_root,
-            super::ProjectStageMutation::RefreshSceneDefinition {
-                project_id,
-                scene_id,
-            },
-        )?;
-        Ok(ProjectSceneAdoptionResponse {
-            project: summary,
-            scene_id,
-            placement_id: None,
-            operation_id: operation_id.clone(),
-            generation,
-            progress: ProjectImportProgress {
+                placement_id: None,
                 operation_id: operation_id.clone(),
                 generation,
-                phase: ProjectImportPhase::Completed,
-            },
-        })
-    })();
+                progress: ProjectImportProgress {
+                    operation_id: operation_id.clone(),
+                    generation,
+                    phase: ProjectImportPhase::Completed,
+                },
+            })
+        })();
     service.progress.publish(ProjectImportProgress {
         operation_id,
         generation,
@@ -333,3 +343,7 @@ fn adopt_scene_inner(
 #[cfg(test)]
 #[path = "scene_adoption_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "scene_adoption_sync_tests.rs"]
+mod sync_tests;

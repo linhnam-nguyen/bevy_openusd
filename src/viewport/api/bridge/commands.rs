@@ -127,6 +127,14 @@ pub(super) fn apply_viewport_commands(
                     .variants
                     .insert((prim_path.clone(), set_name.clone()), option.clone());
                 if let Some(stage) = state.stage.as_deref() {
+                    if stage.is_authoring_frozen() {
+                        reject(
+                            &mut outbox,
+                            request_id,
+                            "LiveStage authoring is leased by Project publication".to_owned(),
+                        );
+                        continue;
+                    }
                     stage.mark_authored(prim_path.clone());
                     if let Err(error) = state.histories.authoring.set_variant(
                         &stage.stage,

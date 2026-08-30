@@ -14,6 +14,9 @@ pub(super) fn apply_runtime_mutations(
     histories: &mut EditorHistories,
     batch: &RuntimeMutationBatch,
 ) -> Result<Vec<String>, String> {
+    if stage.is_authoring_frozen() {
+        return Err("LiveStage authoring is leased by Project publication".to_owned());
+    }
     let mut changed_paths = Vec::new();
 
     for mutation in &batch.operations {

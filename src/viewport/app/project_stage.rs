@@ -17,13 +17,36 @@ use crate::{
     viewport::session::StageHandle,
 };
 
+#[path = "project_runtime_authority.rs"]
+mod project_runtime_authority;
+
 /// The render-server process owns this queue resource. Project mutation
 /// records are read from the active Project's private cache outbox.
 #[derive(Resource, Clone, Default)]
 pub(super) struct ProjectStageMutationRuntime(pub(super) ProjectStageMutationQueue);
 
-#[derive(Resource, Clone, Default)]
-pub(super) struct ProjectRuntimeAuthorityRuntime(pub(super) ProjectRuntimeAuthorityQueue);
+#[derive(Clone, Debug)]
+struct ActiveProjectRuntimeLease {
+    project_id: ProjectId,
+    lease_id: String,
+    session_id: u64,
+    live_revision: u64,
+}
+
+#[derive(Resource, Clone)]
+pub(super) struct ProjectRuntimeAuthorityRuntime {
+    pub(super) queue: ProjectRuntimeAuthorityQueue,
+    active_lease: Option<ActiveProjectRuntimeLease>,
+}
+
+impl Default for ProjectRuntimeAuthorityRuntime {
+    fn default() -> Self {
+        Self {
+            queue: ProjectRuntimeAuthorityQueue::default(),
+            active_lease: None,
+        }
+    }
+}
 
 pub(super) fn install(app: &mut App) {
     app.insert_resource(ProjectStageMutationRuntime::default())
@@ -31,104 +54,46 @@ pub(super) fn install(app: &mut App) {
         .add_systems(
             Update,
             (
-                consume_project_runtime_authority,
+                project_runtime_authority::consume_project_runtime_authority,
                 consume_project_stage_mutations,
             )
                 .in_set(usd_bevy::LiveStageSet::Project),
         );
 }
 
-/// Answer host-side Commit/Export requests from the exact LiveStage owner.
-pub(super) fn consume_project_runtime_authority(world: &mut World) {
-    let Some(stage_path) = world
-        .get_resource::<StageHandle>()
-        .map(|handle| handle.path.clone())
-    else {
-        return;
-    };
-    let Some(project_root) = project_root_for_stage(&stage_path) else {
-        return;
-    };
-    let Ok(manifest) = ManifestStore::read_validated(&project_root) else {
-        return;
-    };
-    let project_id = manifest.raw().project_id;
-    let Some(active_scene_id) = active_scene_id_for_stage(&stage_path, &project_root) else {
-        return;
-    };
-    let queue = world.resource::<ProjectRuntimeAuthorityRuntime>().0.clone();
-    let Ok(requests) = queue.consume_pending(&project_root) else {
-        return;
-    };
-    for request in requests {
-        let request_id = request.request_id().to_owned();
-        let response = match request {
-            ProjectRuntimeRequest::BeginCommit {
-                project_id: request_project_id,
-                target,
-                ..
-            } if request_project_id == project_id => {
-                let allowed = match target {
-                    ProjectCommitTarget::Project => true,
-                    ProjectCommitTarget::Scene(scene_id) => scene_id == active_scene_id,
-                };
-                if !allowed {
-                    ProjectRuntimeResponse::Inactive { request_id }
-                } else {
-                    runtime_snapshot_response(world, &request_id, active_scene_id)
-                }
-            }
-            ProjectRuntimeRequest::ExportScene {
-                project_id: request_project_id,
-                scene_id,
-                ..
-            } if request_project_id == project_id && scene_id == active_scene_id => {
-                runtime_snapshot_response(world, &request_id, active_scene_id)
-            }
-            ProjectRuntimeRequest::ValidateCommit {
-                project_id: request_project_id,
-                live_revision,
-                ..
-            } if request_project_id == project_id => {
-                runtime_revision_response(world, &request_id, live_revision)
-            }
-            ProjectRuntimeRequest::FinishCommit {
-                project_id: request_project_id,
-                live_revision,
-                ..
-            } if request_project_id == project_id => {
-                runtime_finish_response(world, &request_id, live_revision)
-            }
-            ProjectRuntimeRequest::AbortCommit {
-                project_id: request_project_id,
-                ..
-            } if request_project_id == project_id => {
-                ProjectRuntimeResponse::Finished { request_id }
-            }
-            _ => ProjectRuntimeResponse::Inactive { request_id },
-        };
-        if let Err(error) = queue.publish_response(&project_root, &response) {
-            bevy::log::warn!("Project runtime authority response failed: {error:?}");
-        }
-    }
-}
-
 fn runtime_revision_response(
     world: &World,
     request_id: &str,
+    project_id: ProjectId,
+    lease_id: &str,
     expected_revision: u64,
 ) -> ProjectRuntimeResponse {
-    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
-        return ProjectRuntimeResponse::Failed {
-            request_id: request_id.to_owned(),
-            code: project_protocol::ProjectWriteErrorCode::Busy,
-        };
+    let Some(active_lease) = world
+        .get_resource::<ProjectRuntimeAuthorityRuntime>()
+        .and_then(|runtime| runtime.active_lease.as_ref())
+    else {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
     };
-    if live.current_revision().0 != expected_revision {
-        return ProjectRuntimeResponse::Failed {
-            request_id: request_id.to_owned(),
-            code: project_protocol::ProjectWriteErrorCode::ConcurrentChange,
-        };
+    if active_lease.project_id != project_id || active_lease.lease_id != lease_id {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    }
+    if active_lease.live_revision != expected_revision {
+        return runtime_failed(
+            request_id,
+            project_protocol::ProjectWriteErrorCode::ConcurrentChange,
+        );
+    }
+    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    };
+    if live.session_id() != active_lease.session_id {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    }
+    if live.authoring_generation().0 != expected_revision {
+        return runtime_failed(
+            request_id,
+            project_protocol::ProjectWriteErrorCode::ConcurrentChange,
+        );
     }
     ProjectRuntimeResponse::Validated {
         request_id: request_id.to_owned(),
@@ -136,42 +101,158 @@ fn runtime_revision_response(
 }
 
 fn runtime_finish_response(
-    world: &World,
+    world: &mut World,
     request_id: &str,
+    project_id: ProjectId,
+    lease_id: &str,
     expected_revision: u64,
 ) -> ProjectRuntimeResponse {
-    match runtime_revision_response(world, request_id, expected_revision) {
-        ProjectRuntimeResponse::Validated { .. } => ProjectRuntimeResponse::Finished {
-            request_id: request_id.to_owned(),
-        },
+    match runtime_revision_response(world, request_id, project_id, lease_id, expected_revision) {
+        ProjectRuntimeResponse::Validated { .. } => {
+            if let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() {
+                live.unfreeze_authoring();
+            }
+            world
+                .resource_mut::<ProjectRuntimeAuthorityRuntime>()
+                .active_lease = None;
+            ProjectRuntimeResponse::Finished {
+                request_id: request_id.to_owned(),
+            }
+        }
         response => response,
     }
 }
 
 fn runtime_snapshot_response(
-    world: &World,
+    world: &mut World,
     request_id: &str,
+    project_id: ProjectId,
     active_scene_id: SceneId,
 ) -> ProjectRuntimeResponse {
-    let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
-        return ProjectRuntimeResponse::Failed {
-            request_id: request_id.to_owned(),
-            code: project_protocol::ProjectWriteErrorCode::Busy,
+    if world
+        .resource::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease
+        .is_some()
+    {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    }
+    let (root_layer, lease_id, session_id, live_revision) = {
+        let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
+            return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
         };
-    };
-    let Ok(root_layer) = live.stage.root_layer().export_to_string() else {
-        return ProjectRuntimeResponse::Failed {
-            request_id: request_id.to_owned(),
-            code: project_protocol::ProjectWriteErrorCode::ExportFailed,
+        if !live.try_freeze_authoring() {
+            return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+        }
+        let Ok(root_layer) = live.stage.root_layer().export_to_string() else {
+            live.unfreeze_authoring();
+            return runtime_failed(
+                request_id,
+                project_protocol::ProjectWriteErrorCode::ExportFailed,
+            );
         };
+        (
+            root_layer,
+            uuid::Uuid::new_v4().to_string(),
+            live.session_id(),
+            live.authoring_generation().0,
+        )
     };
+    world
+        .resource_mut::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease = Some(ActiveProjectRuntimeLease {
+        project_id,
+        lease_id: lease_id.clone(),
+        session_id,
+        live_revision,
+    });
     ProjectRuntimeResponse::Ready {
         request_id: request_id.to_owned(),
-        lease_id: uuid::Uuid::new_v4().to_string(),
+        lease_id,
+        session_id,
         scene_id: active_scene_id,
-        live_revision: live.current_revision().0,
+        live_revision,
         root_layer: root_layer.into_bytes(),
     }
+}
+
+fn runtime_abort_response(
+    world: &mut World,
+    request_id: &str,
+    project_id: ProjectId,
+    lease_id: &str,
+) -> ProjectRuntimeResponse {
+    let matches = world
+        .resource::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease
+        .as_ref()
+        .is_some_and(|active| active.project_id == project_id && active.lease_id == lease_id);
+    if !matches {
+        return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
+    }
+    clear_runtime_lease(world, project_id, lease_id);
+    ProjectRuntimeResponse::Finished {
+        request_id: request_id.to_owned(),
+    }
+}
+
+fn clear_runtime_lease(world: &mut World, project_id: ProjectId, lease_id: &str) {
+    let matches = world
+        .resource::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease
+        .as_ref()
+        .is_some_and(|active| active.project_id == project_id && active.lease_id == lease_id);
+    if !matches {
+        return;
+    }
+    if let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() {
+        live.unfreeze_authoring();
+    }
+    world
+        .resource_mut::<ProjectRuntimeAuthorityRuntime>()
+        .active_lease = None;
+}
+
+fn runtime_failed(
+    request_id: &str,
+    code: project_protocol::ProjectWriteErrorCode,
+) -> ProjectRuntimeResponse {
+    ProjectRuntimeResponse::Failed {
+        request_id: request_id.to_owned(),
+        code,
+    }
+}
+
+fn runtime_scene_is_allowed(
+    project_root: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    active_scene_id: SceneId,
+    target: &ProjectCommitTarget,
+) -> bool {
+    match target {
+        ProjectCommitTarget::Project => manifest.scene(active_scene_id).is_some(),
+        ProjectCommitTarget::Scene(scene_id) => {
+            crate::project::service::scene_closure::scene_commit_closure(
+                project_root,
+                manifest.raw(),
+                *scene_id,
+            )
+            .is_ok_and(|(scenes, _)| scenes.contains(&active_scene_id))
+        }
+    }
+}
+
+fn runtime_scene_is_in_export_closure(
+    project_root: &Path,
+    manifest: &usd_project::ValidatedProjectManifest,
+    root_scene: SceneId,
+    active_scene_id: SceneId,
+) -> bool {
+    crate::project::service::scene_closure::scene_dependency_closure(
+        project_root,
+        manifest.raw(),
+        root_scene,
+    )
+    .is_ok_and(|(scenes, _)| scenes.contains(&active_scene_id))
 }
 
 /// Apply canonical Project composition changes on the thread that owns the
@@ -198,6 +279,9 @@ pub(super) fn consume_project_stage_mutations(world: &mut World) {
     let Some(mut live) = world.get_non_send_mut::<usd_bevy::LiveStage>() else {
         return;
     };
+    if live.is_authoring_frozen() {
+        return;
+    }
     if let Err(error) = queue.apply_for_active_scene(
         &mut *live,
         &project_root,

@@ -109,6 +109,7 @@ mod runtime_authority;
 mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
+pub(crate) mod scene_closure;
 mod scene_lifecycle;
 mod stage_activation;
 mod stage_mutation;

@@ -173,11 +173,6 @@ pub struct ProjectLinkSceneRequest {
 pub struct ProjectSyncLinkedSceneRequest {
     pub project_id: ProjectId,
     pub scene_id: SceneId,
-    pub source: LocalSelectionToken,
-    pub inspection: CompositionInspection,
-    pub name: String,
-    pub operation_id: String,
-    pub generation: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

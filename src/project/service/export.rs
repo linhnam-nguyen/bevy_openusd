@@ -14,10 +14,10 @@ use project_protocol::{
     ProjectExportSceneRequest, ProjectReadError, ProjectSceneExportResponse, ProjectWriteError,
     ProjectWriteErrorCode,
 };
-use usd_project::{SceneId, SceneMemberTarget};
+use usd_project::SceneId;
 use uuid::Uuid;
 
-use super::ProjectApplicationService;
+use super::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard};
 
 #[path = "live_export.rs"]
 mod live_export;
@@ -53,16 +53,15 @@ pub(super) fn export_scene(
     })?;
 
     let project_root = entry.repository_locator();
-    let runtime_snapshot = service
-        .publication_coordinator
-        .runtime_authority_arc()
-        .snapshot_for_export(&project_root, project_id, request.scene_id)?;
-    if runtime_snapshot
-        .as_ref()
-        .is_some_and(|snapshot| snapshot.scene_id != request.scene_id)
-    {
-        return Err(export_error());
-    }
+    let runtime_authority = service.publication_coordinator.runtime_authority_arc();
+    let runtime_snapshot =
+        runtime_authority.snapshot_for_export(&project_root, project_id, request.scene_id)?;
+    let _runtime_lease = RuntimeLeaseGuard::new(
+        runtime_authority,
+        project_root.to_owned(),
+        project_id,
+        runtime_snapshot.as_ref(),
+    );
     let parent = destination.parent().ok_or(ProjectWriteError::Invalid {
         code: ProjectWriteErrorCode::ExportDestinationInvalid,
     })?;
@@ -77,7 +76,7 @@ pub(super) fn export_scene(
                 &manifest,
                 request.scene_id,
                 &temporary,
-                Some(&live_root_path),
+                Some((&live_root_path, snapshot.scene_id)),
             )?;
         } else {
             write_archive(project_root, &manifest, request.scene_id, &temporary)?;
@@ -138,15 +137,20 @@ fn write_archive_with_root_source(
     manifest: &usd_project::ValidatedProjectManifest,
     root_scene: SceneId,
     destination: &Path,
-    root_source_override: Option<&Path>,
+    runtime_override: Option<(&Path, SceneId)>,
 ) -> Result<(), ProjectWriteError> {
-    let (scenes, models) = dependency_closure(project_root, manifest, root_scene)?;
+    let (scenes, models) =
+        super::scene_closure::scene_dependency_closure(project_root, manifest.raw(), root_scene)
+            .map_err(|_| export_error())?;
     let entries = export_entries(project_root, manifest, &scenes, &models)?;
     let root_source = scene_path(project_root, root_scene);
     if !entries.iter().any(|entry| entry.source == root_source) {
         return Err(export_error());
     }
-    let root_read_source = root_source_override.unwrap_or(&root_source);
+    let root_read_source = runtime_override
+        .filter(|(_, scene_id)| *scene_id == root_scene)
+        .map(|(source, _)| source)
+        .unwrap_or(&root_source);
     let mut archive = ArchiveWriter::create(destination).map_err(|_| export_error())?;
     let mapping = entries
         .iter()
@@ -160,48 +164,17 @@ fn write_archive_with_root_source(
     let mut ordered = entries;
     ordered.sort_by(|left, right| left.archive.cmp(&right.archive));
     for entry in ordered {
-        let bytes = read_export_bytes(&entry.source, &entry.archive, &mapping)?;
+        let source = runtime_override
+            .filter(|(_, scene_id)| entry.source == scene_path(project_root, *scene_id))
+            .map(|(source, _)| source)
+            .unwrap_or(&entry.source);
+        let bytes = read_export_bytes(source, &entry.archive, &mapping)?;
         archive
             .add_layer(&entry.archive, &bytes)
             .map_err(|_| export_error())?;
     }
     archive.finish().map_err(|_| export_error())?;
     Ok(())
-}
-
-fn dependency_closure(
-    project_root: &Path,
-    manifest: &usd_project::ValidatedProjectManifest,
-    root_scene: SceneId,
-) -> Result<(HashSet<SceneId>, HashSet<usd_project::ModelId>), ProjectWriteError> {
-    let mut members = HashMap::new();
-    for scene in manifest.scenes() {
-        let path = scene_path(project_root, scene.id);
-        let scene_members = crate::project::scene::authoring::read_scene_members(&path, scene.id)
-            .map_err(|_| export_error())?;
-        members.insert(scene.id, scene_members);
-    }
-
-    let mut scenes = HashSet::from([root_scene]);
-    let mut models = HashSet::new();
-    let mut pending = vec![root_scene];
-    while let Some(scene_id) = pending.pop() {
-        for member in members.get(&scene_id).into_iter().flatten() {
-            match member.target {
-                SceneMemberTarget::Scene(child) if scenes.insert(child) => pending.push(child),
-                SceneMemberTarget::Model(model_id) => {
-                    models.insert(model_id);
-                }
-                SceneMemberTarget::Scene(_) => {}
-            }
-        }
-    }
-    for model_id in &models {
-        if manifest.model(*model_id).is_none() {
-            return Err(export_error());
-        }
-    }
-    Ok((scenes, models))
 }
 
 fn export_entries(
