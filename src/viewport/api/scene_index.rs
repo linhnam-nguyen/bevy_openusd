@@ -230,17 +230,26 @@ impl SceneAnchorIndex {
             .map(
                 |(entity, prim, display_name, target, transparent, visibility, children)| {
                     let display_name = display_name.map(|display_name| display_name.0.clone());
-                    let display_name = target
-                        .and_then(|target| presentation?.target_name(&target.kind, &target.id))
-                        .map(str::to_owned)
-                        .or(display_name)
-                        .or_else(|| {
-                            presentation
-                                .filter(|presentation| {
-                                    presentation.root_path.as_deref() == Some(prim.path.as_str())
-                                })
-                                .and_then(|presentation| presentation.root_name.clone())
-                        });
+                    let is_presentation_root = presentation.is_some_and(|presentation| {
+                        presentation.root_path.as_deref() == Some(prim.path.as_str())
+                    });
+                    let display_name = if is_presentation_root {
+                        presentation
+                            .and_then(|presentation| presentation.root_name.clone())
+                            .or_else(|| {
+                                target
+                                    .and_then(|target| {
+                                        presentation?.target_name(&target.kind, &target.id)
+                                    })
+                                    .map(str::to_owned)
+                            })
+                            .or(display_name)
+                    } else {
+                        target
+                            .and_then(|target| presentation?.target_name(&target.kind, &target.id))
+                            .map(str::to_owned)
+                            .or(display_name)
+                    };
                     Candidate {
                         entity,
                         path: prim.path.clone(),
@@ -376,3 +385,7 @@ impl SceneAnchorIndex {
 #[cfg(test)]
 #[path = "scene_index_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "scene_index_lifecycle_tests.rs"]
+mod lifecycle_tests;

@@ -24,6 +24,10 @@ const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
 const SCENES_DIRECTORY: &str = "scenes";
 
+#[path = "adoption_placement.rs"]
+mod placement;
+pub(crate) use placement::propose_scene_placement;
+
 /// Inputs for one backend-only Scene adoption transaction.
 pub(crate) struct SceneAdoptionRequest<'a> {
     pub project_root: &'a Path,
@@ -58,10 +62,17 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .base_manifest
         .validate()
         .context("validate base Project manifest")?;
-    adoption_support::ensure_adoptable(request.inspection)?;
+    adoption_support::ensure_adoptable(request.inspection)
+        .map_err(|error| {
+            anyhow::Error::new(adoption_support::AdoptionPhaseError::ClassificationRejected(error))
+        })
+        .context("validate Scene adoption classification and dependencies")?;
     adoption_support::ensure_current_manifest(request.project_root, request.base_manifest)?;
 
-    let default_prim = adoption_support::revalidate_source(request.source, request.inspection)?;
+    let default_prim =
+        adoption_support::revalidate_source_for_adoption(request.source, request.inspection)
+            .map_err(anyhow::Error::new)
+            .context("validate adoption source after inspection")?;
     let scene_name = request.name.trim();
     ensure!(
         !scene_name.is_empty(),
@@ -178,7 +189,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     let result = (|| {
         if scene_is_new {
             let source_name =
-                materialize_source_closure(request.source, &temporary_source_directory)?;
+                materialize_source_closure(request.source, &temporary_source_directory)
+                    .map_err(|error| {
+                        anyhow::Error::new(
+                            adoption_support::AdoptionPhaseError::DependencyLocalization(error),
+                        )
+                    })
+                    .context("localize Scene dependency closure")?;
             adoption_authoring::author_scene_wrapper_to_path(
                 &temporary_scene_path,
                 request.project_root,
@@ -189,13 +206,25 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 scene_name,
                 &request.inspection.spatial,
                 request.linked_source.is_some(),
-            )?;
+            )
+            .map_err(|error| {
+                anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                    error,
+                ))
+            })
+            .context("validate adopted Scene composition")?;
             adoption_authoring::validate_scene_wrapper(
                 &temporary_scene_path,
                 scene_id,
                 &request.inspection.spatial,
                 request.linked_source.is_some(),
-            )?;
+            )
+            .map_err(|error| {
+                anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                    error,
+                ))
+            })
+            .context("validate adopted Scene composition")?;
             ensure!(
                 !final_scene_path.exists(),
                 "new Project Scene canonical layer already exists"
@@ -205,7 +234,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                     &temporary_binding_path,
                     scene_id,
                     linked_source,
-                )?;
+                )
+                .map_err(|error| {
+                    anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                        error,
+                    ))
+                })
+                .context("validate adopted Scene composition")?;
             }
         }
 
@@ -225,7 +260,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                     parent_members,
                     scene_id,
                     &final_scene_path,
-                )?;
+                )
+                .map_err(|error| {
+                    anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                        error,
+                    ))
+                })
+                .context("validate parent Scene composition")?;
             } else {
                 adoption_authoring::prepare_parent_layer(
                     parent_scene_path,
@@ -235,7 +276,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                         .parent_scene_id
                         .expect("parent path implies parent identity"),
                     parent_members,
-                )?;
+                )
+                .map_err(|error| {
+                    anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                        error,
+                    ))
+                })
+                .context("validate parent Scene composition")?;
             }
             authoring::validate_scene_file(
                 temporary_parent_path,
@@ -243,7 +290,13 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                     .parent_scene_id
                     .expect("parent path implies parent identity"),
                 parent_members,
-            )?;
+            )
+            .map_err(|error| {
+                anyhow::Error::new(adoption_support::AdoptionPhaseError::CompositionValidation(
+                    error,
+                ))
+            })
+            .context("validate parent Scene composition")?;
         }
 
         if let Some(parent_scene_path) = parent_scene_path.as_ref() {
@@ -299,7 +352,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 .context("publish adopted Project manifest")?;
         }
         Ok(())
-    })();
+    })()
+    .context("publish canonical Scene adoption");
 
     let final_result = match result {
         Ok(()) => Ok(AdoptedScene {
@@ -309,7 +363,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             manifest: manifest_candidate,
         }),
         Err(error) => {
-            if let Err(rollback_error) = adoption_support::rollback_publication(
+            let error = if let Err(rollback_error) = adoption_support::rollback_publication(
                 parent_scene_path.as_deref(),
                 &parent_backup_path,
                 parent_backup_created,
@@ -321,12 +375,15 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 &final_binding_path,
                 binding_published,
             ) {
-                Err(error.context(format!(
+                error.context(format!(
                     "rollback Scene adoption publication: {rollback_error}"
-                )))
+                ))
             } else {
-                Err(error)
-            }
+                error
+            };
+            Err(anyhow::Error::new(
+                adoption_support::AdoptionPhaseError::Publication(error),
+            ))
         }
     };
     let _ = fs::remove_dir_all(&transaction_directory);
@@ -336,21 +393,6 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
 pub(crate) use crate::project::scene::linked_sync::{
     LinkedSceneSyncRequest, sync_linked_scene_atomic,
 };
-
-/// Propose a placement while preserving the target Scene identity.
-pub(crate) fn propose_scene_placement(
-    graph: &SceneCompositionGraph,
-    parent_scene_id: SceneId,
-    target_scene_id: SceneId,
-) -> Result<(SceneCompositionGraph, SceneMember)> {
-    adoption_support::propose_scene_placement_with_name(
-        graph,
-        parent_scene_id,
-        target_scene_id,
-        "",
-        ScenePlacementTransform::IDENTITY,
-    )
-}
 
 #[cfg(test)]
 #[path = "adoption_tests.rs"]

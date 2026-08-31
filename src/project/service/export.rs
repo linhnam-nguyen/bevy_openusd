@@ -290,11 +290,12 @@ fn read_export_bytes(
         return Ok(bytes);
     }
     let text = String::from_utf8(bytes).map_err(|_| export_error())?;
-    rewrite_asset_paths(&text, archive_path, mapping).map(|text| text.into_bytes())
+    rewrite_asset_paths(&text, source, archive_path, mapping).map(|text| text.into_bytes())
 }
 
 fn rewrite_asset_paths(
     text: &str,
+    source: &Path,
     current_archive_path: &str,
     mapping: &HashMap<PathBuf, String>,
 ) -> Result<String, ProjectWriteError> {
@@ -308,11 +309,17 @@ fn rewrite_asset_paths(
         };
         let close = open + 1 + close_offset;
         let asset = &text[open + 1..close];
-        if asset.starts_with('/') {
-            let asset_path = Path::new(asset);
-            let target = mapping.get(asset_path).ok_or_else(export_error)?;
-            let relative = relative_archive_path(current_archive_path, target);
-            output.push_str(&relative);
+        let asset_path = Path::new(asset);
+        let resolved = if asset_path.is_absolute() {
+            asset_path.to_owned()
+        } else {
+            source
+                .parent()
+                .map(|parent| parent.join(asset_path))
+                .unwrap_or_else(|| asset_path.to_owned())
+        };
+        if let Some(target) = mapping.get(&resolved) {
+            output.push_str(&relative_archive_path(current_archive_path, target));
         } else {
             output.push_str(asset);
         }

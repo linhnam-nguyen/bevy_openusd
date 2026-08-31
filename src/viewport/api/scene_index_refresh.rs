@@ -46,7 +46,11 @@ pub(crate) fn refresh_scene_anchor_index(
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
     // trigger as well; otherwise a static stage can publish an empty tree
     // before its projected prim entities are visible to this query.
+    let presentation_changed = presentation
+        .as_ref()
+        .is_some_and(|presentation| presentation.is_changed());
     let changed = spawned.is_changed()
+        || presentation_changed
         || !changed_prims.is_empty()
         || removed_prims.read().next().is_some()
         || removed_transparent.read().next().is_some();

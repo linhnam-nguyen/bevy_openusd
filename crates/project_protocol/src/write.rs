@@ -77,8 +77,10 @@ pub enum ProjectWriteErrorCode {
     CommitFailed,
     ExportDestinationInvalid,
     ExportFailed,
-    SourceInspectionFailed,
-    CompositionGraphUnavailable,
+    SourceChanged,
+    SourceClassificationRejected,
+    DependencyLocalizationFailed,
+    CompositionValidationFailed,
     ParentSceneUnavailable,
     ScenePublicationFailed,
 }

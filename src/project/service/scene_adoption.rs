@@ -10,6 +10,10 @@ use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 
 use super::ProjectApplicationService;
 
+#[path = "scene_adoption_errors.rs"]
+mod errors;
+use errors::{adoption_error_code, source_revalidation_error_code};
+
 pub(super) fn adopt_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
@@ -264,17 +268,16 @@ fn adopt_scene_inner(
     let project_root = entry.repository_locator();
     crate::project::scene::adoption_support::ensure_adoptable(inspection).map_err(|_| {
         ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::SourceInspectionFailed,
+            code: ProjectWriteErrorCode::SourceClassificationRejected,
         }
     })?;
-    crate::project::scene::adoption_support::revalidate_source(source, inspection).map_err(
-        |_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::SourceInspectionFailed,
-        },
-    )?;
+    crate::project::scene::adoption_support::revalidate_source_for_adoption(source, inspection)
+        .map_err(|error| ProjectWriteError::Failed {
+            code: source_revalidation_error_code(&error),
+        })?;
     let graph = super::scene::scene_graph(project_root, &validated).map_err(|_| {
         ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::CompositionGraphUnavailable,
+            code: ProjectWriteErrorCode::CompositionValidationFailed,
         }
     })?;
     let parent_members = parent_scene_id
@@ -314,8 +317,8 @@ fn adopt_scene_inner(
             linked_source,
         },
     )
-    .map_err(|_| ProjectWriteError::Failed {
-        code: ProjectWriteErrorCode::ScenePublicationFailed,
+    .map_err(|error| ProjectWriteError::Failed {
+        code: adoption_error_code(&error),
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {

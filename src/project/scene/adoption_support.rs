@@ -2,6 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::{Context, Result, ensure};
 use openusd::usd::{InitialLoadSet, Stage};
+use thiserror::Error;
 use usd_project::{
     CompositionClassification, CompositionInspection, ProjectManifestV1, SceneCompositionGraph,
     SceneId, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform,
@@ -9,6 +10,31 @@ use usd_project::{
 
 use super::inspection::inspect_composition;
 use crate::project::catalog::manifest_store::ManifestStore;
+
+#[derive(Debug, Error)]
+pub(crate) enum SourceRevalidationError {
+    #[error("Scene adoption source is missing or changed")]
+    Changed,
+    #[error("Scene adoption source composition could not be validated: {0}")]
+    CompositionValidation(#[source] anyhow::Error),
+    #[error("Scene adoption source classification or dependency is rejected: {0}")]
+    ClassificationRejected(#[source] anyhow::Error),
+}
+
+/// Stable internal adoption phases. The service maps these phases to
+/// path-free protocol error codes instead of exposing a broad anyhow context
+/// or filesystem details to the UI.
+#[derive(Debug, Error)]
+pub(crate) enum AdoptionPhaseError {
+    #[error("Scene adoption source classification was rejected: {0}")]
+    ClassificationRejected(#[source] anyhow::Error),
+    #[error("Scene adoption dependency localization failed: {0}")]
+    DependencyLocalization(#[source] anyhow::Error),
+    #[error("Scene adoption composition validation failed: {0}")]
+    CompositionValidation(#[source] anyhow::Error),
+    #[error("Scene adoption publication failed: {0}")]
+    Publication(#[source] anyhow::Error),
+}
 
 pub(super) fn ensure_current_manifest(
     project_root: &Path,
@@ -67,28 +93,42 @@ pub(crate) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()>
 }
 
 pub(crate) fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<String> {
-    ensure!(
-        source.is_file(),
-        "Scene adoption source disappeared or is not a file"
-    );
-    let actual = inspect_composition(source).context("reinspect Scene adoption source")?;
-    ensure!(
-        &actual == expected,
-        "Scene adoption source changed after inspection"
-    );
-    ensure_adoptable(&actual)?;
+    revalidate_source_for_adoption(source, expected).map_err(anyhow::Error::new)
+}
 
-    let source_string = source
-        .to_str()
-        .context("Scene adoption source path must be valid UTF-8")?;
+pub(crate) fn revalidate_source_for_adoption(
+    source: &Path,
+    expected: &CompositionInspection,
+) -> std::result::Result<String, SourceRevalidationError> {
+    if !source.is_file() {
+        return Err(SourceRevalidationError::Changed);
+    }
+    let actual =
+        inspect_composition(source).map_err(SourceRevalidationError::CompositionValidation)?;
+    if &actual != expected {
+        return Err(SourceRevalidationError::Changed);
+    }
+    ensure_adoptable(&actual).map_err(SourceRevalidationError::ClassificationRejected)?;
+
+    let source_string = source.to_str().ok_or_else(|| {
+        SourceRevalidationError::CompositionValidation(anyhow::anyhow!(
+            "Scene adoption source path must be valid UTF-8"
+        ))
+    })?;
     let stage = Stage::builder()
         .load(InitialLoadSet::LoadNone)
         .open(source_string)
-        .context("reopen Scene adoption source")?;
+        .map_err(|error| {
+            SourceRevalidationError::CompositionValidation(anyhow::anyhow!("{error:#}"))
+        })?;
     stage
         .default_prim()
         .map(|token| token.as_str().to_owned())
-        .context("Scene adoption source has no defaultPrim")
+        .ok_or_else(|| {
+            SourceRevalidationError::CompositionValidation(anyhow::anyhow!(
+                "Scene adoption source has no defaultPrim"
+            ))
+        })
 }
 
 pub(super) fn rollback_publication(

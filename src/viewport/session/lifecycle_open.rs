@@ -5,6 +5,10 @@ use usd_bevy::LiveStage;
 use super::{Spawned, StageHandle, StagePresentationContext};
 
 pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
+    let presentation = world
+        .get_resource::<StagePresentationContext>()
+        .cloned()
+        .unwrap_or_default();
     world.remove_non_send::<LiveStage>();
     world.insert_resource(StageHandle {
         path: path.clone(),
@@ -22,7 +26,7 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
     let path_string = path.to_string_lossy().into_owned();
     match Stage::open(&path_string) {
         Ok(stage) => {
-            world.insert_resource(StagePresentationContext::default());
+            world.insert_resource(presentation);
             world.insert_non_send(LiveStage::new(stage));
         }
         Err(error) => {

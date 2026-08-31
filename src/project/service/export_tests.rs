@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read};
+use std::{fs, fs::File, io::Read};
 
 use super::ProjectApplicationService;
 use project_protocol::{
@@ -106,10 +106,45 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
     let mut service =
         ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
     let source_project = service.create_project(&parent, "Roundtrip Source").unwrap();
-    let source_scene_id = match source_project.root {
-        usd_project::ProjectRoot::Scene(scene_id) => scene_id,
-        root => panic!("expected protected Scene root, found {root:?}"),
-    };
+    assert!(matches!(
+        source_project.root,
+        usd_project::ProjectRoot::Scene(_)
+    ));
+    let composed_scene = service
+        .create_scene(
+            source_project.id,
+            ProjectWriteTarget::Project(source_project.id),
+            "Published Assembly",
+        )
+        .unwrap();
+    let source_directory = directory.path().join("source-closure");
+    fs::create_dir(&source_directory).unwrap();
+    let dependency = source_directory.join("dependency.usda");
+    fs::write(
+        &dependency,
+        "#usda 1.0\n( defaultPrim = \"Asset\" )\ndef Xform \"Asset\" {}\n",
+    )
+    .unwrap();
+    let composed_source = source_directory.join("assembly.usda");
+    fs::write(
+        &composed_source,
+        "#usda 1.0\n( defaultPrim = \"Assembly\" )\ndef Xform \"Assembly\" (kind = \"assembly\" references = @./dependency.usda@</Asset>) {}\n",
+    )
+    .unwrap();
+    let composed_inspection =
+        crate::project::scene::inspection::inspect_composition(&composed_source).unwrap();
+    let localized_scene = service
+        .adopt_scene(
+            source_project.id,
+            ProjectWriteTarget::Scene(composed_scene.scene_id),
+            &composed_source,
+            &composed_inspection,
+            "Localized Interior".to_owned(),
+            "roundtrip-localized".to_owned(),
+            1,
+            PlacementSpec::Default,
+        )
+        .unwrap();
     let exports = directory.path().join("exports");
     std::fs::create_dir(&exports).unwrap();
     let destination = exports.join("roundtrip.usdz");
@@ -118,18 +153,46 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
         .export_scene(
             ProjectExportSceneRequest {
                 project_id: source_project.id,
-                scene_id: source_scene_id,
+                scene_id: composed_scene.scene_id,
                 destination: LocalSelectionToken::new("roundtrip-export"),
             },
             &destination,
         )
         .unwrap();
     let inspection = crate::project::scene::inspection::inspect_composition(&destination).unwrap();
+    let file = File::open(&destination).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    assert!(
+        archive
+            .by_name(&format!("scenes/{}.usda", composed_scene.scene_id))
+            .is_ok()
+    );
+    assert!(
+        archive
+            .by_name(&format!("scenes/{}.usda", localized_scene.scene_id))
+            .is_ok()
+    );
+    let localized_import_prefix = format!("imports/scenes/{}/", localized_scene.scene_id);
+    assert!((0..archive.len()).any(|index| {
+        archive
+            .by_index(index)
+            .expect("export archive entry")
+            .name()
+            .starts_with(&localized_import_prefix)
+    }));
+    drop(archive);
     assert!(matches!(
         inspection.classification,
         usd_project::CompositionClassification::NativeUsdHubScene
             | usd_project::CompositionClassification::SceneLike
     ));
+    assert!(inspection.dependencies.iter().all(|dependency| {
+        !matches!(
+            dependency.classification,
+            usd_project::DependencyClassification::Missing
+                | usd_project::DependencyClassification::Unsupported
+        )
+    }));
 
     let target_project = service.create_project(&parent, "Roundtrip Target").unwrap();
     let imported = service
@@ -145,6 +208,15 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
         )
         .unwrap();
     assert!(imported.placement_id.is_some());
+    let target_root = parent.join("Roundtrip Target");
+    let imported_path =
+        crate::project::scene::authoring::scene_path(&target_root, imported.scene_id);
+    let imported_stage =
+        openusd::usd::Stage::open(imported_path.to_string_lossy().as_ref()).unwrap();
+    assert!(imported_stage.prim("/SceneRoot").is_defined().unwrap());
+    imported_stage
+        .traverse(openusd::usd::PrimPredicate::DEFAULT, |_| {})
+        .unwrap();
 
     let placed = service
         .adopt_scene(
@@ -159,7 +231,12 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
         )
         .unwrap();
     let placement_id = placed.placement_id.expect("matrix import placement");
-    let target_root = parent.join("Roundtrip Target");
+    let placed_path = crate::project::scene::authoring::scene_path(&target_root, placed.scene_id);
+    let placed_stage = openusd::usd::Stage::open(placed_path.to_string_lossy().as_ref()).unwrap();
+    assert!(placed_stage.prim("/SceneRoot").is_defined().unwrap());
+    placed_stage
+        .traverse(openusd::usd::PrimPredicate::DEFAULT, |_| {})
+        .unwrap();
     let members = crate::project::scene::authoring::read_scene_members(
         &crate::project::scene::authoring::scene_path(&target_root, imported.scene_id),
         imported.scene_id,
