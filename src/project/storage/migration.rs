@@ -11,6 +11,8 @@ use super::ProjectStorageLayout;
 
 #[path = "migration_assets.rs"]
 mod assets;
+#[path = "migration_durability.rs"]
+mod durability;
 #[path = "migration_journal.rs"]
 mod journal;
 #[path = "migration_publish.rs"]

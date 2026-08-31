@@ -128,3 +128,36 @@ fn invalid_canonical_manifest_preserves_recovery_transaction() -> Result<()> {
     assert!(!transaction_directory.exists());
     Ok(())
 }
+
+#[test]
+fn missing_canonical_target_preserves_recovery_transaction() -> Result<()> {
+    let _guard = MIGRATION_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let fixture = legacy_fixture();
+    let root = fixture.directory.path();
+    let layout = ProjectStorageLayout::new(root);
+    let migrated_manifest = fixture.manifest.clone().migrate_legacy()?.canonicalized();
+    let transaction_directory = layout
+        .metadata_dir()
+        .join(".transactions")
+        .join("migration-missing-canonical-target");
+    let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
+    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::failure_injection::set(3);
+    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    assert!(layout.canonical_manifest_path().is_file());
+
+    fs::remove_file(&plan.scenes[0].final_path)?;
+
+    assert!(super::super::recover_interrupted_migration(root, Some(&migrated_manifest)).is_err());
+    assert!(transaction_directory.is_dir());
+    assert!(layout.legacy_manifest_path().is_file());
+    assert!(layout.canonical_manifest_path().is_file());
+
+    fs::remove_file(layout.canonical_manifest_path())?;
+    super::super::recover_interrupted_migration(root, Some(&migrated_manifest))?;
+    assert!(!transaction_directory.exists());
+    assert!(layout.legacy_manifest_path().is_file());
+    Ok(())
+}

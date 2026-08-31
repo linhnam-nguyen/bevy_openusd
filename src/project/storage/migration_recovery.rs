@@ -3,7 +3,9 @@ use std::{collections::BTreeSet, fs, path::Path};
 use anyhow::{Context, Result, ensure};
 use usd_project::ProjectManifestV1;
 
-use super::{MigrationPlan, ProjectStorageLayout, TRANSACTIONS_DIRECTORY, journal, publish};
+use super::{
+    MigrationPlan, ProjectStorageLayout, TRANSACTIONS_DIRECTORY, durability, journal, publish,
+};
 
 pub(crate) fn recover_interrupted_migration(
     project_root: &Path,
@@ -87,6 +89,8 @@ pub(super) fn finalize_committed_migration(
 ) -> Result<()> {
     journal::validate_canonical_manifest(project_root, journal)?;
     let plan = journal::plan_from_journal(project_root, transaction_directory.to_owned(), journal)?;
+    durability::sync_and_validate_canonical_targets(project_root, &plan)
+        .context("validate and durably sync committed canonical Project assets")?;
     let layout = ProjectStorageLayout::new(project_root);
     let legacy_manifest = layout.legacy_manifest_path();
     if path_is_present(&legacy_manifest) {

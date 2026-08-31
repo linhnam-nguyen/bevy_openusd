@@ -71,6 +71,8 @@ pub(super) fn publish_plan(
         fs::rename(&model.staged_wrapper, &legacy_wrapper)
             .context("publish migrated Model wrapper")?;
     }
+    super::durability::sync_and_validate_canonical_targets(project_root, plan)
+        .context("durably sync migrated canonical Project assets")?;
     maybe_fail_before_manifest()?;
     let ignore = install_managed_ignore(project_root).context("update Project managed ignore")?;
     if let Err(error) = ManifestStore::write_manifest_atomic(project_root, manifest) {
