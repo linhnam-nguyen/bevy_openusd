@@ -2,12 +2,12 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4+/C5+/C7++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++/C5++/C7+++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
-C1+/C3+/C4+/C5+/C7++ repair batch. It is not marked `PASSED / FROZEN` until the
-owner reviews this packet.
+C1+/C3+/C4+/C5+/C7++ repair batch plus the final C4++/C5++/C7+++ correction.
+It is not marked `PASSED / FROZEN` until the owner reviews this packet.
 
 ## Branch continuity and scope
 
@@ -23,7 +23,8 @@ was created or retained.
 
 The milestone covers bounded BIM property delivery, stale request handling,
 classification color and hierarchy behavior, authoritative field/property
-controls, panel flex/scroll behavior, and the integrated acceptance matrix.
+controls, panel flex/scroll behavior, production semantic-adapter startup,
+model-wide BIM field-catalogue delivery, and the integrated acceptance matrix.
 
 ## Checkpoint ledger
 
@@ -42,6 +43,9 @@ controls, panel flex/scroll behavior, and the integrated acceptance matrix.
 | M8-OR2-C4+ | `eec3aa2`, `4ef5132` | — | Normalized BIM-identity eligibility boundary, explicit semantic-adapter configuration for BIM integration fixtures, and mixed hierarchy/search/color regression. |
 | M8-OR2-C5+ | — | `5a5a713` | `Classification [ON]` editor with automatic row numbering, searchable human-facing field catalogue, trailing placeholder promotion, delete/reorder actions, and one active color row. |
 | M8-OR2-C7++ | `4ef5132` + packet update | `5a5a713` | Corrected acceptance bookkeeping, reran the final gate matrix, recorded C4+/C5+ evidence and final code refs, pushed both continuous branches, and reopened Owner Review 2. |
+| M8-OR2-C4++ | `fddda20` | — | Normal `usdview` startup now injects the observed NVIDIA/Revit semantic adapter; BIM eligibility also rejects whitespace-only identity evidence. |
+| M8-OR2-C5++ | `fddda20`, `b432d1e` | `262d926` | Protocol-v8 bounded model-wide BIM field catalogue, semantic-revision publication/idempotence, selection-independent UI reduction, and stale-revision rejection. |
+| M8-OR2-C7+++ | packet commit below | — | Final backend/UI gates, supplied asset audit, plan/packet update, continuous-branch push, and Owner Review 2 stop. |
 
 ## C7 implementation and repair evidence
 
@@ -127,6 +131,52 @@ cargo test -p usd_hub_desktop: 232 passed; 1 ignored
 cargo test --workspace --all-targets (UI): desktop 232 passed/1 ignored; viewport_client 11 passed
 ```
 
+## C4++/C5++ final repair evidence
+
+### C4++ production semantic adapter
+
+The normal `usdview` startup path now inserts
+`SemanticSyncState::with_config(SemanticConfig::for_nvidia_revit_connector())`
+before the viewport bridge plugin starts. The adapter explicitly maps the
+observed NVIDIA/Revit identity property `BIM:Instance:ElementId`; it is not a
+test-only setter and classification does not hardcode exporter property names.
+The semantic BIM-eligibility predicate also treats whitespace-only element IDs
+as absent, so a valid family identity can still qualify an entity.
+
+The bridge integration test app uses this same runtime adapter constructor and
+asserts that the initial semantic snapshot contains the normalized element ID.
+The former `configure_bim_runtime_semantics` test-only override was removed.
+
+```text
+cargo test -p usd_semantic nvidia_revit_runtime_adapter_uses_observed_element_id_property: 1 passed
+cargo test -p usdview live_edit_converges_into_bim_classification_search_and_diff: 1 passed
+cargo test -p usd_model whitespace_only_normalized_identity_is_not_eligibility_evidence: 1 passed
+```
+
+### C5++ model-wide catalogue
+
+Protocol version 8 carries `BimClassificationFieldCatalogue`, bounded to
+4,096 fields. The backend derives it from the accepted semantic snapshot over
+all BIM-eligible entities, always retaining typed `Category`, `Family`, and
+`Type` fields, and deterministically adding validated property names. It is
+independent of `SelectionReadModel` and selection-scoped property paging; a
+property found only on a Window remains available while a Wall is selected,
+while helper-only properties remain excluded.
+
+Semantic synchronization publishes one catalogue event when the accepted
+semantic revision/list changes. Snapshot and reload responses include the
+current catalogue. The UI resets to typed defaults during stage loading,
+reduces the model-wide event without a selection request ID, rejects stale
+revisions, and projects the catalogue regardless of selection or property
+response state.
+
+```text
+cargo test -p usdview field_catalogue_is_model_wide_bim_only_and_revision_scoped: 1 passed
+cargo test -p usdview identical_catalogue_revision_is_published_only_once: 1 passed
+cargo test -p usd_hub_desktop model_wide_field_catalogue_is_reduced_without_selection_and_rejects_stale_revision: 1 passed
+cargo test -p usd_hub_desktop classification_catalogue_is_independent_of_selection_and_properties: 1 passed
+```
+
 ## Integrated evidence matrix
 
 ### Real supplied asset
@@ -140,7 +190,7 @@ cargo test -p usd_bevy --lib --no-default-features live::tests::native_instance_
 Observed result:
 
 ```text
-OR1-C8 Revit audit: window_roots=5 proxy_meshes=10 projected_proxy_meshes=10 projection_ms=231.78
+OR1-C8 Revit audit: window_roots=5 proxy_meshes=10 projected_proxy_meshes=10 projection_ms=234.13
 test result: ok. 1 passed; 0 failed; 111 filtered out
 ```
 
@@ -154,23 +204,23 @@ allocation-bounded audit also passes in both workspace test matrices.
 | --- | --- |
 | `cargo fmt --all -- --check` | PASS |
 | `cargo check --workspace --all-targets` | PASS |
-| `cargo test --workspace --all-targets` | PASS: usd_bevy 111 passed/1 ignored; usdview 333 passed/5 ignored; viewport_streaming 56 passed; remaining workspace tests passed. |
+| `cargo test --workspace --all-targets` | PASS: usd_bevy 111 passed/1 ignored; usdview 334 passed/5 ignored; viewport_streaming 56 passed; remaining workspace tests passed. |
 | `cargo check --workspace --all-targets --no-default-features` | PASS |
-| `cargo test --workspace --all-targets --no-default-features` | PASS: usd_bevy 111 passed/1 ignored; usdview 333 passed/5 ignored; viewport_streaming 56 passed; all doctests passed or were explicitly ignored. |
-| `./scripts/check_rust_file_size.sh` | PASS: 575 files scanned, 0 over 400 lines, 45 warnings in the 351–400 range. |
+| `cargo test --workspace --all-targets --no-default-features` | PASS: usd_bevy 111 passed/1 ignored; usdview 334 passed/5 ignored; viewport_streaming 56 passed; all doctests passed or were explicitly ignored. |
+| `./scripts/check_rust_file_size.sh` | PASS: 576 files scanned, 0 over 400 lines, 43 warnings in the 351–400 range. |
 | Changed-crate strict clippy | PASS for `viewport_streaming`; `usdview` remains baseline-limited by the same four pre-existing findings in untouched API files. No finding was reported for the new packer/index modules. |
 | Workspace strict no-default clippy | BASELINE-LIMITED: four findings in untouched `usdview` files (`bim_provenance`, `bim_commands`, and `scene_query`). |
-| `make harden` | ENVIRONMENT-LIMITED after source-size and no-default stages: all-features compile requires unset `DLSS_SDK` and reports Vulkan APIs configured out; underlying cargo failure is `bevy_render`, `make` exit 2. |
+| `make harden` | ENVIRONMENT-LIMITED after source-size and no-default stages: all-features compile requires unset `DLSS_SDK` and reports Vulkan APIs configured out; underlying cargo failure is `bevy_render`, `make` exit 101. |
 
 ### UI gates
 
-The repaired UI revision is `5a5a713` on `panel-BIMData`; the prior C1+/C3+
-revision `a279b12` remains its parent.
+The repaired UI revision is `262d926` on `panel-BIMData`; the prior C5+
+revision `5a5a713` remains its parent.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused `usd_hub_desktop` library tests: 232 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 234 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  232 passed/1 ignored and viewport client 11 passed in both recorded runs.
+  234 passed/1 ignored in both recorded runs.
 - UI source-size audit: repaired `state.rs` 288 lines, `reducer.rs` 349 lines,
   `properties_state.rs` 181 lines, and `property_reducer.rs` 129 lines. Six
   unrelated pre-existing UI files remain over 400 lines and were not touched.
@@ -197,6 +247,8 @@ include:
 - 4,000-entry indexed classification scale with 4,000 path lookups and 4,000
   occurrence visits;
 - large BIM fixture cold/idle query, intersection, and color-cost checks;
+- model-wide BIM field-catalogue reduction with no selection, Window-only field
+  retention, helper-property exclusion, and stale-revision rejection;
 - renderer configuration, transport, and selection projection acceptance
   tests.
 
@@ -214,4 +266,5 @@ UNAVAILABLE — HARDWARE LIMITATION
 ```
 
 Owner Review 2 should include the supplied launch command in a capable native
-GPU/Tauri/WebRTC environment before OR2 is frozen.
+GPU/Tauri/WebRTC environment before OR2 is frozen. No OR3 work is authorized
+until this Owner Review 2 boundary is accepted.
