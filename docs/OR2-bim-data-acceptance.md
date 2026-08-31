@@ -2,12 +2,13 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++/C5++/C7+++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
-C1+/C3+/C4+/C5+/C7++ repair batch plus the final C4++/C5++/C7+++ correction.
-It is not marked `PASSED / FROZEN` until the owner reviews this packet.
+C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
+C4++++/C5++++/C6+/C7++++ review repair. It is not marked `PASSED / FROZEN`
+until the owner reviews this packet.
 
 ## Branch continuity and scope
 
@@ -24,7 +25,8 @@ was created or retained.
 The milestone covers bounded BIM property delivery, stale request handling,
 classification color and hierarchy behavior, authoritative field/property
 controls, panel flex/scroll behavior, production semantic-adapter startup,
-model-wide BIM field-catalogue delivery, and the integrated acceptance matrix.
+model-wide BIM field-catalogue delivery, normalized Revit classification
+semantics, compact property presentation, and the integrated acceptance matrix.
 
 ## Checkpoint ledger
 
@@ -44,8 +46,12 @@ model-wide BIM field-catalogue delivery, and the integrated acceptance matrix.
 | M8-OR2-C5+ | — | `5a5a713` | `Classification [ON]` editor with automatic row numbering, searchable human-facing field catalogue, trailing placeholder promotion, delete/reorder actions, and one active color row. |
 | M8-OR2-C7++ | `4ef5132` + packet update | `5a5a713` | Corrected acceptance bookkeeping, reran the final gate matrix, recorded C4+/C5+ evidence and final code refs, pushed both continuous branches, and reopened Owner Review 2. |
 | M8-OR2-C4++ | `fddda20` | — | Normal `usdview` startup now injects the observed NVIDIA/Revit semantic adapter; BIM eligibility also rejects whitespace-only identity evidence. |
-| M8-OR2-C5++ | `fddda20`, `b432d1e` | `262d926` | Protocol-v8 bounded model-wide BIM field catalogue, semantic-revision publication/idempotence, selection-independent UI reduction, and stale-revision rejection. |
+| M8-OR2-C5++ | `fddda20`, `b432d1e` | `262d926` | Prior protocol-v8 bounded model-wide BIM field catalogue, semantic-revision publication/idempotence, selection-independent UI reduction, and stale-revision rejection. |
 | M8-OR2-C7+++ | packet commit below | — | Final backend/UI gates, supplied asset audit, plan/packet update, continuous-branch push, and Owner Review 2 stop. |
+| M8-OR2-C4++++ | `6674aae` | — | Preserved generic OpenUSD `kind`/`type_name` semantics and added explicit normalized Revit Category/Family/Type classification sourced only from verified fields. |
+| M8-OR2-C5++++ | `6674aae` | `5e3776c` | Protocol-v9 model-wide descriptor catalogue with human labels, `[I]`/`[T]` scope, deterministic byte-bounded paging, exact reconstruction, stale rejection, and no partial UI catalogue. |
+| M8-OR2-C6+ | — | `5e3776c` | Exact Search/Classification/Properties layout, compact one-line properties, raw-key titles, scope badges, and removal of Selection/legacy status presentation. |
+| M8-OR2-C7++++ | `7dca9b0` | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
 
 ## C7 implementation and repair evidence
 
@@ -177,11 +183,72 @@ cargo test -p usd_hub_desktop model_wide_field_catalogue_is_reduced_without_sele
 cargo test -p usd_hub_desktop classification_catalogue_is_independent_of_selection_and_properties: 1 passed
 ```
 
+## C4++++/C5++++/C6+ additional repair evidence
+
+### C4++++ normalized Revit classification
+
+The generic OpenUSD semantic fields remain source-neutral: `SemanticInfo.category`
+continues to represent `prim.kind()` and `SemanticInfo.type_name` continues to
+represent `prim.type_name()`. BIM classification no longer reuses those generic
+fields. It is carried in the separate `BimClassificationInfo` value and is
+populated only through the configured NVIDIA/Revit adapter.
+
+The observed export fields are preserved as authoritative source keys:
+`BIM:Instance:Category`, `BIM:Type:Name`, `BIM:Instance:ElementId`,
+`BIM:Instance:Commentaires`, `BIM:Instance:Identifiant`,
+`BIM:Instance:IfcGUID`, `BIM:Instance:Longueur`, and
+`BIM:Type:Description`. Category and Type are normalized from the first two
+verified mappings. Family remains absent because no actual family field was
+verified; the implementation does not guess one from Category, Type, or an
+arbitrary property name.
+
+Property descriptors classify only explicit `BIM:Instance:` and `BIM:Type:`
+namespaces as instance/type. Other names retain the `Other` scope. The backend
+read model carries the stable raw key, human label, and scope so the UI does
+not need to infer BIM meaning from presentation text.
+
+```text
+cargo test -p usd_semantic classification_mapping_keeps_generic_usd_fields_separate: 1 passed
+cargo test -p usdview classification_contract: 1 passed
+cargo test -p usdview property_read_classifies_observed_instance_namespace_without_guessing_values: 1 passed
+```
+
+### C5++++ paged descriptor catalogue
+
+The descriptor catalogue now travels on protocol v9. It is model-wide and
+semantic-revision-scoped, bounded to 4,096 fields, and uses a deterministic
+page envelope whose encoded application message is at most 12 KiB. The
+catalogue assembler validates page count, total count, revision, page index,
+duplicate keys, and exact reconstruction before replacing the visible field
+list. Stale revisions and duplicate pages are ignored; incomplete catalogues
+remain hidden and cannot partially replace the prior visible catalogue.
+
+```text
+cargo test -p viewport_streaming oversized_bim_classification_catalogue_is_paged_and_reconstructs_exactly: passed
+cargo test -p usd_hub_desktop paged_catalogue_stays_hidden_until_all_pages_arrive_and_ignores_duplicates: passed
+cargo test -p viewport_protocol --tests: passed
+```
+
+### C6+ exact BIM panel presentation
+
+The panel now presents Search, Classification, and Properties in that order.
+The BIM search uses the shared `model-view-input` and
+`model-view-input__clear` hooks with placeholder `Search BIM data…`. The
+Selection card and `BIM properties ready.` status are removed. Properties use
+the exact `▼ Properties`/`▶ Properties` header and `Edit` checkbox, render
+compact one-line rows without `<Ungrouped>`, show `[I]` or `[T]` only when the
+typed scope requires it, and keep the raw property key in the title attribute.
+
+```text
+cargo test -p usd_hub_desktop --all-targets: 236 passed; 1 ignored
+cargo check -p usd_hub_desktop --all-targets: passed
+```
+
 ## Integrated evidence matrix
 
 ### Real supplied asset
 
-Command:
+Expected command:
 
 ```text
 cargo test -p usd_bevy --lib --no-default-features live::tests::native_instance_audit::projet1_usdc_windows_project_to_scene_proxy_meshes -- --ignored --nocapture
@@ -190,13 +257,15 @@ cargo test -p usd_bevy --lib --no-default-features live::tests::native_instance_
 Observed result:
 
 ```text
-OR1-C8 Revit audit: window_roots=5 proxy_meshes=10 projected_proxy_meshes=10 projection_ms=234.13
-test result: ok. 1 passed; 0 failed; 111 filtered out
+asset-unavailable: ../external_assets/Omniverse/V2/Projet1.usdc is absent on this host
+UNAVAILABLE — HARDWARE LIMITATION
 ```
 
-This is direct CPU-side proof that the windows in `Projet1.usdc` reach
-projected `Mesh3d` scene entities. The generated 1,000-native-instance
-allocation-bounded audit also passes in both workspace test matrices.
+The historical OR1-C8 CPU audit recorded 5 window roots, 10 proxy meshes, and
+10 projected `Mesh3d` entities, but it was not rerun for this correction because
+the supplied asset is not present in the current workspace or home-directory
+search scope. No new asset-specific screenshot or live `usdview` rendering
+claim is made here.
 
 ### Backend gates
 
@@ -204,23 +273,23 @@ allocation-bounded audit also passes in both workspace test matrices.
 | --- | --- |
 | `cargo fmt --all -- --check` | PASS |
 | `cargo check --workspace --all-targets` | PASS |
-| `cargo test --workspace --all-targets` | PASS: usd_bevy 111 passed/1 ignored; usdview 334 passed/5 ignored; viewport_streaming 56 passed; remaining workspace tests passed. |
+| `cargo test --workspace --all-targets` | PASS: usdview 335 passed/5 ignored; usd_bevy 111 passed/1 ignored; viewport_streaming 57 passed; remaining workspace tests passed. |
 | `cargo check --workspace --all-targets --no-default-features` | PASS |
 | `cargo test --workspace --all-targets --no-default-features` | PASS: usd_bevy 111 passed/1 ignored; usdview 334 passed/5 ignored; viewport_streaming 56 passed; all doctests passed or were explicitly ignored. |
-| `./scripts/check_rust_file_size.sh` | PASS: 576 files scanned, 0 over 400 lines, 43 warnings in the 351–400 range. |
+| `./scripts/check_rust_file_size.sh` | PASS: 578 files scanned, 0 over 400 lines, 48 warnings in the 351–400 range. |
 | Changed-crate strict clippy | PASS for `viewport_streaming`; `usdview` remains baseline-limited by the same four pre-existing findings in untouched API files. No finding was reported for the new packer/index modules. |
 | Workspace strict no-default clippy | BASELINE-LIMITED: four findings in untouched `usdview` files (`bim_provenance`, `bim_commands`, and `scene_query`). |
-| `make harden` | ENVIRONMENT-LIMITED after source-size and no-default stages: all-features compile requires unset `DLSS_SDK` and reports Vulkan APIs configured out; underlying cargo failure is `bevy_render`, `make` exit 101. |
+| `make harden` | ENVIRONMENT-LIMITED after source-size, default/no-default checks, workspace tests, and doctests: all-features compile requires unset `DLSS_SDK` and reports Vulkan APIs configured out; underlying cargo failure is `bevy_render`, `make` exit 101. |
 
 ### UI gates
 
-The repaired UI revision is `262d926` on `panel-BIMData`; the prior C5+
-revision `5a5a713` remains its parent.
+The repaired UI revision is `5e3776c` on `panel-BIMData`; the prior C5++
+revision `262d926` remains its parent.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused/full `usd_hub_desktop` library tests: 234 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 236 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  234 passed/1 ignored in both recorded runs.
+  236 passed/1 ignored in the final recorded run.
 - UI source-size audit: repaired `state.rs` 288 lines, `reducer.rs` 349 lines,
   `properties_state.rs` 181 lines, and `property_reducer.rs` 129 lines. Six
   unrelated pre-existing UI files remain over 400 lines and were not touched.
@@ -249,6 +318,11 @@ include:
 - large BIM fixture cold/idle query, intersection, and color-cost checks;
 - model-wide BIM field-catalogue reduction with no selection, Window-only field
   retention, helper-property exclusion, and stale-revision rejection;
+- normalized Category/Type classification with generic OpenUSD semantic-field
+  separation, verified namespace scope descriptors, exact paged-catalogue
+  reconstruction, and hidden-until-complete UI assembly;
+- compact BIM panel layout/search/property presentation and absence of the
+  removed Selection/legacy-ready/`<Ungrouped>` presentation;
 - renderer configuration, transport, and selection projection acceptance
   tests.
 
@@ -256,8 +330,10 @@ include:
 
 Automated tests prove the authored data path, bounded transport/read-model
 behavior, CPU-side projection, hierarchy/classification semantics, and
-configuration state transitions. They do not prove a live GPU frame, Tauri
-window rendering, WebRTC playback, or H265 output.
+configuration state transitions. This run also cannot prove the supplied
+`Projet1.usdc` asset-specific runtime path because the asset is unavailable.
+The tests do not prove a live GPU frame, Tauri window rendering, WebRTC
+playback, or H265 output.
 
 Manual visual/runtime evidence is therefore:
 
@@ -265,6 +341,7 @@ Manual visual/runtime evidence is therefore:
 UNAVAILABLE — HARDWARE LIMITATION
 ```
 
-Owner Review 2 should include the supplied launch command in a capable native
-GPU/Tauri/WebRTC environment before OR2 is frozen. No OR3 work is authorized
-until this Owner Review 2 boundary is accepted.
+Owner Review 2 should include the supplied launch command and the real
+`Projet1.usdc` asset in a capable native GPU/Tauri/WebRTC environment before
+OR2 is frozen. No OR3 work is authorized until this Owner Review 2 boundary is
+accepted.
