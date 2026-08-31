@@ -2,10 +2,12 @@ use std::{
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::Result;
 use openusd::{
+    ar::DefaultResolver,
     usd::{InitialLoadSet, Stage},
     usdz::ArchiveWriter,
 };
@@ -148,6 +150,31 @@ fn canonical_project_dependency_report_rejects_external_resolution() -> Result<(
 }
 
 #[test]
+fn discovery_uses_configured_resolver_search_paths_for_external_layers() -> Result<()> {
+    let source_directory = tempdir()?;
+    let resolver_directory = tempdir()?;
+    let source = source_directory.path().join("root.usda");
+    let resolved_layer = resolver_directory.path().join("configured.usda");
+    fs::write(
+        &resolved_layer,
+        "#usda 1.0\n( defaultPrim = \"Asset\" )\ndef Xform \"Asset\" {}\n",
+    )?;
+    fs::write(
+        &source,
+        "#usda 1.0\n( defaultPrim = \"Root\" )\ndef Xform \"Root\" (references = @configured.usda@</Asset>) {}\n",
+    )?;
+    let resolved_layer = fs::canonicalize(resolved_layer)?;
+
+    let resolver =
+        DefaultResolver::with_search_paths([source_directory.path(), resolver_directory.path()]);
+    let report = discovery::discover_with_resolver(&source, Arc::new(resolver))?;
+
+    assert!(report.unresolved.is_empty(), "{:?}", report.unresolved);
+    assert!(report.layers.iter().any(|path| path == &resolved_layer));
+    Ok(())
+}
+
+#[test]
 fn external_dependency_is_localized_without_copying_its_neighbor_directory() -> Result<()> {
     let source_directory = tempdir()?;
     let external_directory = tempdir()?;
@@ -250,6 +277,30 @@ fn usd_z_package_is_preserved_as_one_exact_closure() -> Result<()> {
     assert_eq!(source_name, "package.usdz");
     assert!(destination.join("package.usdz").is_file());
     assert_localized_root_is_composed(&destination.join(source_name))?;
+    Ok(())
+}
+
+#[test]
+fn nested_package_identifier_is_localized_as_an_atomic_archive() -> Result<()> {
+    let source_directory = tempdir()?;
+    let package = source_directory.path().join("package.usdz");
+    let mut archive = ArchiveWriter::create(&package)?;
+    archive.add_layer("inner.usda", b"#usda 1.0\ndef Xform \"Inner\" {}\n")?;
+    archive.finish()?;
+
+    let source = source_directory.path().join("root.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n( defaultPrim = \"Root\" )\ndef Xform \"Root\" (references = @./package.usdz[inner.usda]@</Inner>) {}\n",
+    )?;
+    let destination = tempdir()?.path().join("closure");
+
+    materialize_source_closure(&source, &destination)?;
+
+    assert!(destination.join("root.usda").is_file());
+    assert!(destination.join("package.usdz").is_file());
+    drop(source_directory);
+    assert_localized_root_is_composed(&destination.join("root.usda"))?;
     Ok(())
 }
 

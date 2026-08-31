@@ -2,18 +2,22 @@ use std::{
     collections::{BTreeSet, HashMap},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use openusd::{
-    ar::{DefaultResolver, ResolvedPath, Resolver},
+    ar::{DefaultResolver, Resolver, is_package_relative_path},
     sdf::Value,
     usd::{InitialLoadSet, PrimPredicate, Stage},
 };
 
 #[path = "source_closure_patterns.rs"]
 mod patterns;
+#[path = "source_closure_resolver.rs"]
+mod resolver;
 pub(crate) use patterns::expand_template_asset_paths;
+use resolver::{SharedResolver, filesystem_identifier, resolve_asset_paths_with_resolver};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LocalizedDependencyReport {
@@ -25,8 +29,23 @@ pub(crate) struct LocalizedDependencyReport {
 
 pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
     let root_asset = regular_file(source).context("validate USD source")?;
+    let resolver = DefaultResolver::with_search_paths([source.parent().unwrap_or(Path::new("."))]);
+    discover_with_resolver(&root_asset, Arc::new(resolver))
+}
+
+/// Discover a closure through one configured OpenUSD resolver authority.
+///
+/// The same resolver is installed on every Stage opened during discovery and
+/// is also used for asset-valued fields. This keeps resolver configuration and
+/// resolver-context behavior at the OpenUSD boundary instead of reconstructing
+/// filesystem candidates in USDHub.
+pub(crate) fn discover_with_resolver(
+    source: &Path,
+    resolver: Arc<dyn Resolver>,
+) -> Result<LocalizedDependencyReport> {
+    let root_asset = regular_file(source).context("validate USD source")?;
     if is_usdz_path(&root_asset) {
-        return discover_usdz(root_asset);
+        return discover_usdz(root_asset, resolver);
     }
     let mut state = DiscoveryState {
         root_asset: root_asset.clone(),
@@ -35,6 +54,7 @@ pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
         unresolved: BTreeSet::new(),
         pending: vec![root_asset.clone()],
         visited: BTreeSet::new(),
+        scanned: BTreeSet::new(),
     };
 
     while let Some(layer_path) = state.pending.pop() {
@@ -45,7 +65,8 @@ pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
             .to_str()
             .context("USD dependency path must be valid UTF-8")?;
         let stage = match Stage::builder()
-            .load(InitialLoadSet::LoadNone)
+            .resolver(SharedResolver(resolver.clone()))
+            .load(InitialLoadSet::LoadAll)
             .open(path_string)
         {
             Ok(stage) => stage,
@@ -62,17 +83,29 @@ pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
             state.unresolved.insert(format!("composition: {error}"));
         }
         for identifier in stage.layer_identifiers() {
-            let Some(identifier_path) = filesystem_identifier(&identifier) else {
+            let Some(identifier_path) = filesystem_identifier(&identifier, resolver.as_ref())
+            else {
                 state
                     .unresolved
                     .insert(format!("{}: non-filesystem layer identifier", identifier));
                 continue;
             };
-            let Some(identifier_path) = state.add_layer(identifier_path) else {
+            if is_package_relative_path(&identifier) || is_usdz_path(Path::new(&identifier)) {
+                state.non_layer_assets.insert(identifier_path.clone());
+            } else if state.add_layer(identifier_path.clone()).is_none() {
                 continue;
-            };
+            }
             if let Some(layer) = stage.layer(&identifier) {
-                scan_layer(&layer, &identifier_path, &mut state)?;
+                if state.scanned.insert(identifier.clone()) {
+                    let anchor = if is_package_relative_path(&identifier)
+                        || is_usdz_path(Path::new(&identifier))
+                    {
+                        PathBuf::from(&identifier)
+                    } else {
+                        identifier_path
+                    };
+                    scan_layer(&layer, &anchor, &mut state, resolver.as_ref())?;
+                }
             }
         }
     }
@@ -85,12 +118,16 @@ pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
     })
 }
 
-fn discover_usdz(root_asset: PathBuf) -> Result<LocalizedDependencyReport> {
+fn discover_usdz(
+    root_asset: PathBuf,
+    resolver: Arc<dyn Resolver>,
+) -> Result<LocalizedDependencyReport> {
     let mut unresolved = BTreeSet::new();
     let path_string = root_asset
         .to_str()
         .context("USDZ dependency path must be valid UTF-8")?;
     match Stage::builder()
+        .resolver(SharedResolver(resolver))
         .load(InitialLoadSet::LoadNone)
         .open(path_string)
     {
@@ -139,7 +176,9 @@ pub(crate) fn regular_file(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn resolve_asset_path(layer_path: &Path, authored: &str) -> Result<PathBuf> {
-    let paths = resolve_asset_paths(layer_path, authored)?;
+    let resolver =
+        DefaultResolver::with_search_paths([layer_path.parent().unwrap_or(Path::new("."))]);
+    let paths = resolve_asset_paths_with_resolver(&resolver, layer_path, authored)?;
     ensure!(
         paths.len() == 1,
         "USD asset path resolves to multiple files and needs a pattern: {authored}"
@@ -151,40 +190,9 @@ pub(crate) fn resolve_asset_path(layer_path: &Path, authored: &str) -> Result<Pa
 /// Pattern-valued assets (UDIM) deliberately return every exact match in the
 /// authored directory; they never broaden into a recursive neighbor scan.
 pub(crate) fn resolve_asset_paths(layer_path: &Path, authored: &str) -> Result<Vec<PathBuf>> {
-    if authored.is_empty() {
-        bail!("USD asset path is empty");
-    }
-    if authored.starts_with("anon:") {
-        bail!("USD asset path is not a filesystem path: {authored}");
-    }
-    if authored.contains("<UDIM>") {
-        return patterns::resolve_udim_pattern(layer_path, authored);
-    }
-    if authored.contains('[') {
-        bail!("package-relative USD asset paths are not localizable: {authored}");
-    }
-    let authored_path = Path::new(authored);
-    let candidate = if authored_path.is_absolute() {
-        authored_path.to_owned()
-    } else {
-        layer_path
-            .parent()
-            .context("USD dependency layer has no parent directory")?
-            .join(authored_path)
-    };
-    let path = regular_file(&candidate)?;
-    let resolver = DefaultResolver::new();
-    let resolved = resolver
-        .resolve(
-            &resolver.create_identifier(authored, Some(&ResolvedPath::new(layer_path.to_owned()))),
-        )
-        .with_context(|| format!("OpenUSD resolver could not resolve {authored}"))?;
-    let resolved = regular_file(&resolved)?;
-    ensure!(
-        resolved == path,
-        "OpenUSD resolver resolved {authored} inconsistently"
-    );
-    Ok(vec![path])
+    let resolver =
+        DefaultResolver::with_search_paths([layer_path.parent().unwrap_or(Path::new("."))]);
+    resolve_asset_paths_with_resolver(&resolver, layer_path, authored)
 }
 
 struct DiscoveryState {
@@ -194,6 +202,7 @@ struct DiscoveryState {
     unresolved: BTreeSet<String>,
     pending: Vec<PathBuf>,
     visited: BTreeSet<PathBuf>,
+    scanned: BTreeSet<String>,
 }
 
 impl DiscoveryState {
@@ -215,8 +224,14 @@ impl DiscoveryState {
         Some(path)
     }
 
-    fn add_dependency(&mut self, layer_path: &Path, authored: &str, is_layer: bool) {
-        match resolve_asset_paths(layer_path, authored) {
+    fn add_dependency(
+        &mut self,
+        layer_path: &Path,
+        authored: &str,
+        is_layer: bool,
+        resolver: &dyn Resolver,
+    ) {
+        match resolve_asset_paths_with_resolver(resolver, layer_path, authored) {
             Ok(paths) if is_layer => {
                 for path in paths {
                     self.add_layer(path);
@@ -244,15 +259,11 @@ fn force_reachable_layers(stage: &Stage) -> Result<()> {
     Ok(())
 }
 
-fn filesystem_identifier(identifier: &str) -> Option<PathBuf> {
-    (!identifier.starts_with("anon:") && !identifier.contains('['))
-        .then(|| PathBuf::from(identifier))
-}
-
 fn scan_layer(
     layer: &openusd::sdf::Layer,
     layer_path: &Path,
     state: &mut DiscoveryState,
+    resolver: &dyn Resolver,
 ) -> Result<()> {
     let data = layer.data();
     for spec_path in data.spec_paths() {
@@ -260,66 +271,53 @@ fn scan_layer(
             let Some(value) = data.try_field(&spec_path, &field)? else {
                 continue;
             };
-            if field == openusd::sdf::FieldKey::SubLayers.as_str() {
-                if let Value::StringVec(paths) = &*value {
-                    for path in paths {
-                        state.add_dependency(layer_path, path, true);
-                    }
-                }
-            }
-            scan_value(&value, layer_path, state, field.as_str());
+            scan_value(&value, layer_path, state, field.as_str(), resolver);
         }
     }
     Ok(())
 }
 
-fn scan_value(value: &Value, layer_path: &Path, state: &mut DiscoveryState, field: &str) {
+fn scan_value(
+    value: &Value,
+    layer_path: &Path,
+    state: &mut DiscoveryState,
+    field: &str,
+    resolver: &dyn Resolver,
+) {
     match value {
-        Value::AssetPath(asset) => state.add_dependency(layer_path, asset.as_str(), false),
+        Value::AssetPath(asset) => {
+            state.add_dependency(layer_path, asset.as_str(), false, resolver)
+        }
         Value::AssetPathVec(assets) => {
             for asset in assets {
-                state.add_dependency(layer_path, asset.as_str(), false);
+                state.add_dependency(layer_path, asset.as_str(), false, resolver);
             }
         }
         Value::ReferenceListOp(references) => {
             for reference in references.iter() {
-                if !reference.asset_path.is_empty() {
-                    state.add_dependency(layer_path, &reference.asset_path, true);
-                }
                 for value in reference.custom_data.values() {
-                    scan_value(value, layer_path, state, "");
+                    scan_value(value, layer_path, state, "", resolver);
                 }
             }
         }
-        Value::PayloadListOp(payloads) => {
-            for payload in payloads.iter() {
-                if !payload.asset_path.is_empty() {
-                    state.add_dependency(layer_path, &payload.asset_path, true);
-                }
-            }
-        }
-        Value::Payload(payload) => {
-            if !payload.asset_path.is_empty() {
-                state.add_dependency(layer_path, &payload.asset_path, true);
-            }
-        }
+        Value::PayloadListOp(_) => {}
         Value::Dictionary(values) => {
             if field == "clips" {
-                scan_clip_dictionary(values, layer_path, state);
+                scan_clip_dictionary(values, layer_path, state, resolver);
             } else {
                 for value in values.values() {
-                    scan_value(value, layer_path, state, "");
+                    scan_value(value, layer_path, state, "", resolver);
                 }
             }
         }
         Value::ValueVec(values) => {
             for value in values {
-                scan_value(value, layer_path, state, "");
+                scan_value(value, layer_path, state, "", resolver);
             }
         }
         Value::TimeSamples(samples) => {
             for (_, value) in samples {
-                scan_value(value, layer_path, state, "");
+                scan_value(value, layer_path, state, "", resolver);
             }
         }
         _ => {}
@@ -330,6 +328,7 @@ fn scan_clip_dictionary(
     values: &HashMap<String, Value>,
     layer_path: &Path,
     state: &mut DiscoveryState,
+    resolver: &dyn Resolver,
 ) {
     for set in values.values().filter_map(|value| match value {
         Value::Dictionary(set) => Some(set),
@@ -337,19 +336,19 @@ fn scan_clip_dictionary(
     }) {
         if let Some(Value::AssetPathVec(paths)) = set.get("assetPaths") {
             for path in paths {
-                state.add_dependency(layer_path, path.as_str(), true);
+                state.add_dependency(layer_path, path.as_str(), true, resolver);
             }
         }
         if let Some(Value::AssetPath(path)) = set.get("manifestAssetPath")
             && !path.is_empty()
         {
-            state.add_dependency(layer_path, path.as_str(), true);
+            state.add_dependency(layer_path, path.as_str(), true, resolver);
         }
         if let Some(Value::AssetPath(path)) = set.get("templateAssetPath") {
             match expand_template_asset_paths(set, path.as_str()) {
                 Ok(paths) => {
                     for path in paths {
-                        state.add_dependency(layer_path, &path, true);
+                        state.add_dependency(layer_path, &path, true, resolver);
                     }
                 }
                 Err(error) => {

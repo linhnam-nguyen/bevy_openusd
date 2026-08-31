@@ -1,3 +1,6 @@
+use std::path::{Path as FsPath, PathBuf};
+
+use openusd::ar::{DefaultResolver, ResolvedPath, Resolver};
 use openusd::sdf::{Path, Value};
 use openusd::usd::Stage;
 use std::collections::{HashSet, VecDeque};
@@ -295,7 +298,41 @@ fn shader_kind(stage: &Stage, prim: &Path) -> anyhow::Result<ShaderKind> {
 }
 
 fn read_texture_file(stage: &Stage, tex_prim: &Path) -> anyhow::Result<Option<String>> {
-    read_asset_path(stage, tex_prim, "inputs:file")
+    let Some(authored) = read_asset_path(stage, tex_prim, "inputs:file")? else {
+        return Ok(None);
+    };
+    Ok(Some(resolve_texture_path(stage, tex_prim, &authored)?))
+}
+
+/// Resolve a relative texture against the layer that authors the connected
+/// `inputs:file` property. The material cache consumes filesystem paths, while
+/// USD stores the authored asset identifier; the property stack supplies the
+/// OpenUSD composition anchor needed to bridge those representations.
+fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyhow::Result<String> {
+    if authored.is_empty() || FsPath::new(authored).is_absolute() || authored.starts_with("anon:") {
+        return Ok(authored.to_owned());
+    }
+    let Some((layer_identifier, _)) = stage
+        .prim(tex_prim.clone())
+        .attribute("inputs:file")
+        .property_stack()?
+        .into_iter()
+        .next()
+    else {
+        return Ok(authored.to_owned());
+    };
+
+    // Stage's resolver is intentionally private in the pinned OpenUSD Rust
+    // API. With a filesystem layer-stack anchor, the official default
+    // resolver reproduces the same relative-path rule for the cache reader.
+    let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
+    let anchor = ResolvedPath::new(layer_identifier);
+    let identifier = resolver.create_identifier(authored, Some(&anchor));
+    Ok(resolver
+        .resolve(&identifier)
+        .or_else(|| resolver.resolve(authored))
+        .map(|resolved| resolved.to_string())
+        .unwrap_or_else(|| authored.to_owned()))
 }
 
 fn value_to_preview(v: Value) -> Option<ResolvedValue> {

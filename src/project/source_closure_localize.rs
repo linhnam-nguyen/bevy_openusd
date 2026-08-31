@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{
+    ar::{join_package_relative_path, split_package_relative_path_outer},
     sdf,
     usd::{InitialLoadSet, Stage},
 };
@@ -47,7 +48,7 @@ pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> R
             fs::create_dir_all(parent)
                 .with_context(|| format!("create source closure {}", parent.display()))?;
         }
-        if report.layers.is_empty() && original == report.root_asset {
+        if is_usdz_root(&report.root_asset) && original == report.root_asset {
             // A USDZ package is already an atomic exact closure. Keeping the
             // archive intact preserves package-relative internal layer and
             // asset identifiers without copying neighboring filesystem data.
@@ -371,5 +372,17 @@ fn rewrite_layer_asset(
             original_asset.display()
         )
     })?;
-    crate::project::storage::authored_relative_asset_path(localized_layer, localized_asset)
+    let localized_path =
+        crate::project::storage::authored_relative_asset_path(localized_layer, localized_asset)?;
+    if let Some((_, packaged_path)) = split_package_relative_path_outer(authored) {
+        Ok(join_package_relative_path(&localized_path, &packaged_path))
+    } else {
+        Ok(localized_path)
+    }
+}
+
+fn is_usdz_root(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
 }
