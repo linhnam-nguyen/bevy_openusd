@@ -24,6 +24,11 @@ impl NativeInstanceDependencyIndex {
         self.by_proxy.len()
     }
 
+    /// Whether no scene proxy paths are registered.
+    pub fn is_empty(&self) -> bool {
+        self.by_proxy.is_empty()
+    }
+
     /// Rebuild the index after initial projection or an explicit full reconcile.
     pub(crate) fn rebuild(&mut self, stage: &Stage) -> Result<()> {
         let mut proxies = Vec::new();

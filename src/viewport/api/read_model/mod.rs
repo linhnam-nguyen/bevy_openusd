@@ -26,7 +26,6 @@ pub(crate) struct ScenePageRequest {
     pub(crate) page: u32,
     pub(crate) page_size: u32,
 }
-
 impl ScenePageRequest {
     fn key(&self) -> ScenePageKey {
         ScenePageKey {
@@ -36,7 +35,6 @@ impl ScenePageRequest {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 struct SceneSearchState {
     request_id: String,
@@ -161,6 +159,8 @@ impl ViewportReadModelState {
             | ViewportEvent::HierarchySearchResults { .. }
             | ViewportEvent::BimSearchResults { .. }
             | ViewportEvent::BimPropertiesRead { .. }
+            | ViewportEvent::BimPropertiesPage { .. }
+            | ViewportEvent::BimPropertiesError { .. }
             | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }

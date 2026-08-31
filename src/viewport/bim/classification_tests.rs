@@ -75,11 +75,10 @@ fn classification_projection_reuses_the_cached_read_model_arc() {
 fn classification_color_entries_are_deterministic_across_snapshot_map_order() {
     let original = snapshot();
     let mut reordered = original.clone();
-    reordered.entities = original
-        .entities
-        .values()
-        .cloned()
-        .rev()
+    let mut entities = original.entities.values().cloned().collect::<Vec<_>>();
+    entities.reverse();
+    reordered.entities = entities
+        .into_iter()
         .map(|entity| (entity.key.clone(), entity))
         .collect();
     let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(

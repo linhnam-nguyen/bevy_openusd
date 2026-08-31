@@ -20,6 +20,14 @@ struct PropertyItem {
     property: BimPropertyReadModel,
 }
 
+struct PageContext<'a> {
+    selection_revision: u64,
+    total_properties: u32,
+    targets: &'a [viewport_protocol::SceneAnchor],
+    diff: Option<&'a viewport_protocol::BimPropertyDiffReadModel>,
+    request_id: Option<&'a str>,
+}
+
 pub(super) fn queue_bim_properties(
     state: &mut ApplicationSessionState,
     request_id: Option<String>,
@@ -69,6 +77,13 @@ pub(super) fn queue_bim_properties(
             })
         })
         .collect::<Vec<_>>();
+    let page_context = PageContext {
+        selection_revision: properties.selection_revision,
+        total_properties: total_properties as u32,
+        targets: &properties.targets,
+        diff: diff.as_ref(),
+        request_id: request_id.as_deref(),
+    };
 
     let mut pages = Vec::new();
     let mut current = Vec::new();
@@ -122,16 +137,7 @@ pub(super) fn queue_bim_properties(
             return;
         }
 
-        if !push_page(
-            &mut pages,
-            properties.selection_revision,
-            total_properties as u32,
-            &properties.targets,
-            &diff,
-            &current,
-            request_id.as_deref(),
-            state,
-        ) {
+        if !push_page(&mut pages, &page_context, &current, state) {
             queue_error(
                 state,
                 request_id.as_deref(),
@@ -170,18 +176,7 @@ pub(super) fn queue_bim_properties(
         current.push(item);
     }
 
-    if !current.is_empty()
-        && !push_page(
-            &mut pages,
-            properties.selection_revision,
-            total_properties as u32,
-            &properties.targets,
-            &diff,
-            &current,
-            request_id.as_deref(),
-            state,
-        )
-    {
+    if !current.is_empty() && !push_page(&mut pages, &page_context, &current, state) {
         queue_error(
             state,
             request_id.as_deref(),
@@ -193,27 +188,16 @@ pub(super) fn queue_bim_properties(
         return;
     }
 
-    if pages.is_empty() {
-        if !push_page(
-            &mut pages,
-            properties.selection_revision,
-            0,
-            &properties.targets,
-            &diff,
-            &[],
-            request_id.as_deref(),
+    if pages.is_empty() && !push_page(&mut pages, &page_context, &[], state) {
+        queue_error(
             state,
-        ) {
-            queue_error(
-                state,
-                request_id.as_deref(),
-                properties.selection_revision,
-                BimPropertiesDeliveryErrorKind::OversizedMetadata,
-                None,
-                properties.targets.len(),
-            );
-            return;
-        }
+            request_id.as_deref(),
+            properties.selection_revision,
+            BimPropertiesDeliveryErrorKind::OversizedMetadata,
+            None,
+            properties.targets.len(),
+        );
+        return;
     }
 
     let page_count = pages.len() as u32;
@@ -236,12 +220,8 @@ pub(super) fn queue_bim_properties(
 
 fn push_page(
     pages: &mut Vec<BimPropertiesPage>,
-    selection_revision: u64,
-    total_properties: u32,
-    targets: &[viewport_protocol::SceneAnchor],
-    diff: &Option<viewport_protocol::BimPropertyDiffReadModel>,
+    context: &PageContext<'_>,
     items: &[PropertyItem],
-    request_id: Option<&str>,
     state: &mut ApplicationSessionState,
 ) -> bool {
     if pages.len() >= PAGE_COUNT_BOUND as usize {
@@ -249,15 +229,15 @@ fn push_page(
     }
     let first_page = pages.is_empty();
     let page = make_page(
-        selection_revision,
+        context.selection_revision,
         PAGE_COUNT_BOUND - 1,
         PAGE_COUNT_BOUND,
-        total_properties,
-        first_page.then_some(targets),
+        context.total_properties,
+        first_page.then_some(context.targets),
         items,
-        first_page.then_some(diff.as_ref()).flatten(),
+        first_page.then_some(context.diff).flatten(),
     );
-    if !page_fits(state, request_id, &page) {
+    if !page_fits(state, context.request_id, &page) {
         return false;
     }
     pages.push(page);
