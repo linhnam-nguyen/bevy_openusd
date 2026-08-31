@@ -24,6 +24,8 @@ use super::selection_outline::collect_mesh_descendants;
 pub(in crate::viewport) struct ClassificationColorDiagnostics {
     pub(in crate::viewport) rebuilds: u64,
     pub(in crate::viewport) rebinds: u64,
+    pub(in crate::viewport) path_lookups: u64,
+    pub(in crate::viewport) occurrence_visits: u64,
     pub(in crate::viewport) applied_entities: HashSet<Entity>,
     pub(in crate::viewport) last_generation: Option<u64>,
     pub(in crate::viewport) last_scene_revision: Option<u64>,
@@ -80,9 +82,13 @@ pub(in crate::viewport) fn sync_classification_color_overrides(
     let mut desired = HashMap::<Entity, ColorRgb8>::new();
     for entry in plan.entries() {
         let roots = scene_index.resolve_all_by_prim_path(&entry.anchor.prim_path);
+        diagnostics.path_lookups = diagnostics.path_lookups.saturating_add(1);
+        diagnostics.occurrence_visits = diagnostics
+            .occurrence_visits
+            .saturating_add(roots.len() as u64);
         for root in roots {
             let mut meshes = HashSet::new();
-            collect_mesh_descendants(root, &mesh_hierarchy, &mut meshes);
+            collect_mesh_descendants(*root, &mesh_hierarchy, &mut meshes);
             for entity in meshes {
                 desired.entry(entity).or_insert(entry.color);
             }

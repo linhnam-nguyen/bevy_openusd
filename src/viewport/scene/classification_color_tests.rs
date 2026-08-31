@@ -234,3 +234,51 @@ fn path_only_classification_entries_rebind_all_instance_occurrences() {
         authored
     );
 }
+
+#[test]
+fn large_classification_plan_uses_indexed_occurrence_visits() {
+    let entry_count = 4_000;
+    let authored: Handle<StandardMaterial> = Handle::default();
+    let mut app = App::new();
+    app.init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<ClassificationColorPlan>()
+        .init_resource::<ClassificationColorDiagnostics>()
+        .init_resource::<ClassificationColorMaterialCache>()
+        .add_systems(Update, sync_classification_color_overrides);
+
+    let mut indexed_entities = Vec::with_capacity(entry_count);
+    let mut color_entries = Vec::with_capacity(entry_count);
+    for index in 0..entry_count {
+        let path = format!("/World/Element{index:04}");
+        let anchor = SceneAnchor::active_session(&path);
+        let entity = app
+            .world_mut()
+            .spawn((
+                UsdPrimRef::new(&path),
+                Mesh3d(Handle::default()),
+                MeshMaterial3d(authored.clone()),
+            ))
+            .id();
+        indexed_entities.push((anchor.clone(), entity));
+        color_entries.push(ClassificationColorEntry {
+            anchor,
+            color: ColorRgb8::new(0x12, 0x34, 0x56),
+        });
+    }
+    app.insert_resource(SceneAnchorIndex::from_test_entities(indexed_entities));
+    app.world_mut()
+        .resource_mut::<ClassificationColorPlan>()
+        .replace(1, color_entries);
+
+    let started = std::time::Instant::now();
+    app.update();
+    let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let diagnostics = app.world().resource::<ClassificationColorDiagnostics>();
+    assert_eq!(diagnostics.path_lookups, entry_count as u64);
+    assert_eq!(diagnostics.occurrence_visits, entry_count as u64);
+    assert_eq!(diagnostics.applied_entities.len(), entry_count);
+    eprintln!(
+        "M8-OR2-C3+ indexed color scale: entities={entry_count} path_lookups={} occurrence_visits={} elapsed_ms={elapsed_ms:.3}",
+        diagnostics.path_lookups, diagnostics.occurrence_visits,
+    );
+}

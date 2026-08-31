@@ -1,8 +1,8 @@
 use log::warn;
 use viewport_protocol::{
     BimPropertiesDeliveryError, BimPropertiesDeliveryErrorKind, BimPropertiesPage,
-    BimPropertiesReadModel, BimPropertyGroupId, BimPropertyGroupReadModel, BimPropertyReadModel,
-    ServerEvent, ViewportEvent,
+    BimPropertiesReadModel, BimPropertyGroupReadModel, BimPropertyReadModel, ServerEvent,
+    ViewportEvent,
 };
 
 use super::constants::MAX_APPLICATION_MESSAGE_BYTES;
@@ -12,21 +12,9 @@ use super::session::ApplicationSessionState;
 
 const PAGE_COUNT_BOUND: u32 = viewport_protocol::MAX_BIM_PROPERTY_PAGES;
 
-#[derive(Clone)]
-struct PropertyItem {
-    group_id: BimPropertyGroupId,
-    group_name: String,
-    editable_group: bool,
-    property: BimPropertyReadModel,
-}
-
-struct PageContext<'a> {
-    selection_revision: u64,
-    total_properties: u32,
-    targets: &'a [viewport_protocol::SceneAnchor],
-    diff: Option<&'a viewport_protocol::BimPropertyDiffReadModel>,
-    request_id: Option<&'a str>,
-}
+#[path = "bim_property_packer.rs"]
+mod packer;
+use packer::{PageContext, PageSizeEstimator, PropertyItem, encoded_empty_group_size};
 
 pub(super) fn queue_bim_properties(
     state: &mut ApplicationSessionState,
@@ -69,10 +57,13 @@ pub(super) fn queue_bim_properties(
                 editable_group,
                 properties,
             } = group;
+            let encoded_empty_group_size = encoded_empty_group_size(id, &name, editable_group);
             properties.into_iter().map(move |property| PropertyItem {
                 group_id: id,
                 group_name: name.clone(),
                 editable_group,
+                encoded_size: encoded_property_size(&property),
+                encoded_empty_group_size,
                 property,
             })
         })
@@ -87,29 +78,29 @@ pub(super) fn queue_bim_properties(
 
     let mut pages = Vec::new();
     let mut current = Vec::new();
+    let mut estimator = PageSizeEstimator::new(state, &page_context, true);
     for item in items {
-        let include_metadata = pages.is_empty();
-        let mut candidate = current.clone();
-        candidate.push(item.clone());
-        if page_fits(
-            state,
-            request_id.as_deref(),
-            &make_page(
-                properties.selection_revision,
-                PAGE_COUNT_BOUND - 1,
-                PAGE_COUNT_BOUND,
-                total_properties as u32,
-                include_metadata.then_some(properties.targets.as_slice()),
-                &candidate,
-                include_metadata.then_some(diff.as_ref()).flatten(),
-            ),
-        ) {
-            current = candidate;
+        if estimator.fits(&item) {
+            estimator.add(&item);
+            current.push(item);
             continue;
         }
 
         if current.is_empty() {
-            let kind = if page_fits(
+            let fits_with_metadata = page_fits(
+                state,
+                request_id.as_deref(),
+                &make_page(
+                    properties.selection_revision,
+                    PAGE_COUNT_BOUND - 1,
+                    PAGE_COUNT_BOUND,
+                    total_properties as u32,
+                    Some(properties.targets.as_slice()),
+                    std::slice::from_ref(&item),
+                    diff.as_ref(),
+                ),
+            );
+            let fits_without_metadata = page_fits(
                 state,
                 request_id.as_deref(),
                 &make_page(
@@ -121,18 +112,24 @@ pub(super) fn queue_bim_properties(
                     std::slice::from_ref(&item),
                     None,
                 ),
-            ) {
+            );
+            let kind = if fits_without_metadata {
                 BimPropertiesDeliveryErrorKind::OversizedMetadata
             } else {
                 BimPropertiesDeliveryErrorKind::OversizedPropertyValue
             };
+            if fits_with_metadata {
+                estimator.add(&item);
+                current.push(item);
+                continue;
+            }
             queue_error(
                 state,
                 request_id.as_deref(),
                 properties.selection_revision,
                 kind,
                 Some(item.property.key.clone()),
-                encoded_property_size(&item.property),
+                item.encoded_size,
             );
             return;
         }
@@ -149,30 +146,37 @@ pub(super) fn queue_bim_properties(
             return;
         }
         current.clear();
-        let page_fits_without_metadata = page_fits(
-            state,
-            request_id.as_deref(),
-            &make_page(
-                properties.selection_revision,
-                PAGE_COUNT_BOUND - 1,
-                PAGE_COUNT_BOUND,
-                total_properties as u32,
-                None,
-                std::slice::from_ref(&item),
-                None,
-            ),
-        );
-        if !page_fits_without_metadata {
+        estimator = PageSizeEstimator::new(state, &page_context, false);
+        if !estimator.fits(&item) {
+            let fits_without_metadata = page_fits(
+                state,
+                request_id.as_deref(),
+                &make_page(
+                    properties.selection_revision,
+                    PAGE_COUNT_BOUND - 1,
+                    PAGE_COUNT_BOUND,
+                    total_properties as u32,
+                    None,
+                    std::slice::from_ref(&item),
+                    None,
+                ),
+            );
+            if fits_without_metadata {
+                estimator.add(&item);
+                current.push(item);
+                continue;
+            }
             queue_error(
                 state,
                 request_id.as_deref(),
                 properties.selection_revision,
                 BimPropertiesDeliveryErrorKind::OversizedPropertyValue,
                 Some(item.property.key.clone()),
-                encoded_property_size(&item.property),
+                item.encoded_size,
             );
             return;
         }
+        estimator.add(&item);
         current.push(item);
     }
 
@@ -321,3 +325,7 @@ fn queue_error(
         warn!("[viewport-data-channel] BIM property delivery error could not be queued");
     }
 }
+
+#[cfg(test)]
+#[path = "bim_properties_packing_tests.rs"]
+mod packing_tests;

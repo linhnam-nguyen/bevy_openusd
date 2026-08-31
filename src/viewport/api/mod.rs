@@ -10,6 +10,7 @@ mod interface;
 mod queues;
 mod read_model;
 mod scene_index;
+mod scene_occurrence_index;
 mod scene_query;
 mod session_registry;
 
