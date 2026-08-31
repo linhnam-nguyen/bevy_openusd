@@ -1,14 +1,19 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{
+    ar::{DefaultResolver, ResolvedPath, Resolver},
     sdf::Value,
     usd::{InitialLoadSet, PrimPredicate, Stage},
 };
+
+#[path = "source_closure_patterns.rs"]
+mod patterns;
+pub(crate) use patterns::expand_template_asset_paths;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LocalizedDependencyReport {
@@ -134,11 +139,29 @@ pub(crate) fn regular_file(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn resolve_asset_path(layer_path: &Path, authored: &str) -> Result<PathBuf> {
+    let paths = resolve_asset_paths(layer_path, authored)?;
+    ensure!(
+        paths.len() == 1,
+        "USD asset path resolves to multiple files and needs a pattern: {authored}"
+    );
+    Ok(paths.into_iter().next().expect("one resolved asset path"))
+}
+
+/// Resolve one authored USD asset through the pinned OpenUSD resolver surface.
+/// Pattern-valued assets (UDIM) deliberately return every exact match in the
+/// authored directory; they never broaden into a recursive neighbor scan.
+pub(crate) fn resolve_asset_paths(layer_path: &Path, authored: &str) -> Result<Vec<PathBuf>> {
     if authored.is_empty() {
         bail!("USD asset path is empty");
     }
-    if authored.starts_with("anon:") || authored.contains('[') {
+    if authored.starts_with("anon:") {
         bail!("USD asset path is not a filesystem path: {authored}");
+    }
+    if authored.contains("<UDIM>") {
+        return patterns::resolve_udim_pattern(layer_path, authored);
+    }
+    if authored.contains('[') {
+        bail!("package-relative USD asset paths are not localizable: {authored}");
     }
     let authored_path = Path::new(authored);
     let candidate = if authored_path.is_absolute() {
@@ -149,7 +172,19 @@ pub(crate) fn resolve_asset_path(layer_path: &Path, authored: &str) -> Result<Pa
             .context("USD dependency layer has no parent directory")?
             .join(authored_path)
     };
-    regular_file(&candidate)
+    let path = regular_file(&candidate)?;
+    let resolver = DefaultResolver::new();
+    let resolved = resolver
+        .resolve(
+            &resolver.create_identifier(authored, Some(&ResolvedPath::new(layer_path.to_owned()))),
+        )
+        .with_context(|| format!("OpenUSD resolver could not resolve {authored}"))?;
+    let resolved = regular_file(&resolved)?;
+    ensure!(
+        resolved == path,
+        "OpenUSD resolver resolved {authored} inconsistently"
+    );
+    Ok(vec![path])
 }
 
 struct DiscoveryState {
@@ -181,12 +216,14 @@ impl DiscoveryState {
     }
 
     fn add_dependency(&mut self, layer_path: &Path, authored: &str, is_layer: bool) {
-        match resolve_asset_path(layer_path, authored) {
-            Ok(path) if is_layer => {
-                self.add_layer(path);
+        match resolve_asset_paths(layer_path, authored) {
+            Ok(paths) if is_layer => {
+                for path in paths {
+                    self.add_layer(path);
+                }
             }
-            Ok(path) => {
-                self.non_layer_assets.insert(path);
+            Ok(paths) => {
+                self.non_layer_assets.extend(paths);
             }
             Err(error) => {
                 self.unresolved.insert(format!(
@@ -230,13 +267,13 @@ fn scan_layer(
                     }
                 }
             }
-            scan_value(&value, layer_path, state);
+            scan_value(&value, layer_path, state, field.as_str());
         }
     }
     Ok(())
 }
 
-fn scan_value(value: &Value, layer_path: &Path, state: &mut DiscoveryState) {
+fn scan_value(value: &Value, layer_path: &Path, state: &mut DiscoveryState, field: &str) {
     match value {
         Value::AssetPath(asset) => state.add_dependency(layer_path, asset.as_str(), false),
         Value::AssetPathVec(assets) => {
@@ -250,7 +287,7 @@ fn scan_value(value: &Value, layer_path: &Path, state: &mut DiscoveryState) {
                     state.add_dependency(layer_path, &reference.asset_path, true);
                 }
                 for value in reference.custom_data.values() {
-                    scan_value(value, layer_path, state);
+                    scan_value(value, layer_path, state, "");
                 }
             }
         }
@@ -267,20 +304,62 @@ fn scan_value(value: &Value, layer_path: &Path, state: &mut DiscoveryState) {
             }
         }
         Value::Dictionary(values) => {
-            for value in values.values() {
-                scan_value(value, layer_path, state);
+            if field == "clips" {
+                scan_clip_dictionary(values, layer_path, state);
+            } else {
+                for value in values.values() {
+                    scan_value(value, layer_path, state, "");
+                }
             }
         }
         Value::ValueVec(values) => {
             for value in values {
-                scan_value(value, layer_path, state);
+                scan_value(value, layer_path, state, "");
             }
         }
         Value::TimeSamples(samples) => {
             for (_, value) in samples {
-                scan_value(value, layer_path, state);
+                scan_value(value, layer_path, state, "");
             }
         }
         _ => {}
+    }
+}
+
+fn scan_clip_dictionary(
+    values: &HashMap<String, Value>,
+    layer_path: &Path,
+    state: &mut DiscoveryState,
+) {
+    for set in values.values().filter_map(|value| match value {
+        Value::Dictionary(set) => Some(set),
+        _ => None,
+    }) {
+        if let Some(Value::AssetPathVec(paths)) = set.get("assetPaths") {
+            for path in paths {
+                state.add_dependency(layer_path, path.as_str(), true);
+            }
+        }
+        if let Some(Value::AssetPath(path)) = set.get("manifestAssetPath")
+            && !path.is_empty()
+        {
+            state.add_dependency(layer_path, path.as_str(), true);
+        }
+        if let Some(Value::AssetPath(path)) = set.get("templateAssetPath") {
+            match expand_template_asset_paths(set, path.as_str()) {
+                Ok(paths) => {
+                    for path in paths {
+                        state.add_dependency(layer_path, &path, true);
+                    }
+                }
+                Err(error) => {
+                    state.unresolved.insert(format!(
+                        "{} in {}: {error}",
+                        path.as_str(),
+                        layer_path.display()
+                    ));
+                }
+            }
+        }
     }
 }

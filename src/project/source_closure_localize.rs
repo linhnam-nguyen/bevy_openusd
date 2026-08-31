@@ -7,8 +7,13 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{
     sdf,
-    usd::{InitialLoadSet, PrimPredicate, Stage},
+    usd::{InitialLoadSet, Stage},
 };
+
+#[path = "source_closure_localize_patterns.rs"]
+mod patterns;
+#[path = "source_closure_localize_validate.rs"]
+mod validation;
 
 use super::discovery::{LocalizedDependencyReport, discover, resolve_asset_path};
 use super::io::copy_file_synced;
@@ -67,7 +72,7 @@ pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> R
         localized_root.is_file(),
         "source closure did not materialize its root source"
     );
-    validate_localized_root(localized_root)?;
+    validation::validate_localized_root(localized_root)?;
     Ok(source_name)
 }
 
@@ -155,7 +160,10 @@ fn localized_path(original: &Path, source_parent: &Path, destination: &Path) -> 
     if let Ok(relative) = original.strip_prefix(source_parent) {
         return Ok(destination.join(relative));
     }
-    let hash = blake3::hash(original.to_string_lossy().as_bytes())
+    let parent = original
+        .parent()
+        .context("external USD dependency has no parent directory")?;
+    let hash = blake3::hash(parent.to_string_lossy().as_bytes())
         .to_hex()
         .to_string();
     let name = original
@@ -172,7 +180,10 @@ fn logical_path(original: &Path, source_parent: &Path) -> Result<String> {
             relative.to_string_lossy().replace('\\', "/")
         ));
     }
-    let hash = blake3::hash(original.to_string_lossy().as_bytes())
+    let parent = original
+        .parent()
+        .context("external USD dependency has no parent directory")?;
+    let hash = blake3::hash(parent.to_string_lossy().as_bytes())
         .to_hex()
         .to_string();
     let name = original
@@ -215,7 +226,7 @@ fn localize_layer(
     let rewritten = records
         .into_iter()
         .map(|(path, field, value)| {
-            let value = rewrite_value(&value, original, destination, mapping, &field)?;
+            let value = rewrite_value(&value, original, destination, mapping, field.as_str())?;
             Ok((path, field, value))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -292,8 +303,17 @@ fn rewrite_value(
             }
         }
         sdf::Value::Dictionary(values) => {
-            for value in values.values_mut() {
-                *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
+            if field == "clips" {
+                patterns::rewrite_clip_dictionary(
+                    values,
+                    original_layer,
+                    localized_layer,
+                    mapping,
+                )?;
+            } else {
+                for value in values.values_mut() {
+                    *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
+                }
             }
         }
         sdf::Value::ValueVec(values) => {
@@ -323,7 +343,7 @@ fn rewrite_asset(
     mapping: &BTreeMap<PathBuf, PathBuf>,
 ) -> Result<()> {
     if !asset.is_empty() {
-        asset.authored_path = rewrite_layer_asset(
+        asset.authored_path = patterns::rewrite_asset_path(
             &asset.authored_path,
             original_layer,
             localized_layer,
@@ -352,32 +372,4 @@ fn rewrite_layer_asset(
         )
     })?;
     crate::project::storage::authored_relative_asset_path(localized_layer, localized_asset)
-}
-
-fn validate_localized_root(path: &Path) -> Result<()> {
-    let path_string = path
-        .to_str()
-        .context("localized USD root path must be valid UTF-8")?;
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(path_string)
-        .context("reopen localized USD root")?;
-    stage
-        .traverse(PrimPredicate::ALL, |_| {})
-        .context("traverse localized USD root")?;
-    ensure!(
-        stage.composition_errors().is_empty(),
-        "localized USD root has composition errors"
-    );
-    let inspection = crate::project::scene::inspection::inspect_composition(path)
-        .context("reinspect localized USD root")?;
-    ensure!(
-        !matches!(
-            inspection.classification,
-            usd_project::CompositionClassification::Unsupported
-        ),
-        "localized USD root failed composition inspection: {:?}",
-        inspection.diagnostics
-    );
-    Ok(())
 }

@@ -252,3 +252,92 @@ fn usd_z_package_is_preserved_as_one_exact_closure() -> Result<()> {
     assert_localized_root_is_composed(&destination.join(source_name))?;
     Ok(())
 }
+
+#[test]
+fn udim_assets_localize_every_matching_tile_without_copying_neighbors() -> Result<()> {
+    let source_directory = tempdir()?;
+    let textures = source_directory.path().join("textures");
+    fs::create_dir(&textures)?;
+    fs::write(textures.join("diffuse.1001.bin"), b"tile-1001")?;
+    fs::write(textures.join("diffuse.1002.bin"), b"tile-1002")?;
+    fs::write(textures.join("diffuse.2001.bin"), b"outside-udim-range")?;
+    fs::write(textures.join("other.1001.bin"), b"unrelated-pattern")?;
+    let source = source_directory.path().join("root.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n( defaultPrim = \"Root\" upAxis = \"Y\" metersPerUnit = 1.0 )\ndef Xform \"Root\" { asset texture = @./textures/diffuse.<UDIM>.bin@ }\n",
+    )?;
+
+    let report = discovery::discover(&source)?;
+    assert!(report.unresolved.is_empty(), "{:?}", report.unresolved);
+    assert_eq!(
+        report
+            .non_layer_assets
+            .iter()
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("bin"))
+            .count(),
+        2
+    );
+
+    let destination_parent = tempdir()?;
+    let destination = destination_parent.path().join("closure");
+    materialize_source_closure(&source, &destination)?;
+    assert!(destination.join("textures/diffuse.1001.bin").is_file());
+    assert!(destination.join("textures/diffuse.1002.bin").is_file());
+    assert!(!destination.join("textures/diffuse.2001.bin").exists());
+    assert!(!destination.join("textures/other.1001.bin").exists());
+    Ok(())
+}
+
+#[test]
+fn templated_value_clips_localize_the_expanded_layer_set() -> Result<()> {
+    let source_directory = tempdir()?;
+    fs::write(
+        source_directory.path().join("clip.1.usda"),
+        "#usda 1.0\ndef Xform \"Model\" { float size = 1 }\n",
+    )?;
+    fs::write(
+        source_directory.path().join("clip.2.usda"),
+        "#usda 1.0\ndef Xform \"Model\" { float size = 2 }\n",
+    )?;
+    fs::write(
+        source_directory.path().join("clip.9.usda"),
+        "#usda 1.0\ndef Xform \"Model\" { float size = 9 }\n",
+    )?;
+    let source = source_directory.path().join("root.usda");
+    fs::write(
+        &source,
+        "#usda 1.0\n( defaultPrim = \"Model\" )\ndef Xform \"Model\" ( clips = { dictionary default = { asset templateAssetPath = @./clip.#.usda@ double templateStartTime = 1 double templateEndTime = 2 double templateStride = 1 string primPath = \"/Model\" } } ) {}\n",
+    )?;
+
+    let report = discovery::discover(&source)?;
+    assert!(report.unresolved.is_empty(), "{:?}", report.unresolved);
+    assert!(
+        report
+            .layers
+            .iter()
+            .any(|path| path.ends_with("clip.1.usda"))
+    );
+    assert!(
+        report
+            .layers
+            .iter()
+            .any(|path| path.ends_with("clip.2.usda"))
+    );
+    assert!(
+        !report
+            .layers
+            .iter()
+            .any(|path| path.ends_with("clip.9.usda"))
+    );
+
+    let destination_parent = tempdir()?;
+    let destination = destination_parent.path().join("closure");
+    materialize_source_closure(&source, &destination)?;
+    assert!(destination.join("clip.1.usda").is_file());
+    assert!(destination.join("clip.2.usda").is_file());
+    assert!(!destination.join("clip.9.usda").exists());
+    drop(source_directory);
+    assert_localized_root_is_composed(&destination.join("root.usda"))?;
+    Ok(())
+}
