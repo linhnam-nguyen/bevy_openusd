@@ -2,13 +2,14 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++/C7++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
 C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
-C4++++/C5++++/C6+/C7++++ review repair, and the additive C7+++++ provider
-restoration correction. It is not marked `PASSED / FROZEN`
+C4++++/C5++++/C6+/C7++++ review repair, the additive C7+++++ provider
+restoration correction, and the additive C7++++++ test-layout correction. It
+is not marked `PASSED / FROZEN`
 until the owner reviews this packet.
 
 ## Branch continuity and scope
@@ -54,6 +55,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C6+ | — | `5e3776c` | Exact Search/Classification/Properties layout, compact one-line properties, raw-key titles, scope badges, and removal of Selection/legacy status presentation. |
 | M8-OR2-C7++++ | final packet commit (recorded in the implementation plan) | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
 | M8-OR2-C7+++++ | `99594be` | `4343944` | Reversible Prim ↔ BIM provider switching: authoritative remote Prim root reload after BIM return, repeated backend/UI round trips, and stale inactive-provider page rejection in both directions. |
+| M8-OR2-C7++++++ | — | `d493d0b` | Extracted the hierarchy-provider fixture into a focused module, split the remote regression into provider-specific cases, moved the pre-existing interaction cases out of the oversized aggregate test module, and kept every materially touched Rust test file under 400 lines. |
 
 ## C7 implementation and repair evidence
 
@@ -268,10 +270,48 @@ authoritative Prim root restoration and late inactive-provider pages.
 cargo test -p usdview --bin usdview classification_provider_switch_round_trips_to_prim_repeatedly -- --nocapture: 1 passed
 cargo test -p usdview --bin usdview --tests: 336 passed; 5 ignored
 cargo test -p usd_hub_desktop fixture_hierarchy_provider_switch_round_trips_to_prim_repeatedly -- --nocapture: 1 passed
-cargo test -p usd_hub_desktop remote_hierarchy_switch_reloads_prim_roots_and_discards_late_bim_pages -- --nocapture: 1 passed
-cargo test -p usd_hub_desktop --all-targets: 239 passed; 1 ignored
+cargo test -p usd_hub_desktop remote_bim_to_prim_requests_authoritative_prim_roots -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop inactive_bim_page_is_ignored_after_switch_to_prim -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop inactive_prim_page_is_ignored_after_switch_to_bim -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop --all-targets: 241 passed; 1 ignored
 cargo fmt --all -- --check: PASS on both continuous branches
 ```
+
+### C7++++++ test-layout and bookkeeping correction
+
+Owner Review 2 also identified that the new hierarchy regression had enlarged
+the already oversized aggregate UI test module and had pushed the remote test
+module over the strict 400-line source limit. This checkpoint changes test
+organization only; no production hierarchy logic was modified.
+
+- `store/tests/hierarchy_provider.rs` now owns the local fixture round-trip,
+  the authoritative remote BIM → Prim root request case, and the two stale
+  inactive-provider cases.
+- `store/tests/interaction.rs` owns the three pre-existing interaction tests
+  moved out of the aggregate module; their assertions are unchanged.
+- `store/tests.rs` and `store/tests/remote.rs` retain their existing
+  responsibilities and are now below the source-size limit.
+
+The final materially touched UI Rust test files are bounded as follows:
+
+```text
+store/tests.rs: 335 lines
+store/tests/remote.rs: 267 lines
+store/tests/hierarchy_provider.rs: 235 lines
+store/tests/interaction.rs: 120 lines
+```
+
+```text
+cargo fmt --all -- --check: PASS
+cargo test -p usd_hub_desktop hierarchy_provider -- --nocapture: 5 passed
+cargo test -p usd_hub_desktop remote -- --nocapture: 4 passed
+cargo test -p usd_hub_desktop interaction -- --nocapture: 3 passed
+cargo test -p usd_hub_desktop --all-targets --quiet: 241 passed; 1 ignored
+```
+
+UI commit `d493d0b` records this source-layout correction on the continuous
+`panel-BIMData` branch. The production hierarchy implementation remains the
+reviewed `4343944` revision.
 
 ## Integrated evidence matrix
 
@@ -312,16 +352,21 @@ claim is made here.
 
 ### UI gates
 
-The repaired UI revision is `5e3776c` on `panel-BIMData`; the prior C5++
-revision `262d926` remains its parent.
+The reviewed functional UI revision is `4343944` on `panel-BIMData`; the
+prior C5++ revision `262d926` remains in its ancestry. The additive
+C7++++++ source-layout correction is `d493d0b`.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused/full `usd_hub_desktop` library tests: 236 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 241 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  236 passed/1 ignored in the final recorded run.
-- UI source-size audit: repaired `state.rs` 288 lines, `reducer.rs` 349 lines,
-  `properties_state.rs` 181 lines, and `property_reducer.rs` 129 lines. Six
-  unrelated pre-existing UI files remain over 400 lines and were not touched.
+  241 passed/1 ignored in the final post-extraction run.
+- UI source-size audit: the materially touched test files are bounded at
+  `tests.rs` 335 lines, `tests/remote.rs` 267 lines,
+  `tests/hierarchy_provider.rs` 235 lines, and `tests/interaction.rs` 120
+  lines. The previously repaired `state.rs` 288 lines, `reducer.rs` 349
+  lines, `properties_state.rs` 181 lines, and `property_reducer.rs` 129 lines
+  remain unchanged. Other pre-existing oversized UI files were not part of
+  this correction and were not touched.
 - Strict all-features UI clippy remains baseline-limited by pre-existing
   findings outside the C5+ classification files (including `model_view.rs`,
   benchmark/settings code, and existing scene/store tests); no finding was
