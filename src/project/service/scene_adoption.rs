@@ -262,9 +262,19 @@ fn adopt_scene_inner(
         phase: ProjectImportPhase::Validating,
     });
     let project_root = entry.repository_locator();
+    crate::project::scene::adoption_support::ensure_adoptable(inspection).map_err(|_| {
+        ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::SourceInspectionFailed,
+        }
+    })?;
+    crate::project::scene::adoption_support::revalidate_source(source, inspection).map_err(
+        |_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::SourceInspectionFailed,
+        },
+    )?;
     let graph = super::scene::scene_graph(project_root, &validated).map_err(|_| {
         ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::FilesystemFailure,
+            code: ProjectWriteErrorCode::CompositionGraphUnavailable,
         }
     })?;
     let parent_members = parent_scene_id
@@ -276,7 +286,7 @@ fn adopt_scene_inner(
         })
         .transpose()
         .map_err(|_| ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::FilesystemFailure,
+            code: ProjectWriteErrorCode::ParentSceneUnavailable,
         })?
         .unwrap_or_else(Vec::<SceneMember>::new);
     if parent_scene_id.is_some() {
@@ -305,7 +315,7 @@ fn adopt_scene_inner(
         },
     )
     .map_err(|_| ProjectWriteError::Failed {
-        code: ProjectWriteErrorCode::FilesystemFailure,
+        code: ProjectWriteErrorCode::ScenePublicationFailed,
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {

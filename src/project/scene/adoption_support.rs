@@ -45,7 +45,7 @@ pub(super) fn propose_scene_placement_with_name(
     ))
 }
 
-pub(super) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()> {
+pub(crate) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()> {
     ensure!(
         matches!(
             inspection.classification,
@@ -66,7 +66,7 @@ pub(super) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()>
     Ok(())
 }
 
-pub(super) fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<String> {
+pub(crate) fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<String> {
     ensure!(
         source.is_file(),
         "Scene adoption source disappeared or is not a file"

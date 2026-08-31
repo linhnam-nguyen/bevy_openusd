@@ -10,5 +10,6 @@ pub(crate) use lifecycle::{
 };
 pub(crate) use state::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageCameraData,
-    StageCameraInfo, StageCameraProjection, StageHandle, StageInfo, VariantSetInfo,
+    StageCameraInfo, StageCameraProjection, StageHandle, StageInfo, StagePresentationContext,
+    VariantSetInfo,
 };

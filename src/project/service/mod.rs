@@ -111,6 +111,9 @@ mod runtime_authority_owner_review5_tests;
 mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
+#[cfg(test)]
+#[path = "scene_adoption_error_tests.rs"]
+mod scene_adoption_error_tests;
 pub(crate) mod scene_closure;
 mod scene_lifecycle;
 mod stage_activation;
@@ -124,7 +127,7 @@ pub(crate) use runtime_authority::{
     ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse, unix_time_ms,
 };
 pub use scene_inspection::ProjectSceneInspectionQueue;
-pub use stage_activation::ProjectStageActivationTarget;
+pub use stage_activation::{ProjectStageActivationTarget, ProjectStagePresentationContext};
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
 use self::read::{project_list_item, project_tree, repository_summary};

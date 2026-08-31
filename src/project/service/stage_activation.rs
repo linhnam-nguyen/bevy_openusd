@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use project_protocol::{ProjectReadError, ProjectReadErrorCode, ProjectStageTarget};
 use usd_project::ProjectId;
@@ -7,6 +7,16 @@ use super::ProjectApplicationService;
 use crate::project::{
     cache::ProjectCacheTarget, cache_warmer::ProjectCachePreparation, scene::authoring::scene_path,
 };
+
+/// Manifest-backed semantic labels for one resolved Project stage. This
+/// neutral value crosses the library/binary boundary; the viewport converts
+/// it into a Bevy resource at successful activation time.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProjectStagePresentationContext {
+    pub root_path: Option<String>,
+    pub root_name: Option<String>,
+    pub target_names: HashMap<(String, String), String>,
+}
 
 /// Backend-only canonical stage target resolved from a Project identity.
 ///
@@ -19,6 +29,7 @@ pub struct ProjectStageActivationTarget {
     pub target: ProjectStageTarget,
     pub project_root: PathBuf,
     pub path: PathBuf,
+    pub(crate) presentation: ProjectStagePresentationContext,
 }
 
 impl ProjectApplicationService {
@@ -74,11 +85,13 @@ impl ProjectApplicationService {
             return Err(invalid_project_data(project_id));
         }
 
+        let presentation = presentation_context(&manifest, &target);
         Ok(Some(ProjectStageActivationTarget {
             project_id,
             target,
             project_root,
             path,
+            presentation,
         }))
     }
 
@@ -100,6 +113,44 @@ impl ProjectApplicationService {
         self.cache_warm
             .prepare_for_activation(&target.project_root, cache_target)
     }
+}
+
+fn presentation_context(
+    manifest: &usd_project::ValidatedProjectManifest,
+    target: &ProjectStageTarget,
+) -> ProjectStagePresentationContext {
+    let root_path = match target {
+        ProjectStageTarget::Model(_)
+        | ProjectStageTarget::ProjectRoot(usd_project::ProjectRoot::Model(_)) => "/ModelRoot",
+        _ => "/SceneRoot",
+    };
+    let mut context = ProjectStagePresentationContext {
+        root_path: Some(root_path.to_owned()),
+        root_name: None,
+        target_names: Default::default(),
+    };
+    for scene in manifest.scenes() {
+        context.target_names.insert(
+            ("scene".to_owned(), scene.id.to_string()),
+            scene.display_name.clone(),
+        );
+    }
+    for model in manifest.models() {
+        context.target_names.insert(
+            ("model".to_owned(), model.id.to_string()),
+            model.display_name.clone(),
+        );
+    }
+    context.root_name = match target {
+        ProjectStageTarget::ProjectRoot(_) => Some(manifest.raw().name.clone()),
+        ProjectStageTarget::Scene(scene_id) => manifest
+            .scene(*scene_id)
+            .map(|entry| entry.display_name.clone()),
+        ProjectStageTarget::Model(model_id) => manifest
+            .model(*model_id)
+            .map(|entry| entry.display_name.clone()),
+    };
+    context
 }
 
 fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {

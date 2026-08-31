@@ -26,6 +26,34 @@ pub(crate) struct RequestedAsset {
     pub(crate) root: PathBuf,
 }
 
+/// Manifest-backed presentation context for the currently activated stage.
+/// The stage path remains diagnostic state; this resource supplies the typed
+/// Project identity needed to label the semantic hierarchy.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct StagePresentationContext {
+    pub(crate) root_path: Option<String>,
+    pub(crate) root_name: Option<String>,
+    pub(crate) target_names: HashMap<(String, String), String>,
+}
+
+impl StagePresentationContext {
+    pub(crate) fn from_project(
+        context: crate::project::service::ProjectStagePresentationContext,
+    ) -> Self {
+        Self {
+            root_path: context.root_path,
+            root_name: context.root_name,
+            target_names: context.target_names,
+        }
+    }
+
+    pub(crate) fn target_name(&self, kind: &str, id: &str) -> Option<&str> {
+        self.target_names
+            .get(&(kind.to_owned(), id.to_owned()))
+            .map(String::as_str)
+    }
+}
+
 #[derive(Resource, Default, Debug, Clone)]
 pub struct StageInfo {
     /// Project activation generation that owns the current Stage snapshot.

@@ -8,10 +8,13 @@ use std::collections::HashMap;
 use super::super::RouteCtx;
 use super::UsdDisplayName;
 use crate::prim_ref::{
-    USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE, UsdTransparentHierarchyNode,
+    USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE, UsdHierarchyTarget,
+    UsdTransparentHierarchyNode,
 };
 
 const DISPLAY_NAME_FIELD: &str = "ui:displayName";
+const TARGET_KIND_FIELD: &str = "usdhub:targetKind";
+const TARGET_ID_FIELD: &str = "usdhub:targetId";
 
 /// Stage-owned metadata projected into Bevy is indexed once per composed Stage.
 ///
@@ -116,6 +119,20 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
             _ => None,
         })
         .unwrap_or(false);
+    let target = ctx
+        .stage
+        .prim(ctx.path.clone())
+        .custom_data()
+        .ok()
+        .flatten()
+        .and_then(|value| match value {
+            Value::Dictionary(data) => Some(UsdHierarchyTarget::new(
+                data.get(TARGET_KIND_FIELD)?.as_str()?,
+                data.get(TARGET_ID_FIELD)?.as_str()?,
+            )),
+            _ => None,
+        })
+        .filter(|target| !target.kind.is_empty() && !target.id.is_empty());
 
     let Ok(mut entity) = world.get_entity_mut(entity) else {
         return;
@@ -129,6 +146,11 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
         entity.insert(UsdTransparentHierarchyNode);
     } else {
         entity.remove::<UsdTransparentHierarchyNode>();
+    }
+    if let Some(target) = target {
+        entity.insert(target);
+    } else {
+        entity.remove::<UsdHierarchyTarget>();
     }
 }
 

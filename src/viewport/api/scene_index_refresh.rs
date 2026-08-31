@@ -1,8 +1,9 @@
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdPrimRef, UsdTransparentHierarchyNode};
+use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
 
 use crate::viewport::session::Spawned;
+use crate::viewport::session::StagePresentationContext;
 
 use super::SceneAnchorIndex;
 
@@ -18,6 +19,8 @@ pub(crate) fn refresh_scene_anchor_index(
                 Added<UsdPrimRef>,
                 Changed<UsdPrimRef>,
                 Changed<UsdDisplayName>,
+                Added<UsdHierarchyTarget>,
+                Changed<UsdHierarchyTarget>,
                 Added<UsdTransparentHierarchyNode>,
                 Changed<UsdTransparentHierarchyNode>,
                 Changed<Visibility>,
@@ -29,6 +32,7 @@ pub(crate) fn refresh_scene_anchor_index(
         Entity,
         &UsdPrimRef,
         Option<&UsdDisplayName>,
+        Option<&UsdHierarchyTarget>,
         Option<&UsdTransparentHierarchyNode>,
         Option<&Visibility>,
         Option<&Children>,
@@ -36,6 +40,7 @@ pub(crate) fn refresh_scene_anchor_index(
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
     mut index: ResMut<SceneAnchorIndex>,
+    presentation: Option<Res<StagePresentationContext>>,
 ) {
     // ScenePatch materialization can happen across a frame boundary after
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
@@ -50,7 +55,7 @@ pub(crate) fn refresh_scene_anchor_index(
         return;
     }
     if changed || !index.initialized {
-        index.rebuild(&prims);
+        index.rebuild(&prims, presentation.as_deref());
         let root_count = index
             .nodes
             .iter()

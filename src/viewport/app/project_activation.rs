@@ -25,6 +25,7 @@ use crate::project::cache_hydration::{
 };
 use crate::project::service::ProjectApplicationService;
 use crate::viewport::api::RenderServerInterface;
+use crate::viewport::session::StagePresentationContext;
 use crate::viewport::session::activate_stage_with_cache_context_for_generation;
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
@@ -215,6 +216,7 @@ fn publish_prepared_result(
                 target.path,
                 cache_context,
                 command.generation,
+                StagePresentationContext::from_project(target.presentation),
             ) {
                 Ok(()) => ProjectActivationReply::activated(&command),
                 Err(error) => ProjectActivationReply::failed(&command, error),

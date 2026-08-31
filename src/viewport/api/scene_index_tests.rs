@@ -120,12 +120,13 @@ fn explicit_source_role_flattens_only_usdhub_wrappers_and_preserves_anchors() {
         Entity,
         &UsdPrimRef,
         Option<&UsdDisplayName>,
+        Option<&UsdHierarchyTarget>,
         Option<&UsdTransparentHierarchyNode>,
         Option<&Visibility>,
         Option<&Children>,
     )>();
     let prims = prims.query(&world);
-    index.rebuild(&prims);
+    index.rebuild(&prims, None);
 
     let mut paths: Vec<_> = index
         .nodes
@@ -177,5 +178,122 @@ fn explicit_source_role_flattens_only_usdhub_wrappers_and_preserves_anchors() {
             ))
             .is_some(),
         "physical wrapper anchor remains selectable even when omitted from the tree"
+    );
+}
+
+#[test]
+fn canonical_project_activation_projects_manifest_names_into_protocol_read_model() {
+    use crate::viewport::session::{Spawned, StagePresentationContext};
+    use bevy::app::App;
+    use openusd::usd::Stage;
+    use project_protocol::ProjectStageTarget;
+    use tempfile::tempdir;
+    use usd_bevy::{LiveStage, LiveStagePlugin, UsdPlugin};
+    use usd_project::ProjectRoot;
+
+    let directory = tempdir().expect("temporary Project directory");
+    let projects = directory.path().join("projects");
+    std::fs::create_dir(&projects).expect("Project parent directory");
+    let mut service = crate::project::service::ProjectApplicationService::open(
+        directory.path().join("workspace.json"),
+    )
+    .expect("Project service opens");
+    let project = service
+        .create_project(&projects, "Pro3")
+        .expect("Project creates");
+    let root_scene_id = match project.root.clone() {
+        ProjectRoot::Scene(scene_id) => scene_id,
+        _ => panic!("new Project has a canonical Scene root"),
+    };
+    let child = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Scene(root_scene_id),
+            "Kitchen_set",
+        )
+        .expect("nested Scene creates");
+    let target = service
+        .resolve_stage_activation(
+            project.id,
+            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root_scene_id)),
+        )
+        .expect("Project root resolves")
+        .expect("Project has a Scene root");
+    let stage = Stage::open(target.path.to_string_lossy().as_ref()).expect("canonical Stage opens");
+
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<SceneAnchorIndex>()
+        .add_systems(
+            bevy::app::Update,
+            refresh_scene_anchor_index.after(usd_bevy::LiveStageSet::Reconcile),
+        );
+    app.world_mut().insert_resource(Spawned(true));
+    app.world_mut()
+        .insert_resource(StagePresentationContext::from_project(target.presentation));
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+
+    for _ in 0..8 {
+        app.update();
+    }
+
+    let read_model = app
+        .world()
+        .resource::<SceneAnchorIndex>()
+        .roots_read_model();
+    let root_node = read_model
+        .prims
+        .iter()
+        .find(|node| node.anchor.prim_path == "/SceneRoot")
+        .expect("canonical Scene root is in the protocol read model");
+    assert_eq!(root_node.display_name.as_deref(), Some("Pro3"));
+    let members = app.world().resource::<SceneAnchorIndex>().children_page(
+        Some(&SceneAnchor::active_session("/SceneRoot")),
+        0,
+        100,
+    );
+    let child_node = members
+        .nodes
+        .iter()
+        .find(|node| node.display_name.as_deref() == Some("Kitchen_set"))
+        .expect("managed member resolves to the manifest Scene display name");
+    assert!(
+        child_node
+            .anchor
+            .prim_path
+            .contains(&child.scene_id.to_string())
+            || child_node
+                .anchor
+                .prim_path
+                .starts_with("/SceneRoot/Member_")
+    );
+    assert!(
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .nodes
+            .iter()
+            .all(|node| !node
+                .display_name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("Member_")))
+    );
+    assert!(
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .hierarchy_snapshot()
+            .nodes
+            .iter()
+            .all(|node| !node.name.starts_with("Member_"))
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .hierarchy_snapshot()
+            .nodes
+            .iter()
+            .find(|node| node.prim_path.as_deref() == Some("/SceneRoot"))
+            .map(|node| node.name.as_str()),
+        Some("Pro3")
     );
 }

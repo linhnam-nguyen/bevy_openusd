@@ -8,13 +8,14 @@ use std::sync::Arc;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdPrimRef, UsdTransparentHierarchyNode};
+use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
 use viewport_protocol::{
     DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
     SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
 use super::hierarchy::HierarchyReadModel;
+use crate::viewport::session::StagePresentationContext;
 
 #[path = "scene_index_refresh.rs"]
 mod refresh;
@@ -200,10 +201,12 @@ impl SceneAnchorIndex {
             Entity,
             &UsdPrimRef,
             Option<&UsdDisplayName>,
+            Option<&UsdHierarchyTarget>,
             Option<&UsdTransparentHierarchyNode>,
             Option<&Visibility>,
             Option<&Children>,
         )>,
+        presentation: Option<&StagePresentationContext>,
     ) {
         #[derive(Debug)]
         struct Candidate {
@@ -225,8 +228,19 @@ impl SceneAnchorIndex {
             .iter()
             .filter(|(_, prim, ..)| prim.path != "/")
             .map(
-                |(entity, prim, display_name, transparent, visibility, children)| {
+                |(entity, prim, display_name, target, transparent, visibility, children)| {
                     let display_name = display_name.map(|display_name| display_name.0.clone());
+                    let display_name = target
+                        .and_then(|target| presentation?.target_name(&target.kind, &target.id))
+                        .map(str::to_owned)
+                        .or(display_name)
+                        .or_else(|| {
+                            presentation
+                                .filter(|presentation| {
+                                    presentation.root_path.as_deref() == Some(prim.path.as_str())
+                                })
+                                .and_then(|presentation| presentation.root_name.clone())
+                        });
                     Candidate {
                         entity,
                         path: prim.path.clone(),

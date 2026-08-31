@@ -1,7 +1,9 @@
 use std::{fs::File, io::Read};
 
 use super::ProjectApplicationService;
-use project_protocol::{LocalSelectionToken, ProjectExportSceneRequest, ProjectWriteTarget};
+use project_protocol::{
+    LocalSelectionToken, PlacementSpec, ProjectExportSceneRequest, ProjectWriteTarget,
+};
 use tempfile::tempdir;
 
 #[test]
@@ -94,6 +96,81 @@ fn scene_export_rejects_non_usdz_destination_without_creating_a_file() {
         })
     ));
     assert!(!destination.exists());
+}
+
+#[test]
+fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    std::fs::create_dir(&parent).unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let source_project = service.create_project(&parent, "Roundtrip Source").unwrap();
+    let source_scene_id = match source_project.root {
+        usd_project::ProjectRoot::Scene(scene_id) => scene_id,
+        root => panic!("expected protected Scene root, found {root:?}"),
+    };
+    let exports = directory.path().join("exports");
+    std::fs::create_dir(&exports).unwrap();
+    let destination = exports.join("roundtrip.usdz");
+
+    service
+        .export_scene(
+            ProjectExportSceneRequest {
+                project_id: source_project.id,
+                scene_id: source_scene_id,
+                destination: LocalSelectionToken::new("roundtrip-export"),
+            },
+            &destination,
+        )
+        .unwrap();
+    let inspection = crate::project::scene::inspection::inspect_composition(&destination).unwrap();
+    assert!(matches!(
+        inspection.classification,
+        usd_project::CompositionClassification::NativeUsdHubScene
+            | usd_project::CompositionClassification::SceneLike
+    ));
+
+    let target_project = service.create_project(&parent, "Roundtrip Target").unwrap();
+    let imported = service
+        .adopt_scene(
+            target_project.id,
+            ProjectWriteTarget::Project(target_project.id),
+            &destination,
+            &inspection,
+            "Imported Default".to_owned(),
+            "roundtrip-default".to_owned(),
+            1,
+            PlacementSpec::Default,
+        )
+        .unwrap();
+    assert!(imported.placement_id.is_some());
+
+    let placed = service
+        .adopt_scene(
+            target_project.id,
+            ProjectWriteTarget::Scene(imported.scene_id),
+            &destination,
+            &inspection,
+            "Imported Corrected".to_owned(),
+            "roundtrip-matrix".to_owned(),
+            2,
+            PlacementSpec::Matrix("1 0 0 0\n0 1 0 0\n0 0 1 0\n7 8 9 1".to_owned()),
+        )
+        .unwrap();
+    let placement_id = placed.placement_id.expect("matrix import placement");
+    let target_root = parent.join("Roundtrip Target");
+    let members = crate::project::scene::authoring::read_scene_members(
+        &crate::project::scene::authoring::scene_path(&target_root, imported.scene_id),
+        imported.scene_id,
+    )
+    .unwrap();
+    assert!(members.iter().any(|member| {
+        member.id == placement_id
+            && member.target == usd_project::SceneMemberTarget::Scene(placed.scene_id)
+            && member.transform
+                == usd_project::ScenePlacementTransform::from_translation([7.0, 8.0, 9.0])
+    }));
 }
 
 #[test]

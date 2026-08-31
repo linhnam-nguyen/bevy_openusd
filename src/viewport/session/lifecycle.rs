@@ -8,8 +8,11 @@ use crate::project::cache_hydration::{ActiveProjectCacheContext, hydrate_project
 
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageCameraData, StageCameraInfo,
-    StageCameraProjection, StageHandle, StageInfo, VariantSetInfo,
+    StageCameraProjection, StageHandle, StageInfo, StagePresentationContext, VariantSetInfo,
 };
+
+#[path = "lifecycle_open.rs"]
+mod lifecycle_open;
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
 
@@ -19,7 +22,7 @@ const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened
 pub(crate) fn load_stage(world: &mut World) {
     let requested = world.resource::<RequestedAsset>().clone();
     let path = requested.root.join(&requested.name);
-    open_stage(world, path);
+    lifecycle_open::open_stage(world, path);
 }
 
 /// Opens a resolved Project root without disturbing the current stage if the
@@ -37,7 +40,14 @@ pub(crate) fn activate_stage_with_cache_context(
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
 ) -> Result<(), String> {
-    activate_stage_with_cache_context_inner(world, path, cache_context, 0, || {})
+    activate_stage_with_cache_context_inner(
+        world,
+        path,
+        cache_context,
+        0,
+        StagePresentationContext::default(),
+        || {},
+    )
 }
 /// Opens a Project stage and records the activation generation for its snapshots.
 pub(crate) fn activate_stage_with_cache_context_for_generation(
@@ -45,12 +55,14 @@ pub(crate) fn activate_stage_with_cache_context_for_generation(
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
     activation_generation: u64,
+    presentation: StagePresentationContext,
 ) -> Result<(), String> {
     activate_stage_with_cache_context_inner(
         world,
         path,
         cache_context,
         activation_generation,
+        presentation,
         || {},
     )
 }
@@ -65,7 +77,14 @@ fn activate_stage_with_cache_context_for_test<F>(
 where
     F: FnOnce(),
 {
-    activate_stage_with_cache_context_inner(world, path, cache_context, 0, before_open)
+    activate_stage_with_cache_context_inner(
+        world,
+        path,
+        cache_context,
+        0,
+        StagePresentationContext::default(),
+        before_open,
+    )
 }
 
 fn activate_stage_with_cache_context_inner<F>(
@@ -73,6 +92,7 @@ fn activate_stage_with_cache_context_inner<F>(
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
     activation_generation: u64,
+    presentation: StagePresentationContext,
     before_open: F,
 ) -> Result<(), String>
 where
@@ -156,6 +176,7 @@ where
     world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
     world.resource_mut::<StageInfo>().activation_generation = activation_generation;
     world.resource_mut::<Spawned>().0 = false;
+    world.insert_resource(presentation);
     if let Some(context) = cache_context {
         world.insert_resource(context);
     } else {
@@ -178,7 +199,7 @@ pub(crate) fn handle_usd_hot_reload(world: &mut World) {
         requested.root.join(&requested.name)
     };
     clear_projected_stage(world);
-    open_stage(world, path);
+    lifecycle_open::open_stage(world, path);
 }
 
 /// Marks a live stage ready once `LiveStagePlugin` has projected real prims
@@ -271,32 +292,6 @@ pub(crate) fn apply_load_request(mut request: ResMut<LoadRequest>) {
     match std::process::Command::new(exe).arg(path).spawn() {
         Ok(_) => std::process::exit(0),
         Err(error) => error!("Browse: failed to relaunch viewer: {error}"),
-    }
-}
-
-fn open_stage(world: &mut World, path: std::path::PathBuf) {
-    world.remove_non_send::<LiveStage>();
-    world.insert_resource(StageHandle {
-        path: path.clone(),
-        error: None,
-    });
-    world.resource_mut::<Spawned>().0 = false;
-
-    if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
-        && !cache.archive_paths.contains(&path)
-    {
-        cache.archive_paths.push(path.clone());
-    }
-
-    info!("opening USD stage: {}", path.display());
-    let path_string = path.to_string_lossy().into_owned();
-    match Stage::open(&path_string) {
-        Ok(stage) => world.insert_non_send(LiveStage::new(stage)),
-        Err(error) => {
-            let message = format!("failed to open {}: {error:#}", path.display());
-            error!("{message}");
-            world.resource_mut::<StageHandle>().error = Some(message);
-        }
     }
 }
 

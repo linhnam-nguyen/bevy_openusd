@@ -77,6 +77,10 @@ pub enum ProjectWriteErrorCode {
     CommitFailed,
     ExportDestinationInvalid,
     ExportFailed,
+    SourceInspectionFailed,
+    CompositionGraphUnavailable,
+    ParentSceneUnavailable,
+    ScenePublicationFailed,
 }
 
 /// Typed write failures safe to return through the native host.

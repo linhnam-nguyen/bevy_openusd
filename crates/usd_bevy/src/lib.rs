@@ -30,7 +30,7 @@ pub use live::{
 };
 pub use prim_ref::{
     SemanticEntityIndex, USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE,
-    UsdEntityKey, UsdPrimRef, UsdTransparentHierarchyNode,
+    UsdEntityKey, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode,
 };
 pub use route::audio::UsdSpatialAudio;
 pub use route::camera::{Projection, UsdCamera};

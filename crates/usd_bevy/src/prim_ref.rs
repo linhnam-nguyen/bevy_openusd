@@ -29,6 +29,24 @@ pub struct UsdPrimRef {
 #[derive(Component, Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct UsdTransparentHierarchyNode;
 
+/// Stable USDHub target identity attached to a projected hierarchy member.
+/// Physical USD paths remain the selection/render identity; this component
+/// carries the manifest-backed identity used for semantic display names.
+#[derive(Component, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct UsdHierarchyTarget {
+    pub kind: String,
+    pub id: String,
+}
+
+impl UsdHierarchyTarget {
+    pub fn new(kind: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            id: id.into(),
+        }
+    }
+}
+
 impl UsdPrimRef {
     pub fn new(path: impl Into<String>) -> Self {
         Self { path: path.into() }
