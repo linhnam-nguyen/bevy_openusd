@@ -2,14 +2,14 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++/C7++++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
 C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
 C4++++/C5++++/C6+/C7++++ review repair, the additive C7+++++ provider
-restoration correction, and the additive C7++++++ test-layout correction. It
-is not marked `PASSED / FROZEN`
+restoration correction, the additive C7++++++ test-layout correction, and the
+additive C7+++++++ provider-wire correction. It is not marked `PASSED / FROZEN`
 until the owner reviews this packet.
 
 ## Branch continuity and scope
@@ -56,6 +56,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C7++++ | final packet commit (recorded in the implementation plan) | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
 | M8-OR2-C7+++++ | `99594be` | `4343944` | Reversible Prim ↔ BIM provider switching: authoritative remote Prim root reload after BIM return, repeated backend/UI round trips, and stale inactive-provider page rejection in both directions. |
 | M8-OR2-C7++++++ | — | `d493d0b` | Extracted the hierarchy-provider fixture into a focused module, split the remote regression into provider-specific cases, moved the pre-existing interaction cases out of the oversized aggregate test module, and kept every materially touched Rust test file under 400 lines. |
+| M8-OR2-C7+++++++ | — | `8364ef1` | Corrected the real BIM toggle wire path: typed Prim/BIM provider intent, authoritative client envelope validation before queueing, recipe-preserving ON/OFF action regression, and JSON encode/decode validation. |
 
 ## C7 implementation and repair evidence
 
@@ -311,7 +312,57 @@ cargo test -p usd_hub_desktop --all-targets --quiet: 241 passed; 1 ignored
 
 UI commit `d493d0b` records this source-layout correction on the continuous
 `panel-BIMData` branch. The production hierarchy implementation remains the
-reviewed `4343944` revision.
+reviewed `4343944` revision; the provider-wire correction is recorded in
+`8364ef1` below.
+
+### C7+++++++ actual classification-toggle wire correction
+
+The owner-provided server warnings identify the remaining runtime defect:
+`classification_recipe()` represented the saved UI recipe and was passed
+unchanged to both hierarchy providers. Because configured levels intentionally
+persist while Classification is disabled, the real toggle emitted
+`source = Prim` with `classification_recipe = Some(recipe)`. The server
+validator correctly rejected that invalid combination as
+`hierarchy.classification_recipe` before the backend could switch providers.
+
+The correction separates persistent panel state from the provider wire intent:
+
+- `HierarchyProviderIntent::Prim` always maps to `Prim` with
+  `classification_recipe = None`.
+- `HierarchyProviderIntent::BimClassification(recipe)` always maps to BIM with
+  `classification_recipe = Some(recipe)`.
+- Classification OFF preserves the configured Category/Family/Type levels for
+  the next ON operation.
+- The client command gateway validates every queued session, stream, input, and
+  viewport envelope with the authoritative protocol `validate()` before it is
+  added to the remote queue. Invalid commands do not consume request/sequence
+  numbers. The server validator remains enabled as defense in depth.
+
+The missing seam is now covered by a focused test that invokes the real
+`toggle_classification` action on a ready remote store, repeats ON → OFF ten
+times, checks the saved levels, verifies both provider payloads, and crosses the
+actual client JSON encode/decode boundary:
+
+```text
+cargo test -p usd_hub_desktop classification_toggle_preserves_recipe_but_emits_valid_provider_wire_commands -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop invalid_viewport_commands_are_rejected_before_queueing -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop --all-targets --quiet: 243 passed; 1 ignored
+cargo test -p usd_hub_desktop --all-targets --no-default-features --quiet: 243 passed; 1 ignored
+cargo test -p viewport_protocol --tests --quiet: all test binaries passed
+cargo fmt --all -- --check: PASS
+```
+
+The expected end-to-end mapping is now:
+
+```text
+Classification ON  → bim_classification + Some(recipe) → validate → server accepts
+Classification OFF → prim + null recipe             → validate → server accepts
+```
+
+UI commit `8364ef1` records this correction on the continuous `panel-BIMData`
+branch. No server validation rule was weakened or removed. Live server-log
+silence and native Tauri/WebRTC/H265 rendering remain runtime evidence for the
+owner environment and were not claimed from these automated tests.
 
 ## Integrated evidence matrix
 
@@ -352,21 +403,23 @@ claim is made here.
 
 ### UI gates
 
-The reviewed functional UI revision is `4343944` on `panel-BIMData`; the
-prior C5++ revision `262d926` remains in its ancestry. The additive
-C7++++++ source-layout correction is `d493d0b`.
+The reviewed functional UI revision is `8364ef1` on `panel-BIMData`; the
+prior hierarchy revision `4343944`, source-layout correction `d493d0b`, and
+C5++ revision `262d926` remain in its ancestry.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused/full `usd_hub_desktop` library tests: 241 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 243 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  241 passed/1 ignored in the final post-extraction run.
-- UI source-size audit: the materially touched test files are bounded at
-  `tests.rs` 335 lines, `tests/remote.rs` 267 lines,
-  `tests/hierarchy_provider.rs` 235 lines, and `tests/interaction.rs` 120
-  lines. The previously repaired `state.rs` 288 lines, `reducer.rs` 349
-  lines, `properties_state.rs` 181 lines, and `property_reducer.rs` 129 lines
-  remain unchanged. Other pre-existing oversized UI files were not part of
-  this correction and were not touched.
+  243 passed/1 ignored in the final provider-wire correction run.
+- UI source-size audit: all materially touched files remain below 400 lines;
+  the largest current files are `store.rs` 331 lines,
+  `command_gateway.rs` 322 lines, `store/scene.rs` 249 lines,
+  `store/tests/hierarchy_provider.rs` 237 lines,
+  `bim/classification_toggle_tests.rs` 128 lines, and
+  `bim/classification_actions.rs` 179 lines. The prior extracted files remain
+  bounded at `tests.rs` 335 lines, `tests/remote.rs` 267 lines, and
+  `tests/interaction.rs` 120 lines. Other pre-existing oversized UI files
+  were not part of this correction and were not touched.
 - Strict all-features UI clippy remains baseline-limited by pre-existing
   findings outside the C5+ classification files (including `model_view.rs`,
   benchmark/settings code, and existing scene/store tests); no finding was
