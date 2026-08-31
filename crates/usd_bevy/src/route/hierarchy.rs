@@ -2,6 +2,7 @@
 
 use bevy::prelude::{Entity, World};
 use openusd::sdf::Value;
+use std::collections::HashMap;
 
 use super::super::RouteCtx;
 use super::UsdDisplayName;
@@ -9,11 +10,72 @@ use crate::prim_ref::{
     USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE, UsdTransparentHierarchyNode,
 };
 
+const DISPLAY_NAME_FIELD: &str = "ui:displayName";
+
+/// Stage-owned metadata projected into Bevy is indexed once per root layer.
+///
+/// The composed attribute query remains authoritative for ordinary authored
+/// attributes. The index covers the legacy prim-spec metadata representation,
+/// whose value is otherwise only available by scanning every layer in the
+/// stack. Keeping that scan at cache-build time makes projection O(N + L*S)
+/// instead of O(N*L) for N projected prims and L stage layers.
+#[derive(bevy::ecs::resource::Resource, Debug, Default, Clone)]
+pub(crate) struct HierarchyMetadataIndex {
+    stage_address: usize,
+    display_names: HashMap<String, String>,
+}
+
+impl HierarchyMetadataIndex {
+    #[cfg(test)]
+    pub(super) fn display_name(&self, path: &str) -> Option<&str> {
+        self.display_names.get(path).map(String::as_str)
+    }
+}
+
+pub(super) fn prepare_metadata_index(stage: &openusd::usd::Stage, world: &mut World) {
+    let stage_address = std::ptr::from_ref(stage) as usize;
+    let needs_rebuild = world
+        .get_resource::<HierarchyMetadataIndex>()
+        .is_none_or(|index| index.stage_address != stage_address);
+    if needs_rebuild {
+        world.insert_resource(build_metadata_index(stage, stage_address));
+    }
+}
+
+fn build_metadata_index(
+    stage: &openusd::usd::Stage,
+    stage_address: usize,
+) -> HierarchyMetadataIndex {
+    let mut display_names = HashMap::new();
+    for identifier in stage.layer_stack() {
+        let Some(layer) = stage.layer(&identifier) else {
+            continue;
+        };
+        let data = layer.data();
+        for spec_path in data.spec_paths() {
+            let Ok(Some(value)) = data.try_field(&spec_path, DISPLAY_NAME_FIELD) else {
+                continue;
+            };
+            if let Some(value) = as_text(value.into_owned()) {
+                // layer_stack is strength ordered, so the first opinion wins.
+                display_names
+                    .entry(spec_path.as_str().to_owned())
+                    .or_insert(value);
+            }
+        }
+    }
+    HierarchyMetadataIndex {
+        stage_address,
+        display_names,
+    }
+}
+
 /// Project semantic labels and explicit USDHub implementation roles alongside
 /// the normal visibility route. These components are disposable projections;
 /// the composed Stage remains authoritative for both values.
 pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) {
-    let display_name = read_display_name(ctx);
+    prepare_metadata_index(ctx.stage, world);
+    let display_name = read_display_name(ctx, world.get_resource::<HierarchyMetadataIndex>());
     let transparent_source = ctx
         .stage
         .prim(ctx.path.clone())
@@ -46,30 +108,23 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
 
 /// Read both representations found in USDHub's existing files: ordinary USD
 /// `ui:displayName` attributes and the prim metadata field authored by the
-/// storage-v2 project layer. The layer scan preserves composed-stage reading
-/// for the latter without exposing OpenUSD's internal Stage field resolver.
-fn read_display_name(ctx: &RouteCtx) -> Option<String> {
-    let as_text = |value: Value| match value {
+/// storage-v2 project layer. The index is prepared at the Stage→Bevy
+/// projection boundary, so this per-prim read never scans the layer stack.
+fn as_text(value: Value) -> Option<String> {
+    match value {
         Value::String(value) => Some(value),
         Value::Token(value) => Some(value.as_str().to_owned()),
         _ => None,
-    };
+    }
+}
+
+fn read_display_name(ctx: &RouteCtx, index: Option<&HierarchyMetadataIndex>) -> Option<String> {
     ctx.stage
         .prim(ctx.path.clone())
-        .attribute("ui:displayName")
+        .attribute(DISPLAY_NAME_FIELD)
         .get::<Value>()
         .ok()
         .flatten()
         .and_then(as_text)
-        .or_else(|| {
-            ctx.stage
-                .layer_stack()
-                .into_iter()
-                .filter_map(|identifier| {
-                    let layer = ctx.stage.layer(&identifier)?;
-                    let spec = layer.prim(ctx.path)?;
-                    spec.field("ui:displayName").ok().flatten()
-                })
-                .find_map(as_text)
-        })
+        .or_else(|| index?.display_names.get(ctx.prim_str()).cloned())
 }

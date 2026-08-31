@@ -253,6 +253,7 @@ impl SchemaRegistry {
     /// Run every matching route's [`project`](PrimRoute::project) on `entity`,
     /// resolving animated attributes at the world's [`StageTime`] (if any).
     pub fn project_prim(&self, stage: &Stage, path: &Path, world: &mut World, entity: Entity) {
+        geom::prepare_hierarchy_metadata(stage, world);
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
             if route.telemetry_key() == Some("material") {
@@ -277,6 +278,7 @@ impl SchemaRegistry {
         entity: Entity,
         changed: &[&str],
     ) {
+        geom::prepare_hierarchy_metadata(stage, world);
         let ctx = RouteCtx::at(stage, path, time_of(world));
         for route in &self.routes {
             if route.telemetry_key() == Some("material") {

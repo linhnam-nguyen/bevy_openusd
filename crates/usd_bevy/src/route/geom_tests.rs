@@ -234,6 +234,33 @@ fn hierarchy_metadata_route_projects_display_name_and_explicit_source_role() -> 
 }
 
 #[test]
+fn hierarchy_metadata_legacy_opinions_are_indexed_once_per_stage() -> anyhow::Result<()> {
+    let stage = openusd::usd::Stage::builder().in_memory("hierarchy-index.usda")?;
+    stage
+        .define_prim("/World/Source")?
+        .set_type_name("Xform")?
+        .set_metadata(
+            "ui:displayName",
+            openusd::sdf::Value::String("Indexed Source".to_owned()),
+        )?;
+    let mut world = World::new();
+
+    super::prepare_hierarchy_metadata(&stage, &mut world);
+    let index = world.resource::<super::hierarchy::HierarchyMetadataIndex>();
+    assert_eq!(index.display_name("/World/Source"), Some("Indexed Source"));
+
+    let path = openusd::sdf::path("/World/Source")?;
+    let ctx = RouteCtx::new(&stage, &path);
+    let entity = world.spawn_empty().id();
+    super::VisibilityRoute.project(&ctx, &mut world, entity);
+    assert_eq!(
+        world.get::<UsdDisplayName>(entity),
+        Some(&UsdDisplayName("Indexed Source".to_owned()))
+    );
+    Ok(())
+}
+
+#[test]
 fn source_mesh_key_changes_for_rendered_content_but_not_extent() {
     let (stage, path) = mesh_stage();
     let read = read_mesh(&stage, &path)

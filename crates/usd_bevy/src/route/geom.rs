@@ -8,6 +8,10 @@ use std::time::Instant;
 #[path = "hierarchy.rs"]
 mod hierarchy;
 
+pub(crate) fn prepare_hierarchy_metadata(stage: &openusd::usd::Stage, world: &mut World) {
+    hierarchy::prepare_metadata_index(stage, world);
+}
+
 use super::ProjectionSeed;
 use super::cache::{
     ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,
