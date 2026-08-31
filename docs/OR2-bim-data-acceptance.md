@@ -512,8 +512,8 @@ make harden: ENVIRONMENT-LIMITED after source-size, no-default compile/test, and
 
 The focused UI test is the regression boundary for the reported defect. The
 automated evidence does not claim supplied-asset, live GPU, Tauri, WebRTC, or
-H265 behavior. OR2 remains `IMPLEMENTED / UNFROZEN — OWNER REVIEW 2 REQUIRED`;
-no OR3 work is authorized.
+H265 behavior. OR2 is now `PASSED / FROZEN — OWNER REVIEW 2 ACCEPTED`; no OR3
+work is authorized without a new explicit milestone authorization.
 
 ## Integrated evidence matrix
 
