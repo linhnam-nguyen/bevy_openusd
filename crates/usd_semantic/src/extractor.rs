@@ -130,6 +130,24 @@ fn metadata_hash(semantic: &SemanticInfo, properties: &[SemanticProperty]) -> Ha
     write_option_string(&mut bytes, semantic.display_name.as_deref());
     write_option_string(&mut bytes, semantic.bim.element_id.as_deref());
     write_option_string(&mut bytes, semantic.bim.family_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim_classification.category.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name.as_deref(),
+    );
+    write_option_string(&mut bytes, semantic.bim_classification.type_name.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.category_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.type_name_property.as_deref(),
+    );
     write_properties(&mut bytes, properties);
     digest(&bytes)
 }
@@ -154,6 +172,24 @@ fn entity_hash(
     write_option_string(&mut bytes, semantic.display_name.as_deref());
     write_option_string(&mut bytes, semantic.bim.element_id.as_deref());
     write_option_string(&mut bytes, semantic.bim.family_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim_classification.category.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name.as_deref(),
+    );
+    write_option_string(&mut bytes, semantic.bim_classification.type_name.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.category_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.type_name_property.as_deref(),
+    );
     write_transform(&mut bytes, transform);
     write_geometry(&mut bytes, geometry);
     write_properties(&mut bytes, properties);

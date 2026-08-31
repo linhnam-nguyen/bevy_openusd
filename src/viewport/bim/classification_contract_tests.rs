@@ -145,18 +145,40 @@ fn field_catalogue_is_model_wide_bim_only_and_revision_scoped() {
     let catalogue = service.classification_field_catalogue(42);
 
     assert_eq!(catalogue.semantic_revision, 42);
-    assert!(catalogue.fields.contains(&BimFieldKey::Category));
-    assert!(catalogue.fields.contains(&BimFieldKey::Family));
-    assert!(catalogue.fields.contains(&BimFieldKey::Type));
-    assert!(catalogue.fields.contains(&BimFieldKey::property("Mark")));
     assert!(
         catalogue
             .fields
-            .contains(&BimFieldKey::property("WindowOnly"))
+            .iter()
+            .any(|field| field.key == BimFieldKey::Category)
     );
     assert!(
-        !catalogue
+        catalogue
             .fields
-            .contains(&BimFieldKey::property("NonBimOnly"))
+            .iter()
+            .any(|field| field.key == BimFieldKey::Family)
+    );
+    assert!(
+        catalogue
+            .fields
+            .iter()
+            .any(|field| field.key == BimFieldKey::Type)
+    );
+    assert!(
+        catalogue
+            .fields
+            .iter()
+            .any(|field| field.key == BimFieldKey::property("Mark"))
+    );
+    assert!(
+        catalogue
+            .fields
+            .iter()
+            .any(|field| field.key == BimFieldKey::property("WindowOnly"))
+    );
+    assert!(
+        catalogue
+            .fields
+            .iter()
+            .all(|field| field.key != BimFieldKey::property("NonBimOnly"))
     );
 }

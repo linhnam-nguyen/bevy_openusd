@@ -206,14 +206,24 @@ fn group_value(
     properties: &HashMap<&str, &SemanticProperty>,
 ) -> String {
     let value = match field {
-        BimFieldKey::Category => entity.semantic.category.as_deref().map(Cow::Borrowed),
+        BimFieldKey::Category => entity
+            .semantic
+            .bim_classification
+            .category
+            .as_deref()
+            .map(Cow::Borrowed),
         BimFieldKey::Family => entity
             .semantic
-            .bim
+            .bim_classification
             .family_name
             .as_deref()
             .map(Cow::Borrowed),
-        BimFieldKey::Type => entity.semantic.type_name.as_deref().map(Cow::Borrowed),
+        BimFieldKey::Type => entity
+            .semantic
+            .bim_classification
+            .type_name
+            .as_deref()
+            .map(Cow::Borrowed),
         BimFieldKey::Property(name) => properties
             .get(name.as_str())
             .and_then(|property| canonical_value_text(&property.value)),

@@ -6,7 +6,7 @@ use usd_model::{MeasurementMetadata, SemanticProperty};
 use usd_semantic::UnitRegistry;
 use viewport_protocol::{
     BimPropertiesReadModel, BimPropertyGroupId, BimPropertyGroupReadModel, BimPropertyReadModel,
-    BimUnitOption, CommonValue, SelectionReadModel,
+    BimPropertyScope, BimUnitOption, CommonValue, SelectionReadModel,
 };
 
 use super::{BimQueryError, BimReadPolicy, BimReadService};
@@ -114,7 +114,8 @@ fn project_property(
                 .collect()
         })
         .unwrap_or_default();
-    let group_id = property_group_id(&key);
+    let descriptor = usd_semantic::nvidia_revit_property_descriptor(&key);
+    let group_id = property_group_id(descriptor.scope);
     let current_display_unit = measurement.as_ref().and_then(|metadata| {
         metadata
             .source_unit
@@ -124,6 +125,8 @@ fn project_property(
 
     BimPropertyReadModel {
         key,
+        label: descriptor.label,
+        scope: descriptor.scope,
         group_id,
         value: if same_value {
             CommonValue::Same(first.value.clone())
@@ -141,17 +144,20 @@ fn project_property(
     }
 }
 
-fn property_group_id(_key: &str) -> BimPropertyGroupId {
-    // SemanticProperty currently carries no validated source-group metadata.
-    // Keep all such rows in the explicit fallback group until extraction
-    // promotes observed connector metadata into the semantic model.
-    BimPropertyGroupId::SourceFallback
+fn property_group_id(scope: BimPropertyScope) -> BimPropertyGroupId {
+    match scope {
+        BimPropertyScope::Instance => BimPropertyGroupId::Instance,
+        BimPropertyScope::Type => BimPropertyGroupId::Type,
+        BimPropertyScope::Other => BimPropertyGroupId::SourceFallback,
+    }
 }
 
 fn property_group_name(group_id: BimPropertyGroupId) -> &'static str {
     match group_id {
         BimPropertyGroupId::Semantic => "Semantic",
-        BimPropertyGroupId::SourceFallback => "<Ungrouped>",
+        BimPropertyGroupId::Instance => "Instance",
+        BimPropertyGroupId::Type => "Type",
+        BimPropertyGroupId::SourceFallback => "Other",
     }
 }
 

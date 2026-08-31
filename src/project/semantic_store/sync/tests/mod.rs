@@ -55,6 +55,7 @@ pub(super) fn snapshot() -> SemanticSnapshot {
                     type_id: None,
                     display_name: Some("Asset".to_owned()),
                     bim: Default::default(),
+                    bim_classification: Default::default(),
                 },
                 transform: TransformSignature {
                     translation_mm: [0, 0, 0],

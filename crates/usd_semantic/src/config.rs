@@ -2,7 +2,9 @@
 
 use usd_model::HashDigest;
 
-use crate::nvidia::{NvidiaRevitConfig, NvidiaRevitIdentityConfig};
+use crate::nvidia::{
+    NvidiaRevitClassificationConfig, NvidiaRevitConfig, NvidiaRevitIdentityConfig,
+};
 
 /// Candidate authored-property names for resolving a stable source identity.
 ///
@@ -95,6 +97,11 @@ impl SemanticConfig {
                     element_id_property: Some("BIM:Instance:ElementId".to_owned()),
                     ..Default::default()
                 },
+                classification: NvidiaRevitClassificationConfig {
+                    category_property: Some("BIM:Instance:Category".to_owned()),
+                    type_name_property: Some("BIM:Type:Name".to_owned()),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -145,6 +152,22 @@ mod tests {
             Some("BIM:Instance:ElementId")
         );
         assert!(config.nvidia_revit.identity.family_name_property.is_none());
+        assert_eq!(
+            config
+                .nvidia_revit
+                .classification
+                .category_property
+                .as_deref(),
+            Some("BIM:Instance:Category")
+        );
+        assert_eq!(
+            config
+                .nvidia_revit
+                .classification
+                .type_name_property
+                .as_deref(),
+            Some("BIM:Type:Name")
+        );
         assert!(config.include_custom_properties);
     }
 }

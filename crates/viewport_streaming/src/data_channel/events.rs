@@ -1,6 +1,7 @@
 use log::warn;
 use viewport_protocol::{ServerEvent, SessionEvent, ViewportEvent, ViewportReadModel};
 
+use super::bim_classification::queue_bim_classification_field_catalogue;
 use super::bim_properties::queue_bim_properties;
 use super::chunks::{queue_runtime_blob, queue_runtime_manifest, queue_snapshot};
 use super::constants::MAX_APPLICATION_MESSAGE_BYTES;
@@ -33,6 +34,11 @@ pub(super) fn queue_server_event_for_request(
         }
         ServerEvent::Viewport(ViewportEvent::BimPropertiesRead { properties, diff }) => {
             queue_bim_properties(state, request_id, properties, diff);
+        }
+        ServerEvent::Viewport(ViewportEvent::BimClassificationFieldCatalogueChanged {
+            catalogue,
+        }) => {
+            queue_bim_classification_field_catalogue(state, request_id, catalogue);
         }
         ServerEvent::Session(SessionEvent::RuntimeManifest { manifest }) => {
             queue_runtime_manifest(state, request_id.as_deref(), manifest);

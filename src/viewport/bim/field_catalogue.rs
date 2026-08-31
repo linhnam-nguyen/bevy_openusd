@@ -1,5 +1,8 @@
 use bevy::prelude::Resource;
-use viewport_protocol::{BimClassificationFieldCatalogue, BimFieldKey};
+use usd_model::BimPropertyScope;
+use viewport_protocol::{
+    BimClassificationFieldCatalogue, BimClassificationFieldDescriptor, BimFieldKey,
+};
 
 /// Current immutable model-wide classification field catalogue.
 ///
@@ -17,9 +20,21 @@ impl Default for BimClassificationFieldCatalogueState {
             catalogue: BimClassificationFieldCatalogue {
                 semantic_revision: 0,
                 fields: vec![
-                    BimFieldKey::Category,
-                    BimFieldKey::Family,
-                    BimFieldKey::Type,
+                    BimClassificationFieldDescriptor::new(
+                        BimFieldKey::Category,
+                        "Category",
+                        BimPropertyScope::Instance,
+                    ),
+                    BimClassificationFieldDescriptor::new(
+                        BimFieldKey::Family,
+                        "Family",
+                        BimPropertyScope::Other,
+                    ),
+                    BimClassificationFieldDescriptor::new(
+                        BimFieldKey::Type,
+                        "Type",
+                        BimPropertyScope::Type,
+                    ),
                 ],
             },
         }
@@ -50,10 +65,26 @@ mod tests {
         let catalogue = BimClassificationFieldCatalogue {
             semantic_revision: 1,
             fields: vec![
-                BimFieldKey::Category,
-                BimFieldKey::Family,
-                BimFieldKey::Type,
-                BimFieldKey::property("Window Only"),
+                BimClassificationFieldDescriptor::new(
+                    BimFieldKey::Category,
+                    "Category",
+                    BimPropertyScope::Instance,
+                ),
+                BimClassificationFieldDescriptor::new(
+                    BimFieldKey::Family,
+                    "Family",
+                    BimPropertyScope::Other,
+                ),
+                BimClassificationFieldDescriptor::new(
+                    BimFieldKey::Type,
+                    "Type",
+                    BimPropertyScope::Type,
+                ),
+                BimClassificationFieldDescriptor::new(
+                    BimFieldKey::property("Window Only"),
+                    "Window Only",
+                    BimPropertyScope::Other,
+                ),
             ],
         };
 

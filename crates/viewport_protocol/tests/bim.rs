@@ -1,8 +1,8 @@
 use viewport_protocol::{
     BimFieldKey, BimPageRequest, BimPropertiesReadModel, BimPropertyGroupId,
     BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus, BimPropertyReadModel,
-    BimSearchQuery, ClassificationLevel, ClassificationRecipe, CommonValue, MAX_BIM_REGEX_BYTES,
-    MAX_BIM_SEARCH_OFFSET, SceneAnchor, ViewportCommand,
+    BimPropertyScope, BimSearchQuery, ClassificationLevel, ClassificationRecipe, CommonValue,
+    MAX_BIM_REGEX_BYTES, MAX_BIM_SEARCH_OFFSET, SceneAnchor, ViewportCommand,
 };
 
 #[test]
@@ -50,10 +50,12 @@ fn property_group_identity_and_selection_revision_round_trip() {
         selection_revision: 9,
         groups: vec![viewport_protocol::BimPropertyGroupReadModel {
             id: BimPropertyGroupId::SourceFallback,
-            name: "<Ungrouped>".to_owned(),
+            name: "Other".to_owned(),
             editable_group: false,
             properties: vec![BimPropertyReadModel {
                 key: "Mark".to_owned(),
+                label: "Mark".to_owned(),
+                scope: BimPropertyScope::Other,
                 group_id: BimPropertyGroupId::SourceFallback,
                 value: CommonValue::Multiple,
                 target_values: Vec::new(),

@@ -1,7 +1,8 @@
 //! Explicit mapping for observed NVIDIA Revit Connector USD properties.
 
 use usd_model::{
-    BimIdentity, CanonicalValue, MeasurementMetadata, QuantitySpecId, SemanticProperty, UnitId,
+    BimClassificationInfo, BimIdentity, BimPropertyDescriptor, BimPropertyScope, CanonicalValue,
+    MeasurementMetadata, QuantitySpecId, SemanticProperty, UnitId,
 };
 
 use crate::units::UnitRegistry;
@@ -33,6 +34,7 @@ impl NvidiaRevitMeasurementMapping {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NvidiaRevitConfig {
     pub identity: NvidiaRevitIdentityConfig,
+    pub classification: NvidiaRevitClassificationConfig,
     pub measurement_mappings: Vec<NvidiaRevitMeasurementMapping>,
 }
 
@@ -44,10 +46,23 @@ pub struct NvidiaRevitIdentityConfig {
     pub family_name_property: Option<String>,
 }
 
+/// Explicit source-property mapping for normalized Revit classification.
+/// Empty fields remain unavailable; no value is inferred from generic USD
+/// kind, prim type, category, or family fields.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NvidiaRevitClassificationConfig {
+    pub category_property: Option<String>,
+    pub family_name_property: Option<String>,
+    pub type_name_property: Option<String>,
+}
+
 impl NvidiaRevitConfig {
     pub(crate) fn write_hash(&self, bytes: &mut Vec<u8>) {
         write_optional_string(bytes, self.identity.element_id_property.as_deref());
         write_optional_string(bytes, self.identity.family_name_property.as_deref());
+        write_optional_string(bytes, self.classification.category_property.as_deref());
+        write_optional_string(bytes, self.classification.family_name_property.as_deref());
+        write_optional_string(bytes, self.classification.type_name_property.as_deref());
         bytes.extend_from_slice(&(self.measurement_mappings.len() as u64).to_le_bytes());
         for mapping in &self.measurement_mappings {
             write_string(bytes, &mapping.property_name);
@@ -64,6 +79,42 @@ pub(crate) fn extract_bim_identity(
     BimIdentity {
         element_id: configured_text(properties, config.element_id_property.as_deref()),
         family_name: configured_text(properties, config.family_name_property.as_deref()),
+    }
+}
+
+pub(crate) fn extract_bim_classification(
+    properties: &[SemanticProperty],
+    config: &NvidiaRevitClassificationConfig,
+) -> BimClassificationInfo {
+    BimClassificationInfo {
+        category: configured_text(properties, config.category_property.as_deref()),
+        family_name: configured_text(properties, config.family_name_property.as_deref()),
+        type_name: configured_text(properties, config.type_name_property.as_deref()),
+        category_property: config.category_property.clone(),
+        family_name_property: config.family_name_property.clone(),
+        type_name_property: config.type_name_property.clone(),
+    }
+}
+
+/// Projects an observed NVIDIA/Revit raw property to source-neutral UI
+/// metadata. The raw key remains unchanged and is never replaced by the
+/// human-facing label.
+pub fn nvidia_revit_property_descriptor(name: &str) -> BimPropertyDescriptor {
+    let (scope, suffix) = if let Some(suffix) = name.strip_prefix("BIM:Instance:") {
+        (BimPropertyScope::Instance, suffix)
+    } else if let Some(suffix) = name.strip_prefix("BIM:Type:") {
+        (BimPropertyScope::Type, suffix)
+    } else {
+        (BimPropertyScope::Other, name)
+    };
+    BimPropertyDescriptor::new(name, humanize_label(suffix), scope)
+}
+
+fn humanize_label(suffix: &str) -> String {
+    match suffix {
+        "ElementId" => "Element ID".to_owned(),
+        "IfcGUID" => "IFC GUID".to_owned(),
+        _ => suffix.to_owned(),
     }
 }
 
@@ -177,6 +228,7 @@ mod tests {
             property("height_unit", CanonicalValue::Text("[ft_i]".to_owned())),
         ];
         let config = NvidiaRevitConfig {
+            classification: NvidiaRevitClassificationConfig::default(),
             measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
                 "height",
                 "length",
@@ -208,6 +260,7 @@ mod tests {
             ),
         ];
         let config = NvidiaRevitConfig {
+            classification: NvidiaRevitClassificationConfig::default(),
             measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
                 "height",
                 "length",
@@ -251,6 +304,46 @@ mod tests {
 
         assert_eq!(identity.element_id.as_deref(), Some("150663"));
         assert_eq!(identity.family_name, None);
+    }
+
+    #[test]
+    fn classification_mapping_keeps_generic_usd_fields_separate() {
+        let properties = vec![
+            property(
+                "BIM:Instance:Category",
+                CanonicalValue::Text("Murs".to_owned()),
+            ),
+            property(
+                "BIM:Type:Name",
+                CanonicalValue::Text("Générique - 400 mm".to_owned()),
+            ),
+        ];
+        let classification = extract_bim_classification(
+            &properties,
+            &NvidiaRevitClassificationConfig {
+                category_property: Some("BIM:Instance:Category".to_owned()),
+                type_name_property: Some("BIM:Type:Name".to_owned()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(classification.category.as_deref(), Some("Murs"));
+        assert_eq!(
+            classification.type_name.as_deref(),
+            Some("Générique - 400 mm")
+        );
+        assert_eq!(
+            classification.category_property.as_deref(),
+            Some("BIM:Instance:Category")
+        );
+        assert_eq!(
+            nvidia_revit_property_descriptor("BIM:Type:Description").label,
+            "Description"
+        );
+        assert_eq!(
+            nvidia_revit_property_descriptor("BIM:Type:Description").scope,
+            BimPropertyScope::Type
+        );
     }
 
     #[test]

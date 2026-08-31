@@ -29,6 +29,8 @@ fn large_bim_property_response_packs_at_scale_without_prefix_rebuilds() {
             properties: (0..property_count)
                 .map(|index| viewport_protocol::BimPropertyReadModel {
                     key: format!("Property-{index}"),
+                    label: format!("Property {index}"),
+                    scope: viewport_protocol::BimPropertyScope::Other,
                     group_id: viewport_protocol::BimPropertyGroupId::Semantic,
                     value: viewport_protocol::CommonValue::Same(
                         viewport_protocol::CanonicalValue::Text("value".to_owned()),

@@ -23,6 +23,7 @@ pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -
             type_id: Some("wall-type".to_owned()),
             display_name: Some("Wall".to_owned()),
             bim: Default::default(),
+            bim_classification: Default::default(),
         },
         transform: TransformSignature {
             translation_mm: [seed as i64, 0, 0],

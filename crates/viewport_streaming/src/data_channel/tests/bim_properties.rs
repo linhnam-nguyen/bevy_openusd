@@ -25,6 +25,8 @@ fn oversized_bim_property_results_are_paged_without_loss_or_duplication() {
             properties: (0..40)
                 .map(|index| viewport_protocol::BimPropertyReadModel {
                     key: format!("Property-{index}"),
+                    label: format!("Property {index}"),
+                    scope: viewport_protocol::BimPropertyScope::Other,
                     group_id: viewport_protocol::BimPropertyGroupId::Semantic,
                     value: viewport_protocol::CommonValue::Same(
                         viewport_protocol::CanonicalValue::Text("x".repeat(400)),
@@ -91,6 +93,8 @@ fn individually_oversized_bim_property_becomes_explicit_delivery_error() {
             editable_group: true,
             properties: vec![viewport_protocol::BimPropertyReadModel {
                 key: "Oversized".to_owned(),
+                label: "Oversized".to_owned(),
+                scope: viewport_protocol::BimPropertyScope::Other,
                 group_id: viewport_protocol::BimPropertyGroupId::Semantic,
                 value: viewport_protocol::CommonValue::Same(
                     viewport_protocol::CanonicalValue::Text(

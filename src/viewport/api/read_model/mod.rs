@@ -135,7 +135,6 @@ impl ViewportReadModelState {
         std::mem::take(&mut self.pending_scene_pages)
     }
 
-    /// Applies an event exactly as a frontend event reducer would.
     pub(crate) fn apply(&mut self, envelope: &ViewportEventEnvelope) {
         match &envelope.event {
             ViewportEvent::Snapshot { state } => self.apply_snapshot(state.as_ref().clone()),
@@ -161,6 +160,7 @@ impl ViewportReadModelState {
             | ViewportEvent::BimPropertiesPage { .. }
             | ViewportEvent::BimPropertiesError { .. }
             | ViewportEvent::BimClassificationFieldCatalogueChanged { .. }
+            | ViewportEvent::BimClassificationFieldCataloguePage { .. }
             | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }

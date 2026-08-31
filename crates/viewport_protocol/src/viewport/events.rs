@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use crate::{PROTOCOL_VERSION, RequestId};
 
 use super::bim::{
-    BimPropertiesDeliveryError, BimPropertiesPage, BimPropertiesReadModel,
-    BimPropertyDiffReadModel, BimPropertyEditOutcome, BimPropertyProvenanceReadModel,
-    BimSearchResult,
+    BimClassificationFieldCataloguePage, BimPropertiesDeliveryError, BimPropertiesPage,
+    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyEditOutcome,
+    BimPropertyProvenanceReadModel, BimSearchResult,
 };
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
@@ -50,6 +50,9 @@ pub enum ViewportEvent {
     },
     BimClassificationFieldCatalogueChanged {
         catalogue: super::bim::BimClassificationFieldCatalogue,
+    },
+    BimClassificationFieldCataloguePage {
+        page: BimClassificationFieldCataloguePage,
     },
     BimPropertyProvenanceRead {
         provenance: BimPropertyProvenanceReadModel,

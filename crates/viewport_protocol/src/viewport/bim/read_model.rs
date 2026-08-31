@@ -1,7 +1,7 @@
 //! Typed BIM read models returned by the application service.
 
 use serde::{Deserialize, Serialize};
-use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
+use usd_model::{BimPropertyScope, CanonicalValue, MeasurementMetadata, UnitId};
 
 use super::super::editor::EditorValue;
 use super::super::read_models::SceneAnchor;
@@ -16,7 +16,34 @@ use super::query::BimFieldKey;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct BimClassificationFieldCatalogue {
     pub semantic_revision: u64,
-    pub fields: Vec<BimFieldKey>,
+    pub fields: Vec<BimClassificationFieldDescriptor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BimClassificationFieldDescriptor {
+    pub key: BimFieldKey,
+    pub label: String,
+    pub scope: BimPropertyScope,
+}
+
+impl BimClassificationFieldDescriptor {
+    pub fn new(key: BimFieldKey, label: impl Into<String>, scope: BimPropertyScope) -> Self {
+        Self {
+            key,
+            label: label.into(),
+            scope,
+        }
+    }
+}
+
+/// One bounded transport page of a model-wide classification field catalogue.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BimClassificationFieldCataloguePage {
+    pub semantic_revision: u64,
+    pub page_index: u32,
+    pub page_count: u32,
+    pub total_fields: u32,
+    pub fields: Vec<BimClassificationFieldDescriptor>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,12 +82,18 @@ fn default_unit_scale() -> f64 {
 pub enum BimPropertyGroupId {
     #[default]
     Semantic,
+    Instance,
+    Type,
     SourceFallback,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BimPropertyReadModel {
     pub key: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub scope: BimPropertyScope,
     #[serde(default)]
     pub group_id: BimPropertyGroupId,
     pub value: CommonValue,

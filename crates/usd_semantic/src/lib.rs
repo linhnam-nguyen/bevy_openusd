@@ -17,5 +17,8 @@ pub use config::{IdentityConfig, SemanticConfig};
 pub use extractor::{SemanticExtractor, extract_stage};
 pub use identity::resolve_identity;
 pub use metadata::canonical_value;
-pub use nvidia::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, NvidiaRevitMeasurementMapping};
+pub use nvidia::{
+    NvidiaRevitClassificationConfig, NvidiaRevitConfig, NvidiaRevitIdentityConfig,
+    NvidiaRevitMeasurementMapping, nvidia_revit_property_descriptor,
+};
 pub use units::{UnitConversionError, UnitDefinition, UnitRegistry};

@@ -1,8 +1,6 @@
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SnapshotSource};
-use usd_semantic::{
-    NvidiaRevitConfig, NvidiaRevitIdentityConfig, SemanticConfig, SemanticExtractor,
-};
+use usd_semantic::{SemanticConfig, SemanticExtractor};
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
 use super::BimReadService;
@@ -14,16 +12,7 @@ fn real_nvidia_fixture_projects_element_only_leaf_when_family_is_unvalidated() -
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../external_assets/Omniverse/V2/Projet1.usdc");
     let stage = Stage::open(fixture.to_str().expect("fixture path is valid UTF-8"))?;
-    let config = SemanticConfig {
-        nvidia_revit: NvidiaRevitConfig {
-            identity: NvidiaRevitIdentityConfig {
-                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    };
+    let config = SemanticConfig::for_nvidia_revit_connector();
     let snapshot = SemanticExtractor::new(config).extract(
         &stage,
         SnapshotSource::Working {
@@ -43,6 +32,28 @@ fn real_nvidia_fixture_projects_element_only_leaf_when_family_is_unvalidated() -
         .expect("real Revit wall entity");
     assert_eq!(wall.semantic.bim.element_id.as_deref(), Some("150663"));
     assert_eq!(wall.semantic.bim.family_name, None);
+    assert_eq!(
+        wall.semantic.bim_classification.category.as_deref(),
+        Some("Murs")
+    );
+    assert_eq!(
+        wall.semantic.bim_classification.type_name.as_deref(),
+        Some("Générique - 200 mm")
+    );
+    assert_eq!(
+        wall.semantic
+            .bim_classification
+            .category_property
+            .as_deref(),
+        Some("BIM:Instance:Category")
+    );
+    assert_eq!(
+        wall.semantic
+            .bim_classification
+            .type_name_property
+            .as_deref(),
+        Some("BIM:Type:Name")
+    );
     assert!(wall.properties.iter().any(|property| {
         property.name == "BIM:Type:Name"
             && property.value == CanonicalValue::Text("Générique - 200 mm".to_owned())
@@ -51,7 +62,7 @@ fn real_nvidia_fixture_projects_element_only_leaf_when_family_is_unvalidated() -
     let mut service = BimReadService::new(&snapshot);
     let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
         "category-property",
-        BimFieldKey::property("BIM:Instance:Category"),
+        BimFieldKey::Category,
     )]);
     let roots = service
         .classification_page(&recipe, None, 0, 20)

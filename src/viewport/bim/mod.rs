@@ -32,15 +32,16 @@ mod m8_failure_tests;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
-    BimClassificationFieldCatalogue, BimFieldKey, BimPropertiesReadModel, BimSearchQuery,
-    BimSearchResult, ClassificationColorEntry, ClassificationColorIntent, ClassificationRecipe,
+    BimClassificationFieldCatalogue, BimClassificationFieldDescriptor, BimFieldKey,
+    BimPropertiesReadModel, BimPropertyScope, BimSearchQuery, BimSearchResult,
+    ClassificationColorEntry, ClassificationColorIntent, ClassificationRecipe,
     HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel, MAX_BIM_CLASSIFICATION_FIELDS,
     ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
@@ -145,13 +146,67 @@ impl<'snapshot> BimReadService<'snapshot> {
         &self,
         semantic_revision: u64,
     ) -> BimClassificationFieldCatalogue {
-        let mut fields = BTreeSet::from([
-            BimFieldKey::Category,
-            BimFieldKey::Family,
-            BimFieldKey::Type,
-        ]);
         let mut entities = self.entities().collect::<Vec<_>>();
         entities.sort_unstable_by(|left, right| left.key.as_str().cmp(right.key.as_str()));
+        let mut represented_properties = BTreeSet::new();
+        for entity in &entities {
+            let classification = &entity.semantic.bim_classification;
+            represented_properties.extend(
+                [
+                    classification.category_property.as_deref(),
+                    classification.family_name_property.as_deref(),
+                    classification.type_name_property.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(str::to_owned),
+            );
+        }
+
+        let mut fields = BTreeMap::from([
+            (
+                BimFieldKey::Category,
+                classification_descriptor(
+                    BimFieldKey::Category,
+                    "Category",
+                    entities.iter().find_map(|entity| {
+                        entity
+                            .semantic
+                            .bim_classification
+                            .category_property
+                            .as_deref()
+                    }),
+                ),
+            ),
+            (
+                BimFieldKey::Family,
+                classification_descriptor(
+                    BimFieldKey::Family,
+                    "Family",
+                    entities.iter().find_map(|entity| {
+                        entity
+                            .semantic
+                            .bim_classification
+                            .family_name_property
+                            .as_deref()
+                    }),
+                ),
+            ),
+            (
+                BimFieldKey::Type,
+                classification_descriptor(
+                    BimFieldKey::Type,
+                    "Type",
+                    entities.iter().find_map(|entity| {
+                        entity
+                            .semantic
+                            .bim_classification
+                            .type_name_property
+                            .as_deref()
+                    }),
+                ),
+            ),
+        ]);
 
         for entity in entities {
             let mut property_names = entity
@@ -169,15 +224,25 @@ impl<'snapshot> BimReadService<'snapshot> {
 
             for name in property_names {
                 let field = BimFieldKey::Property(name.to_owned());
-                if fields.len() < MAX_BIM_CLASSIFICATION_FIELDS || fields.contains(&field) {
-                    fields.insert(field);
+                if represented_properties.contains(name) {
+                    continue;
+                }
+                if fields.len() < MAX_BIM_CLASSIFICATION_FIELDS {
+                    let descriptor = usd_semantic::nvidia_revit_property_descriptor(name);
+                    fields.entry(field).or_insert_with(|| {
+                        BimClassificationFieldDescriptor::new(
+                            BimFieldKey::property(name),
+                            descriptor.label,
+                            descriptor.scope,
+                        )
+                    });
                 }
             }
         }
 
         BimClassificationFieldCatalogue {
             semantic_revision,
-            fields: fields.into_iter().collect(),
+            fields: fields.into_values().collect(),
         }
     }
 
@@ -321,4 +386,15 @@ impl<'snapshot> BimReadService<'snapshot> {
     pub(super) fn anchor_for_entity(entity: &EntitySnapshot) -> SceneAnchor {
         SceneAnchor::active_session(entity.prim_path.clone())
     }
+}
+
+fn classification_descriptor(
+    key: BimFieldKey,
+    label: &'static str,
+    source_property: Option<&str>,
+) -> BimClassificationFieldDescriptor {
+    let scope = source_property
+        .map(usd_semantic::nvidia_revit_property_descriptor)
+        .map_or(BimPropertyScope::Other, |descriptor| descriptor.scope);
+    BimClassificationFieldDescriptor::new(key, label, scope)
 }

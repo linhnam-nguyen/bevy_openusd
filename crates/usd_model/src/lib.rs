@@ -17,7 +17,9 @@ pub use change::{ChangeFlags, PresenceState};
 pub use hash::{HashDigest, HashDigestError};
 pub use identity::{EntityKey, IdentitySource};
 pub use measurement::{MeasurementMetadata, QuantitySpecId, UnitId};
-pub use semantic::{BimIdentity, SemanticInfo};
+pub use semantic::{
+    BimClassificationInfo, BimIdentity, BimPropertyDescriptor, BimPropertyScope, SemanticInfo,
+};
 pub use signature::{BlobId, Bounds3, GeometrySignature, QuantizedPoint3, TransformSignature};
 pub use snapshot::{
     EntitySnapshot, SemanticProperty, SemanticSnapshot, SnapshotId, SnapshotSource,

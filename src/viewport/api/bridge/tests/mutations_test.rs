@@ -206,6 +206,15 @@ mod tests {
             initial_snapshot_loaded,
             "initial semantic snapshot did not load"
         );
+        // The initial semantic sync publishes a request-independent BIM
+        // catalogue event. Drain that bootstrap traffic before asserting the
+        // correlation of the next command response.
+        while app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .is_some()
+        {}
 
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::ApplyRuntimeMutationBatch {

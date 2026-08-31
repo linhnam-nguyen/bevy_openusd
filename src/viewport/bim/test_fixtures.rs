@@ -1,7 +1,7 @@
 use usd_model::{
-    BimIdentity, CanonicalValue, EntityKey, EntitySnapshot, HashDigest, IdentitySource,
-    MeasurementMetadata, SemanticInfo, SemanticProperty, SemanticSnapshot, SnapshotId,
-    SnapshotSource, TransformSignature,
+    BimClassificationInfo, BimIdentity, CanonicalValue, EntityKey, EntitySnapshot, HashDigest,
+    IdentitySource, MeasurementMetadata, SemanticInfo, SemanticProperty, SemanticSnapshot,
+    SnapshotId, SnapshotSource, TransformSignature,
 };
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
@@ -39,6 +39,12 @@ pub(super) fn entity(
             type_name: type_name.map(str::to_owned),
             bim: BimIdentity {
                 family_name: family.map(str::to_owned),
+                ..Default::default()
+            },
+            bim_classification: BimClassificationInfo {
+                category: category.map(str::to_owned),
+                family_name: family.map(str::to_owned),
+                type_name: type_name.map(str::to_owned),
                 ..Default::default()
             },
             ..SemanticInfo::default()

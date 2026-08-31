@@ -64,7 +64,7 @@ fn property_read_projects_intersection_and_authoritative_units() {
 }
 
 #[test]
-fn property_read_uses_ungrouped_fallback_without_validated_source_metadata() {
+fn property_read_classifies_observed_instance_namespace_without_guessing_values() {
     let mut snapshot = super::test_fixtures::snapshot();
     for path in ["/World/WallA", "/World/WallB"] {
         snapshot
@@ -102,7 +102,12 @@ fn property_read_uses_ungrouped_fallback_without_validated_source_metadata() {
         .expect("observed source property");
     assert_eq!(
         source_property.group_id,
-        viewport_protocol::BimPropertyGroupId::SourceFallback
+        viewport_protocol::BimPropertyGroupId::Instance
+    );
+    assert_eq!(source_property.label, "Surface");
+    assert_eq!(
+        source_property.scope,
+        viewport_protocol::BimPropertyScope::Instance
     );
 }
 
