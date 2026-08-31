@@ -2,7 +2,7 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++/C4+++++/C7++++++++/C4++++++/C7+++++++++ COMPLETE`
+Status: `PASSED / FROZEN — OWNER REVIEW 2 ACCEPTED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++/C4+++++/C7++++++++/C4++++++/C7+++++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
@@ -12,8 +12,9 @@ restoration correction, the additive C7++++++ test-layout correction, the
 additive C7+++++++ provider-wire correction, the additive C5+++++
 authoritative-catalogue hydration correction, the C4+++++ provider-neutral
 hierarchy-visibility correction, and this C4++++++ typed-search visibility
-correction. It is not marked `PASSED / FROZEN` until the owner reviews this
-packet.
+correction. Owner Review 2 accepted this packet on 2026-08-31; OR2 is now
+marked `PASSED / FROZEN` at the recorded implementation and automated-evidence
+boundary.
 
 ## Branch continuity and scope
 
@@ -65,6 +66,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C7++++++++ | packet commit below | — | Final hierarchy-visibility acceptance record, complete gate matrix, exact limitations, implementation-plan update, and Owner Review 2 stop. |
 | M8-OR2-C4++++++ | `cc903bb` | `e5d58e7` | Preserved typed Visible/Hidden/Mixed state through backend search, protocol wire DTOs, UI cache reduction, and search-row controls; Mixed results render `◐` and request restore. |
 | M8-OR2-C7+++++++++ | packet commit below | — | Recorded the focused search-mode regression, complete current gate evidence, exact all-features limitation, implementation-plan update, and Owner Review 2 stop. |
+| M8-OR2-FREEZE | packet commit below | — | Owner Review 2 accepted the packet and froze OR2 on 2026-08-31. The documented supplied-asset/native-runtime evidence limitation remains explicit; no OR3 work is authorized. |
 
 ## C7 implementation and repair evidence
 
@@ -621,7 +623,8 @@ Manual visual/runtime evidence is therefore:
 UNAVAILABLE — HARDWARE LIMITATION
 ```
 
-Owner Review 2 should include the supplied launch command and the real
-`Projet1.usdc` asset in a capable native GPU/Tauri/WebRTC environment before
-OR2 is frozen. No OR3 work is authorized until this Owner Review 2 boundary is
-accepted.
+Owner Review 2 accepted this packet and froze OR2 on 2026-08-31. The supplied
+launch command, real `Projet1.usdc` asset, native GPU/Tauri/WebRTC rendering,
+and H265 playback remain unavailable evidence on this host; this limitation is
+retained explicitly and no live-runtime claim is made. No OR3 work is
+authorized without a new explicit milestone authorization.
