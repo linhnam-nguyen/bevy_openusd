@@ -48,6 +48,9 @@ impl ClassificationIndex {
             .collect::<HashSet<_>>();
 
         for entity in snapshot.entities.values() {
+            if !entity.semantic.is_bim_entity() {
+                continue;
+            }
             let properties = indexed_properties(entity, &property_fields);
             let mut parent = None;
             let mut levels = Vec::with_capacity(recipe.levels.len());

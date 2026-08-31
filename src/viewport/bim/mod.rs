@@ -17,6 +17,9 @@ pub(crate) mod test_fixtures;
 mod classification_tests;
 
 #[cfg(test)]
+mod classification_contract_tests;
+
+#[cfg(test)]
 mod classification_real_fixture_tests;
 
 #[cfg(test)]
@@ -262,7 +265,10 @@ impl<'snapshot> BimReadService<'snapshot> {
     }
 
     pub(super) fn entities(&self) -> impl Iterator<Item = &'snapshot EntitySnapshot> {
-        self.snapshot.entities.values()
+        self.snapshot
+            .entities
+            .values()
+            .filter(|entity| entity.semantic.is_bim_entity())
     }
 
     pub(super) fn anchor_for_entity(entity: &EntitySnapshot) -> SceneAnchor {
