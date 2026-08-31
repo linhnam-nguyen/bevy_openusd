@@ -2,12 +2,13 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
 C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
-C4++++/C5++++/C6+/C7++++ review repair. It is not marked `PASSED / FROZEN`
+C4++++/C5++++/C6+/C7++++ review repair, and the additive C7+++++ provider
+restoration correction. It is not marked `PASSED / FROZEN`
 until the owner reviews this packet.
 
 ## Branch continuity and scope
@@ -52,6 +53,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C5++++ | `6674aae` | `5e3776c` | Protocol-v9 model-wide descriptor catalogue with human labels, `[I]`/`[T]` scope, deterministic byte-bounded paging, exact reconstruction, stale rejection, and no partial UI catalogue. |
 | M8-OR2-C6+ | — | `5e3776c` | Exact Search/Classification/Properties layout, compact one-line properties, raw-key titles, scope badges, and removal of Selection/legacy status presentation. |
 | M8-OR2-C7++++ | final packet commit (recorded in the implementation plan) | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
+| M8-OR2-C7+++++ | `99594be` | `4343944` | Reversible Prim ↔ BIM provider switching: authoritative remote Prim root reload after BIM return, repeated backend/UI round trips, and stale inactive-provider page rejection in both directions. |
 
 ## C7 implementation and repair evidence
 
@@ -244,6 +246,33 @@ cargo test -p usd_hub_desktop --all-targets: 236 passed; 1 ignored
 cargo check -p usd_hub_desktop --all-targets: passed
 ```
 
+### C7+++++ reversible hierarchy-provider restoration
+
+The remaining Owner Review 2 defect was the remote BIM → Prim return path.
+Changing the UI cache source to Prim previously restored only the compact
+snapshot, which is intentionally roots-only for a remote session; it did not
+request authoritative Prim roots. The correction keeps local fixtures on the
+existing snapshot materialization path, while remote sessions invalidate the
+old provider cache and queue a fresh Prim root page request. The cache already
+rejects any `HierarchyChildrenPage` whose source is not the active provider,
+so late BIM pages after a Prim switch and late Prim pages after a BIM switch
+cannot repopulate the visible hierarchy.
+
+Backend commit `99594be` adds a deterministic Prim → BIM → Prim projection
+round-trip repeated ten times, including the real Prim node names and BIM
+classification group. UI commit `4343944` adds local fixture round-trips
+repeated ten times and a remote transport/cache regression covering both
+authoritative Prim root restoration and late inactive-provider pages.
+
+```text
+cargo test -p usdview --bin usdview classification_provider_switch_round_trips_to_prim_repeatedly -- --nocapture: 1 passed
+cargo test -p usdview --bin usdview --tests: 336 passed; 5 ignored
+cargo test -p usd_hub_desktop fixture_hierarchy_provider_switch_round_trips_to_prim_repeatedly -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop remote_hierarchy_switch_reloads_prim_roots_and_discards_late_bim_pages -- --nocapture: 1 passed
+cargo test -p usd_hub_desktop --all-targets: 239 passed; 1 ignored
+cargo fmt --all -- --check: PASS on both continuous branches
+```
+
 ## Integrated evidence matrix
 
 ### Real supplied asset
@@ -309,8 +338,9 @@ include:
 - stale paged-property and stale-property request rejection;
 - classification color restoration, repeated Auto refresh, and path-only
   fan-out across native-instance scene occurrences;
-- deterministic virtual hierarchy/provider switching and non-selectable
-  virtual-group boundaries;
+- deterministic virtual hierarchy/provider switching, reversible Prim restore,
+  bidirectional stale-page rejection, and non-selectable virtual-group
+  boundaries;
 - bounded BIM property paging and explicit oversized-property errors;
 - 4,096-property paging scale with 67 bounded pages and no per-prefix rebuild;
 - 4,000-entry indexed classification scale with 4,000 path lookups and 4,000
