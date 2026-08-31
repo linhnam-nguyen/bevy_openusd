@@ -73,6 +73,10 @@ pub struct CurveTuning {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageReadModel {
+    /// Project activation generation that produced this snapshot. Zero is
+    /// reserved for stages opened outside the Project activation protocol.
+    #[serde(default)]
+    pub activation_generation: u64,
     pub display_name: String,
     pub loaded: bool,
 }

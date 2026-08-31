@@ -2,6 +2,7 @@
 
 use bevy::prelude::{Entity, World};
 use openusd::sdf::Value;
+use openusd::usd::PrimPredicate;
 use std::collections::HashMap;
 
 use super::super::RouteCtx;
@@ -12,13 +13,15 @@ use crate::prim_ref::{
 
 const DISPLAY_NAME_FIELD: &str = "ui:displayName";
 
-/// Stage-owned metadata projected into Bevy is indexed once per root layer.
+/// Stage-owned metadata projected into Bevy is indexed once per composed Stage.
 ///
 /// The composed attribute query remains authoritative for ordinary authored
 /// attributes. The index covers the legacy prim-spec metadata representation,
 /// whose value is otherwise only available by scanning every layer in the
-/// stack. Keeping that scan at cache-build time makes projection O(N + L*S)
-/// instead of O(N*L) for N projected prims and L stage layers.
+/// stack. Each prim-stack site is recorded under the composed Stage path, so
+/// referenced descendants keep their display names after namespace mapping.
+/// Keeping that work at cache-build time makes the per-prim projection read
+/// O(1), independent of the number of layers.
 #[derive(bevy::ecs::resource::Resource, Debug, Default, Clone)]
 pub(crate) struct HierarchyMetadataIndex {
     stage_address: usize,
@@ -65,23 +68,27 @@ fn build_metadata_index(
     revision: u64,
 ) -> HierarchyMetadataIndex {
     let mut display_names = HashMap::new();
-    for identifier in stage.layer_stack() {
-        let Some(layer) = stage.layer(&identifier) else {
-            continue;
+    let _ = stage.traverse(PrimPredicate::ALL, |composed_path| {
+        let prim = stage.prim(composed_path.clone());
+        let Ok(prim_stack) = prim.prim_stack() else {
+            return;
         };
-        let data = layer.data();
-        for spec_path in data.spec_paths() {
+        for (identifier, spec_path) in prim_stack {
+            let Some(layer) = stage.layer(&identifier) else {
+                continue;
+            };
+            let data = layer.data();
             let Ok(Some(value)) = data.try_field(&spec_path, DISPLAY_NAME_FIELD) else {
                 continue;
             };
             if let Some(value) = as_text(value.into_owned()) {
-                // layer_stack is strength ordered, so the first opinion wins.
-                display_names
-                    .entry(spec_path.as_str().to_owned())
-                    .or_insert(value);
+                // Prim::prim_stack is strength ordered, so the first opinion
+                // wins while the composed path preserves reference mapping.
+                display_names.insert(composed_path.as_str().to_owned(), value);
+                break;
             }
         }
-    }
+    });
     HierarchyMetadataIndex {
         stage_address,
         revision,

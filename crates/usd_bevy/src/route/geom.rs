@@ -350,3 +350,7 @@ pub struct UsdDisplayName(pub String);
 #[cfg(test)]
 #[path = "geom_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "hierarchy_tests.rs"]
+mod hierarchy_tests;

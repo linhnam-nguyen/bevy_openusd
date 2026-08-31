@@ -28,6 +28,9 @@ pub(crate) struct RequestedAsset {
 
 #[derive(Resource, Default, Debug, Clone)]
 pub struct StageInfo {
+    /// Project activation generation that owns the current Stage snapshot.
+    /// Zero denotes a stage opened outside the Project activation protocol.
+    pub activation_generation: u64,
     pub path: String,
     pub default_prim: Option<String>,
     pub layer_count: usize,

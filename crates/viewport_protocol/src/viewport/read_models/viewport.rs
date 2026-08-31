@@ -58,6 +58,7 @@ impl ViewportReadModel {
         Self {
             protocol_version: PROTOCOL_VERSION,
             stage: StageReadModel {
+                activation_generation: 0,
                 display_name: display_name.into(),
                 loaded: false,
             },

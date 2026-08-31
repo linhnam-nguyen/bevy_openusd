@@ -37,7 +37,22 @@ pub(crate) fn activate_stage_with_cache_context(
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
 ) -> Result<(), String> {
-    activate_stage_with_cache_context_inner(world, path, cache_context, || {})
+    activate_stage_with_cache_context_inner(world, path, cache_context, 0, || {})
+}
+/// Opens a Project stage and records the activation generation for its snapshots.
+pub(crate) fn activate_stage_with_cache_context_for_generation(
+    world: &mut World,
+    path: std::path::PathBuf,
+    cache_context: Option<ActiveProjectCacheContext>,
+    activation_generation: u64,
+) -> Result<(), String> {
+    activate_stage_with_cache_context_inner(
+        world,
+        path,
+        cache_context,
+        activation_generation,
+        || {},
+    )
 }
 
 #[cfg(test)]
@@ -50,13 +65,14 @@ fn activate_stage_with_cache_context_for_test<F>(
 where
     F: FnOnce(),
 {
-    activate_stage_with_cache_context_inner(world, path, cache_context, before_open)
+    activate_stage_with_cache_context_inner(world, path, cache_context, 0, before_open)
 }
 
 fn activate_stage_with_cache_context_inner<F>(
     world: &mut World,
     path: std::path::PathBuf,
     cache_context: Option<ActiveProjectCacheContext>,
+    activation_generation: u64,
     before_open: F,
 ) -> Result<(), String>
 where
@@ -138,6 +154,7 @@ where
         error: None,
     });
     world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
+    world.resource_mut::<StageInfo>().activation_generation = activation_generation;
     world.resource_mut::<Spawned>().0 = false;
     if let Some(context) = cache_context {
         world.insert_resource(context);

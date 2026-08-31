@@ -16,6 +16,7 @@ impl ViewportProtocolViewportSnapshot {
             state: Box::new(ViewportReadModel {
                 protocol_version: viewport_protocol::PROTOCOL_VERSION,
                 stage: viewport_protocol::StageReadModel {
+                    activation_generation: 0,
                     display_name: "fixture".to_owned(),
                     loaded: true,
                 },

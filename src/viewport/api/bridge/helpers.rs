@@ -124,6 +124,7 @@ pub(super) fn build_read_model(
     ViewportReadModel {
         protocol_version: PROTOCOL_VERSION,
         stage: StageReadModel {
+            activation_generation: stage_info.activation_generation,
             display_name: stage_info.path.clone(),
             loaded: stage_loaded,
         },

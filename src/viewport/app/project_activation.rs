@@ -25,7 +25,7 @@ use crate::project::cache_hydration::{
 };
 use crate::project::service::ProjectApplicationService;
 use crate::viewport::api::RenderServerInterface;
-use crate::viewport::session::activate_stage_with_cache_context;
+use crate::viewport::session::activate_stage_with_cache_context_for_generation;
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
 const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
@@ -210,7 +210,12 @@ fn publish_prepared_result(
         Ok(None) => ProjectActivationReply::activated(&command),
         Ok(Some(target)) => {
             let cache_context = cache_context_for(&target);
-            match activate_stage_with_cache_context(world, target.path, cache_context) {
+            match activate_stage_with_cache_context_for_generation(
+                world,
+                target.path,
+                cache_context,
+                command.generation,
+            ) {
                 Ok(()) => ProjectActivationReply::activated(&command),
                 Err(error) => ProjectActivationReply::failed(&command, error),
             }
