@@ -17,7 +17,8 @@ mod patterns;
 #[path = "source_closure_resolver.rs"]
 mod resolver;
 pub(crate) use patterns::expand_template_asset_paths;
-use resolver::{SharedResolver, filesystem_identifier, resolve_asset_paths_with_resolver};
+pub(crate) use resolver::resolve_asset_paths_with_resolver;
+use resolver::{SharedResolver, filesystem_identifier};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LocalizedDependencyReport {
@@ -61,14 +62,11 @@ pub(crate) fn discover_with_resolver(
         if !state.visited.insert(layer_path.clone()) {
             continue;
         }
-        let path_string = layer_path
-            .to_str()
-            .context("USD dependency path must be valid UTF-8")?;
-        let stage = match Stage::builder()
-            .resolver(SharedResolver(resolver.clone()))
-            .load(InitialLoadSet::LoadAll)
-            .open(path_string)
-        {
+        let stage = match open_stage_with_resolver(
+            &layer_path,
+            resolver.clone(),
+            InitialLoadSet::LoadAll,
+        ) {
             Ok(stage) => stage,
             Err(error) => {
                 state.unresolved.insert(format!(
@@ -123,14 +121,7 @@ fn discover_usdz(
     resolver: Arc<dyn Resolver>,
 ) -> Result<LocalizedDependencyReport> {
     let mut unresolved = BTreeSet::new();
-    let path_string = root_asset
-        .to_str()
-        .context("USDZ dependency path must be valid UTF-8")?;
-    match Stage::builder()
-        .resolver(SharedResolver(resolver))
-        .load(InitialLoadSet::LoadNone)
-        .open(path_string)
-    {
+    match open_stage_with_resolver(&root_asset, resolver, InitialLoadSet::LoadNone) {
         Ok(stage) => {
             if let Err(error) = force_reachable_layers(&stage) {
                 unresolved.insert(format!(
@@ -157,6 +148,21 @@ fn discover_usdz(
     })
 }
 
+pub(crate) fn open_stage_with_resolver(
+    path: &Path,
+    resolver: Arc<dyn Resolver>,
+    load: InitialLoadSet,
+) -> Result<Stage> {
+    let path_string = path
+        .to_str()
+        .context("USD dependency path must be valid UTF-8")?;
+    Stage::builder()
+        .resolver(SharedResolver(resolver))
+        .load(load)
+        .open(path_string)
+        .with_context(|| format!("open USD stage {}", path.display()))
+}
+
 fn is_usdz_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -175,24 +181,17 @@ pub(crate) fn regular_file(path: &Path) -> Result<PathBuf> {
         .with_context(|| format!("canonicalize USD dependency {}", path.display()))
 }
 
-pub(crate) fn resolve_asset_path(layer_path: &Path, authored: &str) -> Result<PathBuf> {
-    let resolver =
-        DefaultResolver::with_search_paths([layer_path.parent().unwrap_or(Path::new("."))]);
-    let paths = resolve_asset_paths_with_resolver(&resolver, layer_path, authored)?;
+pub(crate) fn resolve_asset_path_with_resolver(
+    resolver: &dyn Resolver,
+    layer_path: &Path,
+    authored: &str,
+) -> Result<PathBuf> {
+    let paths = resolve_asset_paths_with_resolver(resolver, layer_path, authored)?;
     ensure!(
         paths.len() == 1,
         "USD asset path resolves to multiple files and needs a pattern: {authored}"
     );
     Ok(paths.into_iter().next().expect("one resolved asset path"))
-}
-
-/// Resolve one authored USD asset through the pinned OpenUSD resolver surface.
-/// Pattern-valued assets (UDIM) deliberately return every exact match in the
-/// authored directory; they never broaden into a recursive neighbor scan.
-pub(crate) fn resolve_asset_paths(layer_path: &Path, authored: &str) -> Result<Vec<PathBuf>> {
-    let resolver =
-        DefaultResolver::with_search_paths([layer_path.parent().unwrap_or(Path::new("."))]);
-    resolve_asset_paths_with_resolver(&resolver, layer_path, authored)
 }
 
 struct DiscoveryState {

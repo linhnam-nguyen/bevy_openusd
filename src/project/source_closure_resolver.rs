@@ -51,7 +51,7 @@ impl Resolver for SharedResolver {
     }
 }
 
-pub(super) fn resolve_asset_paths_with_resolver(
+pub(crate) fn resolve_asset_paths_with_resolver(
     resolver: &dyn Resolver,
     layer_path: &Path,
     authored: &str,
@@ -63,7 +63,7 @@ pub(super) fn resolve_asset_paths_with_resolver(
         bail!("USD asset path is not a filesystem path: {authored}");
     }
     if authored.contains("<UDIM>") {
-        return super::patterns::resolve_udim_pattern(layer_path, authored);
+        return super::patterns::resolve_udim_pattern(resolver, layer_path, authored);
     }
     let anchor = ResolvedPath::new(layer_path.to_owned());
     let identifier = resolver.create_identifier(authored, Some(&anchor));
@@ -74,7 +74,7 @@ pub(super) fn resolve_asset_paths_with_resolver(
     Ok(vec![resolved_filesystem_path(&resolved)?])
 }
 
-fn resolved_filesystem_path(resolved: &ResolvedPath) -> Result<PathBuf> {
+pub(super) fn resolved_filesystem_path(resolved: &ResolvedPath) -> Result<PathBuf> {
     let resolved_string = resolved.to_string();
     let filesystem_path = split_package_relative_path_outer(&resolved_string)
         .map(|(package, _)| PathBuf::from(package))

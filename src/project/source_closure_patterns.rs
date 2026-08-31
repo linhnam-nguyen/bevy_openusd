@@ -1,36 +1,24 @@
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail, ensure};
+use openusd::ar::{ResolvedPath, Resolver};
 use openusd::sdf::Value;
 
-use super::regular_file;
+use super::resolver::resolved_filesystem_path;
 
-pub(super) fn resolve_udim_pattern(layer_path: &Path, authored: &str) -> Result<Vec<PathBuf>> {
+pub(super) fn resolve_udim_pattern(
+    resolver: &dyn Resolver,
+    layer_path: &Path,
+    authored: &str,
+) -> Result<Vec<PathBuf>> {
     let authored_path = Path::new(authored);
     ensure!(
         !authored_path.is_absolute() || authored_path.file_name().is_some(),
         "UDIM asset path must have a filename: {authored}"
     );
-    let parent = if authored_path.is_absolute() {
-        authored_path
-            .parent()
-            .context("UDIM asset path has no parent directory")?
-            .to_owned()
-    } else {
-        layer_path
-            .parent()
-            .context("USD dependency layer has no parent directory")?
-            .join(
-                authored_path
-                    .parent()
-                    .filter(|parent| !parent.as_os_str().is_empty())
-                    .unwrap_or_else(|| Path::new("")),
-            )
-    };
     let file_pattern = authored_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -38,28 +26,28 @@ pub(super) fn resolve_udim_pattern(layer_path: &Path, authored: &str) -> Result<
     let (prefix, suffix) = file_pattern
         .split_once("<UDIM>")
         .context("UDIM asset path has no <UDIM> token")?;
+    let anchor = ResolvedPath::new(layer_path.to_owned());
     let mut matches = Vec::new();
-    for entry in fs::read_dir(&parent)
-        .with_context(|| format!("read UDIM asset directory {}", parent.display()))?
-    {
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let Some(tile) = name
-            .strip_prefix(prefix)
-            .and_then(|name| name.strip_suffix(suffix))
+    for tile in 1001..=1999 {
+        let candidate_name = format!("{prefix}{tile:04}{suffix}");
+        let candidate_path = authored_path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(|parent| parent.join(&candidate_name))
+            .unwrap_or_else(|| Path::new(&candidate_name).to_owned());
+        let candidate = candidate_path
+            .to_str()
+            .context("UDIM asset path must be valid UTF-8")?;
+        let identifier = resolver.create_identifier(candidate, Some(&anchor));
+        let Some(resolved) = resolver
+            .resolve(&identifier)
+            .or_else(|| resolver.resolve(candidate))
         else {
             continue;
         };
-        if tile.len() != 4
-            || !tile.bytes().all(|byte| byte.is_ascii_digit())
-            || !(1001..=1999).contains(&tile.parse::<u32>().unwrap_or_default())
-        {
-            continue;
+        if let Ok(path) = resolved_filesystem_path(&resolved) {
+            matches.push(path);
         }
-        matches.push(regular_file(&entry.path())?);
     }
     matches.sort();
     matches.dedup();

@@ -12,7 +12,10 @@ mod io;
 mod localize;
 
 pub(crate) use discovery::{LocalizedDependencyReport, discover};
-pub(crate) use localize::{materialize_source_closure, source_closure_fingerprint};
+pub(crate) use localize::{
+    materialize_source_closure, materialize_source_closure_with_resolver,
+    source_closure_fingerprint,
+};
 
 /// Discover a canonical Project asset and prove its complete dependency
 /// closure remains inside the Project root. The discovery itself walks
@@ -48,3 +51,7 @@ pub(crate) fn dependency_containment_report(
 #[cfg(test)]
 #[path = "source_closure_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "source_closure_pattern_tests.rs"]
+mod pattern_tests;

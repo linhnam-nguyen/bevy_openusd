@@ -2,27 +2,43 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::{
-    ar::{join_package_relative_path, split_package_relative_path_outer},
-    sdf,
-    usd::{InitialLoadSet, Stage},
+    ar::{DefaultResolver, Resolver},
+    usd::InitialLoadSet,
 };
 
 #[path = "source_closure_localize_patterns.rs"]
 mod patterns;
+#[path = "source_closure_localize_rewrite.rs"]
+mod rewrite;
 #[path = "source_closure_localize_validate.rs"]
 mod validation;
 
-use super::discovery::{LocalizedDependencyReport, discover, resolve_asset_path};
+use super::discovery::{
+    LocalizedDependencyReport, discover, open_stage_with_resolver, resolve_asset_path_with_resolver,
+};
 use super::io::copy_file_synced;
 
 /// Copy one import into a fresh Project-owned directory and return the copied
 /// root source filename relative to that directory.
 pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> Result<String> {
-    let report = discover(source).context("discover USD source dependency closure")?;
+    let root_asset = super::discovery::regular_file(source).context("validate USD source")?;
+    let resolver =
+        DefaultResolver::with_search_paths([root_asset.parent().unwrap_or(Path::new("."))]);
+    materialize_source_closure_with_resolver(source, destination, Arc::new(resolver))
+}
+
+pub(crate) fn materialize_source_closure_with_resolver(
+    source: &Path,
+    destination: &Path,
+    resolver: Arc<dyn Resolver>,
+) -> Result<String> {
+    let report = super::discovery::discover_with_resolver(source, resolver.clone())
+        .context("discover USD source dependency closure")?;
     ensure_resolved(&report)?;
     ensure!(
         !destination.exists(),
@@ -54,7 +70,7 @@ pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> R
             // asset identifiers without copying neighboring filesystem data.
             copy_file_synced(&original, target)?;
         } else if layer_set.contains(&original) {
-            localize_layer(&original, target, &mapping)?;
+            localize_layer(&original, target, &mapping, resolver.clone())?;
         } else {
             copy_file_synced(&original, target)?;
         }
@@ -73,7 +89,7 @@ pub(crate) fn materialize_source_closure(source: &Path, destination: &Path) -> R
         localized_root.is_file(),
         "source closure did not materialize its root source"
     );
-    validation::validate_localized_root(localized_root)?;
+    validation::validate_localized_root(localized_root, resolver)?;
     Ok(source_name)
 }
 
@@ -198,13 +214,9 @@ fn localize_layer(
     original: &Path,
     destination: &Path,
     mapping: &BTreeMap<PathBuf, PathBuf>,
+    resolver: Arc<dyn Resolver>,
 ) -> Result<()> {
-    let source_string = original
-        .to_str()
-        .context("USD layer path must be valid UTF-8")?;
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(source_string)
+    let stage = open_stage_with_resolver(original, resolver.clone(), InitialLoadSet::LoadNone)
         .with_context(|| format!("open USD layer {} for localization", original.display()))?;
     let root_identifier = stage.root_layer().identifier().to_owned();
     let mut layer = stage
@@ -227,7 +239,14 @@ fn localize_layer(
     let rewritten = records
         .into_iter()
         .map(|(path, field, value)| {
-            let value = rewrite_value(&value, original, destination, mapping, field.as_str())?;
+            let value = rewrite::rewrite_value(
+                &value,
+                original,
+                destination,
+                mapping,
+                field.as_str(),
+                resolver.as_ref(),
+            )?;
             Ok((path, field, value))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -247,138 +266,6 @@ fn localize_layer(
                 .context("localized USD layer path must be valid UTF-8")?,
         )
         .with_context(|| format!("export localized USD layer {}", destination.display()))
-}
-
-fn rewrite_value(
-    value: &sdf::Value,
-    original_layer: &Path,
-    localized_layer: &Path,
-    mapping: &BTreeMap<PathBuf, PathBuf>,
-    field: &str,
-) -> Result<sdf::Value> {
-    let mut rewritten = value.clone();
-    match &mut rewritten {
-        sdf::Value::AssetPath(asset) => {
-            rewrite_asset(asset, original_layer, localized_layer, mapping)?
-        }
-        sdf::Value::AssetPathVec(assets) => {
-            for asset in assets {
-                rewrite_asset(asset, original_layer, localized_layer, mapping)?;
-            }
-        }
-        sdf::Value::ReferenceListOp(references) => {
-            for reference in references.iter_mut() {
-                if !reference.asset_path.is_empty() {
-                    reference.asset_path = rewrite_layer_asset(
-                        &reference.asset_path,
-                        original_layer,
-                        localized_layer,
-                        mapping,
-                    )?;
-                }
-                for value in reference.custom_data.values_mut() {
-                    *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
-                }
-            }
-        }
-        sdf::Value::PayloadListOp(payloads) => {
-            for payload in payloads.iter_mut() {
-                if !payload.asset_path.is_empty() {
-                    payload.asset_path = rewrite_layer_asset(
-                        &payload.asset_path,
-                        original_layer,
-                        localized_layer,
-                        mapping,
-                    )?;
-                }
-            }
-        }
-        sdf::Value::Payload(payload) => {
-            if !payload.asset_path.is_empty() {
-                payload.asset_path = rewrite_layer_asset(
-                    &payload.asset_path,
-                    original_layer,
-                    localized_layer,
-                    mapping,
-                )?;
-            }
-        }
-        sdf::Value::Dictionary(values) => {
-            if field == "clips" {
-                patterns::rewrite_clip_dictionary(
-                    values,
-                    original_layer,
-                    localized_layer,
-                    mapping,
-                )?;
-            } else {
-                for value in values.values_mut() {
-                    *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
-                }
-            }
-        }
-        sdf::Value::ValueVec(values) => {
-            for value in values {
-                *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
-            }
-        }
-        sdf::Value::TimeSamples(samples) => {
-            for (_, value) in samples {
-                *value = rewrite_value(value, original_layer, localized_layer, mapping, "")?;
-            }
-        }
-        sdf::Value::StringVec(paths) if field == sdf::FieldKey::SubLayers.as_str() => {
-            for path in paths {
-                *path = rewrite_layer_asset(path, original_layer, localized_layer, mapping)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(rewritten)
-}
-
-fn rewrite_asset(
-    asset: &mut sdf::AssetPath,
-    original_layer: &Path,
-    localized_layer: &Path,
-    mapping: &BTreeMap<PathBuf, PathBuf>,
-) -> Result<()> {
-    if !asset.is_empty() {
-        asset.authored_path = patterns::rewrite_asset_path(
-            &asset.authored_path,
-            original_layer,
-            localized_layer,
-            mapping,
-        )?;
-    }
-    Ok(())
-}
-
-fn rewrite_layer_asset(
-    authored: &str,
-    original_layer: &Path,
-    localized_layer: &Path,
-    mapping: &BTreeMap<PathBuf, PathBuf>,
-) -> Result<String> {
-    let original_asset = resolve_asset_path(original_layer, authored).with_context(|| {
-        format!(
-            "resolve USD asset {authored} in {}",
-            original_layer.display()
-        )
-    })?;
-    let localized_asset = mapping.get(&original_asset).with_context(|| {
-        format!(
-            "USD asset is outside exact closure: {}",
-            original_asset.display()
-        )
-    })?;
-    let localized_path =
-        crate::project::storage::authored_relative_asset_path(localized_layer, localized_asset)?;
-    if let Some((_, packaged_path)) = split_package_relative_path_outer(authored) {
-        Ok(join_package_relative_path(&localized_path, &packaged_path))
-    } else {
-        Ok(localized_path)
-    }
 }
 
 fn is_usdz_root(path: &Path) -> bool {

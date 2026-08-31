@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use openusd::{
     ar::DefaultResolver,
     usd::{InitialLoadSet, Stage},
@@ -13,7 +13,10 @@ use openusd::{
 };
 use tempfile::tempdir;
 
-use super::{discovery, materialize_source_closure, source_closure_fingerprint};
+use super::{
+    discovery, materialize_source_closure, materialize_source_closure_with_resolver,
+    source_closure_fingerprint,
+};
 
 fn write_composed_source(directory: &Path) -> PathBuf {
     fs::write(directory.join("texture.bin"), b"texture").unwrap();
@@ -171,6 +174,51 @@ fn discovery_uses_configured_resolver_search_paths_for_external_layers() -> Resu
 
     assert!(report.unresolved.is_empty(), "{:?}", report.unresolved);
     assert!(report.layers.iter().any(|path| path == &resolved_layer));
+    Ok(())
+}
+
+#[test]
+fn materialization_keeps_one_configured_resolver_through_localization_and_validation() -> Result<()>
+{
+    let source_directory = tempdir()?;
+    let resolver_directory = tempdir()?;
+    let source = source_directory.path().join("root.usda");
+    let configured_layer = resolver_directory.path().join("configured.usda");
+    fs::write(
+        resolver_directory.path().join("texture.1001.bin"),
+        b"tile-1001",
+    )?;
+    fs::write(
+        resolver_directory.path().join("texture.1002.bin"),
+        b"tile-1002",
+    )?;
+    fs::write(
+        &configured_layer,
+        "#usda 1.0\n( defaultPrim = \"Asset\" )\ndef Xform \"Asset\" { asset texture = @texture.<UDIM>.bin@ }\n",
+    )?;
+    fs::write(
+        &source,
+        "#usda 1.0\n( defaultPrim = \"Root\" )\ndef Xform \"Root\" (references = @configured.usda@</Asset>) {}\n",
+    )?;
+
+    let resolver =
+        DefaultResolver::with_search_paths([source_directory.path(), resolver_directory.path()]);
+    let destination_parent = tempdir()?;
+    let destination = destination_parent.path().join("closure");
+    materialize_source_closure_with_resolver(&source, &destination, Arc::new(resolver))?;
+
+    let external_root = destination.join("external");
+    let external_directory = fs::read_dir(&external_root)?
+        .next()
+        .context("custom resolver dependency directory is missing")??
+        .path();
+    assert!(external_directory.join("configured.usda").is_file());
+    assert!(external_directory.join("texture.1001.bin").is_file());
+    assert!(external_directory.join("texture.1002.bin").is_file());
+
+    drop(source_directory);
+    drop(resolver_directory);
+    assert_localized_root_is_composed(&destination.join("root.usda"))?;
     Ok(())
 }
 
@@ -337,58 +385,5 @@ fn udim_assets_localize_every_matching_tile_without_copying_neighbors() -> Resul
     assert!(destination.join("textures/diffuse.1002.bin").is_file());
     assert!(!destination.join("textures/diffuse.2001.bin").exists());
     assert!(!destination.join("textures/other.1001.bin").exists());
-    Ok(())
-}
-
-#[test]
-fn templated_value_clips_localize_the_expanded_layer_set() -> Result<()> {
-    let source_directory = tempdir()?;
-    fs::write(
-        source_directory.path().join("clip.1.usda"),
-        "#usda 1.0\ndef Xform \"Model\" { float size = 1 }\n",
-    )?;
-    fs::write(
-        source_directory.path().join("clip.2.usda"),
-        "#usda 1.0\ndef Xform \"Model\" { float size = 2 }\n",
-    )?;
-    fs::write(
-        source_directory.path().join("clip.9.usda"),
-        "#usda 1.0\ndef Xform \"Model\" { float size = 9 }\n",
-    )?;
-    let source = source_directory.path().join("root.usda");
-    fs::write(
-        &source,
-        "#usda 1.0\n( defaultPrim = \"Model\" )\ndef Xform \"Model\" ( clips = { dictionary default = { asset templateAssetPath = @./clip.#.usda@ double templateStartTime = 1 double templateEndTime = 2 double templateStride = 1 string primPath = \"/Model\" } } ) {}\n",
-    )?;
-
-    let report = discovery::discover(&source)?;
-    assert!(report.unresolved.is_empty(), "{:?}", report.unresolved);
-    assert!(
-        report
-            .layers
-            .iter()
-            .any(|path| path.ends_with("clip.1.usda"))
-    );
-    assert!(
-        report
-            .layers
-            .iter()
-            .any(|path| path.ends_with("clip.2.usda"))
-    );
-    assert!(
-        !report
-            .layers
-            .iter()
-            .any(|path| path.ends_with("clip.9.usda"))
-    );
-
-    let destination_parent = tempdir()?;
-    let destination = destination_parent.path().join("closure");
-    materialize_source_closure(&source, &destination)?;
-    assert!(destination.join("clip.1.usda").is_file());
-    assert!(destination.join("clip.2.usda").is_file());
-    assert!(!destination.join("clip.9.usda").exists());
-    drop(source_directory);
-    assert_localized_root_is_composed(&destination.join("root.usda"))?;
     Ok(())
 }

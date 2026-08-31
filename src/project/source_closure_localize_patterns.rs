@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use openusd::ar::Resolver;
 use openusd::sdf;
 
 use super::super::discovery;
@@ -13,10 +14,18 @@ pub(super) fn rewrite_asset_path(
     original_layer: &Path,
     localized_layer: &Path,
     mapping: &BTreeMap<PathBuf, PathBuf>,
+    resolver: &dyn Resolver,
 ) -> Result<String> {
-    let original_assets = discovery::resolve_asset_paths(original_layer, authored)?;
+    let original_assets =
+        discovery::resolve_asset_paths_with_resolver(resolver, original_layer, authored)?;
     if original_assets.len() == 1 {
-        return super::rewrite_layer_asset(authored, original_layer, localized_layer, mapping);
+        return super::rewrite::layer_asset(
+            authored,
+            original_layer,
+            localized_layer,
+            mapping,
+            resolver,
+        );
     }
     rewrite_pattern_asset(authored, localized_layer, mapping, &original_assets)
 }
@@ -63,6 +72,7 @@ pub(super) fn rewrite_clip_dictionary(
     original_layer: &Path,
     localized_layer: &Path,
     mapping: &BTreeMap<PathBuf, PathBuf>,
+    resolver: &dyn Resolver,
 ) -> Result<()> {
     for set in values.values_mut().filter_map(|value| match value {
         sdf::Value::Dictionary(set) => Some(set),
@@ -71,11 +81,12 @@ pub(super) fn rewrite_clip_dictionary(
         if let Some(sdf::Value::AssetPathVec(paths)) = set.get_mut("assetPaths") {
             for path in paths {
                 if !path.is_empty() {
-                    path.authored_path = super::rewrite_layer_asset(
+                    path.authored_path = super::rewrite::layer_asset(
                         &path.authored_path,
                         original_layer,
                         localized_layer,
                         mapping,
+                        resolver,
                     )?;
                 }
             }
@@ -83,11 +94,12 @@ pub(super) fn rewrite_clip_dictionary(
         if let Some(sdf::Value::AssetPath(path)) = set.get_mut("manifestAssetPath")
             && !path.is_empty()
         {
-            path.authored_path = super::rewrite_layer_asset(
+            path.authored_path = super::rewrite::layer_asset(
                 &path.authored_path,
                 original_layer,
                 localized_layer,
                 mapping,
+                resolver,
             )?;
         }
         let template = match set.get("templateAssetPath") {
@@ -100,7 +112,9 @@ pub(super) fn rewrite_clip_dictionary(
             let expanded = discovery::expand_template_asset_paths(set, &template)?;
             let originals = expanded
                 .iter()
-                .map(|asset| discovery::resolve_asset_path(original_layer, asset))
+                .map(|asset| {
+                    discovery::resolve_asset_path_with_resolver(resolver, original_layer, asset)
+                })
                 .collect::<Result<Vec<_>>>()?;
             let rewritten = rewrite_pattern_asset(&template, localized_layer, mapping, &originals)?;
             if let Some(sdf::Value::AssetPath(path)) = set.get_mut("templateAssetPath") {
