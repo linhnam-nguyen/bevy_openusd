@@ -2,14 +2,15 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
 C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
 C4++++/C5++++/C6+/C7++++ review repair, the additive C7+++++ provider
-restoration correction, the additive C7++++++ test-layout correction, and the
-additive C7+++++++ provider-wire correction. It is not marked `PASSED / FROZEN`
+restoration correction, the additive C7++++++ test-layout correction, the
+additive C7+++++++ provider-wire correction, and the additive C5+++++
+authoritative-catalogue hydration correction. It is not marked `PASSED / FROZEN`
 until the owner reviews this packet.
 
 ## Branch continuity and scope
@@ -57,6 +58,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C7+++++ | `99594be` | `4343944` | Reversible Prim ↔ BIM provider switching: authoritative remote Prim root reload after BIM return, repeated backend/UI round trips, and stale inactive-provider page rejection in both directions. |
 | M8-OR2-C7++++++ | — | `d493d0b` | Extracted the hierarchy-provider fixture into a focused module, split the remote regression into provider-specific cases, moved the pre-existing interaction cases out of the oversized aggregate test module, and kept every materially touched Rust test file under 400 lines. |
 | M8-OR2-C7+++++++ | — | `8364ef1` | Corrected the real BIM toggle wire path: typed Prim/BIM provider intent, authoritative client envelope validation before queueing, recipe-preserving ON/OFF action regression, and JSON encode/decode validation. |
+| M8-OR2-C5+++++ | `c961a13` | `f6a3860` | Authoritative classification catalogue hydration: explicit protocol-v10 request/replay, honest Unavailable/Loading/Ready/Error UI lifecycle, reconnect/stage hydration, stale/partial-page protection, conditional Category/Family/Type aliases, and strict raw-key selection. |
 
 ## C7 implementation and repair evidence
 
@@ -363,6 +365,56 @@ UI commit `8364ef1` records this correction on the continuous `panel-BIMData`
 branch. No server validation rule was weakened or removed. Live server-log
 silence and native Tauri/WebRTC/H265 rendering remain runtime evidence for the
 owner environment and were not claimed from these automated tests.
+
+### C5+++++ authoritative classification catalogue hydration
+
+Owner Review 2 found that the visible `[I] Category`, `Family`, and `[T] Type`
+options were still produced by the UI's synthetic fallback list. That fallback
+hid the fact that a browser joining after semantic extraction had no authoritative
+catalogue in its local state. The strict `parse_field_value()` contract is
+preserved; only values present in the authoritative descriptor catalogue can be
+selected.
+
+The correction closes the full model-to-browser lifecycle:
+
+- Protocol version 10 adds the idempotent
+  `RequestBimClassificationFieldCatalogue { known_revision }` command. A ready
+  remote browser explicitly requests the current backend resource, including
+  when semantic extraction completed before the browser connected. The response
+  keeps request correlation and existing 12 KiB / 4,096-descriptor paging.
+- The UI catalogue lifecycle is explicit: `Unavailable`, `Loading`, `Ready`, or
+  `Error`. Fields remain empty while unavailable/loading, and a partial newer
+  revision never replaces the prior Ready catalogue. Stage load, stage reload,
+  and disconnect clear old fields and configured levels before hydration.
+- Category, Family, and Type aliases are emitted only when their configured raw
+  source key is verified in BIM entity properties. The supplied Revit semantic
+  shape therefore exposes Category and Type while Family is absent when no
+  verified Family source exists.
+- The view-model and controls are reactive to the authoritative catalogue;
+  typed raw keys remain selectable as `[I] Longueur` and `[T] Description`,
+  while invalid labels and synthetic IDs are rejected.
+- Publication emits the diagnostic shape
+  `[bim-catalogue] revision=<n> fields=<count> semantic_aliases=<count>` once
+  per changed semantic revision.
+
+```text
+cargo test -p usd_hub_desktop classification_catalogue_flow_tests: 3 passed
+cargo test -p usd_hub_desktop classification_controls: 3 passed
+cargo test -p usd_hub_desktop --all-targets --quiet: 246 passed; 1 ignored
+cargo test -p viewport_protocol --tests --quiet: all test binaries passed
+cargo test -p usdview --bin usdview --tests: 337 passed; 5 ignored; integration binaries passed
+cargo fmt --all -- --check: PASS on both continuous branches
+source-size audit: PASS — 0 files over 400 lines
+make harden: ENVIRONMENT-LIMITED at all-features because DLSS_SDK is unset and
+the host Vulkan API configuration is unavailable; no source-size or no-default
+failure was observed
+```
+
+Backend implementation commit `c961a13` and UI implementation commit `f6a3860`
+are pushed to the continuous branches. The packet update follows this source
+commit and records the final evidence without claiming live Tauri, GPU,
+WebRTC, or H265 proof. OR2 remains at the Owner Review 2 boundary; no OR3 work
+is authorized.
 
 ## Integrated evidence matrix
 
