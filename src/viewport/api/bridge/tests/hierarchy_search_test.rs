@@ -74,6 +74,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn classification_provider_switch_round_trips_to_prim_repeatedly() {
+        let prim_nodes = vec![
+            node("/World", None, "World", None),
+            node("/World/Window", Some("/World"), "Window", None),
+        ];
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .insert_resource(SceneAnchorIndex::from_test_nodes(prim_nodes.clone()))
+            .insert_resource(CurrentHierarchyProjection::from_prim_nodes(&prim_nodes, 1))
+            .init_resource::<ActiveHierarchyProvider>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(
+                crate::viewport::bim::test_fixtures::snapshot(),
+            ))
+            .add_systems(Update, dispatch_scene_query_commands);
+
+        let recipe = ClassificationRecipe::new(vec![
+            ClassificationLevel::new("category", BimFieldKey::Category),
+            ClassificationLevel::new("level", BimFieldKey::property("Level")),
+            ClassificationLevel::new("type", BimFieldKey::Type),
+        ]);
+        for _ in 0..10 {
+            app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+                ViewportCommand::SetHierarchySource {
+                    source: HierarchySource::BimClassification,
+                    classification_recipe: Some(recipe.clone()),
+                },
+            );
+            app.update();
+            let bim_projection = app.world().resource::<CurrentHierarchyProjection>();
+            assert_eq!(bim_projection.source(), HierarchySource::BimClassification);
+            assert!(
+                bim_projection
+                    .snapshot()
+                    .nodes
+                    .iter()
+                    .any(|node| node.name == "Walls")
+            );
+
+            app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+                ViewportCommand::SetHierarchySource {
+                    source: HierarchySource::Prim,
+                    classification_recipe: None,
+                },
+            );
+            app.update();
+            let prim_projection = app.world().resource::<CurrentHierarchyProjection>();
+            assert_eq!(prim_projection.source(), HierarchySource::Prim);
+            assert_eq!(
+                prim_projection
+                    .snapshot()
+                    .nodes
+                    .iter()
+                    .map(|node| node.name.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["World", "Window"]
+            );
+        }
+    }
+
     fn empty_snapshot() -> SemanticSnapshot {
         SemanticSnapshot {
             snapshot_id: SnapshotId("hierarchy-test".to_owned()),
