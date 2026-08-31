@@ -2,7 +2,7 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++/C4+++++/C7++++++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++/C4+++++/C7++++++++/C4++++++/C7+++++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
@@ -10,9 +10,10 @@ C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
 C4++++/C5++++/C6+/C7++++ review repair, the additive C7+++++ provider
 restoration correction, the additive C7++++++ test-layout correction, the
 additive C7+++++++ provider-wire correction, the additive C5+++++
-authoritative-catalogue hydration correction, and this C4+++++ provider-neutral
-hierarchy-visibility correction. It is not marked `PASSED / FROZEN` until the
-owner reviews this packet.
+authoritative-catalogue hydration correction, the C4+++++ provider-neutral
+hierarchy-visibility correction, and this C4++++++ typed-search visibility
+correction. It is not marked `PASSED / FROZEN` until the owner reviews this
+packet.
 
 ## Branch continuity and scope
 
@@ -62,6 +63,8 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C5+++++ | `c961a13` | `f6a3860` | Authoritative classification catalogue hydration: explicit protocol-v10 request/replay, honest Unavailable/Loading/Ready/Error UI lifecycle, reconnect/stage hydration, stale/partial-page protection, conditional Category/Family/Type aliases, and strict raw-key selection. |
 | M8-OR2-C4+++++ | `820cd28` | `b669c1d` | Provider-neutral hierarchy visibility: virtual BIM-group controls, typed source/node intents, Visible/Hidden/Mixed aggregation, native-instance occurrence fan-out, authoritative visibility events, active-provider cache isolation, and bounded action lookup. |
 | M8-OR2-C7++++++++ | packet commit below | — | Final hierarchy-visibility acceptance record, complete gate matrix, exact limitations, implementation-plan update, and Owner Review 2 stop. |
+| M8-OR2-C4++++++ | `cc903bb` | `e5d58e7` | Preserved typed Visible/Hidden/Mixed state through backend search, protocol wire DTOs, UI cache reduction, and search-row controls; Mixed results render `◐` and request restore. |
+| M8-OR2-C7+++++++++ | packet commit below | — | Recorded the focused search-mode regression, complete current gate evidence, exact all-features limitation, implementation-plan update, and Owner Review 2 stop. |
 
 ## C7 implementation and repair evidence
 
@@ -473,6 +476,43 @@ The supplied `Projet1.usdc` runtime command, native GPU/Tauri/WebRTC/H265
 rendering, and server-terminal silence remain Owner Review 2 evidence. They
 were not claimed from the CPU-side automated tests.
 
+### C4++++++ typed visibility through hierarchy search
+
+Owner Review 2 found that the ordinary hierarchy retained the typed
+`HierarchyVisibilityState`, while the search DTO reduced it to `visible: bool`.
+That conversion made a searched `Mixed` result render as visible and sent a
+hide request instead of the required restore request. This checkpoint keeps the
+typed state authoritative end to end while retaining the legacy boolean field
+as a compatibility projection.
+
+- The backend private search result and generic search mapper now carry
+  `HierarchyVisibilityState`; the protocol `HierarchySearchMatch` carries the
+  same typed field and derives `visible` from it at the scene-query boundary.
+- The UI local-search adapter, remote search-cache reduction, and search-row
+  rendering preserve the typed state. A searched `Mixed` row renders `◐` and
+  its click intent requests `Visible`/`true`, restoring the affected members.
+- The focused regression covers `Mixed → search result → click → restore` at
+  the UI helper boundary, generic backend search, and protocol JSON
+  encode/decode. The full workspace suites also exercise the integrated path.
+- The existing O(N²) broad visibility refresh optimization remains explicitly
+  deferred to OR3; it is not part of this Owner Review 2 correction.
+
+```text
+cargo test -p usd_hub_desktop --lib searched_mixed_result_keeps_mixed_marker_and_restore_click: 1 passed
+cargo test -p usdview --bin usdview generic_search_preserves_mixed_visibility_state: 1 passed
+cargo test -p viewport_protocol --test compatibility hierarchy_search_result_preserves_typed_visibility_on_wire: 1 passed
+cargo test --workspace --all-targets: PASS — usd_hub_desktop 251 passed; 1 ignored; viewport_client 11 passed; usdview 341 passed; 5 ignored; usd_bevy 111 passed; 1 ignored; viewport_streaming 57 passed; remaining workspace tests passed
+cargo test --workspace --all-targets --no-default-features: PASS — usd_hub_desktop 251 passed; 1 ignored; viewport_client 11 passed; usdview 341 passed; 5 ignored; usd_bevy 111 passed; 1 ignored; viewport_streaming 57 passed; remaining workspace tests passed
+cargo fmt --all -- --check: PASS on both continuous branches
+source-size audit: PASS — 582 files scanned, 0 over 400 lines; backend scene_query.rs is 399 lines
+make harden: ENVIRONMENT-LIMITED after source-size, no-default compile/test, and doctest stages; all-features compile fails because DLSS_SDK is unset and host Vulkan APIs are unavailable (make exit 101)
+```
+
+The focused UI test is the regression boundary for the reported defect. The
+automated evidence does not claim supplied-asset, live GPU, Tauri, WebRTC, or
+H265 behavior. OR2 remains `IMPLEMENTED / UNFROZEN — OWNER REVIEW 2 REQUIRED`;
+no OR3 work is authorized.
+
 ## Integrated evidence matrix
 
 ### Real supplied asset
@@ -502,24 +542,24 @@ claim is made here.
 | --- | --- |
 | `cargo fmt --all -- --check` | PASS |
 | `cargo check --workspace --all-targets` | PASS |
-| `cargo test --workspace --all-targets` | PASS: usdview 335 passed/5 ignored; usd_bevy 111 passed/1 ignored; viewport_streaming 57 passed; remaining workspace tests passed. |
+| `cargo test --workspace --all-targets` | PASS: usdview 341 passed/5 ignored; usd_bevy 111 passed/1 ignored; viewport_streaming 57 passed; remaining workspace tests passed. |
 | `cargo check --workspace --all-targets --no-default-features` | PASS |
-| `cargo test --workspace --all-targets --no-default-features` | PASS: usd_bevy 111 passed/1 ignored; usdview 334 passed/5 ignored; viewport_streaming 56 passed; all doctests passed or were explicitly ignored. |
-| `./scripts/check_rust_file_size.sh` | PASS: 578 files scanned, 0 over 400 lines, 48 warnings in the 351–400 range. |
+| `cargo test --workspace --all-targets --no-default-features` | PASS: usd_bevy 111 passed/1 ignored; usdview 341 passed/5 ignored; viewport_streaming 57 passed; all doctests passed or were explicitly ignored. |
+| `./scripts/check_rust_file_size.sh` | PASS: 582 files scanned, 0 over 400 lines; backend `src/viewport/api/scene_query.rs` is 399 lines. |
 | Changed-crate strict clippy | PASS for `viewport_streaming`; `usdview` remains baseline-limited by the same four pre-existing findings in untouched API files. No finding was reported for the new packer/index modules. |
 | Workspace strict no-default clippy | BASELINE-LIMITED: four findings in untouched `usdview` files (`bim_provenance`, `bim_commands`, and `scene_query`). |
 | `make harden` | ENVIRONMENT-LIMITED after source-size, default/no-default checks, workspace tests, and doctests: all-features compile requires unset `DLSS_SDK` and reports Vulkan APIs configured out; underlying cargo failure is `bevy_render`, `make` exit 101. |
 
 ### UI gates
 
-The reviewed functional UI revision is `b669c1d` on `panel-BIMData`; the
+The reviewed functional UI revision is `e5d58e7` on `panel-BIMData`; the
 prior hierarchy revision `4343944`, source-layout correction `d493d0b`, and
 C5++ revision `262d926` remain in its ancestry.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused/full `usd_hub_desktop` library tests: 250 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 251 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  250 passed/1 ignored in the final hierarchy-visibility correction run.
+  251 passed/1 ignored in the final typed-search visibility correction run.
 - UI source-size audit: all materially touched files remain below 400 lines;
   the largest current files are `store.rs` 331 lines,
   `command_gateway.rs` 322 lines, `store/scene.rs` 249 lines,
