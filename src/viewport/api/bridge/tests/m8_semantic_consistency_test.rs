@@ -23,6 +23,7 @@ use super::support::runtime_semantic_test_app;
 fn live_edit_converges_into_bim_classification_search_and_diff() -> Result<()> {
     let project_root = tempfile::tempdir()?;
     let mut app = runtime_semantic_test_app(project_root.path().to_path_buf());
+    configure_bim_runtime_semantics(&mut app);
     app.world_mut()
         .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
     app.init_resource::<ActiveHierarchyProvider>()

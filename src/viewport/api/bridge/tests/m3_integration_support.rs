@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use openusd::sdf::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SemanticSnapshot, SnapshotSource};
+use usd_semantic::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, SemanticConfig};
 use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportEventEnvelope};
 
 use crate::viewport::api::ViewportEventOutbox;
@@ -22,21 +23,44 @@ pub(super) fn stage_with_widths() -> Stage {
         .set_type_name("Xform")
         .expect("world type authors");
     for (path, width) in [("/World/A", 1.0), ("/World/B", 2.0)] {
-        stage
+        let prim = stage
             .define_prim(path)
             .expect("target defines")
             .set_type_name("Xform")
             .expect("target type authors");
-        stage
-            .prim(openusd::sdf::path(path).expect("path parses"))
-            .create_attribute("Width", "double")
-            .expect("attribute creates")
+        prim.create_attribute("BIM:Instance:ElementId", "string")
+            .expect("element id attribute creates")
             .set_custom(true)
-            .expect("custom flag authors")
+            .expect("element id custom flag authors")
+            .set(Value::String(path.rsplit('/').next().unwrap().to_owned()))
+            .expect("element id authors");
+        prim.create_attribute("Width", "double")
+            .expect("width attribute creates")
+            .set_custom(true)
+            .expect("width custom flag authors")
             .set(Value::Double(width))
-            .expect("attribute value authors");
+            .expect("width authors");
     }
     stage
+}
+
+fn bim_runtime_semantic_config() -> SemanticConfig {
+    SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            identity: NvidiaRevitIdentityConfig {
+                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+pub(super) fn configure_bim_runtime_semantics(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<SemanticSyncState>()
+        .set_config(bim_runtime_semantic_config());
 }
 
 pub(super) fn anchor(path: &str) -> SceneAnchor {

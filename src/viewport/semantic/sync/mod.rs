@@ -131,7 +131,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         return;
     }
 
-    let extractor = SemanticExtractor::new(SemanticConfig::default());
+    let extractor = SemanticExtractor::new(world.resource::<SemanticSyncState>().config());
     let source = SnapshotSource::Working {
         session: "viewport-working".to_owned(),
         live_revision: live_revision.0,
