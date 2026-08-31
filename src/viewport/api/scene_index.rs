@@ -9,8 +9,8 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{
-    DEFAULT_SCENE_PAGE_SIZE, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
-    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
+    DEFAULT_SCENE_PAGE_SIZE, HierarchyVisibilityState, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel,
+    SceneAnchor, SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch,
 };
 
 use super::hierarchy::CurrentHierarchyProjection;
@@ -53,6 +53,31 @@ impl SceneAnchorIndex {
     /// scene-local instance contexts.
     pub(crate) fn resolve_all_by_prim_path(&self, prim_path: &str) -> &[Entity] {
         self.occurrence_index.resolve(prim_path)
+    }
+
+    pub(crate) fn visibility_for_anchor(&self, anchor: &SceneAnchor) -> HierarchyVisibilityState {
+        self.nodes
+            .iter()
+            .find(|node| node.anchor == *anchor)
+            .map_or(HierarchyVisibilityState::Visible, |node| {
+                HierarchyVisibilityState::from_visible(node.visible)
+            })
+    }
+
+    pub(crate) fn visibility_for_prim_path(&self, prim_path: &str) -> HierarchyVisibilityState {
+        let mut states = self
+            .nodes
+            .iter()
+            .filter(|node| node.anchor.prim_path == prim_path)
+            .map(|node| HierarchyVisibilityState::from_visible(node.visible));
+        let Some(first) = states.next() else {
+            return HierarchyVisibilityState::Visible;
+        };
+        if states.all(|state| state == first) {
+            first
+        } else {
+            HierarchyVisibilityState::Mixed
+        }
     }
 
     pub(crate) fn anchor_for(&self, entity: Entity) -> Option<SceneAnchor> {

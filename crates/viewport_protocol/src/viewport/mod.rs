@@ -17,7 +17,8 @@ pub use bim::*;
 pub use hierarchy::{
     ClassificationColorEntry, ClassificationColorIntent, ClassificationColorSource,
     HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel,
-    HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch, HierarchySource,
+    HierarchyNodeVisibility, HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch,
+    HierarchySource, HierarchyVisibilityIntent, HierarchyVisibilityState,
 };
 
 pub use commands::{ViewportCommand, ViewportCommandEnvelope};

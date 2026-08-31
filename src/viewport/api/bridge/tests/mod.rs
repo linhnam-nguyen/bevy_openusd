@@ -5,6 +5,7 @@ mod bim_edit_test;
 mod bim_properties_test;
 mod commands_test;
 mod hierarchy_search_test;
+mod hierarchy_visibility_test;
 mod m3_integration_support;
 mod m3_integration_test;
 mod m8_failure_test;

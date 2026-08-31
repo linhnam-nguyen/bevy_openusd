@@ -47,7 +47,9 @@ use viewport_protocol::{
 
 use self::classification::ClassificationIndex;
 pub(crate) use self::field_catalogue::BimClassificationFieldCatalogueState;
-use crate::viewport::api::{CurrentHierarchyProjection, HierarchyPageIndex};
+use crate::viewport::api::{
+    CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityIndex,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct BimReadPolicy {
@@ -97,6 +99,7 @@ struct ClassificationCache {
     recipe: ClassificationRecipe,
     read_model: Arc<HierarchyReadModel>,
     page_index: HierarchyPageIndex,
+    visibility_index: HierarchyVisibilityIndex,
     color_groups: Arc<Vec<classification::ClassificationColorGroup>>,
     build_count: u64,
 }
@@ -182,10 +185,13 @@ impl<'snapshot> BimReadService<'snapshot> {
             .classification_cache
             .take()
             .expect("classification cache is initialized");
-        Ok(CurrentHierarchyProjection::from_shared_parts(
-            cache.read_model,
-            cache.page_index,
-        ))
+        Ok(
+            CurrentHierarchyProjection::from_shared_parts_with_visibility(
+                cache.read_model,
+                cache.page_index,
+                cache.visibility_index,
+            ),
+        )
     }
 
     pub(crate) fn classification_color_entries(
@@ -233,11 +239,13 @@ impl<'snapshot> BimReadService<'snapshot> {
             let color_groups = Arc::new(index.color_groups().to_vec());
             let read_model = Arc::new(index.read_model(self.snapshot, build_count));
             let page_index = HierarchyPageIndex::from_read_model(&read_model);
+            let visibility_index = index.visibility_index(self.snapshot);
             self.classification_cache = Some(ClassificationCache {
                 snapshot_id: self.snapshot.snapshot_id.clone(),
                 recipe: recipe.clone(),
                 read_model,
                 page_index,
+                visibility_index,
                 color_groups,
                 build_count,
             });

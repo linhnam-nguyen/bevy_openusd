@@ -5,6 +5,10 @@ use bevy::asset::Assets;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use usd_bevy::{LiveStage, LiveStagePlugin, LiveStageSet, UsdPlugin};
+use viewport_protocol::{
+    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, HierarchyVisibilityState, ViewportEvent,
+};
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
@@ -168,5 +172,151 @@ fn native_instance_selection_resolves_real_projected_scene_proxy_paths_only() {
         index.resolve(&SceneAnchor::active_session("/__Prototype_1/Frame")),
         None,
         "prototype paths are not selectable scene identities"
+    );
+}
+
+#[test]
+fn semantic_path_visibility_targets_all_native_occurrences() {
+    let first = Entity::from_bits(1);
+    let second = Entity::from_bits(2);
+    let path = "/World/WindowPrototype/Frame";
+    let index = SceneAnchorIndex::from_test_entities(vec![
+        (
+            SceneAnchor {
+                session_id: None,
+                prim_path: path.to_owned(),
+                instance_context: Some("occurrence-0".to_owned()),
+            },
+            first,
+        ),
+        (
+            SceneAnchor {
+                session_id: None,
+                prim_path: path.to_owned(),
+                instance_context: Some("occurrence-1".to_owned()),
+            },
+            second,
+        ),
+    ]);
+
+    assert_eq!(index.resolve_all_by_prim_path(path), &[first, second]);
+}
+
+#[test]
+fn classification_visibility_reports_mixed_state_and_restores_groups() {
+    use std::collections::HashMap;
+
+    let group_id = HierarchyNodeId::new("bim-group-windows");
+    let first_id = HierarchyNodeId::new("bim-leaf-first");
+    let second_id = HierarchyNodeId::new("bim-leaf-second");
+    let first = HierarchyNodeReadModel::scene(
+        first_id.clone(),
+        Some(group_id.clone()),
+        "first".to_owned(),
+        "Fenêtres / first".to_owned(),
+        SceneAnchor::active_session("/World/WindowA"),
+        None,
+        true,
+        false,
+    );
+    let second = HierarchyNodeReadModel::scene(
+        second_id.clone(),
+        Some(group_id.clone()),
+        "second".to_owned(),
+        "Fenêtres / second".to_owned(),
+        SceneAnchor::active_session("/World/WindowB"),
+        None,
+        true,
+        false,
+    );
+    let group = HierarchyNodeReadModel::virtual_node_with_kind(
+        group_id.clone(),
+        None,
+        "Fenêtres".to_owned(),
+        "Fenêtres".to_owned(),
+        HierarchyNodeKind::Group,
+        false,
+        true,
+    );
+    let read_model = std::sync::Arc::new(HierarchyReadModel {
+        source: HierarchySource::BimClassification,
+        revision: 1,
+        nodes: vec![group, first, second],
+    });
+    let page_index = HierarchyPageIndex::from_read_model(&read_model);
+    let visibility_index =
+        crate::viewport::api::HierarchyVisibilityIndex::from_targets(HashMap::from([
+            (
+                group_id.clone(),
+                vec![
+                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                        "/World/WindowA".to_owned(),
+                    ),
+                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                        "/World/WindowB".to_owned(),
+                    ),
+                ],
+            ),
+            (
+                first_id.clone(),
+                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    "/World/WindowA".to_owned(),
+                )],
+            ),
+            (
+                second_id.clone(),
+                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    "/World/WindowB".to_owned(),
+                )],
+            ),
+        ]));
+    let mut projection = CurrentHierarchyProjection::from_shared_parts_with_visibility(
+        read_model,
+        page_index,
+        visibility_index,
+    );
+
+    let event = projection
+        .apply_visibility(&first_id, false)
+        .expect("classification leaf is actionable");
+    assert!(matches!(
+        event,
+        ViewportEvent::HierarchyVisibilityChanged {
+            visibility: HierarchyVisibilityState::Hidden,
+            ancestors,
+            ..
+        } if ancestors.iter().any(|ancestor| ancestor.node_id == group_id
+            && ancestor.visibility == HierarchyVisibilityState::Mixed)
+    ));
+    assert_eq!(
+        projection
+            .snapshot()
+            .nodes
+            .iter()
+            .find(|node| node.id == group_id)
+            .unwrap()
+            .visibility,
+        HierarchyVisibilityState::Mixed
+    );
+
+    projection
+        .apply_visibility(&group_id, false)
+        .expect("classification group is actionable");
+    assert!(
+        projection
+            .snapshot()
+            .nodes
+            .iter()
+            .all(|node| { node.visibility == HierarchyVisibilityState::Hidden })
+    );
+    projection
+        .apply_visibility(&group_id, true)
+        .expect("classification group restores all members");
+    assert!(
+        projection
+            .snapshot()
+            .nodes
+            .iter()
+            .all(|node| { node.visibility == HierarchyVisibilityState::Visible })
     );
 }

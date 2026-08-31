@@ -109,6 +109,11 @@ pub enum ViewportCommand {
         target: SceneAnchor,
         visible: bool,
     },
+    SetHierarchyNodeVisibility {
+        source: HierarchySource,
+        node_id: HierarchyNodeId,
+        visible: bool,
+    },
     SetVariantSelection {
         prim_path: String,
         set_name: String,

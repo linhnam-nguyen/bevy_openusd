@@ -4,7 +4,7 @@ use usd_bevy::LiveStage;
 
 use super::super::state::{EditorHistories, RuntimeMutationCoordinator};
 use crate::viewport::animation::UsdStageTime;
-use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommandInbox};
+use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
@@ -51,4 +51,10 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub semantic: Option<Res<'w, SemanticSyncState>>,
     pub bim_field_catalogue: Option<Res<'w, BimClassificationFieldCatalogueState>>,
     pub spawned: Res<'w, Spawned>,
+}
+
+impl<'w, 's> ApplyViewportCommandState<'w, 's> {
+    pub(super) fn queue_tree_command(&mut self, command: ViewportTreeCommand) {
+        self.tree_commands.push(command);
+    }
 }

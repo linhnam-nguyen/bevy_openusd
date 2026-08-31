@@ -13,7 +13,7 @@ use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::scene_query::SceneQueryService;
 use crate::viewport::api::{
     ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
-    ViewportCommandInbox, ViewportEventOutbox,
+    ViewportCommandInbox, ViewportEventOutbox, refresh_projection_visibility,
 };
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::diagnostics::performance::RendererCounters;
@@ -23,7 +23,6 @@ use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 pub(super) use super::scene_query_results::publish_scene_query_results;
-
 /// Routes scene-query commands to the current hierarchy projection.
 pub(super) fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
@@ -272,6 +271,8 @@ pub(super) fn dispatch_scene_query_commands(
                 };
                 match projection {
                     Ok(projection) => {
+                        let mut projection = projection;
+                        refresh_projection_visibility(&mut projection, &scene_index);
                         *current_projection = projection;
                         provider.set(source, classification_recipe);
                     }
@@ -288,6 +289,7 @@ pub(super) fn dispatch_scene_query_commands(
 pub(super) fn refresh_active_hierarchy_projection(
     provider: Res<ActiveHierarchyProvider>,
     semantic: Res<crate::viewport::semantic::SemanticSyncState>,
+    scene_index: Res<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut color_plan: Option<ResMut<ClassificationColorPlan>>,
 ) {
@@ -312,9 +314,10 @@ pub(super) fn refresh_active_hierarchy_projection(
             }
         }
     });
-    let Ok(projection) = service.classification_projection(recipe) else {
+    let Ok(mut projection) = service.classification_projection(recipe) else {
         return;
     };
+    refresh_projection_visibility(&mut projection, &scene_index);
     *current_projection = projection;
     if let (Some(plan), Some(entries)) = (color_plan.as_deref_mut(), color_entries) {
         plan.replace_entries(entries);

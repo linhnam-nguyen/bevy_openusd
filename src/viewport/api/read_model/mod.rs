@@ -54,7 +54,6 @@ pub(crate) struct ViewportReadModelState {
     search: Option<SceneSearchState>,
     editor: EditorStateReadModel,
 }
-
 impl ViewportReadModelState {
     /// Returns the latest snapshot after the render server has published one.
     pub(crate) fn snapshot(&self) -> Option<&ViewportReadModel> {
@@ -164,6 +163,7 @@ impl ViewportReadModelState {
             | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
+            | ViewportEvent::HierarchyVisibilityChanged { .. }
             | ViewportEvent::CommandRejected { .. } => {}
             ViewportEvent::StageLoadStateChanged { state } => {
                 if !matches!(state, StageLoadState::Ready) {

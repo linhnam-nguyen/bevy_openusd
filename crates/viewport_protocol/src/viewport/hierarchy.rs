@@ -43,6 +43,46 @@ pub enum HierarchySource {
     BimClassification,
 }
 
+/// Aggregate presentation visibility for one provider-neutral hierarchy row.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HierarchyVisibilityState {
+    #[default]
+    Visible,
+    Hidden,
+    Mixed,
+}
+
+impl HierarchyVisibilityState {
+    pub fn from_visible(visible: bool) -> Self {
+        if visible { Self::Visible } else { Self::Hidden }
+    }
+
+    pub fn is_visible(self) -> bool {
+        !matches!(self, Self::Hidden)
+    }
+
+    /// Mixed groups are restored by the next click, while visible rows hide.
+    pub fn next_requested_visibility(self) -> bool {
+        matches!(self, Self::Hidden | Self::Mixed)
+    }
+}
+
+/// One ancestor aggregate included with an authoritative visibility event.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HierarchyNodeVisibility {
+    pub node_id: HierarchyNodeId,
+    pub visibility: HierarchyVisibilityState,
+}
+
+/// Provider-neutral hierarchy visibility intent emitted by the hierarchy UI.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HierarchyVisibilityIntent {
+    pub source: HierarchySource,
+    pub node_id: HierarchyNodeId,
+    pub visible: bool,
+}
+
 /// Semantic kind of one row in the active hierarchy provider.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -64,6 +104,7 @@ pub struct HierarchyNodeReadModel {
     pub anchor: Option<SceneAnchor>,
     pub parent_anchor: Option<SceneAnchor>,
     pub visible: bool,
+    pub visibility: HierarchyVisibilityState,
     pub has_children: bool,
 }
 
@@ -89,6 +130,7 @@ impl HierarchyNodeReadModel {
             anchor: Some(anchor),
             parent_anchor,
             visible,
+            visibility: HierarchyVisibilityState::from_visible(visible),
             has_children,
         }
     }
@@ -110,6 +152,7 @@ impl HierarchyNodeReadModel {
             anchor: None,
             parent_anchor: None,
             visible: true,
+            visibility: HierarchyVisibilityState::Visible,
             has_children,
         }
     }
@@ -136,8 +179,14 @@ impl HierarchyNodeReadModel {
             anchor: None,
             parent_anchor: None,
             visible: true,
+            visibility: HierarchyVisibilityState::Visible,
             has_children,
         }
+    }
+
+    pub fn set_visibility(&mut self, visibility: HierarchyVisibilityState) {
+        self.visibility = visibility;
+        self.visible = visibility.is_visible();
     }
 }
 

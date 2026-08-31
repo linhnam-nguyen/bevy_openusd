@@ -105,8 +105,8 @@ fn sampling_intent_and_provider_are_separate_wire_values() {
 }
 
 #[test]
-fn protocol_v10_bim_catalogue_hydration_is_explicit() {
-    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 10);
+fn protocol_v11_hierarchy_visibility_and_bim_catalogue_are_explicit() {
+    assert_eq!(viewport_protocol::PROTOCOL_VERSION, 11);
     let decoded: SamplingProvider = serde_json::from_str("\"fsr\"").unwrap();
     assert_eq!(decoded, SamplingProvider::Fsr);
 }

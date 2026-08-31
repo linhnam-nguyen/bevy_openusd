@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    FocusMode, RequestId, SceneAnchor, ViewportCommand, ViewportCommandEnvelope,
-    ViewportEventEnvelope,
+    FocusMode, HierarchyNodeId, HierarchySource, RequestId, SceneAnchor, ViewportCommand,
+    ViewportCommandEnvelope, ViewportEventEnvelope,
 };
 
 /// Tree-specific commands are applied after the scene-anchor index refreshes.
@@ -16,6 +16,12 @@ pub(crate) enum ViewportTreeCommand {
     SetSubtreeVisibility {
         request_id: RequestId,
         target: SceneAnchor,
+        visible: bool,
+    },
+    SetHierarchyNodeVisibility {
+        request_id: RequestId,
+        source: HierarchySource,
+        node_id: HierarchyNodeId,
         visible: bool,
     },
 }

@@ -6,6 +6,7 @@
 mod bim_provenance;
 mod bridge;
 mod hierarchy;
+mod hierarchy_visibility;
 mod interface;
 mod queues;
 mod read_model;
@@ -21,7 +22,9 @@ pub(in crate::viewport) use bridge::{
 };
 pub(crate) use hierarchy::{
     ActiveHierarchyProvider, CurrentHierarchyProjection, HierarchyPageIndex,
+    HierarchyVisibilityIndex, HierarchyVisibilityTarget,
 };
+pub(crate) use hierarchy_visibility::refresh_projection_visibility;
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,

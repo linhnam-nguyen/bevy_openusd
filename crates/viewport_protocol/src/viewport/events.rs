@@ -9,7 +9,10 @@ use super::bim::{
 };
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
-use super::hierarchy::{HierarchyChildrenPage, HierarchySearchMatch, HierarchySource};
+use super::hierarchy::{
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeVisibility, HierarchySearchMatch,
+    HierarchySource, HierarchyVisibilityState,
+};
 use super::read_models::{
     CameraOrientationReadModel, CameraSource, FocusMode, PresentationReadModel, SceneAnchor,
     SceneChildrenPage, SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
@@ -91,6 +94,12 @@ pub enum ViewportEvent {
     PrimVisibilityChanged {
         target: SceneAnchor,
         visible: bool,
+    },
+    HierarchyVisibilityChanged {
+        source: HierarchySource,
+        target: HierarchyNodeId,
+        visibility: HierarchyVisibilityState,
+        ancestors: Vec<HierarchyNodeVisibility>,
     },
     CameraSourceChanged {
         source: CameraSource,

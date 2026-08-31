@@ -40,8 +40,78 @@ impl ActiveHierarchyProvider {
 /// Shared immutable hierarchy projection for the currently selected provider.
 #[derive(Resource, Clone, Debug)]
 pub(crate) struct CurrentHierarchyProjection {
-    read_model: Arc<HierarchyReadModel>,
-    page_index: HierarchyPageIndex,
+    pub(super) read_model: Arc<HierarchyReadModel>,
+    pub(super) page_index: HierarchyPageIndex,
+    pub(super) visibility_index: HierarchyVisibilityIndex,
+}
+
+/// Backend-only target set for provider-neutral hierarchy visibility actions.
+/// Semantic BIM paths are resolved to all current native-instance occurrences
+/// by [`SceneAnchorIndex`] at command application time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HierarchyVisibilityTarget {
+    SceneAnchor(SceneAnchor),
+    PrimPath(String),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct HierarchyVisibilityIndex {
+    targets_by_node: HashMap<HierarchyNodeId, Vec<HierarchyVisibilityTarget>>,
+    nodes_by_prim_path: HashMap<String, Vec<HierarchyNodeId>>,
+}
+
+impl HierarchyVisibilityIndex {
+    pub(crate) fn from_read_model(read_model: &HierarchyReadModel) -> Self {
+        let targets_by_node = read_model
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.anchor.as_ref().map(|anchor| {
+                    (
+                        node.id.clone(),
+                        vec![HierarchyVisibilityTarget::SceneAnchor(anchor.clone())],
+                    )
+                })
+            })
+            .collect();
+        Self::from_targets(targets_by_node)
+    }
+
+    pub(crate) fn from_targets(
+        targets_by_node: HashMap<HierarchyNodeId, Vec<HierarchyVisibilityTarget>>,
+    ) -> Self {
+        let mut nodes_by_prim_path: HashMap<String, Vec<HierarchyNodeId>> = HashMap::new();
+        for (node_id, targets) in &targets_by_node {
+            for target in targets {
+                if let HierarchyVisibilityTarget::PrimPath(path) = target {
+                    nodes_by_prim_path
+                        .entry(path.clone())
+                        .or_default()
+                        .push(node_id.clone());
+                }
+            }
+        }
+        Self {
+            targets_by_node,
+            nodes_by_prim_path,
+        }
+    }
+
+    pub(crate) fn targets_for(
+        &self,
+        node_id: &HierarchyNodeId,
+    ) -> Option<&[HierarchyVisibilityTarget]> {
+        self.targets_by_node.get(node_id).map(Vec::as_slice)
+    }
+
+    pub(crate) fn nodes_for_prim_paths<'a>(
+        &'a self,
+        paths: impl IntoIterator<Item = &'a str>,
+    ) -> impl Iterator<Item = &'a HierarchyNodeId> {
+        paths
+            .into_iter()
+            .flat_map(|path| self.nodes_by_prim_path.get(path).into_iter().flatten())
+    }
 }
 
 /// Reusable indexes for one immutable hierarchy read model.
@@ -97,9 +167,11 @@ impl CurrentHierarchyProjection {
 
     pub(crate) fn from_read_model(read_model: HierarchyReadModel) -> Self {
         let page_index = HierarchyPageIndex::from_read_model(&read_model);
+        let visibility_index = HierarchyVisibilityIndex::from_read_model(&read_model);
         Self {
             read_model: Arc::new(read_model),
             page_index,
+            visibility_index,
         }
     }
 
@@ -109,9 +181,19 @@ impl CurrentHierarchyProjection {
         read_model: Arc<HierarchyReadModel>,
         page_index: HierarchyPageIndex,
     ) -> Self {
+        let visibility_index = HierarchyVisibilityIndex::from_read_model(&read_model);
+        Self::from_shared_parts_with_visibility(read_model, page_index, visibility_index)
+    }
+
+    pub(crate) fn from_shared_parts_with_visibility(
+        read_model: Arc<HierarchyReadModel>,
+        page_index: HierarchyPageIndex,
+        visibility_index: HierarchyVisibilityIndex,
+    ) -> Self {
         Self {
             read_model,
             page_index,
+            visibility_index,
         }
     }
 

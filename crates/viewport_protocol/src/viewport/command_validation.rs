@@ -255,6 +255,9 @@ impl ViewportCommand {
             | Self::RedoEditor
             | Self::SaveStage
             | Self::ExportStage => {}
+            Self::SetHierarchyNodeVisibility { node_id, .. } => {
+                hierarchy_id("hierarchy.node_id", node_id)?;
+            }
         }
         Ok(())
     }

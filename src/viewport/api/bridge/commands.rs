@@ -1,6 +1,3 @@
-use bevy::prelude::*;
-use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
-
 use super::editor_commands::apply_editor_command;
 use super::helpers::{
     emit_classification_field_catalogue, emit_presentation_changed, emit_snapshot,
@@ -11,6 +8,8 @@ use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTr
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
 };
+use bevy::prelude::*;
+use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 mod cadence;
 mod camera;
 mod presentation;
@@ -18,13 +17,8 @@ mod selection;
 mod selection_dispatch;
 mod state;
 mod timeline;
-
 pub(super) use cadence::apply_pending_renderer_cadence;
 use state::ApplyViewportCommandState;
-
-/// Applies commands whose state does not require a tree traversal. Tree
-/// commands are forwarded to the next system after the scene index refreshes.
-/// Stage-authoring commands are delegated to [`apply_editor_command`].
 pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -43,7 +37,6 @@ pub(super) fn apply_viewport_commands(
             );
             continue;
         }
-
         let Some((command, request_id)) = selection_dispatch::apply_selection_command(
             envelope.command,
             request_id,
@@ -54,7 +47,6 @@ pub(super) fn apply_viewport_commands(
         ) else {
             continue;
         };
-
         match command {
             ViewportCommand::RequestSnapshot => {
                 emit_snapshot(
@@ -127,20 +119,30 @@ pub(super) fn apply_viewport_commands(
                 );
             }
             ViewportCommand::FocusTarget { target, mode } => {
-                state.tree_commands.push(ViewportTreeCommand::Focus {
+                state.queue_tree_command(ViewportTreeCommand::Focus {
                     request_id,
                     target,
                     mode,
                 });
             }
             ViewportCommand::SetSubtreeVisibility { target, visible } => {
-                state
-                    .tree_commands
-                    .push(ViewportTreeCommand::SetSubtreeVisibility {
-                        request_id,
-                        target,
-                        visible,
-                    });
+                state.queue_tree_command(ViewportTreeCommand::SetSubtreeVisibility {
+                    request_id,
+                    target,
+                    visible,
+                });
+            }
+            ViewportCommand::SetHierarchyNodeVisibility {
+                source,
+                node_id,
+                visible,
+            } => {
+                state.queue_tree_command(ViewportTreeCommand::SetHierarchyNodeVisibility {
+                    request_id,
+                    source,
+                    node_id,
+                    visible,
+                });
             }
             ViewportCommand::SetVariantSelection {
                 prim_path,
@@ -301,9 +303,7 @@ pub(super) fn apply_viewport_commands(
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSamplingPreference { preference } => {
-                // FSR is a forward-compatible provider vocabulary only. No
-                // reviewed implementation is active in B4, so sampling On
-                // may select DLSS or reject explicitly.
+                // FSR remains vocabulary-only; On selects DLSS or rejects.
                 let capabilities = SamplingCapabilities::new(state.dlss.supported(), false);
                 let active = match choose_upscaler(preference.enabled, capabilities) {
                     Ok(active) => active,
@@ -374,7 +374,6 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::SetPhysicsRunning { running } => {
                 presentation::set_physics(request_id, running, &mut outbox, &mut state.physics);
             }
-            // All stage-authoring commands are delegated to editor_commands.
             command => {
                 apply_editor_command(
                     command,

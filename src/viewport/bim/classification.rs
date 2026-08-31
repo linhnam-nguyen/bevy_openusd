@@ -9,6 +9,8 @@ use viewport_protocol::{
     HierarchySource, SceneAnchor, UNCLASSIFIED_LABEL,
 };
 
+use crate::viewport::api::{HierarchyVisibilityIndex, HierarchyVisibilityTarget};
+
 struct ClassificationNode {
     id: HierarchyNodeId,
     parent: Option<usize>,
@@ -85,6 +87,47 @@ impl ClassificationIndex {
 
     pub(super) fn color_groups(&self) -> &[ClassificationColorGroup] {
         &self.color_groups
+    }
+
+    pub(super) fn visibility_index(&self, snapshot: &SemanticSnapshot) -> HierarchyVisibilityIndex {
+        let mut paths_by_node = vec![Vec::<String>::new(); self.nodes.len()];
+        let mut targets_by_node = HashMap::with_capacity(self.nodes.len());
+
+        for index in (0..self.nodes.len()).rev() {
+            let mut paths = self.nodes[index]
+                .leaves
+                .iter()
+                .filter_map(|key| snapshot.entities.get(key))
+                .map(|entity| entity.prim_path.clone())
+                .collect::<Vec<_>>();
+            for child in &self.nodes[index].children {
+                paths.extend(paths_by_node[*child].iter().cloned());
+            }
+            paths.sort_unstable();
+            paths.dedup();
+            paths_by_node[index] = paths.clone();
+            targets_by_node.insert(
+                self.nodes[index].id.clone(),
+                paths
+                    .into_iter()
+                    .map(HierarchyVisibilityTarget::PrimPath)
+                    .collect(),
+            );
+
+            for key in &self.nodes[index].leaves {
+                let Some(entity) = snapshot.entities.get(key) else {
+                    continue;
+                };
+                targets_by_node.insert(
+                    leaf_id(&self.nodes[index].id, key),
+                    vec![HierarchyVisibilityTarget::PrimPath(
+                        entity.prim_path.clone(),
+                    )],
+                );
+            }
+        }
+
+        HierarchyVisibilityIndex::from_targets(targets_by_node)
     }
 
     pub(super) fn read_model(
