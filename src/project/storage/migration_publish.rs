@@ -1,9 +1,12 @@
-use std::fs;
+use std::{fs, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use usd_project::{ProjectManifestV1, ProjectRoot};
 
-use super::{LEGACY_MODEL_MARKER, MIGRATION_JOURNAL, MigrationPlan, ProjectStorageLayout};
+use super::{
+    LEGACY_MODEL_MARKER, MigrationPlan,
+    journal::{self, MigrationPhase},
+};
 use crate::project::{
     catalog::manifest_store::ManifestStore,
     storage::{IgnoreChange, install_managed_ignore},
@@ -14,6 +17,12 @@ pub(super) fn publish_plan(
     manifest: &ProjectManifestV1,
     plan: &MigrationPlan,
 ) -> Result<()> {
+    journal::set_phase(
+        project_root,
+        &plan.transaction_directory.join(journal::JOURNAL_FILE),
+        MigrationPhase::Publishing,
+    )
+    .context("durably mark Project migration as publishing")?;
     for import in &plan.imports {
         fs::create_dir_all(
             import
@@ -69,51 +78,83 @@ pub(super) fn publish_plan(
         return Err(error.context("publish migrated Project manifest"));
     }
     maybe_fail_after_manifest()?;
-    let legacy_manifest = ProjectStorageLayout::new(project_root).legacy_manifest_path();
-    if let Err(error) = fs::remove_file(&legacy_manifest) {
-        restore_ignore(project_root, ignore);
-        let _ = fs::remove_file(ProjectStorageLayout::new(project_root).canonical_manifest_path());
-        return Err(error).with_context(|| {
-            format!(
-                "remove migrated legacy manifest {}",
-                legacy_manifest.display()
-            )
-        });
-    }
     Ok(())
 }
 
-pub(super) fn rollback_plan(plan: &MigrationPlan) {
+pub(super) fn rollback_plan(plan: &MigrationPlan) -> Result<()> {
     for import in plan.imports.iter().rev() {
-        if import.final_dir.exists() && !import.backup_dir.exists() {
-            let _ = fs::rename(&import.final_dir, &import.backup_dir);
+        if path_is_present(&import.final_dir) && !path_is_present(&import.backup_dir) {
+            fs::rename(&import.final_dir, &import.backup_dir).with_context(|| {
+                format!(
+                    "rollback migrated import {} to backup",
+                    import.final_dir.display()
+                )
+            })?;
         }
-        if import.backup_dir.exists() && !import.old_dir.exists() {
-            let _ = fs::rename(&import.backup_dir, &import.old_dir);
+        if path_is_present(&import.backup_dir) {
+            if path_is_present(&import.old_dir) {
+                bail!(
+                    "cannot restore legacy import because destination is occupied: {}",
+                    import.old_dir.display()
+                );
+            }
+            fs::rename(&import.backup_dir, &import.old_dir)
+                .with_context(|| format!("restore legacy import {}", import.old_dir.display()))?;
         }
     }
     for model in plan.models.iter().rev() {
         let legacy_wrapper = model.final_dir.join("model.usda");
         let marker = model.final_dir.join(LEGACY_MODEL_MARKER);
-        if model.final_dir.exists() {
-            if marker.exists() {
-                let _ = fs::remove_file(&legacy_wrapper);
-                let _ = fs::rename(&marker, &legacy_wrapper);
+        if path_is_present(&model.final_dir) {
+            if path_is_present(&marker) {
+                if path_is_present(&legacy_wrapper) {
+                    fs::remove_file(&legacy_wrapper).with_context(|| {
+                        format!(
+                            "remove published Model wrapper {}",
+                            legacy_wrapper.display()
+                        )
+                    })?;
+                }
+                fs::rename(&marker, &legacy_wrapper).with_context(|| {
+                    format!("restore legacy Model wrapper {}", legacy_wrapper.display())
+                })?;
             }
-            let _ = fs::rename(&model.final_dir, &model.backup_dir);
+            fs::rename(&model.final_dir, &model.backup_dir).with_context(|| {
+                format!(
+                    "rollback migrated Model {} to backup",
+                    model.final_dir.display()
+                )
+            })?;
         }
-        if model.backup_dir.exists() && !model.old_dir.exists() {
-            let _ = fs::rename(&model.backup_dir, &model.old_dir);
+        if path_is_present(&model.backup_dir) {
+            if path_is_present(&model.old_dir) {
+                bail!(
+                    "cannot restore legacy Model because destination is occupied: {}",
+                    model.old_dir.display()
+                );
+            }
+            fs::rename(&model.backup_dir, &model.old_dir)
+                .with_context(|| format!("restore legacy Model {}", model.old_dir.display()))?;
         }
     }
     for scene in plan.scenes.iter().rev() {
-        if scene.final_path.exists() {
-            let _ = fs::remove_file(&scene.final_path);
+        if path_is_present(&scene.final_path) {
+            fs::remove_file(&scene.final_path).with_context(|| {
+                format!("remove published Scene {}", scene.final_path.display())
+            })?;
         }
-        if scene.backup_path.exists() && !scene.old_path.exists() {
-            let _ = fs::rename(&scene.backup_path, &scene.old_path);
+        if path_is_present(&scene.backup_path) {
+            if path_is_present(&scene.old_path) {
+                bail!(
+                    "cannot restore legacy Scene because destination is occupied: {}",
+                    scene.old_path.display()
+                );
+            }
+            fs::rename(&scene.backup_path, &scene.old_path)
+                .with_context(|| format!("restore legacy Scene {}", scene.old_path.display()))?;
         }
     }
+    Ok(())
 }
 
 fn restore_ignore(project_root: &std::path::Path, change: IgnoreChange) {
@@ -124,10 +165,21 @@ fn is_ordinary_scene(manifest: &ProjectManifestV1, id: usd_project::SceneId) -> 
     manifest.root != ProjectRoot::Scene(id)
 }
 
-pub(super) fn write_journal(plan: &MigrationPlan) -> Result<()> {
-    let journal = plan.transaction_directory.join("migration.journal");
-    fs::write(&journal, MIGRATION_JOURNAL)
-        .with_context(|| format!("write migration journal {}", journal.display()))
+pub(super) fn write_journal(
+    project_root: &Path,
+    manifest: &ProjectManifestV1,
+    plan: &MigrationPlan,
+) -> Result<()> {
+    journal::write_new(
+        project_root,
+        manifest,
+        plan,
+        &plan.transaction_directory.join(journal::JOURNAL_FILE),
+    )
+}
+
+fn path_is_present(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
 }
 
 #[cfg(test)]

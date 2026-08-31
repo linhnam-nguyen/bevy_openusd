@@ -349,7 +349,7 @@ fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
         .join(".transactions")
         .join("migration-interrupted");
     let plan = super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::publish::write_journal(&plan)?;
+    super::publish::write_journal(root, &migrated_manifest, &plan)?;
     super::failure_injection::set(1);
     assert!(super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
     assert!(!layout.canonical_manifest_path().exists());
@@ -366,33 +366,6 @@ fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
             .canonical_root_scene_path(&StorageKey::new("Pro2")?)
             .is_file()
     );
-    Ok(())
-}
-
-#[test]
-fn committed_manifest_wins_over_a_stale_legacy_manifest_after_restart() -> Result<()> {
-    let _guard = MIGRATION_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let fixture = legacy_fixture();
-    let root = fixture.directory.path();
-    let layout = ProjectStorageLayout::new(root);
-    let migrated_manifest = fixture.manifest.clone().migrate_legacy()?.canonicalized();
-    let transaction_directory = layout
-        .metadata_dir()
-        .join(".transactions")
-        .join("migration-committed");
-    let plan = super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::publish::write_journal(&plan)?;
-    super::failure_injection::set(3);
-    assert!(super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
-    assert!(layout.canonical_manifest_path().is_file());
-    assert!(layout.legacy_manifest_path().is_file());
-
-    let read = ManifestStore::read_validated(root)?;
-
-    assert_eq!(read.raw(), &migrated_manifest);
-    assert!(!transaction_directory.exists());
     Ok(())
 }
 

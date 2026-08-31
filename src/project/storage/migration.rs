@@ -11,15 +11,15 @@ use super::ProjectStorageLayout;
 
 #[path = "migration_assets.rs"]
 mod assets;
+#[path = "migration_journal.rs"]
+mod journal;
 #[path = "migration_publish.rs"]
 mod publish;
 #[path = "migration_recovery.rs"]
 mod recovery;
 
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
-const LEGACY_MODEL_MARKER: &str = ".legacy-model.usda";
-pub(super) const MIGRATION_JOURNAL: &[u8] =
-    b"USDHub Storage v2 migration in progress\nmanifest-published-last\n";
+pub(super) const LEGACY_MODEL_MARKER: &str = ".legacy-model.usda";
 
 struct SceneMove {
     id: SceneId,
@@ -93,16 +93,39 @@ pub(crate) fn migrate_legacy_project(
             return Err(error);
         }
     };
-    publish::write_journal(&plan)?;
+    if let Err(error) = publish::write_journal(project_root, &migrated_manifest, &plan) {
+        let _ = fs::remove_dir_all(&transaction_directory);
+        return Err(error);
+    }
     let result = publish::publish_plan(project_root, &migrated_manifest, &plan);
     if let Err(error) = result {
-        publish::rollback_plan(&plan);
-        let _ = fs::remove_file(ProjectStorageLayout::new(project_root).canonical_manifest_path());
-        let _ = fs::remove_dir_all(&plan.transaction_directory);
+        if let Err(rollback_error) = publish::rollback_plan(&plan) {
+            return Err(error.context(format!(
+                "rollback legacy Project storage migration failed; preserving transaction: {rollback_error:#}"
+            )));
+        }
+        let canonical_manifest = ProjectStorageLayout::new(project_root).canonical_manifest_path();
+        if canonical_manifest.exists() {
+            fs::remove_file(&canonical_manifest).with_context(|| {
+                format!(
+                    "remove incomplete canonical Project manifest {}",
+                    canonical_manifest.display()
+                )
+            })?;
+        }
+        recovery::verify_rolled_back(project_root, &plan)
+            .context("verify rolled-back Project storage migration")?;
+        recovery::sync_rolled_back_directories(project_root, &plan)
+            .context("sync rolled-back Project storage migration")?;
+        recovery::remove_transaction_directory(&plan.transaction_directory)?;
         return Err(error.context("rollback legacy Project storage migration"));
     }
-    fs::remove_dir_all(&plan.transaction_directory)
-        .context("remove completed Project migration transaction")?;
+    let journal = journal::read(
+        project_root,
+        &plan.transaction_directory.join(journal::JOURNAL_FILE),
+    )?;
+    recovery::finalize_committed_migration(project_root, &plan.transaction_directory, &journal)?;
+    recovery::remove_transaction_directory(&plan.transaction_directory)?;
     Ok(())
 }
 

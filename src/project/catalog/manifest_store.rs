@@ -27,34 +27,34 @@ impl ManifestStore {
     pub(crate) fn read_validated(project_root: &Path) -> Result<ValidatedProjectManifest> {
         let layout = ProjectStorageLayout::new(project_root);
         let canonical_manifest_present = layout.canonical_manifest_present();
-        if canonical_manifest_present {
-            crate::project::storage::recover_interrupted_migration(project_root, None)
-                .context("clean completed Project storage migration")?;
-        }
         let path = layout.readable_manifest_path();
         let bytes =
             fs::read(&path).with_context(|| format!("read Project manifest {}", path.display()))?;
         let manifest: ProjectManifestV1 = serde_json::from_slice(&bytes)
             .with_context(|| format!("decode Project manifest {}", path.display()))?;
-        if path == layout.legacy_manifest_path() && !canonical_manifest_present {
-            let migrated = manifest
-                .clone()
-                .migrate_legacy()
-                .context("prepare legacy Project storage migration")?;
-            crate::project::storage::recover_interrupted_migration(project_root, Some(&migrated))
-                .context("recover interrupted Project storage migration")?;
-            crate::project::storage::migrate_legacy_project(project_root, &migrated)
-                .context("migrate legacy Project storage")?;
-            return Self::read_validated(project_root);
-        }
         let migrated = manifest
             .clone()
             .migrate_legacy()
             .context("migrate Project manifest")?
             .canonicalized();
-        if migrated != manifest && path == layout.canonical_manifest_path() {
-            Self::write_manifest_atomic(project_root, &migrated)
-                .context("persist migrated Project manifest")?;
+        migrated.validate().context("validate Project manifest")?;
+        if canonical_manifest_present {
+            crate::project::storage::recover_interrupted_migration(project_root, Some(&migrated))
+                .context("recover interrupted Project storage migration")?;
+            if migrated != manifest {
+                Self::write_manifest_atomic(project_root, &migrated)
+                    .context("persist migrated Project manifest")?;
+            }
+            return migrated
+                .validate_and_index()
+                .context("validate Project manifest");
+        }
+        if path == layout.legacy_manifest_path() && !canonical_manifest_present {
+            crate::project::storage::recover_interrupted_migration(project_root, Some(&migrated))
+                .context("recover interrupted Project storage migration")?;
+            crate::project::storage::migrate_legacy_project(project_root, &migrated)
+                .context("migrate legacy Project storage")?;
+            return Self::read_validated(project_root);
         }
         migrated
             .validate_and_index()
