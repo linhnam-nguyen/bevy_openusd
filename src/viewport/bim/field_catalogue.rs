@@ -39,3 +39,26 @@ impl BimClassificationFieldCatalogueState {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identical_catalogue_revision_is_published_only_once() {
+        let mut state = BimClassificationFieldCatalogueState::default();
+        let catalogue = BimClassificationFieldCatalogue {
+            semantic_revision: 1,
+            fields: vec![
+                BimFieldKey::Category,
+                BimFieldKey::Family,
+                BimFieldKey::Type,
+                BimFieldKey::property("Window Only"),
+            ],
+        };
+
+        assert!(state.replace(catalogue.clone()));
+        assert!(!state.replace(catalogue));
+        assert_eq!(state.current().semantic_revision, 1);
+    }
+}
