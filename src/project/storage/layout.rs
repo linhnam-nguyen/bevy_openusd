@@ -51,12 +51,20 @@ impl ProjectStorageLayout {
         self.metadata_dir().join(PROJECT_MANIFEST_FILE)
     }
 
+    /// Whether Storage v2 has claimed the Project manifest path.
+    ///
+    /// Use filesystem presence rather than is_file: a malformed canonical
+    /// entry must fail loudly instead of being hidden by legacy fallback.
+    pub(crate) fn canonical_manifest_present(&self) -> bool {
+        path_is_present(&self.canonical_manifest_path())
+    }
+
     pub(crate) fn manifest_path(&self) -> PathBuf {
         self.canonical_manifest_path()
     }
 
     pub(crate) fn readable_manifest_path(&self) -> PathBuf {
-        if self.canonical_manifest_path().is_file() {
+        if self.canonical_manifest_present() {
             self.canonical_manifest_path()
         } else {
             self.legacy_manifest_path()
@@ -96,12 +104,17 @@ impl ProjectStorageLayout {
         };
         if canonical.is_file() {
             canonical
-        } else if manifest.root != ProjectRoot::Scene(scene.id)
+        } else if !path_is_present(&canonical)
+            && manifest.root != ProjectRoot::Scene(scene.id)
             && self.canonical_root_scene_path(&scene.storage_key).is_file()
         {
             // Transitional compatibility for a pre-C3 root Scene that was
             // already named by StorageKey but has not yet moved under scenes/.
             self.canonical_root_scene_path(&scene.storage_key)
+        } else if self.canonical_manifest_present() {
+            // Once the canonical manifest exists, a missing canonical asset is
+            // unavailable data, never permission to consult .usdhub.
+            canonical
         } else {
             self.legacy_scene_path(scene.id)
         }
@@ -143,7 +156,7 @@ impl ProjectStorageLayout {
 
     pub(crate) fn readable_scene_import_dir(&self, scene_id: SceneId) -> PathBuf {
         let canonical = self.canonical_scene_import_dir(scene_id);
-        if canonical.exists() {
+        if path_is_present(&canonical) || self.canonical_manifest_present() {
             canonical
         } else {
             self.legacy_scene_import_dir(scene_id)
@@ -158,7 +171,7 @@ impl ProjectStorageLayout {
 
     pub(crate) fn readable_model_import_dir(&self, model_id: ModelId) -> PathBuf {
         let canonical = self.canonical_model_import_dir(model_id);
-        if canonical.exists() {
+        if path_is_present(&canonical) || self.canonical_manifest_present() {
             canonical
         } else {
             self.legacy_model_import_dir(model_id)
@@ -200,6 +213,10 @@ impl ProjectStorageLayout {
         fs::create_dir_all(self.recovery_dir()).context("create Project recovery root")?;
         Ok(())
     }
+}
+
+fn path_is_present(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
 }
 
 pub(crate) fn authored_relative_asset_path(
@@ -279,6 +296,10 @@ fn lexical_relative(base: &Path, target: &Path) -> Result<PathBuf> {
     }
     Ok(relative)
 }
+
+#[cfg(test)]
+#[path = "layout_fallback_tests.rs"]
+mod fallback_tests;
 
 #[cfg(test)]
 mod tests {

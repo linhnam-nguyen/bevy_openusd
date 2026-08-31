@@ -70,6 +70,14 @@ pub(crate) fn scene_path(project_root: &Path, scene_id: SceneId) -> PathBuf {
     {
         return layout.readable_scene_path(manifest.raw(), scene);
     }
+    if layout.canonical_manifest_present() {
+        // An invalid or incomplete canonical manifest must not make a legacy
+        // Scene layer authoritative. This best-effort path only surfaces the
+        // canonical-data error to the caller.
+        return layout
+            .canonical_scenes_dir()
+            .join(format!("{scene_id}.usda"));
+    }
     layout.legacy_scene_path(scene_id)
 }
 

@@ -1,3 +1,5 @@
+use std::fs;
+
 use anyhow::{Context, Result};
 use openusd::usd::Stage;
 use tempfile::tempdir;
@@ -7,6 +9,7 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};
 use super::preparation::wait_for;
 use super::*;
 use crate::project::blob_store::{BlobStore, FilesystemBlobStore};
+use crate::project::catalog::manifest_store::ManifestStore;
 
 #[test]
 fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> {
@@ -48,9 +51,15 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
         .root_layer()
         .export(legacy_path.to_string_lossy().as_ref())?;
 
+    fs::create_dir_all(directory.path().join(".usdhub"))?;
+    fs::write(
+        directory.path().join(".usdhub/project.json"),
+        serde_json::to_vec_pretty(&legacy_manifest)?,
+    )?;
+    let migrated_storage = ManifestStore::read_validated(directory.path())?;
     let migrated = crate::project::scene::root::ensure_protected_root_scene_atomic(
         directory.path(),
-        &legacy_manifest,
+        migrated_storage.raw(),
     )?;
     let ProjectRoot::Scene(root_scene_id) = migrated.root else {
         anyhow::bail!("legacy Project must receive a protected Root Scene");

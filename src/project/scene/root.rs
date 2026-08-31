@@ -94,7 +94,10 @@ fn protected_root_path(
         return layout.legacy_scene_path(scene_id);
     };
     let canonical = layout.canonical_root_scene_path(&scene.storage_key);
-    if canonical.exists() || !layout.legacy_scene_path(scene_id).exists() {
+    if canonical.exists()
+        || layout.canonical_manifest_present()
+        || !layout.legacy_scene_path(scene_id).exists()
+    {
         canonical
     } else {
         layout.legacy_scene_path(scene_id)

@@ -100,11 +100,9 @@ fn collect_target_files(
                 .with_context(|| format!("Scene cache target {id} is not in the manifest"))?;
             let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
             collect_one_file(project_root, &path, files)?;
-            let imported_directory = project_root
-                .join(PROJECT_METADATA_DIRECTORY)
-                .join("imports")
-                .join("scenes")
-                .join(id);
+            let imported_directory =
+                crate::project::storage::ProjectStorageLayout::new(project_root)
+                    .readable_scene_import_dir(scene.id);
             match fs::symlink_metadata(&imported_directory) {
                 Ok(metadata) => {
                     ensure!(

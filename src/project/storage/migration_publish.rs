@@ -3,7 +3,7 @@ use std::fs;
 use anyhow::{Context, Result};
 use usd_project::{ProjectManifestV1, ProjectRoot};
 
-use super::{LEGACY_MODEL_MARKER, MigrationPlan, ProjectStorageLayout};
+use super::{LEGACY_MODEL_MARKER, MIGRATION_JOURNAL, MigrationPlan, ProjectStorageLayout};
 use crate::project::{
     catalog::manifest_store::ManifestStore,
     storage::{IgnoreChange, install_managed_ignore},
@@ -55,6 +55,7 @@ pub(super) fn publish_plan(
         fs::create_dir_all(model.final_dir.parent().expect("Model has a parent"))?;
         fs::rename(&model.backup_dir, &model.final_dir)
             .with_context(|| format!("publish migrated Model {}", model.final_dir.display()))?;
+        maybe_fail_after_model_directory()?;
         let legacy_wrapper = model.final_dir.join("model.usda");
         fs::rename(&legacy_wrapper, model.final_dir.join(LEGACY_MODEL_MARKER))
             .context("stage legacy Model wrapper")?;
@@ -67,6 +68,7 @@ pub(super) fn publish_plan(
         restore_ignore(project_root, ignore);
         return Err(error.context("publish migrated Project manifest"));
     }
+    maybe_fail_after_manifest()?;
     let legacy_manifest = ProjectStorageLayout::new(project_root).legacy_manifest_path();
     if let Err(error) = fs::remove_file(&legacy_manifest) {
         restore_ignore(project_root, ignore);
@@ -94,8 +96,8 @@ pub(super) fn rollback_plan(plan: &MigrationPlan) {
         let legacy_wrapper = model.final_dir.join("model.usda");
         let marker = model.final_dir.join(LEGACY_MODEL_MARKER);
         if model.final_dir.exists() {
-            let _ = fs::remove_file(&legacy_wrapper);
             if marker.exists() {
+                let _ = fs::remove_file(&legacy_wrapper);
                 let _ = fs::rename(&marker, &legacy_wrapper);
             }
             let _ = fs::rename(&model.final_dir, &model.backup_dir);
@@ -124,11 +126,8 @@ fn is_ordinary_scene(manifest: &ProjectManifestV1, id: usd_project::SceneId) -> 
 
 pub(super) fn write_journal(plan: &MigrationPlan) -> Result<()> {
     let journal = plan.transaction_directory.join("migration.journal");
-    fs::write(
-        &journal,
-        b"USDHub Storage v2 migration in progress\nmanifest-published-last\n",
-    )
-    .with_context(|| format!("write migration journal {}", journal.display()))
+    fs::write(&journal, MIGRATION_JOURNAL)
+        .with_context(|| format!("write migration journal {}", journal.display()))
 }
 
 #[cfg(test)]
@@ -148,5 +147,25 @@ fn maybe_fail_before_manifest() -> Result<()> {
 
 #[cfg(not(test))]
 fn maybe_fail_before_manifest() -> Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn maybe_fail_after_model_directory() -> Result<()> {
+    super::failure_injection::maybe(4)
+}
+
+#[cfg(not(test))]
+fn maybe_fail_after_model_directory() -> Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn maybe_fail_after_manifest() -> Result<()> {
+    super::failure_injection::maybe(3)
+}
+
+#[cfg(not(test))]
+fn maybe_fail_after_manifest() -> Result<()> {
     Ok(())
 }

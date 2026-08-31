@@ -13,9 +13,13 @@ use super::ProjectStorageLayout;
 mod assets;
 #[path = "migration_publish.rs"]
 mod publish;
+#[path = "migration_recovery.rs"]
+mod recovery;
 
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
 const LEGACY_MODEL_MARKER: &str = ".legacy-model.usda";
+pub(super) const MIGRATION_JOURNAL: &[u8] =
+    b"USDHub Storage v2 migration in progress\nmanifest-published-last\n";
 
 struct SceneMove {
     id: SceneId,
@@ -53,19 +57,20 @@ pub(crate) fn migrate_legacy_project(
     manifest: &ProjectManifestV1,
 ) -> Result<()> {
     let layout = ProjectStorageLayout::new(project_root);
+    let migrated_manifest = manifest
+        .clone()
+        .migrate_legacy()
+        .context("migrate legacy Project manifest schema")?
+        .canonicalized();
+    recover_interrupted_migration(project_root, Some(&migrated_manifest))?;
     ensure!(
-        !layout.canonical_manifest_path().exists(),
+        !layout.canonical_manifest_present(),
         "Storage v2 manifest unexpectedly exists during legacy migration"
     );
     ensure!(
         layout.legacy_manifest_path().is_file(),
         "legacy Project manifest is missing during migration"
     );
-    let migrated_manifest = manifest
-        .clone()
-        .migrate_legacy()
-        .context("migrate legacy Project manifest schema")?
-        .canonicalized();
     migrated_manifest
         .validate()
         .context("validate legacy Project migration manifest")?;
@@ -100,6 +105,8 @@ pub(crate) fn migrate_legacy_project(
         .context("remove completed Project migration transaction")?;
     Ok(())
 }
+
+pub(crate) use recovery::recover_interrupted_migration;
 
 fn build_plan(
     project_root: &Path,
@@ -170,18 +177,17 @@ fn build_plan(
     }
 
     let mut imports = Vec::new();
-    for (old_dir, final_dir) in manifest_import_directories(&layout, manifest) {
+    for (index, (old_dir, final_dir)) in manifest_import_directories(&layout, manifest)
+        .into_iter()
+        .enumerate()
+    {
         if !old_dir.exists() {
             continue;
         }
         ensure!(old_dir.is_dir(), "legacy import path is not a directory");
         ensure_destination_absent(&final_dir)?;
         asset_map.add_rule(old_dir.clone(), final_dir.clone());
-        let name = format!(
-            "{}-{}",
-            old_dir.file_name().unwrap().to_string_lossy(),
-            imports.len()
-        );
+        let name = import_backup_name(&old_dir, index);
         imports.push(DirectoryMove {
             old_dir,
             final_dir,
@@ -216,6 +222,10 @@ fn build_plan(
         )?;
     }
     Ok(plan)
+}
+
+fn import_backup_name(old_dir: &Path, index: usize) -> String {
+    format!("{}-{index}", old_dir.file_name().unwrap().to_string_lossy())
 }
 
 fn scene_path(

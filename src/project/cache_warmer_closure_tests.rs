@@ -41,14 +41,14 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
 
     let imports = directory
         .path()
-        .join(".usdhub/imports/scenes")
+        .join("imports/scenes")
         .join(scene_a.to_string());
     fs::create_dir_all(&imports)?;
     let source_a = imports.join("source.usda");
     fs::write(&source_a, b"imported-source-v1")?;
     let imports_b = directory
         .path()
-        .join(".usdhub/imports/scenes")
+        .join("imports/scenes")
         .join(scene_b.to_string());
     fs::create_dir_all(&imports_b)?;
     let source_b = imports_b.join("source.usda");

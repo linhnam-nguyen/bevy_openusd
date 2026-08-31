@@ -43,9 +43,15 @@ pub(crate) fn model_wrapper_path(project_root: &Path, model_id: usd_project::Mod
         && let Some(model) = manifest.model(model_id)
     {
         let canonical = layout.canonical_model_wrapper_path(model);
-        if canonical.is_file() {
-            return canonical;
-        }
+        return canonical;
+    }
+    if layout.canonical_manifest_present() {
+        // Do not turn a missing or invalid canonical wrapper into a legacy
+        // read.
+        return layout
+            .canonical_models_dir()
+            .join(model_id.to_string())
+            .join("model.usda");
     }
     layout.legacy_model_wrapper_path(model_id)
 }
