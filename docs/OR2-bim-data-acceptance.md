@@ -2,16 +2,17 @@
 
 Date: 2026-08-31
 
-Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++ COMPLETE`
+Status: `IMPLEMENTED / OWNER REVIEW 2 REQUIRED — C4++++/C5++++/C5+++++/C6+/C7++++/C7+++++/C7++++++/C7+++++++/C4+++++/C7++++++++ COMPLETE`
 
 Review boundary: Owner Review 2. OR2 is complete at the implementation and
 automated-evidence boundary recorded here, including the additive
 C1+/C3+/C4+/C5+/C7++ repair batch, the C4++/C5++ correction, and this
 C4++++/C5++++/C6+/C7++++ review repair, the additive C7+++++ provider
 restoration correction, the additive C7++++++ test-layout correction, the
-additive C7+++++++ provider-wire correction, and the additive C5+++++
-authoritative-catalogue hydration correction. It is not marked `PASSED / FROZEN`
-until the owner reviews this packet.
+additive C7+++++++ provider-wire correction, the additive C5+++++
+authoritative-catalogue hydration correction, and this C4+++++ provider-neutral
+hierarchy-visibility correction. It is not marked `PASSED / FROZEN` until the
+owner reviews this packet.
 
 ## Branch continuity and scope
 
@@ -59,6 +60,8 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C7++++++ | — | `d493d0b` | Extracted the hierarchy-provider fixture into a focused module, split the remote regression into provider-specific cases, moved the pre-existing interaction cases out of the oversized aggregate test module, and kept every materially touched Rust test file under 400 lines. |
 | M8-OR2-C7+++++++ | — | `8364ef1` | Corrected the real BIM toggle wire path: typed Prim/BIM provider intent, authoritative client envelope validation before queueing, recipe-preserving ON/OFF action regression, and JSON encode/decode validation. |
 | M8-OR2-C5+++++ | `c961a13` | `f6a3860` | Authoritative classification catalogue hydration: explicit protocol-v10 request/replay, honest Unavailable/Loading/Ready/Error UI lifecycle, reconnect/stage hydration, stale/partial-page protection, conditional Category/Family/Type aliases, and strict raw-key selection. |
+| M8-OR2-C4+++++ | `820cd28` | `b669c1d` | Provider-neutral hierarchy visibility: virtual BIM-group controls, typed source/node intents, Visible/Hidden/Mixed aggregation, native-instance occurrence fan-out, authoritative visibility events, active-provider cache isolation, and bounded action lookup. |
+| M8-OR2-C7++++++++ | packet commit below | — | Final hierarchy-visibility acceptance record, complete gate matrix, exact limitations, implementation-plan update, and Owner Review 2 stop. |
 
 ## C7 implementation and repair evidence
 
@@ -411,10 +414,64 @@ failure was observed
 ```
 
 Backend implementation commit `c961a13` and UI implementation commit `f6a3860`
-are pushed to the continuous branches. The packet update follows this source
-commit and records the final evidence without claiming live Tauri, GPU,
-WebRTC, or H265 proof. OR2 remains at the Owner Review 2 boundary; no OR3 work
-is authorized.
+are pushed to the continuous branches. The additional visibility implementation
+commits `820cd28` (backend) and `b669c1d` (UI) are also pushed to the continuous
+branches. The packet update follows these source commits and records the final
+evidence without claiming live Tauri, GPU, WebRTC, or H265 proof. OR2 remains at
+the Owner Review 2 boundary; no OR3 work is authorized.
+
+### C4+++++ provider-neutral hierarchy visibility
+
+The final OR2 hierarchy finding was caused by applying Prim-tree assumptions to
+the virtual BIM Classification provider. Virtual groups had no controls,
+classification leaves derived their toggle state from a lazy Prim snapshot,
+and Prim visibility events could not address BIM leaf IDs. A visibility change
+also allowed a generic Prim snapshot to contaminate the active BIM cache.
+
+The correction is provider-neutral and presentation-only:
+
+- Protocol v11 adds `HierarchyVisibilityIntent`, `HierarchyVisibilityState`
+  (`Visible`, `Hidden`, `Mixed`), `SetHierarchyNodeVisibility`, and the
+  authoritative `HierarchyVisibilityChanged` event with target and ancestor
+  states.
+- The backend builds a private BIM membership/action index. Group actions use
+  semantic Prim paths, resolve every current native-instance occurrence through
+  `resolve_all_by_prim_path`, update the projected rows, and never author USD
+  visibility opinions.
+- The UI renders a visibility control for virtual groups and leaves, uses the
+  authoritative node state for next-click semantics, preserves hidden rows,
+  and reduces the authoritative event into the active provider cache.
+- Scene-index visibility is overlaid onto BIM projection refreshes without
+  changing semantic revision. Prim snapshots are ignored while BIM is active;
+  Prim-tree child-toggle ancestor behavior remains unchanged.
+
+```text
+cargo test -p usdview --bin usdview bim_group_visibility_updates_all_scene_occurrences_and_publishes_authoritative_event: 1 passed
+cargo test -p usdview --bin usdview classification_visibility_reports_mixed_state_and_restores_groups: 1 passed
+cargo test -p usdview --bin usdview semantic_path_visibility_targets_all_native_occurrences: 1 passed
+cargo test -p usd_hub_desktop --lib hierarchy_visibility: 1 passed
+cargo test -p usd_hub_desktop --lib virtual_groups_keep_visibility_capability: 1 passed
+cargo test -p usd_hub_desktop --all-targets --quiet: 250 passed; 1 ignored
+cargo test -p usd_hub_desktop --all-targets --no-default-features --quiet: 250 passed; 1 ignored
+cargo test -p viewport_protocol --tests --no-default-features --quiet: 72 passed
+cargo test -p usdview --bin usdview --tests --quiet: 340 passed; 5 ignored; all integration binaries passed
+cargo test -p usdview --bin usdview --tests --no-default-features --quiet: 340 passed; 5 ignored; all integration binaries passed
+cargo fmt --all -- --check: PASS on both continuous branches
+source-size audit: PASS — 582 files scanned, 0 over 400 lines
+make harden: ENVIRONMENT-LIMITED at all-features because DLSS_SDK is unset and
+the host Vulkan API configuration is unavailable; default/no-default tests and
+source-size stages passed
+```
+
+The focused bridge regression proves request correlation, virtual-group
+fan-out to both scene occurrences, hide/show restoration, and the
+`HierarchyVisibilityChanged` payload. The UI regressions prove the mixed marker
+and restore action, retention of BIM groups/leaves, source-mismatched snapshot
+rejection, and preservation of the legacy Prim child-toggle contract.
+
+The supplied `Projet1.usdc` runtime command, native GPU/Tauri/WebRTC/H265
+rendering, and server-terminal silence remain Owner Review 2 evidence. They
+were not claimed from the CPU-side automated tests.
 
 ## Integrated evidence matrix
 
@@ -455,14 +512,14 @@ claim is made here.
 
 ### UI gates
 
-The reviewed functional UI revision is `8364ef1` on `panel-BIMData`; the
+The reviewed functional UI revision is `b669c1d` on `panel-BIMData`; the
 prior hierarchy revision `4343944`, source-layout correction `d493d0b`, and
 C5++ revision `262d926` remain in its ancestry.
 
 - `cargo fmt --all -- --check`: PASS.
-- Focused/full `usd_hub_desktop` library tests: 243 passed, 1 ignored.
+- Focused/full `usd_hub_desktop` library tests: 250 passed, 1 ignored.
 - UI workspace default and no-default compile/test gates: PASS; desktop
-  243 passed/1 ignored in the final provider-wire correction run.
+  250 passed/1 ignored in the final hierarchy-visibility correction run.
 - UI source-size audit: all materially touched files remain below 400 lines;
   the largest current files are `store.rs` 331 lines,
   `command_gateway.rs` 322 lines, `store/scene.rs` 249 lines,
@@ -503,6 +560,9 @@ include:
   reconstruction, and hidden-until-complete UI assembly;
 - compact BIM panel layout/search/property presentation and absence of the
   removed Selection/legacy-ready/`<Ungrouped>` presentation;
+- virtual BIM-group visibility controls, Visible/Hidden/Mixed state
+  propagation, native-instance fan-out, authoritative event reduction, and
+  Prim/BIM cache isolation;
 - renderer configuration, transport, and selection projection acceptance
   tests.
 
