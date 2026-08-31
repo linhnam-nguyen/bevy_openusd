@@ -6,7 +6,6 @@ use bevy::prelude::*;
 use openusd::sdf::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SemanticSnapshot, SnapshotSource};
-use usd_semantic::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, SemanticConfig};
 use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportEventEnvelope};
 
 use crate::viewport::api::ViewportEventOutbox;
@@ -42,25 +41,6 @@ pub(super) fn stage_with_widths() -> Stage {
             .expect("width authors");
     }
     stage
-}
-
-fn bim_runtime_semantic_config() -> SemanticConfig {
-    SemanticConfig {
-        nvidia_revit: NvidiaRevitConfig {
-            identity: NvidiaRevitIdentityConfig {
-                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
-
-pub(super) fn configure_bim_runtime_semantics(app: &mut App) {
-    app.world_mut()
-        .resource_mut::<SemanticSyncState>()
-        .set_config(bim_runtime_semantic_config());
 }
 
 pub(super) fn anchor(path: &str) -> SceneAnchor {

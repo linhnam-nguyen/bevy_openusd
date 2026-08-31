@@ -6,6 +6,18 @@ use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
 use super::super::editor::EditorValue;
 use super::super::read_models::SceneAnchor;
 use super::constants::UNCLASSIFIED_LABEL;
+use super::query::BimFieldKey;
+
+/// Bounded model-wide field catalogue used by the classification editor.
+///
+/// The revision is the authoritative semantic live-stage revision that
+/// produced the catalogue. Selection-scoped property reads must not be used
+/// to construct this list.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BimClassificationFieldCatalogue {
+    pub semantic_revision: u64,
+    pub fields: Vec<BimFieldKey>,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CommonValue {

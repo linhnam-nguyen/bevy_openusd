@@ -6,7 +6,7 @@
 //! and `Server*` types reserve the richer session contract used by the remote
 //! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 7;
+pub const PROTOCOL_VERSION: u16 = 8;
 
 pub use usd_model::{CanonicalValue, UnitId};
 
@@ -61,30 +61,30 @@ pub use stream::{
     ActiveStreamConfiguration, CodecId, StreamLimits, StreamStatistics, ViewportMetrics,
 };
 pub use viewport::{
-    BimFieldKey, BimObjectMatch, BimPageRequest, BimPropertiesDeliveryError,
-    BimPropertiesDeliveryErrorKind, BimPropertiesPage, BimPropertiesReadModel,
-    BimPropertyDiffReadModel, BimPropertyDiffRow, BimPropertyDiffStatus, BimPropertyEditOutcome,
-    BimPropertyEditStatus, BimPropertyGroupId, BimPropertyGroupReadModel, BimPropertyMutation,
-    BimPropertyNameMatch, BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus,
-    BimPropertyReadModel, BimPropertyValueMatch, BimReplacementPreviewRow, BimSearchQuery,
-    BimSearchResult, BimUnitOption, CameraOrientationReadModel, CameraSource,
-    ClassificationColorEntry, ClassificationColorIntent, ClassificationColorSource,
-    ClassificationLevel, ClassificationRecipe, ColorRgb8, CommonValue, CurveTuning,
-    DEFAULT_GIZMO_SIZE_LEVEL, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
+    BimClassificationFieldCatalogue, BimFieldKey, BimObjectMatch, BimPageRequest,
+    BimPropertiesDeliveryError, BimPropertiesDeliveryErrorKind, BimPropertiesPage,
+    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyDiffRow, BimPropertyDiffStatus,
+    BimPropertyEditOutcome, BimPropertyEditStatus, BimPropertyGroupId, BimPropertyGroupReadModel,
+    BimPropertyMutation, BimPropertyNameMatch, BimPropertyProvenanceReadModel,
+    BimPropertyProvenanceStatus, BimPropertyReadModel, BimPropertyValueMatch,
+    BimReplacementPreviewRow, BimSearchQuery, BimSearchResult, BimUnitOption,
+    CameraOrientationReadModel, CameraSource, ClassificationColorEntry, ClassificationColorIntent,
+    ClassificationColorSource, ClassificationLevel, ClassificationRecipe, ColorRgb8, CommonValue,
+    CurveTuning, DEFAULT_GIZMO_SIZE_LEVEL, DEFAULT_SCENE_PAGE_SIZE, DEFAULT_SCENE_SEARCH_PAGE_SIZE,
     EditorOperation, EditorPrimReadModel, EditorStateReadModel, EditorValue, FocusMode,
     GroundGridOrigin, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind,
     HierarchyNodeReadModel, HierarchyPageReference, HierarchyReadModel, HierarchySearchMatch,
-    HierarchySource, MAX_BIM_BATCH_EDITS, MAX_BIM_CLASSIFICATION_LEVELS,
-    MAX_BIM_CLASSIFICATION_PAGE_SIZE, MAX_BIM_FIELD_KEY_BYTES, MAX_BIM_PROPERTY_COUNT,
-    MAX_BIM_PROPERTY_PAGES, MAX_BIM_REGEX_BYTES, MAX_BIM_REPLACEMENT_BYTES, MAX_BIM_SEARCH_GROUPS,
-    MAX_BIM_SEARCH_OFFSET, MAX_BIM_SEARCH_PAGE_SIZE, MAX_BIM_SELECTION_TARGETS,
-    MAX_CLASSIFICATION_COLOR_ENTRIES, MAX_EDITOR_TEXT_BYTES, MAX_GIZMO_SIZE_LEVEL,
-    MAX_HIERARCHY_NODE_ID_BYTES, MAX_HIERARCHY_SEARCH_QUERY_BYTES, MAX_RUNTIME_MUTATIONS,
-    MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE, MAX_SCENE_SEARCH_RESULTS,
-    MAX_SELECTION_TARGETS, MIN_GIZMO_SIZE_LEVEL, OverlayKind, PresentationReadModel,
-    PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation, RuntimeMutationBatch,
-    SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor, SceneChildrenPage,
-    ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
+    HierarchySource, MAX_BIM_BATCH_EDITS, MAX_BIM_CLASSIFICATION_FIELDS,
+    MAX_BIM_CLASSIFICATION_LEVELS, MAX_BIM_CLASSIFICATION_PAGE_SIZE, MAX_BIM_FIELD_KEY_BYTES,
+    MAX_BIM_PROPERTY_COUNT, MAX_BIM_PROPERTY_PAGES, MAX_BIM_REGEX_BYTES, MAX_BIM_REPLACEMENT_BYTES,
+    MAX_BIM_SEARCH_GROUPS, MAX_BIM_SEARCH_OFFSET, MAX_BIM_SEARCH_PAGE_SIZE,
+    MAX_BIM_SELECTION_TARGETS, MAX_CLASSIFICATION_COLOR_ENTRIES, MAX_EDITOR_TEXT_BYTES,
+    MAX_GIZMO_SIZE_LEVEL, MAX_HIERARCHY_NODE_ID_BYTES, MAX_HIERARCHY_SEARCH_QUERY_BYTES,
+    MAX_RUNTIME_MUTATIONS, MAX_RUNTIME_SOURCE_ID_BYTES, MAX_SCENE_PAGE_SIZE,
+    MAX_SCENE_SEARCH_RESULTS, MAX_SELECTION_TARGETS, MIN_GIZMO_SIZE_LEVEL, OverlayKind,
+    PresentationReadModel, PrimNodeReadModel, RenderMode, RendererConfiguration, RuntimeMutation,
+    RuntimeMutationBatch, SamplingPreference, SamplingProvider, SamplingReadModel, SceneAnchor,
+    SceneChildrenPage, ScenePageReference, SceneReadModel, SceneSearchMatch, SectionBoxReadModel,
     SelectionPresentationSettings, SelectionReadModel, StageLoadState, StageReadModel,
     StandardView, TimelineReadModel, UNCLASSIFIED_LABEL, ViewerEnvironmentSettings,
     ViewerSettingsCapabilities, ViewerSettingsReadModel, ViewportCommand, ViewportCommandEnvelope,

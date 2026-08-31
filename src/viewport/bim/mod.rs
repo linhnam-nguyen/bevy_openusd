@@ -7,6 +7,7 @@ pub(crate) mod authoring;
 mod classification;
 mod classification_color;
 pub(super) mod diff;
+mod field_catalogue;
 mod properties;
 mod search;
 
@@ -31,19 +32,21 @@ mod m8_failure_tests;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
-    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationColorEntry,
-    ClassificationColorIntent, ClassificationRecipe, HierarchyChildrenPage, HierarchyNodeId,
-    HierarchyReadModel, ProtocolValidationError, SceneAnchor, SelectionReadModel,
+    BimClassificationFieldCatalogue, BimFieldKey, BimPropertiesReadModel, BimSearchQuery,
+    BimSearchResult, ClassificationColorEntry, ClassificationColorIntent, ClassificationRecipe,
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel, MAX_BIM_CLASSIFICATION_FIELDS,
+    ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
 
 use self::classification::ClassificationIndex;
+pub(crate) use self::field_catalogue::BimClassificationFieldCatalogueState;
 use crate::viewport::api::{CurrentHierarchyProjection, HierarchyPageIndex};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -132,6 +135,50 @@ impl<'snapshot> BimReadService<'snapshot> {
         selection: &[SceneAnchor],
     ) -> Option<viewport_protocol::BimPropertyDiffReadModel> {
         diff::property_diff(baseline, self.snapshot, selection)
+    }
+
+    /// Builds the bounded, model-wide field catalogue from BIM-eligible
+    /// entities only. The caller supplies the semantic revision so the
+    /// browser can invalidate this immutable list without coupling it to
+    /// selection-scoped property reads.
+    pub(crate) fn classification_field_catalogue(
+        &self,
+        semantic_revision: u64,
+    ) -> BimClassificationFieldCatalogue {
+        let mut fields = BTreeSet::from([
+            BimFieldKey::Category,
+            BimFieldKey::Family,
+            BimFieldKey::Type,
+        ]);
+        let mut entities = self.entities().collect::<Vec<_>>();
+        entities.sort_unstable_by(|left, right| left.key.as_str().cmp(right.key.as_str()));
+
+        for entity in entities {
+            let mut property_names = entity
+                .properties
+                .iter()
+                .map(|property| property.name.trim())
+                .filter(|name| {
+                    !name.is_empty()
+                        && name.len() <= viewport_protocol::MAX_BIM_FIELD_KEY_BYTES
+                        && !name.contains('\0')
+                })
+                .collect::<Vec<_>>();
+            property_names.sort_unstable();
+            property_names.dedup();
+
+            for name in property_names {
+                let field = BimFieldKey::Property(name.to_owned());
+                if fields.len() < MAX_BIM_CLASSIFICATION_FIELDS || fields.contains(&field) {
+                    fields.insert(field);
+                }
+            }
+        }
+
+        BimClassificationFieldCatalogue {
+            semantic_revision,
+            fields: fields.into_iter().collect(),
+        }
     }
 
     pub(crate) fn classification_page(

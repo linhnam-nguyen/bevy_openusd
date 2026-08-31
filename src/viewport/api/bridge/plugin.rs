@@ -19,6 +19,7 @@ use crate::viewport::api::{
     ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
     ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
 };
+use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::scene::ClassificationColorPlan;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{
@@ -41,6 +42,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
             .init_resource::<BimProvenanceService>()
+            .init_resource::<BimClassificationFieldCatalogueState>()
             .init_resource::<SelectedTargets>()
             .init_resource::<ClassificationColorPlan>()
             .init_resource::<ViewerSettingsState>()

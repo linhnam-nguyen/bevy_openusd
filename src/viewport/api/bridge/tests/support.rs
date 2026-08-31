@@ -82,7 +82,10 @@ pub(super) fn runtime_semantic_test_app(project_root: std::path::PathBuf) -> App
         .init_resource::<RuntimeMutationCoordinator>()
         .init_resource::<Spawned>()
         .init_resource::<SemanticWorkingStore>()
-        .init_resource::<SemanticSyncState>()
+        .insert_resource(SemanticSyncState::with_config(
+            usd_semantic::SemanticConfig::for_nvidia_revit_connector(),
+        ))
+        .init_resource::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
         .init_resource::<SemanticDiffState>()
         .init_resource::<RecoveryRuntime>()
         .insert_resource(RecoverySettings { project_root })

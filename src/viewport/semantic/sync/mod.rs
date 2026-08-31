@@ -24,6 +24,9 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 use super::diff::SemanticDiffState;
 use super::state::SemanticSyncState;
 use super::worker::SemanticWorkingStore;
+use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::bim::{BimClassificationFieldCatalogueState, BimReadService};
+use viewport_protocol::ViewportEventEnvelope;
 
 /// Synchronize the semantic working store from the retained live-stage batch.
 ///
@@ -320,10 +323,12 @@ fn synchronize_live_stage_inner(world: &mut World) {
     {
         counters.render_blob_prepare_ms += render_blob_started.elapsed().as_secs_f64() * 1000.0;
     }
-
     let request_id = format!("semantic-sync-{}", live_revision.0);
+    let mut published_catalogue = None;
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
+            let catalogue =
+                BimReadService::new(&snapshot).classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_snapshot(request_id, snapshot.clone());
@@ -334,11 +339,14 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
                 }
+                published_catalogue = Some(catalogue);
             }
             submitted
         }
         SemanticSyncAction::Delta(update) => {
             let snapshot = update.snapshot.clone();
+            let catalogue =
+                BimReadService::new(&snapshot).classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
                 .submit_delta_with_snapshot(request_id, update.request, &snapshot);
@@ -349,11 +357,15 @@ fn synchronize_live_stage_inner(world: &mut World) {
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, snapshot);
                 }
+                published_catalogue = Some(catalogue);
             }
             submitted
         }
     };
     if submitted {
+        if let Some(catalogue) = published_catalogue {
+            publish_classification_field_catalogue(world, catalogue);
+        }
         if let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
         {
@@ -369,5 +381,20 @@ fn synchronize_live_stage_inner(world: &mut World) {
             c.semantic_worker_submission_failures += 1;
         }
         bevy::log::warn!("[semantic-sync] worker channel is unavailable");
+    }
+}
+
+fn publish_classification_field_catalogue(
+    world: &mut World,
+    catalogue: viewport_protocol::BimClassificationFieldCatalogue,
+) {
+    let changed = world
+        .get_resource_mut::<BimClassificationFieldCatalogueState>()
+        .is_some_and(|mut state| state.replace(catalogue.clone()));
+    if changed && let Some(mut outbox) = world.get_resource_mut::<ViewportEventOutbox>() {
+        outbox.push(ViewportEventEnvelope::new(
+            None,
+            viewport_protocol::ViewportEvent::BimClassificationFieldCatalogueChanged { catalogue },
+        ));
     }
 }

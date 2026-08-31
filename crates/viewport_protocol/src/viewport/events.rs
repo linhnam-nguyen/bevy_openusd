@@ -48,6 +48,9 @@ pub enum ViewportEvent {
     BimPropertiesError {
         error: BimPropertiesDeliveryError,
     },
+    BimClassificationFieldCatalogueChanged {
+        catalogue: super::bim::BimClassificationFieldCatalogue,
+    },
     BimPropertyProvenanceRead {
         provenance: BimPropertyProvenanceReadModel,
     },

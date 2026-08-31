@@ -15,6 +15,7 @@ use crate::viewport::api::{
     ActiveHierarchyProvider, CurrentHierarchyProjection, ViewportCommandInbox,
 };
 use crate::viewport::semantic::SemanticDiffState;
+use crate::viewport::semantic::SemanticSyncState;
 
 use super::m3_integration_support::*;
 use super::support::runtime_semantic_test_app;
@@ -23,7 +24,6 @@ use super::support::runtime_semantic_test_app;
 fn live_edit_converges_into_bim_classification_search_and_diff() -> Result<()> {
     let project_root = tempfile::tempdir()?;
     let mut app = runtime_semantic_test_app(project_root.path().to_path_buf());
-    configure_bim_runtime_semantics(&mut app);
     app.world_mut()
         .insert_non_send(usd_bevy::LiveStage::new(stage_with_widths()));
     app.init_resource::<ActiveHierarchyProvider>()
@@ -40,6 +40,22 @@ fn live_edit_converges_into_bim_classification_search_and_diff() -> Result<()> {
     );
 
     let initial = wait_for_initial_semantics(&mut app)?;
+    assert_eq!(
+        app.world()
+            .resource::<SemanticSyncState>()
+            .config()
+            .nvidia_revit
+            .identity
+            .element_id_property
+            .as_deref(),
+        Some("BIM:Instance:ElementId")
+    );
+    assert!(
+        initial
+            .entities
+            .values()
+            .any(|entity| { entity.semantic.bim.element_id.as_deref() == Some("A") })
+    );
     let mut baseline = initial.clone();
     baseline.source = SnapshotSource::GitCommit {
         oid: "m8-consistency-baseline".to_owned(),

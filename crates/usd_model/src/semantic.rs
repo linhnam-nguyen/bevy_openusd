@@ -28,12 +28,13 @@ impl SemanticInfo {
     /// exporter adapter. Generic USD metadata is deliberately not enough to
     /// opt an entity into BIM classification or search.
     pub fn is_bim_entity(&self) -> bool {
-        self.bim
-            .element_id
-            .as_deref()
-            .or(self.bim.family_name.as_deref())
-            .is_some_and(|value| !value.trim().is_empty())
+        is_non_empty(self.bim.element_id.as_deref())
+            || is_non_empty(self.bim.family_name.as_deref())
     }
+}
+
+fn is_non_empty(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
 }
 
 #[cfg(test)]

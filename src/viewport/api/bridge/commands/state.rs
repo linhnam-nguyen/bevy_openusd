@@ -6,6 +6,7 @@ use super::super::state::{EditorHistories, RuntimeMutationCoordinator};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
+use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
@@ -48,5 +49,6 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub stage: Option<NonSend<'w, LiveStage>>,
     pub stage_handle: Option<Res<'w, StageHandle>>,
     pub semantic: Option<Res<'w, SemanticSyncState>>,
+    pub bim_field_catalogue: Option<Res<'w, BimClassificationFieldCatalogueState>>,
     pub spawned: Res<'w, Spawned>,
 }

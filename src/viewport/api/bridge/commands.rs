@@ -3,7 +3,8 @@ use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 
 use super::editor_commands::apply_editor_command;
 use super::helpers::{
-    emit_presentation_changed, emit_snapshot, emit_viewer_settings_changed, reject,
+    emit_classification_field_catalogue, emit_presentation_changed, emit_snapshot,
+    emit_viewer_settings_changed, reject,
 };
 use super::state::EditorHistories;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
@@ -58,7 +59,7 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::RequestSnapshot => {
                 emit_snapshot(
                     &mut outbox,
-                    request_id,
+                    request_id.clone(),
                     &state.configuration.p0(),
                     &state.spawned,
                     &state.selected_targets.0,
@@ -71,6 +72,11 @@ pub(super) fn apply_viewport_commands(
                     &state.toggles,
                     &state.tuning,
                     state.physics.0,
+                );
+                emit_classification_field_catalogue(
+                    &mut outbox,
+                    request_id,
+                    state.bim_field_catalogue.as_deref(),
                 );
             }
             ViewportCommand::RequestSceneChildren { .. }
@@ -93,7 +99,7 @@ pub(super) fn apply_viewport_commands(
                 state.runtime_mutations.reset();
                 emit_snapshot(
                     &mut outbox,
-                    request_id,
+                    request_id.clone(),
                     &state.configuration.p0(),
                     &state.spawned,
                     &state.selected_targets.0,
@@ -106,6 +112,11 @@ pub(super) fn apply_viewport_commands(
                     &state.toggles,
                     &state.tuning,
                     state.physics.0,
+                );
+                emit_classification_field_catalogue(
+                    &mut outbox,
+                    request_id,
+                    state.bim_field_catalogue.as_deref(),
                 );
             }
             ViewportCommand::FocusTarget { target, mode } => {

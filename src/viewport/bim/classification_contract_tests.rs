@@ -30,11 +30,14 @@ fn mixed_snapshot() -> SemanticSnapshot {
         None,
         Some("Fixed Window"),
         Some("Window"),
-        vec![property(
-            "Mark",
-            CanonicalValue::Text("WINDOW-B".to_owned()),
-            None,
-        )],
+        vec![
+            property("Mark", CanonicalValue::Text("WINDOW-B".to_owned()), None),
+            property(
+                "WindowOnly",
+                CanonicalValue::Text("window-only".to_owned()),
+                None,
+            ),
+        ],
     );
     unclassified.semantic.bim.element_id = Some("window-b-id".to_owned());
     snapshot
@@ -132,5 +135,28 @@ fn mixed_projection_keeps_non_bim_out_of_hierarchy_search_and_colors() {
         colors
             .iter()
             .all(|entry| !entry.anchor.prim_path.contains("PlainMesh"))
+    );
+}
+
+#[test]
+fn field_catalogue_is_model_wide_bim_only_and_revision_scoped() {
+    let snapshot = mixed_snapshot();
+    let service = BimReadService::new(&snapshot);
+    let catalogue = service.classification_field_catalogue(42);
+
+    assert_eq!(catalogue.semantic_revision, 42);
+    assert!(catalogue.fields.contains(&BimFieldKey::Category));
+    assert!(catalogue.fields.contains(&BimFieldKey::Family));
+    assert!(catalogue.fields.contains(&BimFieldKey::Type));
+    assert!(catalogue.fields.contains(&BimFieldKey::property("Mark")));
+    assert!(
+        catalogue
+            .fields
+            .contains(&BimFieldKey::property("WindowOnly"))
+    );
+    assert!(
+        !catalogue
+            .fields
+            .contains(&BimFieldKey::property("NonBimOnly"))
     );
 }

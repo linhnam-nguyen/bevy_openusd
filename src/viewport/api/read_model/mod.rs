@@ -43,7 +43,6 @@ struct SceneSearchState {
     total: u32,
     has_more: bool,
 }
-
 /// Latest authoritative viewport snapshot as reduced from emitted events.
 #[derive(Resource, Debug, Clone, Default)]
 pub(crate) struct ViewportReadModelState {
@@ -161,6 +160,7 @@ impl ViewportReadModelState {
             | ViewportEvent::BimPropertiesRead { .. }
             | ViewportEvent::BimPropertiesPage { .. }
             | ViewportEvent::BimPropertiesError { .. }
+            | ViewportEvent::BimClassificationFieldCatalogueChanged { .. }
             | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }

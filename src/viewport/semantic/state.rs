@@ -27,12 +27,15 @@ impl Default for SemanticSyncState {
 }
 
 impl SemanticSyncState {
-    pub(crate) fn config(&self) -> SemanticConfig {
-        self.config.clone()
+    pub(crate) fn with_config(config: SemanticConfig) -> Self {
+        Self {
+            config,
+            ..Self::default()
+        }
     }
 
-    pub(crate) fn set_config(&mut self, config: SemanticConfig) {
-        self.config = config;
+    pub(crate) fn config(&self) -> SemanticConfig {
+        self.config.clone()
     }
 
     pub(crate) fn snapshot(&self) -> Option<&SemanticSnapshot> {
