@@ -116,6 +116,7 @@ pub fn apply_change_batch(
     if batch.is_empty() {
         return;
     }
+    crate::route::geom::note_hierarchy_metadata_revision(world, batch.revision.0);
     if batch.has_resync() {
         let all_resynced: Vec<&str> = batch
             .changes

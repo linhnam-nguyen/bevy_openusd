@@ -12,6 +12,12 @@ pub(crate) fn prepare_hierarchy_metadata(stage: &openusd::usd::Stage, world: &mu
     hierarchy::prepare_metadata_index(stage, world);
 }
 
+/// Invalidate Stage-owned hierarchy metadata once at the live change-batch
+/// boundary. The next prim projection rebuilds the shared index once.
+pub(crate) fn note_hierarchy_metadata_revision(world: &mut World, revision: u64) {
+    hierarchy::note_metadata_revision(world, revision);
+}
+
 use super::ProjectionSeed;
 use super::cache::{
     ProjectionCache, intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh,

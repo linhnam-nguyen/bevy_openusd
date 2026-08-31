@@ -22,8 +22,18 @@ const DISPLAY_NAME_FIELD: &str = "ui:displayName";
 #[derive(bevy::ecs::resource::Resource, Debug, Default, Clone)]
 pub(crate) struct HierarchyMetadataIndex {
     stage_address: usize,
+    revision: u64,
     display_names: HashMap<String, String>,
 }
+
+/// Revision of the live Stage represented by the cached metadata index.
+///
+/// The live reconciliation boundary updates this resource once per drained
+/// [`crate::live::StageChangeBatch`]. A same-address Stage therefore still invalidates its
+/// metadata cache after in-place authoring, while every prim in that batch
+/// shares one rebuilt index.
+#[derive(bevy::ecs::resource::Resource, Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub(crate) struct HierarchyMetadataRevision(pub(crate) u64);
 
 impl HierarchyMetadataIndex {
     #[cfg(test)]
@@ -34,17 +44,25 @@ impl HierarchyMetadataIndex {
 
 pub(super) fn prepare_metadata_index(stage: &openusd::usd::Stage, world: &mut World) {
     let stage_address = std::ptr::from_ref(stage) as usize;
+    let revision = world
+        .get_resource::<HierarchyMetadataRevision>()
+        .map_or(0, |revision| revision.0);
     let needs_rebuild = world
         .get_resource::<HierarchyMetadataIndex>()
-        .is_none_or(|index| index.stage_address != stage_address);
+        .is_none_or(|index| index.stage_address != stage_address || index.revision != revision);
     if needs_rebuild {
-        world.insert_resource(build_metadata_index(stage, stage_address));
+        world.insert_resource(build_metadata_index(stage, stage_address, revision));
     }
+}
+
+pub(super) fn note_metadata_revision(world: &mut World, revision: u64) {
+    world.insert_resource(HierarchyMetadataRevision(revision));
 }
 
 fn build_metadata_index(
     stage: &openusd::usd::Stage,
     stage_address: usize,
+    revision: u64,
 ) -> HierarchyMetadataIndex {
     let mut display_names = HashMap::new();
     for identifier in stage.layer_stack() {
@@ -66,6 +84,7 @@ fn build_metadata_index(
     }
     HierarchyMetadataIndex {
         stage_address,
+        revision,
         display_names,
     }
 }

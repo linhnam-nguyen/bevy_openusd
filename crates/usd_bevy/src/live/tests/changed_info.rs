@@ -17,6 +17,7 @@ def Xform "World"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 }
+
 "#;
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);
@@ -67,4 +68,53 @@ def Xform "World"
         Vec3::new(10.0, 20.0, 30.0),
         "bare prim changed_info must repatch transform"
     );
+}
+
+#[test]
+fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> anyhow::Result<()> {
+    let stage = UsdSnippet::new(
+        r#"#usda 1.0
+(defaultPrim = "World")
+def Xform "World"
+{
+    def Xform "Source" {}
+}
+"#,
+    )
+    .open_stage()?;
+    stage.prim("/World/Source").set_metadata(
+        "ui:displayName",
+        openusd::sdf::Value::String("Before patch".to_owned()),
+    )?;
+    let live = LiveStage::new(stage);
+
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut().insert_non_send(live);
+    app.update();
+
+    let entity = app
+        .world()
+        .resource::<PrimEntities>()
+        .entity("/World/Source")
+        .expect("source prim is projected");
+    assert_eq!(
+        app.world().get::<crate::UsdDisplayName>(entity),
+        Some(&crate::UsdDisplayName("Before patch".to_owned()))
+    );
+
+    {
+        let live = app.world().get_non_send::<LiveStage>().expect("live stage");
+        live.stage.prim("/World/Source").set_metadata(
+            "ui:displayName",
+            openusd::sdf::Value::String("After patch".to_owned()),
+        )?;
+    }
+    app.update();
+
+    assert_eq!(
+        app.world().get::<crate::UsdDisplayName>(entity),
+        Some(&crate::UsdDisplayName("After patch".to_owned()))
+    );
+    Ok(())
 }
