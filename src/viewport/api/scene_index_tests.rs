@@ -13,18 +13,15 @@ fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
 
 #[test]
 fn semantic_path_resolution_preserves_runtime_reveal_pages() {
-    let index = SceneAnchorIndex {
-        nodes: vec![
-            node("/World", None, "World"),
-            node("/World/Environment", Some("/World"), "Environment"),
-            node(
-                "/World/Environment/Door",
-                Some("/World/Environment"),
-                "Door",
-            ),
-        ],
-        ..Default::default()
-    };
+    let index = SceneAnchorIndex::from_test_nodes(vec![
+        node("/World", None, "World"),
+        node("/World/Environment", Some("/World"), "Environment"),
+        node(
+            "/World/Environment/Door",
+            Some("/World/Environment"),
+            "Door",
+        ),
+    ]);
 
     let result = index
         .search_match_for_path("/World/Environment/Door")
@@ -62,6 +59,28 @@ fn hierarchy_snapshot_reuses_cached_projection() {
     let second = index.hierarchy_snapshot();
 
     assert!(std::sync::Arc::ptr_eq(&first, &second));
+}
+
+#[test]
+fn indexed_hierarchy_pages_and_search_preserve_order_without_full_scans() {
+    let index = SceneAnchorIndex::from_test_nodes(vec![
+        node("/World", None, "World"),
+        node("/World/A", Some("/World"), "A"),
+        node("/World/B", Some("/World"), "B"),
+        node("/World/C", Some("/World"), "C"),
+    ]);
+
+    let page = index.children_page(Some(&SceneAnchor::active_session("/World")), 1, 2);
+    assert_eq!(page.total, 3);
+    assert_eq!(page.nodes.len(), 1);
+    assert_eq!(page.nodes[0].anchor.prim_path, "/World/C");
+    assert_eq!(index.page_by_anchor.len(), 4);
+
+    let result = index
+        .search_match_for_path("/World/C")
+        .expect("indexed path resolves");
+    assert_eq!(result.label, "C");
+    assert_eq!(result.reveal_pages.len(), 2);
 }
 
 #[test]

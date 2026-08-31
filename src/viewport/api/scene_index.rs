@@ -15,7 +15,10 @@ use viewport_protocol::{
 };
 
 use super::hierarchy::HierarchyReadModel;
-use crate::viewport::session::Spawned;
+
+#[path = "scene_index_refresh.rs"]
+mod refresh;
+pub(crate) use refresh::refresh_scene_anchor_index;
 
 /// Returns the current prim-tree node name for a prim path.
 pub(crate) fn prim_name(path: &str) -> &str {
@@ -30,6 +33,10 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     nodes: Vec<PrimNodeReadModel>,
+    node_by_anchor: HashMap<SceneAnchor, usize>,
+    first_node_by_path: HashMap<String, usize>,
+    children_by_parent: HashMap<Option<SceneAnchor>, Vec<usize>>,
+    page_by_anchor: HashMap<SceneAnchor, u32>,
     hierarchy: Arc<HierarchyReadModel>,
     initialized: bool,
     revision: u64,
@@ -68,22 +75,18 @@ impl SceneAnchorIndex {
         } else {
             page_size.min(MAX_SCENE_PAGE_SIZE)
         };
-        let nodes: Vec<PrimNodeReadModel> = self
-            .nodes
-            .iter()
-            .filter(|node| node.parent.as_ref() == parent)
-            .cloned()
-            .collect();
-        let total = nodes.len() as u32;
+        let parent = parent.cloned();
+        let children = self.children_by_parent.get(&parent);
+        let total = children.map_or(0, |children| children.len()) as u32;
         let start = (page as usize).saturating_mul(page_size as usize);
-        let page_nodes = nodes
+        let page_nodes = children
             .into_iter()
-            .skip(start)
-            .take(page_size as usize)
+            .flat_map(|children| children.iter().skip(start).take(page_size as usize))
+            .filter_map(|index| self.nodes.get(*index).cloned())
             .collect();
 
         SceneChildrenPage {
-            parent: parent.cloned(),
+            parent,
             page,
             page_size,
             total,
@@ -100,14 +103,15 @@ impl SceneAnchorIndex {
 
     #[cfg(test)]
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
-        let hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&nodes));
-        Self {
+        let mut index = Self {
             nodes,
-            hierarchy,
             initialized: true,
             revision: 1,
             ..Default::default()
-        }
+        };
+        index.hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&index.nodes));
+        index.rebuild_read_indexes();
+        index
     }
 
     /// Resolves an existing prim row into the current runtime tree representation.
@@ -115,24 +119,18 @@ impl SceneAnchorIndex {
     /// This index owns the session-local anchor, visibility, hierarchy, and
     /// reveal-page information required by the viewport protocol.
     pub(crate) fn search_match_for_path(&self, prim_path: &str) -> Option<SceneSearchMatch> {
-        let node = self
-            .nodes
-            .iter()
-            .find(|node| node.anchor.prim_path == prim_path)?;
-        let by_anchor: HashMap<SceneAnchor, &PrimNodeReadModel> = self
-            .nodes
-            .iter()
-            .map(|node| (node.anchor.clone(), node))
-            .collect();
+        let node_index = *self.first_node_by_path.get(prim_path)?;
+        let node = self.nodes.get(node_index)?;
 
         let mut ancestry = Vec::new();
-        let mut current = Some(node);
-        while let Some(node) = current {
+        let mut current = Some(node_index);
+        while let Some(index) = current {
+            let node = self.nodes.get(index)?;
             ancestry.push(node);
             current = node
                 .parent
                 .as_ref()
-                .and_then(|parent| by_anchor.get(parent).copied());
+                .and_then(|parent| self.node_by_anchor.get(parent).copied());
         }
 
         let reveal_pages = ancestry
@@ -163,13 +161,37 @@ impl SceneAnchorIndex {
     }
 
     fn sibling_page(&self, node: &PrimNodeReadModel) -> u32 {
-        let index = self
-            .nodes
-            .iter()
-            .filter(|candidate| candidate.parent.as_ref() == node.parent.as_ref())
-            .position(|candidate| candidate.anchor == node.anchor)
-            .unwrap_or_default();
-        (index as u32) / DEFAULT_SCENE_PAGE_SIZE
+        self.page_by_anchor
+            .get(&node.anchor)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn rebuild_read_indexes(&mut self) {
+        self.node_by_anchor.clear();
+        self.first_node_by_path.clear();
+        self.children_by_parent.clear();
+        self.page_by_anchor.clear();
+        for (index, node) in self.nodes.iter().enumerate() {
+            self.node_by_anchor.insert(node.anchor.clone(), index);
+            self.first_node_by_path
+                .entry(node.anchor.prim_path.clone())
+                .or_insert(index);
+            self.children_by_parent
+                .entry(node.parent.clone())
+                .or_default()
+                .push(index);
+        }
+        for children in self.children_by_parent.values() {
+            for (index, node_index) in children.iter().enumerate() {
+                if let Some(node) = self.nodes.get(*node_index) {
+                    self.page_by_anchor.insert(
+                        node.anchor.clone(),
+                        (index as u32) / DEFAULT_SCENE_PAGE_SIZE,
+                    );
+                }
+            }
+        }
     }
 
     fn rebuild(
@@ -330,68 +352,10 @@ impl SceneAnchorIndex {
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.nodes = nodes;
+        self.rebuild_read_indexes();
         self.hierarchy = Arc::new(HierarchyReadModel::from_prim_nodes(&self.nodes));
         self.initialized = true;
         self.revision = self.revision.saturating_add(1);
-    }
-}
-
-/// Rebuilds only after stage entities or tree-visible data changes. This keeps
-/// the protocol boundary from traversing a large scene every frame.
-pub(crate) fn refresh_scene_anchor_index(
-    spawned: Res<Spawned>,
-    changed_prims: Query<
-        Entity,
-        (
-            With<UsdPrimRef>,
-            Or<(
-                Added<UsdPrimRef>,
-                Changed<UsdPrimRef>,
-                Changed<UsdDisplayName>,
-                Added<UsdTransparentHierarchyNode>,
-                Changed<UsdTransparentHierarchyNode>,
-                Changed<Visibility>,
-                Changed<Children>,
-            )>,
-        ),
-    >,
-    prims: Query<(
-        Entity,
-        &UsdPrimRef,
-        Option<&UsdDisplayName>,
-        Option<&UsdTransparentHierarchyNode>,
-        Option<&Visibility>,
-        Option<&Children>,
-    )>,
-    mut removed_prims: RemovedComponents<UsdPrimRef>,
-    mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
-    mut index: ResMut<SceneAnchorIndex>,
-) {
-    // ScenePatch materialization can happen across a frame boundary after
-    // Spawned flips to true. Treat that lifecycle transition as a rebuild
-    // trigger as well; otherwise a static stage can publish an empty tree
-    // before its projected prim entities are visible to this query.
-    let changed = spawned.is_changed()
-        || !changed_prims.is_empty()
-        || removed_prims.read().next().is_some()
-        || removed_transparent.read().next().is_some();
-    if !index.initialized && prims.is_empty() {
-        index.initialized = true;
-        return;
-    }
-    if changed || !index.initialized {
-        index.rebuild(&prims);
-        let root_count = index
-            .nodes
-            .iter()
-            .filter(|node| node.parent.is_none())
-            .count();
-        info!(
-            "[viewport-scene-index] rebuilt revision={} prims={} roots={}",
-            index.revision,
-            index.nodes.len(),
-            root_count
-        );
     }
 }
 
