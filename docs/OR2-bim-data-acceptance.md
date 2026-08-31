@@ -51,7 +51,7 @@ semantics, compact property presentation, and the integrated acceptance matrix.
 | M8-OR2-C4++++ | `6674aae` | — | Preserved generic OpenUSD `kind`/`type_name` semantics and added explicit normalized Revit Category/Family/Type classification sourced only from verified fields. |
 | M8-OR2-C5++++ | `6674aae` | `5e3776c` | Protocol-v9 model-wide descriptor catalogue with human labels, `[I]`/`[T]` scope, deterministic byte-bounded paging, exact reconstruction, stale rejection, and no partial UI catalogue. |
 | M8-OR2-C6+ | — | `5e3776c` | Exact Search/Classification/Properties layout, compact one-line properties, raw-key titles, scope badges, and removal of Selection/legacy status presentation. |
-| M8-OR2-C7++++ | `7dca9b0` | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
+| M8-OR2-C7++++ | final packet commit (recorded in the implementation plan) | — | Final correction gates, asset/runtime limitation record, implementation-plan update, continuous-branch push, and Owner Review 2 stop. |
 
 ## C7 implementation and repair evidence
 
