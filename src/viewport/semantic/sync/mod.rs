@@ -1,5 +1,6 @@
 mod action;
 mod changed_info;
+mod classification_catalogue;
 mod delivery;
 mod delivery_worker;
 mod subtree;
@@ -24,9 +25,7 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 use super::diff::SemanticDiffState;
 use super::state::SemanticSyncState;
 use super::worker::SemanticWorkingStore;
-use crate::viewport::api::ViewportEventOutbox;
-use crate::viewport::bim::{BimClassificationFieldCatalogueState, BimReadService};
-use viewport_protocol::ViewportEventEnvelope;
+use crate::viewport::bim::BimReadService;
 
 /// Synchronize the semantic working store from the retained live-stage batch.
 ///
@@ -364,7 +363,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
     };
     if submitted {
         if let Some(catalogue) = published_catalogue {
-            publish_classification_field_catalogue(world, catalogue);
+            classification_catalogue::publish(world, catalogue);
         }
         if let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
@@ -381,20 +380,5 @@ fn synchronize_live_stage_inner(world: &mut World) {
             c.semantic_worker_submission_failures += 1;
         }
         bevy::log::warn!("[semantic-sync] worker channel is unavailable");
-    }
-}
-
-fn publish_classification_field_catalogue(
-    world: &mut World,
-    catalogue: viewport_protocol::BimClassificationFieldCatalogue,
-) {
-    let changed = world
-        .get_resource_mut::<BimClassificationFieldCatalogueState>()
-        .is_some_and(|mut state| state.replace(catalogue.clone()));
-    if changed && let Some(mut outbox) = world.get_resource_mut::<ViewportEventOutbox>() {
-        outbox.push(ViewportEventEnvelope::new(
-            None,
-            viewport_protocol::ViewportEvent::BimClassificationFieldCatalogueChanged { catalogue },
-        ));
     }
 }

@@ -6,7 +6,7 @@
 //! and `Server*` types reserve the richer session contract used by the remote
 //! viewport transport.
 
-pub const PROTOCOL_VERSION: u16 = 9;
+pub const PROTOCOL_VERSION: u16 = 10;
 
 pub use usd_model::{BimPropertyDescriptor, BimPropertyScope, CanonicalValue, UnitId};
 

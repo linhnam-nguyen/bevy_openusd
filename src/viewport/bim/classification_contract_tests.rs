@@ -22,6 +22,20 @@ fn mixed_snapshot() -> SemanticSnapshot {
         )],
     );
     window.semantic.bim.element_id = Some("window-a-id".to_owned());
+    window.semantic.bim_classification.category_property = Some("BIM:Instance:Category".to_owned());
+    window.semantic.bim_classification.type_name_property = Some("BIM:Type:Name".to_owned());
+    window.properties.extend([
+        property(
+            "BIM:Instance:Category",
+            CanonicalValue::Text("Windows".to_owned()),
+            None,
+        ),
+        property(
+            "BIM:Type:Name",
+            CanonicalValue::Text("Window".to_owned()),
+            None,
+        ),
+    ]);
     snapshot.entities.insert(window.key.clone(), window);
 
     let mut unclassified = entity(
@@ -152,7 +166,7 @@ fn field_catalogue_is_model_wide_bim_only_and_revision_scoped() {
             .any(|field| field.key == BimFieldKey::Category)
     );
     assert!(
-        catalogue
+        !catalogue
             .fields
             .iter()
             .any(|field| field.key == BimFieldKey::Family)
@@ -181,4 +195,8 @@ fn field_catalogue_is_model_wide_bim_only_and_revision_scoped() {
             .iter()
             .all(|field| field.key != BimFieldKey::property("NonBimOnly"))
     );
+    assert!(catalogue.fields.iter().all(|field| {
+        field.key != BimFieldKey::property("BIM:Instance:Category")
+            && field.key != BimFieldKey::property("BIM:Type:Name")
+    }));
 }

@@ -234,6 +234,7 @@ impl ViewportCommand {
             Self::SetVariantSelection { .. }
             | Self::ResetVariantSelection { .. }
             | Self::RequestSnapshot
+            | Self::RequestBimClassificationFieldCatalogue { .. }
             | Self::RequestSceneChildren { .. }
             | Self::SearchScene { .. }
             | Self::RequestBimProperties

@@ -1,8 +1,5 @@
 use bevy::prelude::Resource;
-use usd_model::BimPropertyScope;
-use viewport_protocol::{
-    BimClassificationFieldCatalogue, BimClassificationFieldDescriptor, BimFieldKey,
-};
+use viewport_protocol::BimClassificationFieldCatalogue;
 
 /// Current immutable model-wide classification field catalogue.
 ///
@@ -19,23 +16,7 @@ impl Default for BimClassificationFieldCatalogueState {
         Self {
             catalogue: BimClassificationFieldCatalogue {
                 semantic_revision: 0,
-                fields: vec![
-                    BimClassificationFieldDescriptor::new(
-                        BimFieldKey::Category,
-                        "Category",
-                        BimPropertyScope::Instance,
-                    ),
-                    BimClassificationFieldDescriptor::new(
-                        BimFieldKey::Family,
-                        "Family",
-                        BimPropertyScope::Other,
-                    ),
-                    BimClassificationFieldDescriptor::new(
-                        BimFieldKey::Type,
-                        "Type",
-                        BimPropertyScope::Type,
-                    ),
-                ],
+                fields: Vec::new(),
             },
         }
     }
@@ -58,6 +39,7 @@ impl BimClassificationFieldCatalogueState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use viewport_protocol::{BimClassificationFieldDescriptor, BimFieldKey, BimPropertyScope};
 
     #[test]
     fn identical_catalogue_revision_is_published_only_once() {

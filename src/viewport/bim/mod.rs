@@ -5,6 +5,7 @@
 
 pub(crate) mod authoring;
 mod classification;
+mod classification_catalogue_projection;
 mod classification_color;
 pub(super) mod diff;
 mod field_catalogue;
@@ -32,18 +33,16 @@ mod m8_failure_tests;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
 use usd_model::{EntitySnapshot, SemanticSnapshot, SnapshotId};
 use viewport_protocol::{
-    BimClassificationFieldCatalogue, BimClassificationFieldDescriptor, BimFieldKey,
-    BimPropertiesReadModel, BimPropertyScope, BimSearchQuery, BimSearchResult,
-    ClassificationColorEntry, ClassificationColorIntent, ClassificationRecipe,
-    HierarchyChildrenPage, HierarchyNodeId, HierarchyReadModel, MAX_BIM_CLASSIFICATION_FIELDS,
-    ProtocolValidationError, SceneAnchor, SelectionReadModel,
+    BimPropertiesReadModel, BimSearchQuery, BimSearchResult, ClassificationColorEntry,
+    ClassificationColorIntent, ClassificationRecipe, HierarchyChildrenPage, HierarchyNodeId,
+    HierarchyReadModel, ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
 
 use self::classification::ClassificationIndex;
@@ -136,114 +135,6 @@ impl<'snapshot> BimReadService<'snapshot> {
         selection: &[SceneAnchor],
     ) -> Option<viewport_protocol::BimPropertyDiffReadModel> {
         diff::property_diff(baseline, self.snapshot, selection)
-    }
-
-    /// Builds the bounded, model-wide field catalogue from BIM-eligible
-    /// entities only. The caller supplies the semantic revision so the
-    /// browser can invalidate this immutable list without coupling it to
-    /// selection-scoped property reads.
-    pub(crate) fn classification_field_catalogue(
-        &self,
-        semantic_revision: u64,
-    ) -> BimClassificationFieldCatalogue {
-        let mut entities = self.entities().collect::<Vec<_>>();
-        entities.sort_unstable_by(|left, right| left.key.as_str().cmp(right.key.as_str()));
-        let mut represented_properties = BTreeSet::new();
-        for entity in &entities {
-            let classification = &entity.semantic.bim_classification;
-            represented_properties.extend(
-                [
-                    classification.category_property.as_deref(),
-                    classification.family_name_property.as_deref(),
-                    classification.type_name_property.as_deref(),
-                ]
-                .into_iter()
-                .flatten()
-                .map(str::to_owned),
-            );
-        }
-
-        let mut fields = BTreeMap::from([
-            (
-                BimFieldKey::Category,
-                classification_descriptor(
-                    BimFieldKey::Category,
-                    "Category",
-                    entities.iter().find_map(|entity| {
-                        entity
-                            .semantic
-                            .bim_classification
-                            .category_property
-                            .as_deref()
-                    }),
-                ),
-            ),
-            (
-                BimFieldKey::Family,
-                classification_descriptor(
-                    BimFieldKey::Family,
-                    "Family",
-                    entities.iter().find_map(|entity| {
-                        entity
-                            .semantic
-                            .bim_classification
-                            .family_name_property
-                            .as_deref()
-                    }),
-                ),
-            ),
-            (
-                BimFieldKey::Type,
-                classification_descriptor(
-                    BimFieldKey::Type,
-                    "Type",
-                    entities.iter().find_map(|entity| {
-                        entity
-                            .semantic
-                            .bim_classification
-                            .type_name_property
-                            .as_deref()
-                    }),
-                ),
-            ),
-        ]);
-
-        for entity in entities {
-            let mut property_names = entity
-                .properties
-                .iter()
-                .map(|property| property.name.trim())
-                .filter(|name| {
-                    !name.is_empty()
-                        && name.len() <= viewport_protocol::MAX_BIM_FIELD_KEY_BYTES
-                        && !name.contains('\0')
-                })
-                .collect::<Vec<_>>();
-            property_names.sort_unstable();
-            property_names.dedup();
-
-            for name in property_names {
-                let field = BimFieldKey::Property(name.to_owned());
-                if represented_properties.contains(name) {
-                    continue;
-                }
-                if fields.len() < MAX_BIM_CLASSIFICATION_FIELDS {
-                    let descriptor = usd_semantic::nvidia_revit_property_descriptor(name);
-                    fields.entry(field).or_insert_with(|| {
-                        BimClassificationFieldDescriptor::new(
-                            BimFieldKey::property(name),
-                            descriptor.label,
-                            descriptor.scope,
-                        )
-                    });
-                }
-            }
-        }
-
-        BimClassificationFieldCatalogue {
-            semantic_revision,
-            fields: fields.into_values().collect(),
-        }
     }
 
     pub(crate) fn classification_page(
@@ -386,15 +277,4 @@ impl<'snapshot> BimReadService<'snapshot> {
     pub(super) fn anchor_for_entity(entity: &EntitySnapshot) -> SceneAnchor {
         SceneAnchor::active_session(entity.prim_path.clone())
     }
-}
-
-fn classification_descriptor(
-    key: BimFieldKey,
-    label: &'static str,
-    source_property: Option<&str>,
-) -> BimClassificationFieldDescriptor {
-    let scope = source_property
-        .map(usd_semantic::nvidia_revit_property_descriptor)
-        .map_or(BimPropertyScope::Other, |descriptor| descriptor.scope);
-    BimClassificationFieldDescriptor::new(key, label, scope)
 }

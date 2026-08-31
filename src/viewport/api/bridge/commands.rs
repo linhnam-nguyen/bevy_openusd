@@ -79,6 +79,13 @@ pub(super) fn apply_viewport_commands(
                     state.bim_field_catalogue.as_deref(),
                 );
             }
+            ViewportCommand::RequestBimClassificationFieldCatalogue { known_revision: _ } => {
+                emit_classification_field_catalogue(
+                    &mut outbox,
+                    request_id,
+                    state.bim_field_catalogue.as_deref(),
+                );
+            }
             ViewportCommand::RequestSceneChildren { .. }
             | ViewportCommand::SearchScene { .. }
             | ViewportCommand::SearchBim { .. }

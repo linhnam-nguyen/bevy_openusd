@@ -41,6 +41,7 @@ mod tests {
             .init_resource::<PhysicsActive>()
             .init_resource::<EditorHistories>()
             .init_resource::<RuntimeMutationCoordinator>()
+            .init_resource::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
             .init_resource::<Spawned>()
             .insert_resource(StageInfo {
                 path: "fixtures/spinner.usda".to_owned(),
@@ -222,6 +223,40 @@ mod tests {
         assert!(state.scene.prims.is_empty());
         assert!(state.selection.targets.is_empty());
         assert!(state.selection.primary.is_none());
+    }
+
+    #[test]
+    fn explicit_catalogue_request_replays_the_current_catalogue_with_correlation() {
+        let mut app = command_test_app();
+        let catalogue = BimClassificationFieldCatalogue {
+            semantic_revision: 17,
+            fields: vec![BimClassificationFieldDescriptor::new(
+                BimFieldKey::property("BIM:Instance:Longueur"),
+                "Longueur",
+                BimPropertyScope::Instance,
+            )],
+        };
+        app.world_mut()
+            .resource_mut::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
+            .replace(catalogue.clone());
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::RequestBimClassificationFieldCatalogue {
+                known_revision: Some(0),
+            },
+        );
+
+        app.update();
+
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("catalogue request must emit a response");
+        assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+        assert_eq!(
+            event.event,
+            ViewportEvent::BimClassificationFieldCatalogueChanged { catalogue }
+        );
     }
 
     #[test]

@@ -15,6 +15,12 @@ use super::read_models::{
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum ViewportCommand {
     RequestSnapshot,
+    /// Requests the current model-wide BIM classification catalogue. This is
+    /// idempotent and separate from selection-scoped properties so a
+    /// reconnecting client can hydrate state produced before it joined.
+    RequestBimClassificationFieldCatalogue {
+        known_revision: Option<u64>,
+    },
     RequestSceneChildren {
         parent: Option<SceneAnchor>,
         page: u32,
