@@ -265,6 +265,32 @@ fn generic_search_preserves_provider_ids_and_virtual_reveal_pages() {
 }
 
 #[test]
+fn generic_search_preserves_mixed_visibility_state() {
+    let mut group = viewport_protocol::HierarchyNodeReadModel::virtual_node(
+        HierarchyNodeId::new("bim-group-windows"),
+        None,
+        "Fenêtres".to_owned(),
+        "Fenêtres".to_owned(),
+        true,
+    );
+    group.set_visibility(viewport_protocol::HierarchyVisibilityState::Mixed);
+    let hierarchy = HierarchyReadModel {
+        source: viewport_protocol::HierarchySource::BimClassification,
+        revision: 3,
+        nodes: vec![group],
+    };
+
+    let (total, matches) = search_hierarchy_generic(&hierarchy, "fenêtres", 0, 10);
+
+    assert_eq!(total, 1);
+    assert_eq!(matches[0].visible, true);
+    assert_eq!(
+        matches[0].visibility,
+        viewport_protocol::HierarchyVisibilityState::Mixed
+    );
+}
+
+#[test]
 fn latest_mailbox_replaces_pending_values_without_backlog() {
     let mailbox = LatestMailbox::new();
     for value in 0..10_000 {

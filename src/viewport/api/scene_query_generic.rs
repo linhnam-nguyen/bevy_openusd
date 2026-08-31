@@ -54,6 +54,7 @@ pub(crate) fn search_hierarchy_generic(
             anchor: node.anchor.clone(),
             parent_anchor: node.parent_anchor.clone(),
             visible: node.visible,
+            visibility: node.visibility,
             has_children: node.has_children,
             reveal_pages: generic_reveal_pages(node, hierarchy, &by_id),
         })

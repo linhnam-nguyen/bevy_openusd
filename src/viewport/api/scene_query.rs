@@ -13,7 +13,8 @@ use viewport_protocol::{
     BimSearchQuery, BimSearchResult as ProtocolBimSearchResult, DEFAULT_SCENE_PAGE_SIZE,
     HierarchyNodeId, HierarchyNodeReadModel, HierarchyReadModel,
     HierarchySearchMatch as ProtocolHierarchySearchMatch, HierarchySource,
-    MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference, SceneSearchMatch,
+    HierarchyVisibilityState, MAX_SCENE_SEARCH_RESULTS, SceneAnchor, ScenePageReference,
+    SceneSearchMatch,
 };
 
 #[path = "scene_query_generic.rs"]
@@ -118,7 +119,7 @@ pub(crate) struct HierarchySearchMatch {
     pub(crate) breadcrumb: String,
     pub(crate) anchor: Option<SceneAnchor>,
     pub(crate) parent: Option<SceneAnchor>,
-    pub(crate) visible: bool,
+    pub(crate) visibility: HierarchyVisibilityState,
     pub(crate) has_children: bool,
     pub(crate) reveal_pages: Vec<ScenePageReference>,
 }
@@ -131,7 +132,7 @@ impl HierarchySearchMatch {
             parent: self.parent,
             label: self.name,
             breadcrumb: self.breadcrumb,
-            visible: self.visible,
+            visible: self.visibility.is_visible(),
             has_children: self.has_children,
             reveal_pages: self.reveal_pages,
         })
@@ -327,7 +328,7 @@ pub(crate) fn search_hierarchy(
             breadcrumb: node.breadcrumb.clone(),
             anchor: node.anchor.clone(),
             parent: node.parent_anchor.clone(),
-            visible: node.visible,
+            visibility: node.visibility,
             has_children: node.has_children,
             reveal_pages: reveal_pages(node, hierarchy, &by_id),
         })

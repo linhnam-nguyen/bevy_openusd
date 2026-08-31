@@ -85,6 +85,35 @@ fn hierarchy_visibility_intent_and_authoritative_event_round_trip() {
 }
 
 #[test]
+fn hierarchy_search_result_preserves_typed_visibility_on_wire() {
+    let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
+        Some("search-mixed".into()),
+        ViewportEvent::HierarchySearchResults {
+            source: viewport_protocol::HierarchySource::BimClassification,
+            query: "fenêtres".to_owned(),
+            offset: 0,
+            total: 1,
+            matches: vec![viewport_protocol::HierarchySearchMatch {
+                node_id: viewport_protocol::HierarchyNodeId::new("bim-group-windows"),
+                name: "Fenêtres".to_owned(),
+                breadcrumb: "Fenêtres".to_owned(),
+                anchor: None,
+                parent_anchor: None,
+                visible: true,
+                visibility: viewport_protocol::HierarchyVisibilityState::Mixed,
+                has_children: true,
+                reveal_pages: Vec::new(),
+            }],
+            has_more: false,
+        },
+    ));
+    let line = encode_json_line(&message).unwrap();
+
+    assert!(line.contains("\"visibility\":\"mixed\""));
+    assert_eq!(decode_json_line(&line).unwrap(), message);
+}
+
+#[test]
 fn selection_delta_event_round_trips_through_the_v11_wire_shape() {
     let target = viewport_protocol::SceneAnchor::active_session("/World/Cube");
     let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(

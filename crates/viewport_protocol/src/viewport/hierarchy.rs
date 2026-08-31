@@ -253,6 +253,7 @@ pub struct HierarchySearchMatch {
     pub anchor: Option<SceneAnchor>,
     pub parent_anchor: Option<SceneAnchor>,
     pub visible: bool,
+    pub visibility: HierarchyVisibilityState,
     pub has_children: bool,
     pub reveal_pages: Vec<HierarchyPageReference>,
 }
