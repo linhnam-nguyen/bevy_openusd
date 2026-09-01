@@ -40,6 +40,15 @@ pub(crate) enum SkinFidelity {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct SkinFidelityMetrics {
+    pub(crate) fidelity: SkinFidelity,
+    pub(crate) vertex_count: usize,
+    pub(crate) discarded_weight_sum: f64,
+    pub(crate) discarded_weight_max: f64,
+    pub(crate) discarded_weight_buckets: [u64; 6],
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ExtendedSkinAttrs {
     pub(crate) indices: Vec<[[u16; 4]; 4]>,
     pub(crate) weights: Vec<[[f32; 4]; 4]>,
@@ -158,6 +167,75 @@ pub(crate) fn skin_fidelity(
         }
     }
     Ok(SkinFidelity::Standard4)
+}
+
+/// Profiles the production classifier without changing its count-based rule.
+/// This extra pass is called only when the opt-in C12 diagnostic is enabled.
+pub(crate) fn profile_skin_fidelity(
+    binding: &openusd::schemas::skel::SkelBindingAPI,
+    vertex_count: usize,
+    joint_count: usize,
+) -> anyhow::Result<SkinFidelityMetrics> {
+    let indices = binding.joint_indices()?;
+    let weights = binding.joint_weights()?;
+    let influences = binding.elements_per_element()?.max(1) as usize;
+    let constant = matches!(
+        binding.interpolation()?,
+        openusd::schemas::skel::InfluenceInterpolation::Constant
+    );
+    let mut fidelity = SkinFidelity::Standard4;
+    let mut discarded_weight_sum = 0.0;
+    let mut discarded_weight_max: f64 = 0.0;
+    let mut discarded_weight_buckets = [0; 6];
+
+    for vertex in 0..vertex_count {
+        let base = if constant { 0 } else { vertex * influences };
+        let mut valid_weights = (0..influences)
+            .filter_map(|slot| {
+                let index = indices.get(base + slot).copied()?;
+                let weight = weights.get(base + slot).copied().unwrap_or_default();
+                (index >= 0 && (index as usize) < joint_count && weight > 0.0).then_some(weight)
+            })
+            .collect::<Vec<_>>();
+        if valid_weights.len() > 4 {
+            fidelity = SkinFidelity::Extended16;
+        }
+        valid_weights
+            .sort_by(|left, right| right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal));
+        let total_weight: f64 = valid_weights.iter().map(|weight| *weight as f64).sum();
+        let top_four_weight: f64 = valid_weights
+            .iter()
+            .take(4)
+            .map(|weight| *weight as f64)
+            .sum();
+        let discarded = if total_weight > 0.0 {
+            ((total_weight - top_four_weight) / total_weight).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        discarded_weight_sum += discarded;
+        discarded_weight_max = discarded_weight_max.max(discarded);
+        discarded_weight_buckets[discarded_weight_bucket(discarded)] += 1;
+    }
+
+    Ok(SkinFidelityMetrics {
+        fidelity,
+        vertex_count,
+        discarded_weight_sum,
+        discarded_weight_max,
+        discarded_weight_buckets,
+    })
+}
+
+fn discarded_weight_bucket(value: f64) -> usize {
+    match value {
+        value if value <= 0.001 => 0,
+        value if value <= 0.01 => 1,
+        value if value <= 0.05 => 2,
+        value if value <= 0.10 => 3,
+        value if value <= 0.25 => 4,
+        _ => 5,
+    }
 }
 
 /// Convert a binding to four native groups, retaining at most sixteen valid

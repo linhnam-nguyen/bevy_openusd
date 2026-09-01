@@ -1,6 +1,52 @@
 //! Low-overhead counters for the OR3 working-set and animation baselines.
 
 use bevy::prelude::Resource;
+use serde::{Deserialize, Serialize};
+
+use crate::mesh::{SkinFidelity, SkinFidelityMetrics};
+
+/// Opt-in load-time distribution for the data-driven skinning classifier.
+/// Runtime playback never updates this resource.
+#[derive(Resource, Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct SkinningProfile {
+    pub enabled: bool,
+    pub standard4_meshes: u64,
+    pub extended16_meshes: u64,
+    pub standard4_vertices: u64,
+    pub extended16_vertices: u64,
+    pub discarded_weight_sum: f64,
+    pub discarded_weight_max: f64,
+    /// Buckets are <=0.1%, <=1%, <=5%, <=10%, <=25%, and >25% discarded.
+    pub discarded_weight_buckets: [u64; 6],
+}
+
+impl SkinningProfile {
+    pub(crate) fn record(&mut self, metrics: &SkinFidelityMetrics) {
+        match metrics.fidelity {
+            SkinFidelity::Standard4 => {
+                self.standard4_meshes = self.standard4_meshes.saturating_add(1);
+                self.standard4_vertices = self
+                    .standard4_vertices
+                    .saturating_add(metrics.vertex_count as u64);
+            }
+            SkinFidelity::Extended16 => {
+                self.extended16_meshes = self.extended16_meshes.saturating_add(1);
+                self.extended16_vertices = self
+                    .extended16_vertices
+                    .saturating_add(metrics.vertex_count as u64);
+            }
+        }
+        self.discarded_weight_sum += metrics.discarded_weight_sum;
+        self.discarded_weight_max = self.discarded_weight_max.max(metrics.discarded_weight_max);
+        for (total, sample) in self
+            .discarded_weight_buckets
+            .iter_mut()
+            .zip(metrics.discarded_weight_buckets)
+        {
+            *total = total.saturating_add(sample);
+        }
+    }
+}
 
 /// Opt-in counters for performance work that crosses the live projection
 /// boundary. The default is disabled so normal sessions only pay the branch

@@ -14,6 +14,7 @@ pub(crate) mod cadence;
 pub(crate) mod headless;
 mod offscreen_resize;
 mod runner;
+mod runner_diagnostics;
 mod scene;
 mod sync;
 pub(crate) use runner::run;

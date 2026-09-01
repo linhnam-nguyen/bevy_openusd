@@ -158,6 +158,9 @@ pub fn benchmark_stepper_system(world: &mut World) {
         if let Some(mut c) = world.get_resource_mut::<RendererCounters>() {
             c.reset();
         }
+        if let Some(mut c) = world.get_resource_mut::<usd_bevy::PerformanceCounters>() {
+            c.reset();
+        }
         if let Some(mut gc) = world.get_resource_mut::<bevy_glacial::prelude::GlacialGridCounters>()
         {
             *gc = Default::default();

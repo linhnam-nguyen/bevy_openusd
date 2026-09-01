@@ -89,12 +89,45 @@ pub(super) fn attach_native_mesh(
     } else {
         Vec::new()
     };
-    let fidelity = if skinned {
-        crate::mesh::skin_fidelity(&binding.binding, read.points.len(), selected.len())
-            .unwrap_or(crate::mesh::SkinFidelity::Standard4)
+    let skin_profile_enabled = world
+        .get_resource::<crate::live::SkinningProfile>()
+        .is_some_and(|profile| profile.enabled);
+    let force_standard4 = std::env::var_os("USDHUB_DIAGNOSTIC_FORCE_STANDARD4").is_some();
+    let (classified_fidelity, skin_metrics) = if skinned {
+        if skin_profile_enabled {
+            match crate::mesh::profile_skin_fidelity(
+                &binding.binding,
+                read.points.len(),
+                selected.len(),
+            ) {
+                Ok(metrics) => (metrics.fidelity, Some(metrics)),
+                Err(_) => (
+                    crate::mesh::skin_fidelity(&binding.binding, read.points.len(), selected.len())
+                        .unwrap_or(crate::mesh::SkinFidelity::Standard4),
+                    None,
+                ),
+            }
+        } else {
+            (
+                crate::mesh::skin_fidelity(&binding.binding, read.points.len(), selected.len())
+                    .unwrap_or(crate::mesh::SkinFidelity::Standard4),
+                None,
+            )
+        }
     } else {
-        crate::mesh::SkinFidelity::Standard4
+        (crate::mesh::SkinFidelity::Standard4, None)
     };
+    let fidelity = if force_standard4 {
+        crate::mesh::SkinFidelity::Standard4
+    } else {
+        classified_fidelity
+    };
+    if !force_standard4
+        && let Some(metrics) = skin_metrics
+        && let Some(mut profile) = world.get_resource_mut::<crate::live::SkinningProfile>()
+    {
+        profile.record(&metrics);
+    }
     let Some(mut mesh) = (if skinned {
         match fidelity {
             crate::mesh::SkinFidelity::Standard4 => {
