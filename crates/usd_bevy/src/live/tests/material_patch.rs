@@ -9,8 +9,8 @@ use openusd::usd::Stage;
 
 use crate::UsdPlugin;
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
-    apply_change_batch,
+    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, StageChange,
+    StageChangeBatch, apply_change_batch,
 };
 use crate::route::material::MaterialRouteDiagnostics;
 
@@ -47,7 +47,7 @@ fn build_app_for(fixture: &str) -> App {
 fn entity(app: &App, path: &str) -> Entity {
     app.world()
         .resource::<PrimEntities>()
-        .entity(path)
+        .entity(app.world().resource::<PathStore>(), path)
         .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 

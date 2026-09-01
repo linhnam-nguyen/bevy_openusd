@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use super::change::PendingStageChanges;
 use super::index::PrimEntities;
+use super::path::PathStore;
 use super::projection::registry_of;
 use super::reconcile::apply_change_batch;
 use super::stage::LiveStage;
@@ -28,7 +29,10 @@ pub(super) fn apply_display_purposes_system(world: &mut World) {
     };
     let map = world.remove_resource::<PrimEntities>().unwrap_or_default();
     let registry = registry_of(world);
-    let entries: Vec<(String, Entity)> = map.iter().map(|(p, e)| (p.to_string(), e)).collect();
+    let entries: Vec<(String, Entity)> = {
+        let paths = world.resource::<PathStore>();
+        map.iter(&paths).map(|(p, e)| (p.to_string(), e)).collect()
+    };
     for (path, entity) in entries {
         if let Ok(p) = openusd::sdf::path(&path) {
             registry.patch_prim(&live.stage, &p, world, entity, &["purpose"]);

@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use openusd::usd::{PrimPredicate, Stage};
-use usd_bevy::{AnimatedPrims, LiveStage, PrimEntities};
+use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageCameraData, StageCameraInfo,
@@ -154,10 +154,11 @@ fn open_stage(world: &mut World, path: std::path::PathBuf) {
 
 fn clear_projected_stage(world: &mut World) {
     let entities: Vec<Entity> = world
-        .resource::<PrimEntities>()
-        .iter()
-        .map(|(_, entity)| entity)
-        .collect();
+        .get_resource::<PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+        .map_or_else(Vec::new, |(map, paths)| {
+            map.iter(paths).map(|(_, entity)| entity).collect()
+        });
     for entity in entities {
         let _ = world.despawn(entity);
     }

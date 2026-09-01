@@ -1,7 +1,9 @@
 use std::{sync::Arc, time::Instant};
 
 use bevy::prelude::World;
-use usd_bevy::{LiveRevision, LiveStage, ProgressiveProjectionState, ProjectionReadiness};
+use usd_bevy::{
+    LiveRevision, LiveStage, PathStore, ProgressiveProjectionState, ProjectionReadiness,
+};
 use usd_model::SemanticSnapshot;
 
 use crate::project::blob_store::PreparedMeshBlob;
@@ -199,7 +201,10 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
             prepare_render_blobs(world, Arc::make_mut(snapshot))
         }
         SemanticSyncAction::Delta(update) => {
-            let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
+            let Some((map, paths)) = world
+                .get_resource::<usd_bevy::PrimEntities>()
+                .zip(world.get_resource::<PathStore>())
+            else {
                 bevy::log::warn!(
                     target: "ghost_cache",
                     resync_fallback_reason = "missing_prim_entities_index",
@@ -222,7 +227,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                     .geometry
                     .as_ref()
                     .is_some_and(|g| g.render_blob.is_none())
-                    && map.entity(&entity.prim_path).is_none()
+                    && map.entity(paths, &entity.prim_path).is_none()
             });
 
             if has_missing_mapping {

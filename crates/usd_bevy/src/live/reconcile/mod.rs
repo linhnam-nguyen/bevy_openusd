@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use super::change::StageChangeBatch;
 use super::index::PrimEntities;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
-use super::path::{prim_of, property_of, validate_prim_path};
+use super::path::{PathId, PathStore, prim_of, property_of, validate_prim_path};
 use super::performance::PerformanceCounters;
 use super::projection::registry_of;
 use super::stage::LiveStage;
@@ -51,8 +51,8 @@ pub(super) fn apply_sparse_changed_info(
     let registry = registry_of(world);
     let suppressed = live.take_suppressed();
     let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
-    let mut native_dependents: HashMap<String, Vec<String>> = HashMap::new();
-    let mut dependent_instancers = HashSet::new();
+    let mut native_dependents: HashMap<PathId, Vec<String>> = HashMap::new();
+    let mut dependent_instancers: HashSet<PathId> = HashSet::new();
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
         counters.reconcile_changed_properties(changed_info.len() as u64);
     }
@@ -83,8 +83,11 @@ pub(super) fn apply_sparse_changed_info(
                 counters.reconcile_dependency_queries(1);
             }
         }
-        if let Some(index) = world.get_resource::<PointInstancerDependencyIndex>() {
-            dependent_instancers.extend(index.dependents_for_path(prim));
+        if let (Some(index), Some(paths)) = (
+            world.get_resource::<PointInstancerDependencyIndex>(),
+            world.get_resource::<PathStore>(),
+        ) {
+            dependent_instancers.extend(index.dependents_for_path(&paths, prim));
         }
         let has_native_index = world.contains_resource::<NativeInstanceDependencyIndex>();
         if has_native_index {
@@ -93,7 +96,8 @@ pub(super) fn apply_sparse_changed_info(
             }
         }
         if let Some(index) = world.get_resource::<NativeInstanceDependencyIndex>() {
-            for dependent in index.dependents_for_path(prim) {
+            let paths = world.resource::<PathStore>();
+            for dependent in index.dependents_for_path(&paths, prim) {
                 let entry = native_dependents.entry(dependent).or_default();
                 for property in properties {
                     if !entry.contains(property) {
@@ -116,7 +120,11 @@ pub(super) fn apply_sparse_changed_info(
         let Ok(p) = openusd::sdf::path(&prim) else {
             continue;
         };
-        let Some(entity) = map.entity(&prim) else {
+        let entity = {
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, &prim)
+        };
+        let Some(entity) = entity else {
             continue;
         };
         let prop_refs: Vec<&str> = props.iter().map(String::as_str).collect();
@@ -139,11 +147,18 @@ fn apply_prototype_dependents(
     stage: &openusd::usd::Stage,
     map: &PrimEntities,
     registry: &crate::route::SchemaRegistry,
-    instancers: HashSet<String>,
+    instancers: HashSet<PathId>,
 ) -> usize {
     let mut patched = 0;
     for instancer in instancers {
-        let Some(entity) = map.entity(&instancer) else {
+        let Some(entity) = map.entity_id(instancer) else {
+            continue;
+        };
+        let Some(instancer) = world
+            .resource::<PathStore>()
+            .path(instancer)
+            .map(str::to_owned)
+        else {
             continue;
         };
         let Ok(path) = openusd::sdf::path(&instancer) else {
@@ -160,11 +175,18 @@ fn apply_native_instance_dependents(
     stage: &openusd::usd::Stage,
     map: &PrimEntities,
     registry: &crate::route::SchemaRegistry,
-    dependents: HashMap<String, Vec<String>>,
+    dependents: HashMap<PathId, Vec<String>>,
 ) -> usize {
     let mut patched = 0;
-    for (proxy, properties) in dependents {
-        let Some(entity) = map.entity(&proxy) else {
+    for (proxy_id, properties) in dependents {
+        let Some(entity) = map.entity_id(proxy_id) else {
+            continue;
+        };
+        let Some(proxy) = world
+            .resource::<PathStore>()
+            .path(proxy_id)
+            .map(str::to_owned)
+        else {
             continue;
         };
         let Ok(path) = openusd::sdf::path(&proxy) else {
@@ -236,19 +258,21 @@ pub fn apply_change_batch(
         if !resynced_paths.is_empty() {
             let instancer_dependencies = world
                 .get_resource::<PointInstancerDependencyIndex>()
-                .map(|index| {
+                .zip(world.get_resource::<PathStore>())
+                .map(|(index, paths)| {
                     resynced_paths
                         .iter()
-                        .flat_map(|path| index.dependents_for_resync_root(path))
+                        .flat_map(|path| index.dependents_for_resync_root(paths, path))
                         .collect::<HashSet<_>>()
                 })
                 .unwrap_or_default();
             let native_dependencies = world
                 .get_resource::<NativeInstanceDependencyIndex>()
-                .map(|index| {
+                .zip(world.get_resource::<PathStore>())
+                .map(|(index, paths)| {
                     resynced_paths
                         .iter()
-                        .flat_map(|path| index.dependents_for_resync_root(path))
+                        .flat_map(|path| index.dependents_for_resync_root(paths, path))
                         .map(|proxy| (proxy, Vec::new()))
                         .collect::<HashMap<_, _>>()
                 })

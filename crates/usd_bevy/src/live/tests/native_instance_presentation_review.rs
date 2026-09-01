@@ -5,7 +5,7 @@ use bevy::prelude::{App, GlobalTransform, Vec3};
 use openusd::usd::Stage;
 
 use crate::UsdPlugin;
-use crate::live::{LiveStage, LiveStagePlugin, PrimEntities};
+use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities};
 
 fn characterization_stage() -> Stage {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,9 +15,10 @@ fn characterization_stage() -> Stage {
 }
 
 fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
-    app.world()
+    let world = app.world();
+    world
         .resource::<PrimEntities>()
-        .entity(path)
+        .entity(world.resource::<PathStore>(), path)
         .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 

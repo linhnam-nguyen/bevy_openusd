@@ -110,6 +110,36 @@ Metal shader/pipeline startup compatibility only; they do not prove GPU
 readback parity, visual correctness, measured FPS/CPU/RSS, equivalent render
 pass cost, or timeline playhead behavior.
 
+## Additive C4+ compact path-index repair
+
+The first consolidated OR3 owner review rejected C4 because the original
+implementation retained path strings in `PrimEntities`, native-instance
+dependencies, and PointInstancer dependencies, including duplicated ancestor
+prefix postings. C4+ replaces that architecture with a shared `PathStore`
+that owns each canonical path string once and returns stable compact `PathId`
+values to the indexes.
+
+`PrimEntities` now stores `PathId` mappings plus a compact parent-to-children
+topology for subtree traversal. Native-instance and PointInstancer indexes
+store only `PathId` edges; ancestor queries walk interned IDs and no longer
+construct or retain per-index prefix strings. Full projection cleanup clears
+the indexes and the path store together, while scoped reconciliation removes
+edges without requiring a stage-wide path-index rebuild.
+
+C4+ deterministic gates passed:
+
+```text
+cargo fmt --all -- --check              PASS
+cargo check -p usd_bevy -p usdview      PASS
+cargo test -p usd_bevy --lib            PASS — 116 passed, 1 ignored
+git diff --check                        PASS
+```
+
+The C4+ tests include shared-ancestor ownership, topology removal, and
+PointInstancer compact-ID dependency resolution. This repair does not include
+the rejected-review follow-ons C5+ (compact ChangePlan) or C10+ (hierarchy
+clone/ancestry work).
+
 ## Owner-gated runtime rows
 
 The following must still be measured by the owner with the fixed-16 candidate

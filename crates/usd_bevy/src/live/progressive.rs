@@ -6,6 +6,7 @@ use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::native_animation;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
+use super::path::PathStore;
 use super::performance::PerformanceCounters;
 use super::progressive_cleanup::clear_projection;
 use super::progressive_resident::resident_projection;
@@ -50,6 +51,7 @@ pub(super) fn project_on_load_system(world: &mut World) {
             || resident_projection(
                 world,
                 world.resource::<PrimEntities>(),
+                world.resource::<PathStore>(),
                 world.resource::<ProgressiveProjectionState>(),
             ));
     if resident {
@@ -290,10 +292,13 @@ fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
     };
     if ready {
         world.init_resource::<NativeInstanceDependencyIndex>();
-        if let Err(error) = world
-            .resource_mut::<NativeInstanceDependencyIndex>()
-            .rebuild(&live.stage)
-        {
+        let rebuild = world.resource_scope(
+            |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+                let mut paths = world.resource_mut::<PathStore>();
+                dependencies.rebuild(&mut paths, &live.stage)
+            },
+        );
+        if let Err(error) = rebuild {
             bevy::log::warn!(
                 "[progressive] native instance dependency index rebuild failed: {error:#}"
             );

@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::time::Instant;
 
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, ReconcileStats, StageChange,
+    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats, StageChange,
     StageChangeBatch, apply_change_batch,
 };
 use crate::{GeometryProfile, UsdPlugin, UsdSnippet};
@@ -80,7 +80,7 @@ fn mesh_handle(app: &App) -> Handle<Mesh> {
     let entity = app
         .world()
         .resource::<PrimEntities>()
-        .entity(MESH_PATH)
+        .entity(app.world().resource::<PathStore>(), MESH_PATH)
         .expect("triangle entity exists");
     app.world()
         .get::<Mesh3d>(entity)
@@ -301,7 +301,7 @@ fn m5_c4_live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion() {
     assert!(
         app.world()
             .resource::<PrimEntities>()
-            .entity("/World/NewTriangle")
+            .entity(app.world().resource::<PathStore>(), "/World/NewTriangle",)
             .is_some(),
         "subtree add is projected"
     );
@@ -324,7 +324,7 @@ fn m5_c4_live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion() {
     assert!(
         app.world()
             .resource::<PrimEntities>()
-            .entity("/World/NewTriangle")
+            .entity(app.world().resource::<PathStore>(), "/World/NewTriangle",)
             .is_none(),
         "subtree removal is reconciled"
     );

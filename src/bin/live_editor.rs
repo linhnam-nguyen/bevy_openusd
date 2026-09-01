@@ -18,8 +18,8 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{
-    DisplayPurposes, ExtendedSkinPlugin, LiveStage, LiveStagePlugin, PrimEntities, StageTime,
-    UsdPlugin,
+    DisplayPurposes, ExtendedSkinPlugin, LiveStage, LiveStagePlugin, PathStore, PrimEntities,
+    StageTime, UsdPlugin,
 };
 
 #[derive(Resource)]
@@ -162,8 +162,13 @@ fn handle_reload_system(world: &mut World) {
 
     // Despawn existing entities
     world.remove_non_send::<LiveStage>();
-    if let Some(map) = world.get_resource::<PrimEntities>() {
-        let entities: Vec<Entity> = map.iter().map(|(_, e)| e).collect();
+    let entities: Vec<Entity> = world
+        .get_resource::<PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+        .map_or_else(Vec::new, |(map, paths)| {
+            map.iter(paths).map(|(_, e)| e).collect()
+        });
+    if !entities.is_empty() {
         for entity in entities {
             world.despawn(entity);
         }

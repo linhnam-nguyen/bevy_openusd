@@ -2,7 +2,7 @@ use bevy::ecs::hierarchy::ChildOf;
 use bevy::prelude::*;
 use openusd::usd::Stage;
 
-use crate::live::{LiveStage, LiveStagePlugin, PrimEntities, ReconcileStats};
+use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats};
 use crate::snippet::UsdSnippet;
 
 #[test]
@@ -21,8 +21,10 @@ fn test_reconcile_subtrees_missing_external_parent_triggers_full_fallback() {
 
     // Simulate corrupted map where external parent /World/A was removed from PrimEntities
     app.world_mut()
-        .resource_mut::<PrimEntities>()
-        .remove_path("/World/A");
+        .resource_scope(|world, mut map: Mut<PrimEntities>| {
+            let paths = world.resource::<PathStore>();
+            map.remove_path(paths, "/World/A");
+        });
 
     // Define a new child /World/A/B on stage
     let live = app.world().get_non_send::<LiveStage>().unwrap();
@@ -36,9 +38,12 @@ fn test_reconcile_subtrees_missing_external_parent_triggers_full_fallback() {
     // Preflight detected missing external parent /World/A and aborted subtree reconcile,
     // falling back to reconcile_full which restored the complete hierarchy.
     let prim_entities = app.world().resource::<PrimEntities>();
-    let a_entity = prim_entities.entity("/World/A").expect("/World/A restored");
+    let paths = app.world().resource::<PathStore>();
+    let a_entity = prim_entities
+        .entity(paths, "/World/A")
+        .expect("/World/A restored");
     let b_entity = prim_entities
-        .entity("/World/A/B")
+        .entity(paths, "/World/A/B")
         .expect("/World/A/B spawned");
 
     // Verify /World/A/B is child of /World/A, NOT child of stage root "/"
@@ -61,8 +66,10 @@ fn test_reconcile_subtrees_missing_stage_root_triggers_full_fallback() {
 
     // Simulate missing stage root "/"
     app.world_mut()
-        .resource_mut::<PrimEntities>()
-        .remove_path("/");
+        .resource_scope(|world, mut map: Mut<PrimEntities>| {
+            let paths = world.resource::<PathStore>();
+            map.remove_path(paths, "/");
+        });
 
     let live = app.world().get_non_send::<LiveStage>().unwrap();
     live.stage.define_prim("/World/NewPrim").unwrap();
@@ -73,8 +80,9 @@ fn test_reconcile_subtrees_missing_stage_root_triggers_full_fallback() {
 
     // Subtree reconcile falls back to full reconcile and restores "/"
     let prim_entities = app.world().resource::<PrimEntities>();
-    assert!(prim_entities.entity("/").is_some());
-    assert!(prim_entities.entity("/World/NewPrim").is_some());
+    let paths = app.world().resource::<PathStore>();
+    assert!(prim_entities.entity(paths, "/").is_some());
+    assert!(prim_entities.entity(paths, "/World/NewPrim").is_some());
 }
 
 #[test]

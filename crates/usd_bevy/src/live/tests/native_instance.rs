@@ -1,7 +1,7 @@
 use crate::live::reconcile::ReconcileStats;
 use crate::live::{
-    LiveRevision, NativeInstanceDependencyIndex, ProjectionPlan, StageChange, StageChangeBatch,
-    apply_change_batch,
+    LiveRevision, NativeInstanceDependencyIndex, PathStore, ProjectionPlan, StageChange,
+    StageChangeBatch, apply_change_batch,
 };
 use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin, UsdPurpose};
 use anyhow::Result;
@@ -43,9 +43,10 @@ fn projected_app() -> App {
 }
 
 fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
-    app.world()
+    let world = app.world();
+    world
         .resource::<PrimEntities>()
-        .entity(path)
+        .entity(world.resource::<PathStore>(), path)
         .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 
@@ -230,10 +231,17 @@ fn native_instance_reference_target_maps_proxy_to_source_path() -> Result<()> {
     );
 
     let mut index = NativeInstanceDependencyIndex::default();
-    index.rebuild(&stage)?;
+    let mut paths = PathStore::default();
+    index.rebuild(&mut paths, &stage)?;
     assert_eq!(index.len(), 4, "all native proxy meshes are indexed");
+    let actual = index
+        .dependents_for_path(&paths, "/World/WindowPrototype/Frame")
+        .iter()
+        .filter_map(|path| paths.path(*path))
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
     assert_eq!(
-        index.dependents_for_path("/World/WindowPrototype/Frame"),
+        actual,
         std::collections::HashSet::from([
             "/World/Window_A/Frame".to_string(),
             "/World/Window_B/Frame".to_string(),
@@ -325,10 +333,11 @@ fn nested_native_instances_project_scene_paths_and_shared_leaf_meshes() {
         .position(|path| path == "/Outer_A/Nested/Leaf")
         .unwrap();
     assert!(nested_index < leaf_index);
+    let world = app.world();
     assert!(
-        app.world()
+        world
             .resource::<PrimEntities>()
-            .iter()
+            .iter(world.resource::<PathStore>())
             .all(|(path, _)| !path.starts_with("/__Prototype")),
         "synthetic prototype paths stay out of the projected identity map"
     );

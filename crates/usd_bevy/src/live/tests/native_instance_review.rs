@@ -8,7 +8,8 @@ use openusd::sdf::Value;
 use openusd::usd::Stage;
 
 use crate::live::{
-    LiveStage, LiveStagePlugin, NativeInstanceDependencyIndex, PendingStageChanges, PrimEntities,
+    LiveStage, LiveStagePlugin, NativeInstanceDependencyIndex, PathStore, PendingStageChanges,
+    PrimEntities,
 };
 use crate::{UsdPlugin, UsdSnippet, author_transform};
 
@@ -37,9 +38,10 @@ fn characterization_app() -> App {
 }
 
 fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
-    app.world()
+    let world = app.world();
+    world
         .resource::<PrimEntities>()
-        .entity(path)
+        .entity(world.resource::<PathStore>(), path)
         .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 
@@ -150,14 +152,20 @@ fn native_instance_structural_resync_projects_and_removes_all_proxy_consumers() 
             .0,
         "new proxy consumers share the source mesh handle"
     );
+    let world = app.world();
+    let paths = world.resource::<PathStore>();
+    let dependent_names = world
+        .resource::<NativeInstanceDependencyIndex>()
+        .dependents_for_path(paths, "/World/WindowPrototype/Mullion")
+        .iter()
+        .filter_map(|path| paths.path(*path))
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
     assert!(
-        app.world()
-            .resource::<NativeInstanceDependencyIndex>()
-            .dependents_for_path("/World/WindowPrototype/Mullion")
-            .is_superset(&std::collections::HashSet::from([
-                "/World/Window_A/Mullion".to_owned(),
-                "/World/Window_B/Mullion".to_owned(),
-            ]))
+        dependent_names.is_superset(&std::collections::HashSet::from([
+            "/World/Window_A/Mullion".to_owned(),
+            "/World/Window_B/Mullion".to_owned(),
+        ]))
     );
 
     {
@@ -174,22 +182,15 @@ fn native_instance_structural_resync_projects_and_removes_all_proxy_consumers() 
         "prototype removal must be delivered through the real stage-change sink"
     );
 
+    let world = app.world();
+    let paths = world.resource::<PathStore>();
+    let map = world.resource::<PrimEntities>();
+    assert!(map.entity(paths, "/World/Window_A/Mullion").is_none());
+    assert!(map.entity(paths, "/World/Window_B/Mullion").is_none());
     assert!(
-        app.world()
-            .resource::<PrimEntities>()
-            .entity("/World/Window_A/Mullion")
-            .is_none()
-    );
-    assert!(
-        app.world()
-            .resource::<PrimEntities>()
-            .entity("/World/Window_B/Mullion")
-            .is_none()
-    );
-    assert!(
-        app.world()
+        world
             .resource::<NativeInstanceDependencyIndex>()
-            .dependents_for_path("/World/WindowPrototype/Mullion")
+            .dependents_for_path(paths, "/World/WindowPrototype/Mullion")
             .is_empty()
     );
     Ok(())
@@ -213,12 +214,14 @@ fn native_instance_removal_cleans_proxy_entities_and_dependency_records() -> Res
     }
     app.update();
 
-    let map = app.world().resource::<PrimEntities>();
-    assert!(map.entity("/World/Window_A").is_none());
-    assert!(map.entity("/World/Window_A/Frame").is_none());
-    assert!(map.entity("/World/Window_A/Glass").is_none());
-    assert_eq!(map.entity("/World/Window_B"), Some(window_b));
-    assert_eq!(map.entity("/World/Window_B/Frame"), Some(frame_b));
+    let world = app.world();
+    let map = world.resource::<PrimEntities>();
+    let paths = world.resource::<PathStore>();
+    assert!(map.entity(paths, "/World/Window_A").is_none());
+    assert!(map.entity(paths, "/World/Window_A/Frame").is_none());
+    assert!(map.entity(paths, "/World/Window_A/Glass").is_none());
+    assert_eq!(map.entity(paths, "/World/Window_B"), Some(window_b));
+    assert_eq!(map.entity(paths, "/World/Window_B/Frame"), Some(frame_b));
     assert_eq!(
         app.world()
             .get::<Mesh3d>(frame_b)
@@ -226,13 +229,15 @@ fn native_instance_removal_cleans_proxy_entities_and_dependency_records() -> Res
             .0,
         frame_b_mesh
     );
-    let index = app.world().resource::<NativeInstanceDependencyIndex>();
+    let index = world.resource::<NativeInstanceDependencyIndex>();
     assert_eq!(index.len(), 2, "only Window_B proxy meshes remain indexed");
     assert!(
         index
-            .dependents_for_path("/World/WindowPrototype/Frame")
+            .dependents_for_path(paths, "/World/WindowPrototype/Frame")
             .iter()
-            .all(|path| path.starts_with("/World/Window_B/"))
+            .all(|path| paths
+                .path(*path)
+                .is_some_and(|path| path.starts_with("/World/Window_B/")))
     );
     Ok(())
 }
@@ -329,13 +334,13 @@ fn nested_prototype_resync_reconciles_nested_consumers_and_excludes_unrelated_in
     assert!(
         app.world()
             .resource::<PrimEntities>()
-            .entity("/Other_C/Added")
+            .entity(app.world().resource::<PathStore>(), "/Other_C/Added",)
             .is_none()
     );
     assert!(
         app.world()
             .resource::<PrimEntities>()
-            .entity("/Other_C/OtherLeaf")
+            .entity(app.world().resource::<PathStore>(), "/Other_C/OtherLeaf",)
             .is_some()
     );
     Ok(())

@@ -7,7 +7,7 @@ use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::native_animation;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
-use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
+use super::path::{PathStore, is_descendant_or_self, parent_path, validate_prim_path};
 use super::performance::PerformanceCounters;
 use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
@@ -99,6 +99,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     let start = std::time::Instant::now();
     let stage = &live.stage;
     let registry = registry_of(world);
+    world.init_resource::<PathStore>();
     let Ok(plan) = ProjectionPlan::from_stage(stage) else {
         bevy::log::error!("[projection] failed to build deterministic projection plan");
         return;
@@ -110,10 +111,13 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     let mut animated: HashSet<String> = HashSet::new();
     let traversal_start = std::time::Instant::now();
     for entry in plan.entries() {
-        let parent = entry
-            .parent_index()
-            .and_then(|_| map.entity(parent_path(entry.path())))
-            .or_else(|| map.entity("/"));
+        let parent = {
+            let paths = world.resource::<PathStore>();
+            entry
+                .parent_index()
+                .and_then(|_| map.entity(&paths, parent_path(entry.path())))
+                .or_else(|| map.entity(&paths, "/"))
+        };
         let entity = project_plan_entry(world, stage, &registry, map, entry, parent);
         if entry.path() != "/"
             && openusd::sdf::path(entry.path())
@@ -146,10 +150,13 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         material_resolve_ms: None,
     });
     world.init_resource::<NativeInstanceDependencyIndex>();
-    if let Err(error) = world
-        .resource_mut::<NativeInstanceDependencyIndex>()
-        .rebuild(stage)
-    {
+    let rebuild = world.resource_scope(
+        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+            let mut paths = world.resource_mut::<PathStore>();
+            dependencies.rebuild(&mut paths, stage)
+        },
+    );
+    if let Err(error) = rebuild {
         bevy::log::warn!("[projection] native instance dependency index rebuild failed: {error:#}");
     }
     let _ = live.drain_change_batch();
@@ -184,7 +191,9 @@ pub(super) fn project_plan_entry(
             ))
             .id()
     };
-    map.insert(entry.path(), entity);
+    world.resource_scope(|_world, mut paths: Mut<PathStore>| {
+        map.insert(&mut paths, entry.path(), entity);
+    });
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
         counters.projection_paths_materialized(1);
     }

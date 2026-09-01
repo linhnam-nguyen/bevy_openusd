@@ -25,12 +25,13 @@ pub use extended_skin::{
 };
 pub use live::{
     AnimatedPrims, AuthoredSuppressionGuard, LiveRevision, LiveStage, LiveStagePlugin,
-    LiveStageSet, NativeInstanceDependencyIndex, PendingStageChanges, PerformanceCounters,
-    PrimEntities, ProgressiveProjectionState, ProjectionBudget, ProjectionPlan,
-    ProjectionPlanBuilder, ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange,
-    StageChangeBatch, TransformHistory, apply_change_batch, apply_changes, author_transform,
-    collect_stage_subtree_paths, current_transform, is_descendant_or_self, minimize_resync_roots,
-    normalize_prim_path, prim_of, project_stage, property_of, validate_prim_path,
+    LiveStageSet, NativeInstanceDependencyIndex, PathId, PathStore, PendingStageChanges,
+    PerformanceCounters, PrimEntities, ProgressiveProjectionState, ProjectionBudget,
+    ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry, ProjectionReadiness,
+    ProjectionStats, StageChange, StageChangeBatch, TransformHistory, apply_change_batch,
+    apply_changes, author_transform, collect_stage_subtree_paths, current_transform,
+    is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, project_stage,
+    property_of, validate_prim_path,
 };
 pub use prim_ref::{SemanticEntityIndex, UsdEntityKey, UsdPrimRef};
 pub use route::audio::UsdSpatialAudio;
@@ -76,6 +77,7 @@ impl Plugin for UsdPlugin {
         }
         // Intern projected meshes so identical prims share one GPU asset (6d).
         app.init_resource::<route::cache::ProjectionCache>();
+        app.init_resource::<crate::live::PathStore>();
         app.init_resource::<route::instancer::PointInstancerStats>();
         app.init_resource::<route::instancer::PointInstancerSelection>();
         app.init_resource::<route::instancer_dependency::PointInstancerDependencyIndex>();

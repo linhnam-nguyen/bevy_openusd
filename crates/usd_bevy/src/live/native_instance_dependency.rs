@@ -6,15 +6,17 @@ use openusd::sdf::Path;
 use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
 use std::collections::{HashMap, HashSet};
 
-/// Maps prototype/source paths to scene-scoped instance proxy paths.
+use super::path::{PathId, PathStore};
+
+/// Maps prototype/source path IDs to scene-scoped instance proxy path IDs.
 ///
-/// The index stores paths, not entities. A prototype can be shared by many
-/// instance roots, and Bevy entities are replaceable during reconciliation.
+/// The index stores compact IDs, not path strings or entities. A prototype can
+/// be shared by many instance roots, and Bevy entities are replaceable during
+/// reconciliation. Path bytes are owned by the shared [`PathStore`].
 #[derive(Resource, Debug, Default)]
 pub struct NativeInstanceDependencyIndex {
-    by_proxy: HashMap<String, HashSet<String>>,
-    by_prototype: HashMap<String, HashSet<String>>,
-    by_prototype_prefix: HashMap<String, HashSet<String>>,
+    by_proxy: HashMap<PathId, HashSet<PathId>>,
+    by_prototype: HashMap<PathId, HashSet<PathId>>,
 }
 
 impl NativeInstanceDependencyIndex {
@@ -29,21 +31,22 @@ impl NativeInstanceDependencyIndex {
     }
 
     /// Rebuild the index after initial projection or an explicit full reconcile.
-    pub(crate) fn rebuild(&mut self, stage: &Stage) -> Result<()> {
+    pub(crate) fn rebuild(&mut self, paths: &mut PathStore, stage: &Stage) -> Result<()> {
         let mut proxies = Vec::new();
         stage.traverse(PrimPredicate::DEFAULT_PROXIES, |path| {
             proxies.push(path.as_str().to_string());
         })?;
         self.clear();
         for path in proxies {
-            self.refresh_path(stage, &path);
+            self.refresh_path(paths, stage, &path);
         }
         Ok(())
     }
 
     /// Refresh one path after a scoped reconcile; no stage-wide scan occurs.
-    pub(crate) fn refresh_path(&mut self, stage: &Stage, proxy: &str) {
-        self.remove_proxy(proxy);
+    pub(crate) fn refresh_path(&mut self, paths: &mut PathStore, stage: &Stage, proxy: &str) {
+        let proxy_id = paths.intern(proxy);
+        self.remove_proxy_id(proxy_id);
         let Ok(path) = openusd::sdf::path(proxy) else {
             return;
         };
@@ -55,7 +58,7 @@ impl NativeInstanceDependencyIndex {
             .prim_in_prototype()
             .ok()
             .flatten()
-            .map(|prim| prim.path().as_str().to_string())
+            .map(|prim| paths.intern(prim.path().as_str()))
         else {
             return;
         };
@@ -71,7 +74,7 @@ impl NativeInstanceDependencyIndex {
                     continue;
                 };
                 if let Some(source) = target.map_to_spec_path(&path) {
-                    keys.insert(source.as_str().to_string());
+                    keys.insert(paths.intern(source.as_str()));
                 }
             }
         }
@@ -79,41 +82,30 @@ impl NativeInstanceDependencyIndex {
             self.by_prototype
                 .entry(key.clone())
                 .or_default()
-                .insert(proxy.to_string());
-            for prefix in prefixes(key) {
-                self.by_prototype_prefix
-                    .entry(prefix)
-                    .or_default()
-                    .insert(proxy.to_string());
-            }
+                .insert(proxy_id);
         }
-        self.by_proxy.insert(proxy.to_string(), keys);
+        self.by_proxy.insert(proxy_id, keys);
     }
 
     /// Remove one proxy and all reverse edges pointing at it.
-    pub(crate) fn remove_proxy(&mut self, proxy: &str) {
-        let Some(keys) = self.by_proxy.remove(proxy) else {
+    pub(crate) fn remove_proxy(&mut self, paths: &PathStore, proxy: &str) {
+        let Some(proxy) = paths.lookup(proxy) else {
+            return;
+        };
+        self.remove_proxy_id(proxy);
+    }
+
+    fn remove_proxy_id(&mut self, proxy: PathId) {
+        let Some(keys) = self.by_proxy.remove(&proxy) else {
             return;
         };
         for key in keys {
             let remove_key = self.by_prototype.get_mut(&key).is_some_and(|proxies| {
-                proxies.remove(proxy);
+                proxies.remove(&proxy);
                 proxies.is_empty()
             });
             if remove_key {
                 self.by_prototype.remove(&key);
-            }
-            for prefix in prefixes(&key) {
-                let remove_prefix =
-                    self.by_prototype_prefix
-                        .get_mut(&prefix)
-                        .is_some_and(|proxies| {
-                            proxies.remove(proxy);
-                            proxies.is_empty()
-                        });
-                if remove_prefix {
-                    self.by_prototype_prefix.remove(&prefix);
-                }
             }
         }
     }
@@ -122,44 +114,35 @@ impl NativeInstanceDependencyIndex {
     pub(crate) fn clear(&mut self) {
         self.by_proxy.clear();
         self.by_prototype.clear();
-        self.by_prototype_prefix.clear();
     }
 
-    /// Return scene proxy paths affected by a changed prototype/source path.
-    pub(crate) fn dependents_for_path(&self, changed: &str) -> HashSet<String> {
+    /// Return scene proxy path IDs affected by a changed prototype/source path.
+    pub(crate) fn dependents_for_path(&self, paths: &PathStore, changed: &str) -> HashSet<PathId> {
         let mut dependents = HashSet::new();
-        for prefix in prefixes(changed) {
-            if prefix == "/" && changed != "/" {
-                continue;
+        paths.for_each_ancestor_id(changed, |ancestor| {
+            if let Some(proxies) = self.by_prototype.get(&ancestor) {
+                dependents.extend(proxies.iter().copied());
             }
-            if let Some(proxies) = self.by_prototype.get(&prefix) {
-                dependents.extend(proxies.iter().cloned());
+        });
+        let Some(changed) = paths.lookup(changed) else {
+            return dependents;
+        };
+        for (prototype, proxies) in &self.by_prototype {
+            if paths.is_descendant_or_self(changed, *prototype) {
+                dependents.extend(proxies.iter().copied());
             }
-        }
-        if let Some(proxies) = self.by_prototype_prefix.get(changed) {
-            dependents.extend(proxies.iter().cloned());
         }
         dependents
     }
 
-    /// Return scene proxy paths whose prototype is covered by a resync root.
-    pub(crate) fn dependents_for_resync_root(&self, root: &str) -> HashSet<String> {
-        self.dependents_for_path(root)
+    /// Return scene proxy path IDs whose prototype is covered by a resync root.
+    pub(crate) fn dependents_for_resync_root(
+        &self,
+        paths: &PathStore,
+        root: &str,
+    ) -> HashSet<PathId> {
+        self.dependents_for_path(paths, root)
     }
-}
-
-fn prefixes(path: &str) -> Vec<String> {
-    if path == "/" {
-        return vec!["/".to_string()];
-    }
-    let mut output = vec!["/".to_string()];
-    let mut current = String::new();
-    for segment in path.split('/').filter(|segment| !segment.is_empty()) {
-        current.push('/');
-        current.push_str(segment);
-        output.push(current.clone());
-    }
-    output
 }
 
 fn instance_root(stage: &Stage, path: &Path) -> Option<openusd::usd::Prim> {

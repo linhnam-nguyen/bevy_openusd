@@ -18,6 +18,7 @@ use openusd::sdf::Path;
 use openusd::usd::{Stage, TimeCode};
 
 use super::index::PrimEntities;
+use super::path::PathStore;
 use super::projection::traverse_predicate;
 use super::stage::LiveStage;
 use crate::route::skel::{UsdBlendShapeBinding, UsdJoint, UsdSkelAnimDriver};
@@ -210,7 +211,11 @@ fn attach_native_mesh(
     resolver: &SkeletonResolver,
     source: &Path,
 ) {
-    let Some(entity) = map.entity(&binding.prim) else {
+    let entity = {
+        let paths = world.resource::<PathStore>();
+        map.entity(&paths, &binding.prim)
+    };
+    let Some(entity) = entity else {
         return;
     };
     let Ok(mesh_path) = openusd::sdf::path(&binding.prim) else {
@@ -365,7 +370,11 @@ pub(super) fn rebuild(world: &mut World, live: &LiveStage, map: &PrimEntities) {
         let Ok(path) = openusd::sdf::path(&skeleton_path) else {
             continue;
         };
-        let Some(skeleton_entity) = map.entity(&skeleton_path) else {
+        let skeleton_entity = {
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, &skeleton_path)
+        };
+        let Some(skeleton_entity) = skeleton_entity else {
             continue;
         };
         let Ok(Some(skeleton)) = Skeleton::get(stage, path.clone()) else {
@@ -458,33 +467,37 @@ pub(super) fn rebuild(world: &mut World, live: &LiveStage, map: &PrimEntities) {
             );
         }
     }
-    let mut transforms = Vec::new();
-    for (path, entity) in map.iter() {
-        let Ok(path) = openusd::sdf::path(path) else {
-            continue;
-        };
-        let animated = stage
-            .prim(path.clone())
-            .attributes()
-            .map(|attrs| {
-                attrs.iter().any(|attribute| {
-                    attribute
-                        .path()
-                        .as_str()
-                        .rsplit_once('.')
-                        .map(|(_, name)| name.starts_with("xformOp"))
-                        .unwrap_or(false)
-                        && attribute
-                            .time_sample_times()
-                            .map(|times| !times.is_empty())
+    let transforms = {
+        let paths = world.resource::<PathStore>();
+        let mut transforms = Vec::new();
+        for (path, entity) in map.iter(&paths) {
+            let Ok(path) = openusd::sdf::path(path) else {
+                continue;
+            };
+            let animated = stage
+                .prim(path.clone())
+                .attributes()
+                .map(|attrs| {
+                    attrs.iter().any(|attribute| {
+                        attribute
+                            .path()
+                            .as_str()
+                            .rsplit_once('.')
+                            .map(|(_, name)| name.starts_with("xformOp"))
                             .unwrap_or(false)
+                            && attribute
+                                .time_sample_times()
+                                .map(|times| !times.is_empty())
+                                .unwrap_or(false)
+                    })
                 })
-            })
-            .unwrap_or(false);
-        if animated {
-            transforms.push(TransformBinding { entity, path });
+                .unwrap_or(false);
+            if animated {
+                transforms.push(TransformBinding { entity, path });
+            }
         }
-    }
+        transforms
+    };
     let mut skeletons = Vec::new();
     let mut query = world.query::<&UsdSkelAnimDriver>();
     let drivers = query.iter(world).cloned().collect::<Vec<_>>();

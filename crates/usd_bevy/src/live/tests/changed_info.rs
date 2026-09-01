@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
-    apply_change_batch, author_transform,
+    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, StageChange,
+    StageChangeBatch, apply_change_batch, author_transform,
 };
 use crate::snippet::UsdSnippet;
 
@@ -29,7 +29,7 @@ def Xform "World"
     let entity = app
         .world()
         .resource::<PrimEntities>()
-        .entity("/World/A")
+        .entity(app.world().resource::<PathStore>(), "/World/A")
         .unwrap();
     let initial_transform = *app.world().get::<Transform>(entity).unwrap();
     assert_eq!(initial_transform.translation, Vec3::ZERO);

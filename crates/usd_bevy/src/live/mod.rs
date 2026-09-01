@@ -24,8 +24,8 @@ pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatc
 pub use index::PrimEntities;
 pub use native_instance_dependency::NativeInstanceDependencyIndex;
 pub use path::{
-    is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
-    validate_prim_path,
+    PathId, PathStore, is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of,
+    property_of, validate_prim_path,
 };
 pub use performance::PerformanceCounters;
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
@@ -67,7 +67,8 @@ pub enum LiveStageSet {
 
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PrimEntities>()
+        app.init_resource::<PathStore>()
+            .init_resource::<PrimEntities>()
             .init_resource::<ProjectionBudget>()
             .init_resource::<ProgressiveProjectionState>()
             .init_resource::<SemanticEntityIndex>()

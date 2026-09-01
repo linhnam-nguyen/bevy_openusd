@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::live::{LiveStage, LiveStagePlugin, PrimEntities};
+use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities};
 use crate::snippet::UsdSnippet;
 
 #[test]
@@ -25,7 +25,11 @@ def Xform "World"
     app.update();
 
     let prim_entities = app.world().resource::<PrimEntities>();
-    assert!(prim_entities.entity("/World/PayloadPrim").is_some());
+    assert!(
+        prim_entities
+            .entity(app.world().resource::<PathStore>(), "/World/PayloadPrim")
+            .is_some()
+    );
 
     let live = app.world().get_non_send::<LiveStage>().unwrap();
     live.unload_payload("/World/PayloadPrim");

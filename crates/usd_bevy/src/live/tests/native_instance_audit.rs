@@ -12,7 +12,8 @@ use openusd::usd::{PrimPredicate, Stage};
 
 use crate::UsdPlugin;
 use crate::live::{
-    LiveStage, NativeInstanceDependencyIndex, PrimEntities, ProjectionPlan, project_stage,
+    LiveStage, NativeInstanceDependencyIndex, PathStore, PrimEntities, ProjectionPlan,
+    project_stage,
 };
 use crate::snippet::UsdSnippet;
 
@@ -71,7 +72,7 @@ fn generated_thousand_native_instances_keep_projection_allocation_bounded() -> R
     let (mut app, map, projection_ms) = projected_app(stage.clone());
 
     let leaf_paths = map
-        .iter()
+        .iter(app.world().resource::<PathStore>())
         .filter(|(path, _)| path.starts_with("/World/Instance") && path.ends_with("/Leaf"))
         .map(|(path, _)| path.to_owned())
         .collect::<Vec<_>>();
@@ -152,7 +153,7 @@ fn projet1_usdc_windows_project_to_scene_proxy_meshes() -> Result<()> {
     let (app, map, projection_ms) = projected_app(stage);
     let mut projected_proxy_meshes = 0;
     for path in &proxy_mesh_paths {
-        let Some(entity) = map.entity(path) else {
+        let Some(entity) = map.entity(app.world().resource::<PathStore>(), path) else {
             continue;
         };
         if app.world().get::<Mesh3d>(entity).is_some() {

@@ -6,7 +6,7 @@ use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::index::PrimEntities;
 use super::super::native_animation;
 use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
-use super::super::path::parent_path;
+use super::super::path::{PathStore, parent_path};
 use super::super::performance::PerformanceCounters;
 use super::super::projection::{registry_of, stage_up_axis, traverse_predicate};
 use super::super::stage::LiveStage;
@@ -32,11 +32,13 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         return;
     }
 
-    let stale: Vec<(String, Entity)> = map
-        .iter()
-        .filter(|(p, _)| *p != "/" && !current.contains(*p))
-        .map(|(p, e)| (p.to_string(), e))
-        .collect();
+    let stale: Vec<(String, Entity)> = {
+        let paths = world.resource::<PathStore>();
+        map.iter(&paths)
+            .filter(|(p, _)| *p != "/" && !current.contains(*p))
+            .map(|(p, e)| (p.to_string(), e))
+            .collect()
+    };
     let despawned_count = stale.len();
     for (path, entity) in stale {
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
@@ -47,18 +49,33 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         {
             material_idx.remove_consumer(&path);
         }
-        if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
-            dependencies.remove_instancer(&path);
+        if world.contains_resource::<PointInstancerDependencyIndex>() {
+            world.resource_scope(
+                |world, mut dependencies: Mut<PointInstancerDependencyIndex>| {
+                    let paths = world.resource::<PathStore>();
+                    dependencies.remove_instancer(&paths, &path);
+                },
+            );
         }
         remove_mesh_projection_consumer(world, entity);
         world.despawn(entity);
-        map.remove_path(&path);
-        if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {
-            dependencies.remove_proxy(&path);
+        let paths = world.resource::<PathStore>();
+        map.remove_path(&paths, &path);
+        if world.contains_resource::<NativeInstanceDependencyIndex>() {
+            world.resource_scope(
+                |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+                    let paths = world.resource::<PathStore>();
+                    dependencies.remove_proxy(&paths, &path);
+                },
+            );
         }
     }
 
-    let root = map.entity("/").unwrap_or_else(|| {
+    let root = {
+        let paths = world.resource::<PathStore>();
+        map.entity(&paths, "/")
+    }
+    .unwrap_or_else(|| {
         let r = world
             .spawn((
                 UsdPrimRef {
@@ -68,7 +85,9 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
                 Visibility::default(),
             ))
             .id();
-        map.insert("/", r);
+        world.resource_scope(|_world, mut paths: Mut<PathStore>| {
+            map.insert(&mut paths, "/", r);
+        });
         r
     });
     let mut ordered: Vec<&String> = current.iter().collect();
@@ -83,17 +102,26 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         if prim_is_animated(stage, &p) {
             animated.insert(path.clone());
         }
-        if let Some(entity) = map.entity(path) {
+        let existing = {
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, path)
+        };
+        if let Some(entity) = existing {
             registry.patch_prim(stage, &p, world, entity, &[]);
             patched_count += 1;
         } else {
-            let parent = map.entity(parent_path(path)).or(Some(root));
+            let parent = {
+                let paths = world.resource::<PathStore>();
+                map.entity(&paths, parent_path(path)).or(Some(root))
+            };
             let mut e = world.spawn(UsdPrimRef { path: path.clone() });
             if let Some(parent) = parent {
                 e.insert(ChildOf(parent));
             }
             let entity = e.id();
-            map.insert(path.clone(), entity);
+            world.resource_scope(|_world, mut paths: Mut<PathStore>| {
+                map.insert(&mut paths, path, entity);
+            });
             registry.project_prim(stage, &p, world, entity);
             spawned_count += 1;
         }
@@ -108,10 +136,13 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         despawned_entities: despawned_count,
     });
     world.init_resource::<NativeInstanceDependencyIndex>();
-    if let Err(error) = world
-        .resource_mut::<NativeInstanceDependencyIndex>()
-        .rebuild(stage)
-    {
+    let rebuild = world.resource_scope(
+        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+            let mut paths = world.resource_mut::<PathStore>();
+            dependencies.rebuild(&mut paths, stage)
+        },
+    );
+    if let Err(error) = rebuild {
         bevy::log::warn!("[reconcile_full] native instance dependency rebuild failed: {error:#}");
     }
 }
