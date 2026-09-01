@@ -293,6 +293,30 @@ impl<'snapshot> BimReadService<'snapshot> {
             .filter_map(|key| self.snapshot.entities.get(key))
     }
 
+    fn property_for_posting(
+        &self,
+        posting: index::PropertyPosting,
+    ) -> Option<&'snapshot usd_model::SemanticProperty> {
+        let key = self.index.entity_order().get(posting.entity)?;
+        self.snapshot
+            .entities
+            .get(key)?
+            .properties
+            .get(posting.property)
+    }
+
+    fn entity_property_for_posting(
+        &self,
+        posting: index::PropertyPosting,
+    ) -> Option<(
+        &'snapshot EntitySnapshot,
+        &'snapshot usd_model::SemanticProperty,
+    )> {
+        let key = self.index.entity_order().get(posting.entity)?;
+        let entity = self.snapshot.entities.get(key)?;
+        Some((entity, entity.properties.get(posting.property)?))
+    }
+
     pub(super) fn anchor_for_entity(entity: &EntitySnapshot) -> SceneAnchor {
         SceneAnchor::active_session(entity.prim_path.clone())
     }

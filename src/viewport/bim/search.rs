@@ -47,22 +47,27 @@ fn property_names(
     page: viewport_protocol::BimPageRequest,
 ) -> Result<BimSearchResult, BimQueryError> {
     let mut grouped: BTreeMap<String, (Option<MeasurementMetadata>, bool, u32)> = BTreeMap::new();
-    for entity in service.entities() {
-        for property in &entity.properties {
-            if !regex.is_match(&property.name) {
+    for name in service.index.property_names() {
+        if !regex.is_match(name) {
+            continue;
+        }
+        if grouped.len() >= MAX_BIM_SEARCH_GROUPS {
+            return Err(BimQueryError::TooManyResults {
+                kind: "property-name",
+                limit: MAX_BIM_SEARCH_GROUPS,
+            });
+        }
+        let Some(property_id) = service.index.property_id(name) else {
+            continue;
+        };
+        for posting in service.index.property_postings(property_id) {
+            let Some(property) = service.property_for_posting(*posting) else {
                 continue;
-            }
-            if !grouped.contains_key(&property.name) && grouped.len() >= MAX_BIM_SEARCH_GROUPS {
-                return Err(BimQueryError::TooManyResults {
-                    kind: "property-name",
-                    limit: MAX_BIM_SEARCH_GROUPS,
-                });
-            }
-            let entry = grouped.entry(property.name.clone()).or_insert((
-                property.measurement.clone(),
-                true,
-                0,
-            ));
+            };
+            let entry =
+                grouped
+                    .entry(name.clone())
+                    .or_insert((property.measurement.clone(), true, 0));
             if entry.1 && entry.0 != property.measurement {
                 entry.1 = false;
             }
@@ -160,26 +165,32 @@ fn object_matches(
     page: viewport_protocol::BimPageRequest,
 ) -> Result<BimSearchResult, BimQueryError> {
     let mut page_items = BoundedPage::new(page);
-    for entity in service.entities() {
-        for (property_index, property) in entity.properties.iter().enumerate() {
-            if property.name != property_name {
-                continue;
-            }
-            let Some(display_value) = canonical_value_text(&property.value) else {
-                continue;
-            };
-            if regex.is_match(&display_value) {
-                page_items.push(
-                    object_order_key(entity, property_index),
-                    BimObjectMatch {
-                        anchor: BimReadService::anchor_for_entity(entity),
-                        label: entity_label(entity),
-                        property: property.name.clone(),
-                        value: property.value.clone(),
-                        display_value: display_value.into_owned(),
-                    },
-                );
-            }
+    let Some(property_id) = service.index.property_id(property_name) else {
+        return Ok(BimSearchResult::Objects {
+            offset: page.offset,
+            total: 0,
+            matches: Vec::new(),
+            has_more: false,
+        });
+    };
+    for posting in service.index.property_postings(property_id) {
+        let Some((entity, property)) = service.entity_property_for_posting(*posting) else {
+            continue;
+        };
+        let Some(display_value) = canonical_value_text(&property.value) else {
+            continue;
+        };
+        if regex.is_match(&display_value) {
+            page_items.push(
+                object_order_key(entity, posting.property),
+                BimObjectMatch {
+                    anchor: BimReadService::anchor_for_entity(entity),
+                    label: entity_label(entity),
+                    property: property.name.clone(),
+                    value: property.value.clone(),
+                    display_value: display_value.into_owned(),
+                },
+            );
         }
     }
     let (total, matches, has_more) = page_items.finish(page);
@@ -199,33 +210,39 @@ fn replacement_preview(
     page: viewport_protocol::BimPageRequest,
 ) -> Result<BimSearchResult, BimQueryError> {
     let mut page_items = BoundedPage::new(page);
-    for entity in service.entities() {
-        for (property_index, property) in entity.properties.iter().enumerate() {
-            if property.name != property_name {
-                continue;
-            }
-            let Some(old_value) = canonical_value_text(&property.value) else {
-                continue;
-            };
-            if regex.is_match(&old_value) {
-                let proposed_value = regex.replace(old_value.as_ref(), replacement).into_owned();
-                page_items.push(
-                    object_order_key(entity, property_index),
-                    BimReplacementPreviewRow {
-                        anchor: BimReadService::anchor_for_entity(entity),
-                        label: entity_label(entity),
-                        property: property.name.clone(),
-                        proposed_value: proposed_value.clone(),
-                        expected_old_value: property.value.clone(),
-                        proposed_canonical_value: replacement_canonical_value(
-                            &property.value,
-                            &proposed_value,
-                        ),
-                        measurement: property.measurement.clone(),
-                        old_value: old_value.into_owned(),
-                    },
-                );
-            }
+    let Some(property_id) = service.index.property_id(property_name) else {
+        return Ok(BimSearchResult::ReplacementPreview {
+            offset: page.offset,
+            total: 0,
+            rows: Vec::new(),
+            has_more: false,
+        });
+    };
+    for posting in service.index.property_postings(property_id) {
+        let Some((entity, property)) = service.entity_property_for_posting(*posting) else {
+            continue;
+        };
+        let Some(old_value) = canonical_value_text(&property.value) else {
+            continue;
+        };
+        if regex.is_match(&old_value) {
+            let proposed_value = regex.replace(old_value.as_ref(), replacement).into_owned();
+            page_items.push(
+                object_order_key(entity, posting.property),
+                BimReplacementPreviewRow {
+                    anchor: BimReadService::anchor_for_entity(entity),
+                    label: entity_label(entity),
+                    property: property.name.clone(),
+                    proposed_value: proposed_value.clone(),
+                    expected_old_value: property.value.clone(),
+                    proposed_canonical_value: replacement_canonical_value(
+                        &property.value,
+                        &proposed_value,
+                    ),
+                    measurement: property.measurement.clone(),
+                    old_value: old_value.into_owned(),
+                },
+            );
         }
     }
     let (total, rows, has_more) = page_items.finish(page);
