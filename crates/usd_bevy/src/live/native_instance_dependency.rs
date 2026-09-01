@@ -6,8 +6,6 @@ use openusd::sdf::Path;
 use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
 use std::collections::{HashMap, HashSet};
 
-use super::is_descendant_or_self;
-
 /// Maps prototype/source paths to scene-scoped instance proxy paths.
 ///
 /// The index stores paths, not entities. A prototype can be shared by many
@@ -16,6 +14,7 @@ use super::is_descendant_or_self;
 pub struct NativeInstanceDependencyIndex {
     by_proxy: HashMap<String, HashSet<String>>,
     by_prototype: HashMap<String, HashSet<String>>,
+    by_prototype_prefix: HashMap<String, HashSet<String>>,
 }
 
 impl NativeInstanceDependencyIndex {
@@ -81,6 +80,12 @@ impl NativeInstanceDependencyIndex {
                 .entry(key.clone())
                 .or_default()
                 .insert(proxy.to_string());
+            for prefix in prefixes(key) {
+                self.by_prototype_prefix
+                    .entry(prefix)
+                    .or_default()
+                    .insert(proxy.to_string());
+            }
         }
         self.by_proxy.insert(proxy.to_string(), keys);
     }
@@ -98,6 +103,18 @@ impl NativeInstanceDependencyIndex {
             if remove_key {
                 self.by_prototype.remove(&key);
             }
+            for prefix in prefixes(&key) {
+                let remove_prefix =
+                    self.by_prototype_prefix
+                        .get_mut(&prefix)
+                        .is_some_and(|proxies| {
+                            proxies.remove(proxy);
+                            proxies.is_empty()
+                        });
+                if remove_prefix {
+                    self.by_prototype_prefix.remove(&prefix);
+                }
+            }
         }
     }
 
@@ -105,23 +122,44 @@ impl NativeInstanceDependencyIndex {
     pub(crate) fn clear(&mut self) {
         self.by_proxy.clear();
         self.by_prototype.clear();
+        self.by_prototype_prefix.clear();
     }
 
     /// Return scene proxy paths affected by a changed prototype/source path.
     pub(crate) fn dependents_for_path(&self, changed: &str) -> HashSet<String> {
-        self.by_prototype
-            .iter()
-            .filter(|(key, _)| {
-                is_descendant_or_self(key, changed) || is_descendant_or_self(changed, key)
-            })
-            .flat_map(|(_, proxies)| proxies.iter().cloned())
-            .collect()
+        let mut dependents = HashSet::new();
+        for prefix in prefixes(changed) {
+            if prefix == "/" && changed != "/" {
+                continue;
+            }
+            if let Some(proxies) = self.by_prototype.get(&prefix) {
+                dependents.extend(proxies.iter().cloned());
+            }
+        }
+        if let Some(proxies) = self.by_prototype_prefix.get(changed) {
+            dependents.extend(proxies.iter().cloned());
+        }
+        dependents
     }
 
     /// Return scene proxy paths whose prototype is covered by a resync root.
     pub(crate) fn dependents_for_resync_root(&self, root: &str) -> HashSet<String> {
         self.dependents_for_path(root)
     }
+}
+
+fn prefixes(path: &str) -> Vec<String> {
+    if path == "/" {
+        return vec!["/".to_string()];
+    }
+    let mut output = vec!["/".to_string()];
+    let mut current = String::new();
+    for segment in path.split('/').filter(|segment| !segment.is_empty()) {
+        current.push('/');
+        current.push_str(segment);
+        output.push(current.clone());
+    }
+    output
 }
 
 fn instance_root(stage: &Stage, path: &Path) -> Option<openusd::usd::Prim> {

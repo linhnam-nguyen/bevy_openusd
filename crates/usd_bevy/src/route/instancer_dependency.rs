@@ -13,6 +13,7 @@ use crate::live::is_descendant_or_self;
 pub struct PointInstancerDependencyIndex {
     by_instancer: HashMap<String, HashSet<String>>,
     by_prototype: HashMap<String, HashSet<String>>,
+    by_prototype_prefix: HashMap<String, HashSet<String>>,
 }
 
 impl PointInstancerDependencyIndex {
@@ -29,6 +30,12 @@ impl PointInstancerDependencyIndex {
                 .entry(root.clone())
                 .or_default()
                 .insert(instancer.clone());
+            for prefix in prefixes(root) {
+                self.by_prototype_prefix
+                    .entry(prefix)
+                    .or_default()
+                    .insert(instancer.clone());
+            }
         }
         self.by_instancer.insert(instancer, roots);
     }
@@ -46,16 +53,32 @@ impl PointInstancerDependencyIndex {
             if remove_root {
                 self.by_prototype.remove(&root);
             }
+            for prefix in prefixes(&root) {
+                let remove_prefix =
+                    self.by_prototype_prefix
+                        .get_mut(&prefix)
+                        .is_some_and(|consumers| {
+                            consumers.remove(instancer);
+                            consumers.is_empty()
+                        });
+                if remove_prefix {
+                    self.by_prototype_prefix.remove(&prefix);
+                }
+            }
         }
     }
 
     /// Return consumers whose registered prototype root contains a changed prim.
     pub(crate) fn dependents_for_path(&self, changed_path: &str) -> HashSet<String> {
-        self.by_prototype
-            .iter()
-            .filter(|(root, _)| is_descendant_or_self(root, changed_path))
-            .flat_map(|(_, consumers)| consumers.iter().cloned())
-            .collect()
+        prefixes(changed_path)
+            .into_iter()
+            .filter(|prefix| prefix != "/" || changed_path == "/")
+            .fold(HashSet::new(), |mut output, prefix| {
+                if let Some(consumers) = self.by_prototype.get(&prefix) {
+                    output.extend(consumers.iter().cloned());
+                }
+                output
+            })
     }
 
     /// Return consumers whose registered prototype root is covered by a
@@ -74,4 +97,18 @@ impl PointInstancerDependencyIndex {
             .flat_map(|(_, consumers)| consumers.iter().cloned())
             .collect()
     }
+}
+
+fn prefixes(path: &str) -> Vec<String> {
+    if path == "/" {
+        return vec!["/".to_string()];
+    }
+    let mut output = vec!["/".to_string()];
+    let mut current = String::new();
+    for segment in path.split('/').filter(|segment| !segment.is_empty()) {
+        current.push('/');
+        current.push_str(segment);
+        output.push(current.clone());
+    }
+    output
 }
