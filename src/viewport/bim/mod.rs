@@ -9,6 +9,7 @@ mod classification_catalogue_projection;
 mod classification_color;
 pub(super) mod diff;
 mod field_catalogue;
+mod index;
 mod properties;
 mod search;
 
@@ -31,9 +32,11 @@ mod m8_performance_tests;
 mod m8_failure_tests;
 
 #[cfg(test)]
+mod index_tests;
+
+#[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
@@ -45,8 +48,8 @@ use viewport_protocol::{
     HierarchyReadModel, ProtocolValidationError, SceneAnchor, SelectionReadModel,
 };
 
-use self::classification::ClassificationIndex;
 pub(crate) use self::field_catalogue::BimClassificationFieldCatalogueState;
+pub(crate) use self::index::BimReadIndex;
 use crate::viewport::api::{
     CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityIndex,
 };
@@ -106,19 +109,23 @@ struct ClassificationCache {
 
 pub(crate) struct BimReadService<'snapshot> {
     pub(super) snapshot: &'snapshot SemanticSnapshot,
-    by_path: HashMap<&'snapshot str, &'snapshot EntitySnapshot>,
+    pub(super) index: Arc<BimReadIndex>,
     classification_cache: Option<ClassificationCache>,
 }
 
 impl<'snapshot> BimReadService<'snapshot> {
     pub(crate) fn new(snapshot: &'snapshot SemanticSnapshot) -> Self {
-        let mut by_path = HashMap::with_capacity(snapshot.entities.len());
-        for entity in snapshot.entities.values() {
-            by_path.insert(entity.prim_path.as_str(), entity);
-        }
+        Self::with_index(snapshot, Arc::new(BimReadIndex::build(snapshot)))
+    }
+
+    pub(crate) fn with_index(
+        snapshot: &'snapshot SemanticSnapshot,
+        index: Arc<BimReadIndex>,
+    ) -> Self {
+        debug_assert_eq!(index.snapshot_id, snapshot.snapshot_id);
         Self {
             snapshot,
-            by_path,
+            index,
             classification_cache: None,
         }
     }
@@ -235,7 +242,7 @@ impl<'snapshot> BimReadService<'snapshot> {
                 .classification_cache
                 .as_ref()
                 .map_or(1, |cache| cache.build_count.saturating_add(1));
-            let index = ClassificationIndex::build(self.snapshot, recipe);
+            let index = self.index.classification(self.snapshot, recipe);
             let color_groups = Arc::new(index.color_groups().to_vec());
             let read_model = Arc::new(index.read_model(self.snapshot, build_count));
             let page_index = HierarchyPageIndex::from_read_model(&read_model);
@@ -269,17 +276,21 @@ impl<'snapshot> BimReadService<'snapshot> {
         anchor: &SceneAnchor,
     ) -> Result<&'snapshot EntitySnapshot, BimQueryError> {
         anchor.validate()?;
-        self.by_path
-            .get(anchor.prim_path.as_str())
-            .copied()
+        let key = self
+            .index
+            .entity_key_for_path(anchor.prim_path.as_str())
+            .ok_or_else(|| BimQueryError::TargetNotFound(anchor.prim_path.clone()))?;
+        self.snapshot
+            .entities
+            .get(key)
             .ok_or_else(|| BimQueryError::TargetNotFound(anchor.prim_path.clone()))
     }
 
     pub(super) fn entities(&self) -> impl Iterator<Item = &'snapshot EntitySnapshot> {
-        self.snapshot
-            .entities
-            .values()
-            .filter(|entity| entity.semantic.is_bim_entity())
+        self.index
+            .entity_order()
+            .iter()
+            .filter_map(|key| self.snapshot.entities.get(key))
     }
 
     pub(super) fn anchor_for_entity(entity: &EntitySnapshot) -> SceneAnchor {

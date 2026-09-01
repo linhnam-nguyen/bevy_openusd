@@ -11,6 +11,7 @@ use viewport_protocol::{
 
 use crate::viewport::api::{HierarchyVisibilityIndex, HierarchyVisibilityTarget};
 
+#[derive(Debug)]
 struct ClassificationNode {
     id: HierarchyNodeId,
     parent: Option<usize>,
@@ -20,6 +21,7 @@ struct ClassificationNode {
     leaves: Vec<EntityKey>,
 }
 
+#[derive(Debug)]
 pub(super) struct ClassificationIndex {
     nodes: Vec<ClassificationNode>,
     child_lookup: HashMap<(usize, String), usize>,

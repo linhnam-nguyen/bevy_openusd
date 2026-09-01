@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use usd_model::SemanticSnapshot;
 use viewport_protocol::{
@@ -34,10 +35,18 @@ pub(super) fn dispatch(
         );
         return;
     };
+    let Some(index) = semantic.and_then(SemanticSyncState::shared_bim_index) else {
+        reject(
+            outbox,
+            request_id,
+            "BIM semantic index is unavailable".to_owned(),
+        );
+        return;
+    };
 
     let selection_model = &selection.0;
     let diff = semantic_diff.and_then(|state| state.bim_property_diff(&selection_model.targets));
-    let properties = match read_properties(snapshot, selection_model, selection.revision()) {
+    let properties = match read_properties(snapshot, index, selection_model, selection.revision()) {
         Ok(properties) => properties,
         Err(_error)
             if diff.as_ref().is_some_and(|value| {
@@ -64,10 +73,11 @@ pub(super) fn dispatch(
 
 fn read_properties(
     snapshot: &SemanticSnapshot,
+    index: Arc<crate::viewport::bim::BimReadIndex>,
     selection: &SelectionReadModel,
     selection_revision: u64,
 ) -> Result<BimPropertiesReadModel, String> {
-    crate::viewport::bim::BimReadService::new(snapshot)
+    crate::viewport::bim::BimReadService::with_index(snapshot, index)
         .read_properties(
             selection,
             selection_revision,

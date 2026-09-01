@@ -257,9 +257,10 @@ pub(super) fn dispatch_scene_query_commands(
                     HierarchySource::BimClassification => match (
                         classification_recipe.as_ref(),
                         semantic.as_ref().and_then(|state| state.snapshot()),
+                        semantic.as_ref().and_then(|state| state.shared_bim_index()),
                     ) {
-                        (Some(recipe), Some(snapshot)) => {
-                            crate::viewport::bim::BimReadService::new(snapshot)
+                        (Some(recipe), Some(snapshot), Some(index)) => {
+                            crate::viewport::bim::BimReadService::with_index(snapshot, index)
                                 .classification_projection(recipe)
                                 .map_err(|error| error.to_string())
                         }
@@ -296,11 +297,14 @@ pub(super) fn refresh_active_hierarchy_projection(
     if provider.source() != HierarchySource::BimClassification || !semantic.is_changed() {
         return;
     }
-    let (Some(recipe), Some(snapshot)) = (provider.classification_recipe(), semantic.snapshot())
-    else {
+    let (Some(recipe), Some(snapshot), Some(index)) = (
+        provider.classification_recipe(),
+        semantic.snapshot(),
+        semantic.shared_bim_index(),
+    ) else {
         return;
     };
-    let mut service = crate::viewport::bim::BimReadService::new(snapshot);
+    let mut service = crate::viewport::bim::BimReadService::with_index(snapshot, index);
     let color_intent = color_plan.as_ref().and_then(|plan| plan.intent());
     let color_entries = color_intent.as_ref().map(|intent| {
         match service.classification_color_entries(recipe, intent) {

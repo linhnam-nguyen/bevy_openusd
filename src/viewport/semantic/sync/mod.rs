@@ -25,7 +25,7 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 use super::diff::SemanticDiffState;
 use super::state::SemanticSyncState;
 use super::worker::SemanticWorkingStore;
-use crate::viewport::bim::BimReadService;
+use crate::viewport::bim::{BimReadIndex, BimReadService};
 
 /// Synchronize the semantic working store from the retained live-stage batch.
 ///
@@ -319,7 +319,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
     let mut published_catalogue = None;
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
-            let catalogue = BimReadService::new(snapshot.as_ref())
+            let bim_index = Arc::new(BimReadIndex::build(snapshot.as_ref()));
+            let catalogue = BimReadService::with_index(snapshot.as_ref(), Arc::clone(&bim_index))
                 .classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
@@ -327,6 +328,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
             if submitted {
                 queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(Arc::clone(&snapshot));
+                world.resource_mut::<SemanticSyncState>().bim_index = Some(bim_index);
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, Arc::clone(&snapshot));
                 }
@@ -336,7 +338,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
         }
         SemanticSyncAction::Delta(update) => {
             let snapshot = Arc::clone(&update.snapshot);
-            let catalogue = BimReadService::new(snapshot.as_ref())
+            let bim_index = Arc::new(BimReadIndex::build(snapshot.as_ref()));
+            let catalogue = BimReadService::with_index(snapshot.as_ref(), Arc::clone(&bim_index))
                 .classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
@@ -344,6 +347,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
             if submitted {
                 queue_runtime_delivery(world, session_id, live_revision, &snapshot, prepared_blobs);
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(Arc::clone(&snapshot));
+                world.resource_mut::<SemanticSyncState>().bim_index = Some(bim_index);
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
                     diff_state.update_working(session_id, Arc::clone(&snapshot));
                 }

@@ -108,7 +108,10 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
             plan.replace_entries(Vec::new());
             return;
         };
-        let Some(snapshot) = semantic.as_deref().and_then(SemanticSyncState::snapshot) else {
+        let Some((snapshot, index)) = semantic
+            .as_deref()
+            .and_then(|state| Some((state.snapshot()?, state.shared_bim_index()?)))
+        else {
             plan.replace_entries(Vec::new());
             return;
         };
@@ -116,7 +119,9 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
             plan.replace_entries(Vec::new());
             return;
         }
-        match BimReadService::new(snapshot).classification_color_entries(recipe, &intent) {
+        match BimReadService::with_index(snapshot, index)
+            .classification_color_entries(recipe, &intent)
+        {
             Ok(entries) => entries,
             Err(error) => {
                 bevy::log::warn!(

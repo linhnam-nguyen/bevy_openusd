@@ -104,6 +104,7 @@ struct BimSearchJob {
     request_id: String,
     query: BimSearchQuery,
     snapshot: Arc<SemanticSnapshot>,
+    index: Arc<crate::viewport::bim::BimReadIndex>,
 }
 
 #[derive(Debug)]
@@ -213,12 +214,14 @@ impl SceneQueryService {
         request_id: String,
         query: BimSearchQuery,
         snapshot: Arc<SemanticSnapshot>,
+        index: Arc<crate::viewport::bim::BimReadIndex>,
     ) -> bool {
         self.jobs
             .replace(SearchJob::Bim(BimSearchJob {
                 request_id,
                 query,
                 snapshot,
+                index,
             }))
             .is_ok()
     }
@@ -267,7 +270,7 @@ fn search_worker(
             }
             SearchJob::Bim(job) => SearchResult::Bim {
                 request_id: job.request_id,
-                result: crate::viewport::bim::BimReadService::new(&job.snapshot)
+                result: crate::viewport::bim::BimReadService::with_index(&job.snapshot, job.index)
                     .search(&job.query)
                     .map_err(|error| error.to_string()),
             },

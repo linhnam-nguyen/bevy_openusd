@@ -37,7 +37,9 @@ pub(super) fn dispatch(
     outbox: &mut ViewportEventOutbox,
     counters: &mut Option<ResMut<RendererCounters>>,
 ) {
-    let Some(snapshot) = semantic.and_then(SemanticSyncState::shared_snapshot) else {
+    let Some((snapshot, index)) =
+        semantic.and_then(|state| Some((state.shared_snapshot()?, state.shared_bim_index()?)))
+    else {
         reject(
             outbox,
             request_id,
@@ -45,7 +47,7 @@ pub(super) fn dispatch(
         );
         return;
     };
-    if scene_query.submit_bim_search(request_id.clone(), query, snapshot) {
+    if scene_query.submit_bim_search(request_id.clone(), query, snapshot, index) {
         search_requests.pending.clear();
         search_requests.pending.insert(
             request_id,

@@ -5,12 +5,15 @@ use usd_bevy::LiveRevision;
 use usd_model::SemanticSnapshot;
 use usd_semantic::SemanticConfig;
 
+use crate::viewport::bim::BimReadIndex;
+
 /// Local authoritative semantic state used to derive the next incremental
 /// update from the same live-stage revision consumed by Bevy projection.
 #[derive(Default, Resource)]
 pub(crate) struct SemanticSyncState {
     config: SemanticConfig,
     pub(super) snapshot: Option<Arc<SemanticSnapshot>>,
+    pub(super) bim_index: Option<Arc<BimReadIndex>>,
     pub(super) session_id: Option<u64>,
     pub(super) revision: Option<LiveRevision>,
 }
@@ -35,10 +38,15 @@ impl SemanticSyncState {
         self.snapshot.as_ref().map(Arc::clone)
     }
 
+    pub(crate) fn shared_bim_index(&self) -> Option<Arc<BimReadIndex>> {
+        self.bim_index.as_ref().map(Arc::clone)
+    }
+
     #[cfg(test)]
     pub(crate) fn from_test_snapshot(snapshot: SemanticSnapshot) -> Self {
         Self {
             config: SemanticConfig::default(),
+            bim_index: Some(Arc::new(BimReadIndex::build(&snapshot))),
             snapshot: Some(Arc::new(snapshot)),
             session_id: None,
             revision: None,
