@@ -5,7 +5,7 @@ use bevy::asset::{Handle, load_internal_asset, uuid_handle};
 use bevy::mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
-    MaterialPlugin, StandardMaterial,
+    MaterialPlugin, MeshPipelineKey, StandardMaterial,
 };
 use bevy::prelude::*;
 use bevy::render::render_resource::{
@@ -21,6 +21,8 @@ use crate::mesh::{
 
 pub const EXTENDED_SKIN_SHADER_HANDLE: Handle<Shader> =
     uuid_handle!("c6b0e8e2-1e9c-4ae4-93b3-9b7f3f0c1616");
+pub const EXTENDED_SKIN_PREPASS_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("c6b0e8e2-1e9c-4ae4-93b3-9b7f3f0c1617");
 
 /// Marker for a mesh selected by the data-driven fidelity classifier.
 #[derive(Component, Debug, Default, Clone, Copy)]
@@ -36,8 +38,14 @@ impl MaterialExtension for ExtendedSkinExtension {
         EXTENDED_SKIN_SHADER_HANDLE.into()
     }
 
-    // The base StandardMaterial shaders retain equivalent prepass and shadow
-    // passes; only the forward vertex path is replaced for the four groups.
+    fn prepass_vertex_shader() -> ShaderRef {
+        EXTENDED_SKIN_PREPASS_SHADER_HANDLE.into()
+    }
+
+    fn deferred_vertex_shader() -> ShaderRef {
+        EXTENDED_SKIN_PREPASS_SHADER_HANDLE.into()
+    }
+
     fn enable_prepass() -> bool {
         true
     }
@@ -50,30 +58,37 @@ impl MaterialExtension for ExtendedSkinExtension {
         _pipeline: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialExtensionKey<Self>,
+        key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
+        let prepass = key.mesh_key.intersects(
+            MeshPipelineKey::DEPTH_PREPASS
+                | MeshPipelineKey::NORMAL_PREPASS
+                | MeshPipelineKey::DEFERRED_PREPASS
+                | MeshPipelineKey::MOTION_VECTOR_PREPASS,
+        );
         let mut attributes = Vec::new();
         if layout.0.contains(Mesh::ATTRIBUTE_POSITION) {
             attributes.push(Mesh::ATTRIBUTE_POSITION.at_shader_location(0));
         }
         if layout.0.contains(Mesh::ATTRIBUTE_NORMAL) {
-            attributes.push(Mesh::ATTRIBUTE_NORMAL.at_shader_location(1));
+            attributes.push(Mesh::ATTRIBUTE_NORMAL.at_shader_location(if prepass { 3 } else { 1 }));
         }
         if layout.0.contains(Mesh::ATTRIBUTE_UV_0) {
-            attributes.push(Mesh::ATTRIBUTE_UV_0.at_shader_location(2));
+            attributes.push(Mesh::ATTRIBUTE_UV_0.at_shader_location(if prepass { 1 } else { 2 }));
         }
         if layout.0.contains(Mesh::ATTRIBUTE_UV_1) {
-            attributes.push(Mesh::ATTRIBUTE_UV_1.at_shader_location(3));
+            attributes.push(Mesh::ATTRIBUTE_UV_1.at_shader_location(if prepass { 2 } else { 3 }));
         }
         if layout.0.contains(Mesh::ATTRIBUTE_TANGENT) {
             attributes.push(Mesh::ATTRIBUTE_TANGENT.at_shader_location(4));
         }
         if layout.0.contains(Mesh::ATTRIBUTE_COLOR) {
-            attributes.push(Mesh::ATTRIBUTE_COLOR.at_shader_location(5));
+            attributes.push(Mesh::ATTRIBUTE_COLOR.at_shader_location(if prepass { 7 } else { 5 }));
         }
+        let native_joint_location = if prepass { 5 } else { 6 };
         attributes.extend([
-            Mesh::ATTRIBUTE_JOINT_INDEX.at_shader_location(6),
-            Mesh::ATTRIBUTE_JOINT_WEIGHT.at_shader_location(7),
+            Mesh::ATTRIBUTE_JOINT_INDEX.at_shader_location(native_joint_location),
+            Mesh::ATTRIBUTE_JOINT_WEIGHT.at_shader_location(native_joint_location + 1),
             ATTRIBUTE_EXTENDED_JOINT_INDEX_1.at_shader_location(8),
             ATTRIBUTE_EXTENDED_JOINT_WEIGHT_1.at_shader_location(9),
             ATTRIBUTE_EXTENDED_JOINT_INDEX_2.at_shader_location(10),
@@ -94,6 +109,12 @@ impl Plugin for ExtendedSkinPlugin {
             app,
             EXTENDED_SKIN_SHADER_HANDLE,
             "extended_skin.wgsl",
+            Shader::from_wgsl
+        );
+        load_internal_asset!(
+            app,
+            EXTENDED_SKIN_PREPASS_SHADER_HANDLE,
+            "extended_skin_prepass.wgsl",
             Shader::from_wgsl
         );
         app.add_plugins(MaterialPlugin::<ExtendedSkinMaterial>::default());
