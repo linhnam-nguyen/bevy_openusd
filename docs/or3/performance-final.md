@@ -140,6 +140,31 @@ PointInstancer compact-ID dependency resolution. This repair does not include
 the rejected-review follow-ons C5+ (compact ChangePlan) or C10+ (hierarchy
 clone/ancestry work).
 
+## Additive C4++ native dependency lookup repair
+
+Owner Review found one remaining C4+ hot-path defect: native
+`dependents_for_path()` still scanned every registered prototype after its
+direct ancestor lookups. C4++ removes that scan. Ordinary exact or property
+changes now resolve only the changed path and its interned ancestors through
+direct `HashMap<PathId, ...>` lookups. The bidirectional prototype/root
+relationship scan is retained only in `dependents_for_resync_root()`, where it
+is required for structural composition boundaries.
+
+The regression proves that a nested exact change still reaches its proxy,
+that a parent exact change does not scan down into descendant prototypes, and
+that the same parent used as a structural resync root still reaches the proxy.
+
+C4++ deterministic gates passed:
+
+```text
+cargo fmt --all -- --check                      PASS
+cargo test -p usd_bevy --lib exact_lookup_avoids_descendant_prototype_scan
+                                               PASS — 1 passed
+cargo test -p usd_bevy --lib                    PASS — 117 passed, 1 ignored
+cargo check -p usd_bevy -p usdview              PASS
+git diff --cached --check                       PASS
+```
+
 ## Owner-gated runtime rows
 
 The following must still be measured by the owner with the fixed-16 candidate

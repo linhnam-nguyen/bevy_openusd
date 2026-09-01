@@ -124,14 +124,6 @@ impl NativeInstanceDependencyIndex {
                 dependents.extend(proxies.iter().copied());
             }
         });
-        let Some(changed) = paths.lookup(changed) else {
-            return dependents;
-        };
-        for (prototype, proxies) in &self.by_prototype {
-            if paths.is_descendant_or_self(changed, *prototype) {
-                dependents.extend(proxies.iter().copied());
-            }
-        }
         dependents
     }
 
@@ -141,7 +133,17 @@ impl NativeInstanceDependencyIndex {
         paths: &PathStore,
         root: &str,
     ) -> HashSet<PathId> {
-        self.dependents_for_path(paths, root)
+        let Some(root) = paths.lookup(root) else {
+            return HashSet::new();
+        };
+        self.by_prototype
+            .iter()
+            .filter(|(prototype, _)| {
+                paths.is_descendant_or_self(root, **prototype)
+                    || paths.is_descendant_or_self(**prototype, root)
+            })
+            .flat_map(|(_, proxies)| proxies.iter().copied())
+            .collect()
     }
 }
 
@@ -154,4 +156,34 @@ fn instance_root(stage: &Stage, path: &Path) -> Option<openusd::usd::Prim> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_lookup_avoids_descendant_prototype_scan() {
+        let mut paths = PathStore::default();
+        let prototype = paths.intern("/World/Prototype/Nested");
+        let proxy = paths.intern("/World/Instance/Nested");
+        let mut index = NativeInstanceDependencyIndex::default();
+        index.by_prototype.insert(prototype, HashSet::from([proxy]));
+        index.by_proxy.insert(proxy, HashSet::from([prototype]));
+
+        assert!(
+            index
+                .dependents_for_path(&paths, "/World/Prototype")
+                .is_empty(),
+            "an exact change must not scan prototypes below the changed path"
+        );
+        assert_eq!(
+            index.dependents_for_path(&paths, "/World/Prototype/Nested/Geometry"),
+            HashSet::from([proxy])
+        );
+        assert_eq!(
+            index.dependents_for_resync_root(&paths, "/World/Prototype"),
+            HashSet::from([proxy])
+        );
+    }
 }
