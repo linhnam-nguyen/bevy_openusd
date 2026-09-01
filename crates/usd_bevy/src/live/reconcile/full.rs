@@ -6,6 +6,7 @@ use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::index::PrimEntities;
 use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::parent_path;
+use super::super::performance::PerformanceCounters;
 use super::super::projection::{registry_of, stage_up_axis, traverse_predicate};
 use super::super::stage::LiveStage;
 use super::ReconcileStats;
@@ -17,6 +18,9 @@ use crate::route::remove_mesh_projection_consumer;
 pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let stage = &live.stage;
     let registry = registry_of(world);
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_full_stage_walks(1);
+    }
     let mut current: HashSet<String> = HashSet::new();
     if let Err(error) = stage.traverse(traverse_predicate(), |p: &openusd::sdf::Path| {
         current.insert(p.as_str().to_string());

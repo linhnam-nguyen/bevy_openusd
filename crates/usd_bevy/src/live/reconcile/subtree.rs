@@ -7,6 +7,7 @@ use super::super::change::LiveRevision;
 use super::super::index::PrimEntities;
 use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::{is_descendant_or_self, parent_path};
+use super::super::performance::PerformanceCounters;
 use super::super::projection::{collect_stage_subtree_paths, registry_of};
 use super::super::stage::LiveStage;
 use super::ReconcileStats;
@@ -48,6 +49,9 @@ pub(super) fn reconcile_subtrees(
 
     let mut current_paths: HashSet<String> = HashSet::new();
     for root in roots {
+        if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+            counters.projection_subtree_walks(1);
+        }
         match collect_stage_subtree_paths(stage, root) {
             Ok(paths) => {
                 current_paths.extend(paths);

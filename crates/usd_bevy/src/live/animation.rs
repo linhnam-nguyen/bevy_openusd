@@ -3,6 +3,7 @@ use openusd::usd::Stage;
 use std::collections::HashSet;
 
 use super::index::PrimEntities;
+use super::performance::PerformanceCounters;
 use super::projection::registry_of;
 use super::stage::LiveStage;
 use crate::route::StageTime;
@@ -49,10 +50,16 @@ pub(super) fn resample_animation_system(world: &mut World) {
     if current == last {
         return; // time hasn't moved
     }
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.stage_time_changes(1);
+    }
     let animated = world
         .get_resource::<AnimatedPrims>()
         .cloned()
         .unwrap_or_default();
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.animation_runtime_samples(1);
+    }
     if animated.0.is_empty() {
         // Nothing animated; still record the time so we don't re-check.
         if let Some(mut sampled) = world.get_resource_mut::<SampledTime>() {
@@ -66,11 +73,17 @@ pub(super) fn resample_animation_system(world: &mut World) {
     let map = world.remove_resource::<PrimEntities>().unwrap_or_default();
     let registry = registry_of(world);
     for path in &animated.0 {
-        if let Some(entity) = map.entity(path)
-            && let Ok(p) = openusd::sdf::path(path)
-        {
-            // patch_prim resolves values at the world's StageTime.
-            registry.patch_prim(&live.stage, &p, world, entity, &[]);
+        if let Some(entity) = map.entity(path) {
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.animation_usd_path_parses(1);
+            }
+            if let Ok(p) = openusd::sdf::path(path) {
+                if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                    counters.animation_generic_patch_calls(1);
+                }
+                // patch_prim resolves values at the world's StageTime.
+                registry.patch_prim(&live.stage, &p, world, entity, &[]);
+            }
         }
     }
     world.insert_resource(map);

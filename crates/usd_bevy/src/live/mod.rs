@@ -6,6 +6,7 @@ mod change;
 mod index;
 mod native_instance_dependency;
 mod path;
+mod performance;
 mod progressive;
 mod progressive_cleanup;
 mod progressive_resident;
@@ -25,6 +26,7 @@ pub use path::{
     is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
     validate_prim_path,
 };
+pub use performance::PerformanceCounters;
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
@@ -72,6 +74,7 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<ReconcileStats>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
+            .init_resource::<PerformanceCounters>()
             .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
             .init_resource::<crate::route::DisplayPurposes>()

@@ -8,6 +8,7 @@ use super::change::StageChangeBatch;
 use super::index::PrimEntities;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::path::{prim_of, property_of, validate_prim_path};
+use super::performance::PerformanceCounters;
 use super::projection::registry_of;
 use super::stage::LiveStage;
 use crate::route::instancer_dependency::PointInstancerDependencyIndex;
@@ -52,17 +53,38 @@ pub(super) fn apply_sparse_changed_info(
     let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
     let mut native_dependents: HashMap<String, Vec<String>> = HashMap::new();
     let mut dependent_instancers = HashSet::new();
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.reconcile_changed_properties(changed_info.len() as u64);
+    }
     for prop_path in changed_info {
         let prim = prim_of(prop_path);
         if suppressed.contains(prim) {
             continue;
         }
         let entry = per_prim.entry(prim.to_string()).or_default();
+        if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+            counters.reconcile_string_materializations(1);
+        }
         if let Some(prop) = property_of(prop_path) {
             entry.push(prop.to_string());
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.reconcile_string_materializations(1);
+            }
+        }
+        let has_instancer_index = world.contains_resource::<PointInstancerDependencyIndex>();
+        if has_instancer_index {
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.reconcile_dependency_queries(1);
+            }
         }
         if let Some(index) = world.get_resource::<PointInstancerDependencyIndex>() {
             dependent_instancers.extend(index.dependents_for_path(prim));
+        }
+        let has_native_index = world.contains_resource::<NativeInstanceDependencyIndex>();
+        if has_native_index {
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.reconcile_dependency_queries(1);
+            }
         }
         if let Some(index) = world.get_resource::<NativeInstanceDependencyIndex>() {
             for dependent in index.dependents_for_path(prim) {
@@ -76,6 +98,10 @@ pub(super) fn apply_sparse_changed_info(
                 }
             }
         }
+    }
+
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.reconcile_distinct_prims(per_prim.len() as u64);
     }
 
     let mut patched_count = 0;

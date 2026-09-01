@@ -7,6 +7,7 @@ use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
+use super::performance::PerformanceCounters;
 use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
 use crate::prim_ref::UsdPrimRef;
@@ -101,6 +102,10 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         bevy::log::error!("[projection] failed to build deterministic projection plan");
         return;
     };
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_full_stage_walks(1);
+        counters.projection_paths_planned(plan.len() as u64);
+    }
     let mut animated: HashSet<String> = HashSet::new();
     let traversal_start = std::time::Instant::now();
     for entry in plan.entries() {
@@ -178,6 +183,9 @@ pub(super) fn project_plan_entry(
             .id()
     };
     map.insert(entry.path(), entity);
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_paths_materialized(1);
+    }
     if entry.path() != "/"
         && let Ok(path) = openusd::sdf::path(entry.path())
     {

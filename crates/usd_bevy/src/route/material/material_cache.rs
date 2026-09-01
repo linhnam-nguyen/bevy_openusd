@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
+use crate::live::PerformanceCounters;
 use crate::read::shade::ReadPreviewMaterial;
 
 use super::builder::build_standard_material;
@@ -103,6 +104,9 @@ pub(super) fn intern_material(
     let handle = world
         .resource_mut::<Assets<StandardMaterial>>()
         .add(material);
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.animation_material_allocations(1);
+    }
     if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
         cache.materials.insert(
             binding.to_owned(),

@@ -5,6 +5,7 @@ use std::time::Instant;
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
+use super::performance::PerformanceCounters;
 use super::progressive_cleanup::clear_projection;
 use super::progressive_resident::resident_projection;
 use super::progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
@@ -103,6 +104,9 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     }
 
     let generation_started = Instant::now();
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_full_stage_walks(1);
+    }
     let plan_builder = ProjectionPlanBuilder::new(&live.stage);
     world.remove_non_send::<ProjectionPlanBuilder>();
     world.insert_non_send(plan_builder);
@@ -244,6 +248,9 @@ fn finalize_plan(world: &mut World) {
         .remove_non_send::<ProjectionPlanBuilder>()
         .expect("finished projection planner exists");
     let plan = builder.finish().expect("finished planner produces a plan");
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_paths_planned(plan.len() as u64);
+    }
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
     state.total = plan.len();
     state.plan = Some(plan);
