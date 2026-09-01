@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, StageChange,
-    StageChangeBatch, apply_change_batch, author_transform,
+    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PerformanceCounters, PrimEntities,
+    StageChange, StageChangeBatch, apply_change_batch, author_transform,
 };
 use crate::snippet::UsdSnippet;
 
@@ -17,6 +17,7 @@ def Xform "World"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 }
+
 "#;
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);
@@ -67,4 +68,54 @@ def Xform "World"
         Vec3::new(10.0, 20.0, 30.0),
         "bare prim changed_info must repatch transform"
     );
+}
+
+#[test]
+fn compact_change_plan_deduplicates_paths_and_properties() {
+    let usda = r#"#usda 1.0
+def Xform "World"
+{
+    def Xform "A"
+    {
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+"#;
+    let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
+    let live = LiveStage::new(stage);
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut().insert_non_send(live);
+    app.update();
+    app.world_mut()
+        .resource_mut::<PerformanceCounters>()
+        .enabled = true;
+    app.world_mut()
+        .resource_mut::<PerformanceCounters>()
+        .reset();
+
+    let live = app.world_mut().remove_non_send::<LiveStage>().unwrap();
+    let mut map = app.world_mut().remove_resource::<PrimEntities>().unwrap();
+    let batch = StageChangeBatch {
+        revision: LiveRevision(2),
+        changes: vec![StageChange {
+            resynced: Vec::new(),
+            changed_info: vec![
+                "/World/A.xformOp:translate".to_string(),
+                "/World/A.xformOp:translate".to_string(),
+                "/World/A.xformOpOrder".to_string(),
+                "/World/A.xformOpOrder".to_string(),
+            ],
+        }],
+    };
+    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    app.world_mut().insert_non_send(live);
+    app.world_mut().insert_resource(map);
+
+    let counters = app.world().resource::<PerformanceCounters>();
+    assert_eq!(counters.reconcile_changed_properties, 4);
+    assert_eq!(counters.reconcile_distinct_prims, 1);
+    assert_eq!(counters.reconcile_dependency_queries, 1);
+    assert_eq!(counters.reconcile_string_materializations, 0);
 }

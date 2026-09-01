@@ -29,6 +29,96 @@ pub(crate) struct ReconcileStats {
     pub(crate) despawned_entities: usize,
 }
 
+/// Compact, batch-local representation of sparse changed-info work.
+///
+/// Prim paths are interned once into [`PathId`]s. Property names remain
+/// borrowed from the authoritative change batch, so the plan owns neither
+/// repeated path strings nor cloned property strings. The per-prim vectors
+/// are deduplicated before route patching and can be reused for dependency
+/// fanout.
+#[derive(Default)]
+struct ChangePlan<'a> {
+    changed: Vec<PrimChange<'a>>,
+    by_path: HashMap<PathId, usize>,
+    changed_info_count: usize,
+}
+
+struct PrimChange<'a> {
+    path: PathId,
+    properties: Vec<&'a str>,
+}
+
+impl<'a> ChangePlan<'a> {
+    fn from_changed_info<I>(
+        paths: &mut PathStore,
+        changed_info: I,
+        suppressed: &HashSet<String>,
+    ) -> Self
+    where
+        I: IntoIterator<Item = &'a String>,
+    {
+        let mut plan = Self::default();
+        for info_path in changed_info {
+            plan.changed_info_count += 1;
+            let prim = prim_of(info_path);
+            if suppressed.contains(prim) {
+                continue;
+            }
+            let path = paths.lookup(prim).unwrap_or_else(|| paths.intern(prim));
+            plan.add(path, property_of(info_path));
+        }
+        plan
+    }
+
+    fn add(&mut self, path: PathId, property: Option<&'a str>) {
+        let index = if let Some(index) = self.by_path.get(&path).copied() {
+            index
+        } else {
+            let index = self.changed.len();
+            self.changed.push(PrimChange {
+                path,
+                properties: Vec::new(),
+            });
+            self.by_path.insert(path, index);
+            index
+        };
+        if let Some(property) = property
+            && !self.changed[index]
+                .properties
+                .iter()
+                .any(|existing| *existing == property)
+        {
+            self.changed[index].properties.push(property);
+        }
+    }
+
+    fn add_properties<I>(&mut self, path: PathId, properties: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        let index = if let Some(index) = self.by_path.get(&path).copied() {
+            index
+        } else {
+            let index = self.changed.len();
+            self.changed.push(PrimChange {
+                path,
+                properties: Vec::new(),
+            });
+            self.by_path.insert(path, index);
+            index
+        };
+        for property in properties {
+            if !self.changed[index]
+                .properties
+                .iter()
+                .any(|existing| *existing == property)
+            {
+                self.changed[index].properties.push(property);
+            }
+        }
+    }
+}
+
 /// Drain the change queue and reproject affected entities.
 pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
     let Some(batch) = live.drain_change_batch() else {
@@ -39,96 +129,78 @@ pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities
 
 /// Sparse property patch applied per owning prim. Each prim's registered route
 /// runs with `changed` pointing to only the properties modified in the batch.
-pub(super) fn apply_sparse_changed_info(
+pub(super) fn apply_sparse_changed_info<'a, I>(
     world: &mut World,
     live: &LiveStage,
     map: &mut PrimEntities,
-    changed_info: &[String],
-) {
-    if changed_info.is_empty() {
-        return;
-    }
+    changed_info: I,
+) where
+    I: IntoIterator<Item = &'a String>,
+{
     let registry = registry_of(world);
     let suppressed = live.take_suppressed();
-    let mut per_prim: HashMap<String, Vec<String>> = HashMap::new();
-    let mut native_dependents: HashMap<PathId, Vec<String>> = HashMap::new();
+    let plan = {
+        let mut paths = world.resource_mut::<PathStore>();
+        ChangePlan::from_changed_info(&mut paths, changed_info, &suppressed)
+    };
+    if plan.changed.is_empty() {
+        return;
+    }
+    let mut native_dependents = ChangePlan::default();
     let mut dependent_instancers: HashSet<PathId> = HashSet::new();
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-        counters.reconcile_changed_properties(changed_info.len() as u64);
-    }
-    for prop_path in changed_info {
-        let prim = prim_of(prop_path);
-        if suppressed.contains(prim) {
-            continue;
-        }
-        let entry = per_prim.entry(prim.to_string()).or_default();
-        if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-            counters.reconcile_string_materializations(1);
-        }
-        if let Some(prop) = property_of(prop_path) {
-            entry.push(prop.to_string());
-            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-                counters.reconcile_string_materializations(1);
-            }
-        }
+        counters.reconcile_changed_properties(plan.changed_info_count as u64);
     }
 
     // Dependency queries are keyed by owning prim, not by individual changed
     // property. Resolve each distinct prim once, then fan its already-planned
     // property slice out to native dependents.
-    for (prim, properties) in &per_prim {
-        let has_instancer_index = world.contains_resource::<PointInstancerDependencyIndex>();
-        if has_instancer_index {
-            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-                counters.reconcile_dependency_queries(1);
-            }
-        }
-        if let (Some(index), Some(paths)) = (
-            world.get_resource::<PointInstancerDependencyIndex>(),
-            world.get_resource::<PathStore>(),
-        ) {
-            dependent_instancers.extend(index.dependents_for_path(&paths, prim));
-        }
-        let has_native_index = world.contains_resource::<NativeInstanceDependencyIndex>();
-        if has_native_index {
-            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-                counters.reconcile_dependency_queries(1);
-            }
-        }
-        if let Some(index) = world.get_resource::<NativeInstanceDependencyIndex>() {
+    for change in &plan.changed {
+        let (instancers, native) = {
             let paths = world.resource::<PathStore>();
-            for dependent in index.dependents_for_path(&paths, prim) {
-                let entry = native_dependents.entry(dependent).or_default();
-                for property in properties {
-                    if !entry.contains(property) {
-                        entry.push(property.clone());
-                    }
-                }
+            let Some(prim) = paths.path(change.path) else {
+                continue;
+            };
+            let instancers = world
+                .get_resource::<PointInstancerDependencyIndex>()
+                .map(|index| index.dependents_for_path(&paths, prim))
+                .unwrap_or_default();
+            let native = world
+                .get_resource::<NativeInstanceDependencyIndex>()
+                .map(|index| index.dependents_for_path(&paths, prim))
+                .unwrap_or_default();
+            (instancers, native)
+        };
+        dependent_instancers.extend(instancers);
+        for dependent in native {
+            native_dependents.add_properties(dependent, change.properties.iter().copied());
+        }
+        if world.contains_resource::<PointInstancerDependencyIndex>()
+            || world.contains_resource::<NativeInstanceDependencyIndex>()
+        {
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.reconcile_dependency_queries(1);
             }
         }
     }
 
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-        counters.reconcile_distinct_prims(per_prim.len() as u64);
+        counters.reconcile_distinct_prims(plan.changed.len() as u64);
     }
 
     let mut patched_count = 0;
-    for (prim, props) in per_prim {
-        if suppressed.contains(&prim) {
-            continue;
-        }
-        let Ok(p) = openusd::sdf::path(&prim) else {
-            continue;
-        };
-        let entity = {
-            let paths = world.resource::<PathStore>();
-            map.entity(&paths, &prim)
-        };
-        let Some(entity) = entity else {
+    for change in plan.changed {
+        let Some(path) = world
+            .resource::<PathStore>()
+            .path(change.path)
+            .and_then(|path| openusd::sdf::path(path).ok())
+        else {
             continue;
         };
-        let prop_refs: Vec<&str> = props.iter().map(String::as_str).collect();
-        registry.patch_prim(&live.stage, &p, world, entity, &prop_refs);
+        let Some(entity) = map.entity_id(change.path) else {
+            continue;
+        };
+        registry.patch_prim(&live.stage, &path, world, entity, &change.properties);
         patched_count += 1;
     }
     patched_count +=
@@ -154,14 +226,11 @@ fn apply_prototype_dependents(
         let Some(entity) = map.entity_id(instancer) else {
             continue;
         };
-        let Some(instancer) = world
+        let Some(path) = world
             .resource::<PathStore>()
             .path(instancer)
-            .map(str::to_owned)
+            .and_then(|path| openusd::sdf::path(path).ok())
         else {
-            continue;
-        };
-        let Ok(path) = openusd::sdf::path(&instancer) else {
             continue;
         };
         registry.patch_prim(stage, &path, world, entity, &["prototype_dependency"]);
@@ -175,25 +244,21 @@ fn apply_native_instance_dependents(
     stage: &openusd::usd::Stage,
     map: &PrimEntities,
     registry: &crate::route::SchemaRegistry,
-    dependents: HashMap<PathId, Vec<String>>,
+    dependents: ChangePlan<'_>,
 ) -> usize {
     let mut patched = 0;
-    for (proxy_id, properties) in dependents {
-        let Some(entity) = map.entity_id(proxy_id) else {
+    for change in dependents.changed {
+        let Some(entity) = map.entity_id(change.path) else {
             continue;
         };
-        let Some(proxy) = world
+        let Some(path) = world
             .resource::<PathStore>()
-            .path(proxy_id)
-            .map(str::to_owned)
+            .path(change.path)
+            .and_then(|path| openusd::sdf::path(path).ok())
         else {
             continue;
         };
-        let Ok(path) = openusd::sdf::path(&proxy) else {
-            continue;
-        };
-        let property_refs: Vec<&str> = properties.iter().map(String::as_str).collect();
-        registry.patch_prim(stage, &path, world, entity, &property_refs);
+        registry.patch_prim(stage, &path, world, entity, &change.properties);
         patched += 1;
     }
     patched
@@ -249,34 +314,40 @@ pub fn apply_change_batch(
         }
         let unshaded = batch.unshaded_changed_info();
         apply_sparse_changed_info(world, live, map, &unshaded);
-        let resynced_paths = batch
-            .changes
-            .iter()
-            .flat_map(|change| change.resynced.iter())
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        if !resynced_paths.is_empty() {
+        let resync_roots = batch.resync_roots();
+        if !resync_roots.is_empty() {
             let instancer_dependencies = world
                 .get_resource::<PointInstancerDependencyIndex>()
                 .zip(world.get_resource::<PathStore>())
                 .map(|(index, paths)| {
-                    resynced_paths
+                    resync_roots
                         .iter()
                         .flat_map(|path| index.dependents_for_resync_root(paths, path))
                         .collect::<HashSet<_>>()
                 })
                 .unwrap_or_default();
-            let native_dependencies = world
-                .get_resource::<NativeInstanceDependencyIndex>()
-                .zip(world.get_resource::<PathStore>())
-                .map(|(index, paths)| {
-                    resynced_paths
+            let native_dependencies = {
+                let mut plan = ChangePlan::default();
+                if let (Some(index), Some(paths)) = (
+                    world.get_resource::<NativeInstanceDependencyIndex>(),
+                    world.get_resource::<PathStore>(),
+                ) {
+                    for proxy in resync_roots
                         .iter()
                         .flat_map(|path| index.dependents_for_resync_root(paths, path))
-                        .map(|proxy| (proxy, Vec::new()))
-                        .collect::<HashMap<_, _>>()
-                })
-                .unwrap_or_default();
+                    {
+                        plan.add(proxy, None);
+                    }
+                }
+                plan
+            };
+            if world.contains_resource::<PointInstancerDependencyIndex>()
+                || world.contains_resource::<NativeInstanceDependencyIndex>()
+            {
+                if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                    counters.reconcile_dependency_queries(resync_roots.len() as u64);
+                }
+            }
             let registry = registry_of(world);
             apply_prototype_dependents(world, &live.stage, map, &registry, instancer_dependencies);
             apply_native_instance_dependents(
@@ -291,12 +362,14 @@ pub fn apply_change_batch(
         return;
     }
 
-    let all_changed_info: Vec<String> = batch
-        .changes
-        .iter()
-        .flat_map(|c| &c.changed_info)
-        .cloned()
-        .collect();
-    apply_sparse_changed_info(world, live, map, &all_changed_info);
+    apply_sparse_changed_info(
+        world,
+        live,
+        map,
+        batch
+            .changes
+            .iter()
+            .flat_map(|change| change.changed_info.iter()),
+    );
     cleanup_retired_materials(world);
 }
