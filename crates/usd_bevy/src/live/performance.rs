@@ -11,6 +11,7 @@ pub struct PerformanceCounters {
 
     pub stage_time_changes: u64,
     pub animation_runtime_samples: u64,
+    pub animation_runtime_rebuilds: u64,
     pub animation_generic_patch_calls: u64,
     pub animation_usd_path_parses: u64,
     pub animation_read_mesh_calls: u64,
@@ -61,6 +62,7 @@ macro_rules! counter_adders {
 counter_adders!(
     stage_time_changes,
     animation_runtime_samples,
+    animation_runtime_rebuilds,
     animation_generic_patch_calls,
     animation_usd_path_parses,
     animation_read_mesh_calls,

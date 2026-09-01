@@ -13,6 +13,37 @@ pub struct Transform3 {
     pub scale: [f32; 3],
 }
 
+#[derive(Clone)]
+pub(crate) struct TransformBinding {
+    prim: Path,
+    ops: Vec<BoundXformOp>,
+}
+
+#[derive(Clone)]
+struct BoundXformOp {
+    name: String,
+    kind: XformOpKind,
+    inverted: bool,
+}
+
+#[derive(Clone, Copy)]
+enum XformOpKind {
+    Translate,
+    Scale,
+    Orient,
+    RotateX,
+    RotateY,
+    RotateZ,
+    RotateXYZ,
+    RotateYXZ,
+    RotateZXY,
+    RotateXZY,
+    RotateYZX,
+    RotateZYX,
+    Transform,
+    Unknown,
+}
+
 fn attr_value(
     stage: &Stage,
     prim: &Path,
@@ -39,24 +70,49 @@ pub fn read_transform_at(
     prim: &Path,
     time: Option<f64>,
 ) -> anyhow::Result<Option<Transform3>> {
-    let tc = time.map(TimeCode::new);
-    let Some(raw) = attr_value(stage, prim, "xformOpOrder", tc)? else {
+    let Some(binding) = bind_transform(stage, prim)? else {
         return Ok(None);
     };
-    let order: Vec<String> = match raw {
-        Value::TokenVec(v) => v.into_iter().map(|t| t.as_str().to_string()).collect(),
+    read_bound_transform_at(stage, &binding, time)
+}
+
+/// Bind the authored xform operation order and operation kinds once. The
+/// returned representation contains only the structural data needed by
+/// [`read_bound_transform_at`]; sampled values are still read at playback
+/// time.
+pub(crate) fn bind_transform(
+    stage: &Stage,
+    prim: &Path,
+) -> anyhow::Result<Option<TransformBinding>> {
+    let Some(raw) = attr_value(stage, prim, "xformOpOrder", None)? else {
+        return Ok(None);
+    };
+    let order = match raw {
+        Value::TokenVec(v) => v.into_iter().map(|t| t.as_str().to_owned()).collect(),
         Value::StringVec(v) => v,
         Value::TokenListOp(op) => op
             .flatten()
             .into_iter()
-            .map(|t| t.as_str().to_string())
+            .map(|t| t.as_str().to_owned())
             .collect(),
         _ => return Ok(None),
     };
+    Ok(Some(TransformBinding {
+        prim: prim.clone(),
+        ops: order.into_iter().map(bind_op).collect(),
+    }))
+}
 
+/// Read only the sampled operation values for a previously bound transform.
+pub(crate) fn read_bound_transform_at(
+    stage: &Stage,
+    binding: &TransformBinding,
+    time: Option<f64>,
+) -> anyhow::Result<Option<Transform3>> {
+    let tc = time.map(TimeCode::new);
     let mut m = Mat4::IDENTITY;
-    for op in &order {
-        m *= build_op_matrix(stage, prim, op, tc)?;
+    for op in &binding.ops {
+        m *= build_bound_op_matrix(stage, &binding.prim, op, tc)?;
     }
 
     let (s, r, t) = m.to_scale_rotation_translation();
@@ -67,57 +123,92 @@ pub fn read_transform_at(
     }))
 }
 
-fn build_op_matrix(
-    stage: &Stage,
-    prim: &Path,
-    op_token: &str,
-    time: Option<TimeCode>,
-) -> anyhow::Result<Mat4> {
+fn bind_op(op_token: String) -> BoundXformOp {
     const INVERT: &str = "!invert!";
     let (inverted, base) = match op_token.strip_prefix(INVERT) {
         Some(stripped) => (true, stripped),
-        None => (false, op_token),
+        None => (false, op_token.as_str()),
     };
+    let kind = base.strip_prefix("xformOp:").unwrap_or(base);
+    let kind = kind.split(':').next().unwrap_or(kind);
+    let kind = match kind {
+        "translate" => XformOpKind::Translate,
+        "scale" => XformOpKind::Scale,
+        "orient" => XformOpKind::Orient,
+        "rotateX" => XformOpKind::RotateX,
+        "rotateY" => XformOpKind::RotateY,
+        "rotateZ" => XformOpKind::RotateZ,
+        "rotateXYZ" => XformOpKind::RotateXYZ,
+        "rotateYXZ" => XformOpKind::RotateYXZ,
+        "rotateZXY" => XformOpKind::RotateZXY,
+        "rotateXZY" => XformOpKind::RotateXZY,
+        "rotateYZX" => XformOpKind::RotateYZX,
+        "rotateZYX" => XformOpKind::RotateZYX,
+        "transform" => XformOpKind::Transform,
+        _ => XformOpKind::Unknown,
+    };
+    BoundXformOp {
+        name: base.to_owned(),
+        kind,
+        inverted,
+    }
+}
 
-    let Some(raw) = attr_value(stage, prim, base, time)? else {
+fn build_bound_op_matrix(
+    stage: &Stage,
+    prim: &Path,
+    op: &BoundXformOp,
+    time: Option<TimeCode>,
+) -> anyhow::Result<Mat4> {
+    let Some(raw) = attr_value(stage, prim, &op.name, time)? else {
         return Ok(Mat4::IDENTITY);
     };
 
-    let kind = base.strip_prefix("xformOp:").unwrap_or(base);
-    let kind = kind.split(':').next().unwrap_or(kind);
-
-    let m = match kind {
-        "translate" => {
+    let m = match op.kind {
+        XformOpKind::Translate => {
             Mat4::from_translation(Vec3::from(value_to_vec3f(&raw).unwrap_or([0.0, 0.0, 0.0])))
         }
-        "scale" => Mat4::from_scale(Vec3::from(value_to_vec3f(&raw).unwrap_or([1.0, 1.0, 1.0]))),
-        "orient" => {
+        XformOpKind::Scale => {
+            Mat4::from_scale(Vec3::from(value_to_vec3f(&raw).unwrap_or([1.0, 1.0, 1.0])))
+        }
+        XformOpKind::Orient => {
             let q = value_to_quat_wxyz(&raw).unwrap_or([1.0, 0.0, 0.0, 0.0]);
             Mat4::from_quat(Quat::from_xyzw(q[1], q[2], q[3], q[0]))
         }
-        "rotateX" => Mat4::from_rotation_x(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians()),
-        "rotateY" => Mat4::from_rotation_y(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians()),
-        "rotateZ" => Mat4::from_rotation_z(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians()),
-        "rotateXYZ" | "rotateYXZ" | "rotateZXY" | "rotateXZY" | "rotateYZX" | "rotateZYX" => {
+        XformOpKind::RotateX => {
+            Mat4::from_rotation_x(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians())
+        }
+        XformOpKind::RotateY => {
+            Mat4::from_rotation_y(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians())
+        }
+        XformOpKind::RotateZ => {
+            Mat4::from_rotation_z(value_to_scalar_f32(&raw).unwrap_or(0.0).to_radians())
+        }
+        XformOpKind::RotateXYZ
+        | XformOpKind::RotateYXZ
+        | XformOpKind::RotateZXY
+        | XformOpKind::RotateXZY
+        | XformOpKind::RotateYZX
+        | XformOpKind::RotateZYX => {
             let v = value_to_vec3f(&raw).unwrap_or([0.0, 0.0, 0.0]);
             let rx_m = Mat4::from_rotation_x(v[0].to_radians());
             let ry_m = Mat4::from_rotation_y(v[1].to_radians());
             let rz_m = Mat4::from_rotation_z(v[2].to_radians());
-            match kind {
-                "rotateXYZ" => rz_m * ry_m * rx_m,
-                "rotateYXZ" => rz_m * rx_m * ry_m,
-                "rotateZXY" => ry_m * rx_m * rz_m,
-                "rotateXZY" => ry_m * rz_m * rx_m,
-                "rotateYZX" => rx_m * rz_m * ry_m,
-                "rotateZYX" => rx_m * ry_m * rz_m,
+            match op.kind {
+                XformOpKind::RotateXYZ => rz_m * ry_m * rx_m,
+                XformOpKind::RotateYXZ => rz_m * rx_m * ry_m,
+                XformOpKind::RotateZXY => ry_m * rx_m * rz_m,
+                XformOpKind::RotateXZY => ry_m * rz_m * rx_m,
+                XformOpKind::RotateYZX => rx_m * rz_m * ry_m,
+                XformOpKind::RotateZYX => rx_m * ry_m * rz_m,
                 _ => unreachable!(),
             }
         }
-        "transform" => value_to_mat4_glam(&raw).unwrap_or(Mat4::IDENTITY),
-        _ => Mat4::IDENTITY,
+        XformOpKind::Transform => value_to_mat4_glam(&raw).unwrap_or(Mat4::IDENTITY),
+        XformOpKind::Unknown => Mat4::IDENTITY,
     };
 
-    Ok(if inverted { m.inverse() } else { m })
+    Ok(if op.inverted { m.inverse() } else { m })
 }
 
 fn value_to_mat4_glam(v: &Value) -> Option<Mat4> {

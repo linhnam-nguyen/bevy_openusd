@@ -19,6 +19,7 @@ use openusd::usd::{Stage, TimeCode};
 
 use super::index::PrimEntities;
 use super::path::PathStore;
+use super::performance::PerformanceCounters;
 use super::projection::traverse_predicate;
 use super::stage::LiveStage;
 use crate::route::skel::{UsdBlendShapeBinding, UsdJoint, UsdSkelAnimDriver};
@@ -26,18 +27,18 @@ use crate::route::skel::{UsdBlendShapeBinding, UsdJoint, UsdSkelAnimDriver};
 #[derive(Clone)]
 struct TransformBinding {
     entity: Entity,
-    path: Path,
+    xform: crate::read::xform::TransformBinding,
 }
 
 #[derive(Clone)]
 struct BlendBinding {
     entity: Entity,
-    names: Vec<String>,
+    source_indices: Vec<Option<usize>>,
 }
 
 #[derive(Clone)]
 struct SkeletonBinding {
-    source: Path,
+    animation: SkelAnimQuery,
     joints: Vec<Entity>,
     has_translations: bool,
     has_rotations: bool,
@@ -361,6 +362,9 @@ fn attach_native_mesh(
 /// reconcile. Existing joint entities are deliberately replaced so stale
 /// skeleton topology cannot survive a USD resync.
 pub(super) fn rebuild(world: &mut World, live: &LiveStage, map: &PrimEntities) {
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.animation_runtime_rebuilds(1);
+    }
     clear_bindings(world);
     let stage = &live.stage;
     let by_skeleton = collect_bindings(stage);
@@ -493,7 +497,10 @@ pub(super) fn rebuild(world: &mut World, live: &LiveStage, map: &PrimEntities) {
                 })
                 .unwrap_or(false);
             if animated {
-                transforms.push(TransformBinding { entity, path });
+                let Ok(Some(xform)) = crate::read::xform::bind_transform(stage, &path) else {
+                    continue;
+                };
+                transforms.push(TransformBinding { entity, xform });
             }
         }
         transforms
@@ -505,18 +512,31 @@ pub(super) fn rebuild(world: &mut World, live: &LiveStage, map: &PrimEntities) {
         let Ok(source) = openusd::sdf::path(&driver.animation_source_path) else {
             continue;
         };
+        let Ok(Some(animation)) = SkelAnimQuery::new(stage, source) else {
+            continue;
+        };
+        let source_indices = animation
+            .blend_shape_order()
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.as_str(), index))
+            .collect::<HashMap<_, _>>();
         let mut blend_bindings = Vec::new();
         let mut mesh_query = world.query::<(Entity, &UsdBlendShapeBinding)>();
         for (entity, binding) in mesh_query.iter(world) {
             if binding.animation_source_path == driver.animation_source_path {
                 blend_bindings.push(BlendBinding {
                     entity,
-                    names: binding.names.clone(),
+                    source_indices: binding
+                        .names
+                        .iter()
+                        .map(|name| source_indices.get(name.as_str()).copied())
+                        .collect(),
                 });
             }
         }
         skeletons.push(SkeletonBinding {
-            source,
+            animation,
             joints: driver.joint_entities.iter().copied().flatten().collect(),
             has_translations: driver.has_translations,
             has_rotations: driver.has_rotations,
@@ -538,18 +558,16 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
         .unwrap_or_default();
     for target in &runtime.transforms {
         if let Ok(Some(value)) =
-            crate::read::xform::read_transform_at(stage, &target.path, Some(time))
+            crate::read::xform::read_bound_transform_at(stage, &target.xform, Some(time))
             && let Some(mut transform) = world.get_mut::<Transform>(target.entity)
         {
             *transform = crate::live::projection::to_bevy_transform(value);
         }
     }
     for skeleton in &runtime.skeletons {
-        let Ok(Some(animation)) = SkelAnimQuery::new(stage, skeleton.source.clone()) else {
-            continue;
-        };
-        let Ok((translations, rotations, scales)) =
-            animation.compute_joint_local_transform_components(stage, TimeCode::new(time))
+        let Ok((translations, rotations, scales)) = skeleton
+            .animation
+            .compute_joint_local_transform_components(stage, TimeCode::new(time))
         else {
             continue;
         };
@@ -573,8 +591,10 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
                 transform.scale = Vec3::new(value.x, value.y, value.z);
             }
         }
-        if let Ok(weights) = animation.compute_blend_shape_weights(stage, TimeCode::new(time)) {
-            let names = animation.blend_shape_order();
+        if let Ok(weights) = skeleton
+            .animation
+            .compute_blend_shape_weights(stage, TimeCode::new(time))
+        {
             for binding in &skeleton.blend_bindings {
                 let Some(mut morph) = world.get_mut::<MeshMorphWeights>(binding.entity) else {
                     continue;
@@ -582,11 +602,9 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
                 let MeshMorphWeights::Value { weights: output } = &mut *morph else {
                     continue;
                 };
-                for (index, name) in binding.names.iter().enumerate() {
+                for (index, source_index) in binding.source_indices.iter().enumerate() {
                     if let Some(weight) = output.get_mut(index) {
-                        *weight = names
-                            .iter()
-                            .position(|source| source == name)
+                        *weight = source_index
                             .and_then(|source| weights.get(source))
                             .copied()
                             .unwrap_or_default();
