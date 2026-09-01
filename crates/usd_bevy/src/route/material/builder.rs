@@ -63,6 +63,21 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     }) else {
         return;
     };
+    if world
+        .get::<crate::extended_skin::ExtendedSkinMesh>(entity)
+        .is_some()
+    {
+        if let Some(base) = world
+            .resource::<Assets<StandardMaterial>>()
+            .get(&handle)
+            .cloned()
+        {
+            if crate::extended_skin::set_extended_material(world, entity, base) {
+                mark_render_projection_dirty(world, entity);
+                return;
+            }
+        }
+    }
     let changed = if let Some(mut mat) = world.get_mut::<MeshMaterial3d<StandardMaterial>>(entity) {
         if mat.0 == handle {
             false

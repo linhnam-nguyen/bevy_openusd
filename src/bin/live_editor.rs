@@ -17,7 +17,10 @@ use std::path::PathBuf;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use usd_bevy::{DisplayPurposes, LiveStage, LiveStagePlugin, PrimEntities, StageTime, UsdPlugin};
+use usd_bevy::{
+    DisplayPurposes, ExtendedSkinPlugin, LiveStage, LiveStagePlugin, PrimEntities, StageTime,
+    UsdPlugin,
+};
 
 #[derive(Resource)]
 struct StagePath(String);
@@ -89,6 +92,7 @@ fn main() {
             }),
     )
     .add_plugins(UsdPlugin)
+    .add_plugins(ExtendedSkinPlugin)
     .add_plugins(LiveStagePlugin)
     .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))
     .insert_resource(StagePath(path_str.clone()))

@@ -103,6 +103,7 @@ pub(crate) fn run() {
     }
     app.add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
         .add_plugins(UsdPlugin)
+        .add_plugins(usd_bevy::ExtendedSkinPlugin)
         .add_plugins(OutlinePlugin::JUMP_FLOOD);
 
     #[cfg(feature = "solari")]

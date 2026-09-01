@@ -184,6 +184,7 @@ fn clear_bindings(world: &mut World) {
             With<bevy::mesh::skinning::SkinnedMesh>,
             With<MeshMorphWeights>,
             With<UsdBlendShapeBinding>,
+            With<crate::extended_skin::ExtendedSkinMesh>,
         )>>();
         query.iter(world).collect::<Vec<_>>()
     };
@@ -193,6 +194,8 @@ fn clear_bindings(world: &mut World) {
             entity_mut.remove::<bevy::mesh::skinning::SkinnedMesh>();
             entity_mut.remove::<MeshMorphWeights>();
             entity_mut.remove::<UsdBlendShapeBinding>();
+            entity_mut.remove::<crate::extended_skin::ExtendedSkinMesh>();
+            entity_mut.remove::<MeshMaterial3d<crate::extended_skin::ExtendedSkinMaterial>>();
         }
     }
 }
@@ -232,15 +235,35 @@ fn attach_native_mesh(
     } else {
         Vec::new()
     };
+    let fidelity = if skinned {
+        crate::mesh::skin_fidelity(&binding.binding, read.points.len(), selected.len())
+            .unwrap_or(crate::mesh::SkinFidelity::Standard4)
+    } else {
+        crate::mesh::SkinFidelity::Standard4
+    };
     let Some(mut mesh) = (if skinned {
-        let Ok(attrs) = crate::mesh::skin_attrs_from_binding(
-            &binding.binding,
-            read.points.len(),
-            selected.len(),
-        ) else {
-            return;
-        };
-        Some(crate::mesh::mesh_from_usd_with_skin(&read, &attrs))
+        match fidelity {
+            crate::mesh::SkinFidelity::Standard4 => {
+                let Ok(attrs) = crate::mesh::skin_attrs_from_binding(
+                    &binding.binding,
+                    read.points.len(),
+                    selected.len(),
+                ) else {
+                    return;
+                };
+                Some(crate::mesh::mesh_from_usd_with_skin(&read, &attrs))
+            }
+            crate::mesh::SkinFidelity::Extended16 => {
+                let Ok(attrs) = crate::mesh::extended_skin_attrs_from_binding(
+                    &binding.binding,
+                    read.points.len(),
+                    selected.len(),
+                ) else {
+                    return;
+                };
+                Some(crate::mesh::mesh_from_usd_with_extended_skin(&read, &attrs))
+            }
+        }
     } else {
         Some(crate::mesh::mesh_from_usd(&read))
     }) else {
@@ -296,6 +319,14 @@ fn attach_native_mesh(
     } else {
         None
     };
+    let base_material = world
+        .get::<MeshMaterial3d<StandardMaterial>>(entity)
+        .and_then(|material| {
+            world
+                .resource::<Assets<StandardMaterial>>()
+                .get(&material.0)
+        })
+        .cloned();
     if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
         entity_mut.insert(Mesh3d(mesh_handle));
         if !blend_names.is_empty() {
@@ -309,7 +340,15 @@ fn attach_native_mesh(
                 },
             ));
         }
+        if fidelity == crate::mesh::SkinFidelity::Extended16 {
+            entity_mut.insert(crate::extended_skin::ExtendedSkinMesh);
+        }
         let _ = inverse_handle;
+    }
+    if fidelity == crate::mesh::SkinFidelity::Extended16 {
+        if let Some(base) = base_material {
+            let _ = crate::extended_skin::set_extended_material(world, entity, base);
+        }
     }
 }
 

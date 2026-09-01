@@ -10,6 +10,7 @@
 extern crate self as usd_bevy;
 
 pub mod authoring;
+pub mod extended_skin;
 pub mod live;
 pub mod mesh;
 pub mod prim_ref;
@@ -19,6 +20,9 @@ pub mod snippet;
 pub mod sync;
 
 pub use authoring::*;
+pub use extended_skin::{
+    ExtendedSkinExtension, ExtendedSkinMaterial, ExtendedSkinMesh, ExtendedSkinPlugin,
+};
 pub use live::{
     AnimatedPrims, AuthoredSuppressionGuard, LiveRevision, LiveStage, LiveStagePlugin,
     LiveStageSet, NativeInstanceDependencyIndex, PendingStageChanges, PerformanceCounters,
