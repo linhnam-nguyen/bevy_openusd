@@ -34,9 +34,10 @@ build. The profile used 12,000 properties and passed its assertions.
 ## Integrated implementation evidence
 
 The OR3 sequence is present on local branch `or3/M8-OR3-animation` in the
-backend and frontend repositories. Backend checkpoints C0 through C11 are
-additive commits; the frontend has C0 and C10 implementation commits. The
-complete commit manifest is in `peer-view-portability.md`.
+backend and frontend repositories. Backend checkpoints C0 through C12 and
+the additive corrections are committed; the frontend C0/C10/C12 history and
+the additive C10+ correction are committed. The complete commit manifest is
+in `peer-view-portability.md`.
 
 The deterministic gates passed for the implemented paths. The final backend
 workspace gate passed in both feature modes:
@@ -52,7 +53,14 @@ cargo test --workspace --no-default-features    PASS
 The root `usdview` test target reported `344 passed, 5 ignored`; all workspace
 integration targets also passed in the default and no-default runs. Companion
 Frost warnings and the macOS linker warning were inherited and non-fatal.
-The frontend workspace/WASM gate is recorded in the UI C12 evidence file.
+The frontend workspace format/check/tests passed. The package has no `pnpm
+build` script; the documented `pnpm run frontend:build` passed after
+normalizing the host `NO_COLOR=1` value to `NO_COLOR=true`, including Tailwind
+CSS generation and the Trunk WASM build. Standalone
+`cargo check --manifest-path src-tauri/Cargo.toml` passed. The repository
+`make harden` gate stopped at its source-size audit with 49 warnings and four
+known hard-limit files: `native_animation.rs` 617, `scene_index.rs` 452,
+`bridge/scene_query.rs` 404, and `scene_query.rs` 402.
 
 The fixed-16 CPU mirror diagnostic and the temporary Metal startup check show
 reference agreement and shader/bind-group compatibility for the candidate.
@@ -208,6 +216,97 @@ pre-existing source-size audit before compile/test/clippy stages because
 `src/viewport/api/bridge/scene_query.rs`, and
 `src/viewport/api/scene_query.rs` exceed the 400-line hard limit. No C4+++
 file exceeds that limit, and no unrelated oversized file was modified.
+
+## Additive C4++++ production-path native dependency regression
+
+C4++++ completes the authorized production OpenUSD integration correction for
+native-instance dependency lookup. It preserves the accepted compact
+`PathStore`/`PathId` topology and migrates the remaining pre-C4 `PrimEntities`
+callers. The regression
+`native_instance_prototype_ancestor_change_patches_only_descendant_consumers`
+uses a real OpenUSD production path: an ordinary inheritable property change
+on a prototype ancestor patches only the correct descendant proxy, leaves an
+unrelated branch untouched, and preserves exact-leaf and structural-resync
+coverage.
+
+```text
+M8-OR3-C4++++  c839fe5b51382dcf54765cc5f216519ce992cf17
+```
+
+Targeted rustfmt/focused test, full no-default workspace, full default
+workspace, and staged-diff checks passed. The checkpoint was pushed to the
+backend `or3/M8-OR3-animation` origin branch.
+
+## Additive C1+ animation runtime isolation
+
+C1+ moves invariant xform-operation binding and animation query/blend-name
+indexing out of the StageTime playback loop. Sample-time playback performs
+numeric reads and direct joint-transform updates; it does not rebuild mesh
+assets, call generic `patch_prim`/`read_mesh`, allocate Mesh or
+StandardMaterial values, or scan blend-shape names with `.position`.
+`stage_time_uses_prebound_animation_without_structural_work` verifies the
+transform change and zero structural-work counters for a StageTime sample.
+
+```text
+M8-OR3-C1+  863ef1c4b8584059f26035ad6d9a12467123b9aa
+```
+
+Targeted and full `usd_bevy` checks/tests, formatting, and staged-diff checks
+passed. The repository hardening invocation reached the same pre-existing
+source-size audit recorded above.
+
+## Additive C5+ compact sparse ChangePlan
+
+C5+ introduces a batch-local `ChangePlan` keyed by `PathId`, with borrowed
+property names, path-entry deduplication, property deduplication, and
+minimized structural-resync roots. Reconciliation and native dependent
+fan-out consume this compact plan instead of rebuilding
+`HashMap<String, Vec<String>>` work representations or cloning repeated path
+and property strings. `compact_change_plan_deduplicates_paths_and_properties`
+verifies four duplicate notices collapse to one dependency query with zero
+string materializations.
+
+```text
+M8-OR3-C5+  7d3c2daf8355dda5de0ec60c648243deb32e6cd0
+```
+
+Targeted test, full `usd_bevy` fmt/check/test, staged-diff check, and the
+hardening invocation passed its applicable stages. The checkpoint was pushed
+to the backend `or3/M8-OR3-animation` origin branch.
+
+## Additive C10+ bounded hierarchy projection
+
+C10+ replaces per-reactive-render hierarchy cloning, ancestor walking, and
+complete visible-row materialization with a revision-bound `Arc` index and a
+separate expansion-bound visible projection. Parent indices, depths, and
+subtree ends are computed once per hierarchy revision; selection and scroll
+updates slice only the overscanned viewport window. Stable IDs, expansion,
+lazy child requests, selection, local/server search, timeline projection, and
+the no-StageTime-frame-traffic boundary are preserved.
+
+```text
+M8-OR3-C10+  frontend 95036e7ea9f4b8a10d3cdcfafc91fc383b5c9517
+```
+
+The focused hierarchy regression passed. Frontend `cargo check --workspace`
+and `cargo test --workspace` passed (255 passed, 1 ignored). The documented
+`pnpm run frontend:build` passed with `NO_COLOR=true`, including Tailwind and
+Trunk/WASM; `pnpm build` is not defined by this package. Standalone Tauri
+`cargo check --manifest-path src-tauri/Cargo.toml` passed. The checkpoint was
+pushed to the frontend `or3/M8-OR3-animation` origin branch.
+
+## Consolidated correction boundary
+
+The four corrections were implemented in one uninterrupted authorized pass:
+
+```text
+C4++++ → C1+ → C5+ → C10+
+```
+
+They now stop for one consolidated Owner Review. No measured Hummingbird
+fixed-16-versus-four-wide FPS/CPU/RAM, GPU readback, visual, equivalent-pass,
+or timeline StageTime evidence is claimed here. No merge, freeze,
+forward-port, productionization, OR3 redesign, or M9 work is authorized.
 
 ## Owner-gated runtime rows
 
