@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::change::LiveRevision;
 use super::super::index::PrimEntities;
+use super::super::native_animation;
 use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::{is_descendant_or_self, parent_path};
 use super::super::performance::PerformanceCounters;
@@ -185,6 +186,8 @@ pub(super) fn reconcile_subtrees(
             }
         }
     }
+
+    native_animation::rebuild(world, live, map);
 
     world.init_resource::<NativeInstanceDependencyIndex>();
     if let Some(mut dependencies) = world.get_resource_mut::<NativeInstanceDependencyIndex>() {

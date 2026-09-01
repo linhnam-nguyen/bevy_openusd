@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::index::PrimEntities;
+use super::super::native_animation;
 use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::super::path::parent_path;
 use super::super::performance::PerformanceCounters;
@@ -98,6 +99,7 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
         }
     }
     world.insert_resource(AnimatedPrims(animated));
+    native_animation::rebuild(world, live, map);
     world.insert_resource(ReconcileStats {
         roots: 1,
         visited_stage_prims: current.len(),

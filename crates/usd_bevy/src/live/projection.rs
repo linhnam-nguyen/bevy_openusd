@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::native_animation;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
 use super::performance::PerformanceCounters;
@@ -134,6 +135,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         "projected USD stage"
     );
     world.insert_resource(AnimatedPrims(animated));
+    native_animation::rebuild(world, live, map);
     world.insert_resource(ProjectionStats {
         initial_projection_ms: Some(duration),
         initial_projection_prims: plan.len().saturating_sub(1) as u64,

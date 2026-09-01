@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::native_animation;
 use super::native_instance_dependency::NativeInstanceDependencyIndex;
 use super::performance::PerformanceCounters;
 use super::progressive_cleanup::clear_projection;
@@ -240,7 +241,7 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
         }
         processed += 1;
     }
-    finish_if_ready(world, live);
+    finish_if_ready(world, live, map);
 }
 
 fn finalize_plan(world: &mut World) {
@@ -269,7 +270,7 @@ fn fail_generation(world: &mut World, error: anyhow::Error) {
     world.remove_non_send::<ProjectionPlanBuilder>();
 }
 
-fn finish_if_ready(world: &mut World, live: &LiveStage) {
+fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
     let (ready, animated, duration_ms, prims) = {
         let mut state = world.resource_mut::<ProgressiveProjectionState>();
         let complete = state.total > 0 && state.completed == state.total;
@@ -298,6 +299,7 @@ fn finish_if_ready(world: &mut World, live: &LiveStage) {
             );
         }
         world.insert_resource(AnimatedPrims(animated));
+        native_animation::rebuild(world, live, map);
         if let Some(mut stats) = world.get_resource_mut::<ProjectionStats>() {
             stats.initial_projection_ms = duration_ms;
             stats.initial_projection_prims = prims as u64;

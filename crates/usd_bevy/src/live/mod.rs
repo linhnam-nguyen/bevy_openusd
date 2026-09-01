@@ -4,6 +4,7 @@ mod animation;
 mod author;
 mod change;
 mod index;
+mod native_animation;
 mod native_instance_dependency;
 mod path;
 mod performance;
@@ -77,6 +78,7 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<PerformanceCounters>()
             .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
+            .init_resource::<native_animation::AnimationRuntime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()
             .configure_sets(
