@@ -23,18 +23,15 @@ fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
 
 #[test]
 fn semantic_path_resolution_preserves_runtime_reveal_pages() {
-    let index = SceneAnchorIndex {
-        nodes: vec![
-            node("/World", None, "World"),
-            node("/World/Environment", Some("/World"), "Environment"),
-            node(
-                "/World/Environment/Door",
-                Some("/World/Environment"),
-                "Door",
-            ),
-        ],
-        ..Default::default()
-    };
+    let index = SceneAnchorIndex::from_test_nodes(vec![
+        node("/World", None, "World"),
+        node("/World/Environment", Some("/World"), "Environment"),
+        node(
+            "/World/Environment/Door",
+            Some("/World/Environment"),
+            "Door",
+        ),
+    ]);
 
     let result = index
         .search_match_for_path("/World/Environment/Door")
@@ -62,6 +59,35 @@ fn semantic_path_resolution_preserves_runtime_reveal_pages() {
 fn prim_name_projection_uses_only_the_final_path_segment() {
     assert_eq!(prim_name("/root/name1/name2/name3"), "name3");
     assert_eq!(prim_name("/Architecture/Level01/Wall_0042"), "Wall_0042");
+}
+
+#[test]
+fn dense_scene_index_pages_and_reveal_metadata_are_bounded() {
+    let nodes = (0..40_000)
+        .map(|index| {
+            let path = format!("/World/Element{index:05}");
+            node(&path, None, &format!("Element {index:05}"))
+        })
+        .collect::<Vec<_>>();
+
+    let started = std::time::Instant::now();
+    let index = SceneAnchorIndex::from_test_nodes(nodes);
+    let build_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let page = index.children_page(None, 17, 128);
+
+    assert_eq!(page.total, 40_000);
+    assert_eq!(page.nodes.len(), 128);
+    assert_eq!(page.nodes[0].anchor.prim_path, "/World/Element02176");
+    let match_result = index
+        .search_match_for_path("/World/Element39999")
+        .expect("path posting resolves the node without ancestry reconstruction");
+    assert_eq!(match_result.reveal_pages.len(), 1);
+    assert_eq!(match_result.reveal_pages[0].page, 624);
+
+    eprintln!(
+        "M8-OR3-C6 dense scene index: nodes=40000 build_ms={build_ms:.3} page_nodes={}",
+        page.nodes.len()
+    );
 }
 
 #[test]

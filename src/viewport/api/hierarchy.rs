@@ -6,6 +6,7 @@
 //! entities.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use bevy::prelude::Resource;
@@ -122,7 +123,10 @@ impl HierarchyVisibilityIndex {
 #[derive(Clone, Debug)]
 pub(crate) struct HierarchyPageIndex {
     by_id: HashMap<HierarchyNodeId, usize>,
-    children_by_parent: HashMap<Option<HierarchyNodeId>, Vec<usize>>,
+    /// One range per node plus slot zero for roots. The range points into the
+    /// single dense child-order array, so a page never rebuilds a parent map.
+    child_ranges: Vec<Range<usize>>,
+    child_order: Vec<usize>,
 }
 
 impl Default for CurrentHierarchyProjection {
@@ -224,20 +228,33 @@ impl HierarchyPageIndex {
             .enumerate()
             .map(|(index, node)| (node.id.clone(), index))
             .collect::<HashMap<_, _>>();
-        let mut children_by_parent: HashMap<Option<HierarchyNodeId>, Vec<usize>> = HashMap::new();
+        // Build a compact topology once at publication time. Queries use only
+        // the parent node id, a range lookup, and the requested page slice.
+        let mut children_by_parent = vec![Vec::new(); read_model.nodes.len() + 1];
         for (index, node) in read_model.nodes.iter().enumerate() {
-            children_by_parent
-                .entry(node.parent_id.clone())
-                .or_default()
-                .push(index);
+            let slot = node
+                .parent_id
+                .as_ref()
+                .and_then(|parent| by_id.get(parent).copied())
+                .map_or(0, |parent| parent + 1);
+            children_by_parent[slot].push(index);
         }
-        for children in children_by_parent.values_mut() {
+        for children in &mut children_by_parent {
             children.sort_unstable_by_key(|index| read_model.nodes[*index].id.clone());
+        }
+
+        let mut child_order = Vec::with_capacity(read_model.nodes.len());
+        let mut child_ranges = Vec::with_capacity(children_by_parent.len());
+        for children in children_by_parent {
+            let start = child_order.len();
+            child_order.extend(children);
+            child_ranges.push(start..child_order.len());
         }
 
         Self {
             by_id,
-            children_by_parent,
+            child_ranges,
+            child_order,
         }
     }
 
@@ -257,15 +274,21 @@ impl HierarchyPageIndex {
             ));
         }
 
+        let parent_slot = parent_id
+            .map(|parent_id| {
+                self.by_id
+                    .get(parent_id)
+                    .copied()
+                    .map(|index| index + 1)
+                    .ok_or_else(|| format!("unknown hierarchy parent id `{}`", parent_id.as_str()))
+            })
+            .transpose()?
+            .unwrap_or(0);
         let page_size = page_size.clamp(1, MAX_SCENE_PAGE_SIZE);
-        let child_indices = self
-            .children_by_parent
-            .get(&parent_id.cloned())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let total = child_indices.len() as u32;
+        let child_range = &self.child_ranges[parent_slot];
+        let total = child_range.len() as u32;
         let start = (page as usize).saturating_mul(page_size as usize);
-        let nodes = child_indices
+        let nodes = self.child_order[child_range.clone()]
             .iter()
             .skip(start)
             .take(page_size as usize)

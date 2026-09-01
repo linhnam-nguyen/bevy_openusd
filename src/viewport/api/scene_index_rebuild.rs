@@ -128,6 +128,7 @@ impl SceneAnchorIndex {
                 })
         });
 
+        self.dense = super::DenseSceneIndex::from_nodes(&nodes, &by_anchor);
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.occurrence_index = occurrence_index;

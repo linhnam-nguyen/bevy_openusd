@@ -4,6 +4,7 @@
 //! ECS entity. It never leaves the viewport process.
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
@@ -34,8 +35,144 @@ pub(crate) struct SceneAnchorIndex {
     by_entity: HashMap<Entity, SceneAnchor>,
     occurrence_index: SceneOccurrenceIndex,
     nodes: Vec<PrimNodeReadModel>,
+    dense: DenseSceneIndex,
     initialized: bool,
     revision: u64,
+}
+
+/// Dense, session-local scene topology. Protocol strings remain cold fields on
+/// each node, while parent/child and occurrence queries use integer ranges.
+/// The structure is rebuilt only when projected scene rows change.
+#[derive(Clone, Debug, Default)]
+pub(super) struct DenseSceneIndex {
+    nodes: Vec<DenseSceneNode>,
+    by_anchor: HashMap<SceneAnchor, usize>,
+    by_entity: HashMap<Entity, usize>,
+    by_path: HashMap<String, Vec<usize>>,
+    child_ranges: Vec<Range<usize>>,
+    child_order: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct DenseSceneNode {
+    entity: Option<Entity>,
+    anchor: SceneAnchor,
+    parent: Option<usize>,
+    first_child: usize,
+    child_count: usize,
+    sibling_index: usize,
+    label: String,
+    display_name: Option<String>,
+    visible: bool,
+    has_children: bool,
+}
+
+impl DenseSceneIndex {
+    pub(super) fn from_nodes(
+        nodes: &[PrimNodeReadModel],
+        entities: &HashMap<SceneAnchor, Entity>,
+    ) -> Self {
+        let by_anchor = nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.anchor.clone(), index))
+            .collect::<HashMap<_, _>>();
+        let mut dense_nodes = nodes
+            .iter()
+            .map(|node| DenseSceneNode {
+                entity: entities.get(&node.anchor).copied(),
+                anchor: node.anchor.clone(),
+                parent: node
+                    .parent
+                    .as_ref()
+                    .and_then(|parent| by_anchor.get(parent).copied()),
+                first_child: 0,
+                child_count: 0,
+                sibling_index: 0,
+                label: node.label.clone(),
+                display_name: node.display_name.clone(),
+                visible: node.visible,
+                has_children: node.has_children,
+            })
+            .collect::<Vec<_>>();
+
+        let by_entity = dense_nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| node.entity.map(|entity| (entity, index)))
+            .collect::<HashMap<_, _>>();
+        let mut by_path: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut children_by_parent = vec![Vec::new(); dense_nodes.len() + 1];
+        for (index, node) in dense_nodes.iter().enumerate() {
+            by_path
+                .entry(node.anchor.prim_path.clone())
+                .or_default()
+                .push(index);
+            let slot = node.parent.map_or(0, |parent| parent + 1);
+            children_by_parent[slot].push(index);
+        }
+        for children in &mut children_by_parent {
+            children.sort_unstable_by(|left, right| {
+                dense_nodes[*left].anchor.cmp(&dense_nodes[*right].anchor)
+            });
+        }
+
+        let mut child_order = Vec::with_capacity(dense_nodes.len());
+        let mut child_ranges = Vec::with_capacity(children_by_parent.len());
+        for (parent_slot, children) in children_by_parent.into_iter().enumerate() {
+            let start = child_order.len();
+            for (sibling_index, child) in children.into_iter().enumerate() {
+                dense_nodes[child].sibling_index = sibling_index;
+                child_order.push(child);
+            }
+            let end = child_order.len();
+            if parent_slot > 0 {
+                let parent = parent_slot - 1;
+                dense_nodes[parent].first_child = start;
+                dense_nodes[parent].child_count = end - start;
+            }
+            child_ranges.push(start..end);
+        }
+
+        Self {
+            nodes: dense_nodes,
+            by_anchor,
+            by_entity,
+            by_path,
+            child_ranges,
+            child_order,
+        }
+    }
+
+    fn node(&self, index: usize) -> Option<&DenseSceneNode> {
+        self.nodes.get(index)
+    }
+
+    fn children(&self, parent: Option<usize>) -> &[usize] {
+        let range = match parent {
+            Some(parent) => self
+                .node(parent)
+                .map(|node| node.first_child..node.first_child.saturating_add(node.child_count)),
+            None => self.child_ranges.first().cloned(),
+        };
+        range
+            .map(|range| &self.child_order[range])
+            .unwrap_or_default()
+    }
+
+    fn protocol_node(&self, index: usize) -> Option<PrimNodeReadModel> {
+        let node = self.node(index)?;
+        Some(PrimNodeReadModel {
+            anchor: node.anchor.clone(),
+            parent: node
+                .parent
+                .and_then(|parent| self.node(parent).map(|node| node.anchor.clone())),
+            label: node.label.clone(),
+            display_name: node.display_name.clone(),
+            visible: node.visible,
+            has_children: node.has_children,
+        })
+    }
 }
 
 impl SceneAnchorIndex {
@@ -44,7 +181,12 @@ impl SceneAnchorIndex {
     }
 
     pub(crate) fn resolve(&self, anchor: &SceneAnchor) -> Option<Entity> {
-        self.by_anchor.get(anchor).copied()
+        self.dense
+            .by_anchor
+            .get(anchor)
+            .and_then(|index| self.dense.node(*index))
+            .and_then(|node| node.entity)
+            .or_else(|| self.by_anchor.get(anchor).copied())
     }
 
     /// Resolves every current scene occurrence for a semantic prim path.
@@ -56,9 +198,10 @@ impl SceneAnchorIndex {
     }
 
     pub(crate) fn visibility_for_anchor(&self, anchor: &SceneAnchor) -> HierarchyVisibilityState {
-        self.nodes
-            .iter()
-            .find(|node| node.anchor == *anchor)
+        self.dense
+            .by_anchor
+            .get(anchor)
+            .and_then(|index| self.dense.node(*index))
             .map_or(HierarchyVisibilityState::Visible, |node| {
                 HierarchyVisibilityState::from_visible(node.visible)
             })
@@ -66,9 +209,12 @@ impl SceneAnchorIndex {
 
     pub(crate) fn visibility_for_prim_path(&self, prim_path: &str) -> HierarchyVisibilityState {
         let mut states = self
-            .nodes
-            .iter()
-            .filter(|node| node.anchor.prim_path == prim_path)
+            .dense
+            .by_path
+            .get(prim_path)
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter_map(|index| self.dense.node(*index))
             .map(|node| HierarchyVisibilityState::from_visible(node.visible));
         let Some(first) = states.next() else {
             return HierarchyVisibilityState::Visible;
@@ -81,7 +227,12 @@ impl SceneAnchorIndex {
     }
 
     pub(crate) fn anchor_for(&self, entity: Entity) -> Option<SceneAnchor> {
-        self.by_entity.get(&entity).cloned()
+        self.dense
+            .by_entity
+            .get(&entity)
+            .and_then(|index| self.dense.node(*index))
+            .map(|node| node.anchor.clone())
+            .or_else(|| self.by_entity.get(&entity).cloned())
     }
 
     /// Returns the bounded initial tree payload. Descendants stay in the
@@ -108,18 +259,22 @@ impl SceneAnchorIndex {
         } else {
             page_size.min(MAX_SCENE_PAGE_SIZE)
         };
-        let nodes: Vec<PrimNodeReadModel> = self
-            .nodes
-            .iter()
-            .filter(|node| node.parent.as_ref() == parent)
-            .cloned()
-            .collect();
-        let total = nodes.len() as u32;
+        let children = match parent {
+            Some(parent) => self
+                .dense
+                .by_anchor
+                .get(parent)
+                .map(|index| self.dense.children(Some(*index)))
+                .unwrap_or_default(),
+            None => self.dense.children(None),
+        };
+        let total = children.len() as u32;
         let start = (page as usize).saturating_mul(page_size as usize);
-        let page_nodes = nodes
+        let page_nodes = children
             .into_iter()
             .skip(start)
             .take(page_size as usize)
+            .filter_map(|index| self.dense.protocol_node(*index))
             .collect();
 
         SceneChildrenPage {
@@ -133,8 +288,10 @@ impl SceneAnchorIndex {
 
     #[cfg(test)]
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
+        let dense = DenseSceneIndex::from_nodes(&nodes, &HashMap::new());
         Self {
             nodes,
+            dense,
             initialized: true,
             revision: 1,
             ..Default::default()
@@ -184,38 +341,37 @@ impl SceneAnchorIndex {
     /// This index owns the session-local anchor, visibility, hierarchy, and
     /// reveal-page information required by the viewport protocol.
     pub(crate) fn search_match_for_path(&self, prim_path: &str) -> Option<SceneSearchMatch> {
-        let node = self
-            .nodes
-            .iter()
-            .find(|node| node.anchor.prim_path == prim_path)?;
-        let by_anchor: HashMap<SceneAnchor, &PrimNodeReadModel> = self
-            .nodes
-            .iter()
-            .map(|node| (node.anchor.clone(), node))
-            .collect();
-
+        let node_index = self.dense.by_path.get(prim_path)?.first().copied()?;
+        let node = self.dense.node(node_index)?;
         let mut ancestry = Vec::new();
-        let mut current = Some(node);
-        while let Some(node) = current {
-            ancestry.push(node);
-            current = node
-                .parent
-                .as_ref()
-                .and_then(|parent| by_anchor.get(parent).copied());
+        let mut current = Some(node_index);
+        while let Some(index) = current {
+            let node = self.dense.node(index)?;
+            ancestry.push(index);
+            current = node.parent;
         }
 
         let reveal_pages = ancestry
             .into_iter()
             .rev()
-            .map(|node| ScenePageReference {
-                parent: node.parent.clone(),
-                page: self.sibling_page(node),
+            .filter_map(|index| {
+                let node = self.dense.node(index)?;
+                Some(ScenePageReference {
+                    parent: node
+                        .parent
+                        .and_then(|parent| self.dense.node(parent))
+                        .map(|node| node.anchor.clone()),
+                    page: (node.sibling_index as u32) / DEFAULT_SCENE_PAGE_SIZE,
+                })
             })
             .collect();
 
         Some(SceneSearchMatch {
             anchor: node.anchor.clone(),
-            parent: node.parent.clone(),
+            parent: node
+                .parent
+                .and_then(|parent| self.dense.node(parent))
+                .map(|node| node.anchor.clone()),
             label: node.label.clone(),
             breadcrumb: node.anchor.prim_path.clone(),
             visible: node.visible,
@@ -226,16 +382,6 @@ impl SceneAnchorIndex {
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision
-    }
-
-    fn sibling_page(&self, node: &PrimNodeReadModel) -> u32 {
-        let index = self
-            .nodes
-            .iter()
-            .filter(|candidate| candidate.parent.as_ref() == node.parent.as_ref())
-            .position(|candidate| candidate.anchor == node.anchor)
-            .unwrap_or_default();
-        (index as u32) / DEFAULT_SCENE_PAGE_SIZE
     }
 }
 
