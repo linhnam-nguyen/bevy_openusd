@@ -15,6 +15,7 @@ pub struct PathId(u32);
 pub struct PathStore {
     paths: Vec<String>,
     by_hash: HashMap<u64, Vec<PathId>>,
+    namespace_children: HashMap<PathId, Vec<PathId>>,
 }
 
 impl PathStore {
@@ -88,6 +89,21 @@ impl PathStore {
         }
     }
 
+    /// Visit an interned path and every namespace descendant using compact IDs.
+    ///
+    /// The topology is owned once by the shared path store, so dependency indexes
+    /// can answer descendant queries without retaining prefix postings or scanning
+    /// their complete reverse maps.
+    pub fn for_each_descendant_id(&self, root: PathId, mut visit: impl FnMut(PathId)) {
+        let mut pending = vec![root];
+        while let Some(path) = pending.pop() {
+            visit(path);
+            if let Some(children) = self.namespace_children.get(&path) {
+                pending.extend(children.iter().copied());
+            }
+        }
+    }
+
     /// Compare two interned paths using namespace boundaries.
     pub fn is_descendant_or_self(&self, ancestor: PathId, candidate: PathId) -> bool {
         let Some(ancestor) = self.path(ancestor) else {
@@ -123,6 +139,7 @@ impl PathStore {
     pub(crate) fn clear(&mut self) {
         self.paths.clear();
         self.by_hash.clear();
+        self.namespace_children.clear();
     }
 
     fn lookup_exact(&self, path: &str) -> Option<PathId> {
@@ -135,6 +152,11 @@ impl PathStore {
     }
 
     fn insert_owned(&mut self, path: String) -> PathId {
+        let parent = match path.rfind('/') {
+            Some(0) => self.lookup_exact("/"),
+            Some(index) => self.lookup_exact(&path[..index]),
+            None => None,
+        };
         let id = PathId(
             self.paths
                 .len()
@@ -144,6 +166,9 @@ impl PathStore {
         let hash = path_hash(&path);
         self.paths.push(path);
         self.by_hash.entry(hash).or_default().push(id);
+        if let Some(parent) = parent {
+            self.namespace_children.entry(parent).or_default().push(id);
+        }
         id
     }
 }

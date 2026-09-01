@@ -119,11 +119,20 @@ impl NativeInstanceDependencyIndex {
     /// Return scene proxy path IDs affected by a changed prototype/source path.
     pub(crate) fn dependents_for_path(&self, paths: &PathStore, changed: &str) -> HashSet<PathId> {
         let mut dependents = HashSet::new();
-        paths.for_each_ancestor_id(changed, |ancestor| {
+        let changed_id = paths.lookup(changed);
+        let canonical_changed = changed_id.and_then(|id| paths.path(id)).unwrap_or(changed);
+        paths.for_each_ancestor_id(canonical_changed, |ancestor| {
             if let Some(proxies) = self.by_prototype.get(&ancestor) {
                 dependents.extend(proxies.iter().copied());
             }
         });
+        if let Some(changed) = changed_id {
+            paths.for_each_descendant_id(changed, |candidate| {
+                if let Some(proxies) = self.by_prototype.get(&candidate) {
+                    dependents.extend(proxies.iter().copied());
+                }
+            });
+        }
         dependents
     }
 
@@ -136,14 +145,10 @@ impl NativeInstanceDependencyIndex {
         let Some(root) = paths.lookup(root) else {
             return HashSet::new();
         };
-        self.by_prototype
-            .iter()
-            .filter(|(prototype, _)| {
-                paths.is_descendant_or_self(root, **prototype)
-                    || paths.is_descendant_or_self(**prototype, root)
-            })
-            .flat_map(|(_, proxies)| proxies.iter().copied())
-            .collect()
+        let root = paths
+            .path(root)
+            .expect("a path ID returned by lookup has canonical path bytes");
+        self.dependents_for_path(paths, root)
     }
 }
 
@@ -163,19 +168,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exact_lookup_avoids_descendant_prototype_scan() {
+    fn ordinary_lookup_preserves_descendant_prototype_dependencies() {
         let mut paths = PathStore::default();
         let prototype = paths.intern("/World/Prototype/Nested");
         let proxy = paths.intern("/World/Instance/Nested");
+        let unrelated_prototype = paths.intern("/World/OtherPrototype/Nested");
+        let unrelated_proxy = paths.intern("/World/OtherInstance/Nested");
         let mut index = NativeInstanceDependencyIndex::default();
         index.by_prototype.insert(prototype, HashSet::from([proxy]));
         index.by_proxy.insert(proxy, HashSet::from([prototype]));
+        index
+            .by_prototype
+            .insert(unrelated_prototype, HashSet::from([unrelated_proxy]));
+        index
+            .by_proxy
+            .insert(unrelated_proxy, HashSet::from([unrelated_prototype]));
 
-        assert!(
-            index
-                .dependents_for_path(&paths, "/World/Prototype")
-                .is_empty(),
-            "an exact change must not scan prototypes below the changed path"
+        assert_eq!(
+            index.dependents_for_path(&paths, "/World/Prototype"),
+            HashSet::from([proxy]),
+            "an inheritable ancestor change must reach registered descendant prototypes"
         );
         assert_eq!(
             index.dependents_for_path(&paths, "/World/Prototype/Nested/Geometry"),

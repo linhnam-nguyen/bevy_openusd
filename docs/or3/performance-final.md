@@ -165,6 +165,50 @@ cargo check -p usd_bevy -p usdview              PASS
 git diff --cached --check                       PASS
 ```
 
+## Additive C4+++ native descendant dependency repair
+
+The consolidated Owner Review found that C4++ had removed the ordinary
+`by_prototype` scan but had also removed a required USD namespace semantic:
+an inheritable property change on a prototype ancestor must reach registered
+descendant prototype consumers. C4+++ preserves the bounded lookup by adding
+one shared compact namespace topology to `PathStore`.
+
+`PathStore` now retains parent-to-children `PathId` edges alongside its single
+canonical path-byte table. Native-instance ordinary dependency lookup first
+checks the changed path and its interned ancestors, then traverses the changed
+path's compact namespace descendants and performs direct `HashMap<PathId, ...>`
+lookups. It does not scan `by_prototype` and does not reintroduce duplicated
+prefix-string postings. Structural resync lookup uses the same complete
+ancestor-plus-descendant traversal, preserving both sides of the composition
+boundary without a reverse-map scan.
+
+The C4+++ regression proves that an ordinary inheritable ancestor change
+reaches a nested registered prototype proxy, excludes an unrelated prototype
+branch, and preserves exact nested and structural-resync dependency coverage.
+
+C4+++ deterministic gates passed:
+
+```text
+cargo fmt --all -- --check
+  PASS
+cargo test -p usd_bevy --lib ordinary_lookup_preserves_descendant_prototype_dependencies
+  PASS — 1 passed
+cargo test -p usd_bevy --lib
+  PASS — 117 passed, 1 ignored
+cargo check -p usd_bevy -p usdview
+  PASS — pre-existing Frost warnings only
+git diff --check
+  PASS
+```
+
+The repository `make harden` command was also invoked. It stopped at its
+pre-existing source-size audit before compile/test/clippy stages because
+`crates/usd_bevy/src/live/native_animation.rs`,
+`src/viewport/api/scene_index.rs`,
+`src/viewport/api/bridge/scene_query.rs`, and
+`src/viewport/api/scene_query.rs` exceed the 400-line hard limit. No C4+++
+file exceeds that limit, and no unrelated oversized file was modified.
+
 ## Owner-gated runtime rows
 
 The following must still be measured by the owner with the fixed-16 candidate
