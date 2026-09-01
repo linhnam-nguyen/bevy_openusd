@@ -8,7 +8,7 @@ use crate::viewport::api::{BimProvenanceService, ViewportEventOutbox};
 use crate::viewport::diagnostics::performance::RendererCounters;
 
 /// Drains hierarchy-search-worker responses and publishes search results.
-pub(super) fn publish_scene_query_results(
+pub(crate) fn publish_scene_query_results(
     scene_query: Res<SceneQueryService>,
     bim_provenance: Option<Res<BimProvenanceService>>,
     mut search_requests: ResMut<SceneSearchRequests>,
