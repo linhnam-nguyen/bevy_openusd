@@ -50,10 +50,10 @@ impl SemanticWorkingStore {
     pub(crate) fn submit_snapshot(
         &self,
         request_id: impl Into<String>,
-        snapshot: SemanticSnapshot,
+        snapshot: impl Into<Arc<SemanticSnapshot>>,
     ) -> bool {
         self.mailbox
-            .submit_snapshot(request_id.into(), snapshot)
+            .submit_snapshot(request_id.into(), snapshot.into())
             .is_ok()
     }
 
@@ -85,7 +85,7 @@ impl SemanticWorkingStore {
         &self,
         request_id: impl Into<String>,
         update: SemanticIncrementalUpdate,
-        snapshot: &SemanticSnapshot,
+        snapshot: Arc<SemanticSnapshot>,
     ) -> bool {
         self.mailbox
             .submit_delta_with_snapshot(request_id.into(), update, snapshot)

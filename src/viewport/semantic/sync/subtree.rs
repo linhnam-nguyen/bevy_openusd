@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use openusd::usd::Stage;
 use usd_model::{EntityKey, EntitySnapshot, SemanticSnapshot, SnapshotSource};
@@ -11,10 +14,11 @@ use super::action::{SemanticDelta, SubtreeUpdateError};
 pub(in crate::viewport::semantic) fn resync_subtree_update(
     stage: &Stage,
     extractor: &SemanticExtractor,
-    previous_snapshot: SemanticSnapshot,
+    previous_snapshot: impl Into<Arc<SemanticSnapshot>>,
     batch: &usd_bevy::StageChangeBatch,
     source: SnapshotSource,
 ) -> Result<SemanticDelta, SubtreeUpdateError> {
+    let previous_snapshot = previous_snapshot.into();
     let roots = batch.resync_roots();
     if roots.is_empty() || roots.contains(&"/".to_string()) {
         return Err(SubtreeUpdateError::UnnormalizableRoot(
@@ -108,7 +112,7 @@ pub(in crate::viewport::semantic) fn resync_subtree_update(
     }
 
     // Remove old affected entities from working map
-    let mut working_entities = previous_snapshot.entities;
+    let mut working_entities = previous_snapshot.entities.clone();
     for key in &old_affected_keys {
         working_entities.remove(key);
     }
@@ -143,7 +147,7 @@ pub(in crate::viewport::semantic) fn resync_subtree_update(
     upserts.sort_by(|a, b| a.prim_path.cmp(&b.prim_path));
 
     // 8. Rebuild authoritative snapshot
-    let snapshot = extractor.snapshot_from_entities(source, working_entities);
+    let snapshot = Arc::new(extractor.snapshot_from_entities(source, working_entities));
     let request = SemanticIncrementalUpdate {
         snapshot_id: snapshot.snapshot_id.clone(),
         source: snapshot.source.clone(),

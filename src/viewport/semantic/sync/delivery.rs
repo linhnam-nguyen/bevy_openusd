@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use bevy::prelude::World;
 use usd_bevy::{LiveRevision, LiveStage, ProgressiveProjectionState, ProjectionReadiness};
@@ -19,7 +19,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
     world: &mut World,
     session_id: u64,
     live_revision: LiveRevision,
-    snapshot: &SemanticSnapshot,
+    snapshot: &Arc<SemanticSnapshot>,
     prepared_blobs: Vec<PreparedMeshBlob>,
 ) {
     if world.get_resource::<RenderServerInterface>().is_none() {
@@ -38,7 +38,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
                 live_revision,
                 projection_generation,
             },
-            snapshot: snapshot.clone(),
+            snapshot: Arc::clone(snapshot),
             prepared_blobs,
         });
     }
@@ -152,7 +152,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
                         live_revision: result.identity.live_revision,
                         projection_generation: current_generation,
                     },
-                    snapshot: snapshot.as_ref().clone(),
+                    snapshot: Arc::clone(&snapshot),
                     // The stale worker already persisted its prepared bytes.
                     // The retry only rebuilds the complete manifest/hierarchy.
                     prepared_blobs: Vec::new(),
@@ -195,7 +195,9 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
     root_count: usize,
 ) -> Vec<PreparedMeshBlob> {
     match action {
-        SemanticSyncAction::Replace(snapshot) => prepare_render_blobs(world, snapshot),
+        SemanticSyncAction::Replace(snapshot) => {
+            prepare_render_blobs(world, Arc::make_mut(snapshot))
+        }
         SemanticSyncAction::Delta(update) => {
             let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
                 bevy::log::warn!(
@@ -205,7 +207,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                     live_revision = live_revision.0,
                     "[ghost-cache] PrimEntities resource missing from world; falling back to full attach_render_blobs"
                 );
-                let prepared = prepare_render_blobs(world, &mut update.snapshot);
+                let prepared = prepare_render_blobs(world, Arc::make_mut(&mut update.snapshot));
                 for upsert in &mut update.request.upserts {
                     if let Some(enriched) = update.snapshot.entities.get(&upsert.key) {
                         *upsert = enriched.clone();
@@ -231,7 +233,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                     live_revision = live_revision.0,
                     "[ghost-cache] affected geometry entity missing from PrimEntities index; falling back to full attach_render_blobs"
                 );
-                let prepared = prepare_render_blobs(world, &mut update.snapshot);
+                let prepared = prepare_render_blobs(world, Arc::make_mut(&mut update.snapshot));
                 for upsert in &mut update.request.upserts {
                     if let Some(enriched) = update.snapshot.entities.get(&upsert.key) {
                         *upsert = enriched.clone();
@@ -243,8 +245,9 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
             // Enrich only affected upserted semantic entities
             let prepared = prepare_render_blobs_for_entities(world, &mut update.request.upserts);
             // Copy enriched upserts back into update.snapshot.entities
+            let snapshot = Arc::make_mut(&mut update.snapshot);
             for upsert in &update.request.upserts {
-                if let Some(entity) = update.snapshot.entities.get_mut(&upsert.key) {
+                if let Some(entity) = snapshot.entities.get_mut(&upsert.key) {
                     entity.geometry = upsert.geometry.clone();
                 }
             }

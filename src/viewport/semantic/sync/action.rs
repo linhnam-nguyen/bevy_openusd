@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use usd_model::SemanticSnapshot;
 
 use super::super::types::SemanticIncrementalUpdate;
@@ -45,7 +47,7 @@ impl SubtreeUpdateError {
 }
 
 pub(in crate::viewport::semantic) enum SemanticSyncAction {
-    Replace(SemanticSnapshot),
+    Replace(Arc<SemanticSnapshot>),
     Delta(SemanticDelta),
 }
 
@@ -62,5 +64,5 @@ pub(in crate::viewport::semantic) enum SemanticExtractionOutcome {
 
 pub(in crate::viewport::semantic) struct SemanticDelta {
     pub(in crate::viewport::semantic) request: SemanticIncrementalUpdate,
-    pub(in crate::viewport::semantic) snapshot: SemanticSnapshot,
+    pub(in crate::viewport::semantic) snapshot: Arc<SemanticSnapshot>,
 }

@@ -28,7 +28,7 @@ pub(crate) struct RuntimeDeliveryIdentity {
 #[derive(Debug)]
 pub(crate) struct PendingRuntimeDelivery {
     pub(crate) identity: RuntimeDeliveryIdentity,
-    pub(crate) snapshot: SemanticSnapshot,
+    pub(crate) snapshot: Arc<SemanticSnapshot>,
     pub(crate) prepared_blobs: Vec<PreparedMeshBlob>,
 }
 
@@ -36,7 +36,7 @@ pub(crate) struct PendingRuntimeDelivery {
 struct DeliveryWork {
     identity: RuntimeDeliveryIdentity,
     project_root: PathBuf,
-    snapshot: SemanticSnapshot,
+    snapshot: Arc<SemanticSnapshot>,
     prepared_blobs: Vec<PreparedMeshBlob>,
     profile: RuntimeProfile,
 }
@@ -261,7 +261,7 @@ fn build_delivery(work: &DeliveryWork) -> anyhow::Result<RuntimeDeliveryBundle> 
             stored.0
         );
     }
-    build_runtime_delivery(&store, &work.snapshot, work.profile)
+    build_runtime_delivery(&store, work.snapshot.as_ref(), work.profile)
 }
 
 #[cfg(test)]
@@ -288,7 +288,8 @@ mod tests {
                 },
                 config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
                 entities: HashMap::new(),
-            },
+            }
+            .into(),
             prepared_blobs: Vec::new(),
             profile: RuntimeProfile::NativeMedium,
         }

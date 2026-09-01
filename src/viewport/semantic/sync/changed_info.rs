@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use openusd::usd::{PrimPredicate, Stage};
 use usd_model::{EntityKey, EntitySnapshot, SemanticSnapshot, SnapshotSource};
@@ -10,10 +13,11 @@ use super::action::{SemanticDelta, SubtreeUpdateError};
 pub(in crate::viewport::semantic) fn changed_info_update(
     stage: &Stage,
     extractor: &SemanticExtractor,
-    previous_snapshot: SemanticSnapshot,
+    previous_snapshot: impl Into<Arc<SemanticSnapshot>>,
     batch: &usd_bevy::StageChangeBatch,
     source: SnapshotSource,
 ) -> Result<SemanticDelta, SubtreeUpdateError> {
+    let previous_snapshot = previous_snapshot.into();
     let mut affected_paths = HashSet::new();
     for change in &batch.changes {
         for path in &change.changed_info {
@@ -39,7 +43,7 @@ pub(in crate::viewport::semantic) fn changed_info_update(
         }
     }
 
-    let mut working_entities = previous_snapshot.entities;
+    let mut working_entities = previous_snapshot.entities.clone();
     for key in &old_affected_keys {
         working_entities.remove(key);
     }
@@ -96,7 +100,7 @@ pub(in crate::viewport::semantic) fn changed_info_update(
         .collect();
     removed_paths.sort();
 
-    let snapshot = extractor.snapshot_from_entities(source, working_entities);
+    let snapshot = Arc::new(extractor.snapshot_from_entities(source, working_entities));
     let request = SemanticIncrementalUpdate {
         snapshot_id: snapshot.snapshot_id.clone(),
         source: snapshot.source.clone(),

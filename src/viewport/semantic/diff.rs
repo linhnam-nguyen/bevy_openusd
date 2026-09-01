@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bevy::prelude::Resource;
 use usd_diff::{DiffSummary, StageDiff};
 use usd_model::{SemanticSnapshot, SnapshotId, SnapshotSource};
@@ -10,14 +12,19 @@ use viewport_protocol::{BimPropertyDiffReadModel, SceneAnchor};
 /// diagnostics panel and are intentionally not eligible for BIM diff styling.
 #[derive(Resource, Default)]
 pub(crate) struct SemanticDiffState {
-    baseline: Option<SemanticSnapshot>,
-    working: Option<SemanticSnapshot>,
+    baseline: Option<Arc<SemanticSnapshot>>,
+    working: Option<Arc<SemanticSnapshot>>,
     session_id: Option<u64>,
     diff: Option<StageDiff>,
 }
 
 impl SemanticDiffState {
-    pub(crate) fn update_working(&mut self, session_id: u64, snapshot: SemanticSnapshot) {
+    pub(crate) fn update_working(
+        &mut self,
+        session_id: u64,
+        snapshot: impl Into<Arc<SemanticSnapshot>>,
+    ) {
+        let snapshot = snapshot.into();
         if self.session_id != Some(session_id) {
             self.baseline = None;
             self.diff = None;
@@ -28,7 +35,7 @@ impl SemanticDiffState {
     }
 
     pub(crate) fn capture_baseline(&mut self) -> bool {
-        let Some(working) = self.working.clone() else {
+        let Some(working) = self.working.as_ref().map(Arc::clone) else {
             return false;
         };
         self.baseline = Some(working);
@@ -42,7 +49,7 @@ impl SemanticDiffState {
         if !matches!(snapshot.source, SnapshotSource::GitCommit { .. }) {
             return false;
         }
-        self.baseline = Some(snapshot);
+        self.baseline = Some(Arc::new(snapshot));
         self.recompute();
         true
     }
@@ -53,7 +60,7 @@ impl SemanticDiffState {
     ) -> Option<BimPropertyDiffReadModel> {
         let baseline = self.baseline.as_ref()?;
         let working = self.working.as_ref()?;
-        crate::viewport::bim::diff::property_diff(baseline, working, selection)
+        crate::viewport::bim::diff::property_diff(baseline.as_ref(), working.as_ref(), selection)
     }
 
     pub(crate) fn clear_baseline(&mut self) {
