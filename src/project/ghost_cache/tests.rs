@@ -219,6 +219,7 @@ fn attach_render_blobs_for_entities_scans_only_affected_entities_and_handles() -
     let mut prim_entities = usd_bevy::PrimEntities::default();
 
     // Spawn 3 meshes in Bevy
+    let mut paths = usd_bevy::PathStore::default();
     for path in ["/World/Mesh1", "/World/Mesh2", "/World/Mesh3"] {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -231,8 +232,9 @@ fn attach_render_blobs_for_entities_scans_only_affected_entities_and_handles() -
         mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
         let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
         let entity = world.spawn((UsdPrimRef::new(path), Mesh3d(handle))).id();
-        prim_entities.insert(path, entity);
+        prim_entities.insert(&mut paths, path, entity);
     }
+    world.insert_resource(paths);
     world.insert_resource(prim_entities);
 
     // Only 1 affected upsert entity (/World/Mesh1)

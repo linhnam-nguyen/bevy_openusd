@@ -21,7 +21,7 @@ fn fixture_stage(fixture: &str) -> Stage {
         .expect("native instance fixture opens")
 }
 
-fn projected_app(stage: Stage) -> App {
+pub(super) fn projected_app(stage: Stage) -> App {
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
@@ -37,7 +37,7 @@ fn characterization_app() -> App {
     projected_app(fixture_stage("native_instance_characterization.usda"))
 }
 
-fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
+pub(super) fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
     let world = app.world();
     world
         .resource::<PrimEntities>()
@@ -60,7 +60,7 @@ fn add_triangle_mesh(stage: &Stage, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn nested_consumers_stage() -> Stage {
+pub(super) fn nested_consumers_stage() -> Stage {
     UsdSnippet::new(
         r#"#usda 1.0
 def Xform "InnerPrototype"

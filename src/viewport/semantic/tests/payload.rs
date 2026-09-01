@@ -85,11 +85,14 @@ def Xform "World"
     ));
 
     let prim_entities_1 = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths_1 = app.world().resource::<usd_bevy::PathStore>();
     assert!(
-        prim_entities_1.entity("/World/A/PayloadChild").is_some(),
+        prim_entities_1
+            .entity(paths_1, "/World/A/PayloadChild")
+            .is_some(),
         "PayloadChild composed initially in PrimEntities"
     );
-    let b_bevy_before = prim_entities_1.entity("/World/B/MeshB").unwrap();
+    let b_bevy_before = prim_entities_1.entity(paths_1, "/World/B/MeshB").unwrap();
 
     let sync_state_1 = app.world().resource::<SemanticSyncState>();
     let snap_1 = sync_state_1.snapshot.as_ref().unwrap();
@@ -118,8 +121,11 @@ def Xform "World"
 
     // After unload: PayloadChild is absent from Bevy ECS & semantic snapshot
     let prim_entities_2 = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths_2 = app.world().resource::<usd_bevy::PathStore>();
     assert!(
-        prim_entities_2.entity("/World/A/PayloadChild").is_none(),
+        prim_entities_2
+            .entity(paths_2, "/World/A/PayloadChild")
+            .is_none(),
         "PayloadChild despawned after payload unload"
     );
     let sync_state_2 = app.world().resource::<SemanticSyncState>();
@@ -131,7 +137,7 @@ def Xform "World"
         "PayloadChild absent from semantic snapshot after unload"
     );
     assert_eq!(
-        prim_entities_2.entity("/World/B/MeshB").unwrap(),
+        prim_entities_2.entity(paths_2, "/World/B/MeshB").unwrap(),
         b_bevy_before,
         "sibling /World/B Bevy Entity invariant after unload"
     );
@@ -149,8 +155,11 @@ def Xform "World"
 
     // After load: PayloadChild is restored in Bevy ECS & semantic snapshot
     let prim_entities_3 = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths_3 = app.world().resource::<usd_bevy::PathStore>();
     assert!(
-        prim_entities_3.entity("/World/A/PayloadChild").is_some(),
+        prim_entities_3
+            .entity(paths_3, "/World/A/PayloadChild")
+            .is_some(),
         "PayloadChild restored after payload load"
     );
     let sync_state_3 = app.world().resource::<SemanticSyncState>();
@@ -162,7 +171,7 @@ def Xform "World"
         "PayloadChild restored in semantic snapshot after load"
     );
     assert_eq!(
-        prim_entities_3.entity("/World/B/MeshB").unwrap(),
+        prim_entities_3.entity(paths_3, "/World/B/MeshB").unwrap(),
         b_bevy_before,
         "sibling /World/B Bevy Entity invariant after load"
     );

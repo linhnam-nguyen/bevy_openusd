@@ -264,7 +264,7 @@ mod tests {
         assert!(
             app.world()
                 .resource::<usd_bevy::PrimEntities>()
-                .entity("/World/Box")
+                .entity(app.world().resource::<usd_bevy::PathStore>(), "/World/Box")
                 .is_some(),
             "Bevy prim index should retain the externally edited prim"
         );

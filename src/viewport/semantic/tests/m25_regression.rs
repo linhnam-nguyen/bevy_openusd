@@ -83,8 +83,9 @@ def Xform "World"
     // Capture BEFORE state for /World/B
     let b_key = EntityKey::from("/World/B/MeshB");
     let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths = app.world().resource::<usd_bevy::PathStore>();
     let b_bevy_entity_before = prim_entities
-        .entity("/World/B/MeshB")
+        .entity(paths, "/World/B/MeshB")
         .expect("/World/B/MeshB in Bevy PrimEntities");
 
     let sync_state = app.world().resource::<SemanticSyncState>();
@@ -184,8 +185,9 @@ def Xform "World"
 
     // 2. /World/B: Bevy Entity ID unchanged:
     let prim_entities_2 = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths_2 = app.world().resource::<usd_bevy::PathStore>();
     let b_bevy_entity_after = prim_entities_2
-        .entity("/World/B/MeshB")
+        .entity(paths_2, "/World/B/MeshB")
         .expect("/World/B/MeshB still in Bevy PrimEntities");
     assert_eq!(
         b_bevy_entity_before, b_bevy_entity_after,

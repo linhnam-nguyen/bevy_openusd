@@ -73,7 +73,8 @@ def Xform "World"
 
     // Capture /World/B state
     let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let b_bevy_before = prim_entities.entity("/World/B/MeshB").unwrap();
+    let paths = app.world().resource::<usd_bevy::PathStore>();
+    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
     let sync_state_1 = app.world().resource::<SemanticSyncState>();
     let b_sem_before = sync_state_1
         .snapshot
@@ -116,7 +117,8 @@ def Xform "World"
 
     // Verify /World/B is completely unchanged
     let prim_entities_2 = app.world().resource::<usd_bevy::PrimEntities>();
-    let b_bevy_after = prim_entities_2.entity("/World/B/MeshB").unwrap();
+    let paths_2 = app.world().resource::<usd_bevy::PathStore>();
+    let b_bevy_after = prim_entities_2.entity(paths_2, "/World/B/MeshB").unwrap();
     assert_eq!(
         b_bevy_before, b_bevy_after,
         "Bevy entity ID for /World/B invariant across disjoint resync"
@@ -179,7 +181,8 @@ def Xform "World"
     assert!(matches!(resp_1, SemanticResponse::SnapshotLoaded { .. }));
 
     let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let b_bevy_before = prim_entities.entity("/World/B/MeshB").unwrap();
+    let paths = app.world().resource::<usd_bevy::PathStore>();
+    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
 
     // Rename /World/A/OldName to /World/A/NewName
     {
@@ -196,16 +199,21 @@ def Xform "World"
     assert!(matches!(resp_2, SemanticResponse::DeltaApplied { .. }));
 
     let prim_entities_2 = app.world().resource::<usd_bevy::PrimEntities>();
+    let paths_2 = app.world().resource::<usd_bevy::PathStore>();
     assert!(
-        prim_entities_2.entity("/World/A/OldName").is_none(),
+        prim_entities_2
+            .entity(paths_2, "/World/A/OldName")
+            .is_none(),
         "old path removed from PrimEntities"
     );
     assert!(
-        prim_entities_2.entity("/World/A/NewName").is_some(),
+        prim_entities_2
+            .entity(paths_2, "/World/A/NewName")
+            .is_some(),
         "new path present in PrimEntities"
     );
     assert_eq!(
-        prim_entities_2.entity("/World/B/MeshB").unwrap(),
+        prim_entities_2.entity(paths_2, "/World/B/MeshB").unwrap(),
         b_bevy_before,
         "sibling /World/B stable"
     );
@@ -272,7 +280,8 @@ def Xform "World"
     assert!(matches!(resp_1, SemanticResponse::SnapshotLoaded { .. }));
 
     let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let b_bevy_before = prim_entities.entity("/World/B/MeshB").unwrap();
+    let paths = app.world().resource::<usd_bevy::PathStore>();
+    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
 
     // Reparent /World/A/Child to /World/C/Child
     {
@@ -290,18 +299,19 @@ def Xform "World"
     assert!(matches!(resp_2, SemanticResponse::DeltaApplied { .. }));
 
     let prim_entities_2 = app.world().resource::<usd_bevy::PrimEntities>();
-    assert!(prim_entities_2.entity("/World/A/Child").is_none());
+    let paths_2 = app.world().resource::<usd_bevy::PathStore>();
+    assert!(prim_entities_2.entity(paths_2, "/World/A/Child").is_none());
     let child_entity = prim_entities_2
-        .entity("/World/C/Child")
+        .entity(paths_2, "/World/C/Child")
         .expect("reparented child present in PrimEntities");
     let c_entity = prim_entities_2
-        .entity("/World/C")
+        .entity(paths_2, "/World/C")
         .expect("/World/C entity in PrimEntities");
     let a_entity = prim_entities_2
-        .entity("/World/A")
+        .entity(paths_2, "/World/A")
         .expect("/World/A entity in PrimEntities");
     assert_eq!(
-        prim_entities_2.entity("/World/B/MeshB").unwrap(),
+        prim_entities_2.entity(paths_2, "/World/B/MeshB").unwrap(),
         b_bevy_before
     );
 
