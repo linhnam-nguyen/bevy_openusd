@@ -59,6 +59,57 @@ reference agreement and shader/bind-group compatibility for the candidate.
 They do not prove GPU readback parity, equivalent prepass/shadow behavior,
 final Hummingbird visual correctness, FPS, CPU, or RSS.
 
+## Additive C2+ / C12+ animation repair
+
+The owner E2E launch exposed a real Metal pipeline validation failure in the
+original candidate: the forward fixed-16 vertex layout was being reused by
+Bevy's prepass and shadow pipelines, while those pipelines still consumed
+Bevy's prepass locations. The repair is additive and preserves the complete
+C0-C12 history:
+
+```text
+M8-OR3-C2+  297dde7  pass-correct extended skin prepass
+M8-OR3-C12+ evidence update and runtime startup gate
+```
+
+C2+ keeps the forward shader and its locations unchanged, adds a dedicated
+fixed-16 prepass/deferred vertex shader, and selects the matching Bevy
+prepass/shadow input locations during specialization. Bevy's shadow path uses
+the depth-prepass key, so the same contract covers both prepass and shadows.
+The four extended influence groups remain packed at locations 8 through 13,
+and motion-vector previous-skin support is retained in the custom prepass
+shader.
+
+C2+ deterministic gates passed:
+
+```text
+cargo fmt --all -- --check              PASS
+cargo check -p usd_bevy -p usdview      PASS
+cargo test -p usd_bevy --lib            PASS — 113 passed, 1 ignored
+git diff --cached --check               PASS
+```
+
+C12+ runtime startup evidence on Apple M4/Metal passed the former failure
+point for the same Hummingbird asset:
+
+```text
+cargo run -p usdview --bin usdview -- assets/external/hummingbird.usdz \
+  --headless --transport webrtc --preset adaptive --codec h265
+  PASS — process reached and held the runtime without pbr_prepass_pipeline
+         or shader-location validation errors; stopped with SIGINT
+
+cargo run -- assets/external/hummingbird.usdz
+  PASS — native windowed process reached the runtime without the former
+         pbr_prepass_pipeline or shader-location validation errors; stopped
+         with SIGINT
+```
+
+The prior prototype limitation about intentionally disabling prepass and
+shadows is superseded by C2+ for this candidate. The automated launches prove
+Metal shader/pipeline startup compatibility only; they do not prove GPU
+readback parity, visual correctness, measured FPS/CPU/RSS, equivalent render
+pass cost, or timeline playhead behavior.
+
 ## Owner-gated runtime rows
 
 The following must still be measured by the owner with the fixed-16 candidate
@@ -73,7 +124,6 @@ render:  projected prim count, prepass, shadows, equivalent-pass FPS
 timeline: UI playhead versus backend StageTime
 ```
 
-The C2 prototype limitation remains material: its custom extended material
-needs final runtime confirmation for equivalent prepass and shadow passes.
-The timeline playhead correctness path is separate from the animation hot
-path and is derived from the authoritative frontend read model.
+The remaining owner gate is visual/performance E2E comparison against the
+four-wide control. The timeline playhead correctness path is separate from the
+animation hot path and is derived from the authoritative frontend read model.
