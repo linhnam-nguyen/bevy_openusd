@@ -71,6 +71,12 @@ pub(super) fn apply_sparse_changed_info(
                 counters.reconcile_string_materializations(1);
             }
         }
+    }
+
+    // Dependency queries are keyed by owning prim, not by individual changed
+    // property. Resolve each distinct prim once, then fan its already-planned
+    // property slice out to native dependents.
+    for (prim, properties) in &per_prim {
         let has_instancer_index = world.contains_resource::<PointInstancerDependencyIndex>();
         if has_instancer_index {
             if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
@@ -88,13 +94,11 @@ pub(super) fn apply_sparse_changed_info(
         }
         if let Some(index) = world.get_resource::<NativeInstanceDependencyIndex>() {
             for dependent in index.dependents_for_path(prim) {
-                if let Some(property) = property_of(prop_path) {
-                    native_dependents
-                        .entry(dependent)
-                        .or_default()
-                        .push(property.to_string());
-                } else {
-                    native_dependents.entry(dependent).or_default();
+                let entry = native_dependents.entry(dependent).or_default();
+                for property in properties {
+                    if !entry.contains(property) {
+                        entry.push(property.clone());
+                    }
                 }
             }
         }
