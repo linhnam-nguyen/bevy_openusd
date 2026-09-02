@@ -1,4 +1,4 @@
-pub(crate) const SCHEMA_VERSION: i64 = 1;
+pub(crate) const SCHEMA_VERSION: i64 = 2;
 
 pub(super) const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -70,3 +70,30 @@ ON properties(snapshot_id, name, value_integer);
 CREATE INDEX IF NOT EXISTS idx_properties_name_real
 ON properties(snapshot_id, name, value_real);
 "#;
+
+pub(super) async fn migrate(connection: &turso::Connection) -> anyhow::Result<()> {
+    let mut rows = connection
+        .query("PRAGMA table_info(properties)", ())
+        .await?;
+    let mut columns = Vec::new();
+    while let Some(row) = rows.next().await? {
+        columns.push(row.get::<String>(1)?);
+    }
+    for column in ["quantity_id", "canonical_unit_id", "source_unit_id"] {
+        if !columns.iter().any(|existing| existing == column) {
+            connection
+                .execute(
+                    &format!("ALTER TABLE properties ADD COLUMN {column} TEXT"),
+                    (),
+                )
+                .await?;
+        }
+    }
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO schema_migrations(version) VALUES (2)",
+            (),
+        )
+        .await?;
+    Ok(())
+}

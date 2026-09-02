@@ -124,6 +124,51 @@ fn edit_history_undo_redo() {
 }
 
 #[test]
+fn atomic_attribute_edit_undoes_and_redoes_as_one_group() {
+    let stage = stage_with("/World");
+    define_prim(&stage, "/World/A", "Xform").unwrap();
+    define_prim(&stage, "/World/B", "Xform").unwrap();
+    let mut hist = EditHistory::default();
+
+    hist.set_attrs_atomic(
+        &stage,
+        &[
+            AttributeEdit {
+                prim: "/World/A".into(),
+                name: "Width".into(),
+                type_name: "double".into(),
+                value: Value::Double(2.0),
+            },
+            AttributeEdit {
+                prim: "/World/B".into(),
+                name: "Width".into(),
+                type_name: "double".into(),
+                value: Value::Double(3.0),
+            },
+        ],
+    )
+    .unwrap();
+    assert!(hist.can_undo());
+
+    let read = |path: &str| {
+        stage
+            .prim(openusd::sdf::path(path).unwrap())
+            .attribute("Width")
+            .get::<Value>()
+            .unwrap()
+    };
+    assert!(matches!(read("/World/A"), Some(Value::Double(value)) if value == 2.0));
+    assert!(matches!(read("/World/B"), Some(Value::Double(value)) if value == 3.0));
+
+    assert!(hist.undo(&stage).unwrap());
+    assert!(read("/World/A").is_none());
+    assert!(read("/World/B").is_none());
+    assert!(hist.redo(&stage).unwrap());
+    assert!(matches!(read("/World/A"), Some(Value::Double(value)) if value == 2.0));
+    assert!(matches!(read("/World/B"), Some(Value::Double(value)) if value == 3.0));
+}
+
+#[test]
 fn persistence_export_and_reopen() {
     let stage = stage_with("/World");
     define_prim(&stage, "/World/Saved", "Sphere").unwrap();

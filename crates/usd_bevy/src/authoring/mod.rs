@@ -10,7 +10,7 @@
 mod history;
 mod ops;
 
-pub use history::EditHistory;
+pub use history::{AttributeEdit, EditHistory};
 pub use ops::{
     clear_attribute, define_prim, export_stage_string, move_prim, prim_exists, remove_prim,
     rename_prim, reparent_prim, save_stage_as, set_attribute, set_variant,

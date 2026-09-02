@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use usd_model::{
-    CanonicalValue, EntityKey, EntitySnapshot, IdentitySource, SemanticSnapshot, SnapshotId,
+    CanonicalValue, EntityKey, EntitySnapshot, IdentitySource, MeasurementMetadata,
+    SemanticSnapshot, SnapshotId,
 };
 
 use super::TursoSemanticStore;
@@ -62,14 +63,17 @@ pub(super) async fn insert_property(
     entity_key: &str,
     name: &str,
     value: &CanonicalValue,
+    measurement: Option<&MeasurementMetadata>,
 ) -> Result<()> {
-    let (value_kind, value_text, value_integer, value_real, value_hash) = property_columns(value)?;
+    let (value_kind, value_text, value_integer, value_real, value_hash) =
+        property_columns(value, measurement)?;
     transaction
         .execute(
             "INSERT INTO properties
                 (snapshot_id, entity_key, name, value_kind, value_text,
-                 value_integer, value_real, value_hash)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 value_integer, value_real, value_hash, quantity_id,
+                 canonical_unit_id, source_unit_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             turso::params![
                 snapshot_id.to_owned(),
                 entity_key.to_owned(),
@@ -79,6 +83,12 @@ pub(super) async fn insert_property(
                 value_integer,
                 value_real,
                 value_hash,
+                optional_text(measurement.map(|value| value.quantity.as_str())),
+                optional_text(measurement.map(|value| value.canonical_unit.as_str())),
+                optional_text(
+                    measurement
+                        .and_then(|value| value.source_unit.as_ref().map(|unit| unit.as_str()))
+                ),
             ],
         )
         .await
@@ -125,6 +135,7 @@ pub(super) fn nullable_integer(row: &turso::Row, index: usize) -> Result<Option<
 
 pub(super) fn property_columns(
     value: &CanonicalValue,
+    measurement: Option<&MeasurementMetadata>,
 ) -> Result<(
     &'static str,
     Option<String>,
@@ -152,6 +163,8 @@ pub(super) fn property_columns(
         ),
         CanonicalValue::Json(value) => ("json", Some(value.clone()), None, None),
     };
-    let hash = blake3::hash(format!("{kind}:{text:?}:{integer:?}:{real:?}").as_bytes()).to_hex();
+    let hash =
+        blake3::hash(format!("{kind}:{text:?}:{integer:?}:{real:?}:{measurement:?}").as_bytes())
+            .to_hex();
     Ok((kind, text, integer, real, hash.to_string()))
 }

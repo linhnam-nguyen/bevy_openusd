@@ -1,5 +1,5 @@
 use super::*;
-use crate::live::{LiveStage, PrimEntities, project_stage};
+use crate::live::{LiveStage, PathStore, PrimEntities, project_stage};
 use crate::route::SchemaRegistry;
 use openusd::usd::Stage;
 
@@ -73,7 +73,7 @@ fn author_component_roundtrips_through_usd() {
     });
     let mut map = PrimEntities::default();
     project_stage(&mut dst, &live, &mut map);
-    let re = map.entity("/Enemy").unwrap();
+    let re = map.entity(dst.resource::<PathStore>(), "/Enemy").unwrap();
     assert_eq!(
         dst.get::<Health>(re),
         Some(&Health {
@@ -268,7 +268,7 @@ fn roundtrip<C: Component + PartialReflect + Clone + PartialEq + std::fmt::Debug
     let mut dst = world_with(register);
     let mut map = PrimEntities::default();
     project_stage(&mut dst, &live, &mut map);
-    let re = map.entity("/P").unwrap();
+    let re = map.entity(dst.resource::<PathStore>(), "/P").unwrap();
     dst.get::<C>(re).cloned().expect("component re-projected")
 }
 
@@ -346,5 +346,8 @@ fn no_type_registry_is_graceful() {
     let mut map = PrimEntities::default();
     // Should log a warning and carry on, not panic.
     project_stage(&mut world, &live, &mut map);
-    assert!(map.entity("/P").is_some(), "prim still projected");
+    assert!(
+        map.entity(world.resource::<PathStore>(), "/P").is_some(),
+        "prim still projected"
+    );
 }

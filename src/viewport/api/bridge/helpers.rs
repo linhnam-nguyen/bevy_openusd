@@ -8,6 +8,7 @@ use viewport_protocol::{
 use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
+use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::camera::CameraMount;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
@@ -102,6 +103,22 @@ pub(super) fn emit_snapshot(
                 tuning,
                 physics_running,
             )),
+        },
+    ));
+}
+
+pub(super) fn emit_classification_field_catalogue(
+    outbox: &mut ViewportEventOutbox,
+    request_id: String,
+    catalogue: Option<&BimClassificationFieldCatalogueState>,
+) {
+    let Some(catalogue) = catalogue else {
+        return;
+    };
+    outbox.push(ViewportEventEnvelope::new(
+        Some(request_id),
+        ViewportEvent::BimClassificationFieldCatalogueChanged {
+            catalogue: catalogue.current().clone(),
         },
     ));
 }

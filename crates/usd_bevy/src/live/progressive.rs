@@ -4,6 +4,10 @@ use std::time::Instant;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
+use super::native_animation;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
+use super::path::PathStore;
+use super::performance::PerformanceCounters;
 use super::progressive_cleanup::clear_projection;
 use super::progressive_resident::resident_projection;
 use super::progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
@@ -47,6 +51,7 @@ pub(super) fn project_on_load_system(world: &mut World) {
             || resident_projection(
                 world,
                 world.resource::<PrimEntities>(),
+                world.resource::<PathStore>(),
                 world.resource::<ProgressiveProjectionState>(),
             ));
     if resident {
@@ -102,6 +107,9 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     }
 
     let generation_started = Instant::now();
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_full_stage_walks(1);
+    }
     let plan_builder = ProjectionPlanBuilder::new(&live.stage);
     world.remove_non_send::<ProjectionPlanBuilder>();
     world.insert_non_send(plan_builder);
@@ -235,7 +243,7 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
         }
         processed += 1;
     }
-    finish_if_ready(world, live);
+    finish_if_ready(world, live, map);
 }
 
 fn finalize_plan(world: &mut World) {
@@ -243,6 +251,9 @@ fn finalize_plan(world: &mut World) {
         .remove_non_send::<ProjectionPlanBuilder>()
         .expect("finished projection planner exists");
     let plan = builder.finish().expect("finished planner produces a plan");
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_paths_planned(plan.len() as u64);
+    }
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
     state.total = plan.len();
     state.plan = Some(plan);
@@ -261,7 +272,7 @@ fn fail_generation(world: &mut World, error: anyhow::Error) {
     world.remove_non_send::<ProjectionPlanBuilder>();
 }
 
-fn finish_if_ready(world: &mut World, live: &LiveStage) {
+fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
     let (ready, animated, duration_ms, prims) = {
         let mut state = world.resource_mut::<ProgressiveProjectionState>();
         let complete = state.total > 0 && state.completed == state.total;
@@ -280,7 +291,20 @@ fn finish_if_ready(world: &mut World, live: &LiveStage) {
         )
     };
     if ready {
+        world.init_resource::<NativeInstanceDependencyIndex>();
+        let rebuild = world.resource_scope(
+            |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+                let mut paths = world.resource_mut::<PathStore>();
+                dependencies.rebuild(&mut paths, &live.stage)
+            },
+        );
+        if let Err(error) = rebuild {
+            bevy::log::warn!(
+                "[progressive] native instance dependency index rebuild failed: {error:#}"
+            );
+        }
         world.insert_resource(AnimatedPrims(animated));
+        native_animation::rebuild(world, live, map);
         if let Some(mut stats) = world.get_resource_mut::<ProjectionStats>() {
             stats.initial_projection_ms = duration_ms;
             stats.initial_projection_prims = prims as u64;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, NvidiaRevitMeasurementMapping};
 use openusd::gf::{Vec3d, Vec3f};
 use openusd::schemas::ui::SceneGraphPrimAPI;
 use openusd::sdf::Value;
@@ -31,6 +32,10 @@ fn fixture() -> Result<Stage> {
         .set(Value::TokenVec(vec!["xformOp:translate".into()]))?;
     mesh.create_attribute("family", "string")?
         .set(Value::String("Furniture".to_owned()))?;
+    mesh.create_attribute("height", "double")?
+        .set(Value::Double(10.0))?;
+    mesh.create_attribute("height_unit", "string")?
+        .set(Value::String("[ft_i]".to_owned()))?;
     let ui = SceneGraphPrimAPI::apply(&stage, "/World/Triangle")?;
     ui.create_display_name_attr()?
         .set(Value::token("Triangle"))?;
@@ -95,6 +100,40 @@ fn absent_display_name_does_not_fall_back_to_prim_basename() -> Result<()> {
 }
 
 #[test]
+fn configured_revit_measurement_is_normalized_during_snapshot_extraction() -> Result<()> {
+    let stage = fixture()?;
+    let config = SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let snapshot = SemanticExtractor::new(config).extract(&stage, source())?;
+    let entity = snapshot
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("triangle semantic entity");
+    let height = entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("height property");
+
+    assert_eq!(height.value, CanonicalValue::Real(3.048));
+    let measurement = height.measurement.as_ref().expect("height measurement");
+    assert_eq!(measurement.quantity.as_str(), "length");
+    assert_eq!(measurement.canonical_unit.as_str(), "m");
+    assert_eq!(measurement.source_unit.as_ref().unwrap().as_str(), "[ft_i]");
+    Ok(())
+}
+
+#[test]
 fn changing_a_custom_property_changes_entity_and_metadata_hashes() -> Result<()> {
     let stage = fixture()?;
     let config = SemanticConfig {
@@ -120,5 +159,110 @@ fn changing_a_custom_property_changes_entity_and_metadata_hashes() -> Result<()>
     assert_ne!(before_entity.metadata_hash, after_entity.metadata_hash);
     assert_ne!(before_entity.full_hash, after_entity.full_hash);
     assert_ne!(before.snapshot_id, after.snapshot_id);
+    Ok(())
+}
+
+#[test]
+fn measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged() -> Result<()> {
+    let stage = fixture()?;
+    let baseline = SemanticExtractor::default().extract(&stage, source())?;
+
+    stage
+        .prim(openusd::sdf::path("/World/Triangle")?)
+        .attribute("height_unit")
+        .set(Value::String("m".to_owned()))?;
+    let configured = SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            measurement_mappings: vec![NvidiaRevitMeasurementMapping::new(
+                "height",
+                "length",
+                "height_unit",
+            )],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let measured = SemanticExtractor::new(configured).extract(&stage, source())?;
+
+    let baseline_entity = baseline
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("baseline entity");
+    let measured_entity = measured
+        .entities
+        .get(&EntityKey::from("/World/Triangle"))
+        .expect("measured entity");
+    let baseline_height = baseline_entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("baseline height");
+    let measured_height = measured_entity
+        .properties
+        .iter()
+        .find(|property| property.name == "height")
+        .expect("measured height");
+
+    assert_eq!(baseline_height.value, measured_height.value);
+    assert_ne!(baseline_height.measurement, measured_height.measurement);
+    assert_ne!(baseline_entity.metadata_hash, measured_entity.metadata_hash);
+    assert_ne!(baseline_entity.full_hash, measured_entity.full_hash);
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires the supplied external NVIDIA/Revit Connector export"]
+fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../external_assets/Omniverse/V2/Projet1.usdc");
+    let fixture = fixture
+        .to_str()
+        .expect("real Revit fixture path should be valid UTF-8");
+    let stage = Stage::open(fixture)?;
+
+    let config = SemanticConfig {
+        nvidia_revit: NvidiaRevitConfig {
+            identity: NvidiaRevitIdentityConfig {
+                element_id_property: Some("BIM:Instance:ElementId".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        identity: crate::IdentityConfig {
+            ifc_guid_candidates: vec!["BIM:Instance:IfcGUID".to_owned()],
+            allow_prim_path_fallback: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let snapshot = SemanticExtractor::new(config).extract(&stage, source())?;
+
+    let wall = snapshot
+        .entities
+        .values()
+        .find(|entity| {
+            entity.properties.iter().any(|property| {
+                property.name == "BIM:Instance:ElementId"
+                    && property.value == CanonicalValue::Text("150663".to_owned())
+            })
+        })
+        .expect("real Revit wall entity should be present");
+
+    assert_eq!(wall.identity_source, usd_model::IdentitySource::IfcGuid);
+    assert_eq!(wall.semantic.family, None);
+    assert_eq!(wall.semantic.type_id, None);
+    assert_eq!(wall.semantic.bim.element_id.as_deref(), Some("150663"));
+    assert_eq!(wall.semantic.bim.family_name, None);
+    assert!(wall.properties.iter().any(|property| {
+        property.name == "BIM:Instance:Surface"
+            && property.value == CanonicalValue::Text("22 m²".to_owned())
+            && property.measurement.is_none()
+    }));
+    assert!(wall.properties.iter().any(|property| {
+        property.name == "BIM:Type:Largeur"
+            && property.value == CanonicalValue::Text("200".to_owned())
+            && property.measurement.is_none()
+    }));
+
     Ok(())
 }

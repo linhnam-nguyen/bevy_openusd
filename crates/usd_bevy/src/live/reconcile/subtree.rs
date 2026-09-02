@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 use super::super::animation::{AnimatedPrims, prim_is_animated};
 use super::super::change::LiveRevision;
 use super::super::index::PrimEntities;
-use super::super::path::{is_descendant_or_self, parent_path};
+use super::super::native_animation;
+use super::super::native_instance_dependency::NativeInstanceDependencyIndex;
+use super::super::path::{PathStore, is_descendant_or_self, parent_path};
+use super::super::performance::PerformanceCounters;
 use super::super::projection::{collect_stage_subtree_paths, registry_of};
 use super::super::stage::LiveStage;
 use super::ReconcileStats;
@@ -24,7 +27,11 @@ pub(super) fn reconcile_subtrees(
 ) {
     let stage = &live.stage;
     let registry = registry_of(world);
-    let Some(root_entity) = map.entity("/") else {
+    let root_entity = {
+        let paths = world.resource::<PathStore>();
+        map.entity(&paths, "/")
+    };
+    let Some(root_entity) = root_entity else {
         bevy::log::warn!(
             target: "usd_bevy",
             resync_fallback_reason = "root_entity_missing",
@@ -36,17 +43,24 @@ pub(super) fn reconcile_subtrees(
         return;
     };
 
-    let mut old_entities: HashMap<String, Entity> = HashMap::new();
-    for root in roots {
-        for (path, entity) in map.subtree(root) {
-            if path != "/" {
-                old_entities.insert(path, entity);
+    let old_entities = {
+        let paths = world.resource::<PathStore>();
+        let mut old_entities = HashMap::new();
+        for root in roots {
+            for (path, entity) in map.subtree(&paths, root) {
+                if paths.path(path) != Some("/") {
+                    old_entities.insert(path, entity);
+                }
             }
         }
-    }
+        old_entities
+    };
 
     let mut current_paths: HashSet<String> = HashSet::new();
     for root in roots {
+        if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+            counters.projection_subtree_walks(1);
+        }
         match collect_stage_subtree_paths(stage, root) {
             Ok(paths) => {
                 current_paths.extend(paths);
@@ -66,20 +80,28 @@ pub(super) fn reconcile_subtrees(
     }
 
     // 1. Preflight parent integrity for all new prims (current_paths - old_paths) BEFORE any mutations
-    let mut added: Vec<String> = current_paths
-        .iter()
-        .filter(|path| !old_entities.contains_key(*path))
-        .cloned()
-        .collect();
+    let mut added: Vec<String> = {
+        let paths = world.resource::<PathStore>();
+        current_paths
+            .iter()
+            .filter(|path| {
+                paths
+                    .lookup(path)
+                    .is_none_or(|path_id| !old_entities.contains_key(&path_id))
+            })
+            .cloned()
+            .collect()
+    };
     added.sort_by_key(|a| a.matches('/').count());
 
     for path in &added {
         let parent_str = parent_path(path);
-        let parent_will_exist = if parent_str == "/" {
-            true
-        } else {
-            current_paths.contains(parent_str) || map.entity(parent_str).is_some()
+        let mapped_parent = {
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, parent_str)
         };
+        let parent_will_exist =
+            parent_str == "/" || current_paths.contains(parent_str) || mapped_parent.is_some();
 
         if !parent_will_exist {
             bevy::log::warn!(
@@ -95,15 +117,32 @@ pub(super) fn reconcile_subtrees(
     }
 
     // 2. Despawn removed prims (old_paths - current_paths), deepest first
-    let mut removed: Vec<(String, Entity)> = old_entities
-        .iter()
-        .filter(|(path, _)| !current_paths.contains(*path))
-        .map(|(path, entity)| (path.clone(), *entity))
-        .collect();
-    removed.sort_by_key(|(path, _)| std::cmp::Reverse(path.matches('/').count()));
+    let removed = {
+        let paths = world.resource::<PathStore>();
+        let mut removed: Vec<(super::super::path::PathId, Entity)> = old_entities
+            .iter()
+            .filter(|(path, _)| {
+                paths
+                    .path(**path)
+                    .is_some_and(|path| !current_paths.contains(path))
+            })
+            .map(|(path, entity)| (*path, *entity))
+            .collect();
+        removed.sort_by_key(|(path, _)| {
+            std::cmp::Reverse(paths.path(*path).unwrap_or_default().matches('/').count())
+        });
+        removed
+    };
 
     let despawned_count = removed.len();
-    for (path, entity) in removed {
+    for (path_id, entity) in removed {
+        let Some(path) = world
+            .resource::<PathStore>()
+            .path(path_id)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
             semantic_idx.remove_entity(entity);
         }
@@ -112,12 +151,26 @@ pub(super) fn reconcile_subtrees(
         {
             material_idx.remove_consumer(&path);
         }
-        if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
-            dependencies.remove_instancer(&path);
+        if world.contains_resource::<PointInstancerDependencyIndex>() {
+            world.resource_scope(
+                |world, mut dependencies: Mut<PointInstancerDependencyIndex>| {
+                    let paths = world.resource::<PathStore>();
+                    dependencies.remove_instancer(&paths, &path);
+                },
+            );
         }
         remove_mesh_projection_consumer(world, entity);
         world.despawn(entity);
-        map.remove_path(&path);
+        let paths = world.resource::<PathStore>();
+        map.remove_id(&paths, path_id);
+        if world.contains_resource::<NativeInstanceDependencyIndex>() {
+            world.resource_scope(
+                |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+                    let paths = world.resource::<PathStore>();
+                    dependencies.remove_proxy(&paths, &path);
+                },
+            );
+        }
     }
 
     // 3. Spawn new prims (current_paths - old_paths), shallowest first
@@ -130,7 +183,8 @@ pub(super) fn reconcile_subtrees(
         let parent = if parent_str == "/" {
             Some(root_entity)
         } else {
-            map.entity(parent_str)
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, parent_str)
         };
         let Some(parent) = parent else {
             bevy::log::error!(
@@ -146,7 +200,9 @@ pub(super) fn reconcile_subtrees(
         let mut e = world.spawn(UsdPrimRef { path: path.clone() });
         e.insert(ChildOf(parent));
         let entity = e.id();
-        map.insert(path.clone(), entity);
+        world.resource_scope(|_world, mut paths: Mut<PathStore>| {
+            map.insert(&mut paths, path, entity);
+        });
         registry.project_prim(stage, &p, world, entity);
         spawned_count += 1;
     }
@@ -154,7 +210,13 @@ pub(super) fn reconcile_subtrees(
     // 4. Repatch existing prims (current_paths ∩ old_paths)
     let mut patched_count = 0usize;
     for path in &current_paths {
-        if let Some(&entity) = old_entities.get(path)
+        let entity = {
+            let paths = world.resource::<PathStore>();
+            paths
+                .lookup(path)
+                .and_then(|path_id| old_entities.get(&path_id).copied())
+        };
+        if let Some(entity) = entity
             && let Ok(p) = openusd::sdf::path(path)
         {
             registry.patch_prim(stage, &p, world, entity, &[]);
@@ -177,6 +239,18 @@ pub(super) fn reconcile_subtrees(
             }
         }
     }
+
+    native_animation::rebuild(world, live, map);
+
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    world.resource_scope(
+        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+            let mut paths = world.resource_mut::<PathStore>();
+            for path in &current_paths {
+                dependencies.refresh_path(&mut paths, stage, path);
+            }
+        },
+    );
 
     world.insert_resource(ReconcileStats {
         roots: roots.len(),

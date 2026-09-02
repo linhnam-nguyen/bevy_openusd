@@ -1,10 +1,13 @@
+use std::collections::HashSet;
+
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{
-    SceneAnchorIndex, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
+    CurrentHierarchyProjection, HierarchyVisibilityTarget, SceneAnchorIndex, ViewportEventOutbox,
+    ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 use crate::viewport::camera::{ArcballCamera, FlyTo};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
@@ -20,6 +23,7 @@ pub(super) fn apply_tree_commands(
     mut selected: ResMut<SelectedPrim>,
     mut selection: ResMut<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
+    mut current_projection: ResMut<CurrentHierarchyProjection>,
     cameras: Query<&ArcballCamera>,
     transforms: Query<&Transform>,
     child_of: Query<Option<&ChildOf>>,
@@ -123,6 +127,55 @@ pub(super) fn apply_tree_commands(
                     ViewportEvent::PrimVisibilityChanged { target, visible },
                 ));
             }
+            ViewportTreeCommand::SetHierarchyNodeVisibility {
+                request_id,
+                source,
+                node_id,
+                visible,
+            } => {
+                if source != current_projection.source() {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!("hierarchy provider {source:?} is not active"),
+                    );
+                    continue;
+                }
+                let Some(targets) = current_projection.visibility_targets(&node_id) else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!("hierarchy node {} is not present", node_id.as_str()),
+                    );
+                    continue;
+                };
+                let targets = targets.to_vec();
+                let mut roots = HashSet::new();
+                for target in targets {
+                    match target {
+                        HierarchyVisibilityTarget::SceneAnchor(anchor) => {
+                            if let Some(entity) = scene_index.resolve(&anchor) {
+                                roots.insert(entity);
+                            }
+                        }
+                        HierarchyVisibilityTarget::PrimPath(path) => {
+                            roots.extend(
+                                scene_index.resolve_all_by_prim_path(&path).iter().copied(),
+                            );
+                        }
+                    }
+                }
+                set_subtree_visibility_for_roots(roots, &children, &mut visibility, visible);
+                let Some(event) = current_projection.apply_visibility(&node_id, visible) else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!("hierarchy node {} could not be updated", node_id.as_str()),
+                    );
+                    continue;
+                };
+                outbox.push(ViewportEventEnvelope::new(Some(request_id), event));
+            }
         }
     }
 }
@@ -136,8 +189,21 @@ fn set_subtree_visibility(
     visibility: &mut Query<(Entity, &mut Visibility)>,
     visible: bool,
 ) {
-    let mut stack = vec![root];
+    set_subtree_visibility_for_roots([root], children, visibility, visible);
+}
+
+fn set_subtree_visibility_for_roots(
+    roots: impl IntoIterator<Item = Entity>,
+    children: &Query<&Children>,
+    visibility: &mut Query<(Entity, &mut Visibility)>,
+    visible: bool,
+) {
+    let mut stack: Vec<Entity> = roots.into_iter().collect();
+    let mut visited = HashSet::new();
     while let Some(entity) = stack.pop() {
+        if !visited.insert(entity) {
+            continue;
+        }
         if let Ok((_, mut current)) = visibility.get_mut(entity) {
             *current = if visible {
                 Visibility::Visible

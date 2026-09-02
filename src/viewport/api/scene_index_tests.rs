@@ -1,4 +1,14 @@
 use super::*;
+use crate::viewport::api::HierarchyPageIndex;
+use crate::viewport::session::Spawned;
+use bevy::asset::Assets;
+use bevy::mesh::Mesh;
+use bevy::pbr::StandardMaterial;
+use usd_bevy::{LiveStage, LiveStagePlugin, LiveStageSet, UsdPlugin};
+use viewport_protocol::{
+    HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
+    HierarchySource, HierarchyVisibilityState, ViewportEvent,
+};
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
@@ -52,248 +62,287 @@ fn prim_name_projection_uses_only_the_final_path_segment() {
 }
 
 #[test]
-fn hierarchy_snapshot_reuses_cached_projection() {
-    let index = SceneAnchorIndex::from_test_nodes(vec![node("/World", None, "World")]);
+fn dense_scene_index_pages_and_reveal_metadata_are_bounded() {
+    let nodes = (0..40_000)
+        .map(|index| {
+            let path = format!("/World/Element{index:05}");
+            node(&path, None, &format!("Element {index:05}"))
+        })
+        .collect::<Vec<_>>();
 
-    let first = index.hierarchy_snapshot();
-    let second = index.hierarchy_snapshot();
+    let started = std::time::Instant::now();
+    let index = SceneAnchorIndex::from_test_nodes(nodes);
+    let build_ms = started.elapsed().as_secs_f64() * 1_000.0;
+    let page = index.children_page(None, 17, 128);
+
+    assert_eq!(page.total, 40_000);
+    assert_eq!(page.nodes.len(), 128);
+    assert_eq!(page.nodes[0].anchor.prim_path, "/World/Element02176");
+    let match_result = index
+        .search_match_for_path("/World/Element39999")
+        .expect("path posting resolves the node without ancestry reconstruction");
+    assert_eq!(match_result.reveal_pages.len(), 1);
+    assert_eq!(match_result.reveal_pages[0].page, 624);
+
+    eprintln!(
+        "M8-OR3-C6 dense scene index: nodes=40000 build_ms={build_ms:.3} page_nodes={}",
+        page.nodes.len()
+    );
+}
+
+#[test]
+fn hierarchy_snapshot_reuses_cached_projection() {
+    let projection =
+        CurrentHierarchyProjection::from_prim_nodes(&[node("/World", None, "World")], 1);
+
+    let first = projection.snapshot();
+    let second = projection.snapshot();
 
     assert!(std::sync::Arc::ptr_eq(&first, &second));
 }
 
 #[test]
-fn indexed_hierarchy_pages_and_search_preserve_order_without_full_scans() {
-    let index = SceneAnchorIndex::from_test_nodes(vec![
-        node("/World", None, "World"),
-        node("/World/A", Some("/World"), "A"),
-        node("/World/B", Some("/World"), "B"),
-        node("/World/C", Some("/World"), "C"),
-    ]);
+fn shared_provider_projection_installs_arc_and_matching_page_index() {
+    let read_model = std::sync::Arc::new(viewport_protocol::HierarchyReadModel {
+        source: viewport_protocol::HierarchySource::BimClassification,
+        revision: 3,
+        nodes: Vec::new(),
+    });
+    let page_index = HierarchyPageIndex::from_read_model(&read_model);
+    let projection = CurrentHierarchyProjection::from_shared_parts(
+        std::sync::Arc::clone(&read_model),
+        page_index,
+    );
 
-    let page = index.children_page(Some(&SceneAnchor::active_session("/World")), 1, 2);
-    assert_eq!(page.total, 3);
-    assert_eq!(page.nodes.len(), 1);
-    assert_eq!(page.nodes[0].anchor.prim_path, "/World/C");
-    assert_eq!(index.page_by_anchor.len(), 4);
-
-    let result = index
-        .search_match_for_path("/World/C")
-        .expect("indexed path resolves");
-    assert_eq!(result.label, "C");
-    assert_eq!(result.reveal_pages.len(), 2);
+    assert!(std::sync::Arc::ptr_eq(&read_model, &projection.snapshot()));
+    assert_eq!(projection.children_page(None, 0, 1).unwrap().total, 0);
 }
 
 #[test]
-fn explicit_source_role_flattens_only_usdhub_wrappers_and_preserves_anchors() {
-    let mut world = World::new();
-    let stage_root = world.spawn(UsdPrimRef::new("/")).id();
-    let scene_root = world
-        .spawn((
-            UsdPrimRef::new("/SceneRoot"),
-            UsdDisplayName("Pro2".to_owned()),
-            ChildOf(stage_root),
-        ))
-        .id();
-    let member = world
-        .spawn((
-            UsdPrimRef::new("/SceneRoot/Member_member"),
-            UsdDisplayName("Lv1".to_owned()),
-            ChildOf(scene_root),
-        ))
-        .id();
-    let wrapped_source = world
-        .spawn((
-            UsdPrimRef::new("/SceneRoot/Member_member/Source"),
-            UsdTransparentHierarchyNode,
-            ChildOf(member),
-        ))
-        .id();
-    world.spawn((
-        UsdPrimRef::new("/SceneRoot/Member_member/SourceAsset"),
-        ChildOf(wrapped_source),
-    ));
-    world.spawn((UsdPrimRef::new("/SceneRoot/Members"), ChildOf(scene_root)));
-    world.spawn((UsdPrimRef::new("/SceneRoot/Source"), ChildOf(scene_root)));
-
-    let mut index = SceneAnchorIndex::default();
-    let mut prims = world.query::<(
-        Entity,
-        &UsdPrimRef,
-        Option<&UsdDisplayName>,
-        Option<&UsdHierarchyTarget>,
-        Option<&UsdTransparentHierarchyNode>,
-        Option<&Visibility>,
-        Option<&Children>,
-    )>();
-    let prims = prims.query(&world);
-    index.rebuild(&prims, None);
-
-    let mut paths: Vec<_> = index
-        .nodes
-        .iter()
-        .map(|node| node.anchor.prim_path.as_str())
+fn generic_projection_keeps_snapshot_acquisition_constant_time() {
+    let nodes: Vec<PrimNodeReadModel> = (0..2_000)
+        .map(|index| {
+            let path = format!("/World/Element{index:04}");
+            let label = format!("Element {index:04}");
+            node(&path, None, &label)
+        })
         .collect();
-    paths.sort_unstable();
-    assert_eq!(
-        paths,
-        vec![
-            "/SceneRoot",
-            "/SceneRoot/Member_member",
-            "/SceneRoot/Member_member/SourceAsset",
-            "/SceneRoot/Members",
-            "/SceneRoot/Source",
-        ]
-    );
-    let member_node = index
-        .nodes
-        .iter()
-        .find(|node| node.anchor.prim_path == "/SceneRoot/Member_member")
-        .expect("managed member remains in the hierarchy");
-    assert_eq!(member_node.display_name.as_deref(), Some("Lv1"));
-    assert!(member_node.has_children);
-    let source_asset = index
-        .nodes
-        .iter()
-        .find(|node| node.anchor.prim_path.ends_with("/SourceAsset"))
-        .expect("wrapped source content remains visible");
-    assert_eq!(
-        source_asset
-            .parent
-            .as_ref()
-            .map(|anchor| anchor.prim_path.as_str()),
-        Some("/SceneRoot/Member_member")
-    );
-    assert_eq!(
-        index
-            .nodes
-            .iter()
-            .find(|node| node.anchor.prim_path == "/SceneRoot")
-            .and_then(|node| node.display_name.as_deref()),
-        Some("Pro2")
-    );
-    assert!(
-        index
-            .resolve(&SceneAnchor::active_session(
-                "/SceneRoot/Member_member/Source"
-            ))
-            .is_some(),
-        "physical wrapper anchor remains selectable even when omitted from the tree"
+
+    let projection_started = std::time::Instant::now();
+    let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 7);
+    let projection_elapsed = projection_started.elapsed();
+
+    let snapshot_started = std::time::Instant::now();
+    let first = projection.snapshot();
+    let snapshot_elapsed = snapshot_started.elapsed();
+    let second = projection.snapshot();
+
+    let roots = projection
+        .children_page(None, 0, 1_000)
+        .expect("root page is valid");
+    assert_eq!(roots.total, 2_000);
+    assert_eq!(roots.nodes.len(), MAX_SCENE_PAGE_SIZE as usize);
+    assert!(roots.has_more);
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    assert_eq!(first.revision, 7);
+
+    eprintln!(
+        "M2-C7 generic projection: nodes={} roots={} projection_ms={:.3} snapshot_us={:.3}",
+        nodes.len(),
+        roots.total,
+        projection_elapsed.as_secs_f64() * 1_000.0,
+        snapshot_elapsed.as_secs_f64() * 1_000_000.0,
     );
 }
 
-#[test]
-fn canonical_project_activation_projects_manifest_names_into_protocol_read_model() {
-    use crate::viewport::session::{Spawned, StagePresentationContext};
-    use bevy::app::App;
-    use openusd::usd::Stage;
-    use project_protocol::ProjectStageTarget;
-    use tempfile::tempdir;
-    use usd_bevy::{LiveStage, LiveStagePlugin, UsdPlugin};
-    use usd_project::ProjectRoot;
-
-    let directory = tempdir().expect("temporary Project directory");
-    let projects = directory.path().join("projects");
-    std::fs::create_dir(&projects).expect("Project parent directory");
-    let mut service = crate::project::service::ProjectApplicationService::open(
-        directory.path().join("workspace.json"),
-    )
-    .expect("Project service opens");
-    let project = service
-        .create_project(&projects, "Pro3")
-        .expect("Project creates");
-    let root_scene_id = match project.root.clone() {
-        ProjectRoot::Scene(scene_id) => scene_id,
-        _ => panic!("new Project has a canonical Scene root"),
-    };
-    let child = service
-        .create_scene(
-            project.id,
-            project_protocol::ProjectWriteTarget::Scene(root_scene_id),
-            "Kitchen_set",
-        )
-        .expect("nested Scene creates");
-    let target = service
-        .resolve_stage_activation(
-            project.id,
-            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(root_scene_id)),
-        )
-        .expect("Project root resolves")
-        .expect("Project has a Scene root");
-    let stage = Stage::open(target.path.to_string_lossy().as_ref()).expect("canonical Stage opens");
-
+fn native_instance_scene_index_app() -> App {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/stages/native_instance_characterization.usda");
+    let stage = openusd::usd::Stage::open(path.to_str().expect("fixture path is valid"))
+        .expect("native instance fixture opens");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>()
         .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
         .add_systems(
-            bevy::app::Update,
-            refresh_scene_anchor_index.after(usd_bevy::LiveStageSet::Reconcile),
+            Update,
+            refresh_scene_anchor_index.after(LiveStageSet::Reconcile),
         );
-    app.world_mut().insert_resource(Spawned(true));
-    app.world_mut()
-        .insert_resource(StagePresentationContext::from_project(target.presentation));
     app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.world_mut().resource_mut::<Spawned>().0 = true;
+    app.update();
+    app
+}
 
-    for _ in 0..8 {
-        app.update();
-    }
+#[test]
+fn native_instance_selection_resolves_real_projected_scene_proxy_paths_only() {
+    let app = native_instance_scene_index_app();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    let frame_a = index
+        .resolve(&SceneAnchor::active_session("/World/Window_A/Frame"))
+        .expect("Window_A frame is indexed from the native projection");
+    let frame_b = index
+        .resolve(&SceneAnchor::active_session("/World/Window_B/Frame"))
+        .expect("Window_B frame is indexed from the native projection");
+    assert_ne!(frame_a, frame_b);
 
-    let read_model = app
-        .world()
-        .resource::<SceneAnchorIndex>()
-        .roots_read_model();
-    let root_node = read_model
-        .prims
-        .iter()
-        .find(|node| node.anchor.prim_path == "/SceneRoot")
-        .expect("canonical Scene root is in the protocol read model");
-    assert_eq!(root_node.display_name.as_deref(), Some("Pro3"));
-    let members = app.world().resource::<SceneAnchorIndex>().children_page(
-        Some(&SceneAnchor::active_session("/SceneRoot")),
-        0,
-        100,
-    );
-    let child_node = members
-        .nodes
-        .iter()
-        .find(|node| node.display_name.as_deref() == Some("Kitchen_set"))
-        .expect("managed member resolves to the manifest Scene display name");
-    assert!(
-        child_node
-            .anchor
-            .prim_path
-            .contains(&child.scene_id.to_string())
-            || child_node
-                .anchor
-                .prim_path
-                .starts_with("/SceneRoot/Member_")
-    );
-    assert!(
-        app.world()
-            .resource::<SceneAnchorIndex>()
-            .nodes
-            .iter()
-            .all(|node| !node
-                .display_name
-                .as_deref()
-                .is_some_and(|name| name.starts_with("Member_")))
-    );
-    assert!(
-        app.world()
-            .resource::<SceneAnchorIndex>()
-            .hierarchy_snapshot()
-            .nodes
-            .iter()
-            .all(|node| !node.name.starts_with("Member_"))
+    assert_eq!(
+        index.anchor_for(frame_a).unwrap().prim_path,
+        "/World/Window_A/Frame"
     );
     assert_eq!(
-        app.world()
-            .resource::<SceneAnchorIndex>()
-            .hierarchy_snapshot()
+        index.resolve(&SceneAnchor::active_session("/__Prototype_1/Frame")),
+        None,
+        "prototype paths are not selectable scene identities"
+    );
+}
+
+#[test]
+fn semantic_path_visibility_targets_all_native_occurrences() {
+    let first = Entity::from_bits(1);
+    let second = Entity::from_bits(2);
+    let path = "/World/WindowPrototype/Frame";
+    let index = SceneAnchorIndex::from_test_entities(vec![
+        (
+            SceneAnchor {
+                session_id: None,
+                prim_path: path.to_owned(),
+                instance_context: Some("occurrence-0".to_owned()),
+            },
+            first,
+        ),
+        (
+            SceneAnchor {
+                session_id: None,
+                prim_path: path.to_owned(),
+                instance_context: Some("occurrence-1".to_owned()),
+            },
+            second,
+        ),
+    ]);
+
+    assert_eq!(index.resolve_all_by_prim_path(path), &[first, second]);
+}
+
+#[test]
+fn classification_visibility_reports_mixed_state_and_restores_groups() {
+    use std::collections::HashMap;
+
+    let group_id = HierarchyNodeId::new("bim-group-windows");
+    let first_id = HierarchyNodeId::new("bim-leaf-first");
+    let second_id = HierarchyNodeId::new("bim-leaf-second");
+    let first = HierarchyNodeReadModel::scene(
+        first_id.clone(),
+        Some(group_id.clone()),
+        "first".to_owned(),
+        "Fenêtres / first".to_owned(),
+        SceneAnchor::active_session("/World/WindowA"),
+        None,
+        true,
+        false,
+    );
+    let second = HierarchyNodeReadModel::scene(
+        second_id.clone(),
+        Some(group_id.clone()),
+        "second".to_owned(),
+        "Fenêtres / second".to_owned(),
+        SceneAnchor::active_session("/World/WindowB"),
+        None,
+        true,
+        false,
+    );
+    let group = HierarchyNodeReadModel::virtual_node_with_kind(
+        group_id.clone(),
+        None,
+        "Fenêtres".to_owned(),
+        "Fenêtres".to_owned(),
+        HierarchyNodeKind::Group,
+        false,
+        true,
+    );
+    let read_model = std::sync::Arc::new(HierarchyReadModel {
+        source: HierarchySource::BimClassification,
+        revision: 1,
+        nodes: vec![group, first, second],
+    });
+    let page_index = HierarchyPageIndex::from_read_model(&read_model);
+    let visibility_index =
+        crate::viewport::api::HierarchyVisibilityIndex::from_targets(HashMap::from([
+            (
+                group_id.clone(),
+                vec![
+                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                        "/World/WindowA".to_owned(),
+                    ),
+                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                        "/World/WindowB".to_owned(),
+                    ),
+                ],
+            ),
+            (
+                first_id.clone(),
+                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    "/World/WindowA".to_owned(),
+                )],
+            ),
+            (
+                second_id.clone(),
+                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    "/World/WindowB".to_owned(),
+                )],
+            ),
+        ]));
+    let mut projection = CurrentHierarchyProjection::from_shared_parts_with_visibility(
+        read_model,
+        page_index,
+        visibility_index,
+    );
+
+    let event = projection
+        .apply_visibility(&first_id, false)
+        .expect("classification leaf is actionable");
+    assert!(matches!(
+        event,
+        ViewportEvent::HierarchyVisibilityChanged {
+            visibility: HierarchyVisibilityState::Hidden,
+            ancestors,
+            ..
+        } if ancestors.iter().any(|ancestor| ancestor.node_id == group_id
+            && ancestor.visibility == HierarchyVisibilityState::Mixed)
+    ));
+    assert_eq!(
+        projection
+            .snapshot()
             .nodes
             .iter()
-            .find(|node| node.prim_path.as_deref() == Some("/SceneRoot"))
-            .map(|node| node.name.as_str()),
-        Some("Pro3")
+            .find(|node| node.id == group_id)
+            .unwrap()
+            .visibility,
+        HierarchyVisibilityState::Mixed
+    );
+
+    projection
+        .apply_visibility(&group_id, false)
+        .expect("classification group is actionable");
+    assert!(
+        projection
+            .snapshot()
+            .nodes
+            .iter()
+            .all(|node| { node.visibility == HierarchyVisibilityState::Hidden })
+    );
+    projection
+        .apply_visibility(&group_id, true)
+        .expect("classification group restores all members");
+    assert!(
+        projection
+            .snapshot()
+            .nodes
+            .iter()
+            .all(|node| { node.visibility == HierarchyVisibilityState::Visible })
     );
 }

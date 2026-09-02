@@ -213,8 +213,8 @@ impl SchemaRegistry {
         r.register(curves::CurvesRoute);
         // Material after mesh/shapes: it replaces the placeholder material.
         r.register(material::MaterialRoute);
-        // Skin after mesh: it replaces the rest mesh with deformed geometry.
-        r.register(skel::SkinRoute);
+        // Native UsdSkel projection is installed by the live animation
+        // binding pass; the CPU SkinRoute remains opt-in for compatibility.
         r.register(light::LightRoute);
         r.register(dome::DomeLightRoute);
         r.register(camera::CameraRoute);

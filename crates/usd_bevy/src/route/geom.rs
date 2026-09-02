@@ -25,6 +25,7 @@ use super::cache::{
 use super::cache_key::source_mesh_key;
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{DisplayPurposes, PrimRoute, RouteCtx, track_mesh_projection};
+use crate::live::PerformanceCounters;
 use crate::read::geom::{
     VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility,
 };
@@ -233,6 +234,9 @@ impl MeshRoute {
         let profile_enabled = world
             .get_resource::<GeometryProfile>()
             .is_some_and(|profile| profile.enabled);
+        if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+            counters.animation_read_mesh_calls(1);
+        }
         let read_start = profile_enabled.then(Instant::now);
         let read_result = read_mesh(ctx.stage, ctx.path);
         let read_mesh_ms = read_start
@@ -256,6 +260,9 @@ impl MeshRoute {
         let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
             (mesh_handle, Default::default(), Default::default())
         } else {
+            if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+                counters.animation_mesh_allocations(1);
+            }
             let (mesh, build_metrics) = if profile_enabled {
                 crate::mesh::mesh_from_usd_profiled(&read)
             } else {

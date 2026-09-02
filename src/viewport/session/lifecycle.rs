@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use openusd::usd::{PrimPredicate, Stage};
-use usd_bevy::{AnimatedPrims, LiveStage, PrimEntities};
+use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
 use crate::project::cache_hydration::{ActiveProjectCacheContext, hydrate_project_cache};
 
@@ -297,10 +297,11 @@ pub(crate) fn apply_load_request(mut request: ResMut<LoadRequest>) {
 
 fn clear_projected_stage(world: &mut World) {
     let entities: Vec<Entity> = world
-        .resource::<PrimEntities>()
-        .iter()
-        .map(|(_, entity)| entity)
-        .collect();
+        .get_resource::<PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+        .map_or_else(Vec::new, |(map, paths)| {
+            map.iter(paths).map(|(_, entity)| entity).collect()
+        });
     for entity in entities {
         let _ = world.despawn(entity);
     }

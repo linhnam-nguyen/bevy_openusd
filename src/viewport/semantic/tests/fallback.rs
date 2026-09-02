@@ -43,7 +43,7 @@ fn test_regression_d_collision_triggers_full_snapshot_fallback() -> Result<()> {
     // Artificially modify SemanticSyncState so /World/B has the same key as /World/A
     {
         let mut sync_state = app.world_mut().resource_mut::<SemanticSyncState>();
-        let mut snapshot = sync_state.snapshot.take().unwrap();
+        let mut snapshot = sync_state.snapshot.take().unwrap().as_ref().clone();
         let a_key = snapshot
             .entities
             .iter()
@@ -59,7 +59,7 @@ fn test_regression_d_collision_triggers_full_snapshot_fallback() -> Result<()> {
         let mut b_entity = snapshot.entities.remove(&b_key).unwrap();
         b_entity.key = a_key.clone();
         snapshot.entities.insert(a_key, b_entity);
-        sync_state.snapshot = Some(snapshot);
+        sync_state.snapshot = Some(std::sync::Arc::new(snapshot));
     }
 
     // Resync /World/A -> Extracted /World/A will collide with unaffected /World/B's artificial key

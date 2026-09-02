@@ -6,6 +6,7 @@ use super::ViewerSettingsState;
 use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
 use super::scene_query::{
     dispatch_scene_query_commands, publish_scene_query_results, publish_stage_load_state,
+    refresh_active_hierarchy_projection,
 };
 use super::state::{
     EditorHistories, RuntimeMutationCoordinator, SceneSearchRequests, ViewportBridgeSet,
@@ -15,9 +16,11 @@ use crate::project::ghost_cache::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::api::{
-    SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
-    ViewportTreeCommandInbox,
+    ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
+    ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
 };
+use crate::viewport::bim::BimClassificationFieldCatalogueState;
+use crate::viewport::scene::ClassificationColorPlan;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{
     RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
@@ -35,8 +38,13 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ViewportEventOutbox>()
             .init_resource::<ViewportReadModelState>()
             .init_resource::<SceneAnchorIndex>()
+            .init_resource::<ActiveHierarchyProvider>()
+            .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
+            .init_resource::<BimProvenanceService>()
+            .init_resource::<BimClassificationFieldCatalogueState>()
             .init_resource::<SelectedTargets>()
+            .init_resource::<ClassificationColorPlan>()
             .init_resource::<ViewerSettingsState>()
             .init_resource::<SemanticWorkingStore>()
             .init_resource::<RuntimeDeliveryRuntime>()
@@ -73,6 +81,7 @@ impl Plugin for ViewportBridgePlugin {
                 (
                     drain_runtime_delivery_results,
                     synchronize_live_stage,
+                    refresh_active_hierarchy_projection,
                     flush_pending_runtime_delivery,
                     drain_recovery_results,
                     checkpoint_recovery,

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::live::{
-    LiveStage, LiveStagePlugin, PrimEntities, ProjectionBudget, ProjectionReadiness,
+    LiveStage, LiveStagePlugin, PathStore, PrimEntities, ProjectionBudget, ProjectionReadiness,
 };
 use crate::snippet::UsdSnippet;
 
@@ -23,9 +23,9 @@ def Xform "B"
     .expect("hierarchy stage opens")
 }
 
-fn sorted_paths(map: &PrimEntities) -> Vec<String> {
+fn sorted_paths(map: &PrimEntities, paths: &PathStore) -> Vec<String> {
     let mut paths = map
-        .iter()
+        .iter(paths)
         .map(|(path, _)| path.to_owned())
         .collect::<Vec<_>>();
     paths.sort();
@@ -85,7 +85,10 @@ fn same_session_stage_change_restarts_before_stale_projection_continues() {
         ProjectionReadiness::Ready
     );
     assert_eq!(
-        sorted_paths(app.world().resource::<PrimEntities>()),
+        sorted_paths(
+            app.world().resource::<PrimEntities>(),
+            app.world().resource::<PathStore>(),
+        ),
         vec!["/", "/A", "/A/Changed", "/A/Child", "/B"]
     );
 }

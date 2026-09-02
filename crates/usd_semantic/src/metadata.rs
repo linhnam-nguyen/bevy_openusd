@@ -27,10 +27,14 @@ pub fn extract_metadata(
     } else {
         Vec::new()
     };
+    crate::nvidia::attach_measurements(&mut properties, &config.nvidia_revit);
     properties.sort_by(|left, right| left.name.cmp(&right.name));
 
     let family = configured_text_from_properties(&properties, config.family_property.as_deref());
     let type_id = configured_text_from_properties(&properties, config.type_id_property.as_deref());
+    let bim = crate::nvidia::extract_bim_identity(&properties, &config.nvidia_revit.identity);
+    let bim_classification =
+        crate::nvidia::extract_bim_classification(&properties, &config.nvidia_revit.classification);
 
     Ok((
         SemanticInfo {
@@ -39,6 +43,8 @@ pub fn extract_metadata(
             type_name,
             type_id,
             display_name,
+            bim,
+            bim_classification,
         },
         properties,
     ))
@@ -73,6 +79,7 @@ fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticP
         properties.push(SemanticProperty {
             name,
             value: canonical_value(value),
+            measurement: None,
         });
     }
     Ok(properties)
@@ -116,7 +123,9 @@ fn text_value(value: Value) -> Option<String> {
     }
 }
 
-pub(crate) fn canonical_value(value: Value) -> CanonicalValue {
+/// Convert an OpenUSD value into the transport-neutral semantic value used by
+/// snapshots, diffing, and authoritative compare-and-set checks.
+pub fn canonical_value(value: Value) -> CanonicalValue {
     match value {
         Value::None | Value::ValueBlock => CanonicalValue::Null,
         Value::Bool(value) => CanonicalValue::Bool(value),

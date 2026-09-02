@@ -3,7 +3,8 @@ use openusd::usd::Stage;
 use std::time::Duration;
 
 use crate::live::{
-    LiveStage, LiveStagePlugin, PrimEntities, ProjectionPlan, ProjectionReadiness, project_stage,
+    LiveStage, LiveStagePlugin, PathStore, PrimEntities, ProjectionPlan, ProjectionReadiness,
+    project_stage,
 };
 use crate::prim_ref::UsdPrimRef;
 use crate::snippet::UsdSnippet;
@@ -43,9 +44,9 @@ fn animated_stage() -> Stage {
     .expect("animated stage opens")
 }
 
-fn sorted_paths(map: &PrimEntities) -> Vec<String> {
+fn sorted_paths(map: &PrimEntities, paths: &PathStore) -> Vec<String> {
     let mut paths = map
-        .iter()
+        .iter(paths)
         .map(|(path, _)| path.to_owned())
         .collect::<Vec<_>>();
     paths.sort();
@@ -69,7 +70,10 @@ fn unlimited_progressive_queue_matches_direct_projection() {
     app.update();
 
     let queued_map = app.world().resource::<PrimEntities>();
-    assert_eq!(sorted_paths(queued_map), sorted_paths(&direct_map));
+    assert_eq!(
+        sorted_paths(queued_map, app.world().resource::<PathStore>()),
+        sorted_paths(&direct_map, direct_world.resource::<PathStore>())
+    );
     assert_eq!(
         &app.world().resource::<crate::live::AnimatedPrims>().0,
         &direct_world.resource::<crate::live::AnimatedPrims>().0
@@ -80,9 +84,11 @@ fn unlimited_progressive_queue_matches_direct_projection() {
             .readiness(),
         ProjectionReadiness::Ready
     );
-    for path in sorted_paths(queued_map) {
-        let queued_entity = queued_map.entity(&path).unwrap();
-        let direct_entity = direct_map.entity(&path).unwrap();
+    let queued_paths = app.world().resource::<PathStore>();
+    let direct_paths = direct_world.resource::<PathStore>();
+    for path in sorted_paths(queued_map, queued_paths) {
+        let queued_entity = queued_map.entity(queued_paths, &path).unwrap();
+        let direct_entity = direct_map.entity(direct_paths, &path).unwrap();
         assert_eq!(
             app.world().get::<UsdPrimRef>(queued_entity),
             direct_world.get::<UsdPrimRef>(direct_entity)
@@ -249,11 +255,24 @@ def Xform "Reloaded"
         .resource::<crate::live::ProgressiveProjectionState>();
     assert_ne!(state.session_id(), old_session);
     assert_eq!(state.completed(), 1);
-    assert_eq!(app.world().resource::<PrimEntities>().entity("/A"), None);
-    assert!(app.world().resource::<PrimEntities>().entity("/").is_some());
+    assert_eq!(
+        app.world()
+            .resource::<PrimEntities>()
+            .entity(app.world().resource::<PathStore>(), "/A"),
+        None
+    );
+    assert!(
+        app.world()
+            .resource::<PrimEntities>()
+            .entity(app.world().resource::<PathStore>(), "/")
+            .is_some()
+    );
 
     run_until_ready(&mut app);
-    let paths = sorted_paths(app.world().resource::<PrimEntities>());
+    let paths = sorted_paths(
+        app.world().resource::<PrimEntities>(),
+        app.world().resource::<PathStore>(),
+    );
     assert_eq!(paths, vec!["/", "/Reloaded", "/Reloaded/Child"]);
 }
 
@@ -317,7 +336,7 @@ def Cube "Cube"
     let cube = app
         .world()
         .resource::<PrimEntities>()
-        .entity("/Cube")
+        .entity(app.world().resource::<PathStore>(), "/Cube")
         .unwrap();
     let mesh = app
         .world()
@@ -345,7 +364,7 @@ def Cube "Cube"
     let rebuilt_entity = app
         .world()
         .resource::<PrimEntities>()
-        .entity("/Cube")
+        .entity(app.world().resource::<PathStore>(), "/Cube")
         .expect("rebuilt cube entity");
     let rebuilt = app
         .world()

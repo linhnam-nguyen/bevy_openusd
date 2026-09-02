@@ -193,14 +193,17 @@ impl PrimRoute for PointInstancerRoute {
             return;
         };
         let instance_despawns = Self::clear_instances(world, entity);
-        if let Some(mut dependencies) = world.get_resource_mut::<PointInstancerDependencyIndex>() {
-            dependencies.replace_instancer(
-                ctx.prim_str(),
-                read.prototypes
-                    .iter()
-                    .map(|prototype| prototype.as_str().to_string()),
-            );
-        }
+        let prototype_roots = read
+            .prototypes
+            .iter()
+            .map(|prototype| prototype.as_str().to_string())
+            .collect::<Vec<_>>();
+        world.resource_scope(
+            |world, mut dependencies: Mut<PointInstancerDependencyIndex>| {
+                let mut paths = world.resource_mut::<crate::live::PathStore>();
+                dependencies.replace_instancer(&mut paths, ctx.prim_str(), prototype_roots);
+            },
+        );
 
         // Honor `invisibleIds` (read through the geom schema): those instances
         // are culled entirely.

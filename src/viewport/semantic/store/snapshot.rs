@@ -54,6 +54,7 @@ impl SemanticDatabase {
                     &entity.key.0,
                     &property.name,
                     &property.value,
+                    property.measurement.as_ref(),
                 )
                 .await?;
             }

@@ -35,6 +35,25 @@ fn committed_snapshot_is_immutable_and_git_aliases_are_stable() {
             first
         );
 
+        let mut rows = store
+            .connection()
+            .query(
+                "SELECT quantity_id, canonical_unit_id, source_unit_id
+                   FROM properties
+                  WHERE snapshot_id = ?1 AND name = 'Height'",
+                turso::params![first.snapshot_id.0.clone()],
+            )
+            .await
+            .expect("measurement property query succeeds");
+        let row = rows
+            .next()
+            .await
+            .expect("measurement property row reads")
+            .expect("measurement property row exists");
+        assert_eq!(row.get::<String>(0).expect("quantity decodes"), "length");
+        assert_eq!(row.get::<String>(1).expect("canonical unit decodes"), "m");
+        assert_eq!(row.get::<String>(2).expect("source unit decodes"), "[ft_i]");
+
         let same_content_other_commit = snapshot("commit-b", "snapshot-a", "A", 1);
         store
             .put_snapshot(&same_content_other_commit)

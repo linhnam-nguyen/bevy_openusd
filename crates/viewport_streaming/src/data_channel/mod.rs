@@ -4,6 +4,8 @@
 //! offer. The reliable control channel also owns the application handshake;
 //! semantic viewport commands remain queued for the Phase 3 bridge.
 
+mod bim_classification;
+mod bim_properties;
 mod channel_set;
 mod chunks;
 mod constants;

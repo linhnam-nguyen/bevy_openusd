@@ -6,3 +6,6 @@ pub const MAX_EDITOR_TEXT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_RUNTIME_MUTATIONS: usize = 1024;
 pub const MAX_RUNTIME_SOURCE_ID_BYTES: usize = 256;
 pub const MAX_SELECTION_TARGETS: usize = 5_000;
+pub const MAX_CLASSIFICATION_COLOR_ENTRIES: usize = 65_536;
+pub const MAX_HIERARCHY_NODE_ID_BYTES: usize = 256;
+pub const MAX_HIERARCHY_SEARCH_QUERY_BYTES: usize = 512;

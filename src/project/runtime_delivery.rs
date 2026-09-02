@@ -270,6 +270,7 @@ mod tests {
                     properties: vec![SemanticProperty {
                         name: "secret".to_owned(),
                         value: CanonicalValue::Bool(true),
+                        measurement: None,
                     }],
                     metadata_hash: digest(),
                     full_hash: digest(),

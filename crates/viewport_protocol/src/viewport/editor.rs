@@ -21,6 +21,8 @@ pub enum EditorOperation {
     ReparentPrim,
     MovePrim,
     SetAttribute,
+    EditBimProperty,
+    EditBimProperties,
     ClearAttribute,
     SetVariantSelection,
     SetTransform,
@@ -28,6 +30,7 @@ pub enum EditorOperation {
     UnloadPayload,
     Undo,
     Redo,
+    SaveStage,
     SaveStageAs,
     ExportStage,
     QueryPrim,
@@ -38,6 +41,9 @@ pub enum EditorOperation {
 pub struct EditorStateReadModel {
     pub can_undo: bool,
     pub can_redo: bool,
+    /// Whether the working stage differs from the last successful local save.
+    #[serde(default)]
+    pub is_dirty: bool,
 }
 
 /// A connector-originated group of model mutations applied by the active

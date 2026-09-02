@@ -51,6 +51,9 @@ impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
         super::section_box_clipping::register_embedded_shaders(app);
         app.init_resource::<DisplayToggles>()
+            .init_resource::<super::ClassificationColorPlan>()
+            .init_resource::<super::ClassificationColorDiagnostics>()
+            .init_resource::<super::ClassificationColorMaterialCache>()
             .init_resource::<SceneExtent>()
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
@@ -102,6 +105,8 @@ impl Plugin for OverlaysPlugin {
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_render_mode,
+                    super::refresh_classification_color_plan,
+                    super::sync_classification_color_overrides,
                     update_hover_target,
                     sync_selection_color_overrides,
                     sync_section_box_clipping,

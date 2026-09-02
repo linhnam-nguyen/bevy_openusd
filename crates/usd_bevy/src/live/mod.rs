@@ -4,7 +4,10 @@ mod animation;
 mod author;
 mod change;
 mod index;
+mod native_animation;
+mod native_instance_dependency;
 mod path;
+mod performance;
 mod progressive;
 mod progressive_cleanup;
 mod progressive_resident;
@@ -20,17 +23,19 @@ pub use animation::AnimatedPrims;
 pub use author::{TransformHistory, author_transform, current_transform};
 pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatch};
 pub use index::PrimEntities;
+pub use native_instance_dependency::NativeInstanceDependencyIndex;
 pub use path::{
-    is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, property_of,
-    validate_prim_path,
+    PathId, PathStore, is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of,
+    property_of, validate_prim_path,
 };
+pub use performance::PerformanceCounters;
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 pub use project_readiness::{ProjectOpenReadiness, ProjectOpenReadinessState};
 pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
-pub use stage::LiveStage;
+pub use stage::{AuthoredSuppressionGuard, LiveStage};
 
 use bevy::app::{App, Plugin, Update};
 use bevy::prelude::*;
@@ -64,7 +69,8 @@ pub enum LiveStageSet {
 
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PrimEntities>()
+        app.init_resource::<PathStore>()
+            .init_resource::<PrimEntities>()
             .init_resource::<ProjectionBudget>()
             .init_resource::<ProgressiveProjectionState>()
             .init_resource::<ProjectOpenReadinessState>()
@@ -73,7 +79,10 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<ReconcileStats>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
+            .init_resource::<PerformanceCounters>()
+            .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
+            .init_resource::<native_animation::AnimationRuntime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()
             .configure_sets(

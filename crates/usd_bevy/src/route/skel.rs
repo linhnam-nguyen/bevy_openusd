@@ -93,19 +93,39 @@ impl PrimRoute for SkinRoute {
     }
 }
 
-/// Marker on a skinned mesh entity naming the BlendShapes.
+/// Marker on a skinned mesh entity naming the BlendShapes and their animation
+/// source. The typed runtime resolves the source during binding setup.
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 pub struct UsdBlendShapeBinding {
     pub names: Vec<String>,
+    pub animation_source_path: String,
 }
 
-/// Per-skeleton animation driver.
+/// Marker on a generated native joint entity.
+#[derive(Component, Debug, Clone)]
+pub struct UsdJoint {
+    pub skeleton_path: String,
+    pub path: String,
+    pub index: u32,
+}
+
+/// Per-skeleton animation driver. The vectors are resolved once during
+/// projection; StageTime playback never reparses USD paths or scans routes.
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 pub struct UsdSkelAnimDriver {
     pub anim_name: String,
+    pub animation_source_path: String,
     pub skeleton_joints: Vec<String>,
+    #[entities]
+    pub skeleton_joint_entities: Vec<Option<Entity>>,
+    #[entities]
+    pub joint_entities: Vec<Option<Entity>>,
+    pub has_translations: bool,
+    pub has_rotations: bool,
+    pub has_scales: bool,
+    pub has_blend_shape_weights: bool,
     pub blend_shape_names: Vec<String>,
     pub blend_shape_weights: Vec<(f64, Vec<f32>)>,
 }

@@ -5,7 +5,10 @@ use std::collections::HashSet;
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
-use super::path::{is_descendant_or_self, parent_path, validate_prim_path};
+use super::native_animation;
+use super::native_instance_dependency::NativeInstanceDependencyIndex;
+use super::path::{PathStore, is_descendant_or_self, parent_path, validate_prim_path};
+use super::performance::PerformanceCounters;
 use super::projection_plan::ProjectionPlan;
 use super::stage::LiveStage;
 use crate::prim_ref::UsdPrimRef;
@@ -35,24 +38,26 @@ pub(super) fn stage_up_axis(stage: &Stage) -> Quat {
     }
 }
 
-/// The traversal predicate for projection: active + defined + non-abstract, but
-/// **not** requiring `LOADED` (unlike `PrimPredicate::default()`). This projects
-/// a prim whose payload is *unloaded* as a placeholder (its payloaded children
-/// stay absent until [`LiveStage::load_payload`]). For fully-loaded stages this
-/// is identical to the default predicate.
+/// The traversal predicate for projection: active + defined + non-abstract,
+/// descending through native instance proxies, but **not** requiring `LOADED`
+/// (unlike `PrimPredicate::default()`). This projects a prim whose payload is
+/// *unloaded* as a placeholder (its payloaded children stay absent until
+/// [`LiveStage::load_payload`]). For fully-loaded stages this is the default
+/// predicate with instance proxies enabled.
 pub(super) fn traverse_predicate() -> openusd::usd::PrimPredicate {
     use openusd::usd::PrimStatus;
     openusd::usd::PrimPredicate::new(
         PrimStatus::ACTIVE.union(PrimStatus::DEFINED),
         PrimStatus::ABSTRACT,
     )
+    .with_instance_proxies(true)
 }
 
 /// Collects all valid, projected prim paths within a subtree rooted at `root`.
 ///
-/// Uses the canonical projection predicate (`ACTIVE | DEFINED & ~ABSTRACT`) so
-/// that subtree reconciliation and semantic extraction see exactly the prims
-/// that the renderer projects.
+/// Uses the canonical proxy-aware projection predicate (`ACTIVE | DEFINED &
+/// ~ABSTRACT`) so subtree reconciliation and semantic extraction see exactly
+/// the scene-scoped prims that the renderer projects.
 pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> Result<Vec<String>> {
     let normalized_root = validate_prim_path(root)?;
     let mut collected = Vec::new();
@@ -94,17 +99,25 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     let start = std::time::Instant::now();
     let stage = &live.stage;
     let registry = registry_of(world);
+    world.init_resource::<PathStore>();
     let Ok(plan) = ProjectionPlan::from_stage(stage) else {
         bevy::log::error!("[projection] failed to build deterministic projection plan");
         return;
     };
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_full_stage_walks(1);
+        counters.projection_paths_planned(plan.len() as u64);
+    }
     let mut animated: HashSet<String> = HashSet::new();
     let traversal_start = std::time::Instant::now();
     for entry in plan.entries() {
-        let parent = entry
-            .parent_index()
-            .and_then(|_| map.entity(parent_path(entry.path())))
-            .or_else(|| map.entity("/"));
+        let parent = {
+            let paths = world.resource::<PathStore>();
+            entry
+                .parent_index()
+                .and_then(|_| map.entity(&paths, parent_path(entry.path())))
+                .or_else(|| map.entity(&paths, "/"))
+        };
         let entity = project_plan_entry(world, stage, &registry, map, entry, parent);
         if entry.path() != "/"
             && openusd::sdf::path(entry.path())
@@ -126,6 +139,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         "projected USD stage"
     );
     world.insert_resource(AnimatedPrims(animated));
+    native_animation::rebuild(world, live, map);
     world.insert_resource(ProjectionStats {
         initial_projection_ms: Some(duration),
         initial_projection_prims: plan.len().saturating_sub(1) as u64,
@@ -135,6 +149,16 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
         normal_generation_ms: None,
         material_resolve_ms: None,
     });
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    let rebuild = world.resource_scope(
+        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+            let mut paths = world.resource_mut::<PathStore>();
+            dependencies.rebuild(&mut paths, stage)
+        },
+    );
+    if let Err(error) = rebuild {
+        bevy::log::warn!("[projection] native instance dependency index rebuild failed: {error:#}");
+    }
     let _ = live.drain_change_batch();
 }
 
@@ -167,7 +191,12 @@ pub(super) fn project_plan_entry(
             ))
             .id()
     };
-    map.insert(entry.path(), entity);
+    world.resource_scope(|_world, mut paths: Mut<PathStore>| {
+        map.insert(&mut paths, entry.path(), entity);
+    });
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_paths_materialized(1);
+    }
     if entry.path() != "/"
         && let Ok(path) = openusd::sdf::path(entry.path())
     {

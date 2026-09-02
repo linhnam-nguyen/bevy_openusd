@@ -17,7 +17,10 @@ use std::path::PathBuf;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use usd_bevy::{DisplayPurposes, LiveStage, LiveStagePlugin, PrimEntities, StageTime, UsdPlugin};
+use usd_bevy::{
+    DisplayPurposes, ExtendedSkinPlugin, LiveStage, LiveStagePlugin, PathStore, PrimEntities,
+    StageTime, UsdPlugin,
+};
 
 #[derive(Resource)]
 struct StagePath(String);
@@ -89,6 +92,7 @@ fn main() {
             }),
     )
     .add_plugins(UsdPlugin)
+    .add_plugins(ExtendedSkinPlugin)
     .add_plugins(LiveStagePlugin)
     .insert_resource(ClearColor(Color::srgb(0.06, 0.08, 0.12)))
     .insert_resource(StagePath(path_str.clone()))
@@ -158,8 +162,13 @@ fn handle_reload_system(world: &mut World) {
 
     // Despawn existing entities
     world.remove_non_send::<LiveStage>();
-    if let Some(map) = world.get_resource::<PrimEntities>() {
-        let entities: Vec<Entity> = map.iter().map(|(_, e)| e).collect();
+    let entities: Vec<Entity> = world
+        .get_resource::<PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+        .map_or_else(Vec::new, |(map, paths)| {
+            map.iter(paths).map(|(_, e)| e).collect()
+        });
+    if !entities.is_empty() {
         for entity in entities {
             world.despawn(entity);
         }

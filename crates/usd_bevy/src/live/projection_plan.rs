@@ -1,9 +1,9 @@
 use anyhow::{Result, anyhow};
 use openusd::usd::Stage;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 
-use super::path::{parent_path, validate_prim_path};
+use super::path::validate_prim_path;
 
 /// One deterministic unit of initial projection work.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,9 +89,6 @@ impl ProjectionPlanBuilder {
             return Ok(true);
         };
         let parent = self.stage.prim(openusd::sdf::path(&parent_path)?);
-        if parent_path != "/" && parent.is_instance()? {
-            return Ok(self.pending.is_empty());
-        }
         let mut children = parent.children()?;
         children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
         for child in children {
@@ -121,8 +118,8 @@ impl ProjectionPlanBuilder {
 }
 
 impl ProjectionPlan {
-    /// Build a plan using the same active/defined/non-abstract predicate as
-    /// ordinary live projection and subtree reconciliation.
+    /// Build a plan using the same proxy-aware active/defined/non-abstract
+    /// predicate as ordinary live projection and subtree reconciliation.
     pub fn from_stage(stage: &Stage) -> Result<Self> {
         let mut builder = ProjectionPlanBuilder::new(stage);
         while !builder.is_finished() {
@@ -134,25 +131,42 @@ impl ProjectionPlan {
     /// Build a plan and validate its root argument before filtering it.
     pub fn from_subtree(stage: &Stage, root: &str) -> Result<Self> {
         let root = validate_prim_path(root)?;
-        let full = Self::from_stage(stage)?;
-        let mut entries = Vec::new();
-        let mut remap = HashMap::new();
-        for entry in &full.entries {
-            if entry.path == "/"
-                || entry.path == root
-                || entry.path.starts_with(&format!("{root}/"))
-            {
-                let index = entries.len();
-                remap.insert(entry.path.clone(), index);
-                entries.push(entry.clone());
-            }
+        if root == "/" {
+            return Self::from_stage(stage);
         }
-        for entry in &mut entries {
-            entry.parent = if entry.path == "/" {
-                None
-            } else {
-                remap.get(parent_path(&entry.path)).copied()
-            };
+
+        // Reconcile only the requested namespace. The previous implementation
+        // walked the entire composed stage and filtered afterward, which made
+        // a small subtree resync pay the full-stage traversal cost.
+        let _ = stage.prim(openusd::sdf::path(&root)?);
+        let mut entries = vec![
+            ProjectionPlanEntry {
+                path: "/".to_string(),
+                parent: None,
+            },
+            ProjectionPlanEntry {
+                path: root.clone(),
+                parent: Some(0),
+            },
+        ];
+        let mut pending = VecDeque::from([(root, 1usize)]);
+        while let Some((parent_path, parent_index)) = pending.pop_front() {
+            let parent = stage.prim(openusd::sdf::path(&parent_path)?);
+            let mut children = parent.children()?;
+            children
+                .sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
+            for child in children {
+                if !child.is_active()? || !child.is_defined()? || child.is_abstract()? {
+                    continue;
+                }
+                let path = child.path().as_str().to_string();
+                let index = entries.len();
+                entries.push(ProjectionPlanEntry {
+                    path: path.clone(),
+                    parent: Some(parent_index),
+                });
+                pending.push_back((path, index));
+            }
         }
         Ok(Self { entries })
     }

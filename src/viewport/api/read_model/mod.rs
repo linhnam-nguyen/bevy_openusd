@@ -12,14 +12,12 @@ use viewport_protocol::{
     SceneChildrenPage, SceneSearchMatch, StageLoadState, ViewportEvent, ViewportEventEnvelope,
     ViewportReadModel,
 };
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ScenePageKey {
     parent: Option<SceneAnchor>,
     page: u32,
     page_size: u32,
 }
-
 /// A paged scene request that a local reference adapter must send through the
 /// same public command as the remote frontend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,7 +26,6 @@ pub(crate) struct ScenePageRequest {
     pub(crate) page: u32,
     pub(crate) page_size: u32,
 }
-
 impl ScenePageRequest {
     fn key(&self) -> ScenePageKey {
         ScenePageKey {
@@ -38,7 +35,6 @@ impl ScenePageRequest {
         }
     }
 }
-
 #[derive(Debug, Clone)]
 struct SceneSearchState {
     request_id: String,
@@ -47,7 +43,6 @@ struct SceneSearchState {
     total: u32,
     has_more: bool,
 }
-
 /// Latest authoritative viewport snapshot as reduced from emitted events.
 #[derive(Resource, Debug, Clone, Default)]
 pub(crate) struct ViewportReadModelState {
@@ -59,7 +54,6 @@ pub(crate) struct ViewportReadModelState {
     search: Option<SceneSearchState>,
     editor: EditorStateReadModel,
 }
-
 impl ViewportReadModelState {
     /// Returns the latest snapshot after the render server has published one.
     pub(crate) fn snapshot(&self) -> Option<&ViewportReadModel> {
@@ -99,7 +93,6 @@ impl ViewportReadModelState {
     pub(crate) fn clear_search(&mut self) {
         self.search = None;
     }
-
     /// Returns the latest accepted server-side search matches.
     pub(crate) fn search_results(&self) -> &[SceneSearchMatch] {
         self.search
@@ -141,7 +134,6 @@ impl ViewportReadModelState {
         std::mem::take(&mut self.pending_scene_pages)
     }
 
-    /// Applies an event exactly as a frontend event reducer would.
     pub(crate) fn apply(&mut self, envelope: &ViewportEventEnvelope) {
         match &envelope.event {
             ViewportEvent::Snapshot { state } => self.apply_snapshot(state.as_ref().clone()),
@@ -160,8 +152,18 @@ impl ViewportReadModelState {
                 matches,
                 *has_more,
             ),
-            ViewportEvent::Ready { .. }
+            ViewportEvent::HierarchyChildren { .. }
+            | ViewportEvent::HierarchySearchResults { .. }
+            | ViewportEvent::BimSearchResults { .. }
+            | ViewportEvent::BimPropertiesRead { .. }
+            | ViewportEvent::BimPropertiesPage { .. }
+            | ViewportEvent::BimPropertiesError { .. }
+            | ViewportEvent::BimClassificationFieldCatalogueChanged { .. }
+            | ViewportEvent::BimClassificationFieldCataloguePage { .. }
+            | ViewportEvent::BimPropertyProvenanceRead { .. }
+            | ViewportEvent::Ready { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
+            | ViewportEvent::HierarchyVisibilityChanged { .. }
             | ViewportEvent::CommandRejected { .. } => {}
             ViewportEvent::StageLoadStateChanged { state } => {
                 if !matches!(state, StageLoadState::Ready) {
@@ -246,7 +248,9 @@ impl ViewportReadModelState {
                 }
             }
             ViewportEvent::EditorCommandCompleted { state, .. }
-            | ViewportEvent::RuntimeMutationBatchAccepted { state, .. } => {
+            | ViewportEvent::RuntimeMutationBatchAccepted { state, .. }
+            | ViewportEvent::BimPropertyEditCompleted { state, .. }
+            | ViewportEvent::BimPropertyBatchEditCompleted { state, .. } => {
                 self.editor = state.clone();
             }
             ViewportEvent::EditorPrimState { .. }
@@ -392,6 +396,5 @@ impl ViewportReadModelState {
         self.search = None;
     }
 }
-
 #[cfg(test)]
 mod tests;

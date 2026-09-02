@@ -1,4 +1,184 @@
 use anyhow::{Result, anyhow, bail};
+use bevy::prelude::Resource;
+use std::collections::HashMap;
+
+/// Compact identity for one canonical prim path in [`PathStore`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PathId(u32);
+
+/// The sole owner of canonical prim-path bytes used by projection indexes.
+///
+/// The hash table stores only compact IDs; path strings live once in `paths`.
+/// Hash collisions are resolved by comparing the canonical strings in the
+/// bucket, so the ID remains lossless without duplicating string keys.
+#[derive(Resource, Debug, Default)]
+pub struct PathStore {
+    paths: Vec<String>,
+    by_hash: HashMap<u64, Vec<PathId>>,
+    namespace_children: HashMap<PathId, Vec<PathId>>,
+}
+
+impl PathStore {
+    /// Intern a prim path and return its stable ID for the current store.
+    pub fn intern(&mut self, path: impl AsRef<str>) -> PathId {
+        let normalized = normalize_prim_path(path.as_ref());
+        if let Some(id) = self.lookup_exact(&normalized) {
+            return id;
+        }
+
+        if normalized == "/" {
+            return self.insert_owned(normalized);
+        }
+
+        if self.lookup_exact("/").is_none() {
+            self.insert_owned("/".to_string());
+        }
+
+        // Keep every namespace ancestor available for topology traversal and
+        // ancestor dependency queries. Each canonical path is still owned by
+        // exactly one Vec entry, rather than once per index edge.
+        let mut current = String::with_capacity(normalized.len());
+        for segment in normalized.split('/').filter(|segment| !segment.is_empty()) {
+            current.push('/');
+            current.push_str(segment);
+            if self.lookup_exact(&current).is_none() {
+                self.insert_owned(current.clone());
+            }
+        }
+        self.lookup_exact(&normalized)
+            .expect("interned canonical path is present")
+    }
+
+    /// Find an already interned path without retaining a new string.
+    pub fn lookup(&self, path: &str) -> Option<PathId> {
+        self.lookup_exact(path).or_else(|| {
+            let normalized = normalize_prim_path(path);
+            self.lookup_exact(&normalized)
+        })
+    }
+
+    /// Resolve one compact path ID to its canonical path bytes.
+    pub fn path(&self, id: PathId) -> Option<&str> {
+        self.paths
+            .get(usize::try_from(id.0).ok()?)
+            .map(String::as_str)
+    }
+
+    /// Return the interned namespace parent, if any.
+    pub fn parent(&self, id: PathId) -> Option<PathId> {
+        let path = self.path(id)?;
+        match path.rfind('/') {
+            Some(0) => self.lookup_exact("/"),
+            Some(index) => self.lookup_exact(&path[..index]),
+            None => None,
+        }
+    }
+
+    /// Visit interned ancestors from the path itself toward the stage root.
+    /// The callback receives borrowed IDs and no prefix strings are created.
+    pub fn for_each_ancestor_id(&self, path: &str, mut visit: impl FnMut(PathId)) {
+        let mut end = path.len();
+        loop {
+            if let Some(id) = self.lookup_exact(&path[..end]) {
+                visit(id);
+            }
+            if end <= 1 {
+                break;
+            }
+            end = path[..end].rfind('/').unwrap_or(0).max(1);
+        }
+    }
+
+    /// Visit an interned path and every namespace descendant using compact IDs.
+    ///
+    /// The topology is owned once by the shared path store, so dependency indexes
+    /// can answer descendant queries without retaining prefix postings or scanning
+    /// their complete reverse maps.
+    pub fn for_each_descendant_id(&self, root: PathId, mut visit: impl FnMut(PathId)) {
+        let mut pending = vec![root];
+        while let Some(path) = pending.pop() {
+            visit(path);
+            if let Some(children) = self.namespace_children.get(&path) {
+                pending.extend(children.iter().copied());
+            }
+        }
+    }
+
+    /// Compare two interned paths using namespace boundaries.
+    pub fn is_descendant_or_self(&self, ancestor: PathId, candidate: PathId) -> bool {
+        let Some(ancestor) = self.path(ancestor) else {
+            return false;
+        };
+        let Some(candidate) = self.path(candidate) else {
+            return false;
+        };
+        if ancestor == "/" || ancestor == candidate {
+            return true;
+        }
+        candidate
+            .strip_prefix(ancestor)
+            .is_some_and(|suffix| suffix.starts_with('/') || suffix.starts_with('.'))
+    }
+
+    /// Number of unique canonical paths owned by the store.
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+
+    /// Number of bytes retained for canonical path strings.
+    pub fn path_bytes(&self) -> usize {
+        self.paths.iter().map(String::len).sum()
+    }
+
+    /// Whether no canonical paths are retained.
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
+    /// Reset the store after all projection indexes have been cleared.
+    pub(crate) fn clear(&mut self) {
+        self.paths.clear();
+        self.by_hash.clear();
+        self.namespace_children.clear();
+    }
+
+    fn lookup_exact(&self, path: &str) -> Option<PathId> {
+        let hash = path_hash(path);
+        self.by_hash
+            .get(&hash)?
+            .iter()
+            .copied()
+            .find(|id| self.path(*id).is_some_and(|candidate| candidate == path))
+    }
+
+    fn insert_owned(&mut self, path: String) -> PathId {
+        let parent = match path.rfind('/') {
+            Some(0) => self.lookup_exact("/"),
+            Some(index) => self.lookup_exact(&path[..index]),
+            None => None,
+        };
+        let id = PathId(
+            self.paths
+                .len()
+                .try_into()
+                .expect("path store exceeds u32 IDs"),
+        );
+        let hash = path_hash(&path);
+        self.paths.push(path);
+        self.by_hash.entry(hash).or_default().push(id);
+        if let Some(parent) = parent {
+            self.namespace_children.entry(parent).or_default().push(id);
+        }
+        id
+    }
+}
+
+fn path_hash(path: &str) -> u64 {
+    // Stable FNV-1a keeps the interner independent of randomized hash seeds.
+    path.bytes().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
 
 /// Normalizes a USD prim or property path to its owning prim path without trailing slashes.
 ///

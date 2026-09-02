@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use openusd::usd::Stage;
 
-use crate::live::{LiveStage, LiveStagePlugin, PrimEntities, ReconcileStats};
+use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats};
 
 #[test]
 fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
@@ -142,12 +142,12 @@ fn reconcile_subtree_spawns_and_despawns_while_preserving_sibling_entity_ids() {
     let world_b_entity = app
         .world()
         .resource::<PrimEntities>()
-        .entity("/World/B")
+        .entity(app.world().resource::<PathStore>(), "/World/B")
         .unwrap();
     let child1_entity = app
         .world()
         .resource::<PrimEntities>()
-        .entity("/World/A/Child1")
+        .entity(app.world().resource::<PathStore>(), "/World/A/Child1")
         .unwrap();
 
     // Author changes in /World/A subtree: remove Child2, define Child3
@@ -168,8 +168,15 @@ fn reconcile_subtree_spawns_and_despawns_while_preserving_sibling_entity_ids() {
 
     // Verify entity preservation and removal
     let prim_entities = app.world().resource::<PrimEntities>();
-    assert_eq!(prim_entities.entity("/World/B"), Some(world_b_entity));
-    assert_eq!(prim_entities.entity("/World/A/Child1"), Some(child1_entity));
-    assert!(prim_entities.entity("/World/A/Child2").is_none());
-    assert!(prim_entities.entity("/World/A/Child3").is_some());
+    let paths = app.world().resource::<PathStore>();
+    assert_eq!(
+        prim_entities.entity(paths, "/World/B"),
+        Some(world_b_entity)
+    );
+    assert_eq!(
+        prim_entities.entity(paths, "/World/A/Child1"),
+        Some(child1_entity)
+    );
+    assert!(prim_entities.entity(paths, "/World/A/Child2").is_none());
+    assert!(prim_entities.entity(paths, "/World/A/Child3").is_some());
 }

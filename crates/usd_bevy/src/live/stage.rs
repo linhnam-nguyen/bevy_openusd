@@ -31,6 +31,32 @@ pub struct LiveStage {
     sink: Option<StageSinkId>,
 }
 
+/// Failure-safe reservation for one self-authored prim echo.
+///
+/// The reservation is retained only when the caller commits the authoring
+/// operation. Dropping an uncommitted guard removes the suppression entry so
+/// a failed write cannot hide a later real stage change.
+pub struct AuthoredSuppressionGuard {
+    suppressed: Rc<RefCell<HashSet<String>>>,
+    prim: String,
+    committed: bool,
+}
+
+impl AuthoredSuppressionGuard {
+    /// Retain the suppression entry because the guarded authoring succeeded.
+    pub fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for AuthoredSuppressionGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.suppressed.borrow_mut().remove(&self.prim);
+        }
+    }
+}
+
 impl LiveStage {
     /// Wrap a stage and install the change sink.
     pub fn new(stage: Stage) -> Self {
@@ -179,6 +205,31 @@ impl LiveStage {
     /// re-projected. Call immediately before authoring.
     pub fn mark_authored(&self, prim: impl Into<String>) {
         self.suppressed.borrow_mut().insert(prim.into());
+    }
+
+    /// Reserve a self-authored suppression entry with failure-safe cleanup.
+    pub fn mark_authored_guard(&self, prim: impl Into<String>) -> AuthoredSuppressionGuard {
+        let prim = prim.into();
+        self.mark_authored(prim.clone());
+        AuthoredSuppressionGuard {
+            suppressed: Rc::clone(&self.suppressed),
+            prim,
+            committed: false,
+        }
+    }
+
+    /// Run one authoring operation with failure-safe self-authored tracking.
+    pub fn with_authored<T, E>(
+        &self,
+        prim: impl Into<String>,
+        author: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, E> {
+        let suppression = self.mark_authored_guard(prim);
+        let result = author();
+        if result.is_ok() {
+            suppression.commit();
+        }
+        result
     }
 
     /// Take and clear the set of self-authored prim paths.

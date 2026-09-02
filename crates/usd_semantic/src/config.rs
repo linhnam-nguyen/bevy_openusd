@@ -2,6 +2,10 @@
 
 use usd_model::HashDigest;
 
+use crate::nvidia::{
+    NvidiaRevitClassificationConfig, NvidiaRevitConfig, NvidiaRevitIdentityConfig,
+};
+
 /// Candidate authored-property names for resolving a stable source identity.
 ///
 /// The vectors are deliberately empty by default. Exporters disagree on
@@ -57,6 +61,7 @@ pub struct SemanticConfig {
     pub type_id_property: Option<String>,
     pub display_name_property: Option<String>,
     pub identity: IdentityConfig,
+    pub nvidia_revit: NvidiaRevitConfig,
 }
 
 impl Default for SemanticConfig {
@@ -74,11 +79,35 @@ impl Default for SemanticConfig {
                 allow_prim_path_fallback: true,
                 ..Default::default()
             },
+            nvidia_revit: NvidiaRevitConfig::default(),
         }
     }
 }
 
 impl SemanticConfig {
+    /// Returns the explicitly supported NVIDIA/Revit Connector adapter.
+    ///
+    /// The connector's identity namespace is part of the observed source
+    /// contract, so runtime ingestion must opt into it deliberately instead
+    /// of relying on the empty, schema-neutral default.
+    pub fn for_nvidia_revit_connector() -> Self {
+        Self {
+            nvidia_revit: NvidiaRevitConfig {
+                identity: NvidiaRevitIdentityConfig {
+                    element_id_property: Some("BIM:Instance:ElementId".to_owned()),
+                    ..Default::default()
+                },
+                classification: NvidiaRevitClassificationConfig {
+                    category_property: Some("BIM:Instance:Category".to_owned()),
+                    type_name_property: Some("BIM:Type:Name".to_owned()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
     pub fn hash(&self) -> HashDigest {
         let mut bytes = Vec::new();
         for value in [
@@ -105,6 +134,40 @@ impl SemanticConfig {
             }
         }
         self.identity.write_hash(&mut bytes);
+        self.nvidia_revit.write_hash(&mut bytes);
         HashDigest::new(*blake3::hash(&bytes).as_bytes())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SemanticConfig;
+
+    #[test]
+    fn nvidia_revit_runtime_adapter_uses_observed_element_id_property() {
+        let config = SemanticConfig::for_nvidia_revit_connector();
+
+        assert_eq!(
+            config.nvidia_revit.identity.element_id_property.as_deref(),
+            Some("BIM:Instance:ElementId")
+        );
+        assert!(config.nvidia_revit.identity.family_name_property.is_none());
+        assert_eq!(
+            config
+                .nvidia_revit
+                .classification
+                .category_property
+                .as_deref(),
+            Some("BIM:Instance:Category")
+        );
+        assert_eq!(
+            config
+                .nvidia_revit
+                .classification
+                .type_name_property
+                .as_deref(),
+            Some("BIM:Type:Name")
+        );
+        assert!(config.include_custom_properties);
     }
 }

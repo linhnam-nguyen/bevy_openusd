@@ -24,6 +24,16 @@ use openusd::usd::{Stage, TimeCode};
 
 use super::util::{read_float_vec, read_int_vec, read_rel_first_target};
 
+/// Static blend-shape payload copied into Bevy morph targets during
+/// projection. Playback changes only `MeshMorphWeights`.
+#[derive(Debug, Clone)]
+pub(crate) struct BlendShapeData {
+    pub(crate) names: Vec<String>,
+    pub(crate) offsets: Vec<Vec<[f32; 3]>>,
+    pub(crate) normal_offsets: Vec<Vec<[f32; 3]>>,
+    pub(crate) point_indices: Vec<Vec<i32>>,
+}
+
 /// Whether `prim` carries skinning influences (i.e. is a skinned mesh).
 pub fn is_skinned(stage: &Stage, prim: &Path) -> bool {
     read_float_vec(stage, prim, "primvars:skel:jointWeights")
@@ -195,10 +205,51 @@ fn enclosing_skel_root(stage: &Stage, prim: &Path) -> Option<Path> {
 
 /// Resolve the fully-inherited binding (skeleton + animation source) for the
 /// skinned mesh at `mesh_path`, via `discover_bindings` over its SkelRoot.
-fn binding_of(stage: &Stage, mesh_path: &Path) -> Option<SkelBinding> {
+pub(crate) fn binding_of(stage: &Stage, mesh_path: &Path) -> Option<SkelBinding> {
     let skel_root = enclosing_skel_root(stage, mesh_path)?;
     let bindings = discover_bindings(stage, &skel_root).ok()?;
     bindings.into_iter().find(|b| b.prim == mesh_path.as_str())
+}
+
+/// Read primary blend-shape offsets once. Inbetween evaluation remains on the
+/// CPU compatibility route; native playback uses these static primary targets.
+pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendShapeData> {
+    let api = SkelBindingAPI::get(stage, mesh_path.clone()).ok()??;
+    let names = api.blend_shapes().ok()?;
+    let targets = api.blend_shape_targets().ok()?;
+    let mut data = BlendShapeData {
+        names: Vec::new(),
+        offsets: Vec::new(),
+        normal_offsets: Vec::new(),
+        point_indices: Vec::new(),
+    };
+    for (index, name) in names.iter().enumerate() {
+        let Some(target) = targets.get(index) else {
+            continue;
+        };
+        let Ok(Some(shape)) = BlendShape::get(stage, target.clone()) else {
+            continue;
+        };
+        data.names.push(name.clone());
+        data.offsets.push(
+            shape
+                .offsets()
+                .ok()?
+                .into_iter()
+                .map(|v| [v.x, v.y, v.z])
+                .collect(),
+        );
+        data.normal_offsets.push(
+            shape
+                .normal_offsets()
+                .ok()?
+                .into_iter()
+                .map(|v| [v.x, v.y, v.z])
+                .collect(),
+        );
+        data.point_indices.push(shape.point_indices().ok()?);
+    }
+    (!data.names.is_empty()).then_some(data)
 }
 
 /// Whether the skinned mesh's bound SkelAnimation may vary over time (so the

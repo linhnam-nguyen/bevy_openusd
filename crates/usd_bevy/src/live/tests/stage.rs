@@ -43,6 +43,33 @@ fn pending_batch_is_readable_without_consuming_it() {
 }
 
 #[test]
+fn failed_authoring_drops_self_authored_suppression() {
+    let stage = Stage::builder()
+        .in_memory("failed-authoring-suppression.usda")
+        .expect("in-memory stage");
+    let live = LiveStage::new(stage);
+    let suppression = live.mark_authored_guard("/World/A");
+
+    let result = crate::authoring::move_prim(&live.stage, "/World/Missing", "/World/A");
+    assert!(result.is_err());
+    drop(suppression);
+
+    assert!(live.take_suppressed().is_empty());
+}
+
+#[test]
+fn committed_authoring_keeps_one_self_authored_suppression() {
+    let stage = Stage::builder()
+        .in_memory("committed-authoring-suppression.usda")
+        .expect("in-memory stage");
+    let live = LiveStage::new(stage);
+    let suppression = live.mark_authored_guard("/World/A");
+    suppression.commit();
+
+    assert_eq!(live.take_suppressed().len(), 1);
+}
+
+#[test]
 fn plugin_publishes_one_batch_for_later_consumers() {
     let stage = Stage::builder()
         .in_memory("pending-stage-changes.usda")

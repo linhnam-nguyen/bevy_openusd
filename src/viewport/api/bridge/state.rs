@@ -12,6 +12,7 @@ pub(super) struct EditorHistories {
     pub transforms: usd_bevy::TransformHistory,
     pub undo_domains: Vec<EditorHistoryDomain>,
     pub redo_domains: Vec<EditorHistoryDomain>,
+    pub is_dirty: bool,
 }
 
 /// Main-thread admission control for connector-originated writes.
@@ -98,12 +99,40 @@ impl EditorHistories {
     pub fn record(&mut self, domain: EditorHistoryDomain) {
         self.undo_domains.push(domain);
         self.redo_domains.clear();
+        self.is_dirty = true;
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.is_dirty = true;
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.is_dirty = false;
     }
 
     pub fn state(&self) -> EditorStateReadModel {
         EditorStateReadModel {
             can_undo: !self.undo_domains.is_empty(),
             can_redo: !self.redo_domains.is_empty(),
+            is_dirty: self.is_dirty,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_state_is_separate_from_undo_history() {
+        let mut histories = EditorHistories::default();
+        histories.record(EditorHistoryDomain::Authoring);
+        assert!(histories.state().is_dirty);
+        assert!(histories.state().can_undo);
+
+        histories.mark_saved();
+
+        assert!(!histories.state().is_dirty);
+        assert!(histories.state().can_undo);
     }
 }

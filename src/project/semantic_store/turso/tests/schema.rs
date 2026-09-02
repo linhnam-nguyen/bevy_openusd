@@ -10,7 +10,10 @@ fn schema_migration_creates_durable_snapshot_tables() {
             .expect("durable store opens");
         let mut rows = store
             .connection()
-            .query("SELECT version FROM schema_migrations", ())
+            .query(
+                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1",
+                (),
+            )
             .await
             .expect("migration query succeeds");
         let row = rows
@@ -19,6 +22,21 @@ fn schema_migration_creates_durable_snapshot_tables() {
             .expect("migration row reads")
             .expect("migration row exists");
         assert_eq!(row.get::<i64>(0).expect("version decodes"), SCHEMA_VERSION);
+
+        let row = store
+            .connection()
+            .query(
+                "SELECT COUNT(*) FROM pragma_table_info('properties')
+                 WHERE name IN ('quantity_id', 'canonical_unit_id', 'source_unit_id')",
+                (),
+            )
+            .await
+            .expect("property schema query succeeds")
+            .next()
+            .await
+            .expect("property schema row reads")
+            .expect("property schema row exists");
+        assert_eq!(row.get::<i64>(0).expect("property column count decodes"), 3);
 
         let row = store
             .connection()

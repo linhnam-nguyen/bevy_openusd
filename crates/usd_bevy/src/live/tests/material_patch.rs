@@ -10,8 +10,8 @@ use openusd::usd::Stage;
 use crate::ProjectionSeed;
 use crate::UsdPlugin;
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PrimEntities, StageChange, StageChangeBatch,
-    apply_change_batch,
+    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, StageChange,
+    StageChangeBatch, apply_change_batch,
 };
 use crate::route::material::MaterialRouteDiagnostics;
 
@@ -81,7 +81,7 @@ fn persistent_material_seed_is_consumed_before_usd_decode() {
 fn entity(app: &App, path: &str) -> Entity {
     app.world()
         .resource::<PrimEntities>()
-        .entity(path)
+        .entity(app.world().resource::<PathStore>(), path)
         .unwrap_or_else(|| panic!("{path} entity exists"))
 }
 

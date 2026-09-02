@@ -1,7 +1,7 @@
 //! Current live-stage projection smoke test.
 
 use bevy::prelude::World;
-use usd_bevy::{LiveStage, PrimEntities, UsdPrimRef, UsdSnippet, project_stage};
+use usd_bevy::{LiveStage, PathStore, PrimEntities, UsdPrimRef, UsdSnippet, project_stage};
 
 #[test]
 fn current_live_projection_builds_a_prim_entity_map() {
@@ -24,8 +24,11 @@ def Xform "Root"
 
     project_stage(&mut world, &live, &mut map);
 
-    let root = map.entity("/Root").expect("Root is projected");
-    let child = map.entity("/Root/Child").expect("Child is projected");
+    let paths = world.resource::<PathStore>();
+    let root = map.entity(paths, "/Root").expect("Root is projected");
+    let child = map
+        .entity(paths, "/Root/Child")
+        .expect("Child is projected");
     assert_ne!(root, child);
     assert_eq!(world.get::<UsdPrimRef>(root).unwrap().path, "/Root");
     assert_eq!(world.get::<UsdPrimRef>(child).unwrap().path, "/Root/Child");

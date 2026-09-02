@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use bevy::prelude::*;
+    use usd_model::{HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
     use viewport_protocol::*;
 
     use crate::viewport::api::bridge::scene_query::{
@@ -8,13 +11,19 @@ mod tests {
     };
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::scene_query::SceneQueryService;
-    use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::api::{
+        ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
+        ViewportCommandInbox, ViewportEventOutbox,
+    };
+    use crate::viewport::semantic::SemanticSyncState;
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
+        let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 1);
         let mut app = App::new();
         app.init_resource::<ViewportCommandInbox>()
             .init_resource::<ViewportEventOutbox>()
             .insert_resource(SceneAnchorIndex::from_test_nodes(nodes))
+            .insert_resource(projection)
             .init_resource::<SceneQueryService>()
             .init_resource::<SceneSearchRequests>()
             .add_systems(
@@ -22,6 +31,122 @@ mod tests {
                 (publish_scene_query_results, dispatch_scene_query_commands).chain(),
             );
         app
+    }
+
+    #[test]
+    fn classification_provider_switch_builds_a_virtual_projection() {
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<CurrentHierarchyProjection>()
+            .init_resource::<ActiveHierarchyProvider>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(empty_snapshot()))
+            .add_systems(Update, dispatch_scene_query_commands);
+
+        let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
+            "category",
+            BimFieldKey::Category,
+        )]);
+        let _request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetHierarchySource {
+                source: HierarchySource::BimClassification,
+                classification_recipe: Some(recipe),
+            },
+        );
+
+        app.update();
+
+        assert_eq!(
+            app.world().resource::<ActiveHierarchyProvider>().source(),
+            HierarchySource::BimClassification
+        );
+        let projection = app.world().resource::<CurrentHierarchyProjection>();
+        assert_eq!(projection.source(), HierarchySource::BimClassification);
+        assert!(projection.snapshot().nodes.is_empty());
+        assert!(
+            app.world_mut()
+                .resource_mut::<ViewportEventOutbox>()
+                .pop()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn classification_provider_switch_round_trips_to_prim_repeatedly() {
+        let prim_nodes = vec![
+            node("/World", None, "World", None),
+            node("/World/Window", Some("/World"), "Window", None),
+        ];
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .insert_resource(SceneAnchorIndex::from_test_nodes(prim_nodes.clone()))
+            .insert_resource(CurrentHierarchyProjection::from_prim_nodes(&prim_nodes, 1))
+            .init_resource::<ActiveHierarchyProvider>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(
+                crate::viewport::bim::test_fixtures::snapshot(),
+            ))
+            .add_systems(Update, dispatch_scene_query_commands);
+
+        let recipe = ClassificationRecipe::new(vec![
+            ClassificationLevel::new("category", BimFieldKey::Category),
+            ClassificationLevel::new("level", BimFieldKey::property("Level")),
+            ClassificationLevel::new("type", BimFieldKey::Type),
+        ]);
+        for _ in 0..10 {
+            app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+                ViewportCommand::SetHierarchySource {
+                    source: HierarchySource::BimClassification,
+                    classification_recipe: Some(recipe.clone()),
+                },
+            );
+            app.update();
+            let bim_projection = app.world().resource::<CurrentHierarchyProjection>();
+            assert_eq!(bim_projection.source(), HierarchySource::BimClassification);
+            assert!(
+                bim_projection
+                    .snapshot()
+                    .nodes
+                    .iter()
+                    .any(|node| node.name == "Walls")
+            );
+
+            app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+                ViewportCommand::SetHierarchySource {
+                    source: HierarchySource::Prim,
+                    classification_recipe: None,
+                },
+            );
+            app.update();
+            let prim_projection = app.world().resource::<CurrentHierarchyProjection>();
+            assert_eq!(prim_projection.source(), HierarchySource::Prim);
+            assert_eq!(
+                prim_projection
+                    .snapshot()
+                    .nodes
+                    .iter()
+                    .map(|node| node.name.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["World", "Window"]
+            );
+        }
+    }
+
+    fn empty_snapshot() -> SemanticSnapshot {
+        SemanticSnapshot {
+            snapshot_id: SnapshotId("hierarchy-test".to_owned()),
+            source: SnapshotSource::Working {
+                session: "hierarchy-test".to_owned(),
+                live_revision: 1,
+            },
+            config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
+            entities: HashMap::new(),
+        }
     }
 
     #[test]
@@ -123,6 +248,54 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn bim_search_routes_through_the_semantic_worker() -> anyhow::Result<()> {
+        let mut app = App::new();
+        app.init_resource::<ViewportCommandInbox>()
+            .init_resource::<ViewportEventOutbox>()
+            .init_resource::<SceneAnchorIndex>()
+            .init_resource::<CurrentHierarchyProjection>()
+            .init_resource::<SceneQueryService>()
+            .init_resource::<SceneSearchRequests>()
+            .insert_resource(SemanticSyncState::from_test_snapshot(empty_snapshot()))
+            .add_systems(
+                Update,
+                (publish_scene_query_results, dispatch_scene_query_commands).chain(),
+            );
+
+        let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SearchBim {
+                query: BimSearchQuery::PropertyNameRegex {
+                    pattern: "Fire.*".to_owned(),
+                    page: BimPageRequest::new(0, 20),
+                },
+            },
+        );
+
+        for _ in 0..200 {
+            app.update();
+            if let Some(event) = app.world_mut().resource_mut::<ViewportEventOutbox>().pop() {
+                assert_eq!(event.request_id.as_deref(), Some(request_id.as_str()));
+                let ViewportEvent::BimSearchResults { result } = event.event else {
+                    panic!("expected BIM search results")
+                };
+                assert!(matches!(
+                    result,
+                    BimSearchResult::PropertyNames {
+                        total: 0,
+                        matches,
+                        has_more: false,
+                        ..
+                    } if matches.is_empty()
+                ));
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        anyhow::bail!("BIM search result did not arrive")
     }
 
     fn node(

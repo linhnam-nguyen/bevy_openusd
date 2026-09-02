@@ -14,7 +14,7 @@ pub(crate) const RESPONSE_MAILBOX_CAPACITY: usize = 32;
 pub(crate) enum SemanticStateCommand {
     ReplaceSnapshot {
         request_id: String,
-        snapshot: SemanticSnapshot,
+        snapshot: Arc<SemanticSnapshot>,
     },
     ApplyDelta {
         request_id: String,
@@ -70,7 +70,7 @@ impl SemanticMailbox {
     pub(crate) fn submit_snapshot(
         &self,
         request_id: String,
-        snapshot: SemanticSnapshot,
+        snapshot: Arc<SemanticSnapshot>,
     ) -> Result<bool, MailboxSubmitError> {
         let Ok(mut state) = self.state.lock() else {
             return Err(MailboxSubmitError::Closed);
@@ -108,7 +108,7 @@ impl SemanticMailbox {
         &self,
         request_id: String,
         update: SemanticIncrementalUpdate,
-        snapshot: &SemanticSnapshot,
+        snapshot: Arc<SemanticSnapshot>,
     ) -> Result<bool, MailboxSubmitError> {
         self.submit_delta_inner(request_id, update, Some(snapshot))
     }
@@ -117,7 +117,7 @@ impl SemanticMailbox {
         &self,
         request_id: String,
         update: SemanticIncrementalUpdate,
-        recovery_snapshot: Option<&SemanticSnapshot>,
+        recovery_snapshot: Option<Arc<SemanticSnapshot>>,
     ) -> Result<bool, MailboxSubmitError> {
         let Ok(mut state) = self.state.lock() else {
             return Err(MailboxSubmitError::Closed);
@@ -129,7 +129,7 @@ impl SemanticMailbox {
             let Some(snapshot) = recovery_snapshot else {
                 return Err(MailboxSubmitError::QueueFull);
             };
-            self.replace_with_snapshot(&mut state, request_id, snapshot.clone());
+            self.replace_with_snapshot(&mut state, request_id, snapshot);
             self.wake.notify_one();
             return Ok(true);
         }
@@ -227,7 +227,7 @@ impl SemanticMailbox {
         &self,
         state: &mut MailboxState,
         request_id: String,
-        snapshot: SemanticSnapshot,
+        snapshot: Arc<SemanticSnapshot>,
     ) {
         state.commands.clear();
         state.state_count = 0;
@@ -294,7 +294,11 @@ mod tests {
         }
         assert!(
             mailbox
-                .submit_delta_with_snapshot("recovery".to_owned(), update(99), &snapshot())
+                .submit_delta_with_snapshot(
+                    "recovery".to_owned(),
+                    update(99),
+                    Arc::new(snapshot()),
+                )
                 .unwrap()
         );
         let command = mailbox.recv().expect("recovery command");

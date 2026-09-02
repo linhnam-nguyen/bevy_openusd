@@ -11,13 +11,19 @@
 //! - [`settings`]  — authoritative protocol settings state
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
 
+mod bim_commands;
+mod bim_edit;
+mod bim_properties;
+mod bim_search;
 mod commands;
-mod convert;
+pub(crate) mod convert;
 mod editor_commands;
 mod helpers;
 mod mutations;
 mod plugin;
+mod save;
 mod scene_query;
+mod scene_query_results;
 mod settings;
 mod state;
 mod tree;
@@ -25,6 +31,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use convert::editor_value_to_usd;
 pub(crate) use plugin::ViewportBridgePlugin;
 pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;

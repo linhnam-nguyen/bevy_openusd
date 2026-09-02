@@ -8782,6 +8782,7 @@ version = "0.0.1"
 dependencies = [
  "bitflags 2.13.1",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -8830,6 +8831,7 @@ dependencies = [
  "openusd",
  "project_protocol",
  "rapier3d-f64",
+ "regex",
  "reqwest",
  "rfd",
  "serde",
@@ -8945,6 +8947,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "usd_model",
 ]
 
 [[package]]

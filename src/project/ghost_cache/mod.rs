@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use bevy::asset::Assets;
 use bevy::mesh::{Mesh, Mesh3d};
 use bevy::prelude::{Resource, World};
-use usd_bevy::UsdPrimRef;
+use usd_bevy::{PathStore, UsdPrimRef};
 use usd_model::SemanticSnapshot;
 
 use super::blob_store::{
@@ -129,7 +129,10 @@ pub(crate) fn attach_render_blobs_for_entities(
         return;
     };
 
-    let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
+    let Some((map, paths)) = world
+        .get_resource::<usd_bevy::PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+    else {
         bevy::log::warn!(
             target: "ghost_cache",
             resync_fallback_reason = "missing_prim_entities_index",
@@ -153,7 +156,7 @@ pub(crate) fn attach_render_blobs_for_entities(
     for entity in entities.iter() {
         if let Some(geometry) = entity.geometry.as_ref()
             && geometry.render_blob.is_none()
-            && let Some(bevy_entity) = map.entity(&entity.prim_path)
+            && let Some(bevy_entity) = map.entity(paths, &entity.prim_path)
             && let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity)
         {
             mesh_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());
@@ -280,7 +283,10 @@ pub(crate) fn prepare_render_blobs_for_entities(
     if entities.is_empty() {
         return Vec::new();
     }
-    let Some(map) = world.get_resource::<usd_bevy::PrimEntities>() else {
+    let Some((map, paths)) = world
+        .get_resource::<usd_bevy::PrimEntities>()
+        .zip(world.get_resource::<PathStore>())
+    else {
         return Vec::new();
     };
 
@@ -288,7 +294,7 @@ pub(crate) fn prepare_render_blobs_for_entities(
     for entity in entities.iter() {
         if let Some(geometry) = entity.geometry.as_ref()
             && geometry.render_blob.is_none()
-            && let Some(bevy_entity) = map.entity(&entity.prim_path)
+            && let Some(bevy_entity) = map.entity(paths, &entity.prim_path)
             && let Some(mesh_3d) = world.get::<Mesh3d>(bevy_entity)
         {
             mesh_handles.insert(entity.prim_path.clone(), mesh_3d.0.clone());

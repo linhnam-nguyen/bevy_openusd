@@ -24,7 +24,8 @@ fn work(revision: u64) -> DeliveryWork {
             },
             config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
             entities: HashMap::new(),
-        },
+        }
+        .into(),
         prepared_blobs: Vec::new(),
         prepared_runtime_payloads: PreparedRuntimePayloads::default(),
         profile: RuntimeProfile::NativeMedium,
@@ -155,7 +156,7 @@ fn complete_delivery_publishes_a_ready_descriptor_for_the_active_identity() {
     .expect("cache identity");
     let mut work = work(9);
     work.project_root = project.path().to_path_buf();
-    work.snapshot.config_hash = context.identity.config_hash;
+    Arc::make_mut(&mut work.snapshot).config_hash = context.identity.config_hash;
     work.cache_context = Some(context.clone());
 
     let bundle = build_delivery(&work).expect("delivery bundle");

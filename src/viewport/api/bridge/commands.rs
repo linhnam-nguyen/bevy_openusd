@@ -1,15 +1,15 @@
-use bevy::prelude::*;
-use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
-
 use super::editor_commands::apply_editor_command;
 use super::helpers::{
-    emit_presentation_changed, emit_snapshot, emit_viewer_settings_changed, reject,
+    emit_classification_field_catalogue, emit_presentation_changed, emit_snapshot,
+    emit_viewer_settings_changed, reject,
 };
 use super::state::EditorHistories;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
 };
+use bevy::prelude::*;
+use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 mod cadence;
 mod camera;
 mod presentation;
@@ -17,13 +17,9 @@ mod selection;
 mod selection_dispatch;
 mod state;
 mod timeline;
-
+mod variants;
 pub(super) use cadence::apply_pending_renderer_cadence;
 use state::ApplyViewportCommandState;
-
-/// Applies commands whose state does not require a tree traversal. Tree
-/// commands are forwarded to the next system after the scene index refreshes.
-/// Stage-authoring commands are delegated to [`apply_editor_command`].
 pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
@@ -42,7 +38,6 @@ pub(super) fn apply_viewport_commands(
             );
             continue;
         }
-
         let Some((command, request_id)) = selection_dispatch::apply_selection_command(
             envelope.command,
             request_id,
@@ -53,102 +48,8 @@ pub(super) fn apply_viewport_commands(
         ) else {
             continue;
         };
-
         match command {
             ViewportCommand::RequestSnapshot => {
-                emit_snapshot(
-                    &mut outbox,
-                    request_id,
-                    &state.configuration.p0(),
-                    &state.spawned,
-                    &state.selected_targets.0,
-                    state.selected_targets.revision(),
-                    &state.viewer_settings.0,
-                    &state.scene_index,
-                    &state.camera_mount,
-                    &state.camera_orientation.latest,
-                    &state.clock,
-                    &state.toggles,
-                    &state.tuning,
-                    state.physics.0,
-                );
-            }
-            ViewportCommand::RequestSceneChildren { .. } | ViewportCommand::SearchScene { .. } => {
-                reject(
-                    &mut outbox,
-                    request_id,
-                    "scene query command was not dispatched".to_owned(),
-                );
-            }
-            ViewportCommand::ReloadSession => {
-                state.reload.requested = true;
-                *state.histories = EditorHistories::default();
-                state.runtime_mutations.reset();
-                emit_snapshot(
-                    &mut outbox,
-                    request_id,
-                    &state.configuration.p0(),
-                    &state.spawned,
-                    &state.selected_targets.0,
-                    state.selected_targets.revision(),
-                    &state.viewer_settings.0,
-                    &state.scene_index,
-                    &state.camera_mount,
-                    &state.camera_orientation.latest,
-                    &state.clock,
-                    &state.toggles,
-                    &state.tuning,
-                    state.physics.0,
-                );
-            }
-            ViewportCommand::FocusTarget { target, mode } => {
-                state.tree_commands.push(ViewportTreeCommand::Focus {
-                    request_id,
-                    target,
-                    mode,
-                });
-            }
-            ViewportCommand::SetSubtreeVisibility { target, visible } => {
-                state
-                    .tree_commands
-                    .push(ViewportTreeCommand::SetSubtreeVisibility {
-                        request_id,
-                        target,
-                        visible,
-                    });
-            }
-            ViewportCommand::SetVariantSelection {
-                prim_path,
-                set_name,
-                option,
-            } => {
-                state
-                    .tuning
-                    .variants
-                    .insert((prim_path.clone(), set_name.clone()), option.clone());
-                if let Some(stage) = state.stage.as_deref() {
-                    if stage.is_authoring_frozen() {
-                        reject(
-                            &mut outbox,
-                            request_id,
-                            "LiveStage authoring is leased by Project publication".to_owned(),
-                        );
-                        continue;
-                    }
-                    stage.mark_authored(prim_path.clone());
-                    if let Err(error) = state.histories.authoring.set_variant(
-                        &stage.stage,
-                        &prim_path,
-                        &set_name,
-                        &option,
-                    ) {
-                        reject(&mut outbox, request_id, error.to_string());
-                        continue;
-                    }
-                    state
-                        .histories
-                        .record(super::state::EditorHistoryDomain::Authoring);
-                }
                 emit_snapshot(
                     &mut outbox,
                     request_id.clone(),
@@ -165,12 +66,97 @@ pub(super) fn apply_viewport_commands(
                     &state.tuning,
                     state.physics.0,
                 );
-                super::helpers::emit_editor_completed(
+                emit_classification_field_catalogue(
                     &mut outbox,
                     request_id,
-                    viewport_protocol::EditorOperation::SetVariantSelection,
-                    vec![format!("{prim_path}.{set_name}")],
-                    &state.histories,
+                    state.bim_field_catalogue.as_deref(),
+                );
+            }
+            ViewportCommand::RequestBimClassificationFieldCatalogue { known_revision: _ } => {
+                emit_classification_field_catalogue(
+                    &mut outbox,
+                    request_id,
+                    state.bim_field_catalogue.as_deref(),
+                );
+            }
+            ViewportCommand::RequestSceneChildren { .. }
+            | ViewportCommand::SearchScene { .. }
+            | ViewportCommand::SearchBim { .. }
+            | ViewportCommand::RequestBimProperties
+            | ViewportCommand::RequestBimPropertyProvenance { .. }
+            | ViewportCommand::RequestHierarchyChildren { .. }
+            | ViewportCommand::SearchHierarchy { .. }
+            | ViewportCommand::SetHierarchySource { .. } => {
+                reject(
+                    &mut outbox,
+                    request_id,
+                    "scene query command was not dispatched".to_owned(),
+                );
+            }
+            ViewportCommand::ReloadSession => {
+                state.reload.requested = true;
+                *state.histories = EditorHistories::default();
+                state.runtime_mutations.reset();
+                emit_snapshot(
+                    &mut outbox,
+                    request_id.clone(),
+                    &state.configuration.p0(),
+                    &state.spawned,
+                    &state.selected_targets.0,
+                    state.selected_targets.revision(),
+                    &state.viewer_settings.0,
+                    &state.scene_index,
+                    &state.camera_mount,
+                    &state.camera_orientation.latest,
+                    &state.clock,
+                    &state.toggles,
+                    &state.tuning,
+                    state.physics.0,
+                );
+                emit_classification_field_catalogue(
+                    &mut outbox,
+                    request_id,
+                    state.bim_field_catalogue.as_deref(),
+                );
+            }
+            ViewportCommand::FocusTarget { target, mode } => {
+                state.queue_tree_command(ViewportTreeCommand::Focus {
+                    request_id,
+                    target,
+                    mode,
+                });
+            }
+            ViewportCommand::SetSubtreeVisibility { target, visible } => {
+                state.queue_tree_command(ViewportTreeCommand::SetSubtreeVisibility {
+                    request_id,
+                    target,
+                    visible,
+                });
+            }
+            ViewportCommand::SetHierarchyNodeVisibility {
+                source,
+                node_id,
+                visible,
+            } => {
+                state.queue_tree_command(ViewportTreeCommand::SetHierarchyNodeVisibility {
+                    request_id,
+                    source,
+                    node_id,
+                    visible,
+                });
+            }
+            ViewportCommand::SetVariantSelection {
+                prim_path,
+                set_name,
+                option,
+            } => {
+                variants::set_variant_selection(
+                    request_id,
+                    prim_path,
+                    set_name,
+                    option,
+                    &mut outbox,
+                    &mut state,
                 );
             }
             ViewportCommand::ResetVariantSelection {
@@ -283,9 +269,7 @@ pub(super) fn apply_viewport_commands(
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
             }
             ViewportCommand::SetSamplingPreference { preference } => {
-                // FSR is a forward-compatible provider vocabulary only. No
-                // reviewed implementation is active in B4, so sampling On
-                // may select DLSS or reject explicitly.
+                // FSR remains vocabulary-only; On selects DLSS or rejects.
                 let capabilities = SamplingCapabilities::new(state.dlss.supported(), false);
                 let active = match choose_upscaler(preference.enabled, capabilities) {
                     Ok(active) => active,
@@ -308,6 +292,19 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::SetSelectionPresentationSettings { settings } => {
                 state.viewer_settings.0.selection = settings;
                 emit_viewer_settings_changed(&mut outbox, request_id, &state.viewer_settings.0);
+            }
+            ViewportCommand::SetClassificationColorPlan { intent } => {
+                let Some(plan) = state.classification_color_plan.as_deref_mut() else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "classification color presentation is unavailable".to_owned(),
+                    );
+                    continue;
+                };
+                if let Err(error) = plan.accept_intent(intent) {
+                    reject(&mut outbox, request_id, error.to_owned());
+                }
             }
             ViewportCommand::SetSectionBox { enabled } => {
                 state.viewer_settings.set_section_box_enabled(enabled);
@@ -343,7 +340,6 @@ pub(super) fn apply_viewport_commands(
             ViewportCommand::SetPhysicsRunning { running } => {
                 presentation::set_physics(request_id, running, &mut outbox, &mut state.physics);
             }
-            // All stage-authoring commands are delegated to editor_commands.
             command => {
                 apply_editor_command(
                     command,
@@ -351,7 +347,16 @@ pub(super) fn apply_viewport_commands(
                     &mut outbox,
                     &mut state.histories,
                     &mut state.runtime_mutations,
+                    state
+                        .semantic
+                        .as_ref()
+                        .and_then(|semantic| semantic.snapshot()),
                     state.stage.as_deref(),
+                    state
+                        .stage_handle
+                        .as_ref()
+                        .map(|handle| handle.path.as_path()),
+                    &state.selected_targets,
                 );
             }
         }

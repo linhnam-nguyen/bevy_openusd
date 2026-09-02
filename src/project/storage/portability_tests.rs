@@ -102,20 +102,21 @@ fn moved_project_reopens_after_source_and_local_state_removal() -> anyhow::Resul
     let mut app = App::new();
     let mut prim_entities = usd_bevy::PrimEntities::default();
     usd_bevy::project_stage(app.world_mut(), &live, &mut prim_entities);
-    assert!(prim_entities.entity("/SceneRoot").is_some());
+    let paths = app.world().resource::<usd_bevy::PathStore>();
+    assert!(prim_entities.entity(paths, "/SceneRoot").is_some());
     let placement_id = linked.placement_id.expect("linked Scene placement");
     let placement_path = crate::project::scene::authoring::scene_member_path(placement_id);
     assert!(
-        prim_entities.entity(&placement_path).is_some(),
+        prim_entities.entity(paths, &placement_path).is_some(),
         "placement {placement_path} was not projected; paths: {:?}",
         prim_entities
-            .iter()
+            .iter(paths)
             .map(|(path, _)| path)
             .collect::<Vec<_>>()
     );
     assert!(
         prim_entities
-            .iter()
+            .iter(paths)
             .any(|(path, _)| path.starts_with(&format!("{placement_path}/")))
     );
 

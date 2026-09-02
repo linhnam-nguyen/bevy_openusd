@@ -300,8 +300,10 @@ def Xform "World"
 
     // PrimEntities EXISTS in World, but does NOT contain /World/A/MeshA (partial corruption)
     let mut map = usd_bevy::PrimEntities::default();
-    map.insert("/World", entity);
+    let mut paths = usd_bevy::PathStore::default();
+    map.insert(&mut paths, "/World", entity);
     // /World/A/MeshA is intentionally omitted from map!
+    app.insert_resource(paths);
     app.insert_resource(map);
 
     let mut action = SemanticSyncAction::Delta(delta);

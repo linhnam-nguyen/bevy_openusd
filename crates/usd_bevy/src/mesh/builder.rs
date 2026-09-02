@@ -64,6 +64,50 @@ pub fn mesh_from_usd_subset(read: &ReadMesh, face_subset: Option<&[i32]>) -> Mes
     build_mesh(read, face_subset, None)
 }
 
+/// Return the source USD point represented by every output vertex of the full
+/// mesh path. Corner-expanded output follows face-vertex indices; indexed
+/// output retains the original point order.
+pub(crate) fn output_point_indices(read: &ReadMesh) -> Vec<usize> {
+    let non_indexed = |interp: Interpolation| {
+        matches!(interp, Interpolation::FaceVarying | Interpolation::Uniform)
+    };
+    let expanded = read
+        .normals
+        .as_ref()
+        .is_some_and(|p| non_indexed(p.interpolation))
+        || read
+            .uvs
+            .as_ref()
+            .is_some_and(|p| non_indexed(p.interpolation))
+        || read
+            .display_color
+            .as_ref()
+            .is_some_and(|p| non_indexed(p.interpolation))
+        || read
+            .display_opacity
+            .as_ref()
+            .is_some_and(|p| non_indexed(p.interpolation));
+    if !expanded {
+        return (0..read.points.len()).collect();
+    }
+    let max_point = read.points.len().saturating_sub(1);
+    let mut output = Vec::new();
+    let mut corner = 0usize;
+    for count in &read.face_vertex_counts {
+        let count = (*count).max(0) as usize;
+        for offset in 0..count {
+            let source = read
+                .face_vertex_indices
+                .get(corner + offset)
+                .copied()
+                .unwrap_or_default();
+            output.push((source.max(0) as usize).min(max_point));
+        }
+        corner += count;
+    }
+    output
+}
+
 fn build_mesh(
     read: &ReadMesh,
     face_subset: Option<&[i32]>,

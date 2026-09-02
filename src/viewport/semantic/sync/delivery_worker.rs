@@ -32,7 +32,7 @@ pub(crate) struct RuntimeDeliveryIdentity {
 #[derive(Debug)]
 pub(crate) struct PendingRuntimeDelivery {
     pub(crate) identity: RuntimeDeliveryIdentity,
-    pub(crate) snapshot: SemanticSnapshot,
+    pub(crate) snapshot: Arc<SemanticSnapshot>,
     pub(crate) prepared_blobs: Vec<PreparedMeshBlob>,
     pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
     pub(crate) cache_context: Option<ActiveProjectCacheContext>,
@@ -42,7 +42,7 @@ pub(crate) struct PendingRuntimeDelivery {
 struct DeliveryWork {
     identity: RuntimeDeliveryIdentity,
     project_root: PathBuf,
-    snapshot: SemanticSnapshot,
+    snapshot: Arc<SemanticSnapshot>,
     prepared_blobs: Vec<PreparedMeshBlob>,
     prepared_runtime_payloads: PreparedRuntimePayloads,
     profile: RuntimeProfile,

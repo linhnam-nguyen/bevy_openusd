@@ -22,44 +22,49 @@ pub(super) fn apply_runtime_mutations(
     for mutation in &batch.operations {
         match mutation {
             RuntimeMutation::DefinePrim { path, type_name } => {
-                stage.mark_authored(path.clone());
+                let suppression = stage.mark_authored_guard(path.clone());
                 histories
                     .authoring
                     .define(&stage.stage, path, type_name)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Authoring);
                 changed_paths.push(path.clone());
             }
             RuntimeMutation::RemovePrim { path } => {
-                stage.mark_authored(path.clone());
+                let suppression = stage.mark_authored_guard(path.clone());
                 if usd_bevy::authoring::remove_prim(&stage.stage, path)
                     .map_err(|error| error.to_string())?
                 {
+                    suppression.commit();
                     changed_paths.push(path.clone());
                 }
             }
             RuntimeMutation::RenamePrim { path, new_name } => {
-                stage.mark_authored(path.clone());
+                let suppression = stage.mark_authored_guard(path.clone());
                 histories
                     .authoring
                     .rename(&stage.stage, path, new_name)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Authoring);
                 changed_paths.push(path.clone());
             }
             RuntimeMutation::ReparentPrim { path, new_parent } => {
-                stage.mark_authored(path.clone());
+                let suppression = stage.mark_authored_guard(path.clone());
                 histories
                     .authoring
                     .reparent(&stage.stage, path, new_parent)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Authoring);
                 changed_paths.extend([path.clone(), new_parent.clone()]);
             }
             RuntimeMutation::MovePrim { old_path, new_path } => {
-                stage.mark_authored(old_path.clone());
+                let suppression = stage.mark_authored_guard(old_path.clone());
                 usd_bevy::authoring::move_prim(&stage.stage, old_path, new_path)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 changed_paths.extend([old_path.clone(), new_path.clone()]);
             }
             RuntimeMutation::SetAttribute {
@@ -69,18 +74,20 @@ pub(super) fn apply_runtime_mutations(
                 value,
             } => {
                 let value = editor_value_to_usd(type_name, value)?;
-                stage.mark_authored(prim_path.clone());
+                let suppression = stage.mark_authored_guard(prim_path.clone());
                 histories
                     .authoring
                     .set_attr(&stage.stage, prim_path, name, type_name, value)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Authoring);
                 changed_paths.push(format!("{prim_path}.{name}"));
             }
             RuntimeMutation::ClearAttribute { prim_path, name } => {
-                stage.mark_authored(prim_path.clone());
+                let suppression = stage.mark_authored_guard(prim_path.clone());
                 usd_bevy::authoring::clear_attribute(&stage.stage, prim_path, name)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 changed_paths.push(format!("{prim_path}.{name}"));
             }
             RuntimeMutation::SetTransform {
@@ -89,7 +96,7 @@ pub(super) fn apply_runtime_mutations(
                 rotation,
                 scale,
             } => {
-                stage.mark_authored(prim_path.clone());
+                let suppression = stage.mark_authored_guard(prim_path.clone());
                 histories
                     .transforms
                     .author(
@@ -102,6 +109,7 @@ pub(super) fn apply_runtime_mutations(
                         },
                     )
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Transform);
                 changed_paths.push(prim_path.clone());
             }
@@ -110,11 +118,12 @@ pub(super) fn apply_runtime_mutations(
                 set_name,
                 option,
             } => {
-                stage.mark_authored(prim_path.clone());
+                let suppression = stage.mark_authored_guard(prim_path.clone());
                 histories
                     .authoring
                     .set_variant(&stage.stage, prim_path, set_name, option)
                     .map_err(|error| error.to_string())?;
+                suppression.commit();
                 histories.record(EditorHistoryDomain::Authoring);
                 changed_paths.push(format!("{prim_path}.{set_name}"));
             }

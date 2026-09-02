@@ -128,6 +128,26 @@ fn metadata_hash(semantic: &SemanticInfo, properties: &[SemanticProperty]) -> Ha
     write_option_string(&mut bytes, semantic.type_name.as_deref());
     write_option_string(&mut bytes, semantic.type_id.as_deref());
     write_option_string(&mut bytes, semantic.display_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim.element_id.as_deref());
+    write_option_string(&mut bytes, semantic.bim.family_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim_classification.category.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name.as_deref(),
+    );
+    write_option_string(&mut bytes, semantic.bim_classification.type_name.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.category_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.type_name_property.as_deref(),
+    );
     write_properties(&mut bytes, properties);
     digest(&bytes)
 }
@@ -150,6 +170,26 @@ fn entity_hash(
     write_option_string(&mut bytes, semantic.type_name.as_deref());
     write_option_string(&mut bytes, semantic.type_id.as_deref());
     write_option_string(&mut bytes, semantic.display_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim.element_id.as_deref());
+    write_option_string(&mut bytes, semantic.bim.family_name.as_deref());
+    write_option_string(&mut bytes, semantic.bim_classification.category.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name.as_deref(),
+    );
+    write_option_string(&mut bytes, semantic.bim_classification.type_name.as_deref());
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.category_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.family_name_property.as_deref(),
+    );
+    write_option_string(
+        &mut bytes,
+        semantic.bim_classification.type_name_property.as_deref(),
+    );
     write_transform(&mut bytes, transform);
     write_geometry(&mut bytes, geometry);
     write_properties(&mut bytes, properties);
@@ -218,7 +258,22 @@ fn write_properties(bytes: &mut Vec<u8>, properties: &[SemanticProperty]) {
     for property in properties {
         write_string(bytes, &property.name);
         write_value(bytes, &property.value);
+        write_measurement(bytes, property.measurement.as_ref());
     }
+}
+
+fn write_measurement(bytes: &mut Vec<u8>, measurement: Option<&usd_model::MeasurementMetadata>) {
+    let Some(measurement) = measurement else {
+        bytes.push(0);
+        return;
+    };
+    bytes.push(1);
+    write_string(bytes, measurement.quantity.as_str());
+    write_string(bytes, measurement.canonical_unit.as_str());
+    write_option_string(
+        bytes,
+        measurement.source_unit.as_ref().map(|unit| unit.as_str()),
+    );
 }
 
 fn write_value(bytes: &mut Vec<u8>, value: &CanonicalValue) {

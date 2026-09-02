@@ -2,8 +2,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PROTOCOL_VERSION, RequestId};
 
+use super::bim::{
+    BimClassificationFieldCataloguePage, BimPropertiesDeliveryError, BimPropertiesPage,
+    BimPropertiesReadModel, BimPropertyDiffReadModel, BimPropertyEditOutcome,
+    BimPropertyProvenanceReadModel, BimSearchResult,
+};
 use super::commands::ViewportCommandEnvelope;
 use super::editor::{EditorOperation, EditorPrimReadModel, EditorStateReadModel};
+use super::hierarchy::{
+    HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeVisibility, HierarchySearchMatch,
+    HierarchySource, HierarchyVisibilityState,
+};
 use super::read_models::{
     CameraOrientationReadModel, CameraSource, FocusMode, PresentationReadModel, SceneAnchor,
     SceneChildrenPage, SceneSearchMatch, SelectionReadModel, StageLoadState, TimelineReadModel,
@@ -29,6 +38,40 @@ pub enum ViewportEvent {
         matches: Vec<SceneSearchMatch>,
         has_more: bool,
     },
+    BimSearchResults {
+        result: BimSearchResult,
+    },
+    BimPropertiesRead {
+        properties: BimPropertiesReadModel,
+        diff: Option<BimPropertyDiffReadModel>,
+    },
+    BimPropertiesPage {
+        page: BimPropertiesPage,
+    },
+    BimPropertiesError {
+        error: BimPropertiesDeliveryError,
+    },
+    BimClassificationFieldCatalogueChanged {
+        catalogue: super::bim::BimClassificationFieldCatalogue,
+    },
+    BimClassificationFieldCataloguePage {
+        page: BimClassificationFieldCataloguePage,
+    },
+    BimPropertyProvenanceRead {
+        provenance: BimPropertyProvenanceReadModel,
+    },
+    HierarchyChildren {
+        source: HierarchySource,
+        page: HierarchyChildrenPage,
+    },
+    HierarchySearchResults {
+        source: HierarchySource,
+        query: String,
+        offset: u32,
+        total: u32,
+        matches: Vec<HierarchySearchMatch>,
+        has_more: bool,
+    },
     StageLoadStateChanged {
         state: StageLoadState,
     },
@@ -51,6 +94,12 @@ pub enum ViewportEvent {
     PrimVisibilityChanged {
         target: SceneAnchor,
         visible: bool,
+    },
+    HierarchyVisibilityChanged {
+        source: HierarchySource,
+        target: HierarchyNodeId,
+        visibility: HierarchyVisibilityState,
+        ancestors: Vec<HierarchyNodeVisibility>,
     },
     CameraSourceChanged {
         source: CameraSource,
@@ -80,6 +129,17 @@ pub enum ViewportEvent {
     EditorCommandCompleted {
         operation: EditorOperation,
         changed_paths: Vec<String>,
+        state: EditorStateReadModel,
+    },
+    BimPropertyEditCompleted {
+        outcome: BimPropertyEditOutcome,
+        live_revision: u64,
+        state: EditorStateReadModel,
+    },
+    BimPropertyBatchEditCompleted {
+        outcomes: Vec<BimPropertyEditOutcome>,
+        applied: bool,
+        live_revision: u64,
         state: EditorStateReadModel,
     },
     RuntimeMutationBatchAccepted {

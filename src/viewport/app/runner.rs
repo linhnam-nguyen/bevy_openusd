@@ -1,14 +1,3 @@
-use bevy::pbr::MaterialPlugin;
-use bevy::prelude::*;
-use bevy_egui::EguiPlugin;
-use bevy_frost::prelude::AccentColor;
-use bevy_glacial::prelude::{
-    AxisGizmoPlugin, GizmoAutoScale, GroundGrid, GroundGridPlugin, TransformGizmoPlugin,
-    auto_scale_gizmo_to_target,
-};
-use bevy_mod_outline::OutlinePlugin;
-use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
-
 use super::{cadence, headless, offscreen_resize, project_activation, project_stage, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
@@ -29,13 +18,24 @@ use crate::viewport::scene::{
     setup_skeleton_gizmos_on_top, sync_selected_instance_identity,
     sync_selected_renderable_projection, sync_selection_outlines,
 };
-use crate::viewport::semantic::synchronize_live_stage;
+use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
 use crate::viewport::session::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
 };
 use crate::viewport::transport::{ViewportTransport, parse_launch_options};
 use crate::viewport::ui_frost::ViewerUiPlugin;
+use bevy::pbr::MaterialPlugin;
+use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
+use bevy_frost::prelude::AccentColor;
+use bevy_glacial::prelude::{
+    AxisGizmoPlugin, GizmoAutoScale, GroundGrid, GroundGridPlugin, TransformGizmoPlugin,
+    auto_scale_gizmo_to_target,
+};
+use bevy_mod_outline::OutlinePlugin;
+use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
+use usd_semantic::SemanticConfig;
 
 use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
 use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
@@ -102,6 +102,7 @@ pub(crate) fn run() {
     }
     app.add_plugins(bevy::pbr::wireframe::WireframePlugin::default())
         .add_plugins(UsdPlugin)
+        .add_plugins(usd_bevy::ExtendedSkinPlugin)
         .add_plugins(OutlinePlugin::JUMP_FLOOD);
 
     #[cfg(feature = "solari")]
@@ -153,11 +154,14 @@ pub(crate) fn run() {
         ));
     }
 
-    app.add_plugins(ViewportBridgePlugin)
-        .add_plugins(SamplingCoordinatorPlugin)
-        .add_plugins(DlssProviderPlugin)
-        .add_plugins(SolariCapabilityPlugin)
-        .add_plugins(OverlaysPlugin);
+    app.insert_resource(SemanticSyncState::with_config(
+        SemanticConfig::for_nvidia_revit_connector(),
+    ))
+    .add_plugins(ViewportBridgePlugin)
+    .add_plugins(SamplingCoordinatorPlugin)
+    .add_plugins(DlssProviderPlugin)
+    .add_plugins(SolariCapabilityPlugin)
+    .add_plugins(OverlaysPlugin);
     app.world_mut()
         .resource_mut::<DisplayToggles>()
         .renderer

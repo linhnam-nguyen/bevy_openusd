@@ -1,10 +1,11 @@
 mod action;
 mod changed_info;
+mod classification_catalogue;
 mod delivery;
 mod delivery_worker;
 mod subtree;
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 pub(crate) use action::SubtreeUpdateError;
 pub(in crate::viewport::semantic) use action::{SemanticExtractionOutcome, SemanticSyncAction};
@@ -24,6 +25,7 @@ use usd_semantic::{SemanticConfig, SemanticExtractor};
 use super::diff::SemanticDiffState;
 use super::state::SemanticSyncState;
 use super::worker::SemanticWorkingStore;
+use crate::viewport::bim::{BimReadIndex, BimReadService};
 
 /// Synchronize the semantic working store from the retained live-stage batch.
 ///
@@ -93,14 +95,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
     }
 
     let previous_snapshot = if same_session {
-        let snapshot = world.resource::<SemanticSyncState>().snapshot.clone();
-        if snapshot.is_some()
-            && let Some(mut c) = world
-                .get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
-        {
-            c.semantic_snapshot_clones += 1;
-        }
-        snapshot
+        world.resource::<SemanticSyncState>().shared_snapshot()
     } else {
         None
     };
@@ -131,7 +126,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         return;
     }
 
-    let extractor = SemanticExtractor::new(SemanticConfig::default());
+    let extractor = SemanticExtractor::new(world.resource::<SemanticSyncState>().config());
     let source = SnapshotSource::Working {
         session: "viewport-working".to_owned(),
         live_revision: live_revision.0,
@@ -145,7 +140,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         match previous_snapshot {
             None => match extractor.extract(&live.stage, source) {
                 Ok(snapshot) => (
-                    Some(SemanticSyncAction::Replace(snapshot)),
+                    Some(SemanticSyncAction::Replace(Arc::new(snapshot))),
                     SemanticExtractionOutcome::Initial,
                 ),
                 Err(error) => {
@@ -185,7 +180,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                     if unnormalizable {
                         match extractor.extract(&live.stage, source) {
                             Ok(snapshot) => (
-                                Some(SemanticSyncAction::Replace(snapshot)),
+                                Some(SemanticSyncAction::Replace(Arc::new(snapshot))),
                                 SemanticExtractionOutcome::Fallback,
                             ),
                             Err(err) => {
@@ -207,7 +202,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                             );
                             match extractor.extract(&live.stage, source) {
                                 Ok(snapshot) => (
-                                    Some(SemanticSyncAction::Replace(snapshot)),
+                                    Some(SemanticSyncAction::Replace(Arc::new(snapshot))),
                                     SemanticExtractionOutcome::Fallback,
                                 ),
                                 Err(error) => {
@@ -221,7 +216,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                             match resync_subtree_update(
                                 &live.stage,
                                 &extractor,
-                                previous_snapshot.clone(),
+                                Arc::clone(&previous_snapshot),
                                 &batch,
                                 source.clone(),
                             ) {
@@ -240,7 +235,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                                     );
                                     match extractor.extract(&live.stage, source) {
                                         Ok(snapshot) => (
-                                            Some(SemanticSyncAction::Replace(snapshot)),
+                                            Some(SemanticSyncAction::Replace(Arc::new(snapshot))),
                                             SemanticExtractionOutcome::Fallback,
                                         ),
                                         Err(fallback_err) => {
@@ -258,7 +253,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                     match changed_info_update(
                         &live.stage,
                         &extractor,
-                        previous_snapshot,
+                        Arc::clone(&previous_snapshot),
                         &batch,
                         source.clone(),
                     ) {
@@ -277,7 +272,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
                             );
                             match extractor.extract(&live.stage, source) {
                                 Ok(snapshot) => (
-                                    Some(SemanticSyncAction::Replace(snapshot)),
+                                    Some(SemanticSyncAction::Replace(Arc::new(snapshot))),
                                     SemanticExtractionOutcome::Fallback,
                                 ),
                                 Err(fallback_err) => {
@@ -320,13 +315,16 @@ fn synchronize_live_stage_inner(world: &mut World) {
     {
         counters.render_blob_prepare_ms += render_blob_started.elapsed().as_secs_f64() * 1000.0;
     }
-
     let request_id = format!("semantic-sync-{}", live_revision.0);
+    let mut published_catalogue = None;
     let submitted = match update {
         SemanticSyncAction::Replace(snapshot) => {
+            let bim_index = Arc::new(BimReadIndex::build(snapshot.as_ref()));
+            let catalogue = BimReadService::with_index(snapshot.as_ref(), Arc::clone(&bim_index))
+                .classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
-                .submit_snapshot(request_id, snapshot.clone());
+                .submit_snapshot(request_id, Arc::clone(&snapshot));
             if submitted {
                 queue_runtime_delivery(
                     world,
@@ -337,17 +335,22 @@ fn synchronize_live_stage_inner(world: &mut World) {
                     prepared_payloads.runtime,
                 );
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                world.resource_mut::<SemanticSyncState>().bim_index = Some(bim_index);
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
-                    diff_state.update_working(session_id, snapshot);
+                    diff_state.update_working(session_id, Arc::clone(&snapshot));
                 }
+                published_catalogue = Some(catalogue);
             }
             submitted
         }
         SemanticSyncAction::Delta(update) => {
-            let snapshot = update.snapshot.clone();
+            let snapshot = Arc::clone(&update.snapshot);
+            let bim_index = Arc::new(BimReadIndex::build(snapshot.as_ref()));
+            let catalogue = BimReadService::with_index(snapshot.as_ref(), Arc::clone(&bim_index))
+                .classification_field_catalogue(live_revision.0);
             let submitted = world
                 .resource::<SemanticWorkingStore>()
-                .submit_delta_with_snapshot(request_id, update.request, &snapshot);
+                .submit_delta_with_snapshot(request_id, update.request, Arc::clone(&snapshot));
             if submitted {
                 queue_runtime_delivery(
                     world,
@@ -358,14 +361,19 @@ fn synchronize_live_stage_inner(world: &mut World) {
                     prepared_payloads.runtime,
                 );
                 world.resource_mut::<SemanticSyncState>().snapshot = Some(snapshot.clone());
+                world.resource_mut::<SemanticSyncState>().bim_index = Some(bim_index);
                 if let Some(mut diff_state) = world.get_resource_mut::<SemanticDiffState>() {
-                    diff_state.update_working(session_id, snapshot);
+                    diff_state.update_working(session_id, Arc::clone(&snapshot));
                 }
+                published_catalogue = Some(catalogue);
             }
             submitted
         }
     };
     if submitted {
+        if let Some(catalogue) = published_catalogue {
+            classification_catalogue::publish(world, catalogue);
+        }
         if let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
         {

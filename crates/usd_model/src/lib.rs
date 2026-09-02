@@ -7,6 +7,7 @@
 pub mod change;
 pub mod hash;
 pub mod identity;
+pub mod measurement;
 pub mod semantic;
 pub mod signature;
 pub mod snapshot;
@@ -15,7 +16,10 @@ pub mod value;
 pub use change::{ChangeFlags, PresenceState};
 pub use hash::{HashDigest, HashDigestError};
 pub use identity::{EntityKey, IdentitySource};
-pub use semantic::SemanticInfo;
+pub use measurement::{MeasurementMetadata, QuantitySpecId, UnitId};
+pub use semantic::{
+    BimClassificationInfo, BimIdentity, BimPropertyDescriptor, BimPropertyScope, SemanticInfo,
+};
 pub use signature::{BlobId, Bounds3, GeometrySignature, QuantizedPoint3, TransformSignature};
 pub use snapshot::{
     EntitySnapshot, SemanticProperty, SemanticSnapshot, SnapshotId, SnapshotSource,
