@@ -71,6 +71,7 @@ impl ViewportCommandInbox {
                     | ViewportCommand::RequestBimPropertyProvenance { .. }
                     | ViewportCommand::RequestHierarchyChildren { .. }
                     | ViewportCommand::SearchHierarchy { .. }
+                    | ViewportCommand::SetBimClassificationRecipe { .. }
                     | ViewportCommand::SetHierarchySource { .. }
             ) {
                 queries.push(envelope);
