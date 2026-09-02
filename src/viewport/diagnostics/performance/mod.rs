@@ -17,9 +17,9 @@ pub mod scenario;
 pub mod scenario_driver;
 
 pub use aggregate::{
-    AnimationDiagnostics, CacheSnapshot, FrameTimingAggregate, IncidentGridSummary,
-    IncidentSemanticSummary, IsolationReportSummary, PerformanceReport, PhaseMetrics,
-    RendererCadenceSummary, WebRtcReportSummary, aggregate_frames, calculate_percentile,
+    CacheSnapshot, FrameTimingAggregate, IncidentGridSummary, IncidentSemanticSummary,
+    IsolationReportSummary, PerformanceReport, PhaseMetrics, RendererCadenceSummary,
+    WebRtcReportSummary, aggregate_frames, calculate_percentile,
 };
 pub use collector::{
     ProjectionPhaseTimings, collect_cache_snapshot_from_world, collect_phase_metrics_from_world,

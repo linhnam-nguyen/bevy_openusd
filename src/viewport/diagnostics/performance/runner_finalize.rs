@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use bevy_glacial::prelude::GroundGrid;
 
 use super::super::aggregate::{
-    AnimationDiagnostics, IncidentGridSummary, IncidentSemanticSummary, IsolationReportSummary,
-    PerformanceReport, RendererCadenceSummary, WebRtcReportSummary, aggregate_frames,
+    IncidentGridSummary, IncidentSemanticSummary, IsolationReportSummary, PerformanceReport,
+    RendererCadenceSummary, WebRtcReportSummary, aggregate_frames,
 };
 use super::super::collector::{
     collect_cache_snapshot_from_world, collect_phase_metrics_from_world,
@@ -81,13 +81,6 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
     let steady_state_matches =
         expected_steady_state == observed_steady_state && configuration_matches;
     let timing = aggregate_frames(&run_state.samples, config.warmup_frames as usize);
-    let measured_wall_seconds: f64 = run_state
-        .samples
-        .iter()
-        .skip(config.warmup_frames as usize)
-        .filter_map(|sample| sample.wall_interval_ms)
-        .sum::<f64>()
-        / 1000.0;
     let renderer_cadence = RendererCadenceSummary {
         requested_fps: counters.requested_renderer_fps,
         effective_renderer_target_fps: counters.effective_renderer_target_fps,
@@ -189,22 +182,6 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         .flatten();
     let geometry_render_preparation =
         super::super::render_profile::snapshot(world, config.mesh_profile);
-    let skinning_profile = world
-        .get_resource::<usd_bevy::SkinningProfile>()
-        .filter(|profile| profile.enabled)
-        .cloned();
-    let animation_diagnostics = world
-        .get_resource::<usd_bevy::PerformanceCounters>()
-        .filter(|counters| counters.enabled)
-        .map(|counters| AnimationDiagnostics {
-            stage_time_changes: counters.stage_time_changes,
-            animation_runtime_samples: counters.animation_runtime_samples,
-            stage_time_samples_per_second: if measured_wall_seconds > 0.0 {
-                counters.animation_runtime_samples as f64 / measured_wall_seconds
-            } else {
-                0.0
-            },
-        });
     let cache_snapshot = collect_cache_snapshot_from_world(world);
     let (gpu_adapter, backend) = world
         .get_resource::<bevy::render::renderer::RenderAdapterInfo>()
@@ -243,8 +220,6 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
         phase_metrics,
         geometry_profile,
         geometry_render_preparation,
-        skinning_profile,
-        animation_diagnostics,
         cache_snapshot,
         raw_samples: run_state.samples,
     };

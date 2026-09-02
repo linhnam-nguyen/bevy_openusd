@@ -30,19 +30,8 @@ pub(crate) fn tick_stage_time(
         clock.initialized = true;
     }
 
-    let benchmark_paused = std::env::var_os("USDHUB_BENCHMARK_PAUSED").is_some();
-    let benchmark_playing = std::env::var_os("USDHUB_BENCHMARK_PLAYING").is_some();
-    if benchmark_paused {
-        clock.playing = false;
-    } else if benchmark_playing {
-        clock.playing = true;
-    }
     if clock.playing {
-        clock.seconds += if benchmark_playing {
-            1.0 / 60.0
-        } else {
-            time.delta_secs_f64()
-        };
+        clock.seconds += time.delta_secs_f64();
         let duration = clock.duration_seconds();
         if duration > 0.0 && clock.seconds >= duration {
             clock.seconds = clock.seconds.rem_euclid(duration);

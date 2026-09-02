@@ -1,6 +1,6 @@
 # M8-OR3 portability manifest for Projects peerView
 
-Date: 2026-09-01
+Date: 2026-09-02
 
 This manifest classifies the OR3 changes for a later forward-port. No
 PeerView branch was modified during OR3. The later transfer must adapt each
@@ -54,6 +54,8 @@ M8-OR3-C4+++    8afaee4a5876cea06e120976f592367b13e2e0cb
 M8-OR3-C4++++   c839fe5b51382dcf54765cc5f216519ce992cf17
 M8-OR3-C1+      863ef1c4b8584059f26035ad6d9a12467123b9aa
 M8-OR3-C5+      7d3c2daf8355dda5de0ec60c648243deb32e6cd0
+M8-OR3-C12++    3c904b1b75900cd8280a19fa0822d73ab35b1535 (retained history only)
+M8-OR3-C12+++   documentation closure (this additive commit)
 ```
 
 Frontend `UsdHubUI`, local branch `or3/M8-OR3-animation`:
@@ -90,3 +92,31 @@ The temporary fixed-16 worktree, frozen OR2 branches, and PeerView branches
 remain outside the implementation scope. Final Hummingbird E2E FPS/CPU/RAM,
 visual, equivalent render-pass, GPU readback, and timeline StageTime evidence
 remains owner-gated and is not inferred from deterministic tests.
+
+## C12+++ closure / frozen source basis — 2026-09-02
+
+`M8-OR3-C12+++` is documentation/evidence-only. It removes the production
+diagnostic changes introduced by C12++ and restores the backend production
+source to the approved C6+ basis. C12++ remains in git history only and is not
+the frozen production source. No PeerView branch was modified.
+
+```text
+Backend frozen source basis:
+d3873de6b1fdf04383814cc1c12fa0c7e80615a0 + C12+++ documentation closure
+
+Frontend frozen head:
+be4c603420a28013f2a87a79ea738fa8056fd443
+```
+
+Owner Review:
+
+```text
+Controlled Hummingbird FPS / CPU / RAM comparison waived because the
+review host must remain under concurrent video-streaming workload.
+```
+
+No rendering-performance claim is made. OR3 architecture/correctness is
+accepted and frozen; no C2++ is required. The authorized next operation after
+final Owner Review is merge OR3 into `develop`. The temporary fixed-16
+worktree, frozen OR2 branches, and PeerView branches remain outside this
+closure.

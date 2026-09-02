@@ -1,6 +1,6 @@
 # M8-OR3-C12 integrated performance matrix
 
-Date: 2026-09-01
+Date: 2026-09-02
 
 This is the final OR3 evidence record. A cell is either measured or explicitly
 unavailable; no runtime value is inferred from compilation, a CPU mirror, or a
@@ -325,3 +325,59 @@ timeline: UI playhead versus backend StageTime
 The remaining owner gate is visual/performance E2E comparison against the
 four-wide control. The timeline playhead correctness path is separate from the
 animation hot path and is derived from the authoritative frontend read model.
+
+## Additive M8-OR3-C12+++ evidence-only closure — 2026-09-02
+
+Owner Review rejected `M8-OR3-C12++` as the frozen production source because
+its benchmark environment-variable lookups changed the animation clock hot
+path. The commit remains intact in history:
+
+```text
+M8-OR3-C12++  3c904b1b75900cd8280a19fa0822d73ab35b1535  retained history only
+```
+
+`M8-OR3-C12+++` restores production source behavior to the approved C6+ basis
+and records this evidence-only closure. The frozen source references are:
+
+```text
+Backend frozen source basis:
+d3873de6b1fdf04383814cc1c12fa0c7e80615a0 + C12+++ documentation closure
+
+Frontend frozen head:
+be4c603420a28013f2a87a79ea738fa8056fd443
+```
+
+Owner Review:
+
+```text
+Controlled Hummingbird FPS / CPU / RAM comparison waived because the
+review host must remain under concurrent video-streaming workload.
+```
+
+No rendering-performance claim is made. The streaming-contaminated attempted
+samples are non-authoritative and are not recorded as runtime acceptance
+values. No new Hummingbird benchmark, optimization cycle, or C2++ correction
+is required.
+
+C12+++ closure gates:
+
+```text
+cargo fmt --all -- --check                    PASS
+cargo check --workspace                       PASS
+cargo test --workspace                        PASS
+cargo check --workspace --no-default-features PASS
+cargo test --workspace --no-default-features  PASS
+make harden source-size audit                 PASS — 601 files, 0 failures,
+                                                49 warnings
+make harden all-feature compile               BLOCKED — environment:
+                                                DLSS_SDK unset and Vulkan
+                                                symbols unavailable
+```
+
+The hardening source-size audit is the applicable closure result. The
+all-feature failure is an environment limitation inherited from the host, not
+a C12+++ source failure.
+
+OR3 architecture/correctness accepted and frozen. The authorized next
+operation after final Owner Review is merge OR3 into `develop`; this closure
+does not perform that merge.

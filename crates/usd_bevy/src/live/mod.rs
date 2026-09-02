@@ -27,7 +27,7 @@ pub use path::{
     PathId, PathStore, is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of,
     property_of, validate_prim_path,
 };
-pub use performance::{PerformanceCounters, SkinningProfile};
+pub use performance::PerformanceCounters;
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
@@ -77,7 +77,6 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
             .init_resource::<PerformanceCounters>()
-            .init_resource::<SkinningProfile>()
             .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
             .init_resource::<native_animation::AnimationRuntime>()

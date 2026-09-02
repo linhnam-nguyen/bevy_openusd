@@ -156,14 +156,6 @@ pub struct CacheSnapshot {
     pub texture_misses: u64,
 }
 
-/// Optional StageTime sampling counters captured by the C12 diagnosis.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AnimationDiagnostics {
-    pub stage_time_changes: u64,
-    pub animation_runtime_samples: u64,
-    pub stage_time_samples_per_second: f64,
-}
-
 /// Top-level standardized performance report JSON root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceReport {
@@ -184,8 +176,6 @@ pub struct PerformanceReport {
     pub phase_metrics: PhaseMetrics,
     pub geometry_profile: Option<usd_bevy::GeometryProfile>,
     pub geometry_render_preparation: Option<super::render_profile::GeometryRenderPreparation>,
-    pub skinning_profile: Option<usd_bevy::SkinningProfile>,
-    pub animation_diagnostics: Option<AnimationDiagnostics>,
     pub cache_snapshot: CacheSnapshot,
     pub raw_samples: Vec<FrameSample>,
 }

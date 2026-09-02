@@ -9,7 +9,7 @@ use bevy_glacial::prelude::{
 use bevy_mod_outline::OutlinePlugin;
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 
-use super::{cadence, headless, offscreen_resize, runner_diagnostics, scene, sync};
+use super::{cadence, headless, offscreen_resize, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{UsdStageTime, tick_stage_time};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -106,12 +106,14 @@ pub(crate) fn run() {
         .add_plugins(usd_bevy::ExtendedSkinPlugin)
         .add_plugins(OutlinePlugin::JUMP_FLOOD);
 
-    runner_diagnostics::enable_skinning_profile(&mut app);
-
     #[cfg(feature = "solari")]
     app.add_plugins(bevy::solari::prelude::SolariPlugins);
 
-    runner_diagnostics::enable_mesh_profile(&mut app, launch_options.benchmark_mesh_profile);
+    if launch_options.benchmark_mesh_profile {
+        let mut profile = app.world_mut().resource_mut::<usd_bevy::GeometryProfile>();
+        profile.enabled = true;
+        profile.top_n = 128;
+    }
 
     app.add_plugins(LiveStagePlugin)
         .add_plugins(RapierPhysicsPlugin)
@@ -136,8 +138,6 @@ pub(crate) fn run() {
             0x4A, 0x90, 0xE2,
         )))
         .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
-
-    runner_diagnostics::enable_c12_counters(&mut app);
 
     if launch_options.headless {
         app.add_plugins(headless::HeadlessRenderPlugin {
