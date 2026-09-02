@@ -136,6 +136,14 @@ impl Default for CurrentHierarchyProjection {
 }
 
 impl CurrentHierarchyProjection {
+    pub(crate) fn empty(source: HierarchySource, revision: u64) -> Self {
+        Self::from_read_model(HierarchyReadModel {
+            source,
+            revision,
+            nodes: Vec::new(),
+        })
+    }
+
     pub(crate) fn from_prim_nodes(nodes: &[PrimNodeReadModel], revision: u64) -> Self {
         let ids: HashMap<SceneAnchor, HierarchyNodeId> = nodes
             .iter()

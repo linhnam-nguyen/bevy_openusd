@@ -106,6 +106,7 @@ fn worker_resolves_the_older_property_change_from_real_git_history() {
         entity_key: EntityKey::from("/World/Door"),
         history_head: head.id().clone(),
         stage_path: repository_dir.path().join("model.usda"),
+        activation_generation: 0,
         generation: 1,
     };
 
@@ -156,6 +157,7 @@ fn worker_cancels_a_started_job_when_its_generation_is_superseded() {
         entity_key: EntityKey::from("/World/Door"),
         history_head: head.id().clone(),
         stage_path: repository_dir.path().join("model.usda"),
+        activation_generation: 0,
         generation: 1,
     };
     let first_check = Cell::new(true);

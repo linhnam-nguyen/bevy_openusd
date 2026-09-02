@@ -33,12 +33,14 @@ struct BimProvenanceJob {
     entity_key: EntityKey,
     history_head: RevisionId,
     stage_path: PathBuf,
+    activation_generation: u64,
     generation: u64,
 }
 
 #[derive(Debug)]
 pub(crate) struct BimProvenanceResult {
     pub(crate) request_id: String,
+    pub(crate) activation_generation: u64,
     pub(crate) result: Result<BimPropertyProvenanceReadModel, String>,
 }
 
@@ -80,6 +82,7 @@ impl BimProvenanceService {
         entity_key: EntityKey,
         history_head: RevisionId,
         stage_path: PathBuf,
+        activation_generation: u64,
     ) -> bool {
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         self.jobs
@@ -90,6 +93,7 @@ impl BimProvenanceService {
                 entity_key,
                 history_head,
                 stage_path,
+                activation_generation,
                 generation,
             })
             .is_ok()
@@ -128,7 +132,11 @@ fn provenance_worker(
             ResolveOutcome::Completed(result) => result,
         };
         if results
-            .replace(BimProvenanceResult { request_id, result })
+            .replace(BimProvenanceResult {
+                request_id,
+                activation_generation: job.activation_generation,
+                result,
+            })
             .is_err()
         {
             break;

@@ -15,7 +15,7 @@ use crate::viewport::api::{
 };
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::scene::SelectedTargets;
-use crate::viewport::session::StageHandle;
+use crate::viewport::session::{StageHandle, StageInfo};
 
 /// Routes scene-query commands to the current hierarchy projection.
 pub(crate) fn dispatch_scene_query_commands(
@@ -27,12 +27,16 @@ pub(crate) fn dispatch_scene_query_commands(
     semantic_diff: Option<Res<crate::viewport::semantic::SemanticDiffState>>,
     selection: Option<Res<SelectedTargets>>,
     stage_handle: Option<Res<StageHandle>>,
+    stage_info: Option<Res<StageInfo>>,
     scene_query: Res<SceneQueryService>,
     bim_provenance: Option<Res<BimProvenanceService>>,
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
 ) {
+    let activation_generation = stage_info
+        .as_ref()
+        .map_or(0, |info| info.activation_generation);
     for envelope in inbox.take_scene_query_commands() {
         let request_id = envelope.request_id;
         if envelope.protocol_version != PROTOCOL_VERSION {
@@ -102,6 +106,7 @@ pub(crate) fn dispatch_scene_query_commands(
                     current_projection.snapshot(),
                     HierarchySource::Prim,
                     false,
+                    activation_generation,
                 ) {
                     // Search is a single latest-query projection in the
                     // viewport read model. Dropping older metadata here also
@@ -153,6 +158,7 @@ pub(crate) fn dispatch_scene_query_commands(
                     current_projection.snapshot(),
                     source,
                     true,
+                    activation_generation,
                 ) {
                     search_requests.pending.clear();
                     search_requests.pending.insert(
@@ -182,6 +188,7 @@ pub(crate) fn dispatch_scene_query_commands(
                     request_id,
                     query,
                     semantic.as_ref().map(|state| &**state),
+                    activation_generation,
                     &scene_query,
                     &mut search_requests,
                     &mut outbox,
@@ -230,6 +237,7 @@ pub(crate) fn dispatch_scene_query_commands(
                     semantic.as_deref(),
                     semantic_diff.as_deref(),
                     &stage_handle.path,
+                    activation_generation,
                     &bim_provenance,
                     &mut outbox,
                 );

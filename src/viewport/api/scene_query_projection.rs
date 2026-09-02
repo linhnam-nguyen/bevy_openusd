@@ -35,6 +35,7 @@ fn hierarchy_result(job: HierarchySearchJob) -> SearchResult {
     };
     SearchResult::Hierarchy {
         request_id: job.request_id,
+        activation_generation: job.activation_generation,
         query: job.query,
         offset: job.offset,
         total,
@@ -47,6 +48,7 @@ fn hierarchy_result(job: HierarchySearchJob) -> SearchResult {
 fn bim_result(job: BimSearchJob) -> SearchResult {
     SearchResult::Bim {
         request_id: job.request_id,
+        activation_generation: job.activation_generation,
         result: crate::viewport::bim::BimReadService::with_index(&job.snapshot, job.index)
             .search(&job.query)
             .map_err(|error| error.to_string()),

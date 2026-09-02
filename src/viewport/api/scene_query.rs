@@ -36,6 +36,7 @@ pub(crate) use generic::search_hierarchy_generic;
 #[derive(Debug)]
 struct HierarchySearchJob {
     request_id: String,
+    activation_generation: u64,
     query: String,
     offset: u32,
     limit: u32,
@@ -47,6 +48,7 @@ struct HierarchySearchJob {
 #[derive(Debug)]
 struct BimSearchJob {
     request_id: String,
+    activation_generation: u64,
     query: BimSearchQuery,
     snapshot: Arc<SemanticSnapshot>,
     index: Arc<crate::viewport::bim::BimReadIndex>,
@@ -68,6 +70,7 @@ pub(crate) enum SearchMatches {
 pub(crate) enum SearchResult {
     Hierarchy {
         request_id: String,
+        activation_generation: u64,
         query: String,
         offset: u32,
         total: u32,
@@ -77,6 +80,7 @@ pub(crate) enum SearchResult {
     },
     Bim {
         request_id: String,
+        activation_generation: u64,
         result: Result<ProtocolBimSearchResult, String>,
     },
 }
@@ -113,10 +117,12 @@ impl SceneQueryService {
         hierarchy: Arc<HierarchyReadModel>,
         source: HierarchySource,
         generic: bool,
+        activation_generation: u64,
     ) -> bool {
         self.jobs
             .replace(SearchJob::Hierarchy(HierarchySearchJob {
                 request_id,
+                activation_generation,
                 query,
                 offset,
                 limit,
@@ -133,10 +139,12 @@ impl SceneQueryService {
         query: BimSearchQuery,
         snapshot: Arc<SemanticSnapshot>,
         index: Arc<crate::viewport::bim::BimReadIndex>,
+        activation_generation: u64,
     ) -> bool {
         self.jobs
             .replace(SearchJob::Bim(BimSearchJob {
                 request_id,
+                activation_generation,
                 query,
                 snapshot,
                 index,

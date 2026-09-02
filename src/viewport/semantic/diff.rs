@@ -19,6 +19,13 @@ pub(crate) struct SemanticDiffState {
 }
 
 impl SemanticDiffState {
+    pub(crate) fn reset_for_activation(&mut self) {
+        self.baseline = None;
+        self.working = None;
+        self.session_id = None;
+        self.diff = None;
+    }
+
     pub(crate) fn update_working(
         &mut self,
         session_id: u64,

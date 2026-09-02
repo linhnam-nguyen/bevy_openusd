@@ -32,11 +32,20 @@ pub(super) fn dispatch(
     request_id: String,
     query: BimSearchQuery,
     semantic: Option<&SemanticSyncState>,
+    activation_generation: u64,
     scene_query: &SceneQueryService,
     search_requests: &mut SceneSearchRequests,
     outbox: &mut ViewportEventOutbox,
     counters: &mut Option<ResMut<RendererCounters>>,
 ) {
+    if semantic.is_some_and(|state| state.activation_generation() != activation_generation) {
+        reject(
+            outbox,
+            request_id,
+            "BIM search semantic snapshot belongs to an inactive Project generation".to_owned(),
+        );
+        return;
+    }
     let Some((snapshot, index)) =
         semantic.and_then(|state| Some((state.shared_snapshot()?, state.shared_bim_index()?)))
     else {
@@ -47,7 +56,13 @@ pub(super) fn dispatch(
         );
         return;
     };
-    if scene_query.submit_bim_search(request_id.clone(), query, snapshot, index) {
+    if scene_query.submit_bim_search(
+        request_id.clone(),
+        query,
+        snapshot,
+        index,
+        activation_generation,
+    ) {
         search_requests.pending.clear();
         search_requests.pending.insert(
             request_id,

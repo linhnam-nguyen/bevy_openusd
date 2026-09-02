@@ -34,6 +34,10 @@ impl BimClassificationFieldCatalogueState {
         self.catalogue = catalogue;
         true
     }
+
+    pub(crate) fn clear(&mut self) -> bool {
+        self.replace(Self::default().catalogue)
+    }
 }
 
 #[cfg(test)]

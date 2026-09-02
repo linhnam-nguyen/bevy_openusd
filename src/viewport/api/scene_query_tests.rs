@@ -302,3 +302,35 @@ fn latest_mailbox_replaces_pending_values_without_backlog() {
     mailbox.close();
     assert_eq!(mailbox.replace(10), Err(10));
 }
+
+#[test]
+fn search_worker_preserves_activation_generation_with_immutable_input() {
+    let service = SceneQueryService::default();
+    let hierarchy = hierarchy(&[]);
+    assert!(service.submit_search(
+        "generation-query".to_owned(),
+        "unused".to_owned(),
+        0,
+        10,
+        hierarchy,
+        viewport_protocol::HierarchySource::Prim,
+        false,
+        42,
+    ));
+
+    for _ in 0..200 {
+        if let Some(result) = service.drain_results().into_iter().next() {
+            let SearchResult::Hierarchy {
+                activation_generation,
+                ..
+            } = result
+            else {
+                panic!("expected hierarchy result");
+            };
+            assert_eq!(activation_generation, 42);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("search worker did not return a generation-tagged result");
+}

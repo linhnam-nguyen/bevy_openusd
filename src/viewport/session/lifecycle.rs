@@ -11,6 +11,8 @@ use super::{
     StageCameraProjection, StageHandle, StageInfo, StagePresentationContext, VariantSetInfo,
 };
 
+#[path = "lifecycle_invalidation.rs"]
+mod lifecycle_invalidation;
 #[path = "lifecycle_open.rs"]
 mod lifecycle_open;
 
@@ -168,6 +170,7 @@ where
         cache.archive_paths.push(path.clone());
     }
     clear_projected_stage(world);
+    lifecycle_invalidation::reset_derived_state(world, activation_generation);
     world.insert_resource(RequestedAsset { name, root });
     world.insert_resource(StageHandle {
         path: path.clone(),

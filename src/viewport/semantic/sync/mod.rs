@@ -3,6 +3,7 @@ mod changed_info;
 mod classification_catalogue;
 mod delivery;
 mod delivery_worker;
+mod identity;
 mod subtree;
 
 use std::{sync::Arc, time::Instant};
@@ -54,6 +55,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         let live = world.get_non_send::<LiveStage>()?;
         let pending_batch = world.resource::<PendingStageChanges>().batch().cloned();
         let state = world.resource::<SemanticSyncState>();
+        let activation_generation = identity::activation_generation(world);
         Some((
             live.session_id(),
             live.current_revision(),
@@ -61,6 +63,8 @@ fn synchronize_live_stage_inner(world: &mut World) {
             state.snapshot.is_some(),
             state.session_id,
             state.revision,
+            state.activation_generation,
+            activation_generation,
         ))
     })();
 
@@ -71,12 +75,15 @@ fn synchronize_live_stage_inner(world: &mut World) {
         has_snapshot,
         previous_session,
         previous_revision,
+        previous_activation_generation,
+        activation_generation,
     )) = info
     else {
         return;
     };
 
-    let same_session = previous_session == Some(session_id);
+    let same_session = previous_session == Some(session_id)
+        && previous_activation_generation == activation_generation;
     if same_session && has_snapshot && pending_batch.is_none() {
         if let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()
@@ -100,16 +107,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         None
     };
 
-    let root_count = pending_batch
-        .as_ref()
-        .map(|b| {
-            if b.has_resync() {
-                b.resync_roots().len()
-            } else {
-                0
-            }
-        })
-        .unwrap_or(0);
+    let root_count = identity::resync_root_count(pending_batch.as_ref());
 
     if previous_snapshot.is_none() {
         if let Some(mut c) =
@@ -382,6 +380,7 @@ fn synchronize_live_stage_inner(world: &mut World) {
         let mut state = world.resource_mut::<SemanticSyncState>();
         state.session_id = Some(session_id);
         state.revision = Some(live_revision);
+        state.activation_generation = activation_generation;
     } else {
         if let Some(mut c) =
             world.get_resource_mut::<crate::viewport::diagnostics::performance::RendererCounters>()

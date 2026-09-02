@@ -103,6 +103,7 @@ pub(super) fn submit_provenance(
     semantic: Option<&SemanticSyncState>,
     semantic_diff: Option<&SemanticDiffState>,
     stage_path: &Path,
+    activation_generation: u64,
     service: &BimProvenanceService,
     outbox: &mut ViewportEventOutbox,
 ) {
@@ -140,6 +141,7 @@ pub(super) fn submit_provenance(
         entity.key.clone(),
         usd_git::RevisionId::new(history_head),
         stage_path.to_owned(),
+        activation_generation,
     ) {
         return;
     }

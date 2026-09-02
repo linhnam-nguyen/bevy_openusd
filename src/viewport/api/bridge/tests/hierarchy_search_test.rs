@@ -9,13 +9,14 @@ mod tests {
     use crate::viewport::api::bridge::scene_query::{
         dispatch_scene_query_commands, publish_scene_query_results,
     };
-    use crate::viewport::api::bridge::state::SceneSearchRequests;
+    use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
     use crate::viewport::api::scene_query::SceneQueryService;
     use crate::viewport::api::{
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
         ViewportCommandInbox, ViewportEventOutbox,
     };
     use crate::viewport::semantic::SemanticSyncState;
+    use crate::viewport::session::StageInfo;
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
         let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 1);
@@ -248,6 +249,66 @@ mod tests {
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn stale_search_result_is_dropped_after_project_activation() {
+        let service = SceneQueryService::default();
+        assert!(service.submit_search(
+            "stale-generation".to_owned(),
+            "unused".to_owned(),
+            0,
+            10,
+            CurrentHierarchyProjection::empty(HierarchySource::Prim, 1).snapshot(),
+            HierarchySource::Prim,
+            false,
+            1,
+        ));
+
+        let mut pending = SceneSearchRequests::default();
+        pending.pending.insert(
+            "stale-generation".to_owned(),
+            SceneSearchRequest {
+                query: "unused".to_owned(),
+                offset: 0,
+                submitted_at: std::time::Instant::now(),
+            },
+        );
+        let mut app = App::new();
+        app.insert_resource(service)
+            .insert_resource(pending)
+            .init_resource::<ViewportEventOutbox>()
+            .insert_resource(StageInfo {
+                activation_generation: 2,
+                ..default()
+            })
+            .add_systems(Update, publish_scene_query_results);
+
+        for _ in 0..200 {
+            app.update();
+            if app
+                .world()
+                .resource::<SceneSearchRequests>()
+                .pending
+                .is_empty()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        assert!(
+            app.world()
+                .resource::<SceneSearchRequests>()
+                .pending
+                .is_empty()
+        );
+        assert!(
+            app.world_mut()
+                .resource_mut::<ViewportEventOutbox>()
+                .pop()
+                .is_none()
+        );
     }
 
     #[test]
