@@ -86,6 +86,7 @@ pub(super) fn apply_viewport_commands(
             | ViewportCommand::RequestBimPropertyProvenance { .. }
             | ViewportCommand::RequestHierarchyChildren { .. }
             | ViewportCommand::SearchHierarchy { .. }
+            | ViewportCommand::SetBimClassificationRecipe { .. }
             | ViewportCommand::SetHierarchySource { .. } => {
                 reject(
                     &mut outbox,

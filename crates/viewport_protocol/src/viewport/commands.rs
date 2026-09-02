@@ -62,6 +62,11 @@ pub enum ViewportCommand {
         source: HierarchySource,
         classification_recipe: Option<ClassificationRecipe>,
     },
+    /// Updates BIM classification presentation without replacing the
+    /// contextual hierarchy provider used by the Scene Tree.
+    SetBimClassificationRecipe {
+        recipe: Option<ClassificationRecipe>,
+    },
     /// Selects the backend-owned temporary classification presentation plan.
     /// The intent never authors USD; the backend derives complete entries from
     /// its semantic classification projection.

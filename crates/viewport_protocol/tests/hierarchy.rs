@@ -123,6 +123,21 @@ fn generic_hierarchy_commands_validate_provider_ids_and_bounds() {
         .validate()
         .is_err()
     );
+    assert!(
+        ViewportCommand::SetBimClassificationRecipe {
+            recipe: Some(ClassificationRecipe::new(vec![ClassificationLevel::new(
+                "category",
+                BimFieldKey::Category,
+            )])),
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        ViewportCommand::SetBimClassificationRecipe { recipe: None }
+            .validate()
+            .is_ok()
+    );
 }
 
 #[test]

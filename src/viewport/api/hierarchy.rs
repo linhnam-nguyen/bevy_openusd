@@ -23,6 +23,28 @@ pub(crate) struct ActiveHierarchyProvider {
     classification_recipe: Option<ClassificationRecipe>,
 }
 
+/// BIM classification recipe owned independently from the contextual
+/// hierarchy provider. The recipe drives BIM presentation/colorization while
+/// the Scene Tree remains on its Project/Scene hierarchy source.
+#[derive(Resource, Clone, Debug, Default)]
+pub(crate) struct BimClassificationRecipeState {
+    recipe: Option<ClassificationRecipe>,
+}
+
+impl BimClassificationRecipeState {
+    pub(crate) fn recipe(&self) -> Option<&ClassificationRecipe> {
+        self.recipe.as_ref()
+    }
+
+    pub(crate) fn set(&mut self, recipe: Option<ClassificationRecipe>) -> bool {
+        if self.recipe == recipe {
+            return false;
+        }
+        self.recipe = recipe;
+        true
+    }
+}
+
 impl ActiveHierarchyProvider {
     pub(crate) fn source(&self) -> HierarchySource {
         self.source

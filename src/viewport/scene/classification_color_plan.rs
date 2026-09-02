@@ -5,7 +5,7 @@ use viewport_protocol::{
     ClassificationColorEntry, ClassificationColorIntent, ClassificationColorSource,
 };
 
-use crate::viewport::api::ActiveHierarchyProvider;
+use crate::viewport::api::{ActiveHierarchyProvider, BimClassificationRecipeState};
 use crate::viewport::bim::BimReadService;
 use crate::viewport::semantic::SemanticSyncState;
 
@@ -78,18 +78,23 @@ impl ClassificationColorPlan {
     }
 }
 
-/// Rebuilds the complete semantic color plan only when intent or provider
-/// inputs change. Semantic refresh is coalesced with hierarchy projection;
-/// browser hierarchy paging never participates.
+/// Rebuilds the complete semantic color plan only when intent, classification
+/// recipe, or legacy provider inputs change. The BIM recipe is independent of
+/// the contextual hierarchy provider; browser hierarchy paging never
+/// participates.
 pub(in crate::viewport) fn refresh_classification_color_plan(
     provider: Option<Res<ActiveHierarchyProvider>>,
+    bim_classification: Option<Res<BimClassificationRecipeState>>,
     semantic: Option<Res<SemanticSyncState>>,
     mut plan: ResMut<ClassificationColorPlan>,
     mut last_intent_revision: Local<u64>,
 ) {
     let intent_changed = *last_intent_revision != plan.intent_revision();
     let provider_changed = provider.as_ref().is_some_and(|value| value.is_changed());
-    if !intent_changed && !provider_changed {
+    let classification_changed = bim_classification
+        .as_ref()
+        .is_some_and(|value| value.is_changed());
+    if !intent_changed && !provider_changed && !classification_changed {
         return;
     }
     *last_intent_revision = plan.intent_revision();
@@ -100,11 +105,18 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
     let entries = if matches!(intent.source, ClassificationColorSource::None) {
         Vec::new()
     } else {
-        let Some(provider) = provider.as_deref() else {
-            plan.replace_entries(Vec::new());
-            return;
-        };
-        let Some(recipe) = provider.classification_recipe() else {
+        let recipe = bim_classification
+            .as_deref()
+            .and_then(BimClassificationRecipeState::recipe)
+            .or_else(|| {
+                provider
+                    .as_deref()
+                    .filter(|provider| {
+                        provider.source() == viewport_protocol::HierarchySource::BimClassification
+                    })
+                    .and_then(ActiveHierarchyProvider::classification_recipe)
+            });
+        let Some(recipe) = recipe else {
             plan.replace_entries(Vec::new());
             return;
         };
@@ -115,10 +127,6 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
             plan.replace_entries(Vec::new());
             return;
         };
-        if provider.source() != viewport_protocol::HierarchySource::BimClassification {
-            plan.replace_entries(Vec::new());
-            return;
-        }
         match BimReadService::with_index(snapshot, index)
             .classification_color_entries(recipe, &intent)
         {
@@ -201,6 +209,38 @@ mod tests {
         assert_eq!(
             app.world().resource::<ClassificationColorPlan>().revision(),
             first_revision
+        );
+    }
+
+    #[test]
+    fn backend_builds_color_plan_from_bim_recipe_without_contextual_provider() {
+        let snapshot = snapshot();
+        let entity_count = snapshot.entities.len();
+        let recipe = ClassificationRecipe::new(vec![ClassificationLevel::new(
+            "category",
+            BimFieldKey::Category,
+        )]);
+        let mut app = App::new();
+        app.insert_resource(BimClassificationRecipeState::default())
+            .insert_resource(SemanticSyncState::from_test_snapshot(snapshot))
+            .init_resource::<ClassificationColorPlan>()
+            .add_systems(Update, refresh_classification_color_plan);
+        app.world_mut()
+            .resource_mut::<BimClassificationRecipeState>()
+            .set(Some(recipe));
+        app.world_mut()
+            .resource_mut::<ClassificationColorPlan>()
+            .accept_intent(intent(0))
+            .expect("initial color intent");
+
+        app.update();
+
+        assert_eq!(
+            app.world()
+                .resource::<ClassificationColorPlan>()
+                .entries()
+                .len(),
+            entity_count
         );
     }
 }

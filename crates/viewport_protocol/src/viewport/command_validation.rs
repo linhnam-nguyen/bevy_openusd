@@ -137,6 +137,11 @@ impl ViewportCommand {
                     recipe.validate()?;
                 }
             },
+            Self::SetBimClassificationRecipe { recipe } => {
+                if let Some(recipe) = recipe {
+                    recipe.validate()?;
+                }
+            }
             Self::SetClassificationColorPlan { intent } => {
                 if let Some(level) = intent.active_level.as_deref() {
                     text("classification_color.active_level", level)?;

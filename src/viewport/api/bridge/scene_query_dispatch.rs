@@ -23,6 +23,7 @@ pub(crate) fn dispatch_scene_query_commands(
     scene_index: Res<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut provider: Option<ResMut<ActiveHierarchyProvider>>,
+    mut bim_classification: Option<ResMut<crate::viewport::api::BimClassificationRecipeState>>,
     semantic: Option<Res<crate::viewport::semantic::SemanticSyncState>>,
     semantic_diff: Option<Res<crate::viewport::semantic::SemanticDiffState>>,
     selection: Option<Res<SelectedTargets>>,
@@ -280,6 +281,17 @@ pub(crate) fn dispatch_scene_query_commands(
                         provider.set(source, classification_recipe);
                     }
                     Err(error) => reject(&mut outbox, request_id, error),
+                }
+            }
+            ViewportCommand::SetBimClassificationRecipe { recipe } => {
+                if let Some(bim_classification) = bim_classification.as_deref_mut() {
+                    bim_classification.set(recipe);
+                } else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "BIM classification presentation is unavailable".to_owned(),
+                    );
                 }
             }
             _ => unreachable!("scene query inbox only contains query commands"),

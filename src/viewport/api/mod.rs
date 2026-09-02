@@ -21,8 +21,8 @@ pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
 pub(crate) use hierarchy::{
-    ActiveHierarchyProvider, CurrentHierarchyProjection, HierarchyPageIndex,
-    HierarchyVisibilityIndex, HierarchyVisibilityTarget,
+    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
+    HierarchyPageIndex, HierarchyVisibilityIndex, HierarchyVisibilityTarget,
 };
 pub(crate) use hierarchy_visibility::refresh_projection_visibility;
 pub(crate) use interface::RenderServerInterface;

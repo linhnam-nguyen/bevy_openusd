@@ -18,6 +18,11 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
     {
         catalogue.clear();
     }
+    if let Some(mut classification) =
+        world.get_resource_mut::<crate::viewport::api::BimClassificationRecipeState>()
+    {
+        classification.set(None);
+    }
 
     let hierarchy_source = world
         .get_resource::<crate::viewport::api::ActiveHierarchyProvider>()
