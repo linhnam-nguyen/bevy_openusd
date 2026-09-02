@@ -152,7 +152,9 @@ impl CurrentHierarchyProjection {
                 HierarchyNodeReadModel::scene(
                     ids[&node.anchor].clone(),
                     parent_id,
-                    node.label.clone(),
+                    node.display_name
+                        .clone()
+                        .unwrap_or_else(|| node.label.clone()),
                     node.anchor.prim_path.clone(),
                     node.anchor.clone(),
                     node.parent.clone(),

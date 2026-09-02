@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdPrimRef};
+use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 #[cfg(test)]
@@ -16,7 +16,7 @@ use viewport_protocol::MAX_SCENE_PAGE_SIZE;
 
 use super::hierarchy::CurrentHierarchyProjection;
 use super::scene_occurrence_index::SceneOccurrenceIndex;
-use crate::viewport::session::Spawned;
+use crate::viewport::session::{Spawned, StagePresentationContext};
 
 #[path = "scene_index_dense.rs"]
 mod dense;
@@ -135,6 +135,10 @@ pub(crate) fn refresh_scene_anchor_index(
                 Added<UsdPrimRef>,
                 Changed<UsdPrimRef>,
                 Changed<UsdDisplayName>,
+                Added<UsdHierarchyTarget>,
+                Changed<UsdHierarchyTarget>,
+                Added<UsdTransparentHierarchyNode>,
+                Changed<UsdTransparentHierarchyNode>,
                 Changed<Visibility>,
                 Changed<Children>,
             )>,
@@ -144,27 +148,37 @@ pub(crate) fn refresh_scene_anchor_index(
         Entity,
         &UsdPrimRef,
         Option<&UsdDisplayName>,
+        Option<&UsdHierarchyTarget>,
+        Option<&UsdTransparentHierarchyNode>,
         Option<&Visibility>,
         Option<&Children>,
     )>,
     mut removed_prims: RemovedComponents<UsdPrimRef>,
+    mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
     mut index: ResMut<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     provider: Option<Res<super::ActiveHierarchyProvider>>,
+    presentation: Option<Res<StagePresentationContext>>,
 ) {
     // ScenePatch materialization can happen across a frame boundary after
     // Spawned flips to true. Treat that lifecycle transition as a rebuild
     // trigger as well; otherwise a static stage can publish an empty tree
     // before its projected prim entities are visible to this query.
-    let changed =
-        spawned.is_changed() || !changed_prims.is_empty() || removed_prims.read().next().is_some();
+    let presentation_changed = presentation
+        .as_ref()
+        .is_some_and(|presentation| presentation.is_changed());
+    let changed = spawned.is_changed()
+        || presentation_changed
+        || !changed_prims.is_empty()
+        || removed_prims.read().next().is_some()
+        || removed_transparent.read().next().is_some();
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
         *current_projection = CurrentHierarchyProjection::default();
         return;
     }
     if changed || !index.initialized {
-        let prim_projection = index.rebuild(&prims);
+        let prim_projection = index.rebuild(&prims, presentation.as_deref());
         if provider
             .as_ref()
             .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
@@ -188,3 +202,7 @@ pub(crate) fn refresh_scene_anchor_index(
 #[cfg(test)]
 #[path = "scene_index_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "scene_index_lifecycle_tests.rs"]
+mod lifecycle_tests;

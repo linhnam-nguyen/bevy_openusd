@@ -35,8 +35,9 @@ fn assert_project_names(app: &App, root_name: &str) {
         );
     }
     assert!(
-        index
-            .hierarchy_snapshot()
+        app.world()
+            .resource::<CurrentHierarchyProjection>()
+            .snapshot()
             .nodes
             .iter()
             .all(|node| !node.name.starts_with("Member_"))
@@ -51,6 +52,22 @@ fn assert_project_names(app: &App, root_name: &str) {
                 .display_name
                 .as_deref()
                 .is_some_and(|name| name.starts_with("Member_")))
+    );
+    let physical_member_anchors = index
+        .by_anchor
+        .keys()
+        .filter(|anchor| anchor.prim_path.contains("/Member_"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        !physical_member_anchors.is_empty(),
+        "physical Project member anchors remain indexed"
+    );
+    assert!(
+        physical_member_anchors
+            .iter()
+            .all(|anchor| index.resolve(anchor).is_some()),
+        "transparent semantic wrappers remain selectable by physical anchor"
     );
 }
 
@@ -127,6 +144,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
         .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
         .init_resource::<PrimEntities>()
         .init_resource::<Spawned>()
         .init_resource::<StageInfo>()
