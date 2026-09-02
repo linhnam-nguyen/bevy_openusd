@@ -95,6 +95,9 @@ mod deletion_tests;
 mod error;
 mod export;
 #[cfg(test)]
+#[path = "export_portability_tests.rs"]
+mod export_portability_tests;
+#[cfg(test)]
 mod export_tests;
 mod inspection;
 mod lifecycle;

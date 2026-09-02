@@ -3,7 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use openusd::{
@@ -318,7 +318,7 @@ fn rewrite_asset_paths(
                 .map(|parent| parent.join(asset_path))
                 .unwrap_or_else(|| asset_path.to_owned())
         };
-        if let Some(target) = mapping.get(&resolved) {
+        if let Some(target) = normalize_lookup_path(&resolved).and_then(|path| mapping.get(&path)) {
             output.push_str(&relative_archive_path(current_archive_path, target));
         } else {
             output.push_str(asset);
@@ -328,6 +328,24 @@ fn rewrite_asset_paths(
     }
     output.push_str(&text[cursor..]);
     Ok(output)
+}
+
+fn normalize_lookup_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+    Some(normalized)
 }
 
 fn relative_archive_path(current: &str, target: &str) -> String {
