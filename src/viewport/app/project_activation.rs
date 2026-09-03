@@ -13,20 +13,14 @@ use std::{
 };
 
 use bevy::ecs::schedule::IntoScheduleConfigs;
-use bevy::prelude::{App, Resource, Update, World};
-use project_protocol::ProjectActivationReply;
-use viewport_streaming::{
-    ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
-};
+use bevy::prelude::{App, Resource, Update};
+use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache::ProjectCacheTarget;
-use crate::project::cache_hydration::{
-    ActiveProjectCacheContext, default_project_cache_config_hash,
-};
+use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
-use crate::viewport::api::RenderServerInterface;
-use crate::viewport::session::StagePresentationContext;
-use crate::viewport::session::activate_stage_with_cache_context_for_generation;
+
+#[path = "project_activation_flow.rs"]
+mod flow;
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
 const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
@@ -36,6 +30,9 @@ const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
 pub(super) struct ProjectStageActivationRuntime {
     preparation: ProjectActivationPreparation,
 }
+
+#[derive(Resource, Default)]
+pub(super) struct ProjectActivationAuthorityRuntime(ProjectActivationAuthority);
 
 struct ProjectActivationPreparation {
     sender: SyncSender<ProjectActivationRequest>,
@@ -150,131 +147,21 @@ fn resolve_project_activation(
 
 pub(super) fn install(app: &mut App) {
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
+        .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(
             Update,
-            process_project_activations.before(crate::viewport::session::spawn_when_ready),
+            flow::process_project_activations.before(crate::viewport::session::spawn_when_ready),
         );
-}
-
-/// Submits queued Project activations for preparation and applies prepared
-/// results on the Bevy main world.
-///
-/// The candidate Stage is opened before the current LiveStage is replaced, so
-/// a failed activation leaves the previous renderer state untouched.
-pub(super) fn process_project_activations(world: &mut World) {
-    let Some(interface_resource) = world.get_resource::<RenderServerInterface>() else {
-        return;
-    };
-    let interface = interface_resource.shared();
-
-    loop {
-        let prepared = world
-            .resource::<ProjectStageActivationRuntime>()
-            .take_prepared();
-        let Some(prepared) = prepared else {
-            break;
-        };
-        publish_prepared_result(world, &interface, prepared);
-    }
-
-    while let Some(request) = interface.pop_project_activation() {
-        let submit_result = world
-            .resource::<ProjectStageActivationRuntime>()
-            .submit(request);
-        if let Err(error) = submit_result {
-            let (request, message) = match error {
-                TrySendError::Full(request) => {
-                    (request, "Project activation preparation is busy".to_owned())
-                }
-                TrySendError::Disconnected(request) => (
-                    request,
-                    "Project activation preparation is unavailable".to_owned(),
-                ),
-            };
-            let command = request.command.clone();
-            publish_activation_result(
-                &interface,
-                request,
-                ProjectActivationReply::failed(&command, message),
-            );
-        }
-    }
-}
-
-fn publish_prepared_result(
-    world: &mut World,
-    interface: &viewport_streaming::RenderServerInterface,
-    prepared: PreparedProjectActivation,
-) {
-    let command = prepared.request.command.clone();
-    let reply = match prepared.target {
-        Ok(None) => ProjectActivationReply::activated(&command),
-        Ok(Some(target)) => {
-            let cache_context = cache_context_for(&target);
-            match activate_stage_with_cache_context_for_generation(
-                world,
-                target.path,
-                cache_context,
-                command.generation,
-                StagePresentationContext::from_project(target.presentation),
-            ) {
-                Ok(()) => ProjectActivationReply::activated(&command),
-                Err(error) => ProjectActivationReply::failed(&command, error),
-            }
-        }
-        Err(error) => ProjectActivationReply::failed(&command, error),
-    };
-    publish_activation_result(interface, prepared.request, reply);
-}
-
-fn cache_context_for(
-    target: &crate::project::service::ProjectStageActivationTarget,
-) -> Option<ActiveProjectCacheContext> {
-    let cache_target = match target.target {
-        project_protocol::ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
-        project_protocol::ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
-            id: scene_id.to_string(),
-        },
-        project_protocol::ProjectStageTarget::Model(model_id) => ProjectCacheTarget::Model {
-            id: model_id.to_string(),
-        },
-    };
-    match ActiveProjectCacheContext::new(
-        target.project_root.clone(),
-        cache_target,
-        viewport_protocol::RuntimeProfile::NativeMedium,
-        default_project_cache_config_hash(),
-    ) {
-        Ok(context) => Some(context),
-        Err(error) => {
-            bevy::log::warn!(
-                "[project-cache] could not establish activation identity; using source projection: {error:#}"
-            );
-            None
-        }
-    }
-}
-
-fn publish_activation_result(
-    interface: &viewport_streaming::RenderServerInterface,
-    request: ProjectActivationRequest,
-    reply: ProjectActivationReply,
-) {
-    let result = RoutedProjectActivationResult {
-        session_id: request.session_id,
-        reply,
-    };
-    if let Err(error) = interface.publish_project_activation_result(result) {
-        bevy::log::error!("[project-activation] could not publish activation result: {error:?}");
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::viewport::api::RenderServerInterface;
     use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
     use usd_project::{ProjectId, ProjectRoot, SceneId};
     use viewport_protocol::SessionId;
+    use viewport_streaming::ProjectActivationResult as RoutedProjectActivationResult;
 
     #[test]
     fn activation_reply_preserves_project_root_generation_and_has_no_path() {

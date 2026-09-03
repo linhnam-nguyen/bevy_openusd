@@ -1,14 +1,13 @@
 //! Read-only USD asset inventory used to freeze the OR8 M2 fixtures.
 
 use std::{
-    fs::{self, File},
-    io::Read,
+    fs,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 
-const SAMPLE_LIMIT: u64 = 1024 * 1024;
+use super::asset_inspection;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -176,26 +175,21 @@ fn inventory_file(root: &Path, origin: AssetOrigin, path: &Path) -> Result<Asset
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let fingerprint = fingerprint(path)?;
-    let scan = scan(path, &extension)?;
-    let mut eligible = Vec::new();
-    if scan.instance_indicator {
-        eligible.push("A".to_owned());
-    }
-    if scan.animation || scan.dependency_count > 0 || scan.texture_references > 0 {
-        eligible.push("B".to_owned());
-    }
-    if scan.bim_indicator {
-        eligible.push("C".to_owned());
-    }
     let asset_key = asset_key(origin, &relative_path);
+    let authoritative_fixture = canonical_fixture_key(origin, &relative_path);
+    let fingerprint = asset_inspection::fingerprint(path)?;
+    let scan = asset_inspection::inspect(path, &extension, authoritative_fixture.is_some())?;
+    let fixture_eligibility = authoritative_fixture
+        .filter(|fixture| actual_fixture_signal(fixture, &scan))
+        .map(|fixture| vec![fixture.to_owned()])
+        .unwrap_or_default();
     Ok(AssetRecord {
         asset_key,
         origin,
         relative_path,
         extension: extension.clone(),
         byte_size: metadata.len(),
-        readable: File::open(path).is_ok(),
+        readable: fs::File::open(path).is_ok(),
         usd_layer_or_package_type: match extension.as_str() {
             "usdz" => "usdz_archive".to_owned(),
             "usdc" => "binary_usd_layer".to_owned(),
@@ -208,9 +202,27 @@ fn inventory_file(root: &Path, origin: AssetOrigin, path: &Path) -> Result<Asset
         bim_revit_semantic_indicators: scan.bim_indicator,
         composition_arcs: scan.arcs,
         stable_content_fingerprint: fingerprint,
-        fixture_eligibility: eligible,
+        fixture_eligibility,
         notes: scan.notes,
     })
+}
+
+fn canonical_fixture_key(origin: AssetOrigin, relative_path: &str) -> Option<&'static str> {
+    match (origin, relative_path) {
+        (AssetOrigin::BevyOpenUsd, "external/PointInstancedMedCity.usdz") => Some("A"),
+        (AssetOrigin::BevyOpenUsd, "external/HumanFemale.usdz") => Some("B"),
+        (AssetOrigin::ExternalAssets, "Omniverse/V1/Projet1.usdc") => Some("C"),
+        _ => None,
+    }
+}
+
+fn actual_fixture_signal(fixture: &str, scan: &asset_inspection::AssetScan) -> bool {
+    match fixture {
+        "A" => scan.instance_indicator,
+        "B" => scan.animation,
+        "C" => scan.bim_indicator,
+        _ => false,
+    }
 }
 
 fn asset_key(origin: AssetOrigin, relative_path: &str) -> String {
@@ -230,108 +242,6 @@ fn is_usd_asset(path: &Path) -> bool {
                 "usd" | "usda" | "usdc" | "usdz"
             )
         })
-}
-
-fn fingerprint(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| format!("open {}: {error}", path.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| format!("hash {}: {error}", path.display()))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
-#[derive(Default)]
-struct Scan {
-    dependency_count: usize,
-    texture_references: usize,
-    animation: bool,
-    instance_indicator: bool,
-    bim_indicator: bool,
-    arcs: Vec<String>,
-    notes: String,
-}
-
-fn scan(path: &Path, extension: &str) -> Result<Scan, String> {
-    let mut scan = Scan::default();
-    if path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.to_ascii_lowercase().contains("pointinstanced"))
-    {
-        scan.instance_indicator = true;
-    }
-    if extension == "usdz" {
-        let file = File::open(path).map_err(|error| format!("open {}: {error}", path.display()))?;
-        let mut archive = zip::ZipArchive::new(file)
-            .map_err(|error| format!("open USDZ {}: {error}", path.display()))?;
-        for index in 0..archive.len() {
-            let mut entry = archive
-                .by_index(index)
-                .map_err(|error| format!("read USDZ entry {}: {error}", path.display()))?;
-            let name = entry.name().to_ascii_lowercase();
-            scan_name(&name, &mut scan);
-            if name.ends_with(".usd") || name.ends_with(".usda") || name.ends_with(".usdc") {
-                let mut sample = Vec::new();
-                entry
-                    .take(SAMPLE_LIMIT)
-                    .read_to_end(&mut sample)
-                    .map_err(|error| format!("sample USDZ entry {}: {error}", path.display()))?;
-                scan_bytes(&sample, &mut scan);
-            }
-        }
-        scan.notes =
-            "classified from USDZ central-directory entries and bounded USD samples".to_owned();
-    } else {
-        let mut file =
-            File::open(path).map_err(|error| format!("open {}: {error}", path.display()))?;
-        let mut sample = Vec::new();
-        file.take(SAMPLE_LIMIT)
-            .read_to_end(&mut sample)
-            .map_err(|error| format!("sample {}: {error}", path.display()))?;
-        scan_bytes(&sample, &mut scan);
-        scan.notes = "classified from bounded source sample; no geometry was loaded".to_owned();
-    }
-    scan.arcs.sort();
-    scan.arcs.dedup();
-    Ok(scan)
-}
-
-fn scan_name(name: &str, scan: &mut Scan) {
-    if name.ends_with(".png") || name.ends_with(".jpg") || name.ends_with(".jpeg") {
-        scan.texture_references += 1;
-    }
-    if name.contains("anim") || name.contains("walk") {
-        scan.animation = true;
-    }
-}
-
-fn scan_bytes(bytes: &[u8], scan: &mut Scan) {
-    let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
-    for (marker, arc) in [
-        ("references", "reference"),
-        ("payload", "payload"),
-        ("sublayers", "sublayer"),
-    ] {
-        let count = text.matches(marker).count();
-        if count > 0 {
-            scan.dependency_count += count;
-            scan.arcs.push(arc.to_owned());
-        }
-    }
-    scan.animation |=
-        text.contains("anim") || text.contains("walk") || text.contains("timecodespersecond");
-    scan.instance_indicator |= text.contains("pointinstancer") || text.contains("instanceable");
-    scan.bim_indicator |=
-        text.contains("revit") || text.contains("omniplugin") || text.contains("exported from");
-    scan.texture_references += text.matches(".png").count() + text.matches(".jpg").count();
 }
 
 pub(super) fn default_roots() -> (PathBuf, PathBuf) {

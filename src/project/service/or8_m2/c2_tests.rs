@@ -19,7 +19,7 @@ fn c2_freezes_proj_t_hierarchy_and_scoped_identity_lookup() {
         .expect("create canonical Proj_T");
 
     assert_eq!(fixture.project.name, "Proj_T");
-    assert_eq!(fixture.scenes.len(), 6);
+    assert_eq!(fixture.scenes.len(), 7);
     fixture.verify_readable_layers();
     let duplicate = fixture.identities_named("Sc1.1");
     assert_eq!(duplicate.len(), 2);
@@ -41,7 +41,7 @@ fn c2_freezes_proj_t_hierarchy_and_scoped_identity_lookup() {
     let ProjectReadResponse::ProjectTree { nodes, counts, .. } = tree.result.unwrap() else {
         panic!("canonical Project tree must be readable");
     };
-    assert_eq!(counts.scenes, 7);
+    assert_eq!(counts.scenes, 8);
     let scene_ids = nodes
         .iter()
         .filter_map(|node| match node {
@@ -49,7 +49,7 @@ fn c2_freezes_proj_t_hierarchy_and_scoped_identity_lookup() {
             _ => None,
         })
         .collect::<HashSet<_>>();
-    assert_eq!(scene_ids.len(), 7);
+    assert_eq!(scene_ids.len(), 8);
     assert!(scene_ids.contains(&fixture.root_scene_id));
     assert!(duplicate.iter().all(|scene| scene_ids.contains(&scene.id)));
 

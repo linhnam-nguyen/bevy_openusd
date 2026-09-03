@@ -2,15 +2,16 @@
 
 use std::fs;
 
-use openusd::usd::{InitialLoadSet, PrimPredicate, Stage};
 use project_protocol::{
-    PlacementSpec, ProjectActivationCommand, ProjectActivationReply, ProjectReadCommand,
-    ProjectReadRequest, ProjectReadResponse, ProjectStageTarget, ProjectWriteTarget,
+    PlacementSpec, ProjectActivationCommand, ProjectReadCommand, ProjectReadRequest,
+    ProjectReadResponse, ProjectStageTarget, ProjectWriteTarget,
 };
 use usd_project::SceneId;
 
 use crate::project::{
-    service::{ProjectApplicationService, ProjectModelPreparationQueue},
+    service::{
+        ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageActivationSession,
+    },
     storage::ProjectStorageLayout,
 };
 
@@ -246,7 +247,7 @@ fn activate(context: &mut Context) -> Result<(), String> {
     let mut eligible = [
         context.fixture.identities_named("Sc1.1")[0].id,
         context.fixture.identity("Sc1.2.3").id,
-        context.fixture.identities_named("Sc1.1")[1].id,
+        context.fixture.identity("Sc2.1").id,
     ];
     context
         .trace
@@ -260,7 +261,9 @@ fn activate(context: &mut Context) -> Result<(), String> {
     }
     let manifest_before = read_manifest(context)?;
     let tree_before = read_tree(&context.service, context.fixture.project.id)?;
-    let mut previous_reply = None;
+    let expected_latest_scene = eligible[eligible.len() - 1];
+    let mut session = ProjectStageActivationSession::default();
+    let mut stale_completion = None;
     for (index, scene_id) in eligible.into_iter().enumerate() {
         let generation = index as u64 + 1;
         let request_id = format!("m2-c8-activate-{index}");
@@ -287,23 +290,70 @@ fn activate(context: &mut Context) -> Result<(), String> {
                     .failure(format!("activation resolution: {error}"))
             })?
             .ok_or_else(|| context.trace.failure("activation returned no Scene target"))?;
-        verify_stage(&target.path).map_err(|error| context.trace.failure(error))?;
-        let reply = ProjectActivationReply::activated(&command);
-        if !reply.matches_command(&command)
-            || previous_reply
-                .as_ref()
-                .is_some_and(|old: &ProjectActivationReply| old.matches_command(&command))
+        if !session.observe_request("m2-c8-session", &command) {
+            return Err(context.trace.failure("activation request was not admitted"));
+        }
+        let target_snapshot = target.clone();
+        let snapshot = session
+            .complete("m2-c8-session", &command, target)
+            .map_err(|error| {
+                context
+                    .trace
+                    .failure(format!("activation completion: {error}"))
+            })?;
+        if snapshot.project_id != context.fixture.project.id
+            || snapshot.target != command.target
+            || snapshot.generation != generation
+            || snapshot.stage_path != target_snapshot.path
+            || snapshot.hierarchy_paths.is_empty()
+            || snapshot.bim_snapshot_id.is_empty()
+            || !snapshot
+                .bim_entity_paths
+                .iter()
+                .all(|path| snapshot.hierarchy_paths.iter().any(|item| item == path))
         {
             return Err(context
                 .trace
-                .failure("activation reply identity validation failed"));
+                .failure("active Scene/session identity is incomplete"));
         }
-        previous_reply = Some(reply);
+        context.trace.operation(format!(
+            "active snapshot generation={} stage={} bim_snapshot={} bim_entities={}",
+            snapshot.generation,
+            snapshot.stage_path.display(),
+            snapshot.bim_snapshot_id,
+            snapshot.bim_entity_paths.len()
+        ));
+        if index == 1 {
+            stale_completion = Some((command, target_snapshot));
+        }
         if read_manifest(context)? != manifest_before
             || read_tree(&context.service, context.fixture.project.id)? != tree_before
         {
             return Err(context.trace.failure("activation changed Project content"));
         }
+    }
+    let (stale_command, stale_target) = stale_completion.ok_or_else(|| {
+        context
+            .trace
+            .failure("stale activation candidate is missing")
+    })?;
+    if session
+        .complete("m2-c8-session", &stale_command, stale_target)
+        .is_ok()
+    {
+        return Err(context
+            .trace
+            .failure("stale Scene completion replaced the latest active identity"));
+    }
+    let active = session.active().ok_or_else(|| {
+        context
+            .trace
+            .failure("active Scene/session snapshot is missing")
+    })?;
+    if active.generation != 3 || active.target != ProjectStageTarget::Scene(expected_latest_scene) {
+        return Err(context
+            .trace
+            .failure("latest active Scene/session identity was not retained"));
     }
     Ok(())
 }
@@ -328,21 +378,4 @@ fn read_tree(
         )))
         .result
         .map_err(|error| format!("read ProjectTree: {error}"))
-}
-
-fn verify_stage(path: &std::path::Path) -> Result<(), String> {
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(path.to_string_lossy().as_ref())
-        .map_err(|error| format!("open active Scene: {error}"))?;
-    stage
-        .traverse(PrimPredicate::DEFAULT, |_| {})
-        .map_err(|error| format!("traverse active Scene: {error}"))?;
-    if !stage.composition_errors().is_empty() {
-        return Err(format!(
-            "active Scene composition errors: {:?}",
-            stage.composition_errors()
-        ));
-    }
-    Ok(())
 }

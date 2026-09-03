@@ -130,7 +130,12 @@ pub(crate) use runtime_authority::{
     ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse, unix_time_ms,
 };
 pub use scene_inspection::ProjectSceneInspectionQueue;
-pub use stage_activation::{ProjectStageActivationTarget, ProjectStagePresentationContext};
+pub use stage_activation::{
+    ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivationTarget,
+    ProjectStagePresentationContext,
+};
+#[cfg(test)]
+pub use stage_activation::{ProjectStageActivationSession, ProjectStageSessionSnapshot};
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
 use self::read::{project_list_item, project_tree, repository_summary};

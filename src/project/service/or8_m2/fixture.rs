@@ -94,6 +94,8 @@ pub(super) fn create(
         ProjectWriteTarget::Scene(sc1_2.scene_id),
         "Sc1.2.3",
     )?;
+    let sc2_1 =
+        service.create_scene(project.id, ProjectWriteTarget::Scene(sc2.scene_id), "Sc2.1")?;
     let sc1_1_right = service.create_scene(
         project.id,
         ProjectWriteTarget::Scene(sc2.scene_id),
@@ -129,6 +131,11 @@ pub(super) fn create(
             label: "Sc2".to_owned(),
             id: sc2.scene_id,
             parent: Some(root_scene_id),
+        },
+        SceneIdentity {
+            label: "Sc2.1".to_owned(),
+            id: sc2_1.scene_id,
+            parent: Some(sc2.scene_id),
         },
         SceneIdentity {
             label: "Sc1.1".to_owned(),

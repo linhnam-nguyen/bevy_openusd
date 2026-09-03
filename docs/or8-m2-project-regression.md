@@ -1,8 +1,8 @@
 # OR8 M2 Projects regression matrix
 
-Status: implementation complete; stopped for Owner Review.
+Status: correction batch implemented; stopped for Owner Review after `M2-C8+2`.
 
-Date: 2026-09-03
+Date: 2026-09-04
 
 ## Scope
 
@@ -14,11 +14,12 @@ Each frozen seed runs one complete ordered scenario:
 
 1. create the canonical `Proj_T` fixture;
 2. compose fixtures A, B, and C through Model publication or Scene Import/Link;
-3. activate three eligible canonical leaf Scenes through the authoritative
-   activation resolver;
+3. activate three deterministic canonical nested Scenes through the real
+   stage/session authority, including shallow and deep hierarchy levels;
 4. perform fresh rename, duplicate-name rename, delete, and recreate;
-5. export the reserved deep leaf `Sc1.2.3`, then inspect and reimport it through
-   normal Scene adoption;
+5. select two surviving nested canonical Scenes deterministically after
+   mutation, export one, then inspect and reimport it through normal Scene
+   adoption;
 6. clone the Project filesystem, inspect/import it normally, and validate
    application-local registration identity outside Git-tracked content.
 
@@ -30,9 +31,54 @@ fixtures are:
 - B: `bevy_openusd:external/HumanFemale.usdz`;
 - C: `external_assets:Omniverse/V1/Projet1.usdc`.
 
+The canonical Project fixture contains eight Scene nodes including the
+protected root and exactly this scoped topology:
+
+```text
+Proj_T
+├── Sc1
+│   ├── Sc1.1
+│   └── Sc1.2
+│       └── Sc1.2.3
+└── Sc2
+    ├── Sc2.1
+    └── Sc1.1
+```
+
+The two `Sc1.1` labels remain distinct SceneIds with distinct parents.
+
 Fixture C keeps the exact source USDC bytes and uses a run-owned resolver
 support mirror for missing Omniverse MDL/texture resolver inputs. Original
 assets are not modified.
+
+Canonical fixture eligibility is based on actual OpenUSD inspection. A is
+admitted only when the opened Stage contains a `PointInstancer` or a composed
+instanceable prim; B is admitted only when the opened Stage contains a
+`SkelAnimation` or authored time samples; and C is admitted only when the
+NVIDIA/Revit semantic extractor reports a BIM entity. Package entry names and
+bounded text scans remain descriptive metadata for noncanonical assets and
+cannot authorize a fixture. A regression fixture named
+`PointInstancedMedCity.usda` but containing only an Xform proves the filename
+alone is insufficient.
+
+## M2-C8+2 correction boundary
+
+The previous review found that the activation tests resolved a stage and then
+manufactured `ProjectActivationReply::activated`, without committing active
+stage/session authority. The correction adds a production authority that
+admits only a newer command per session and a deterministic test seam that
+opens the canonical stage, traverses its hierarchy, extracts the same semantic
+snapshot/provider identity, and commits only the exact current command. C4 and
+C8 now perform three real transitions with monotonic generations, assert the
+active Project/Scene, hierarchy paths, semantic snapshot identity, and reject
+an older completion after the third transition. The production Bevy flow also
+checks admission before queueing and completion currency before replacing the
+LiveStage.
+
+C6 selects a seeded permutation of three nested canonical Scenes. C8 performs
+the same selection from surviving nested canonical SceneIds after the lifecycle
+delete/recreate step, so the export target is never a stale deleted identity.
+Both flows keep export and normal `adopt_scene` as the write path.
 
 ## Determinism and clean-run policy
 
@@ -60,22 +106,39 @@ Final C8 command:
 cargo test --lib or8_m2::c8_tests -- --nocapture
 ```
 
-Result: 1 test passed, 0 failed, 262 filtered; all 16 seeds completed; elapsed
-time 604.46 seconds. No final-run failure artifacts remained.
+Result: 1 test passed, 0 failed, 264 filtered; all 16 seeds completed; elapsed
+time 550.88 seconds. The first exploratory run retained expected failure
+artifacts for seed `0x4F52380000000003` because it exposed the deleted-target
+bug; the corrected clean rerun passed and did not retain final-run failures.
 
-Combined M2 gate after the C8+ clone-race repair:
+Combined M2 gate after the C8+2 correction:
 
 ```text
 cargo test --lib or8_m2 -- --nocapture
 ```
 
-Result: 13 tests passed, 0 failed, 250 filtered. The gate includes the C8
-sixteen-seed matrix and the four-seed C1–C7 smoke coverage.
+Result: 14 tests passed, 0 failed, 0 ignored, 251 filtered; the gate includes
+the C8 sixteen-seed matrix and the four-seed C1–C7 smoke coverage. Elapsed
+time: 583.68 seconds.
 
-Formatting and compilation passed with `cargo fmt --all` and the C8 no-run
-compile gate. The source-layout audit passed: all C8 handwritten Rust files
-are within the 200–350 line target; the largest is `matrix_steps.rs` at 348
-lines. Graph verification and persistence checks are split by responsibility.
+The required `make harden` gate completed its source-size audit (`800` files,
+`85` warning-band files, `0` failure-band files) and formatting/check stages,
+then stopped at the no-default-feature workspace test stage. That stage ran
+`263` tests successfully and reported two inherited failures:
+`project::service::m19_tests::phase2_freeze_matrix_covers_create_import_composition_and_recovery`
+(`DirectoryNotEmpty`) and
+`project::service::stage_mutation::tests::deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage`
+(`SceneRoot` assertion), in `651.85s`. The OR8 M2 C8 test passed in the same
+run. Strict all-feature Clippy/tests and the performance script were not
+reached after this required gate failure.
+
+Formatting and the focused library and binary compile gates passed. The
+source-layout audit has no failure-band file: new `asset_inspection.rs` is 230
+lines and `project_activation_flow.rs` is 203 lines. Modified warning-band
+files are `stage_activation.rs` (379), `matrix_steps.rs` (381), and
+`matrix_persistence.rs` (365); they remain below the 400-line failure
+threshold and are explicitly reviewable. Graph verification and persistence
+checks remain split by responsibility.
 
 The C8 harness does not claim GPU, native Tauri, WebRTC/H265, Revit/Omniverse
 production, FPS/RAM, or interactive frontend evidence. The existing workspace

@@ -17,7 +17,7 @@ use crate::project::{
     service::ProjectApplicationService,
 };
 
-use super::{artifacts, fixture};
+use super::{artifacts, fixture, rng::DeterministicRng};
 
 #[derive(Debug)]
 struct Trace {
@@ -57,9 +57,21 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         fixture_ids,
         operations: Vec::new(),
     };
-    let source_scene = fixture.identity("Sc1").id;
-    let target_scene = fixture.identity("Sc2").id;
-    let destination = export_directory.join("sc1.usdz");
+    let mut eligible = [
+        fixture.identities_named("Sc1.1")[0].id,
+        fixture.identity("Sc1.2.3").id,
+        fixture.identity("Sc2.1").id,
+    ];
+    let mut rng = DeterministicRng::seeded(seed);
+    for index in (1..eligible.len()).rev() {
+        eligible.swap(index, rng.choose_index(index + 1));
+    }
+    let source_scene = eligible[0];
+    let target_scene = eligible[1];
+    trace.operations.push(format!(
+        "roundtrip_selection source={source_scene} target={target_scene} candidates={eligible:?}"
+    ));
+    let destination = export_directory.join("selected-scene.usdz");
     trace.operations.push(format!(
         "export scene={source_scene} path={}",
         destination.display()

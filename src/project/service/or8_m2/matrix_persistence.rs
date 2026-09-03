@@ -24,8 +24,7 @@ use crate::project::{
 use super::matrix::Context;
 
 pub(super) fn export_roundtrip(context: &mut Context) -> Result<(), String> {
-    let source_scene = context.fixture.identity("Sc1.2.3").id;
-    let target_scene = context.fixture.identity("Sc2").id;
+    let (source_scene, target_scene) = select_roundtrip_scenes(context)?;
     let destination = context.export_directory.join("matrix.usdz");
     context.trace.operation(format!(
         "export scene={source_scene} path={}",
@@ -97,6 +96,36 @@ pub(super) fn export_roundtrip(context: &mut Context) -> Result<(), String> {
             .failure("reimported Scene is absent from manifest"));
     }
     Ok(())
+}
+
+fn select_roundtrip_scenes(context: &mut Context) -> Result<(SceneId, SceneId), String> {
+    let current_scene_ids = read_scene_ids(&context.service, context.fixture.project.id)?;
+    let mut eligible = context
+        .fixture
+        .scenes
+        .iter()
+        .filter(|scene| {
+            scene
+                .parent
+                .is_some_and(|parent| parent != context.fixture.root_scene_id)
+        })
+        .filter(|scene| current_scene_ids.contains(&scene.id))
+        .map(|scene| scene.id)
+        .collect::<Vec<_>>();
+    if eligible.len() < 2 {
+        return Err(context
+            .trace
+            .failure("fewer than two surviving nested canonical Scenes are export eligible"));
+    }
+    for index in (1..eligible.len()).rev() {
+        eligible.swap(index, context.rng.choose_index(index + 1));
+    }
+    let source_scene = eligible[0];
+    let target_scene = eligible[1];
+    context.trace.decision(format!(
+        "roundtrip_selection surviving_nested source={source_scene} target={target_scene} candidates={eligible:?}"
+    ));
+    Ok((source_scene, target_scene))
 }
 
 pub(super) fn clone_and_validate(context: &mut Context) -> Result<(), String> {

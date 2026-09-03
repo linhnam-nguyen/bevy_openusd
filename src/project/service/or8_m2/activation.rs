@@ -2,10 +2,9 @@
 
 use std::{fs, path::PathBuf};
 
-use openusd::usd::{InitialLoadSet, PrimPredicate, Stage};
 use project_protocol::{
-    ProjectActivationCommand, ProjectActivationReply, ProjectReadCommand, ProjectReadRequest,
-    ProjectReadResponse, ProjectStageTarget,
+    ProjectActivationCommand, ProjectReadCommand, ProjectReadRequest, ProjectReadResponse,
+    ProjectStageTarget,
 };
 use usd_project::SceneId;
 
@@ -63,7 +62,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
     let mut eligible = [
         fixture.identity("Sc1").id,
         fixture.identity("Sc1.2.3").id,
-        fixture.identity("Sc2").id,
+        fixture.identity("Sc2.1").id,
     ];
     for index in (1..eligible.len()).rev() {
         let swap = rng.choose_index(index + 1);
@@ -75,7 +74,9 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
 
     let manifest_before = read_manifest_bytes(&project_root)?;
     let tree_before = read_tree(&service, fixture.project.id)?;
-    let mut previous_reply: Option<ProjectActivationReply> = None;
+    let expected_latest_scene = eligible[eligible.len() - 1];
+    let mut session = crate::project::service::ProjectStageActivationSession::default();
+    let mut stale_completion = None;
     let mut previous_generation = 0;
     for (index, scene_id) in eligible.into_iter().enumerate() {
         let generation = index as u64 + 1;
@@ -103,19 +104,36 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         if target.target != command.target || target.project_id != fixture.project.id {
             return Err(trace.failure("authoritative activation target does not match command"));
         }
-        verify_readable_stage(&target.path)
-            .map_err(|error| trace.failure(format!("active Scene is unreadable: {error}")))?;
-
-        let reply = ProjectActivationReply::activated(&command);
-        if !reply.matches_command(&command) {
-            return Err(trace.failure("authoritative activation reply does not match command"));
+        if !session.observe_request("c4-session", &command) {
+            return Err(trace.failure("activation request was not admitted"));
         }
-        if let Some(old_reply) = previous_reply.as_ref()
-            && old_reply.matches_command(&command)
+        let target_snapshot = target.clone();
+        let snapshot = session
+            .complete("c4-session", &command, target)
+            .map_err(|error| trace.failure(format!("activation completion: {error}")))?;
+        if snapshot.project_id != fixture.project.id
+            || snapshot.target != command.target
+            || snapshot.generation != generation
+            || snapshot.stage_path != target_snapshot.path
+            || snapshot.hierarchy_paths.is_empty()
+            || snapshot.bim_snapshot_id.is_empty()
+            || !snapshot
+                .bim_entity_paths
+                .iter()
+                .all(|path| snapshot.hierarchy_paths.iter().any(|item| item == path))
         {
-            return Err(trace.failure("stale activation reply matched a newer command"));
+            return Err(trace.failure("active Scene/session identity is incomplete"));
         }
-        previous_reply = Some(reply);
+        trace.operations.push(format!(
+            "active snapshot generation={} stage={} bim_snapshot={} bim_entities={}",
+            snapshot.generation,
+            snapshot.stage_path.display(),
+            snapshot.bim_snapshot_id,
+            snapshot.bim_entity_paths.len()
+        ));
+        if index == 1 {
+            stale_completion = Some((command, target_snapshot));
+        }
         previous_generation = generation;
 
         if read_manifest_bytes(&project_root)? != manifest_before {
@@ -129,6 +147,20 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         if manifest.scene(scene_id).is_none() {
             return Err(trace.failure("active Scene is absent from its Project scope"));
         }
+    }
+    let (stale_command, stale_target) =
+        stale_completion.expect("three activations include a stale candidate");
+    if session
+        .complete("c4-session", &stale_command, stale_target)
+        .is_ok()
+    {
+        return Err(trace.failure("stale Scene completion replaced the latest active identity"));
+    }
+    let active = session
+        .active()
+        .ok_or_else(|| trace.failure("active Scene/session snapshot is missing"))?;
+    if active.generation != 3 || active.target != ProjectStageTarget::Scene(expected_latest_scene) {
+        return Err(trace.failure("latest active Scene/session identity was not retained"));
     }
     Ok(())
 }
@@ -148,21 +180,4 @@ fn read_tree(
         )))
         .result
         .map_err(|error| format!("read ProjectTree: {error}"))
-}
-
-fn verify_readable_stage(path: &std::path::Path) -> Result<(), String> {
-    let stage = Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(path.to_string_lossy().as_ref())
-        .map_err(|error| error.to_string())?;
-    stage
-        .traverse(PrimPredicate::DEFAULT, |_| {})
-        .map_err(|error| error.to_string())?;
-    if !stage.composition_errors().is_empty() {
-        return Err(format!(
-            "composition errors: {:?}",
-            stage.composition_errors()
-        ));
-    }
-    Ok(())
 }

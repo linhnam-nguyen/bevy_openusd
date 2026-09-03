@@ -1,7 +1,15 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use project_protocol::{ProjectReadError, ProjectReadErrorCode, ProjectStageTarget};
+#[cfg(test)]
+use openusd::usd::{InitialLoadSet, PrimPredicate, Stage};
+use project_protocol::{
+    ProjectActivationCommand, ProjectReadError, ProjectReadErrorCode, ProjectStageTarget,
+};
+#[cfg(test)]
+use usd_model::SnapshotSource;
 use usd_project::ProjectId;
+#[cfg(test)]
+use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::ProjectApplicationService;
 use crate::project::{
@@ -30,6 +38,75 @@ pub struct ProjectStageActivationTarget {
     pub project_root: PathBuf,
     pub path: PathBuf,
     pub(crate) presentation: ProjectStagePresentationContext,
+}
+
+/// Stable identity of the Project stage currently owned by one render host.
+///
+/// The resolved path is deliberately absent: path resolution remains private
+/// to the host, while the active identity is safe to compare with protocol
+/// commands and derived read-model generations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActiveProjectStage {
+    pub project_id: ProjectId,
+    pub target: ProjectStageTarget,
+    pub generation: u64,
+}
+
+/// Main-thread admission and completion authority for Project activations.
+///
+/// A preparation worker may finish an older request after a newer request was
+/// admitted. The exact command remains the completion key, so such a result
+/// can never replace the latest active Project stage.
+#[derive(Clone, Debug, Default)]
+pub struct ProjectActivationAuthority {
+    latest_by_session: HashMap<String, ProjectActivationCommand>,
+    active: Option<ActiveProjectStage>,
+}
+
+impl ProjectActivationAuthority {
+    /// Records a newer valid request for a transport session.
+    pub fn observe_request(
+        &mut self,
+        session_id: &str,
+        command: &ProjectActivationCommand,
+    ) -> bool {
+        if session_id.trim().is_empty() || command.validate().is_err() {
+            return false;
+        }
+        let is_newer = self
+            .latest_by_session
+            .get(session_id)
+            .is_none_or(|latest| command.generation > latest.generation);
+        if is_newer {
+            self.latest_by_session
+                .insert(session_id.to_owned(), command.clone());
+        }
+        is_newer
+    }
+
+    /// Checks the exact request that is currently allowed to commit.
+    pub fn is_current(&self, session_id: &str, command: &ProjectActivationCommand) -> bool {
+        self.latest_by_session
+            .get(session_id)
+            .is_some_and(|latest| latest == command)
+    }
+
+    /// Commits an activation only if it still belongs to the latest request.
+    pub fn commit(&mut self, session_id: &str, command: &ProjectActivationCommand) -> bool {
+        if !self.is_current(session_id, command) {
+            return false;
+        }
+        self.active = Some(ActiveProjectStage {
+            project_id: command.project_id,
+            target: command.target.clone(),
+            generation: command.generation,
+        });
+        true
+    }
+
+    pub fn active(&self) -> Option<&ActiveProjectStage> {
+        self.active.as_ref()
+    }
 }
 
 impl ProjectApplicationService {
@@ -157,5 +234,146 @@ fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {
     ProjectReadError::Unavailable {
         project_id,
         code: ProjectReadErrorCode::InvalidProjectData,
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectStageSessionSnapshot {
+    pub project_id: ProjectId,
+    pub target: ProjectStageTarget,
+    pub generation: u64,
+    pub stage_path: PathBuf,
+    pub hierarchy_paths: Vec<String>,
+    pub bim_snapshot_id: String,
+    pub bim_entity_paths: Vec<String>,
+}
+
+/// Deterministic seam for the real Project stage/session boundary.
+///
+/// It resolves and opens the canonical Stage, extracts the same semantic
+/// snapshot used by the viewport BIM provider, and commits only the newest
+/// request. No GPU, window, or transport is needed to prove stale completion
+/// handling and latest-scene read-model ownership.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub struct ProjectStageActivationSession {
+    authority: ProjectActivationAuthority,
+    active: Option<ProjectStageSessionSnapshot>,
+}
+
+#[cfg(test)]
+impl ProjectStageActivationSession {
+    pub fn observe_request(
+        &mut self,
+        session_id: &str,
+        command: &ProjectActivationCommand,
+    ) -> bool {
+        self.authority.observe_request(session_id, command)
+    }
+
+    pub fn complete(
+        &mut self,
+        session_id: &str,
+        command: &ProjectActivationCommand,
+        target: ProjectStageActivationTarget,
+    ) -> Result<ProjectStageSessionSnapshot, String> {
+        if !self.authority.is_current(session_id, command) {
+            return Err("stale Project activation completion was rejected".to_owned());
+        }
+        if target.project_id != command.project_id || target.target != command.target {
+            return Err("activation target does not match its command".to_owned());
+        }
+        let stage = open_activation_stage(&target.path)?;
+        let mut hierarchy_paths = Vec::new();
+        stage
+            .traverse(PrimPredicate::DEFAULT, |path| {
+                hierarchy_paths.push(path.as_str().to_owned())
+            })
+            .map_err(|error| format!("traverse activated Stage: {error}"))?;
+        if !stage.composition_errors().is_empty() {
+            return Err(format!(
+                "activated Stage has composition errors: {:?}",
+                stage.composition_errors()
+            ));
+        }
+        let semantic = SemanticExtractor::new(SemanticConfig::for_nvidia_revit_connector())
+            .extract(
+                &stage,
+                SnapshotSource::Working {
+                    session: session_id.to_owned(),
+                    live_revision: command.generation,
+                },
+            )
+            .map_err(|error| format!("extract activated Stage semantics: {error}"))?;
+        let mut bim_entity_paths = semantic
+            .entities
+            .values()
+            .filter(|entity| entity.semantic.is_bim_entity())
+            .map(|entity| entity.prim_path.clone())
+            .collect::<Vec<_>>();
+        bim_entity_paths.sort();
+        let snapshot = ProjectStageSessionSnapshot {
+            project_id: command.project_id,
+            target: command.target.clone(),
+            generation: command.generation,
+            stage_path: target.path,
+            hierarchy_paths,
+            bim_snapshot_id: semantic.snapshot_id.0,
+            bim_entity_paths,
+        };
+        if !self.authority.commit(session_id, command) {
+            return Err("stale Project activation completion was rejected".to_owned());
+        }
+        self.active = Some(snapshot.clone());
+        Ok(snapshot)
+    }
+
+    pub fn active(&self) -> Option<&ProjectStageSessionSnapshot> {
+        self.active.as_ref()
+    }
+}
+
+#[cfg(test)]
+fn open_activation_stage(path: &std::path::Path) -> Result<Stage, String> {
+    Stage::builder()
+        .load(InitialLoadSet::LoadNone)
+        .open(path.to_string_lossy().as_ref())
+        .map_err(|error| format!("open activated Stage: {error}"))
+}
+
+#[cfg(test)]
+mod authority_tests {
+    use super::*;
+    use usd_project::SceneId;
+
+    fn command(generation: u64) -> ProjectActivationCommand {
+        ProjectActivationCommand::new(
+            format!("authority-{generation}"),
+            generation,
+            ProjectId::new_v4(),
+            ProjectStageTarget::Scene(SceneId::new_v4()),
+        )
+    }
+
+    #[test]
+    fn stale_completion_cannot_replace_latest_active_identity() {
+        let mut authority = ProjectActivationAuthority::default();
+        let first = command(1);
+        let second = command(2);
+
+        assert!(authority.observe_request("session", &first));
+        assert!(authority.commit("session", &first));
+        assert!(authority.observe_request("session", &second));
+        assert!(!authority.commit("session", &first));
+        assert!(authority.commit("session", &second));
+        assert_eq!(
+            authority.active(),
+            Some(&ActiveProjectStage {
+                project_id: second.project_id,
+                target: second.target,
+                generation: 2,
+            })
+        );
     }
 }

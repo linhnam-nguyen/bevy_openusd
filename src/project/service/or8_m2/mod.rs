@@ -6,6 +6,7 @@
 
 mod activation;
 mod artifacts;
+mod asset_inspection;
 mod assets;
 mod composition;
 mod export;
