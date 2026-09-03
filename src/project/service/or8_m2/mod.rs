@@ -6,6 +6,7 @@
 
 mod artifacts;
 mod assets;
+mod composition;
 mod fixture;
 mod rng;
 
@@ -13,3 +14,5 @@ mod rng;
 mod c1_tests;
 #[cfg(test)]
 mod c2_tests;
+#[cfg(test)]
+mod c3_tests;

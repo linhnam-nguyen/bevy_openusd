@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn c1_inventory_freezes_the_three_canonical_fixture_records() {
+    let run_directory = artifacts::clean_run_directory("c1-inventory").expect("clean C1 run");
     let (bevy_assets, external_assets) = assets::default_roots();
     let dictionary = assets::inventory(&bevy_assets, &external_assets).expect("inventory assets");
     assert!(!dictionary.assets.is_empty());
@@ -29,12 +30,13 @@ fn c1_inventory_freezes_the_three_canonical_fixture_records() {
             .iter()
             .any(|value| value == "A")
     );
-    artifacts::write_dictionary(&artifacts::m2_testspaces_root(), &dictionary)
+    artifacts::write_dictionary(&run_directory, &dictionary)
         .expect("write deterministic M2 asset dictionary");
 }
 
 #[test]
 fn c1_frozen_fixture_paths_are_not_derived_from_display_names() {
+    artifacts::clean_run_directory("c1-paths").expect("clean C1 run");
     let (bevy_assets, external_assets) = assets::default_roots();
     let dictionary = assets::inventory(&bevy_assets, &external_assets).expect("inventory assets");
     let fixtures = assets::resolve_fixtures(&dictionary, &bevy_assets, &external_assets)
@@ -58,6 +60,7 @@ fn c1_frozen_fixture_paths_are_not_derived_from_display_names() {
 
 #[test]
 fn c1_smoke_uses_only_the_first_four_frozen_seeds() {
+    artifacts::clean_run_directory("c1-seeds").expect("clean C1 run");
     assert_eq!(
         &rng::M2_SEEDS[..4],
         &[
