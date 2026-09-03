@@ -8,6 +8,7 @@ mod activation;
 mod artifacts;
 mod assets;
 mod composition;
+mod export;
 mod fixture;
 mod lifecycle;
 mod rng;
@@ -22,3 +23,5 @@ mod c3_tests;
 mod c4_tests;
 #[cfg(test)]
 mod c5_tests;
+#[cfg(test)]
+mod c6_tests;

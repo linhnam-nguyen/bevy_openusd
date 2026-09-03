@@ -25,15 +25,7 @@ pub(super) fn m2_testspaces_root() -> PathBuf {
 /// Only the exact child named by the harness is removed. This keeps reruns
 /// deterministic without consuming artifacts from another checkpoint.
 pub(super) fn clean_run_directory(name: &str) -> Result<PathBuf, String> {
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains('\0')
-    {
-        return Err(format!("invalid OR8/M2 run name: {name:?}"));
-    }
+    validate_component(name, "run")?;
     let runs_root = m2_testspaces_root().join("runs");
     fs::create_dir_all(&runs_root)
         .map_err(|error| format!("create {}: {error}", runs_root.display()))?;
@@ -45,6 +37,35 @@ pub(super) fn clean_run_directory(name: &str) -> Result<PathBuf, String> {
     fs::create_dir(&run_directory)
         .map_err(|error| format!("create {}: {error}", run_directory.display()))?;
     Ok(run_directory)
+}
+
+pub(super) fn clean_output_directory(group: &str, name: &str) -> Result<PathBuf, String> {
+    validate_component(group, "output group")?;
+    validate_component(name, "output")?;
+    let group_directory = m2_testspaces_root().join(group);
+    fs::create_dir_all(&group_directory)
+        .map_err(|error| format!("create {}: {error}", group_directory.display()))?;
+    let output_directory = group_directory.join(name);
+    if output_directory.exists() {
+        fs::remove_dir_all(&output_directory)
+            .map_err(|error| format!("clean {}: {error}", output_directory.display()))?;
+    }
+    fs::create_dir(&output_directory)
+        .map_err(|error| format!("create {}: {error}", output_directory.display()))?;
+    Ok(output_directory)
+}
+
+fn validate_component(value: &str, kind: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+        || value.contains('\0')
+    {
+        return Err(format!("invalid OR8/M2 {kind} name: {value:?}"));
+    }
+    Ok(())
 }
 
 pub(super) fn write_dictionary(root: &Path, dictionary: &AssetDictionary) -> Result<(), String> {
