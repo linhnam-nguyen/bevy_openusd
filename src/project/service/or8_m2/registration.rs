@@ -180,6 +180,9 @@ fn collect_content(
         fs::read_dir(current).map_err(|error| format!("read {}: {error}", current.display()))?
     {
         let entry = entry.map_err(|error| format!("read Project entry: {error}"))?;
+        if entry.file_name() == ".usdhub" {
+            continue;
+        }
         let path = entry.path();
         let relative = path
             .strip_prefix(root)

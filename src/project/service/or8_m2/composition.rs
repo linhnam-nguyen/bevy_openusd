@@ -11,9 +11,16 @@ use crate::project::service::{ProjectApplicationService, ProjectModelPreparation
 use super::{assets, fixture, rng::DeterministicRng};
 
 #[path = "composition_source.rs"]
-mod composition_source;
+pub(super) mod composition_source;
 #[path = "composition_verify.rs"]
 mod composition_verify;
+
+pub(super) fn prepare_bim_link_source(
+    source: &std::path::Path,
+    directory: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    composition_source::prepare_bim_link_source(source, directory)
+}
 
 #[derive(Clone, Copy, Debug)]
 enum AssetKind {

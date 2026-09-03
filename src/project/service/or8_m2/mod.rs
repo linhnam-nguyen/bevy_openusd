@@ -11,6 +11,11 @@ mod composition;
 mod export;
 mod fixture;
 mod lifecycle;
+mod matrix;
+mod matrix_lifecycle;
+mod matrix_persistence;
+mod matrix_steps;
+mod matrix_verify;
 mod registration;
 mod rng;
 
@@ -28,3 +33,5 @@ mod c5_tests;
 mod c6_tests;
 #[cfg(test)]
 mod c7_tests;
+#[cfg(test)]
+mod c8_tests;
