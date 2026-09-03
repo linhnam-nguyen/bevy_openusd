@@ -13,9 +13,9 @@ use crate::viewport::camera::{ArcballCamera, FlyTo};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 /// Applies focus and visibility actions after scene anchors have been mapped
-/// to their private Bevy entities. Both selection and fly-to use the same
-/// subtree bounds, so repeating the action does not progressively zoom toward
-/// a prim's transform origin.
+/// to their private Bevy entities. Focus is latest-value work tagged with the
+/// selection and scene revisions captured when it was requested; visibility
+/// commands stay ahead of a deferred focus retry.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply_tree_commands(
     mut inbox: ResMut<ViewportTreeCommandInbox>,
@@ -40,7 +40,22 @@ pub(super) fn apply_tree_commands(
                 request_id,
                 target,
                 mode,
+                selection_revision,
+                scene_revision,
+                generation,
             } => {
+                if selection_revision != selection.revision()
+                    || scene_revision != scene_index.revision()
+                {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        format!(
+                            "focus request generation {generation} was superseded by newer scene state"
+                        ),
+                    );
+                    continue;
+                }
                 let Some(entity) = scene_index.resolve(&target) else {
                     reject(
                         &mut outbox,
@@ -75,10 +90,13 @@ pub(super) fn apply_tree_commands(
                     // its Aabb. Preserve the command and retry next frame so
                     // the camera never commits to the prim origin as a fake
                     // fit target.
-                    inbox.push_front(ViewportTreeCommand::Focus {
+                    inbox.defer_focus(ViewportTreeCommand::Focus {
                         request_id,
                         target,
                         mode,
+                        selection_revision,
+                        scene_revision,
+                        generation,
                     });
                     break;
                 };

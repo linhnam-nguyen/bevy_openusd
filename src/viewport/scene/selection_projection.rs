@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 use crate::viewport::scene::SelectedTargets;
 
 #[path = "selection_projection_bounds.rs"]
@@ -35,6 +35,7 @@ pub(crate) struct SelectedRenderableProjection {
     aggregate_bounds: Option<ProjectedWorldBounds>,
     last_selection_revision: Option<u64>,
     last_scene_revision: Option<u64>,
+    bounds_requested: Option<bool>,
     generation: u64,
     bounds_generation: u64,
     resolution_count: u64,
@@ -75,6 +76,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     mut selection: ResMut<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     mut projection: ResMut<SelectedRenderableProjection>,
+    settings: Res<ViewerSettingsState>,
     hierarchy: Query<(Option<&Children>, Option<&Mesh3d>)>,
     geometry: Query<(
         Option<&GlobalTransform>,
@@ -106,23 +108,30 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     mut removed_children: RemovedComponents<Children>,
 ) {
     let targets = &selection.0.targets;
+    let bounds_requested = settings.section_box_enabled();
     let scene_revision = scene_index.revision();
     let scene_changed = projection.last_scene_revision != Some(scene_revision);
     let selection_changed = projection.last_selection_revision != Some(selection.revision());
+    let bounds_request_changed = projection.bounds_requested != Some(bounds_requested);
     let topology_changed = !topology_changed.is_empty()
         || removed_meshes.read().next().is_some()
         || removed_children.read().next().is_some();
     let geometry_changed = geometry_changed.iter().collect::<HashSet<_>>();
     projection.added_renderables.clear();
     projection.removed_renderables.clear();
-    if !scene_changed && !selection_changed && !topology_changed && geometry_changed.is_empty() {
+    if !scene_changed
+        && !selection_changed
+        && !topology_changed
+        && (!bounds_requested || geometry_changed.is_empty())
+        && !bounds_request_changed
+    {
         return;
     }
 
     let full_rebuild =
         projection.last_selection_revision.is_none() || scene_changed || topology_changed;
     let mut mapping_changed = full_rebuild;
-    let mut bounds_changed = full_rebuild;
+    let mut bounds_changed = full_rebuild || bounds_request_changed;
     let mut aggregate_can_extend = !full_rebuild;
     let mut added_bounds = Vec::new();
 
@@ -132,7 +141,14 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         projection.target_bounds.clear();
         projection.renderable_refcounts.clear();
         for target in targets {
-            insert_target_projection(target, &scene_index, &hierarchy, &geometry, &mut projection);
+            insert_target_projection(
+                target,
+                &scene_index,
+                &hierarchy,
+                &geometry,
+                bounds_requested,
+                &mut projection,
+            );
         }
         projection.added_renderables = projection
             .renderables
@@ -164,6 +180,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
                 &scene_index,
                 &hierarchy,
                 &geometry,
+                bounds_requested,
                 &mut projection,
             );
             if let Some(bounds) = projection.target_bounds.get(&target).copied()
@@ -172,10 +189,21 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
                 added_bounds.push(bounds);
             }
             mapping_changed = true;
-            bounds_changed = true;
+            bounds_changed |= bounds_requested;
         }
 
-        if !geometry_changed.is_empty() {
+        if bounds_requested && bounds_request_changed {
+            aggregate_can_extend = false;
+            for target in targets {
+                let Some(renderables) = projection.target_renderables.get(target) else {
+                    continue;
+                };
+                let next = bounds_for_entities(renderables, &geometry);
+                replace_target_bounds(&mut projection, target, next);
+            }
+        }
+
+        if bounds_requested && !geometry_changed.is_empty() {
             for target in targets {
                 let Some(renderables) = projection.target_renderables.get(target) else {
                     continue;
@@ -197,6 +225,11 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         selection.clear_pending_delta();
     }
 
+    if !bounds_requested {
+        projection.target_bounds.clear();
+        projection.aggregate_bounds = None;
+    }
+
     if mapping_changed {
         projection.generation = projection.generation.saturating_add(1);
     }
@@ -216,6 +249,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     }
     projection.last_selection_revision = Some(selection.revision());
     projection.last_scene_revision = Some(scene_revision);
+    projection.bounds_requested = Some(bounds_requested);
 }
 
 fn insert_target_projection(
@@ -228,6 +262,7 @@ fn insert_target_projection(
         Option<&Aabb>,
         Option<&UsdLocalExtent>,
     )>,
+    bounds_requested: bool,
     projection: &mut SelectedRenderableProjection,
 ) {
     projection.resolution_count = projection.resolution_count.saturating_add(1);
@@ -238,7 +273,9 @@ fn insert_target_projection(
         return;
     };
     let renderables = collect_mesh_descendants(root, hierarchy);
-    let bounds = bounds_for_entities(&renderables, geometry);
+    let bounds = bounds_requested
+        .then(|| bounds_for_entities(&renderables, geometry))
+        .flatten();
     add_target_renderables(projection, &renderables);
     projection
         .target_renderables

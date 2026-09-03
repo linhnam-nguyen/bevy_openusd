@@ -46,6 +46,11 @@ pub(super) fn apply_viewport_commands(
             &mut state.selected_targets,
             &state.scene_index,
         ) else {
+            let selection_revision = state.selected_targets.revision();
+            let scene_revision = state.scene_index.revision();
+            state
+                .tree_commands
+                .cancel_focus_if_stale(selection_revision, scene_revision);
             continue;
         };
         match command {
@@ -121,11 +126,7 @@ pub(super) fn apply_viewport_commands(
                 );
             }
             ViewportCommand::FocusTarget { target, mode } => {
-                state.queue_tree_command(ViewportTreeCommand::Focus {
-                    request_id,
-                    target,
-                    mode,
-                });
+                state.queue_focus(request_id, target, mode);
             }
             ViewportCommand::SetSubtreeVisibility { target, visible } => {
                 state.queue_tree_command(ViewportTreeCommand::SetSubtreeVisibility {

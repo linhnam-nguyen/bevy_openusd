@@ -14,6 +14,7 @@ mod mutations_test;
 mod renderer_commands_test;
 mod save_stage_test;
 mod selection_commands_test;
+mod selection_performance_test;
 mod selection_profile_test;
 mod support;
 mod viewer_settings_acceptance_test;

@@ -12,6 +12,9 @@ pub(crate) enum ViewportTreeCommand {
         request_id: RequestId,
         target: SceneAnchor,
         mode: FocusMode,
+        selection_revision: u64,
+        scene_revision: u64,
+        generation: u64,
     },
     SetSubtreeVisibility {
         request_id: RequestId,
@@ -87,19 +90,67 @@ impl ViewportCommandInbox {
 #[derive(Resource, Default)]
 pub(crate) struct ViewportTreeCommandInbox {
     pending: VecDeque<ViewportTreeCommand>,
+    pending_focus: Option<ViewportTreeCommand>,
+    next_focus_generation: u64,
 }
 
 impl ViewportTreeCommandInbox {
     pub(crate) fn push(&mut self, command: ViewportTreeCommand) {
-        self.pending.push_back(command);
+        match command {
+            ViewportTreeCommand::Focus {
+                request_id,
+                target,
+                mode,
+                selection_revision,
+                scene_revision,
+                ..
+            } => {
+                self.next_focus_generation = self.next_focus_generation.saturating_add(1);
+                self.pending_focus = Some(ViewportTreeCommand::Focus {
+                    request_id,
+                    target,
+                    mode,
+                    selection_revision,
+                    scene_revision,
+                    generation: self.next_focus_generation,
+                });
+            }
+            command => self.pending.push_back(command),
+        }
     }
 
-    pub(crate) fn push_front(&mut self, command: ViewportTreeCommand) {
-        self.pending.push_front(command);
+    pub(crate) fn defer_focus(&mut self, command: ViewportTreeCommand) {
+        debug_assert!(matches!(command, ViewportTreeCommand::Focus { .. }));
+        self.pending_focus = Some(command);
     }
 
     pub(crate) fn pop(&mut self) -> Option<ViewportTreeCommand> {
-        self.pending.pop_front()
+        self.pending
+            .pop_front()
+            .or_else(|| self.pending_focus.take())
+    }
+
+    /// Drops focus work captured against an older selection or scene.
+    pub(crate) fn cancel_focus_if_stale(&mut self, selection_revision: u64, scene_revision: u64) {
+        let stale = self.pending_focus.as_ref().is_some_and(|command| {
+            let ViewportTreeCommand::Focus {
+                selection_revision: expected_selection,
+                scene_revision: expected_scene,
+                ..
+            } = command
+            else {
+                return false;
+            };
+            *expected_selection != selection_revision || *expected_scene != scene_revision
+        });
+        if stale {
+            self.pending_focus = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_focus_count(&self) -> usize {
+        usize::from(self.pending_focus.is_some())
     }
 }
 
@@ -170,5 +221,71 @@ mod tests {
 
         assert_eq!(outbox.take_published(), vec![event.clone()]);
         assert_eq!(outbox.pop(), Some(event));
+    }
+
+    #[test]
+    fn focus_queue_keeps_latest_value_behind_control_work() {
+        let mut inbox = ViewportTreeCommandInbox::default();
+        let heavy = SceneAnchor::active_session("/World/Heavy");
+        let light = SceneAnchor::active_session("/World/Light");
+
+        inbox.push(ViewportTreeCommand::Focus {
+            request_id: "heavy-focus".into(),
+            target: heavy,
+            mode: FocusMode::FrameTarget,
+            selection_revision: 1,
+            scene_revision: 1,
+            generation: 0,
+        });
+        inbox.push(ViewportTreeCommand::Focus {
+            request_id: "light-focus".into(),
+            target: light.clone(),
+            mode: FocusMode::FlyToTarget,
+            selection_revision: 2,
+            scene_revision: 1,
+            generation: 0,
+        });
+        inbox.push(ViewportTreeCommand::SetSubtreeVisibility {
+            request_id: "visibility".into(),
+            target: light,
+            visible: false,
+        });
+
+        assert_eq!(inbox.pending_focus_count(), 1);
+        assert!(matches!(
+            inbox.pop(),
+            Some(ViewportTreeCommand::SetSubtreeVisibility { .. })
+        ));
+        let Some(ViewportTreeCommand::Focus {
+            request_id,
+            mode,
+            generation,
+            ..
+        }) = inbox.pop()
+        else {
+            panic!("latest focus must remain queued");
+        };
+        assert_eq!(request_id, "light-focus");
+        assert_eq!(mode, FocusMode::FlyToTarget);
+        assert_eq!(generation, 2);
+        assert_eq!(inbox.pending_focus_count(), 0);
+    }
+
+    #[test]
+    fn stale_focus_is_removed_when_selection_revision_changes() {
+        let mut inbox = ViewportTreeCommandInbox::default();
+        inbox.push(ViewportTreeCommand::Focus {
+            request_id: "heavy-focus".into(),
+            target: SceneAnchor::active_session("/World/Heavy"),
+            mode: FocusMode::FrameTarget,
+            selection_revision: 7,
+            scene_revision: 3,
+            generation: 0,
+        });
+
+        inbox.cancel_focus_if_stale(8, 3);
+
+        assert_eq!(inbox.pending_focus_count(), 0);
+        assert!(inbox.pop().is_none());
     }
 }

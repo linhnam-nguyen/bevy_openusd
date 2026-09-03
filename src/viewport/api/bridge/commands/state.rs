@@ -57,4 +57,20 @@ impl<'w, 's> ApplyViewportCommandState<'w, 's> {
     pub(super) fn queue_tree_command(&mut self, command: ViewportTreeCommand) {
         self.tree_commands.push(command);
     }
+
+    pub(super) fn queue_focus(
+        &mut self,
+        request_id: String,
+        target: viewport_protocol::SceneAnchor,
+        mode: viewport_protocol::FocusMode,
+    ) {
+        self.tree_commands.push(ViewportTreeCommand::Focus {
+            request_id,
+            target,
+            mode,
+            selection_revision: self.selected_targets.revision(),
+            scene_revision: self.scene_index.revision(),
+            generation: 0,
+        });
+    }
 }
