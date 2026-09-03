@@ -9,6 +9,7 @@ mod artifacts;
 mod assets;
 mod composition;
 mod fixture;
+mod lifecycle;
 mod rng;
 
 #[cfg(test)]
@@ -19,3 +20,5 @@ mod c2_tests;
 mod c3_tests;
 #[cfg(test)]
 mod c4_tests;
+#[cfg(test)]
+mod c5_tests;
