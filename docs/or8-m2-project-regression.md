@@ -41,7 +41,9 @@ The corpus is exactly sixteen seeds:
 
 Before each seed, the test removes and recreates only its four exact C8
 attempt directories under `TestSpaces/OR8/M2/runs`, plus the matching exact
-`exports` and `clones` output directories. The first attempt is then run from
+`exports` and `clones` output directories. The Project clone preserves `.git`
+and tracked content while excluding only the local derived `.usdhub` cache.
+The first attempt is then run from
 that clean state. If it fails, the failure trace is written to that attempt’s
 `failure.txt`, the directory is retained, and exactly attempts 2, 3, and 4
 rerun the same seed from their own clean directories. The test does not retry
@@ -61,6 +63,15 @@ cargo test --lib or8_m2::c8_tests -- --nocapture
 Result: 1 test passed, 0 failed, 262 filtered; all 16 seeds completed; elapsed
 time 604.46 seconds. No final-run failure artifacts remained.
 
+Combined M2 gate after the C8+ clone-race repair:
+
+```text
+cargo test --lib or8_m2 -- --nocapture
+```
+
+Result: 13 tests passed, 0 failed, 250 filtered. The gate includes the C8
+sixteen-seed matrix and the four-seed C1–C7 smoke coverage.
+
 Formatting and compilation passed with `cargo fmt --all` and the C8 no-run
 compile gate. The source-layout audit passed: all C8 handwritten Rust files
 are within the 200–350 line target; the largest is `matrix_steps.rs` at 348
@@ -78,5 +89,5 @@ M2 is complete and M3 has not started. Before M3, Owner Review must freeze:
 - B: CPU/GPU residency budgets;
 - C: quantitative performance thresholds.
 
-The exact C8 source commit and both synchronized plan records are the
-checkpoint authority for this report.
+The exact C8 source commit, C8+ repair commit, and both synchronized plan
+records are the checkpoint authority for this report.
