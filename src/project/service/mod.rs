@@ -310,3 +310,6 @@ mod tests;
 #[cfg(test)]
 #[path = "m19_tests.rs"]
 mod m19_tests;
+
+#[cfg(test)]
+mod or8_m2;

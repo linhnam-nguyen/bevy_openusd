@@ -1,0 +1,12 @@
+//! OR8 M2 deterministic Projects regression harness.
+//!
+//! The harness is test-only by design. It enters through the same
+//! ProjectApplicationService methods used by the application and keeps all
+//! generated state below the user-designated OR8/M2 TestSpaces directory.
+
+mod artifacts;
+mod assets;
+mod rng;
+
+#[cfg(test)]
+mod c1_tests;
