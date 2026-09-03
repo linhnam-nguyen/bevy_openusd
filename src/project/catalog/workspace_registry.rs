@@ -24,6 +24,10 @@ struct WorkspaceRegistryFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct WorkspaceProjectEntry {
     project_id: ProjectId,
+    /// Tracked manifest identity. `None` keeps registry files from schema v1
+    /// compatible; legacy entries used the same value for both identities.
+    #[serde(default)]
+    content_project_id: Option<ProjectId>,
     repository_locator: PathBuf,
     last_opened_ms: Option<u64>,
 }
@@ -31,6 +35,10 @@ pub(crate) struct WorkspaceProjectEntry {
 impl WorkspaceProjectEntry {
     pub(crate) fn project_id(&self) -> ProjectId {
         self.project_id
+    }
+
+    pub(crate) fn content_project_id(&self) -> ProjectId {
+        self.content_project_id.unwrap_or(self.project_id)
     }
 
     pub(crate) fn repository_locator(&self) -> &Path {
@@ -93,14 +101,34 @@ impl WorkspaceRegistry {
             .map(|index| &self.entries[*index])
     }
 
+    pub(crate) fn find_by_repository(
+        &self,
+        repository_locator: &Path,
+    ) -> Option<&WorkspaceProjectEntry> {
+        self.entries
+            .iter()
+            .find(|entry| entry.repository_locator == repository_locator)
+    }
+
     pub(crate) fn register(
         &mut self,
         project_id: ProjectId,
         repository_locator: impl Into<PathBuf>,
         last_opened_ms: Option<u64>,
     ) -> Result<()> {
+        self.register_scoped(project_id, project_id, repository_locator, last_opened_ms)
+    }
+
+    pub(crate) fn register_scoped(
+        &mut self,
+        project_id: ProjectId,
+        content_project_id: ProjectId,
+        repository_locator: impl Into<PathBuf>,
+        last_opened_ms: Option<u64>,
+    ) -> Result<()> {
         let entry = WorkspaceProjectEntry {
             project_id,
+            content_project_id: Some(content_project_id),
             repository_locator: repository_locator.into(),
             last_opened_ms,
         };
@@ -238,11 +266,13 @@ mod tests {
             entries: vec![
                 WorkspaceProjectEntry {
                     project_id,
+                    content_project_id: None,
                     repository_locator: PathBuf::from("one"),
                     last_opened_ms: None,
                 },
                 WorkspaceProjectEntry {
                     project_id,
+                    content_project_id: None,
                     repository_locator: PathBuf::from("two"),
                     last_opened_ms: None,
                 },

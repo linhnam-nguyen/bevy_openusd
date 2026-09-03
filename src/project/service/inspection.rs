@@ -194,6 +194,16 @@ pub(super) fn project_summary(
     })
 }
 
+pub(super) fn project_summary_as(
+    manifest: &ProjectManifestV1,
+    project_root: &Path,
+    application_id: usd_project::ProjectId,
+) -> Result<ProjectSummary, ProjectWriteError> {
+    let mut summary = project_summary(manifest, project_root)?;
+    summary.id = application_id;
+    Ok(summary)
+}
+
 fn project_display_name(project_root: &Path) -> String {
     project_root
         .file_name()

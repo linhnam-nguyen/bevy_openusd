@@ -160,11 +160,21 @@ pub(super) fn import_project(
                     project_root.display()
                 );
             }
-            let summary = super::inspection::project_summary(&manifest, project_root)?;
+            let application_id = service
+                .registry
+                .find_by_repository(project_root)
+                .map(|entry| entry.project_id())
+                .or_else(|| {
+                    (service.registry.get(manifest.project_id).is_some())
+                        .then(usd_project::ProjectId::new_v4)
+                })
+                .unwrap_or(manifest.project_id);
+            let summary =
+                super::inspection::project_summary_as(&manifest, project_root, application_id)?;
             let _ = service.cache_warm.enqueue_project_targets(project_root);
             service
                 .registry
-                .register(manifest.project_id, project_root, None)
+                .register_scoped(application_id, manifest.project_id, project_root, None)
                 .map_err(|_| ProjectWriteError::RegistrationFailed {
                     project_created: true,
                 })?;

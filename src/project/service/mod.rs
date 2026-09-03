@@ -263,7 +263,7 @@ impl ProjectApplicationService {
                 code: project_read_error_code(unavailable_reason(entry)),
             }
         })?;
-        if manifest.raw().project_id != project_id {
+        if manifest.raw().project_id != entry.content_project_id() {
             return Err(ProjectReadError::Unavailable {
                 project_id,
                 code: ProjectReadErrorCode::RegistryIdentityMismatch,

@@ -11,6 +11,7 @@ mod composition;
 mod export;
 mod fixture;
 mod lifecycle;
+mod registration;
 mod rng;
 
 #[cfg(test)]
@@ -25,3 +26,5 @@ mod c4_tests;
 mod c5_tests;
 #[cfg(test)]
 mod c6_tests;
+#[cfg(test)]
+mod c7_tests;

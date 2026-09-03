@@ -41,14 +41,14 @@ pub(crate) fn list_projects(registry: &WorkspaceRegistry) -> Vec<ProjectCatalogu
 
 fn catalogue_item(entry: &WorkspaceProjectEntry) -> ProjectCatalogueItem {
     match ManifestStore::read_validated(entry.repository_locator()) {
-        Ok(manifest) if manifest.raw().project_id != entry.project_id() => {
+        Ok(manifest) if manifest.raw().project_id != entry.content_project_id() => {
             ProjectCatalogueItem::Unavailable {
                 project_id: entry.project_id(),
                 reason: ProjectCatalogueUnavailableReason::RegistryIdentityMismatch,
             }
         }
         Ok(manifest) => ProjectCatalogueItem::Available(ProjectSummary {
-            id: manifest.raw().project_id,
+            id: entry.project_id(),
             name: manifest.raw().name.clone(),
             root: manifest.raw().root.clone(),
             repository: RepositorySummary {
