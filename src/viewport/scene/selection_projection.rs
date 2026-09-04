@@ -13,7 +13,7 @@ use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::SelectedTargets;
+use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 #[path = "selection_projection_bounds.rs"]
 mod bounds;
@@ -74,6 +74,7 @@ impl SelectedRenderableProjection {
 #[allow(clippy::type_complexity)]
 pub(in crate::viewport) fn sync_selected_renderable_projection(
     mut selection: ResMut<SelectedTargets>,
+    mut selected_prim: Option<ResMut<SelectedPrim>>,
     scene_index: Res<SceneAnchorIndex>,
     mut projection: ResMut<SelectedRenderableProjection>,
     settings: Res<ViewerSettingsState>,
@@ -107,6 +108,15 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     mut removed_meshes: RemovedComponents<Mesh3d>,
     mut removed_children: RemovedComponents<Children>,
 ) {
+    if let Some(selected_prim) = selected_prim.as_deref_mut()
+        && selected_prim.0.is_none()
+    {
+        selected_prim.0 = selection
+            .0
+            .primary
+            .as_ref()
+            .and_then(|primary| scene_index.resolve(primary));
+    }
     let targets = &selection.0.targets;
     let bounds_requested = settings.section_box_enabled();
     let scene_revision = scene_index.revision();

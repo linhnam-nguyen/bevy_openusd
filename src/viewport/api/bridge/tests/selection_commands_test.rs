@@ -189,7 +189,7 @@ fn select_target_supports_zero_one_and_many_authoritative_targets() {
 }
 
 #[test]
-fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
+fn unprojected_replace_is_accepted_and_add_remove_preserve_primary_invariants() {
     let mut app = selection_test_app();
     app.world_mut()
         .resource_mut::<ViewportCommandInbox>()
@@ -198,22 +198,32 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
         });
     app.update();
     let _ = next_event(&mut app);
-    let before = app.world().resource::<SelectedTargets>().0.clone();
-    let before_primary = app.world().resource::<SelectedPrim>().0;
 
     app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::ReplaceSelection {
-            targets: vec![anchor(FIRST), anchor("/World/Missing")],
+            targets: vec![anchor(FIRST), anchor("/World/Unprojected")],
             primary: Some(anchor(FIRST)),
         },
     );
     app.update();
     assert!(matches!(
         next_event(&mut app).event,
-        ViewportEvent::CommandRejected { .. }
+        ViewportEvent::SelectionDeltaApplied { .. }
     ));
-    assert_eq!(app.world().resource::<SelectedTargets>().0, before);
-    assert_eq!(app.world().resource::<SelectedPrim>().0, before_primary);
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().0.targets,
+        vec![anchor(FIRST), anchor("/World/Unprojected")]
+    );
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().0.primary,
+        Some(anchor(FIRST))
+    );
+    assert_eq!(
+        app.world().resource::<SelectedPrim>().0,
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .resolve(&anchor(FIRST))
+    );
 
     for (target, make_primary) in [(SECOND, true), (SECOND, false)] {
         app.world_mut().resource_mut::<ViewportCommandInbox>().send(
@@ -228,7 +238,7 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
             ViewportEvent::SelectionDeltaApplied { .. }
         ));
     }
-    assert_eq!(app.world().resource::<SelectedTargets>().0.targets.len(), 2);
+    assert_eq!(app.world().resource::<SelectedTargets>().0.targets.len(), 3);
     assert_eq!(
         app.world().resource::<SelectedTargets>().0.primary,
         Some(anchor(SECOND))
@@ -245,8 +255,8 @@ fn unresolved_replace_is_atomic_and_add_remove_preserve_primary_invariants() {
         ViewportEvent::SelectionDeltaApplied { .. }
     ));
     assert_eq!(
-        app.world().resource::<SelectedTargets>().0,
-        SelectionReadModel::from_legacy_target(Some(anchor(FIRST)))
+        app.world().resource::<SelectedTargets>().0.targets,
+        vec![anchor(FIRST), anchor("/World/Unprojected")]
     );
 }
 
@@ -266,7 +276,7 @@ fn batched_selection_deltas_apply_once_and_preserve_primary_invariants() {
 
     app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::AddSelectionTargets {
-            targets: vec![anchor("/World/Missing")],
+            targets: vec![anchor("/World/Unprojected")],
             primary: None,
         },
     );
@@ -274,10 +284,18 @@ fn batched_selection_deltas_apply_once_and_preserve_primary_invariants() {
     let _ = next_event(&mut app);
     assert_eq!(
         app.world().resource::<SelectedTargets>().revision(),
-        before_add_revision,
-        "unresolved batched add must not mutate the authority"
+        before_add_revision + 1,
+        "valid unprojected batched add mutates authority"
+    );
+    assert!(
+        app.world()
+            .resource::<SelectedTargets>()
+            .0
+            .targets
+            .contains(&anchor("/World/Unprojected"))
     );
 
+    let before_second_add_revision = app.world().resource::<SelectedTargets>().revision();
     app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::AddSelectionTargets {
             targets: vec![anchor(SECOND), anchor(THIRD)],
@@ -288,7 +306,7 @@ fn batched_selection_deltas_apply_once_and_preserve_primary_invariants() {
     let _ = next_event(&mut app);
     assert_eq!(
         app.world().resource::<SelectedTargets>().revision(),
-        before_add_revision + 1
+        before_second_add_revision + 1
     );
     assert_eq!(
         app.world().resource::<SelectedTargets>().0.primary,
@@ -298,7 +316,7 @@ fn batched_selection_deltas_apply_once_and_preserve_primary_invariants() {
     let before_remove_revision = app.world().resource::<SelectedTargets>().revision();
     app.world_mut().resource_mut::<ViewportCommandInbox>().send(
         ViewportCommand::RemoveSelectionTargets {
-            targets: vec![anchor(FIRST), anchor(THIRD)],
+            targets: vec![anchor(FIRST), anchor(THIRD), anchor("/World/Unprojected")],
         },
     );
     app.update();

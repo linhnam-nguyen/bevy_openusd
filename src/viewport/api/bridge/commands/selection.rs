@@ -1,6 +1,6 @@
 use viewport_protocol::{SceneAnchor, SelectionReadModel};
 
-use super::super::helpers::{emit_selection_delta, reject, resolve_anchor};
+use super::super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
@@ -19,18 +19,16 @@ pub(crate) fn select_target(
                 .clear()
                 .expect("empty selection must satisfy the protocol invariant");
         }
-        Some(anchor) => match resolve_anchor(&anchor, scene_index) {
-            Ok(entity) => {
-                selected_prim.0 = Some(entity);
-                selection
-                    .replace(SelectionReadModel::from_legacy_target(Some(anchor)))
-                    .expect("resolved selection must satisfy the protocol invariant");
-            }
-            Err(reason) => {
-                reject(outbox, request_id, reason);
+        Some(anchor) => {
+            if let Err(error) = anchor.validate() {
+                reject(outbox, request_id, error.to_string());
                 return;
             }
-        },
+            selected_prim.0 = scene_index.resolve(&anchor);
+            selection
+                .replace(SelectionReadModel::from_legacy_target(Some(anchor)))
+                .expect("validated selection must satisfy the protocol invariant");
+        }
     }
     emit_selection_delta(request_id, selection, outbox);
 }
@@ -50,28 +48,13 @@ pub(crate) fn replace_selection(
         return;
     }
 
-    let mut resolved_primary = None;
-    for target in &next_selection.targets {
-        let Ok(entity) = resolve_anchor(target, scene_index) else {
-            reject(
-                outbox,
-                request_id,
-                format!(
-                    "target {} is not present in the active scene",
-                    target.prim_path
-                ),
-            );
-            return;
-        };
-        if next_selection.primary.as_ref() == Some(target) {
-            resolved_primary = Some(entity);
-        }
-    }
-
+    selected_prim.0 = next_selection
+        .primary
+        .as_ref()
+        .and_then(|target| scene_index.resolve(target));
     selection
         .replace(next_selection)
         .expect("validated selection must satisfy the protocol invariant");
-    selected_prim.0 = resolved_primary;
     emit_selection_delta(request_id, selection, outbox);
 }
 
@@ -105,15 +88,8 @@ pub(crate) fn add_selection_targets(
     scene_index: &SceneAnchorIndex,
 ) {
     for target in &targets {
-        if resolve_anchor(target, scene_index).is_err() {
-            reject(
-                outbox,
-                request_id,
-                format!(
-                    "target {} is not present in the active scene",
-                    target.prim_path
-                ),
-            );
+        if let Err(error) = target.validate() {
+            reject(outbox, request_id, error.to_string());
             return;
         }
     }
