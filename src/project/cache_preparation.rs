@@ -5,7 +5,6 @@ use std::{
 
 #[cfg(test)]
 use anyhow::Result;
-use usd_semantic::SemanticConfig;
 use viewport_protocol::RuntimeProfile;
 
 #[cfg(test)]
@@ -41,7 +40,9 @@ impl ProjectCacheWarmQueue {
                 project_root,
                 target.clone(),
                 RuntimeProfile::NativeMedium,
-                SemanticConfig::default().hash(),
+                super::super::cache_compatibility::project_runtime_cache_config_hash(
+                    usd_semantic::SemanticConfig::default().hash(),
+                ),
             ) {
                 Ok(identity) => identity,
                 Err(error) => {
@@ -108,7 +109,9 @@ pub(crate) fn wait_for(
         project_root,
         target.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        super::super::cache_compatibility::project_runtime_cache_config_hash(
+            usd_semantic::SemanticConfig::default().hash(),
+        ),
     )?;
     let store = super::ProjectCacheStore::new(project_root);
     let deadline = Instant::now() + Duration::from_secs(2);

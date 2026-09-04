@@ -8,7 +8,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use usd_semantic::SemanticConfig;
 use viewport_protocol::RuntimeProfile;
 
 const WARM_QUEUE_CAPACITY: usize = 2;
@@ -91,7 +90,9 @@ impl ProjectCacheWarmQueue {
         let mut targets = targets;
         targets.sort_by_key(super::ProjectCacheTarget::key);
         targets.dedup_by_key(|target| target.key());
-        let config_hash = SemanticConfig::default().hash();
+        let config_hash = super::super::cache_compatibility::project_runtime_cache_config_hash(
+            usd_semantic::SemanticConfig::default().hash(),
+        );
         let mut warm_targets = Vec::with_capacity(targets.len());
         for target in targets {
             let identity = match super::ProjectCacheIdentity::for_project(

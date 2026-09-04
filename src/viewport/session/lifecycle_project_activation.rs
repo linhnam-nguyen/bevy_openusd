@@ -58,6 +58,13 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         }
     });
 
+    let archive_paths = usd_bevy::route::material::archive_paths_for_stage(&stage, &path)
+        .map_err(|error| format!("derive active USDZ packages: {error:#}"))?;
+    if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
+    {
+        cache.replace_active_archives(archive_paths);
+    }
+
     if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
         seed.clear();
     }
@@ -80,11 +87,6 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         }
     }
 
-    if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
-        && !cache.archive_paths.contains(&path)
-    {
-        cache.archive_paths.push(path.clone());
-    }
     super::clear_projected_stage(world);
     lifecycle_invalidation::reset_derived_state(world, activation_generation);
     world.insert_resource(RequestedAsset { name, root });
@@ -112,7 +114,7 @@ pub(crate) fn clear_active_stage_for_generation(world: &mut World, activation_ge
     super::clear_projected_stage(world);
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
     {
-        cache.archive_paths.clear();
+        cache.clear_active_archives();
     }
     lifecycle_invalidation::reset_derived_state(world, activation_generation);
     world.remove_resource::<RequestedAsset>();

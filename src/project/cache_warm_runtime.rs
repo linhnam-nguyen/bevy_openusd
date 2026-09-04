@@ -40,6 +40,7 @@ pub(super) fn build_runtime_cache(
         app.init_resource::<Assets<Mesh>>();
         app.init_resource::<Assets<Image>>();
         app.init_resource::<Assets<StandardMaterial>>();
+        app.init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>();
         let world = app.world_mut();
         let mut prim_entities = usd_bevy::PrimEntities::default();
         usd_bevy::project_stage(world, &live, &mut prim_entities);

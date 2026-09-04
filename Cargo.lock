@@ -8744,6 +8744,7 @@ dependencies = [
  "rapier3d-f64",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.19",
  "usd_macro",
  "usd_model",

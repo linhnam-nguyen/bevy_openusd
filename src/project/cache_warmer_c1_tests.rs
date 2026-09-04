@@ -43,7 +43,7 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
             id: first_scene.to_string(),
         },
         RuntimeProfile::NativeMedium,
-        usd_semantic::SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let store = ProjectCacheStore::new(directory.path());
     store.publish(&ProjectCacheDescriptor::new(
@@ -59,7 +59,7 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
             id: first_scene.to_string(),
         },
         RuntimeProfile::NativeMedium,
-        usd_semantic::SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(first_identity, unchanged_identity);
     assert!(store.load(&unchanged_identity)?.is_some());

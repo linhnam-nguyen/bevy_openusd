@@ -65,19 +65,19 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let root_v1 = ProjectCacheIdentity::for_project(
         directory.path(),
         root.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let identity_b_v1 = ProjectCacheIdentity::for_project(
         directory.path(),
         target_b.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let wrapper_bytes = fs::read(&wrapper_a)?;
 
@@ -86,13 +86,13 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let root_v2 = ProjectCacheIdentity::for_project(
         directory.path(),
         root.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     assert_ne!(identity_a_v1, identity_a_v2);
     assert_ne!(root_v1, root_v2);
@@ -103,18 +103,25 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(identity_a_v1, identity_a_restored);
 
     fs::write(&source_b, b"sibling-source-v2")?;
     let identity_a_after_sibling_edit = ProjectCacheIdentity::for_project(
         directory.path(),
-        target_a,
+        target_a.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
+    )?;
+    let root_after_sibling_edit = ProjectCacheIdentity::for_project(
+        directory.path(),
+        root,
+        RuntimeProfile::NativeMedium,
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(identity_a_restored, identity_a_after_sibling_edit);
+    assert_ne!(root_v2, root_after_sibling_edit);
     assert_eq!(identity_b_v1.target, target_b);
     Ok(())
 }
@@ -146,7 +153,7 @@ fn target_cache_identity_changes_when_authoritative_display_name_changes() -> Re
         directory.path(),
         target.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
 
     let mut renamed = manifest;
@@ -156,7 +163,7 @@ fn target_cache_identity_changes_when_authoritative_display_name_changes() -> Re
         directory.path(),
         target,
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
 
     assert_ne!(
@@ -200,7 +207,7 @@ fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<(
         directory.path(),
         target,
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let descriptor = ProjectCacheStore::new(directory.path())
         .load(&identity)?

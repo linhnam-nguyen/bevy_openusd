@@ -360,7 +360,7 @@ pub(crate) fn run() {
             apply_fly_to,
             sync_selected_instance_identity.before(LiveStageSet::Reconcile),
             follow_mounted_camera,
-            tick_stage_time,
+            tick_stage_time.after(LiveStageSet::Reconcile),
             hide_meshes_on_startup,
         ),
     )

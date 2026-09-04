@@ -63,6 +63,25 @@ pub(crate) use fallback_material::{fallback_material, sync_fallback_material_col
 pub struct StageTime {
     /// The current USD time code.
     pub current: f64,
+    stage_identity: Option<(u64, u64)>,
+}
+
+impl StageTime {
+    pub(crate) fn stage_identity(&self) -> Option<(u64, u64)> {
+        self.stage_identity
+    }
+
+    /// Reset the route clock before projecting a new authoritative Stage.
+    pub(crate) fn reset_for_stage(&mut self, stage_identity: (u64, u64), start: f64) {
+        self.stage_identity = Some(stage_identity);
+        self.current = start;
+    }
+
+    /// Clear stage-owned time when the Project becomes empty.
+    pub fn clear_stage(&mut self) {
+        self.stage_identity = None;
+        self.current = 0.0;
+    }
 }
 
 /// Which USD `purpose` classes are displayed (PLAN Phase A). `default` (and any

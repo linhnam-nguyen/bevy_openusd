@@ -12,6 +12,7 @@ mod material_cache;
 mod provenance;
 mod texture_cache;
 
+pub use archive::archive_paths_for_stage;
 pub use builder::MaterialRoute;
 pub(crate) use consumers::MaterialConsumerIndex;
 pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
@@ -56,5 +57,7 @@ pub(crate) fn record_descriptor_read(world: &mut bevy::ecs::world::World) {
 
 #[cfg(test)]
 mod fallback_tests;
+#[cfg(test)]
+mod package_isolation_tests;
 #[cfg(test)]
 mod tests;

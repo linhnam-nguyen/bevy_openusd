@@ -322,16 +322,17 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
         return Ok(authored.to_owned());
     };
 
-    // A package-relative identifier is resolved by the USDZ archive context,
-    // not by the filesystem resolver. Preserve its authored entry name so
-    // `UsdTextureCache` can match it against the explicitly registered root
-    // archive. Converting it to an absolute path would lose that identity.
+    // Keep the package owner in the cache identifier. The archive reader uses
+    // the exact outer package, so equal inner names in independent USDZ files
+    // cannot collide.
     if layer_identifier.contains(".usdz[")
         || FsPath::new(&layer_identifier)
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
     {
-        return Ok(authored.to_owned());
+        let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
+        let anchor = ResolvedPath::new(layer_identifier);
+        return Ok(resolver.create_identifier(authored, Some(&anchor)));
     }
 
     // Stage's resolver is intentionally private in the pinned OpenUSD Rust

@@ -18,6 +18,7 @@ static NEXT_LIVE_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 pub struct LiveStage {
     pub stage: Stage,
     session_id: u64,
+    stage_generation: u64,
     queue: Rc<RefCell<Vec<StageChange>>>,
     revision: Cell<LiveRevision>,
     authoring_generation: Rc<Cell<LiveRevision>>,
@@ -87,6 +88,7 @@ impl LiveStage {
         Self {
             stage,
             session_id: NEXT_LIVE_SESSION_ID.fetch_add(1, Ordering::Relaxed),
+            stage_generation: 0,
             queue,
             revision: Cell::new(LiveRevision::default()),
             authoring_generation,
@@ -97,8 +99,9 @@ impl LiveStage {
     }
 
     /// Replace the owned USD stage with a freshly synchronized canonical
-    /// snapshot. The LiveStage identity remains stable, while its hierarchy
-    /// generation starts with one root resync for the new composition.
+    /// snapshot. The LiveStage session remains the same service lifetime, but
+    /// the stage generation changes so stage-scoped consumers can invalidate
+    /// derived state before the root resync is projected.
     pub fn replace_stage(&mut self, stage: Stage) {
         if let Some(id) = self.sink.take() {
             self.stage.remove_sink(id);
@@ -134,6 +137,10 @@ impl LiveStage {
             });
         });
         self.stage = stage;
+        self.stage_generation = self
+            .stage_generation
+            .checked_add(1)
+            .expect("live stage generation exhausted");
         self.queue = queue;
         self.authoring_generation = authoring_generation;
         self.suppressed = Rc::new(RefCell::new(HashSet::new()));
@@ -193,6 +200,11 @@ impl LiveStage {
     /// Stable identity for this live-stage lifetime, distinct across reloads.
     pub fn session_id(&self) -> u64 {
         self.session_id
+    }
+
+    /// Identity of the current authoritative composed Stage.
+    pub fn stage_identity(&self) -> (u64, u64) {
+        (self.session_id, self.stage_generation)
     }
 
     /// Whether any change is pending (cheap check before doing work).

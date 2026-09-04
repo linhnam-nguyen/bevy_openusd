@@ -336,7 +336,7 @@ fn target_content_warm_keys_change_with_target_content() -> Result<()> {
         directory.path(),
         ProjectCacheTarget::ProjectRoot,
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     let mut changed_scene = fs::read(&scene_path)?;
     changed_scene.extend_from_slice(b"\n# target content changed\n");
@@ -345,7 +345,7 @@ fn target_content_warm_keys_change_with_target_content() -> Result<()> {
         directory.path(),
         ProjectCacheTarget::ProjectRoot,
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
     assert_ne!(identity_key(&first), identity_key(&second));
     Ok(())

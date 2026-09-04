@@ -7,7 +7,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use usd_semantic::SemanticConfig;
 use viewport_protocol::RuntimeProfile;
 
 use super::cache::{
@@ -130,7 +129,9 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
         project_root,
         target.target.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        super::cache_compatibility::project_runtime_cache_config_hash(
+            usd_semantic::SemanticConfig::default().hash(),
+        ),
     )?;
     if current_identity != target.identity {
         return Ok(());
@@ -170,7 +171,9 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
         project_root,
         target.target.clone(),
         RuntimeProfile::NativeMedium,
-        SemanticConfig::default().hash(),
+        super::cache_compatibility::project_runtime_cache_config_hash(
+            usd_semantic::SemanticConfig::default().hash(),
+        ),
     )?;
     if latest_identity == target.identity {
         store.publish(&ProjectCacheDescriptor::new(

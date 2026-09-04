@@ -60,7 +60,9 @@ impl ActiveProjectCacheContext {
 /// identity. Keeping this in one helper prevents warm and delivery paths from
 /// accidentally publishing different configuration hashes.
 pub(crate) fn default_project_cache_config_hash() -> usd_model::HashDigest {
-    usd_semantic::SemanticConfig::default().hash()
+    super::cache_compatibility::project_runtime_cache_config_hash(
+        usd_semantic::SemanticConfig::default().hash(),
+    )
 }
 
 /// Try to hydrate the current Project from its exact ready descriptor.

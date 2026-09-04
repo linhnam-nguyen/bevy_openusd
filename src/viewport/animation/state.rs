@@ -11,6 +11,7 @@ pub struct UsdStageTime {
     pub time_codes_per_second: f64,
     /// Prevents a loaded stage from overwriting a user scrub every frame.
     pub initialized: bool,
+    stage_identity: Option<(u64, u64)>,
 }
 
 impl Default for UsdStageTime {
@@ -22,11 +23,23 @@ impl Default for UsdStageTime {
             end_time_code: 1.0,
             time_codes_per_second: 24.0,
             initialized: false,
+            stage_identity: None,
         }
     }
 }
 
 impl UsdStageTime {
+    pub(crate) fn stage_identity(&self) -> Option<(u64, u64)> {
+        self.stage_identity
+    }
+
+    pub(crate) fn reset_for_stage(&mut self, stage_identity: Option<(u64, u64)>) {
+        *self = Self {
+            stage_identity,
+            ..Self::default()
+        };
+    }
+
     /// Returns the current playback position in USD time-code units.
     pub fn current_time_code(&self) -> f64 {
         self.start_time_code + self.seconds * self.time_codes_per_second

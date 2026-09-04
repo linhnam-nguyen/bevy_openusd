@@ -17,12 +17,24 @@ use super::stage::LiveStage;
 
 /// The exclusive system that owns initial projection planning and draining.
 pub(super) fn project_on_load_system(world: &mut World) {
-    let Some((session_id, has_changes)) = world
-        .get_non_send::<LiveStage>()
-        .map(|live| (live.session_id(), live.has_changes()))
+    let Some((session_id, stage_identity, stage_start, has_changes)) =
+        world.get_non_send::<LiveStage>().map(|live| {
+            (
+                live.session_id(),
+                live.stage_identity(),
+                live.stage.start_time_code(),
+                live.has_changes(),
+            )
+        })
     else {
         return;
     };
+    let route_stage_identity = world.resource::<crate::route::StageTime>().stage_identity();
+    if route_stage_identity != Some(stage_identity) {
+        world
+            .resource_mut::<crate::route::StageTime>()
+            .reset_for_stage(stage_identity, stage_start);
+    }
     let (state_session, readiness, restart_requested, total, validate_resident) = {
         let state = world.resource::<ProgressiveProjectionState>();
         (

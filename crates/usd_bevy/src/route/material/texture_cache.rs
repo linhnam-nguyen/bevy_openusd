@@ -68,6 +68,31 @@ impl UsdTextureCache {
         self.stats = TextureCacheStats::default();
     }
 
+    /// Replace the packages that own the active stage's textures.
+    ///
+    /// Texture handles and archive indexes are stage-scoped derived state. A
+    /// replacement invalidates both collections when ownership changes so a
+    /// same inner path in a different USDZ cannot reuse the previous image.
+    pub fn replace_active_archives(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut next = paths
+            .into_iter()
+            .map(|path| std::fs::canonicalize(&path).unwrap_or(path))
+            .collect::<Vec<_>>();
+        next.sort();
+        next.dedup();
+        // This method is called at every authoritative stage activation. Even
+        // an identical package list may contain changed bytes, so the image
+        // handles and archive indexes must not survive the replacement.
+        self.archive_paths = next;
+        self.textures.clear();
+        self.archive_indices.clear();
+    }
+
+    /// Drop every stage-owned package and its derived texture entries.
+    pub fn clear_active_archives(&mut self) {
+        self.replace_active_archives(std::iter::empty());
+    }
+
     pub(super) fn archive_indices(&self) -> &HashMap<PathBuf, ArchiveIndex> {
         &self.archive_indices
     }

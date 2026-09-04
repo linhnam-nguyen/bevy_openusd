@@ -248,6 +248,9 @@ fn clear_projected_stage(world: &mut World) {
     {
         provenance.clear();
     }
+    if let Some(mut stage_time) = world.get_resource_mut::<usd_bevy::StageTime>() {
+        stage_time.clear_stage();
+    }
     world.remove_non_send::<LiveStage>();
     world.resource_mut::<Spawned>().0 = false;
 }

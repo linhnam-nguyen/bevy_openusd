@@ -17,6 +17,8 @@ pub(crate) mod scene;
 
 #[path = "project/cache.rs"]
 pub(crate) mod cache;
+#[path = "project/cache_compatibility.rs"]
+pub(crate) mod cache_compatibility;
 #[path = "project/cache_hydration.rs"]
 pub(crate) mod cache_hydration;
 #[path = "project/cache_warm_runtime.rs"]

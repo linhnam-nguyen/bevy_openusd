@@ -240,6 +240,48 @@ fn missing_ready_descriptor_is_a_normal_cache_miss() -> Result<()> {
 }
 
 #[test]
+fn pre_provenance_cache_misses_and_current_cache_rehydrates() -> Result<()> {
+    let (project, context, manifest, _mesh_id, _material_id) = fixture()?;
+    let store = ProjectCacheStore::new(project.path());
+    let current_descriptor = store.descriptor_path(&context.identity)?;
+    std::fs::remove_file(current_descriptor)?;
+
+    let mut old_identity = context.identity.clone();
+    old_identity.config_hash = usd_semantic::SemanticConfig::default().hash();
+    store.publish(&ProjectCacheDescriptor::new(
+        old_identity.clone(),
+        ProjectCacheState::Ready,
+        Some(manifest.clone()),
+    )?)?;
+    assert!(store.load(&old_identity)?.is_some());
+    assert!(store.load(&context.identity)?.is_none());
+
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<Image>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<ProjectionSeed>();
+    assert!(!hydrate_project_cache(&mut world, &context)?);
+    assert_eq!(world.resource::<ProjectionSeed>().pending_materials(), 0);
+
+    store.publish(&ProjectCacheDescriptor::new(
+        context.identity.clone(),
+        ProjectCacheState::Ready,
+        Some(manifest),
+    )?)?;
+    assert!(hydrate_project_cache(&mut world, &context)?);
+    let material = world
+        .resource::<Assets<StandardMaterial>>()
+        .iter()
+        .next()
+        .map(|(_, material)| material)
+        .expect("current cache material");
+    assert_eq!(material.base_color, Color::srgba(0.2, 0.3, 0.4, 1.0));
+    assert!(material.base_color_texture.is_some());
+    Ok(())
+}
+
+#[test]
 fn persistent_cache_hydration_diagnostic_records_repeated_runs() -> Result<()> {
     let (project, context, _manifest, _mesh_id, _material_id) = fixture()?;
     let mut world = World::new();
