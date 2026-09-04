@@ -68,8 +68,10 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
     }
     let source_scene = eligible[0];
     let target_scene = eligible[1];
+    let source_depth = scene_depth(&fixture.scenes, source_scene);
+    let target_depth = scene_depth(&fixture.scenes, target_scene);
     trace.operations.push(format!(
-        "roundtrip_selection source={source_scene} target={target_scene} candidates={eligible:?}"
+        "roundtrip_selection source={source_scene} source_depth={source_depth} target={target_scene} target_depth={target_depth} candidates={eligible:?}"
     ));
     let destination = export_directory.join("selected-scene.usdz");
     trace.operations.push(format!(
@@ -115,6 +117,20 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
     }
     verify_reimport(&project_root, target_scene, imported.scene_id, &trace)?;
     Ok(())
+}
+
+fn scene_depth(scenes: &[super::fixture::SceneIdentity], scene_id: SceneId) -> usize {
+    let mut depth = 0;
+    let mut current = scene_id;
+    while let Some(parent) = scenes
+        .iter()
+        .find(|scene| scene.id == current)
+        .and_then(|scene| scene.parent)
+    {
+        depth += 1;
+        current = parent;
+    }
+    depth
 }
 
 fn verify_export(path: &std::path::Path) -> Result<(), String> {

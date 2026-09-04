@@ -10,15 +10,13 @@ use usd_project::SceneId;
 
 use crate::project::{
     service::{
-        ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageActivationSession,
+        ProjectActivationAuthority, ProjectApplicationService, ProjectModelPreparationQueue,
+        ProjectStageActivation,
     },
     storage::ProjectStorageLayout,
 };
 
-use super::{
-    composition::prepare_bim_link_source, matrix::Context, matrix_lifecycle, matrix_verify,
-    rng::DeterministicRng,
-};
+use super::{matrix::Context, matrix_lifecycle, matrix_verify, rng::DeterministicRng};
 
 #[derive(Clone, Copy)]
 enum AssetKind {
@@ -173,14 +171,9 @@ fn source_and_mode(
         AssetKind::BimRevit => {
             context
                 .trace
-                .decision("fixture_C_mode=link (binary dependency closure)");
-            let source =
-                prepare_bim_link_source(&context.sources.bim_revit_path, &context.directory)
-                    .map_err(|error| context.trace.failure(error))?;
-            context
-                .trace
-                .decision("fixture_C_source_adapter=exact_USDC_plus_MDL_support");
-            Ok((source, SceneMode::Link))
+                .decision("fixture_C_mode=import (original USDC; missing render assets optional)");
+            context.trace.decision("fixture_C_source=original_USDC");
+            Ok((context.sources.bim_revit_path.clone(), SceneMode::Import))
         }
     }
 }
@@ -262,7 +255,7 @@ fn activate(context: &mut Context) -> Result<(), String> {
     let manifest_before = read_manifest(context)?;
     let tree_before = read_tree(&context.service, context.fixture.project.id)?;
     let expected_latest_scene = eligible[eligible.len() - 1];
-    let mut session = ProjectStageActivationSession::default();
+    let mut authority = ProjectActivationAuthority::default();
     let mut stale_completion = None;
     for (index, scene_id) in eligible.into_iter().enumerate() {
         let generation = index as u64 + 1;
@@ -290,17 +283,22 @@ fn activate(context: &mut Context) -> Result<(), String> {
                     .failure(format!("activation resolution: {error}"))
             })?
             .ok_or_else(|| context.trace.failure("activation returned no Scene target"))?;
-        if !session.observe_request("m2-c8-session", &command) {
+        if !authority.observe_request("m2-c8-session", &command) {
             return Err(context.trace.failure("activation request was not admitted"));
         }
         let target_snapshot = target.clone();
-        let snapshot = session
-            .complete("m2-c8-session", &command, target)
-            .map_err(|error| {
+        let activation =
+            ProjectStageActivation::open("m2-c8-session", &command, target).map_err(|error| {
                 context
                     .trace
                     .failure(format!("activation completion: {error}"))
             })?;
+        let snapshot = activation.snapshot().clone();
+        if !authority.commit("m2-c8-session", &command) {
+            return Err(context
+                .trace
+                .failure("activation completion was not committed"));
+        }
         if snapshot.project_id != context.fixture.project.id
             || snapshot.target != command.target
             || snapshot.generation != generation
@@ -324,7 +322,7 @@ fn activate(context: &mut Context) -> Result<(), String> {
             snapshot.bim_entity_paths.len()
         ));
         if index == 1 {
-            stale_completion = Some((command, target_snapshot));
+            stale_completion = Some(command);
         }
         if read_manifest(context)? != manifest_before
             || read_tree(&context.service, context.fixture.project.id)? != tree_before
@@ -332,20 +330,17 @@ fn activate(context: &mut Context) -> Result<(), String> {
             return Err(context.trace.failure("activation changed Project content"));
         }
     }
-    let (stale_command, stale_target) = stale_completion.ok_or_else(|| {
+    let stale_command = stale_completion.ok_or_else(|| {
         context
             .trace
             .failure("stale activation candidate is missing")
     })?;
-    if session
-        .complete("m2-c8-session", &stale_command, stale_target)
-        .is_ok()
-    {
+    if authority.commit("m2-c8-session", &stale_command) {
         return Err(context
             .trace
             .failure("stale Scene completion replaced the latest active identity"));
     }
-    let active = session.active().ok_or_else(|| {
+    let active = authority.active().ok_or_else(|| {
         context
             .trace
             .failure("active Scene/session snapshot is missing")

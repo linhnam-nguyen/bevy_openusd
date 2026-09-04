@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use openusd::usd::{PrimPredicate, Stage};
 use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
-use crate::project::cache_hydration::{ActiveProjectCacheContext, hydrate_project_cache};
+use crate::project::cache_hydration::ActiveProjectCacheContext;
 
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageCameraData, StageCameraInfo,
@@ -15,6 +15,12 @@ use super::{
 mod lifecycle_invalidation;
 #[path = "lifecycle_open.rs"]
 mod lifecycle_open;
+#[path = "lifecycle_project_activation.rs"]
+mod project_activation;
+
+pub(crate) use project_activation::{
+    activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
+};
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
 
@@ -100,94 +106,21 @@ fn activate_stage_with_cache_context_inner<F>(
 where
     F: FnOnce(),
 {
-    let root = path
-        .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_default();
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "resolved Project stage has no valid filename".to_owned())?
-        .to_owned();
-    let path_string = path.to_string_lossy().into_owned();
     before_open();
+    let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).map_err(|error| {
         error!("failed to open Project stage {}: {error:#}", path.display());
         PROJECT_STAGE_OPEN_FAILURE.to_owned()
     })?;
 
-    let cache_context = cache_context.and_then(|context| {
-        let current = crate::project::cache::ProjectCacheIdentity::for_project(
-            &context.project_root,
-            context.identity.target.clone(),
-            context.identity.profile,
-            context.identity.config_hash,
-        );
-        match current {
-            Ok(identity) if identity == context.identity => Some(context),
-            Ok(_) => {
-                bevy::log::warn!(
-                    "[project-cache] source changed across Stage::open for {}; using source projection",
-                    path.display()
-                );
-                None
-            }
-            Err(error) => {
-                bevy::log::warn!(
-                    "[project-cache] could not revalidate source across Stage::open for {}; using source projection: {error:#}",
-                    path.display()
-                );
-                None
-            }
-        }
-    });
-
-    if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
-        seed.clear();
-    }
-    if let Some(context) = cache_context.as_ref() {
-        match hydrate_project_cache(world, context) {
-            Ok(true) => info!("hydrated Project runtime cache for {}", path.display()),
-            Ok(false) => bevy::log::debug!(
-                "[project-cache] no ready cache for {}; continuing with source projection",
-                path.display()
-            ),
-            Err(error) => {
-                bevy::log::warn!(
-                    "[project-cache] cache hydration failed for {}; continuing with source projection: {error:#}",
-                    path.display()
-                );
-                if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
-                    seed.clear();
-                }
-            }
-        }
-    }
-
-    if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
-        && !cache.archive_paths.contains(&path)
-    {
-        cache.archive_paths.push(path.clone());
-    }
-    clear_projected_stage(world);
-    lifecycle_invalidation::reset_derived_state(world, activation_generation);
-    world.insert_resource(RequestedAsset { name, root });
-    world.insert_resource(StageHandle {
-        path: path.clone(),
-        error: None,
-    });
-    world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
-    world.resource_mut::<StageInfo>().activation_generation = activation_generation;
-    world.resource_mut::<Spawned>().0 = false;
-    world.insert_resource(presentation);
-    if let Some(context) = cache_context {
-        world.insert_resource(context);
-    } else {
-        world.remove_resource::<ActiveProjectCacheContext>();
-    }
-    world.insert_non_send(LiveStage::new(stage));
-    info!("activated Project USD stage: {}", path.display());
-    Ok(())
+    project_activation::activate_open_stage_with_cache_context_for_generation(
+        world,
+        path,
+        stage,
+        cache_context,
+        activation_generation,
+        presentation,
+    )
 }
 
 /// Reload the current stage after a command or native keyboard request.

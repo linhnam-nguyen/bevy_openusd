@@ -55,3 +55,7 @@ mod tests;
 #[cfg(test)]
 #[path = "source_closure_pattern_tests.rs"]
 mod pattern_tests;
+
+#[cfg(test)]
+#[path = "source_closure_optional_tests.rs"]
+mod optional_tests;

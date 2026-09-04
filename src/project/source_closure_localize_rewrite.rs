@@ -9,7 +9,7 @@ use openusd::{
     sdf,
 };
 
-use super::super::discovery::resolve_asset_path_with_resolver;
+use super::super::discovery::{is_optional_render_asset, resolve_asset_path_with_resolver};
 use super::patterns;
 
 pub(super) fn rewrite_value(
@@ -141,13 +141,23 @@ fn rewrite_asset(
     resolver: &dyn Resolver,
 ) -> Result<()> {
     if !asset.is_empty() {
-        asset.authored_path = patterns::rewrite_asset_path(
-            &asset.authored_path,
+        let authored = asset.authored_path.clone();
+        match patterns::rewrite_asset_path(
+            &authored,
             original_layer,
             localized_layer,
             mapping,
             resolver,
-        )?;
+        ) {
+            Ok(rewritten) => asset.authored_path = rewritten,
+            Err(error) if is_optional_render_asset(&authored) => {
+                log::debug!(
+                    "retaining missing optional renderer asset {authored} in {}: {error:#}",
+                    original_layer.display()
+                );
+            }
+            Err(error) => return Err(error),
+        }
     }
     Ok(())
 }

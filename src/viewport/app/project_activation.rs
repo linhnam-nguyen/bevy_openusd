@@ -241,3 +241,7 @@ mod tests {
 #[cfg(test)]
 #[path = "project_activation_cache_tests.rs"]
 mod cache_tests;
+
+#[cfg(test)]
+#[path = "project_activation_production_tests.rs"]
+mod production_tests;

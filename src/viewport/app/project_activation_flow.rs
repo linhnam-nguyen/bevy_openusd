@@ -14,9 +14,11 @@ use crate::project::cache::ProjectCacheTarget;
 use crate::project::cache_hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
+use crate::project::service::ProjectStageActivation;
 use crate::viewport::api::RenderServerInterface;
-use crate::viewport::session::StagePresentationContext;
-use crate::viewport::session::activate_stage_with_cache_context_for_generation;
+use crate::viewport::session::{
+    StagePresentationContext, activate_open_stage_with_cache_context_for_generation,
+};
 
 use super::{
     PreparedProjectActivation, ProjectActivationAuthorityRuntime, ProjectStageActivationRuntime,
@@ -114,6 +116,7 @@ fn commit_empty_activation(
     request: &ProjectActivationRequest,
     command: &project_protocol::ProjectActivationCommand,
 ) -> ProjectActivationReply {
+    crate::viewport::session::clear_active_stage_for_generation(world, command.generation);
     if world
         .resource_mut::<ProjectActivationAuthorityRuntime>()
         .0
@@ -131,10 +134,16 @@ fn activate_prepared_stage(
     command: &project_protocol::ProjectActivationCommand,
     target: crate::project::service::ProjectStageActivationTarget,
 ) -> ProjectActivationReply {
+    let activation =
+        match ProjectStageActivation::open(&request.session_id.0, command, target.clone()) {
+            Ok(activation) => activation,
+            Err(error) => return ProjectActivationReply::failed(command, error),
+        };
     let cache_context = cache_context_for(&target);
-    match activate_stage_with_cache_context_for_generation(
+    match activate_open_stage_with_cache_context_for_generation(
         world,
         target.path,
+        activation.into_stage(),
         cache_context,
         command.generation,
         StagePresentationContext::from_project(target.presentation),

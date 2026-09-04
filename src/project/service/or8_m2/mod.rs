@@ -13,6 +13,7 @@ mod export;
 mod fixture;
 mod lifecycle;
 mod matrix;
+mod matrix_depth;
 mod matrix_lifecycle;
 mod matrix_persistence;
 mod matrix_steps;

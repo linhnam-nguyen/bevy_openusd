@@ -231,11 +231,11 @@ mod tests {
             vec!["/root/name1"]
         );
         assert!(run_search(&mut app, "missing")?.is_empty());
-        assert!(run_search(&mut app, "Exterior Wall")?.is_empty());
         assert_eq!(
-            run_search(&mut app, "Wall_0042")?[0].breadcrumb,
+            run_search(&mut app, "Exterior Wall")?[0].breadcrumb,
             "/Building/Level01/Wall_0042"
         );
+        assert!(run_search(&mut app, "Wall_0042")?.is_empty());
         for query in ["chair", "cha", "hair"] {
             assert_eq!(
                 run_search(&mut app, query)?

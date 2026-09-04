@@ -94,9 +94,13 @@ fn search_matches_projected_names_only_and_preserves_context() {
     assert_one("name2", "/root/name1/name2", "name2");
     assert_one("name3", "/root/name1/name2/name3", "name3");
     assert_one("name1", "/root/name1", "name1");
-    assert_one("Wall_0042", "/Building/Level01/Wall_0042", "Wall_0042");
+    assert_one(
+        "Exterior Wall",
+        "/Building/Level01/Wall_0042",
+        "Exterior Wall",
+    );
     assert_eq!(search_hierarchy(&hierarchy, "missing", 0, 10).0, 0);
-    assert_eq!(search_hierarchy(&hierarchy, "Exterior Wall", 0, 10).0, 0);
+    assert_eq!(search_hierarchy(&hierarchy, "Wall_0042", 0, 10).0, 0);
 }
 
 #[test]

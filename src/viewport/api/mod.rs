@@ -17,6 +17,8 @@ mod session_registry;
 
 pub(crate) use bim_provenance::BimProvenanceService;
 pub(crate) use bridge::editor_value_to_usd;
+#[cfg(test)]
+pub(in crate::viewport) use bridge::refresh_active_hierarchy_projection;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };

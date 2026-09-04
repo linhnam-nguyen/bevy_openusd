@@ -4,7 +4,6 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
 };
 
 use anyhow::{Context, Result, ensure};
@@ -22,9 +21,11 @@ use crate::project::{
 
 #[path = "cache_preparation.rs"]
 mod preparation;
+#[path = "cache_warmer_queue.rs"]
+mod queue;
 pub(crate) use preparation::ProjectCachePreparation;
+pub use queue::ProjectCacheWarmQueue;
 
-const WARM_QUEUE_CAPACITY: usize = 2;
 struct WarmTarget {
     target: ProjectCacheTarget,
     identity: ProjectCacheIdentity,
@@ -36,90 +37,7 @@ struct WarmJob {
     key: (PathBuf, String),
 }
 
-/// A bounded queue that coalesces duplicate target warms before they reach the
-/// worker. Warm failures are diagnostic and never fail the source mutation.
-#[derive(Clone)]
-pub struct ProjectCacheWarmQueue {
-    sender: mpsc::SyncSender<WarmJob>,
-    pending: Arc<Mutex<HashSet<(PathBuf, String)>>>,
-}
-
-impl Default for ProjectCacheWarmQueue {
-    fn default() -> Self {
-        let (sender, receiver) = mpsc::sync_channel(WARM_QUEUE_CAPACITY);
-        let pending = Arc::new(Mutex::new(HashSet::new()));
-        let worker_pending = Arc::clone(&pending);
-        std::thread::Builder::new()
-            .name("usdhub-project-cache-warm".to_owned())
-            .spawn(move || worker_loop(receiver, worker_pending))
-            .expect("Project cache warm worker must start");
-        Self { sender, pending }
-    }
-}
-
 impl ProjectCacheWarmQueue {
-    /// Try to schedule one canonical Project target without blocking the
-    /// caller that just published authoritative Project state.
-    pub fn enqueue(&self, project_root: &Path, target: ProjectCacheTarget) -> bool {
-        self.enqueue_targets(project_root, vec![target])
-    }
-
-    /// Try to schedule one bounded batch of canonical targets. One import may
-    /// therefore warm every Stage-bearing target without filling the queue
-    /// with one unbounded request per Scene or Model.
-    pub fn enqueue_targets(&self, project_root: &Path, targets: Vec<ProjectCacheTarget>) -> bool {
-        let project_root = project_root.to_path_buf();
-        let mut targets = targets;
-        targets.sort_by_key(ProjectCacheTarget::key);
-        targets.dedup_by_key(|target| target.key());
-        let config_hash = SemanticConfig::default().hash();
-        let mut warm_targets = Vec::with_capacity(targets.len());
-        for target in targets {
-            let identity = match ProjectCacheIdentity::for_project(
-                &project_root,
-                target.clone(),
-                RuntimeProfile::NativeMedium,
-                config_hash,
-            ) {
-                Ok(identity) => identity,
-                Err(error) => {
-                    log::warn!(
-                        "Project cache warm identity could not be established for {}: {error:#}",
-                        project_root.display()
-                    );
-                    return false;
-                }
-            };
-            warm_targets.push(WarmTarget { target, identity });
-        }
-        if warm_targets.is_empty() {
-            return true;
-        }
-        let batch_key = warm_targets
-            .iter()
-            .map(|target| identity_key(&target.identity))
-            .collect::<Vec<_>>()
-            .join(",");
-        let key = (project_root.clone(), format!("batch:{batch_key}"));
-        let mut pending = self
-            .pending
-            .lock()
-            .expect("Project cache warm state is not poisoned");
-        if !pending.insert(key.clone()) {
-            return true;
-        }
-        let job = WarmJob {
-            project_root,
-            targets: warm_targets,
-            key: key.clone(),
-        };
-        if self.sender.try_send(job).is_err() {
-            pending.remove(&key);
-            return false;
-        }
-        true
-    }
-
     /// Enqueue the changed target and every composed ancestor up to the
     /// Project root. This keeps reusable Scene composition cache identities
     /// source-specific without synchronously rebuilding any descriptor.
@@ -191,16 +109,6 @@ impl ProjectCacheWarmQueue {
                 false
             }
         }
-    }
-}
-
-fn worker_loop(receiver: mpsc::Receiver<WarmJob>, pending: Arc<Mutex<HashSet<(PathBuf, String)>>>) {
-    while let Ok(job) = receiver.recv() {
-        let _ = warm_job(&job);
-        pending
-            .lock()
-            .expect("Project cache warm state is not poisoned")
-            .remove(&job.key);
     }
 }
 

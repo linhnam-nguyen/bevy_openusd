@@ -101,6 +101,11 @@ impl ProjectApplicationService {
             .ok_or(ProjectWriteError::Invalid {
                 code: ProjectWriteErrorCode::ProtectedProjectPath,
             })?;
+        if !self.wait_for_cache_idle(&project_root) {
+            return Err(ProjectWriteError::Failed {
+                code: ProjectWriteErrorCode::ProjectDeleteCleanupFailed,
+            });
+        }
         let tombstone = parent.join(format!(".{name}.usdhub-delete-{}", Uuid::new_v4()));
         fs::rename(&project_root, &tombstone).map_err(|_| ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::ProjectDeleteFailed,

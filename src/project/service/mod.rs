@@ -8,6 +8,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use project_protocol::{
@@ -131,15 +132,21 @@ pub(crate) use runtime_authority::{
 };
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::{
-    ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivationTarget,
-    ProjectStagePresentationContext,
+    ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivation,
+    ProjectStageActivationTarget, ProjectStagePresentationContext, ProjectStageSessionSnapshot,
 };
-#[cfg(test)]
-pub use stage_activation::{ProjectStageActivationSession, ProjectStageSessionSnapshot};
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;
 use self::read::{project_list_item, project_tree, repository_summary};
 impl ProjectApplicationService {
+    /// Quiesce cache publication before a caller disposes this Project's
+    /// derived cache directory. This boundary is intentionally outside the
+    /// renderer/frame hot path and does not retry filesystem operations.
+    pub(crate) fn wait_for_cache_idle(&self, project_root: &std::path::Path) -> bool {
+        self.cache_warm
+            .wait_for_project_idle(project_root, Duration::from_secs(120))
+    }
+
     /// Open the host-owned workspace registry without exposing its locator.
     pub fn open(registry_path: impl Into<PathBuf>) -> Result<Self, ProjectReadError> {
         Self::open_with_publication_coordinator(

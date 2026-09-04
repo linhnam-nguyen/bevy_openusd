@@ -78,10 +78,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     );
     ManifestStore::write_manifest_atomic(project.path(), &manifest).expect("Project manifest");
 
-    let scene_path = project
-        .path()
-        .join(".usdhub/scenes")
-        .join(format!("{scene_id}.usda"));
+    let scene_path = crate::project::scene::authoring::scene_path(project.path(), scene_id);
     fs::create_dir_all(scene_path.parent().expect("Scene directory"))
         .expect("create Scene directory");
     let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -126,16 +123,15 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     world.init_resource::<ProjectionSeed>();
     world.insert_resource(Spawned::default());
     world.insert_resource(StageInfo::default());
-    activate_stage_with_cache_context_for_test(&mut world, scene_path, Some(context), || {
-        fs::write(
-            project
-                .path()
-                .join(".usdhub/scenes")
-                .join(format!("{scene_id}.usda")),
-            source_b,
-        )
-        .expect("mutate source between identity capture and Stage::open")
-    })
+    activate_stage_with_cache_context_for_test(
+        &mut world,
+        scene_path.clone(),
+        Some(context),
+        || {
+            fs::write(&scene_path, source_b)
+                .expect("mutate source between identity capture and Stage::open")
+        },
+    )
     .expect("changed canonical source remains openable");
 
     let seed = world.resource::<ProjectionSeed>();

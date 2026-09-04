@@ -216,6 +216,9 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
         fs::read_dir(source).map_err(|error| format!("read {}: {error}", source.display()))?
     {
         let entry = entry.map_err(|error| format!("read clone entry: {error}"))?;
+        if entry.file_name() == ".usdhub" {
+            continue;
+        }
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
         if entry

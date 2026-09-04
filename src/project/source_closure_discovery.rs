@@ -26,6 +26,7 @@ pub(crate) struct LocalizedDependencyReport {
     pub(crate) layers: Vec<PathBuf>,
     pub(crate) non_layer_assets: Vec<PathBuf>,
     pub(crate) unresolved: Vec<String>,
+    pub(crate) optional_unresolved: Vec<String>,
 }
 
 pub(crate) fn discover(source: &Path) -> Result<LocalizedDependencyReport> {
@@ -53,6 +54,7 @@ pub(crate) fn discover_with_resolver(
         layers: BTreeSet::new(),
         non_layer_assets: BTreeSet::new(),
         unresolved: BTreeSet::new(),
+        optional_unresolved: BTreeSet::new(),
         pending: vec![root_asset.clone()],
         visited: BTreeSet::new(),
         scanned: BTreeSet::new(),
@@ -113,6 +115,7 @@ pub(crate) fn discover_with_resolver(
         layers: state.layers.into_iter().collect(),
         non_layer_assets: state.non_layer_assets.into_iter().collect(),
         unresolved: state.unresolved.into_iter().collect(),
+        optional_unresolved: state.optional_unresolved.into_iter().collect(),
     })
 }
 
@@ -145,6 +148,7 @@ fn discover_usdz(
         layers: Vec::new(),
         non_layer_assets: Vec::new(),
         unresolved: unresolved.into_iter().collect(),
+        optional_unresolved: Vec::new(),
     })
 }
 
@@ -199,6 +203,7 @@ struct DiscoveryState {
     layers: BTreeSet<PathBuf>,
     non_layer_assets: BTreeSet<PathBuf>,
     unresolved: BTreeSet<String>,
+    optional_unresolved: BTreeSet<String>,
     pending: Vec<PathBuf>,
     visited: BTreeSet<PathBuf>,
     scanned: BTreeSet<String>,
@@ -228,6 +233,7 @@ impl DiscoveryState {
         layer_path: &Path,
         authored: &str,
         is_layer: bool,
+        field: &str,
         resolver: &dyn Resolver,
     ) {
         match resolve_asset_paths_with_resolver(resolver, layer_path, authored) {
@@ -240,11 +246,13 @@ impl DiscoveryState {
                 self.non_layer_assets.extend(paths);
             }
             Err(error) => {
-                self.unresolved.insert(format!(
-                    "{} in {}: {error}",
-                    authored,
-                    layer_path.display()
-                ));
+                let message = format!("{} in {}: {error}", authored, layer_path.display());
+                if !is_layer && is_optional_render_asset(authored) {
+                    self.optional_unresolved
+                        .insert(format!("{field}: {message}"));
+                } else {
+                    self.unresolved.insert(message);
+                }
             }
         }
     }
@@ -285,11 +293,11 @@ fn scan_value(
 ) {
     match value {
         Value::AssetPath(asset) => {
-            state.add_dependency(layer_path, asset.as_str(), false, resolver)
+            state.add_dependency(layer_path, asset.as_str(), false, field, resolver)
         }
         Value::AssetPathVec(assets) => {
             for asset in assets {
-                state.add_dependency(layer_path, asset.as_str(), false, resolver);
+                state.add_dependency(layer_path, asset.as_str(), false, field, resolver);
             }
         }
         Value::ReferenceListOp(references) => {
@@ -335,19 +343,19 @@ fn scan_clip_dictionary(
     }) {
         if let Some(Value::AssetPathVec(paths)) = set.get("assetPaths") {
             for path in paths {
-                state.add_dependency(layer_path, path.as_str(), true, resolver);
+                state.add_dependency(layer_path, path.as_str(), true, "clips", resolver);
             }
         }
         if let Some(Value::AssetPath(path)) = set.get("manifestAssetPath")
             && !path.is_empty()
         {
-            state.add_dependency(layer_path, path.as_str(), true, resolver);
+            state.add_dependency(layer_path, path.as_str(), true, "clips", resolver);
         }
         if let Some(Value::AssetPath(path)) = set.get("templateAssetPath") {
             match expand_template_asset_paths(set, path.as_str()) {
                 Ok(paths) => {
                     for path in paths {
-                        state.add_dependency(layer_path, &path, true, resolver);
+                        state.add_dependency(layer_path, &path, true, "clips", resolver);
                     }
                 }
                 Err(error) => {
@@ -360,4 +368,19 @@ fn scan_clip_dictionary(
             }
         }
     }
+}
+
+/// Missing renderer-only assets are retained as authored references and use
+/// the runtime's deterministic flat/default material fallback. USD layers,
+/// references, payloads, and clip files remain composition-critical.
+pub(crate) fn is_optional_render_asset(authored: &str) -> bool {
+    Path::new(authored)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "mdl" | "png" | "jpg" | "jpeg" | "exr" | "hdr" | "tif" | "tiff" | "bmp" | "ktx2"
+            )
+        })
 }

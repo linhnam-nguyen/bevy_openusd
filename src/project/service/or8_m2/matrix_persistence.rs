@@ -21,10 +21,15 @@ use crate::project::{
     },
 };
 
-use super::matrix::Context;
+use super::{
+    matrix::Context,
+    matrix_depth::{self, RoundTripSelection},
+};
 
-pub(super) fn export_roundtrip(context: &mut Context) -> Result<(), String> {
-    let (source_scene, target_scene) = select_roundtrip_scenes(context)?;
+pub(super) fn export_roundtrip(context: &mut Context) -> Result<RoundTripSelection, String> {
+    let selection = select_roundtrip_scenes(context)?;
+    let source_scene = selection.source_scene;
+    let target_scene = selection.target_scene;
     let destination = context.export_directory.join("matrix.usdz");
     context.trace.operation(format!(
         "export scene={source_scene} path={}",
@@ -95,10 +100,10 @@ pub(super) fn export_roundtrip(context: &mut Context) -> Result<(), String> {
             .trace
             .failure("reimported Scene is absent from manifest"));
     }
-    Ok(())
+    Ok(selection)
 }
 
-fn select_roundtrip_scenes(context: &mut Context) -> Result<(SceneId, SceneId), String> {
+fn select_roundtrip_scenes(context: &mut Context) -> Result<RoundTripSelection, String> {
     let current_scene_ids = read_scene_ids(&context.service, context.fixture.project.id)?;
     let mut eligible = context
         .fixture
@@ -122,10 +127,20 @@ fn select_roundtrip_scenes(context: &mut Context) -> Result<(SceneId, SceneId), 
     }
     let source_scene = eligible[0];
     let target_scene = eligible[1];
+    let selection = RoundTripSelection {
+        source_scene,
+        target_scene,
+        source_depth: matrix_depth::scene_depth(context, source_scene),
+        target_depth: matrix_depth::scene_depth(context, target_scene),
+    };
     context.trace.decision(format!(
-        "roundtrip_selection surviving_nested source={source_scene} target={target_scene} candidates={eligible:?}"
+        "roundtrip_selection surviving_nested source={} source_depth={} target={} target_depth={} candidates={eligible:?}",
+        selection.source_scene,
+        selection.source_depth,
+        selection.target_scene,
+        selection.target_depth
     ));
-    Ok((source_scene, target_scene))
+    Ok(selection)
 }
 
 pub(super) fn clone_and_validate(context: &mut Context) -> Result<(), String> {

@@ -16,7 +16,7 @@ use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Rebuilds the active virtual provider only when the semantic snapshot
 /// changes. Prim projection refresh remains owned by `SceneAnchorIndex`.
-pub(crate) fn refresh_active_hierarchy_projection(
+pub(in crate::viewport) fn refresh_active_hierarchy_projection(
     provider: Res<ActiveHierarchyProvider>,
     semantic: Res<crate::viewport::semantic::SemanticSyncState>,
     scene_index: Res<SceneAnchorIndex>,

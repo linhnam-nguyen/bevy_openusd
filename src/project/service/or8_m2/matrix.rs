@@ -60,7 +60,10 @@ impl Trace {
     }
 }
 
-pub(super) fn run_seed(seed: u64, attempt: u8) -> Result<(), String> {
+pub(super) fn run_seed(
+    seed: u64,
+    attempt: u8,
+) -> Result<super::matrix_depth::RoundTripSelection, String> {
     let key = format!("c8-{seed:016x}-attempt-{attempt}");
     let run_directory = artifacts::clean_run_directory(&key)?;
     let export_directory = artifacts::clean_output_directory("exports", &key)?;
@@ -96,7 +99,7 @@ fn execute(
     directory: PathBuf,
     export_directory: PathBuf,
     clone_directory: PathBuf,
-) -> Result<(), String> {
+) -> Result<super::matrix_depth::RoundTripSelection, String> {
     let projects_root = directory.join("projects");
     fs::create_dir(&projects_root).map_err(|error| format!("create C8 projects root: {error}"))?;
     let project_root = projects_root.join("Proj_T");
@@ -130,6 +133,7 @@ fn execute(
         .trace
         .decision(format!("attempt_directory={}", context.directory.display()));
     matrix_steps::compose_activate_and_mutate(&mut context)?;
-    super::matrix_persistence::export_roundtrip(&mut context)?;
-    super::matrix_persistence::clone_and_validate(&mut context)
+    let selection = super::matrix_persistence::export_roundtrip(&mut context)?;
+    super::matrix_persistence::clone_and_validate(&mut context)?;
+    Ok(selection)
 }

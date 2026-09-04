@@ -1,14 +1,15 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
-#[cfg(test)]
-use openusd::usd::{InitialLoadSet, PrimPredicate, Stage};
+use openusd::usd::{PrimPredicate, Stage};
 use project_protocol::{
     ProjectActivationCommand, ProjectReadError, ProjectReadErrorCode, ProjectStageTarget,
 };
-#[cfg(test)]
 use usd_model::SnapshotSource;
 use usd_project::ProjectId;
-#[cfg(test)]
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::ProjectApplicationService;
@@ -237,7 +238,6 @@ fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {
     }
 }
 
-#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectStageSessionSnapshot {
     pub project_id: ProjectId,
@@ -249,38 +249,22 @@ pub struct ProjectStageSessionSnapshot {
     pub bim_entity_paths: Vec<String>,
 }
 
-/// Deterministic seam for the real Project stage/session boundary.
+/// Production candidate for the Project stage/session boundary.
 ///
-/// It resolves and opens the canonical Stage, extracts the same semantic
-/// snapshot used by the viewport BIM provider, and commits only the newest
-/// request. No GPU, window, or transport is needed to prove stale completion
-/// handling and latest-scene read-model ownership.
-#[cfg(test)]
-#[derive(Debug, Default)]
-pub struct ProjectStageActivationSession {
-    authority: ProjectActivationAuthority,
-    active: Option<ProjectStageSessionSnapshot>,
+/// The render host and the OR8 matrix use this same OpenUSD stage, hierarchy,
+/// and semantic/BIM extraction before a candidate is committed. Keeping the
+/// opened Stage in the candidate avoids a second Stage::open on activation.
+pub struct ProjectStageActivation {
+    snapshot: ProjectStageSessionSnapshot,
+    stage: Stage,
 }
 
-#[cfg(test)]
-impl ProjectStageActivationSession {
-    pub fn observe_request(
-        &mut self,
-        session_id: &str,
-        command: &ProjectActivationCommand,
-    ) -> bool {
-        self.authority.observe_request(session_id, command)
-    }
-
-    pub fn complete(
-        &mut self,
+impl ProjectStageActivation {
+    pub fn open(
         session_id: &str,
         command: &ProjectActivationCommand,
         target: ProjectStageActivationTarget,
-    ) -> Result<ProjectStageSessionSnapshot, String> {
-        if !self.authority.is_current(session_id, command) {
-            return Err("stale Project activation completion was rejected".to_owned());
-        }
+    ) -> Result<Self, String> {
         if target.project_id != command.project_id || target.target != command.target {
             return Err("activation target does not match its command".to_owned());
         }
@@ -313,33 +297,31 @@ impl ProjectStageActivationSession {
             .map(|entity| entity.prim_path.clone())
             .collect::<Vec<_>>();
         bim_entity_paths.sort();
-        let snapshot = ProjectStageSessionSnapshot {
-            project_id: command.project_id,
-            target: command.target.clone(),
-            generation: command.generation,
-            stage_path: target.path,
-            hierarchy_paths,
-            bim_snapshot_id: semantic.snapshot_id.0,
-            bim_entity_paths,
-        };
-        if !self.authority.commit(session_id, command) {
-            return Err("stale Project activation completion was rejected".to_owned());
-        }
-        self.active = Some(snapshot.clone());
-        Ok(snapshot)
+        Ok(Self {
+            snapshot: ProjectStageSessionSnapshot {
+                project_id: command.project_id,
+                target: command.target.clone(),
+                generation: command.generation,
+                stage_path: target.path,
+                hierarchy_paths,
+                bim_snapshot_id: semantic.snapshot_id.0,
+                bim_entity_paths,
+            },
+            stage,
+        })
     }
 
-    pub fn active(&self) -> Option<&ProjectStageSessionSnapshot> {
-        self.active.as_ref()
+    pub fn snapshot(&self) -> &ProjectStageSessionSnapshot {
+        &self.snapshot
+    }
+
+    pub fn into_stage(self) -> Stage {
+        self.stage
     }
 }
 
-#[cfg(test)]
-fn open_activation_stage(path: &std::path::Path) -> Result<Stage, String> {
-    Stage::builder()
-        .load(InitialLoadSet::LoadNone)
-        .open(path.to_string_lossy().as_ref())
-        .map_err(|error| format!("open activated Stage: {error}"))
+fn open_activation_stage(path: &Path) -> Result<Stage, String> {
+    Stage::open(&path.to_string_lossy()).map_err(|error| format!("open activated Stage: {error}"))
 }
 
 #[cfg(test)]

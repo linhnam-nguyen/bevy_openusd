@@ -10,17 +10,8 @@ use crate::project::service::{ProjectApplicationService, ProjectModelPreparation
 
 use super::{assets, fixture, rng::DeterministicRng};
 
-#[path = "composition_source.rs"]
-pub(super) mod composition_source;
 #[path = "composition_verify.rs"]
 mod composition_verify;
-
-pub(super) fn prepare_bim_link_source(
-    source: &std::path::Path,
-    directory: &std::path::Path,
-) -> Result<std::path::PathBuf, String> {
-    composition_source::prepare_bim_link_source(source, directory)
-}
 
 #[derive(Clone, Copy, Debug)]
 enum AssetKind {
@@ -130,15 +121,10 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
             }
             AssetKind::BimRevit => {
                 let mode = choose_scene_mode(&mut rng, &mut trace, kind);
-                let source = composition_source::prepare_bim_link_source(
-                    &sources.bim_revit_path,
-                    directory.path(),
-                )
-                .map_err(|error| trace.failure(error))?;
-                trace
-                    .decisions
-                    .push("fixture_C_source_adapter=exact_USDC_plus_MDL_support".to_owned());
-                (source, mode)
+                trace.decisions.push(
+                    "fixture_C_source=original_USDC_missing_render_assets_optional".to_owned(),
+                );
+                (sources.bim_revit_path.clone(), mode)
             }
         };
         let operation_id = format!("m2-c3-{seed:016x}-{ordinal}");
@@ -262,8 +248,8 @@ fn choose_scene_mode(
     if matches!(kind, AssetKind::BimRevit) {
         trace
             .decisions
-            .push("scene_mode_link=true (binary BIM dependency closure)".to_owned());
-        return CompositionMode::LinkScene;
+            .push("scene_mode_import=true (original USDC; render assets optional)".to_owned());
+        return CompositionMode::ImportScene;
     }
     let link = rng.choose_index(2) == 0;
     trace.decisions.push(format!("scene_mode_link={link}"));

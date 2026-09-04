@@ -100,6 +100,7 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
 
     // Derived cache/recovery state is disposable; the manifest and registry
     // remain the canonical Project identity and must still list the Project.
+    assert!(service.wait_for_cache_idle(&project_root));
     fs::remove_dir_all(project_root.join(".usdhub/cache")).unwrap();
     fs::remove_dir_all(project_root.join(".usdhub/recovery")).unwrap();
     let list = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));

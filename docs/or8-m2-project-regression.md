@@ -1,6 +1,6 @@
 # OR8 M2 Projects regression matrix
 
-Status: correction batch implemented; stopped for Owner Review after `M2-C8+2`.
+Status: correction batch implemented; stopped for Owner Review after `M2-C8+3`.
 
 Date: 2026-09-04
 
@@ -80,6 +80,33 @@ the same selection from surviving nested canonical SceneIds after the lifecycle
 delete/recreate step, so the export target is never a stale deleted identity.
 Both flows keep export and normal `adopt_scene` as the write path.
 
+## M2-C8+3 correction boundary
+
+Owner Review required the correction to remove the test-only activation shadow
+seam, prove empty Project activation cleanup, close the cache-worker lifecycle
+race, and use the original BIM source assets. The batch now uses the
+production `ProjectStageActivation` candidate and the production Bevy
+open-stage installation path in C4/C8. Each transition asserts the actual
+`LiveStage`, `StageInfo` generation/path, semantic snapshot and BIM index
+generation, hierarchy provider, and projected hierarchy after the third
+transition; a late completion from an older generation is rejected.
+
+Empty Project activation clears the old `LiveStage`, stage handle/presentation,
+projection cache, semantic snapshot/BIM index, and selection before the empty
+authority commit. The cache warmer retains its bounded queue but now exposes
+condition-variable quiescence; destructive Project deletion waits for its
+Project jobs to finish off the renderer path, and the lifecycle test waits
+before removing the cache directory. Inactive Scene deletion snapshots the
+active Stage before mutation and asserts the active `SceneRoot` remains
+unchanged.
+
+C3/C8 now import/adopt the original `Projet1.usdc` through the normal Scene
+Import path. Missing MDL and texture references are classified as optional
+rendering-only dependencies and retain authored references for fallback
+rendering; no fabricated `OmniGlass.mdl`, `OmniPBR.mdl`, or PNG support files
+are used. C8 traces source/target IDs and hierarchy depths, and its sixteen
+seeds include both shallow and nested-depth selections.
+
 ## Determinism and clean-run policy
 
 The corpus is exactly sixteen seeds:
@@ -100,18 +127,18 @@ path, deterministic decisions, operation trace, and generated Scene IDs.
 
 ## Validation evidence
 
-Final C8 command:
+Final C8 command on the corrected tree:
 
 ```text
 cargo test --lib or8_m2::c8_tests -- --nocapture
 ```
 
 Result: 1 test passed, 0 failed, 264 filtered; all 16 seeds completed; elapsed
-time 550.88 seconds. The first exploratory run retained expected failure
-artifacts for seed `0x4F52380000000003` because it exposed the deleted-target
-bug; the corrected clean rerun passed and did not retain final-run failures.
+time 801.70 seconds. Each seed cleared its exact prior attempt/export/clone
+directories before starting, and the corrected run retained no final failure
+artifacts.
 
-Combined M2 gate after the C8+2 correction:
+Combined M2 gate on the corrected tree:
 
 ```text
 cargo test --lib or8_m2 -- --nocapture
@@ -119,30 +146,34 @@ cargo test --lib or8_m2 -- --nocapture
 
 Result: 14 tests passed, 0 failed, 0 ignored, 251 filtered; the gate includes
 the C8 sixteen-seed matrix and the four-seed C1–C7 smoke coverage. Elapsed
-time: 583.68 seconds.
+time: 824.07 seconds.
 
-The required `make harden` gate completed its source-size audit (`800` files,
-`85` warning-band files, `0` failure-band files) and formatting/check stages,
-then stopped at the no-default-feature workspace test stage. That stage ran
-`263` tests successfully and reported two inherited failures:
-`project::service::m19_tests::phase2_freeze_matrix_covers_create_import_composition_and_recovery`
-(`DirectoryNotEmpty`) and
-`project::service::stage_mutation::tests::deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage`
-(`SceneRoot` assertion), in `651.85s`. The OR8 M2 C8 test passed in the same
-run. Strict all-feature Clippy/tests and the performance script were not
-reached after this required gate failure.
+The final `make harden` run completed source-size auditing (`804` files,
+`83` warning-band files, `0` failure-band files), formatting, diff checks,
+workspace checks, and the no-default-feature library/workspace test matrix.
+That matrix passed `606` tests, failed `0`, and ignored `5` in `730.09s`,
+including the C8 sixteen-seed test and both corrected cache/search regressions.
+The gate then stopped at the separate integration test
+`profiles_embedded_texture_usdz_fixture`, which observed one USDZ texture
+`load_failure` and `304` indexed archive entries while the existing test
+expects zero failures and two entries. No cache-profile or archive fixture
+source is part of this correction batch. Strict all-feature Clippy/tests and
+the performance script were not reached after this inherited fixture/runtime
+failure.
 
 Formatting and the focused library and binary compile gates passed. The
-source-layout audit has no failure-band file: new `asset_inspection.rs` is 230
-lines and `project_activation_flow.rs` is 203 lines. Modified warning-band
-files are `stage_activation.rs` (379), `matrix_steps.rs` (381), and
-`matrix_persistence.rs` (365); they remain below the 400-line failure
-threshold and are explicitly reviewable. Graph verification and persistence
-checks remain split by responsibility.
+source-layout audit has no failure-band file. New files remain below the
+200–350-line target, and the five modified warning-band files remain below
+the 400-line failure threshold: `source_closure_discovery.rs` (386),
+`matrix_persistence.rs` (380), `hierarchy_search_test.rs` (377),
+`matrix_steps.rs` (376), and `stage_activation.rs` (361). They are explicitly
+reviewable; graph verification, cache ownership, and persistence checks remain
+split by responsibility.
 
-The C8 harness does not claim GPU, native Tauri, WebRTC/H265, Revit/Omniverse
-production, FPS/RAM, or interactive frontend evidence. The existing workspace
-warning set remains unchanged.
+The C8 harness and the available desktop self-test surface do not claim GPU,
+native Tauri, WebRTC/H265, Revit/Omniverse production, FPS/RAM, or interactive
+frontend evidence. No USDHub runtime window was available to the computer-use
+self-test. The existing workspace warning set remains unchanged.
 
 ## Review boundary
 

@@ -216,6 +216,7 @@ fn deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage() {
         .unwrap();
 
     let mut live = stage(active_scene_id);
+    let before = live.stage.root_layer().export_to_string().unwrap();
     assert_eq!(
         queue
             .apply_for_active_scene(&mut live, &project_root, project_id, Some(active_scene_id))
@@ -223,14 +224,9 @@ fn deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage() {
         1
     );
     assert_eq!(queue.pending_len_for_project(&project_root), 0);
-    assert!(
-        !live
-            .stage
-            .root_layer()
-            .export_to_string()
-            .unwrap()
-            .contains("SceneRoot")
-    );
+    let after = live.stage.root_layer().export_to_string().unwrap();
+    assert_eq!(after, before);
+    assert!(after.contains("SceneRoot"));
 }
 
 #[test]

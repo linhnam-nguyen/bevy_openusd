@@ -75,7 +75,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
     let manifest_before = read_manifest_bytes(&project_root)?;
     let tree_before = read_tree(&service, fixture.project.id)?;
     let expected_latest_scene = eligible[eligible.len() - 1];
-    let mut session = crate::project::service::ProjectStageActivationSession::default();
+    let mut authority = crate::project::service::ProjectActivationAuthority::default();
     let mut stale_completion = None;
     let mut previous_generation = 0;
     for (index, scene_id) in eligible.into_iter().enumerate() {
@@ -104,13 +104,17 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         if target.target != command.target || target.project_id != fixture.project.id {
             return Err(trace.failure("authoritative activation target does not match command"));
         }
-        if !session.observe_request("c4-session", &command) {
+        if !authority.observe_request("c4-session", &command) {
             return Err(trace.failure("activation request was not admitted"));
         }
         let target_snapshot = target.clone();
-        let snapshot = session
-            .complete("c4-session", &command, target)
-            .map_err(|error| trace.failure(format!("activation completion: {error}")))?;
+        let activation =
+            crate::project::service::ProjectStageActivation::open("c4-session", &command, target)
+                .map_err(|error| trace.failure(format!("activation completion: {error}")))?;
+        let snapshot = activation.snapshot().clone();
+        if !authority.commit("c4-session", &command) {
+            return Err(trace.failure("activation completion was not committed"));
+        }
         if snapshot.project_id != fixture.project.id
             || snapshot.target != command.target
             || snapshot.generation != generation
@@ -132,7 +136,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
             snapshot.bim_entity_paths.len()
         ));
         if index == 1 {
-            stale_completion = Some((command, target_snapshot));
+            stale_completion = Some(command);
         }
         previous_generation = generation;
 
@@ -148,17 +152,13 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
             return Err(trace.failure("active Scene is absent from its Project scope"));
         }
     }
-    let (stale_command, stale_target) =
-        stale_completion.expect("three activations include a stale candidate");
-    if session
-        .complete("c4-session", &stale_command, stale_target)
-        .is_ok()
-    {
+    let stale_command = stale_completion.expect("three activations include a stale candidate");
+    if authority.commit("c4-session", &stale_command) {
         return Err(trace.failure("stale Scene completion replaced the latest active identity"));
     }
-    let active = session
+    let active = authority
         .active()
-        .ok_or_else(|| trace.failure("active Scene/session snapshot is missing"))?;
+        .ok_or_else(|| trace.failure("active Scene/session identity is missing"))?;
     if active.generation != 3 || active.target != ProjectStageTarget::Scene(expected_latest_scene) {
         return Err(trace.failure("latest active Scene/session identity was not retained"));
     }
