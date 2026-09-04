@@ -1,17 +1,15 @@
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{path::Path, time::Duration};
 
 #[cfg(test)]
 use anyhow::Result;
+#[cfg(test)]
+use std::time::Instant;
 use viewport_protocol::RuntimeProfile;
 
 #[cfg(test)]
 use super::ProjectCacheDescriptor;
 use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheTarget, ProjectCacheWarmQueue};
 
-const CACHE_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
 const CACHE_PREPARATION_POLL: Duration = Duration::from_millis(5);
 
 /// Bounded result used by activation preparation before the Bevy world is touched.
@@ -20,81 +18,63 @@ pub(crate) enum ProjectCachePreparation {
     Ready,
     Empty,
     FallbackRequired,
-    TimedOut,
 }
 
 impl ProjectCacheWarmQueue {
-    /// Ensure an exact target cache is ready before activation, or return a
-    /// bounded source-fallback outcome without blocking the Bevy owner thread.
+    /// Probe an exact target cache without making it part of activation.
+    ///
+    /// Cache warming is advisory. A miss, partial descriptor, or in-flight
+    /// build immediately selects canonical source projection; the mutation
+    /// paths remain responsible for scheduling background warms.
     pub(crate) fn prepare_for_activation(
         &self,
         project_root: &Path,
         target: ProjectCacheTarget,
     ) -> ProjectCachePreparation {
-        let deadline = Instant::now() + CACHE_PREPARATION_TIMEOUT;
         let store = super::ProjectCacheStore::new(project_root);
-        let mut requested_identity = None;
-
-        loop {
-            let identity = match ProjectCacheIdentity::for_project(
-                project_root,
-                target.clone(),
-                RuntimeProfile::NativeMedium,
-                super::super::cache_compatibility::project_runtime_cache_config_hash(
-                    usd_semantic::SemanticConfig::default().hash(),
-                ),
-            ) {
-                Ok(identity) => identity,
-                Err(error) => {
-                    log::warn!(
-                        "Project cache activation identity could not be established for {}: {error:#}",
-                        project_root.display()
-                    );
-                    return ProjectCachePreparation::FallbackRequired;
-                }
-            };
-            if requested_identity.as_ref() != Some(&identity) {
-                requested_identity = None;
+        let identity = match ProjectCacheIdentity::for_project(
+            project_root,
+            target,
+            RuntimeProfile::NativeMedium,
+            super::super::cache_compatibility::project_runtime_cache_config_hash(
+                usd_semantic::SemanticConfig::default().hash(),
+            ),
+        ) {
+            Ok(identity) => identity,
+            Err(error) => {
+                log::warn!(
+                    "Project cache activation identity could not be established for {}: {error:#}",
+                    project_root.display()
+                );
+                return ProjectCachePreparation::FallbackRequired;
             }
+        };
+        Self::probe_for_activation(&store, &identity)
+    }
 
-            match store.load(&identity) {
-                Ok(Some(descriptor)) => match descriptor.state {
-                    ProjectCacheState::Ready => return ProjectCachePreparation::Ready,
-                    ProjectCacheState::Empty => return ProjectCachePreparation::Empty,
-                    ProjectCacheState::FallbackRequired => {
-                        return ProjectCachePreparation::FallbackRequired;
-                    }
-                    ProjectCacheState::Building => {}
-                    ProjectCacheState::Partial => {
-                        if requested_identity.is_none() {
-                            if !self.enqueue(project_root, target.clone()) {
-                                return ProjectCachePreparation::TimedOut;
-                            }
-                            requested_identity = Some(identity.clone());
-                        }
-                    }
-                },
-                Ok(None) => {
-                    if requested_identity.is_none() {
-                        if !self.enqueue(project_root, target.clone()) {
-                            return ProjectCachePreparation::TimedOut;
-                        }
-                        requested_identity = Some(identity.clone());
-                    }
-                }
-                Err(error) => {
-                    log::warn!(
-                        "Project cache activation descriptor is unavailable for {}: {error:#}",
-                        project_root.display()
-                    );
-                    return ProjectCachePreparation::FallbackRequired;
-                }
+    /// Inspect one already-computed identity. This deliberately performs no
+    /// queue operation and no wait, so the caller can carry the identity into
+    /// the main-world activation without hashing the target again.
+    pub(crate) fn probe_for_activation(
+        store: &super::ProjectCacheStore,
+        identity: &ProjectCacheIdentity,
+    ) -> ProjectCachePreparation {
+        match store.load(identity) {
+            Ok(Some(descriptor)) => match descriptor.state {
+                ProjectCacheState::Ready => ProjectCachePreparation::Ready,
+                ProjectCacheState::Empty => ProjectCachePreparation::Empty,
+                ProjectCacheState::FallbackRequired
+                | ProjectCacheState::Building
+                | ProjectCacheState::Partial => ProjectCachePreparation::FallbackRequired,
+            },
+            Ok(None) => ProjectCachePreparation::FallbackRequired,
+            Err(error) => {
+                log::warn!(
+                    "Project cache activation descriptor is unavailable for {}: {error:#}",
+                    identity.target.key()
+                );
+                ProjectCachePreparation::FallbackRequired
             }
-
-            if Instant::now() >= deadline {
-                return ProjectCachePreparation::TimedOut;
-            }
-            std::thread::sleep(CACHE_PREPARATION_POLL);
         }
     }
 }

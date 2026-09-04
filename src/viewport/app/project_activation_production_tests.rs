@@ -1,9 +1,14 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
+use bevy::asset::AssetApp;
 use bevy::ecs::schedule::IntoScheduleConfigs;
+use bevy::image::Image;
+use bevy::mesh::Mesh;
+use bevy::pbr::StandardMaterial;
 use bevy::prelude::{App, Update, World};
 use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
 use tempfile::tempdir;
@@ -54,13 +59,24 @@ impl ProductionActivationWorld {
         let mut provider = ActiveHierarchyProvider::default();
         provider.set(HierarchySource::BimClassification, Some(recipe));
         let mut app = App::new();
-        app.add_plugins(usd_bevy::UsdPlugin)
+        app.add_plugins(bevy::MinimalPlugins)
+            .add_plugins(bevy::asset::AssetPlugin::default())
+            .add_plugins(usd_bevy::UsdPlugin)
             .add_plugins(usd_bevy::LiveStagePlugin)
+            .init_asset::<Mesh>()
+            .init_asset::<Image>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .insert_resource(usd_bevy::ProjectionBudget::bounded(
+                32,
+                Duration::from_millis(8),
+            ))
             .insert_resource(provider)
             .init_resource::<BimClassificationRecipeState>()
             .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<BimClassificationFieldCatalogueState>()
+            .init_resource::<crate::viewport::animation::UsdStageTime>()
             .insert_resource(SemanticSyncState::with_config(
                 SemanticConfig::for_nvidia_revit_connector(),
             ))
@@ -84,6 +100,10 @@ impl ProductionActivationWorld {
                     .chain()
                     .after(usd_bevy::LiveStageSet::Presentation),
             );
+        app.add_systems(
+            Update,
+            crate::viewport::animation::tick_stage_time.after(usd_bevy::LiveStageSet::Presentation),
+        );
         Self { app }
     }
 
@@ -278,6 +298,8 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
             target: command.target.clone(),
             project_root: directory.path().to_path_buf(),
             path,
+            archive_paths: Vec::new(),
+            cache_identity: None,
             presentation: ProjectStagePresentationContext::default(),
         };
         if index == 1 {

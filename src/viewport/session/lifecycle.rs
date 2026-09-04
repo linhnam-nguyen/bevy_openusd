@@ -1,18 +1,20 @@
 //! Lifecycle for opening, projecting, and reloading a live USD stage.
 
 use bevy::prelude::*;
-use openusd::usd::{PrimPredicate, Stage};
+use openusd::usd::Stage;
 use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
 use crate::project::cache_hydration::ActiveProjectCacheContext;
 
 use super::{
-    LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageCameraData, StageCameraInfo,
-    StageCameraProjection, StageHandle, StageInfo, StagePresentationContext, VariantSetInfo,
+    LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageHandle, StageInfo,
+    StagePresentationContext,
 };
 
 #[path = "lifecycle_invalidation.rs"]
 mod lifecycle_invalidation;
+#[path = "lifecycle_metadata.rs"]
+mod lifecycle_metadata;
 #[path = "lifecycle_open.rs"]
 mod lifecycle_open;
 #[path = "lifecycle_project_activation.rs"]
@@ -24,6 +26,12 @@ pub(crate) use project_activation::{
 };
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
+
+#[derive(Resource, Default, Debug, Clone, Copy)]
+struct StageMetadataState {
+    session_id: Option<u64>,
+    complete: bool,
+}
 
 /// Open the requested file directly through the current OpenUSD API and place
 /// it in `usd_bevy::LiveStage`. The new live plugin owns projection/revision
@@ -119,6 +127,7 @@ where
         path,
         stage,
         cache_context,
+        None,
         activation_generation,
         presentation,
     )
@@ -142,18 +151,38 @@ pub(crate) fn handle_usd_hot_reload(world: &mut World) {
 /// Marks a live stage ready once `LiveStagePlugin` has projected real prims
 /// and captures the stage metadata used by the viewport read model.
 pub(crate) fn spawn_when_ready(world: &mut World) {
-    if world.resource::<Spawned>().0 {
-        return;
-    }
-    let Some(live) = world.get_non_send::<LiveStage>() else {
+    let Some((session_id, stage)) = world
+        .get_non_send::<LiveStage>()
+        .map(|live| (live.session_id(), live.stage.clone()))
+    else {
         return;
     };
+    let projection_ready = world
+        .get_resource::<usd_bevy::ProgressiveProjectionState>()
+        .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
+    let metadata_complete = world
+        .get_resource::<StageMetadataState>()
+        .is_some_and(|state| state.session_id == Some(session_id) && state.complete);
+    if world.resource::<Spawned>().0 {
+        if !projection_ready || metadata_complete {
+            return;
+        }
+        world.resource_scope(|world, mut info: Mut<StageInfo>| {
+            let map = world.resource::<PrimEntities>();
+            let paths = world.resource::<PathStore>();
+            lifecycle_metadata::refresh(&stage, map, paths, &mut info);
+        });
+        world.insert_resource(StageMetadataState {
+            session_id: Some(session_id),
+            complete: true,
+        });
+        return;
+    }
     let prim_count = world.resource::<PrimEntities>().len();
     if prim_count <= 1 {
         return;
     }
 
-    let stage = live.stage.clone();
     let animated_count = world
         .get_resource::<AnimatedPrims>()
         .map(|animated| animated.0.len())
@@ -163,51 +192,27 @@ pub(crate) fn spawn_when_ready(world: &mut World) {
         requested.root.join(&requested.name)
     };
     let default_prim = stage.default_prim().map(|prim| format!("/{prim}"));
-    let mut variants = std::collections::HashMap::new();
-    let mut cameras = Vec::new();
-    let _ = stage.traverse(PrimPredicate::DEFAULT, |path| {
-        let prim = stage.prim(path.clone());
-        if let Ok(Some(type_name)) = prim.type_name()
-            && type_name.as_str() == "Camera"
-        {
-            cameras.push(StageCameraInfo {
-                path: path.as_str().to_owned(),
-                data: StageCameraData {
-                    focal_length_mm: Some(50.0),
-                    projection: Some(StageCameraProjection::Perspective),
-                },
-            });
-        }
-        if let Ok(selections) = prim.variant_sets().get_all_variant_selections()
-            && !selections.is_empty()
-        {
-            variants.insert(
-                path.as_str().to_owned(),
-                selections
-                    .into_iter()
-                    .map(|(name, selection)| VariantSetInfo {
-                        name,
-                        selection: Some(selection),
-                        options: Vec::new(),
-                    })
-                    .collect(),
-            );
-        }
-    });
-    let variant_count = variants.values().map(Vec::len).sum();
     {
         let mut info = world.resource_mut::<StageInfo>();
         info.path = requested_path.to_string_lossy().into_owned();
         info.default_prim = default_prim.clone();
         info.layer_count = 1;
         info.animated_prim_count = animated_count;
-        info.variant_count = variant_count;
-        info.variants = variants;
-        info.cameras = cameras;
         info.skel_animation_count = 0;
     }
 
     world.resource_mut::<Spawned>().0 = true;
+    world.insert_resource(StageMetadataState {
+        session_id: Some(session_id),
+        complete: projection_ready,
+    });
+    if projection_ready {
+        world.resource_scope(|world, mut info: Mut<StageInfo>| {
+            let map = world.resource::<PrimEntities>();
+            let paths = world.resource::<PathStore>();
+            lifecycle_metadata::refresh(&stage, map, paths, &mut info);
+        });
+    }
     info!(
         "live USD stage projected: {} prims ({} animated), default_prim={default_prim:?}",
         prim_count.saturating_sub(1),
@@ -252,6 +257,7 @@ fn clear_projected_stage(world: &mut World) {
         stage_time.clear_stage();
     }
     world.remove_non_send::<LiveStage>();
+    world.remove_resource::<StageMetadataState>();
     world.resource_mut::<Spawned>().0 = false;
 }
 

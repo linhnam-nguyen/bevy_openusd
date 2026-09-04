@@ -66,12 +66,35 @@ impl Drop for ProjectCacheWarmQueue {
             .expect("Project cache warm worker handle is not poisoned")
             .take()
         {
-            let _ = worker.join();
+            // Dropping the last handle detaches the worker. The sender was
+            // closed above, so it exits after its current atomic job without
+            // making a request-scoped service destructor wait for the build.
+            drop(worker);
         }
     }
 }
 
 impl ProjectCacheWarmQueue {
+    /// Close future warm submissions and detach the worker without waiting for
+    /// an in-flight cache build. Runtime owners use this during teardown so a
+    /// shared queue clone cannot keep an idle worker alive forever.
+    pub(crate) fn shutdown_without_waiting(&self) {
+        self.state
+            .sender
+            .lock()
+            .expect("Project cache warm sender is not poisoned")
+            .take();
+        if let Some(worker) = self
+            .state
+            .worker
+            .lock()
+            .expect("Project cache warm worker handle is not poisoned")
+            .take()
+        {
+            drop(worker);
+        }
+    }
+
     /// Try to schedule one canonical Project target without blocking the
     /// caller that just published authoritative Project state.
     pub fn enqueue(&self, project_root: &Path, target: super::ProjectCacheTarget) -> bool {

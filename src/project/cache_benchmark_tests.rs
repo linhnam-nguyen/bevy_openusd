@@ -60,10 +60,7 @@ fn headless_cache_benchmark_proves_cold_persistent_and_hot_paths() -> Result<()>
     )?)?;
 
     let persistent_start = Instant::now();
-    let context = ActiveProjectCacheContext {
-        project_root: project.path().to_path_buf(),
-        identity,
-    };
+    let context = ActiveProjectCacheContext::from_identity(project.path().to_path_buf(), identity);
     let mut persistent_app = headless_cache_app();
     assert!(hydrate_project_cache(persistent_app.world_mut(), &context)?);
     let persistent_seed_meshes = persistent_app

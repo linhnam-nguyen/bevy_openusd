@@ -180,6 +180,8 @@ fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
         target: command.target.clone(),
         project_root,
         path: adopted_path.clone(),
+        archive_paths: Vec::new(),
+        cache_identity: None,
         presentation: ProjectStagePresentationContext::default(),
     };
     let reply = production.apply(
@@ -191,7 +193,25 @@ fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
         reply.result,
         project_protocol::ProjectActivationResult::Activated { .. }
     ));
-    production.update();
+    for _ in 0..10_000 {
+        production.update();
+        if production
+            .world()
+            .resource::<usd_bevy::ProgressiveProjectionState>()
+            .readiness()
+            == usd_bevy::ProjectionReadiness::Ready
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        production
+            .world()
+            .resource::<usd_bevy::ProgressiveProjectionState>()
+            .readiness(),
+        usd_bevy::ProjectionReadiness::Ready,
+        "adopted Scene projection reaches readiness before BIM observation"
+    );
     let observation = production
         .observe(&adopted_path, 1)
         .expect("activated adopted Scene BIM state");

@@ -10,10 +10,7 @@ use viewport_streaming::{
     ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
 };
 
-use crate::project::cache::ProjectCacheTarget;
-use crate::project::cache_hydration::{
-    ActiveProjectCacheContext, default_project_cache_config_hash,
-};
+use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::service::ProjectStageActivation;
 use crate::viewport::api::RenderServerInterface;
 use crate::viewport::session::{
@@ -52,24 +49,23 @@ pub(super) fn process_project_activations(world: &mut World) {
             );
             continue;
         }
+        if let Some(mut projection) =
+            world.get_resource_mut::<usd_bevy::ProgressiveProjectionState>()
+        {
+            projection.cancel();
+        }
         let submit_result = world
             .resource::<ProjectStageActivationRuntime>()
             .submit(request);
-        if let Err(error) = submit_result {
-            let (request, message) = match error {
-                std::sync::mpsc::TrySendError::Full(request) => {
-                    (request, "Project activation preparation is busy".to_owned())
-                }
-                std::sync::mpsc::TrySendError::Disconnected(request) => (
-                    request,
-                    "Project activation preparation is unavailable".to_owned(),
-                ),
-            };
+        if let Some(request) = submit_result {
             let command = request.command.clone();
             publish_activation_result(
                 &interface,
                 request,
-                ProjectActivationReply::failed(&command, message),
+                ProjectActivationReply::failed(
+                    &command,
+                    "stale Project activation was superseded by a newer request",
+                ),
             );
         }
     }
@@ -156,6 +152,7 @@ fn activate_prepared_stage(
         target.path,
         activation.into_stage(),
         cache_context,
+        Some(target.archive_paths.clone()),
         command.generation,
         StagePresentationContext::from_project(target.presentation),
     ) {
@@ -183,29 +180,9 @@ fn stale_completion_reply(
 fn cache_context_for(
     target: &crate::project::service::ProjectStageActivationTarget,
 ) -> Option<ActiveProjectCacheContext> {
-    let cache_target = match target.target {
-        project_protocol::ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
-        project_protocol::ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
-            id: scene_id.to_string(),
-        },
-        project_protocol::ProjectStageTarget::Model(model_id) => ProjectCacheTarget::Model {
-            id: model_id.to_string(),
-        },
-    };
-    match ActiveProjectCacheContext::new(
-        target.project_root.clone(),
-        cache_target,
-        viewport_protocol::RuntimeProfile::NativeMedium,
-        default_project_cache_config_hash(),
-    ) {
-        Ok(context) => Some(context),
-        Err(error) => {
-            bevy::log::warn!(
-                "[project-cache] could not establish activation identity; using source projection: {error:#}"
-            );
-            None
-        }
-    }
+    target.cache_identity.clone().map(|identity| {
+        ActiveProjectCacheContext::from_identity(target.project_root.clone(), identity)
+    })
 }
 
 fn publish_activation_result(

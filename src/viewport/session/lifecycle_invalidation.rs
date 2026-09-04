@@ -156,11 +156,14 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         }
     } else if pending.selection.is_some()
         && world
+            .get_resource::<usd_bevy::ProgressiveProjectionState>()
+            .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready)
+        && world
             .get_resource::<crate::viewport::api::SceneAnchorIndex>()
             .is_some_and(|index| index.revision() > 0)
     {
-        // A ready, non-empty scene proves that a retained target disappeared;
-        // do not keep an impossible request alive forever.
+        // Only a complete projection proves that a retained target disappeared.
+        // A non-empty progressive index is still an incomplete prefix.
         world.remove_resource::<PendingActivationPresentation>();
         return;
     } else if pending.selection.is_some() {

@@ -9,6 +9,7 @@ use bevy::{
 };
 use tempfile::tempdir;
 use usd_model::{Bounds3, HashDigest, TransformSignature};
+use viewport_protocol::RuntimeProfile;
 
 use super::*;
 use crate::project::blob_store::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
@@ -156,10 +157,7 @@ fn fixture() -> Result<(
     let project_root = project.path().to_path_buf();
     Ok((
         project,
-        ActiveProjectCacheContext {
-            project_root,
-            identity,
-        },
+        ActiveProjectCacheContext::from_identity(project_root, identity),
         manifest,
         mesh_id,
         material_id,

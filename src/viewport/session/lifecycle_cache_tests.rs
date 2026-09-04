@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, time::Duration};
 
 use bevy::prelude::World;
 use tempfile::tempdir;
@@ -105,6 +105,8 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
         id: scene_id.to_string(),
     };
     let queue = crate::project::cache_warmer::ProjectCacheWarmQueue::default();
+    assert!(queue.enqueue(project.path(), target.clone()));
+    assert!(queue.wait_for_project_idle(project.path(), Duration::from_secs(2)));
     assert_eq!(
         queue.prepare_for_activation(project.path(), target.clone()),
         crate::project::cache_warmer::ProjectCachePreparation::Ready

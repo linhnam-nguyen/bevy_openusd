@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Duration;
 
 use anyhow::Result;
 use tempfile::tempdir;
@@ -199,6 +200,8 @@ fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<(
         id: model_id.to_string(),
     };
     let queue = ProjectCacheWarmQueue::default();
+    assert!(queue.enqueue(directory.path(), target.clone()));
+    assert!(queue.wait_for_project_idle(directory.path(), Duration::from_secs(2)));
     assert_eq!(
         queue.prepare_for_activation(directory.path(), target.clone()),
         ProjectCachePreparation::FallbackRequired

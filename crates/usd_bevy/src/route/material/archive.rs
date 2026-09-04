@@ -5,10 +5,12 @@ use std::time::UNIX_EPOCH;
 
 use bevy::prelude::*;
 use openusd::ar::split_package_relative_path_outer;
-use openusd::usd::{PrimPredicate, Stage};
+use openusd::usd::Stage;
 
 use super::texture_cache::UsdTextureCache;
 
+#[path = "archive_dependencies.rs"]
+mod archive_dependencies;
 #[path = "archive_read.rs"]
 mod archive_read;
 pub(super) use archive_read::read_texture_bytes;
@@ -88,11 +90,10 @@ fn collect_usdz_files(world: &World) -> Vec<PathBuf> {
     usdz_files
 }
 
-/// Return only the USDZ packages reached by the active composed Stage.
-/// Traversal forces on-demand reference/payload layers to load; no repository
-/// directory is searched and no per-frame discovery is performed.
+/// Return only the USDZ packages already represented by the Stage and its
+/// authored dependency closure. Discovery is intentionally lazy and does not
+/// force full composed prim traversal during activation.
 pub fn archive_paths_for_stage(stage: &Stage, root_path: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    stage.traverse(PrimPredicate::DEFAULT, |_| {})?;
     let mut paths = Vec::new();
     let mut add = |identifier: &str| {
         let outer = split_package_relative_path_outer(identifier)
@@ -106,6 +107,9 @@ pub fn archive_paths_for_stage(stage: &Stage, root_path: &Path) -> anyhow::Resul
         }
     };
     add(&root_path.to_string_lossy());
+    for path in archive_dependencies::authored_archive_paths(stage)? {
+        add(&path.to_string_lossy());
+    }
     for identifier in stage.layer_identifiers() {
         if !identifier.starts_with("anon:") {
             add(&identifier);

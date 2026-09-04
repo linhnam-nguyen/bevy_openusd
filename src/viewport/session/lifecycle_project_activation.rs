@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use openusd::usd::Stage;
+use std::time::Instant;
 use usd_bevy::LiveStage;
 
 use crate::project::cache_hydration::{ActiveProjectCacheContext, hydrate_project_cache};
@@ -19,9 +20,11 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     path: std::path::PathBuf,
     stage: Stage,
     cache_context: Option<ActiveProjectCacheContext>,
+    archive_paths: Option<Vec<std::path::PathBuf>>,
     activation_generation: u64,
     presentation: StagePresentationContext,
 ) -> Result<(), String> {
+    let install_started = Instant::now();
     let root = path
         .parent()
         .map(std::path::Path::to_path_buf)
@@ -33,6 +36,9 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         .to_owned();
 
     let cache_context = cache_context.and_then(|context| {
+        if !context.should_revalidate() {
+            return Some(context);
+        }
         let current = crate::project::cache::ProjectCacheIdentity::for_project(
             &context.project_root,
             context.identity.target.clone(),
@@ -58,8 +64,16 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         }
     });
 
-    let archive_paths = usd_bevy::route::material::archive_paths_for_stage(&stage, &path)
-        .map_err(|error| format!("derive active USDZ packages: {error:#}"))?;
+    let archive_paths = archive_paths.unwrap_or_else(|| {
+        usd_bevy::route::material::archive_paths_for_stage(&stage, &path).unwrap_or_else(|error| {
+            bevy::log::warn!(
+                "could not derive active USDZ packages for {}; embedded textures will use source fallback: {error:#}",
+                path.display()
+            );
+            Vec::new()
+        })
+    });
+    let archive_count = archive_paths.len();
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
     {
         cache.replace_active_archives(archive_paths);
@@ -104,7 +118,12 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         world.remove_resource::<ActiveProjectCacheContext>();
     }
     world.insert_non_send(LiveStage::new(stage));
-    info!("activated Project USD stage: {}", path.display());
+    info!(
+        "[project-loading] live_stage_install_ms={:.3} archives={} target={}",
+        install_started.elapsed().as_secs_f64() * 1_000.0,
+        archive_count,
+        path.display()
+    );
     Ok(())
 }
 

@@ -7,7 +7,6 @@
 //! returns control to source projection without replacing LiveStage authority.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail, ensure};
 use bevy::asset::RenderAssetUsages;
@@ -15,55 +14,22 @@ use bevy::image::Image;
 use bevy::math::{Affine2, Mat2, Vec2};
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
-use bevy::prelude::{AlphaMode, Assets, Color, LinearRgba, Resource, World};
+use bevy::prelude::{AlphaMode, Assets, Color, LinearRgba, World};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use usd_bevy::ProjectionSeed;
 use usd_model::BlobId;
-use viewport_protocol::{
-    RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind, RuntimeProfile,
-};
+use viewport_protocol::{RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind};
 
 use super::blob_store::{BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, get_mesh};
-use super::cache::{
-    ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore, ProjectCacheTarget,
-};
+use super::cache::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore};
 use super::runtime_delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
 use super::runtime_payload::{
     RuntimeAlphaMode, RuntimeMaterialBlob, RuntimeTextureBlob, RuntimeTextureColorSpace,
 };
+#[path = "cache_hydration_context.rs"]
+mod context;
 
-/// The exact cache identity attached to the currently active Project stage.
-/// It is backend-only and is never exposed to the frontend or renderer crate.
-#[derive(Clone, Debug, Resource)]
-pub(crate) struct ActiveProjectCacheContext {
-    pub(crate) project_root: PathBuf,
-    pub(crate) identity: ProjectCacheIdentity,
-}
-
-impl ActiveProjectCacheContext {
-    pub(crate) fn new(
-        project_root: PathBuf,
-        target: ProjectCacheTarget,
-        profile: RuntimeProfile,
-        config_hash: usd_model::HashDigest,
-    ) -> Result<Self> {
-        let identity =
-            ProjectCacheIdentity::for_project(&project_root, target, profile, config_hash)?;
-        Ok(Self {
-            project_root,
-            identity,
-        })
-    }
-}
-
-/// The application-wide semantic configuration used for runtime cache
-/// identity. Keeping this in one helper prevents warm and delivery paths from
-/// accidentally publishing different configuration hashes.
-pub(crate) fn default_project_cache_config_hash() -> usd_model::HashDigest {
-    super::cache_compatibility::project_runtime_cache_config_hash(
-        usd_semantic::SemanticConfig::default().hash(),
-    )
-}
+pub(crate) use context::{ActiveProjectCacheContext, default_project_cache_config_hash};
 
 /// Try to hydrate the current Project from its exact ready descriptor.
 /// `Ok(false)` is a normal cache miss; errors describe corruption or an

@@ -34,11 +34,13 @@ use bevy_glacial::prelude::{
     auto_scale_gizmo_to_target,
 };
 use bevy_mod_outline::OutlinePlugin;
+use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
+use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
 
-use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
-use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
+#[path = "runner_projection.rs"]
+mod runner_projection;
 
 pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
@@ -49,10 +51,8 @@ pub(crate) fn run() {
         }
     };
     let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument.clone());
-
     let mut app = App::new();
     configure_dlss(&mut app);
-
     if launch_options.headless {
         app.add_plugins(
             DefaultPlugins
@@ -95,7 +95,6 @@ pub(crate) fn run() {
                 }),
         );
     }
-
     app.add_plugins(EguiPlugin::default());
     if launch_options.headless {
         headless::configure_headless_egui(&mut app);
@@ -114,8 +113,9 @@ pub(crate) fn run() {
         profile.top_n = 128;
     }
 
-    app.add_plugins(LiveStagePlugin)
-        .add_plugins(RapierPhysicsPlugin)
+    app.add_plugins(LiveStagePlugin);
+    runner_projection::configure(&mut app);
+    app.add_plugins(RapierPhysicsPlugin)
         .add_plugins(ArcballCameraPlugin)
         .add_plugins(GroundGridPlugin)
         .add_plugins(AxisGizmoPlugin)
@@ -353,7 +353,7 @@ pub(crate) fn run() {
     app.add_systems(
         Update,
         (
-            spawn_when_ready,
+            spawn_when_ready.after(LiveStageSet::Presentation),
             fit_camera_once,
             handle_usd_hot_reload,
             apply_load_request,

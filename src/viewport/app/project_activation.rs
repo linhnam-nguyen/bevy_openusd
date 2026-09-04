@@ -7,8 +7,8 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        Mutex,
-        mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel},
+        Arc, Mutex,
+        mpsc::{Receiver, TryRecvError, sync_channel},
     },
 };
 
@@ -16,32 +16,50 @@ use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{App, Resource, Update};
 use viewport_streaming::ProjectActivationRequest;
 
+use crate::project::cache_warmer::ProjectCacheWarmQueue;
 use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
 
 #[path = "project_activation_flow.rs"]
 mod flow;
+#[path = "project_activation_queue.rs"]
+mod queue;
+
+use queue::{ActivationCancellation, LatestActivationQueue};
 
 const PROJECT_REGISTRY_PATH_ENV: &str = "USDHUB_PROJECT_WORKSPACE_REGISTRY";
-const PROJECT_ACTIVATION_PREPARATION_CAPACITY: usize = 2;
-
 /// Host-owned locator for the machine-local Project registry.
 #[derive(Resource)]
 pub(super) struct ProjectStageActivationRuntime {
     preparation: ProjectActivationPreparation,
+    _cache_warm: ProjectCacheWarmQueue,
 }
 
 #[derive(Resource, Default)]
 pub(super) struct ProjectActivationAuthorityRuntime(ProjectActivationAuthority);
 
 struct ProjectActivationPreparation {
-    sender: SyncSender<ProjectActivationRequest>,
+    requests: Arc<LatestActivationQueue>,
     receiver: Mutex<Receiver<PreparedProjectActivation>>,
+    cancellation: Arc<ActivationCancellation>,
 }
 
 struct PreparedProjectActivation {
     request: ProjectActivationRequest,
     target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+}
+
+impl Drop for ProjectStageActivationRuntime {
+    fn drop(&mut self) {
+        self.preparation.requests.close();
+        self._cache_warm.shutdown_without_waiting();
+    }
+}
+
+impl Drop for ProjectActivationPreparation {
+    fn drop(&mut self) {
+        self.requests.close();
+    }
 }
 
 impl ProjectStageActivationRuntime {
@@ -56,13 +74,29 @@ impl ProjectStageActivationRuntime {
     }
 
     fn with_registry_path(registry_path: Option<PathBuf>) -> Self {
-        let (sender, requests) = sync_channel(PROJECT_ACTIVATION_PREPARATION_CAPACITY);
-        let (prepared, receiver) = sync_channel(PROJECT_ACTIVATION_PREPARATION_CAPACITY);
+        let requests = Arc::new(LatestActivationQueue::new());
+        let (prepared, receiver) = sync_channel(2);
+        let cancellation = Arc::new(ActivationCancellation::default());
+        let cache_warm = ProjectCacheWarmQueue::default();
+        let worker_requests = Arc::clone(&requests);
+        let worker_cancellation = Arc::clone(&cancellation);
+        let worker_cache_warm = cache_warm.clone();
         std::thread::Builder::new()
             .name("project-activation-preparation".to_owned())
             .spawn(move || {
-                while let Ok(request) = requests.recv() {
-                    let target = resolve_project_activation(registry_path.as_deref(), &request);
+                while let Some(queued) = worker_requests.take() {
+                    let queue_wait_ms = queued.enqueued_at.elapsed().as_secs_f64() * 1_000.0;
+                    let request = queued.request;
+                    bevy::log::debug!(
+                        "[project-loading] activation_queue_wait_ms={queue_wait_ms:.3} request={}",
+                        request.command.request_id
+                    );
+                    let target = resolve_project_activation_with_cache(
+                        registry_path.as_deref(),
+                        &request,
+                        &worker_cache_warm,
+                        &worker_cancellation,
+                    );
                     if prepared
                         .send(PreparedProjectActivation { request, target })
                         .is_err()
@@ -75,17 +109,17 @@ impl ProjectStageActivationRuntime {
 
         Self {
             preparation: ProjectActivationPreparation {
-                sender,
+                requests,
                 receiver: Mutex::new(receiver),
+                cancellation,
             },
+            _cache_warm: cache_warm,
         }
     }
 
-    fn submit(
-        &self,
-        request: ProjectActivationRequest,
-    ) -> Result<(), TrySendError<ProjectActivationRequest>> {
-        self.preparation.sender.try_send(request)
+    fn submit(&self, request: ProjectActivationRequest) -> Option<ProjectActivationRequest> {
+        self.preparation.cancellation.supersede(&request);
+        self.preparation.requests.replace(request)
     }
 
     fn take_prepared(&self) -> Option<PreparedProjectActivation> {
@@ -115,16 +149,39 @@ fn resolve_project_activation(
     registry_path: Option<&Path>,
     request: &ProjectActivationRequest,
 ) -> Result<Option<crate::project::service::ProjectStageActivationTarget>, String> {
+    let cache_warm = ProjectCacheWarmQueue::default();
+    let cancellation = ActivationCancellation::default();
+    cancellation.supersede(request);
+    resolve_project_activation_with_cache(registry_path, request, &cache_warm, &cancellation)
+}
+
+fn resolve_project_activation_with_cache(
+    registry_path: Option<&Path>,
+    request: &ProjectActivationRequest,
+    cache_warm: &ProjectCacheWarmQueue,
+    cancellation: &ActivationCancellation,
+) -> Result<Option<crate::project::service::ProjectStageActivationTarget>, String> {
     let Some(registry_path) = registry_path else {
         return Err("Project activation registry is unavailable".to_owned());
     };
-    let service = ProjectApplicationService::open(registry_path.to_path_buf())
-        .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
+    if !cancellation.is_current(request) {
+        return Err("stale Project activation preparation was superseded".to_owned());
+    }
+    let service = ProjectApplicationService::open_with_cache_warm(
+        registry_path.to_path_buf(),
+        cache_warm.clone(),
+    )
+    .map_err(|error| format!("Project activation service is unavailable: {error}"))?;
     let target = service
         .resolve_stage_activation(request.command.project_id, request.command.target.clone())
         .map_err(|error| format!("Project stage activation was rejected: {error}"))?;
-    if let Some(target) = target.as_ref() {
-        let cache_preparation = service.prepare_cache_for_activation(target);
+    if !cancellation.is_current(request) {
+        return Err("stale Project activation preparation was superseded".to_owned());
+    }
+    let mut target = target;
+    if let Some(target) = target.as_mut() {
+        let (cache_preparation, identity) = service.prepare_cache_for_activation(target);
+        target.cache_identity = identity;
         match cache_preparation {
             crate::project::cache_warmer::ProjectCachePreparation::Ready => {}
             crate::project::cache_warmer::ProjectCachePreparation::Empty => {
@@ -135,12 +192,10 @@ fn resolve_project_activation(
                     "[project-cache] activation cache unavailable; canonical source fallback remains active"
                 )
             }
-            crate::project::cache_warmer::ProjectCachePreparation::TimedOut => {
-                bevy::log::warn!(
-                    "[project-cache] activation cache preparation timed out; canonical source fallback remains active"
-                )
-            }
         }
+    }
+    if !cancellation.is_current(request) {
+        return Err("stale Project activation preparation was superseded".to_owned());
     }
     Ok(target)
 }
@@ -150,7 +205,9 @@ pub(super) fn install(app: &mut App) {
         .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(
             Update,
-            flow::process_project_activations.before(crate::viewport::session::spawn_when_ready),
+            flow::process_project_activations
+                .before(usd_bevy::LiveStageSet::Project)
+                .before(crate::viewport::session::spawn_when_ready),
         );
 }
 
@@ -225,7 +282,7 @@ mod tests {
             command: command.clone(),
         };
 
-        runtime.submit(request.clone()).unwrap();
+        assert!(runtime.submit(request.clone()).is_none());
         let prepared = runtime
             .wait_for_prepared()
             .expect("preparation worker should return a result");

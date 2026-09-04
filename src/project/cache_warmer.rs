@@ -4,6 +4,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -112,6 +113,7 @@ impl ProjectCacheWarmQueue {
 }
 
 fn warm_job(job: &WarmJob) -> Result<()> {
+    let started = Instant::now();
     for target in &job.targets {
         if let Err(error) = warm_target(&job.project_root, target) {
             log::warn!(
@@ -121,6 +123,11 @@ fn warm_job(job: &WarmJob) -> Result<()> {
             );
         }
     }
+    log::debug!(
+        "[project-loading] cache_warm_duration_ms={:.3} targets={}",
+        started.elapsed().as_secs_f64() * 1_000.0,
+        job.targets.len()
+    );
     Ok(())
 }
 

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use openusd::usd::Stage;
@@ -12,8 +13,13 @@ use usd_project::ProjectId;
 
 use super::ProjectApplicationService;
 use crate::project::{
-    cache::ProjectCacheTarget, cache_warmer::ProjectCachePreparation, scene::authoring::scene_path,
+    cache::{ProjectCacheIdentity, ProjectCacheTarget},
+    cache_warmer::{ProjectCachePreparation, ProjectCacheWarmQueue},
+    scene::authoring::scene_path,
 };
+
+#[path = "stage_archive.rs"]
+mod stage_archive;
 
 /// Manifest-backed semantic labels for one resolved Project stage. This
 /// neutral value crosses the library/binary boundary; the viewport converts
@@ -36,6 +42,8 @@ pub struct ProjectStageActivationTarget {
     pub target: ProjectStageTarget,
     pub project_root: PathBuf,
     pub path: PathBuf,
+    pub(crate) archive_paths: Vec<PathBuf>,
+    pub(crate) cache_identity: Option<ProjectCacheIdentity>,
     pub(crate) presentation: ProjectStagePresentationContext,
 }
 
@@ -119,6 +127,7 @@ impl ProjectApplicationService {
         project_id: ProjectId,
         target: ProjectStageTarget,
     ) -> Result<Option<ProjectStageActivationTarget>, ProjectReadError> {
+        let target_started = Instant::now();
         let (entry, manifest) = self.validated_project(project_id)?;
         let project_root = fs::canonicalize(entry.repository_locator())
             .map_err(|_| invalid_project_data(project_id))?;
@@ -161,22 +170,45 @@ impl ProjectApplicationService {
             return Err(invalid_project_data(project_id));
         }
 
+        let archive_started = Instant::now();
+        let archive_paths =
+            stage_archive::for_target(&project_root, manifest.raw(), &target, &path)
+                .unwrap_or_else(|error| {
+                    log::warn!(
+                        "Project activation archive discovery failed for {}: {error:#}",
+                        path.display()
+                    );
+                    Vec::new()
+                });
+        log::debug!(
+            "[project-loading] archive_discovery_ms={:.3} packages={} target={}",
+            archive_started.elapsed().as_secs_f64() * 1_000.0,
+            archive_paths.len(),
+            path.display()
+        );
+        log::debug!(
+            "[project-loading] target_resolution_ms={:.3} target={}",
+            target_started.elapsed().as_secs_f64() * 1_000.0,
+            path.display()
+        );
         let presentation = presentation_context(&manifest, &target);
         Ok(Some(ProjectStageActivationTarget {
             project_id,
             target,
             project_root,
             path,
+            archive_paths,
+            cache_identity: None,
             presentation,
         }))
     }
 
-    /// Prepare the resolved target's derived cache before the render host
-    /// opens it. The wait remains on the activation preparation worker.
+    /// Probe the resolved target's derived cache on the preparation worker.
+    /// Cache warming is advisory; canonical Stage activation never waits for it.
     pub(crate) fn prepare_cache_for_activation(
         &self,
         target: &ProjectStageActivationTarget,
-    ) -> ProjectCachePreparation {
+    ) -> (ProjectCachePreparation, Option<ProjectCacheIdentity>) {
         let cache_target = match target.target {
             ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
             ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
@@ -186,8 +218,38 @@ impl ProjectApplicationService {
                 id: model_id.to_string(),
             },
         };
-        self.cache_warm
-            .prepare_for_activation(&target.project_root, cache_target)
+        let identity_started = Instant::now();
+        let identity = match ProjectCacheIdentity::for_project(
+            &target.project_root,
+            cache_target,
+            viewport_protocol::RuntimeProfile::NativeMedium,
+            crate::project::cache_hydration::default_project_cache_config_hash(),
+        ) {
+            Ok(identity) => identity,
+            Err(error) => {
+                log::warn!(
+                    "Project cache activation identity could not be established for {}: {error:#}",
+                    target.project_root.display()
+                );
+                return (ProjectCachePreparation::FallbackRequired, None);
+            }
+        };
+        log::debug!(
+            "[project-loading] cache_identity_ms={:.3} target={}",
+            identity_started.elapsed().as_secs_f64() * 1_000.0,
+            identity.target.key()
+        );
+        let probe_started = Instant::now();
+        let state = ProjectCacheWarmQueue::probe_for_activation(
+            &crate::project::cache::ProjectCacheStore::new(&target.project_root),
+            &identity,
+        );
+        log::debug!(
+            "[project-loading] cache_descriptor_probe_ms={:.3} state={state:?} target={}",
+            probe_started.elapsed().as_secs_f64() * 1_000.0,
+            identity.target.key()
+        );
+        (state, Some(identity))
     }
 }
 
@@ -253,7 +315,13 @@ impl ProjectStageActivation {
         if target.project_id != command.project_id || target.target != command.target {
             return Err("activation target does not match its command".to_owned());
         }
+        let stage_started = Instant::now();
         let stage = open_activation_stage(&target.path)?;
+        log::debug!(
+            "[project-loading] stage_open_ms={:.3} target={}",
+            stage_started.elapsed().as_secs_f64() * 1_000.0,
+            target.path.display()
+        );
         if !stage.composition_errors().is_empty() {
             return Err(format!(
                 "activated Stage has composition errors: {:?}",

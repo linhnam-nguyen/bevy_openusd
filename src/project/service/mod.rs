@@ -189,6 +189,37 @@ impl ProjectApplicationService {
         stage_mutations: ProjectStageMutationQueue,
         progress: ProjectImportProgressStore,
     ) -> Result<Self, ProjectReadError> {
+        Self::open_with_project_state_and_progress_and_cache_warm(
+            registry_path,
+            publication_coordinator,
+            stage_mutations,
+            progress,
+            ProjectCacheWarmQueue::default(),
+        )
+    }
+
+    /// Open with a host-owned cache warmer. Render-host activation uses this
+    /// variant so a request-scoped service never owns the last worker handle.
+    pub(crate) fn open_with_cache_warm(
+        registry_path: impl Into<PathBuf>,
+        cache_warm: ProjectCacheWarmQueue,
+    ) -> Result<Self, ProjectReadError> {
+        Self::open_with_project_state_and_progress_and_cache_warm(
+            registry_path,
+            ProjectPublicationCoordinator::default(),
+            ProjectStageMutationQueue::default(),
+            ProjectImportProgressStore::default(),
+            cache_warm,
+        )
+    }
+
+    fn open_with_project_state_and_progress_and_cache_warm(
+        registry_path: impl Into<PathBuf>,
+        publication_coordinator: ProjectPublicationCoordinator,
+        stage_mutations: ProjectStageMutationQueue,
+        progress: ProjectImportProgressStore,
+        cache_warm: ProjectCacheWarmQueue,
+    ) -> Result<Self, ProjectReadError> {
         let registry = WorkspaceRegistry::load(registry_path).map_err(|_| {
             ProjectReadError::HostUnavailable {
                 code: ProjectReadErrorCode::RegistryUnavailable,
@@ -200,7 +231,7 @@ impl ProjectApplicationService {
             publication_coordinator,
             stage_mutations,
             progress,
-            cache_warm: ProjectCacheWarmQueue::default(),
+            cache_warm,
         })
     }
 

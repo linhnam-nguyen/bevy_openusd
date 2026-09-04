@@ -30,6 +30,14 @@ impl ProjectionBudget {
         }
     }
 
+    /// Limit one update by both work items and wall-clock time.
+    pub const fn bounded(items: usize, duration: Duration) -> Self {
+        Self {
+            max_work_items: Some(items),
+            max_duration: Some(duration),
+        }
+    }
+
     /// Limit one update by elapsed wall-clock time.
     pub fn time(duration: Duration) -> Self {
         Self {

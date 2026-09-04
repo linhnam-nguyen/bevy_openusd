@@ -247,13 +247,30 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
         state.entities[index] = Some(entity);
         state.next_index += 1;
         state.completed += 1;
-        if entry.path() != "/" && state.first_projected_prim_ms.is_none() {
+        let first_projected_prim = entry.path() != "/" && state.first_projected_prim_ms.is_none();
+        let first_geometry = is_mesh && state.first_mesh_ms.is_none();
+        if first_projected_prim {
             state.first_projected_prim_ms = elapsed_ms;
         }
-        if is_mesh && state.first_mesh_ms.is_none() {
+        if first_geometry {
             state.first_mesh_ms = elapsed_ms;
         }
         processed += 1;
+        drop(state);
+        if first_projected_prim {
+            bevy::log::debug!(
+                session = live.session_id(),
+                elapsed_ms = elapsed_ms.unwrap_or_default(),
+                "[project-loading] first_projected_prim"
+            );
+        }
+        if first_geometry {
+            bevy::log::info!(
+                session = live.session_id(),
+                elapsed_ms = elapsed_ms.unwrap_or_default(),
+                "[project-loading] first_geometry"
+            );
+        }
     }
     finish_if_ready(world, live, map);
 }
@@ -273,6 +290,11 @@ fn finalize_plan(world: &mut World) {
     state.plan_complete_ms = state
         .started_at
         .map(|start| start.elapsed().as_secs_f64() * 1000.0);
+    bevy::log::debug!(
+        plan_ms = state.plan_complete_ms.unwrap_or_default(),
+        total = state.total,
+        "[project-loading] projection_plan_complete"
+    );
 }
 
 fn fail_generation(world: &mut World, error: anyhow::Error) {
@@ -285,7 +307,7 @@ fn fail_generation(world: &mut World, error: anyhow::Error) {
 }
 
 fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
-    let (ready, animated, duration_ms, prims) = {
+    let (ready, animated, duration_ms, plan_ms, first_prim_ms, first_geometry_ms, prims) = {
         let mut state = world.resource_mut::<ProgressiveProjectionState>();
         let complete = state.total > 0 && state.completed == state.total;
         if !complete {
@@ -299,6 +321,9 @@ fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
             true,
             std::mem::take(&mut state.animated),
             duration_ms,
+            state.plan_complete_ms,
+            state.first_projected_prim_ms,
+            state.first_mesh_ms,
             state.total.saturating_sub(1),
         )
     };
@@ -325,7 +350,10 @@ fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
             session = live.session_id(),
             prims,
             duration_ms = duration_ms.unwrap_or_default(),
-            "progressive USD stage projection ready"
+            plan_ms = plan_ms.unwrap_or_default(),
+            first_prim_ms = first_prim_ms.unwrap_or_default(),
+            first_geometry_ms = first_geometry_ms.unwrap_or_default(),
+            "[project-loading] projection_complete"
         );
     }
 }
