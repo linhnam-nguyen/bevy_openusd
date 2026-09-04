@@ -18,7 +18,8 @@ pub(crate) fn author_scene_wrapper_to_path(
     authored_layer_path: &Path,
     scene_id: SceneId,
     source_asset_path: &Path,
-    default_prim: &str,
+    source_metadata_path: &Path,
+    source_prims: &[String],
     scene_name: &str,
     spatial: &usd_project::SourceSpatialConvention,
     linked_source: bool,
@@ -27,6 +28,7 @@ pub(crate) fn author_scene_wrapper_to_path(
     stage
         .prim("/SceneRoot")
         .set_metadata("ui:displayName", Value::String(scene_name.to_owned()))?;
+    crate::project::stage_metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
     let source_asset_path = crate::project::storage::authored_relative_project_asset_path(
         project_root,
@@ -35,15 +37,8 @@ pub(crate) fn author_scene_wrapper_to_path(
     )?;
     let source_prim = stage
         .define_prim(source_path.as_str())?
-        .set_type_name("Xform")?
-        .set_metadata(
-            REFERENCES_FIELD,
-            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
-                asset_path: source_asset_path,
-                prim_path: sdf::path(format!("/{default_prim}"))?,
-                ..Default::default()
-            }])),
-        )?;
+        .set_type_name("Xform")?;
+    author_source_references(&stage, &source_prim, &source_asset_path, source_prims)?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
     crate::project::spatial::author_source_binding_role(&source_prim, linked_source)?;
@@ -51,6 +46,44 @@ pub(crate) fn author_scene_wrapper_to_path(
         .root_layer()
         .export(path.to_string_lossy().as_ref())
         .context("export temporary adopted Scene wrapper")?;
+    Ok(())
+}
+
+fn author_source_references(
+    stage: &Stage,
+    source_prim: &openusd::usd::Prim,
+    source_asset_path: &str,
+    source_prims: &[String],
+) -> Result<()> {
+    ensure!(
+        !source_prims.is_empty(),
+        "Scene source has no entrypoint prims"
+    );
+    if source_prims.len() == 1 {
+        source_prim.clone().set_metadata(
+            REFERENCES_FIELD,
+            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
+                asset_path: source_asset_path.to_owned(),
+                prim_path: sdf::path(&source_prims[0])?,
+                ..Default::default()
+            }])),
+        )?;
+        return Ok(());
+    }
+
+    for (index, source_path) in source_prims.iter().enumerate() {
+        stage
+            .define_prim(format!("/SceneRoot/Source/Root_{index}").as_str())?
+            .set_type_name("Xform")?
+            .set_metadata(
+                REFERENCES_FIELD,
+                Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
+                    asset_path: source_asset_path.to_owned(),
+                    prim_path: sdf::path(source_path)?,
+                    ..Default::default()
+                }])),
+            )?;
+    }
     Ok(())
 }
 
@@ -74,10 +107,7 @@ pub(crate) fn validate_scene_wrapper(
     );
     let source_path = sdf::path(format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}"))?;
     ensure!(
-        stage
-            .root_layer()
-            .prim(&source_path)
-            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
+        has_source_reference(&stage, &source_path)?,
         "adopted Scene wrapper must preserve the source as a reference"
     );
     ensure!(
@@ -100,28 +130,65 @@ pub(crate) fn validate_scene_wrapper(
             == linked_source,
         "adopted Scene wrapper linked-source provenance does not match the request"
     );
-    let references = {
-        let root_layer = stage.root_layer();
-        let source_spec = root_layer
-            .prim(&source_path)
-            .context("adopted Scene wrapper source spec is missing")?;
-        let Some(Value::ReferenceListOp(references)) = source_spec.field(REFERENCES_FIELD)? else {
-            anyhow::bail!("adopted Scene wrapper source reference list is missing");
-        };
-        references
-    };
-    for reference in references.iter() {
-        ensure!(
-            !reference.asset_path.is_empty() && !Path::new(&reference.asset_path).is_absolute(),
-            "adopted Scene wrapper source asset path must be relative"
-        );
-    }
+    validate_source_reference_paths(&stage, &source_path)?;
     let source_prim = stage.prim(source_path.as_str());
     ensure!(
         crate::project::spatial::read_source_normalization(&source_prim)?
             == crate::project::spatial::source_normalization_transform(spatial),
         "adopted Scene wrapper spatial normalization does not match the inspected source"
     );
+    Ok(())
+}
+
+fn has_source_reference(stage: &Stage, source_path: &sdf::Path) -> Result<bool> {
+    let source = stage.prim(source_path.as_str());
+    if stage
+        .root_layer()
+        .prim(source_path)
+        .is_some_and(|spec| spec.has_field(REFERENCES_FIELD))
+    {
+        return Ok(true);
+    }
+    let root_layer = stage.root_layer();
+    Ok(source.children()?.into_iter().any(|child| {
+        let path = sdf::path(child.path().as_str()).ok();
+        path.and_then(|path| root_layer.prim(&path))
+            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD))
+    }))
+}
+
+fn validate_source_reference_paths(stage: &Stage, source_path: &sdf::Path) -> Result<()> {
+    let mut specs = Vec::new();
+    let root_layer = stage.root_layer();
+    if let Some(spec) = root_layer.prim(source_path)
+        && spec.has_field(REFERENCES_FIELD)
+    {
+        specs.push(spec);
+    } else {
+        for child in stage.prim(source_path.as_str()).children()? {
+            if let Ok(path) = sdf::path(child.path().as_str())
+                && let Some(spec) = root_layer.prim(&path)
+                && spec.has_field(REFERENCES_FIELD)
+            {
+                specs.push(spec);
+            }
+        }
+    }
+    ensure!(
+        !specs.is_empty(),
+        "adopted Scene wrapper has no source references"
+    );
+    for spec in specs {
+        let Some(Value::ReferenceListOp(references)) = spec.field(REFERENCES_FIELD)? else {
+            anyhow::bail!("adopted Scene wrapper source reference list is missing");
+        };
+        for reference in references.iter() {
+            ensure!(
+                !reference.asset_path.is_empty() && !Path::new(&reference.asset_path).is_absolute(),
+                "adopted Scene wrapper source asset path must be relative"
+            );
+        }
+    }
     Ok(())
 }
 

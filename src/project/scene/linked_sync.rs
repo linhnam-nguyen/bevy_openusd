@@ -107,7 +107,7 @@ pub(crate) fn sync_linked_scene_atomic(
         .context("validate base Project manifest")?;
     adoption_support::ensure_adoptable(request.inspection)?;
     adoption_support::ensure_current_manifest(request.project_root, request.base_manifest)?;
-    let default_prim = adoption_support::revalidate_source(request.source, request.inspection)?;
+    let source_prims = adoption_support::revalidate_source(request.source, request.inspection)?;
     let scene_name = request
         .base_manifest
         .scenes
@@ -167,7 +167,8 @@ pub(crate) fn sync_linked_scene_atomic(
             &final_scene_path,
             request.scene_id,
             &final_source_directory.join(&source_name),
-            &default_prim,
+            &temporary_source_directory.join(&source_name),
+            &source_prims,
             scene_name,
             &request.inspection.spatial,
             true,

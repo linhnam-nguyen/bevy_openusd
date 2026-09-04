@@ -226,7 +226,7 @@ def Xform "Root" (
 }
 
 #[test]
-fn missing_default_prim_is_unsupported() -> Result<()> {
+fn missing_default_prim_uses_explicit_root_reference_strategy() -> Result<()> {
     let directory = tempdir()?;
     let source = write_fixture(
         directory.path(),
@@ -234,9 +234,38 @@ fn missing_default_prim_is_unsupported() -> Result<()> {
         "#usda 1.0\ndef Xform \"Root\" {}\n",
     );
 
+    let inspection = inspect_composition(&source)?;
     assert_eq!(
-        inspect_composition(&source)?.classification,
-        CompositionClassification::Unsupported
+        inspection.classification,
+        CompositionClassification::Ambiguous
     );
+    assert_eq!(inspection.root_prims, vec!["/Root"]);
+    assert!(
+        inspection
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("explicit root references"))
+    );
+    Ok(())
+}
+
+#[test]
+fn multiple_roots_without_default_prim_are_scene_adoptable() -> Result<()> {
+    let directory = tempdir()?;
+    let source = write_fixture(
+        directory.path(),
+        "multi-root.usda",
+        r#"#usda 1.0
+def Xform "First" {}
+def Xform "Second" {}
+"#,
+    );
+
+    let inspection = inspect_composition(&source)?;
+    assert_eq!(
+        inspection.classification,
+        CompositionClassification::SceneLike
+    );
+    assert_eq!(inspection.root_prims, vec!["/First", "/Second"]);
     Ok(())
 }

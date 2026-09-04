@@ -73,11 +73,11 @@ pub(super) fn propose_scene_placement_with_name(
 
 pub(crate) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()> {
     ensure!(
-        matches!(
+        !matches!(
             inspection.classification,
-            CompositionClassification::NativeUsdHubScene | CompositionClassification::SceneLike
+            CompositionClassification::Unsupported
         ),
-        "USD source is not an eligible Scene adoption candidate"
+        "USD source cannot be safely inspected for Scene adoption"
     );
     ensure!(
         inspection.dependencies.iter().all(|dependency| {
@@ -92,14 +92,17 @@ pub(crate) fn ensure_adoptable(inspection: &CompositionInspection) -> Result<()>
     Ok(())
 }
 
-pub(crate) fn revalidate_source(source: &Path, expected: &CompositionInspection) -> Result<String> {
+pub(crate) fn revalidate_source(
+    source: &Path,
+    expected: &CompositionInspection,
+) -> Result<Vec<String>> {
     revalidate_source_for_adoption(source, expected).map_err(anyhow::Error::new)
 }
 
 pub(crate) fn revalidate_source_for_adoption(
     source: &Path,
     expected: &CompositionInspection,
-) -> std::result::Result<String, SourceRevalidationError> {
+) -> std::result::Result<Vec<String>, SourceRevalidationError> {
     if !source.is_file() {
         return Err(SourceRevalidationError::Changed);
     }
@@ -121,14 +124,34 @@ pub(crate) fn revalidate_source_for_adoption(
         .map_err(|error| {
             SourceRevalidationError::CompositionValidation(anyhow::anyhow!("{error:#}"))
         })?;
-    stage
-        .default_prim()
-        .map(|token| token.as_str().to_owned())
-        .ok_or_else(|| {
-            SourceRevalidationError::CompositionValidation(anyhow::anyhow!(
-                "Scene adoption source has no defaultPrim"
-            ))
-        })
+    source_entrypoint_prims(&stage).map_err(SourceRevalidationError::CompositionValidation)
+}
+
+/// Return the explicit root references used by Project wrappers.  A
+/// defaultPrim remains the preferred single entry point; otherwise every
+/// defined top-level prim is preserved as a separate reference target.
+pub(crate) fn source_entrypoint_prims(stage: &Stage) -> Result<Vec<String>> {
+    if let Some(default_prim) = stage.default_prim() {
+        let path = format!("/{default_prim}");
+        ensure!(
+            stage.prim(path.as_str()).is_defined()?,
+            "USD source defaultPrim is not a defined prim"
+        );
+        return Ok(vec![path]);
+    }
+
+    let mut roots = Vec::new();
+    for prim in stage.prim("/").children()? {
+        if prim.is_active()? && prim.is_defined()? && !prim.is_abstract()? {
+            roots.push(prim.path().as_str().to_owned());
+        }
+    }
+    roots.sort();
+    ensure!(
+        !roots.is_empty(),
+        "USD source has no defaultPrim and no defined root prims"
+    );
+    Ok(roots)
 }
 
 pub(super) fn rollback_publication(

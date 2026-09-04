@@ -17,13 +17,9 @@ pub(super) fn validate_localized_root(path: &Path, resolver: Arc<dyn Resolver>) 
         stage.composition_errors().is_empty(),
         "localized USD root has composition errors"
     );
-    let default_prim = stage
-        .default_prim()
-        .context("localized USD root has no defaultPrim")?;
-    let root_path = format!("/{default_prim}");
     ensure!(
-        stage.prim(root_path.as_str()).is_defined()?,
-        "localized USD root defaultPrim is not a defined prim"
+        !stage.prim("/").children()?.is_empty(),
+        "localized USD root has no defined root prims"
     );
     Ok(())
 }

@@ -119,6 +119,36 @@ fn empty_project_candidate_can_become_root() -> Result<()> {
 }
 
 #[test]
+fn multi_root_source_without_default_prim_is_preserved_as_scene() -> Result<()> {
+    let project = tempdir()?;
+    let source = project.path().join("multi-root.usda");
+    fs::write(
+        &source,
+        r#"#usda 1.0
+def Xform "First" {}
+def Xform "Second" {}
+"#,
+    )?;
+    let base = manifest(ProjectId::new_v4(), vec![], ProjectRoot::Empty);
+    ManifestStore::write_manifest_atomic(project.path(), &base)?;
+    let inspection = inspect_composition(&source)?;
+
+    let adopted = adopt_scene_atomic(request(
+        project.path(),
+        &source,
+        &inspection,
+        &base,
+        &SceneCompositionGraph::default(),
+    ))?;
+
+    let stage = Stage::open(&adopted.scene_path.to_string_lossy())?;
+    assert!(stage.prim("/SceneRoot/Source/Root_0").is_defined()?);
+    assert!(stage.prim("/SceneRoot/Source/Root_1").is_defined()?);
+    assert_eq!(stage.start_time_code(), 0.0);
+    Ok(())
+}
+
+#[test]
 fn nested_adoption_publishes_one_distinct_parent_placement() -> Result<()> {
     let project = tempdir()?;
     let source = write_scene_candidate(project.path(), "nested-source.usda");

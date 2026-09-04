@@ -69,7 +69,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
         .context("validate Scene adoption classification and dependencies")?;
     adoption_support::ensure_current_manifest(request.project_root, request.base_manifest)?;
 
-    let default_prim =
+    let source_prims =
         adoption_support::revalidate_source_for_adoption(request.source, request.inspection)
             .map_err(anyhow::Error::new)
             .context("validate adoption source after inspection")?;
@@ -202,7 +202,8 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                 &final_scene_path,
                 scene_id,
                 &final_source_directory.join(&source_name),
-                &default_prim,
+                &temporary_source_directory.join(&source_name),
+                &source_prims,
                 scene_name,
                 &request.inspection.spatial,
                 request.linked_source.is_some(),

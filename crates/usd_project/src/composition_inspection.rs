@@ -54,6 +54,10 @@ pub struct CompositionDiagnostic {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompositionInspection {
     pub classification: CompositionClassification,
+    /// Absolute top-level prim paths.  A source with no `defaultPrim` can
+    /// still be preserved by referencing these explicit roots.
+    #[serde(default)]
+    pub root_prims: Vec<String>,
     pub dependencies: Vec<DependencyInspection>,
     pub diagnostics: Vec<CompositionDiagnostic>,
     pub has_variants: bool,

@@ -43,6 +43,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
 
     let mut inspection = CompositionInspection {
         classification: CompositionClassification::Ambiguous,
+        root_prims: Vec::new(),
         dependencies: Vec::new(),
         diagnostics: Vec::new(),
         has_variants: false,
@@ -64,19 +65,28 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
     }
     let mut dependencies = BTreeMap::new();
 
+    let root_prims = stage_root_prims(&stage)?;
+    inspection.root_prims = root_prims.clone();
+
     collect_sublayer_dependencies(&stage, source, &mut dependencies);
 
-    let Some(default_prim) = stage.default_prim() else {
+    let root_path = if let Some(default_prim) = stage.default_prim() {
+        format!("/{default_prim}")
+    } else if let Some(root_path) = root_prims.first() {
+        inspection.diagnostics.push(diagnostic(
+            "USD source has no defaultPrim; explicit root references will be used",
+        ));
+        root_path.clone()
+    } else {
         inspection.classification = CompositionClassification::Unsupported;
-        inspection
-            .diagnostics
-            .push(diagnostic("USD source has no defaultPrim"));
+        inspection.diagnostics.push(diagnostic(
+            "USD source has no defaultPrim and no defined root prims",
+        ));
         collect_composition_errors(&stage, &mut dependencies, &mut inspection);
         inspection.dependencies = finish_dependencies(dependencies);
         return Ok(inspection);
     };
 
-    let root_path = format!("/{default_prim}");
     let root = stage.prim(root_path.as_str());
     if !root.is_defined()? {
         inspection.classification = CompositionClassification::Unsupported;
@@ -139,6 +149,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         is_native_scene,
         root_is_group,
         root_is_component,
+        root_prims.len() > 1,
         inspection.has_references,
         inspection.has_payloads,
         inspection.has_sublayers,
@@ -152,6 +163,7 @@ fn classify(
     is_native_scene: bool,
     root_is_group: bool,
     root_is_component: bool,
+    has_multiple_roots: bool,
     has_references: bool,
     has_payloads: bool,
     has_sublayers: bool,
@@ -160,6 +172,9 @@ fn classify(
     if is_native_scene {
         return CompositionClassification::NativeUsdHubScene;
     }
+    if has_multiple_roots {
+        return CompositionClassification::SceneLike;
+    }
     if root_is_component {
         return CompositionClassification::ModelLike;
     }
@@ -167,6 +182,20 @@ fn classify(
         return CompositionClassification::SceneLike;
     }
     CompositionClassification::Ambiguous
+}
+
+fn stage_root_prims(stage: &Stage) -> Result<Vec<String>> {
+    let mut roots = stage
+        .prim("/")
+        .children()?
+        .into_iter()
+        .filter_map(|prim| {
+            (prim.is_active().ok()? && prim.is_defined().ok()? && !prim.is_abstract().ok()?)
+                .then(|| prim.path().as_str().to_owned())
+        })
+        .collect::<Vec<_>>();
+    roots.sort();
+    Ok(roots)
 }
 
 fn native_usdhub_scene(root: &openusd::usd::Prim) -> Result<bool> {
@@ -328,6 +357,7 @@ fn diagnostic(message: impl Into<String>) -> CompositionDiagnostic {
 fn unsupported_inspection(message: String) -> CompositionInspection {
     CompositionInspection {
         classification: CompositionClassification::Unsupported,
+        root_prims: Vec::new(),
         dependencies: vec![],
         diagnostics: vec![diagnostic(message)],
         has_variants: false,

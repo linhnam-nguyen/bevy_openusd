@@ -45,6 +45,8 @@ pub(crate) mod semantic_store;
 pub(crate) mod source_closure;
 #[path = "project/spatial.rs"]
 pub(crate) mod spatial;
+#[path = "project/stage_metadata.rs"]
+pub(crate) mod stage_metadata;
 
 #[path = "project/storage.rs"]
 pub(crate) mod storage;

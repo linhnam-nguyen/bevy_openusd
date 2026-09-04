@@ -135,3 +135,70 @@ fn composed_model_source_remains_one_opaque_product_model() -> Result<()> {
     assert_eq!(published.manifest.models[0].storage_key.as_str(), "opaque");
     Ok(())
 }
+
+#[test]
+fn multi_root_source_without_default_prim_can_be_wrapped_as_one_model() -> Result<()> {
+    let project = tempdir()?;
+    let original = project.path().join("multi-root.usda");
+    fs::write(
+        &original,
+        "#usda 1.0\ndef Xform \"First\" {}\ndef Xform \"Second\" {}\n",
+    )?;
+    let base = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Multi Root Model Project",
+        ProjectRoot::Empty,
+        vec![],
+        vec![],
+    );
+    ManifestStore::write_manifest_atomic(project.path(), &base)?;
+    let importer = UsdModelImporter;
+    let inspection = importer.inspect(&original)?;
+    let prepared = importer.prepare(ModelImportRequest {
+        source: original,
+        inspection,
+    })?;
+    let published = publish_model_wrapper_atomic(ModelWrapperRequest {
+        project_root: project.path(),
+        base_manifest: &base,
+        prepared: &prepared,
+        set_as_root: true,
+        placement: None,
+    })?;
+
+    let stage = Stage::open(&published.wrapper_path.to_string_lossy())?;
+    assert!(stage.prim("/ModelRoot/Source/Root_0").is_defined()?);
+    assert!(stage.prim("/ModelRoot/Source/Root_1").is_defined()?);
+    Ok(())
+}
+
+#[test]
+fn packaged_instance_source_can_be_wrapped_as_one_model() -> Result<()> {
+    let project = tempdir()?;
+    let original = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("assets/external/PointInstancedMedCity.usdz");
+    let base = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Packaged Model Project",
+        ProjectRoot::Empty,
+        vec![],
+        vec![],
+    );
+    ManifestStore::write_manifest_atomic(project.path(), &base)?;
+    let importer = UsdModelImporter;
+    let inspection = importer.inspect(&original)?;
+    let prepared = importer.prepare(ModelImportRequest {
+        source: original,
+        inspection,
+    })?;
+
+    let published = publish_model_wrapper_atomic(ModelWrapperRequest {
+        project_root: project.path(),
+        base_manifest: &base,
+        prepared: &prepared,
+        set_as_root: true,
+        placement: None,
+    })?;
+    assert!(published.wrapper_path.is_file());
+    Ok(())
+}

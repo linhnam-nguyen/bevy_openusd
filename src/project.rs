@@ -20,4 +20,5 @@ pub(crate) mod semantic_store;
 pub mod service;
 pub(crate) mod source_closure;
 pub(crate) mod spatial;
+pub(crate) mod stage_metadata;
 pub(crate) mod storage;

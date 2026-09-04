@@ -18,6 +18,7 @@ mod bim_properties_lifecycle;
 mod bim_search;
 mod commands;
 pub(crate) mod convert;
+mod editor_boundary;
 mod editor_commands;
 mod helpers;
 mod mutations;

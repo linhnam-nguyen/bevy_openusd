@@ -4,6 +4,7 @@ use usd_model::SemanticSnapshot;
 use viewport_protocol::{EditorOperation, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
 use super::convert::editor_value_to_usd;
+use super::editor_boundary::validate_command;
 use super::helpers::{
     emit_editor_completed, emit_editor_export, emit_runtime_mutation_accepted, reject,
 };
@@ -35,6 +36,12 @@ pub(super) fn apply_editor_command(
         Ok(result) => return result,
         Err(command_and_request) => command_and_request,
     };
+    if let Some(stage) = stage
+        && let Err(error) = validate_command(&stage.stage, &command)
+    {
+        reject(outbox, request_id, error);
+        return true;
+    }
     macro_rules! require_stage {
         () => {
             match stage {

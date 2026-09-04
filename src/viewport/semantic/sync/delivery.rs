@@ -10,7 +10,6 @@ use crate::project::blob_store::PreparedMeshBlob;
 use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::ghost_cache::{
     PreparedRenderPayloads, prepare_render_blobs, prepare_render_blobs_for_entities,
-    prepare_runtime_payloads,
 };
 use crate::project::recovery::RecoverySettings;
 use crate::viewport::api::RenderServerInterface;
@@ -236,7 +235,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                 }
                 return PreparedRenderPayloads {
                     meshes: prepared,
-                    runtime: prepare_runtime_payloads(world, &update.snapshot),
+                    runtime: prepare_runtime_payloads_if_server(world, &update.snapshot),
                 };
             };
 
@@ -265,7 +264,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
                 }
                 return PreparedRenderPayloads {
                     meshes: prepared,
-                    runtime: prepare_runtime_payloads(world, &update.snapshot),
+                    runtime: prepare_runtime_payloads_if_server(world, &update.snapshot),
                 };
             }
 
@@ -282,8 +281,22 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
         }
     };
     let runtime = match action {
-        SemanticSyncAction::Replace(snapshot) => prepare_runtime_payloads(world, snapshot),
-        SemanticSyncAction::Delta(update) => prepare_runtime_payloads(world, &update.snapshot),
+        SemanticSyncAction::Replace(snapshot) => {
+            prepare_runtime_payloads_if_server(world, snapshot)
+        }
+        SemanticSyncAction::Delta(update) => {
+            prepare_runtime_payloads_if_server(world, &update.snapshot)
+        }
     };
     PreparedRenderPayloads { meshes, runtime }
+}
+
+fn prepare_runtime_payloads_if_server(
+    world: &mut World,
+    snapshot: &SemanticSnapshot,
+) -> crate::project::runtime_payload::PreparedRuntimePayloads {
+    if world.get_resource::<RenderServerInterface>().is_none() {
+        return Default::default();
+    }
+    crate::project::ghost_cache::prepare_runtime_payloads(world, snapshot)
 }

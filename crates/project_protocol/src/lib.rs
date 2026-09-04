@@ -227,6 +227,7 @@ mod tests {
                 source: LocalSelectionToken::new("scene-source"),
                 inspection: usd_project::CompositionInspection {
                     classification: usd_project::CompositionClassification::SceneLike,
+                    root_prims: vec!["/Assembly".to_owned()],
                     dependencies: Vec::new(),
                     diagnostics: Vec::new(),
                     has_variants: false,

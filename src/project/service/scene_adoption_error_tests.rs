@@ -84,7 +84,7 @@ fn adoption_rejects_a_changed_source_with_a_distinct_typed_error() {
 }
 
 #[test]
-fn adoption_rejects_an_ineligible_source_with_a_classification_error() {
+fn adoption_accepts_valid_source_with_advisory_classification() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
@@ -95,7 +95,11 @@ fn adoption_rejects_an_ineligible_source_with_a_classification_error() {
     fs::write(&source, "#usda 1.0\ndef Xform \"World\" {}\n").unwrap();
     let inspection = inspect_composition(&source).unwrap();
 
-    let error = service
+    assert_eq!(
+        inspection.classification,
+        usd_project::CompositionClassification::Ambiguous
+    );
+    let response = service
         .adopt_scene(
             project.id,
             ProjectWriteTarget::Project(project.id),
@@ -106,11 +110,7 @@ fn adoption_rejects_an_ineligible_source_with_a_classification_error() {
             1,
             PlacementSpec::Default,
         )
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        project_protocol::ProjectWriteError::Failed {
-            code: project_protocol::ProjectWriteErrorCode::SourceClassificationRejected
-        }
-    ));
+        .expect("valid USD remains importable despite advisory classification");
+    assert_eq!(response.project.counts.scenes, 2);
+    assert!(response.placement_id.is_some());
 }

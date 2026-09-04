@@ -135,7 +135,7 @@ pub(crate) fn publish_model_wrapper_atomic(
         );
     }
 
-    let source_default_prim = wrapper_authoring::source_default_prim(&request.prepared.source)?;
+    let source_prims = wrapper_authoring::source_entrypoint_prims(&request.prepared.source)?;
     let model_directory = ProjectStorageLayout::new(request.project_root)
         .canonical_models_dir()
         .join(model_name.as_str());
@@ -226,6 +226,9 @@ pub(crate) fn publish_model_wrapper_atomic(
             .dependencies
             .is_empty()
             && source_name != "model.usda"
+            && !Path::new(&source_name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
         {
             fs::rename(
                 temporary_source_directory.join(&source_name),
@@ -240,7 +243,8 @@ pub(crate) fn publish_model_wrapper_atomic(
             &model_directory.join("model.usda"),
             request.prepared.id,
             &source_directory.join(&source_name),
-            &source_default_prim,
+            &temporary_source_directory.join(&source_name),
+            &source_prims,
             &model_name,
             &request.prepared.inspection.composition.spatial,
         )?;

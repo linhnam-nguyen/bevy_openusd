@@ -11,7 +11,7 @@ mod io;
 #[path = "source_closure_localize.rs"]
 mod localize;
 
-pub(crate) use discovery::{LocalizedDependencyReport, discover};
+pub(crate) use discovery::{LocalizedDependencyReport, discover, open_stage_with_resolver};
 pub(crate) use localize::{
     materialize_source_closure, materialize_source_closure_with_resolver,
     source_closure_fingerprint,
