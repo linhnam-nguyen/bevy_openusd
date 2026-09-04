@@ -100,6 +100,7 @@ fn metadata_values(entity: &EntitySnapshot) -> BTreeMap<String, Option<MetadataE
         name,
         value,
         measurement,
+        ..
     } in &entity.properties
     {
         values.insert(

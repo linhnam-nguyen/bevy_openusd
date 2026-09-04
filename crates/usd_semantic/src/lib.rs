@@ -20,5 +20,6 @@ pub use metadata::canonical_value;
 pub use nvidia::{
     NvidiaRevitClassificationConfig, NvidiaRevitConfig, NvidiaRevitIdentityConfig,
     NvidiaRevitMeasurementMapping, nvidia_revit_property_descriptor,
+    nvidia_revit_property_descriptor_with_display_name,
 };
 pub use units::{UnitConversionError, UnitDefinition, UnitRegistry};

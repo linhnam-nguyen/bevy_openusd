@@ -206,29 +206,33 @@ fn build_field_catalogue(snapshot: &SemanticSnapshot) -> BimClassificationFieldC
         );
     }
 
-    let mut property_names = BTreeSet::new();
+    let mut property_metadata: BTreeMap<String, Option<String>> = BTreeMap::new();
     for entity in entities {
-        property_names.extend(
-            entity
-                .properties
-                .iter()
-                .map(|property| property.name.trim())
-                .filter(|name| {
-                    !name.is_empty()
-                        && name.len() <= viewport_protocol::MAX_BIM_FIELD_KEY_BYTES
-                        && !name.contains('\0')
-                }),
-        );
+        for property in &entity.properties {
+            let name = property.name.trim();
+            if name.is_empty()
+                || name.len() > viewport_protocol::MAX_BIM_FIELD_KEY_BYTES
+                || name.contains('\0')
+            {
+                continue;
+            }
+            property_metadata
+                .entry(name.to_owned())
+                .or_insert_with(|| property.display_name.clone());
+        }
     }
-    for name in property_names {
-        let field = BimFieldKey::Property(name.to_owned());
-        if represented_properties.contains(name) || fields.contains_key(&field) {
+    for (name, display_name) in property_metadata {
+        let field = BimFieldKey::Property(name.clone());
+        if represented_properties.contains(name.as_str()) || fields.contains_key(&field) {
             continue;
         }
         if fields.len() >= MAX_BIM_CLASSIFICATION_FIELDS {
             break;
         }
-        let descriptor = usd_semantic::nvidia_revit_property_descriptor(name);
+        let descriptor = usd_semantic::nvidia_revit_property_descriptor_with_display_name(
+            &name,
+            display_name.as_deref(),
+        );
         fields.insert(
             field.clone(),
             BimClassificationFieldDescriptor::new(field, descriptor.label, descriptor.scope),

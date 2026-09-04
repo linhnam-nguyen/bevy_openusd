@@ -114,7 +114,10 @@ fn project_property(
                 .collect()
         })
         .unwrap_or_default();
-    let descriptor = usd_semantic::nvidia_revit_property_descriptor(&key);
+    let descriptor = usd_semantic::nvidia_revit_property_descriptor_with_display_name(
+        &key,
+        first.display_name.as_deref(),
+    );
     let group_id = property_group_id(descriptor.scope);
     let current_display_unit = measurement.as_ref().and_then(|metadata| {
         metadata

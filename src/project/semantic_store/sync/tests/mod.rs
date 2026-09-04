@@ -79,6 +79,7 @@ pub(super) fn snapshot() -> SemanticSnapshot {
                     name: "secret_cost".to_owned(),
                     value: CanonicalValue::Integer(42),
                     measurement: None,
+                    display_name: None,
                 }],
                 metadata_hash: digest(5),
                 full_hash: digest(6),

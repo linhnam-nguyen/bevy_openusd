@@ -96,10 +96,12 @@ pub(crate) fn extract_bim_classification(
     }
 }
 
-/// Projects an observed NVIDIA/Revit raw property to source-neutral UI
-/// metadata. The raw key remains unchanged and is never replaced by the
-/// human-facing label.
-pub fn nvidia_revit_property_descriptor(name: &str) -> BimPropertyDescriptor {
+/// Projects an observed NVIDIA/Revit raw property to source-neutral UI metadata
+/// with an optional authored display name.
+pub fn nvidia_revit_property_descriptor_with_display_name(
+    name: &str,
+    display_name: Option<&str>,
+) -> BimPropertyDescriptor {
     let (scope, suffix) = if let Some(suffix) = name.strip_prefix("BIM:Instance:") {
         (BimPropertyScope::Instance, suffix)
     } else if let Some(suffix) = name.strip_prefix("BIM:Type:") {
@@ -107,15 +109,18 @@ pub fn nvidia_revit_property_descriptor(name: &str) -> BimPropertyDescriptor {
     } else {
         (BimPropertyScope::Other, name)
     };
-    BimPropertyDescriptor::new(name, humanize_label(suffix), scope)
+
+    let label = match display_name.map(str::trim).filter(|text| !text.is_empty()) {
+        Some(authored) => authored.to_owned(),
+        None => suffix.to_owned(),
+    };
+
+    BimPropertyDescriptor::new(name, label, scope)
 }
 
-fn humanize_label(suffix: &str) -> String {
-    match suffix {
-        "ElementId" => "Element ID".to_owned(),
-        "IfcGUID" => "IFC GUID".to_owned(),
-        _ => suffix.to_owned(),
-    }
+/// Projects an observed NVIDIA/Revit raw property to source-neutral UI metadata.
+pub fn nvidia_revit_property_descriptor(name: &str) -> BimPropertyDescriptor {
+    nvidia_revit_property_descriptor_with_display_name(name, None)
 }
 
 pub(crate) fn attach_measurements(properties: &mut [SemanticProperty], config: &NvidiaRevitConfig) {
@@ -200,12 +205,11 @@ fn write_string(bytes: &mut Vec<u8>, value: &str) {
 }
 
 fn write_optional_string(bytes: &mut Vec<u8>, value: Option<&str>) {
-    match value {
-        Some(value) => {
-            bytes.push(1);
-            write_string(bytes, value);
-        }
-        None => bytes.push(0),
+    if let Some(value) = value {
+        bytes.push(1);
+        write_string(bytes, value);
+    } else {
+        bytes.push(0);
     }
 }
 
@@ -218,6 +222,7 @@ mod tests {
             name: name.to_owned(),
             value,
             measurement: None,
+            display_name: None,
         }
     }
 
@@ -336,14 +341,6 @@ mod tests {
             classification.category_property.as_deref(),
             Some("BIM:Instance:Category")
         );
-        assert_eq!(
-            nvidia_revit_property_descriptor("BIM:Type:Description").label,
-            "Description"
-        );
-        assert_eq!(
-            nvidia_revit_property_descriptor("BIM:Type:Description").scope,
-            BimPropertyScope::Type
-        );
     }
 
     #[test]
@@ -361,5 +358,36 @@ mod tests {
         );
 
         assert_eq!(identity.family_name.as_deref(), Some("Basic Wall"));
+    }
+
+    #[test]
+    fn property_descriptor_precedence_authored_display_name_over_suffix() {
+        let with_authored = nvidia_revit_property_descriptor_with_display_name(
+            "BIM:Type:tn__Codedassemblage_pFW3",
+            Some("Code d'assemblage"),
+        );
+        assert_eq!(with_authored.label, "Code d'assemblage");
+        assert_eq!(with_authored.scope, BimPropertyScope::Type);
+
+        let instance_authored = nvidia_revit_property_descriptor_with_display_name(
+            "BIM:Instance:tn__Extensioninfrieure_xIYa3",
+            Some("Extension inférieure"),
+        );
+        assert_eq!(instance_authored.label, "Extension inférieure");
+        assert_eq!(instance_authored.scope, BimPropertyScope::Instance);
+
+        let fallback =
+            nvidia_revit_property_descriptor_with_display_name("BIM:Instance:ElementId", None);
+        assert_eq!(fallback.label, "ElementId");
+        assert_eq!(fallback.scope, BimPropertyScope::Instance);
+
+        let whitespace_fallback =
+            nvidia_revit_property_descriptor_with_display_name("BIM:Instance:IfcGUID", Some("   "));
+        assert_eq!(whitespace_fallback.label, "IfcGUID");
+        assert_eq!(whitespace_fallback.scope, BimPropertyScope::Instance);
+
+        let other = nvidia_revit_property_descriptor("custom_prop");
+        assert_eq!(other.label, "custom_prop");
+        assert_eq!(other.scope, BimPropertyScope::Other);
     }
 }

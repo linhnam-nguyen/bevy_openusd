@@ -257,6 +257,7 @@ fn write_properties(bytes: &mut Vec<u8>, properties: &[SemanticProperty]) {
     bytes.extend_from_slice(&(properties.len() as u64).to_le_bytes());
     for property in properties {
         write_string(bytes, &property.name);
+        write_option_string(bytes, property.display_name.as_deref());
         write_value(bytes, &property.value);
         write_measurement(bytes, property.measurement.as_ref());
     }

@@ -51,6 +51,7 @@ fn snapshot() -> SemanticSnapshot {
             name: "test".to_owned(),
             value: CanonicalValue::Bool(true),
             measurement: None,
+            display_name: None,
         }],
         metadata_hash: digest(),
         full_hash: digest(),

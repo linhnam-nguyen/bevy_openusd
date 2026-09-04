@@ -39,6 +39,7 @@ fn entity(key: &str, path: &str) -> EntitySnapshot {
             name: "Comments".to_owned(),
             value: CanonicalValue::Text("A".to_owned()),
             measurement: None,
+            display_name: None,
         }],
         metadata_hash: digest(30),
         full_hash: digest(40),

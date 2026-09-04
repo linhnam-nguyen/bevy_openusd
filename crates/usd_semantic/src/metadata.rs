@@ -76,10 +76,26 @@ fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticP
             .split_once('.')
             .map(|(_, property)| property.to_owned())
             .unwrap_or_else(|| attribute.path().as_str().to_owned());
+        let display_name = attribute
+            .get_metadata::<String>("displayName")
+            .ok()
+            .flatten()
+            .or_else(|| {
+                attribute
+                    .get_metadata::<Value>("displayName")
+                    .ok()
+                    .flatten()
+                    .and_then(text_value)
+            })
+            .and_then(|name| {
+                let trimmed = name.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_owned())
+            });
         properties.push(SemanticProperty {
             name,
             value: canonical_value(value),
             measurement: None,
+            display_name,
         });
     }
     Ok(properties)

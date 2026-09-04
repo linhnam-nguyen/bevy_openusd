@@ -16,6 +16,8 @@ pub struct SemanticProperty {
     pub value: CanonicalValue,
     #[serde(default)]
     pub measurement: Option<MeasurementMetadata>,
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

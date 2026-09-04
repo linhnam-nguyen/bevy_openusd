@@ -37,6 +37,7 @@ pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -
                 name: "Comments".to_owned(),
                 value: CanonicalValue::Text(comments.to_owned()),
                 measurement: None,
+                display_name: None,
             },
             SemanticProperty {
                 name: "Height".to_owned(),
@@ -46,6 +47,7 @@ pub(super) fn snapshot(oid: &str, snapshot_id: &str, comments: &str, seed: u8) -
                     "m",
                     Some("[ft_i]".to_owned()),
                 )),
+                display_name: None,
             },
         ],
         metadata_hash: HashDigest::new([seed.wrapping_add(1); 32]),

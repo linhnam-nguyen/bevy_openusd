@@ -18,6 +18,7 @@ pub(super) fn property(
         name: name.to_owned(),
         value,
         measurement,
+        display_name: None,
     }
 }
 

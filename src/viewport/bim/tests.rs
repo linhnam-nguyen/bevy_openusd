@@ -112,6 +112,59 @@ fn property_read_classifies_observed_instance_namespace_without_guessing_values(
 }
 
 #[test]
+fn property_read_prefers_authored_display_name_over_stripped_suffix() {
+    let mut snapshot = super::test_fixtures::snapshot();
+    let wall_a = snapshot
+        .entities
+        .get_mut(&usd_model::EntityKey::from("wall-a"))
+        .expect("wall-a");
+    wall_a.properties.push(usd_model::SemanticProperty {
+        name: "BIM:Type:tn__Codedassemblage_pFW3".to_owned(),
+        value: CanonicalValue::Text("EXT-WALL-01".to_owned()),
+        measurement: None,
+        display_name: Some("Code d'assemblage".to_owned()),
+    });
+    wall_a.properties.push(usd_model::SemanticProperty {
+        name: "BIM:Instance:tn__Extensioninfrieure_xIYa3".to_owned(),
+        value: CanonicalValue::Text("0".to_owned()),
+        measurement: None,
+        display_name: Some("Extension inférieure".to_owned()),
+    });
+
+    let service = BimReadService::new(&snapshot);
+    let selection = SelectionReadModel {
+        targets: vec![viewport_protocol::SceneAnchor::active_session(
+            "/World/WallA",
+        )],
+        primary: None,
+    };
+
+    let result = service
+        .read_properties(&selection, 19, BimReadPolicy::default())
+        .expect("selected properties read");
+
+    let all_props = result
+        .groups
+        .iter()
+        .flat_map(|g| g.properties.iter())
+        .collect::<Vec<_>>();
+
+    let assembly = all_props
+        .iter()
+        .find(|p| p.key == "BIM:Type:tn__Codedassemblage_pFW3")
+        .expect("assembly property");
+    assert_eq!(assembly.label, "Code d'assemblage");
+    assert_eq!(assembly.scope, viewport_protocol::BimPropertyScope::Type);
+
+    let ext = all_props
+        .iter()
+        .find(|p| p.key == "BIM:Instance:tn__Extensioninfrieure_xIYa3")
+        .expect("extension property");
+    assert_eq!(ext.label, "Extension inférieure");
+    assert_eq!(ext.scope, viewport_protocol::BimPropertyScope::Instance);
+}
+
+#[test]
 fn empty_selection_preserves_authoritative_revision() {
     let snapshot = snapshot();
     let service = BimReadService::new(&snapshot);

@@ -209,6 +209,7 @@ mod tests {
                 name: "BIM:Width".to_owned(),
                 value: usd_model::CanonicalValue::Integer(value),
                 measurement: None,
+                display_name: None,
             }],
             metadata_hash: digest(metadata_hash),
             full_hash: digest(metadata_hash),
@@ -321,6 +322,7 @@ mod tests {
             name: "BIM:Height".to_owned(),
             value: usd_model::CanonicalValue::Integer(4),
             measurement: None,
+            display_name: None,
         });
         let baseline = snapshot(
             SnapshotSource::GitCommit {

@@ -266,3 +266,47 @@ fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn authored_attribute_display_name_is_extracted_and_changes_hashes() -> Result<()> {
+    let stage = fixture()?;
+    let baseline = SemanticExtractor::default().extract(&stage, source())?;
+
+    let triangle_key = EntityKey::from("/World/Triangle");
+    let baseline_entity = baseline
+        .entities
+        .get(&triangle_key)
+        .expect("baseline triangle entity");
+    let baseline_height = baseline_entity
+        .properties
+        .iter()
+        .find(|p| p.name == "height")
+        .expect("height property");
+    assert_eq!(baseline_height.display_name, None);
+
+    // Set authored displayName metadata on the attribute
+    let prim = stage.prim(openusd::sdf::path("/World/Triangle")?);
+    let height_attr = prim.attribute("height");
+    height_attr.set_metadata("displayName", Value::String("Height (Authored)".to_owned()))?;
+
+    let updated = SemanticExtractor::default().extract(&stage, source())?;
+    let updated_entity = updated
+        .entities
+        .get(&triangle_key)
+        .expect("updated triangle entity");
+    let updated_height = updated_entity
+        .properties
+        .iter()
+        .find(|p| p.name == "height")
+        .expect("height property");
+
+    assert_eq!(
+        updated_height.display_name.as_deref(),
+        Some("Height (Authored)")
+    );
+    assert_ne!(baseline_entity.metadata_hash, updated_entity.metadata_hash);
+    assert_ne!(baseline_entity.full_hash, updated_entity.full_hash);
+    assert_ne!(baseline.snapshot_id, updated.snapshot_id);
+
+    Ok(())
+}
