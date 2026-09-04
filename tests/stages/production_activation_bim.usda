@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+)
+
+def Xform "World"
+{
+    def Xform "Wall"
+    {
+        custom string BIM:Instance:ElementId = "production-wall-001"
+        custom string BIM:Instance:Category = "Walls"
+        custom string BIM:Type:Name = "Generic Wall"
+    }
+
+    def Xform "Door"
+    {
+        custom string BIM:Instance:ElementId = "production-door-001"
+        custom string BIM:Instance:Category = "Doors"
+        custom string BIM:Type:Name = "Generic Door"
+    }
+}

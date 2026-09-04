@@ -173,6 +173,9 @@ pub(crate) fn prepare_runtime_payloads_for_stage(
     stage: &openusd::usd::Stage,
     snapshot: &usd_model::SemanticSnapshot,
 ) -> PreparedRuntimePayloads {
+    let provenance = world
+        .get_resource::<usd_bevy::route::material::MaterialProjectionProvenance>()
+        .cloned();
     prepare_runtime_payloads_with_filter(world, snapshot, |path| {
         let Ok(path) = openusd::sdf::path(path) else {
             return false;
@@ -180,7 +183,10 @@ pub(crate) fn prepare_runtime_payloads_for_stage(
         matches!(
             usd_bevy::read::shade::read_material_binding(stage, &path),
             Ok(Some(_))
-        )
+        ) && provenance.as_ref().is_some_and(|provenance| {
+            provenance.status(path.as_str())
+                == Some(usd_bevy::route::material::MaterialProjectionStatus::AuthoredConversion)
+        })
     })
 }
 
@@ -194,13 +200,21 @@ fn prepare_runtime_payloads_with_filter<F: Fn(&str) -> bool>(
         .values()
         .map(|entity| entity.prim_path.as_str())
         .collect::<HashSet<_>>();
+    let provenance = world
+        .get_resource::<usd_bevy::route::material::MaterialProjectionProvenance>()
+        .cloned();
     let bindings = {
         let mut query =
             world.query::<(&UsdPrimRef, &bevy::pbr::MeshMaterial3d<StandardMaterial>)>();
         query
             .iter(world)
             .filter(|(prim, _)| {
-                snapshot_paths.contains(prim.path.as_str()) && include(prim.path.as_str())
+                snapshot_paths.contains(prim.path.as_str())
+                    && include(prim.path.as_str())
+                    && provenance.as_ref().is_none_or(|provenance| {
+                        provenance.status(prim.path.as_str())
+                            == Some(usd_bevy::route::material::MaterialProjectionStatus::AuthoredConversion)
+                    })
             })
             .map(|(prim, material)| (prim.path.clone(), material.0.clone()))
             .collect::<Vec<_>>()

@@ -2,6 +2,7 @@
 // Split by concern to stay within the 400-line per-file budget.
 
 mod bim_edit_test;
+mod bim_properties_lifecycle_test;
 mod bim_properties_test;
 mod commands_test;
 mod hierarchy_search_test;

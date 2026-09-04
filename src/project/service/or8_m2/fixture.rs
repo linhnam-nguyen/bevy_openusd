@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use openusd::{sdf::Value, usd::Stage};
 use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use usd_project::{ProjectRoot, ProjectSummary, SceneId};
 
@@ -152,6 +153,39 @@ pub(super) fn create(
     verify_manifest_names(&fixture)?;
     fixture.verify_readable_layers();
     Ok(fixture)
+}
+
+/// Adds the authoritative BIM identity used by the production activation
+/// proof. The Project/Scene fixture remains service-authored; this metadata is
+/// added only to the temporary OR8 test copy so the normal semantic and
+/// classification pipelines have a real entity to project.
+pub(super) fn seed_bim_metadata(fixture: &CanonicalProject) -> Result<(), String> {
+    for (ordinal, scene) in fixture.scenes.iter().enumerate() {
+        let path = fixture.scene_path(scene.id);
+        let stage = Stage::open(&path.to_string_lossy())
+            .map_err(|error| format!("open Scene fixture for BIM metadata: {error}"))?;
+        let root = stage.prim("/SceneRoot");
+        for (name, value) in [
+            ("BIM:Instance:ElementId", format!("or8-scene-{ordinal:03}")),
+            ("BIM:Instance:Category", "Project Scene".to_owned()),
+            ("BIM:Type:Name", "USDHub Project Scene".to_owned()),
+        ] {
+            root.create_attribute(name, "string")
+                .map_err(|error| format!("create {name} BIM metadata: {error}"))?
+                .set_custom(true)
+                .map_err(|error| format!("mark {name} BIM metadata custom: {error}"))?
+                .set(Value::String(value))
+                .map_err(|error| format!("write {name} BIM metadata: {error}"))?;
+        }
+        let temporary = path.with_file_name(format!(".{}-or8-bim.usda", scene.id));
+        stage
+            .root_layer()
+            .export(&temporary.to_string_lossy())
+            .map_err(|error| format!("export BIM-enabled Scene fixture: {error}"))?;
+        fs::rename(&temporary, &path)
+            .map_err(|error| format!("publish BIM-enabled Scene fixture: {error}"))?;
+    }
+    Ok(())
 }
 
 fn verify_manifest_names(fixture: &CanonicalProject) -> Result<(), ProjectWriteError> {

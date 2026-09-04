@@ -87,28 +87,40 @@ fn publish_prepared_result(
     interface: &viewport_streaming::RenderServerInterface,
     prepared: PreparedProjectActivation,
 ) {
-    let command = prepared.request.command.clone();
+    let reply = apply_prepared_activation(world, &prepared.request, prepared.target);
+    publish_activation_result(interface, prepared.request, reply);
+}
+
+/// Applies one prepared completion through the production Bevy-world
+/// authority. The currency check is intentionally before Stage installation,
+/// so a late completion cannot mutate any stage-derived resource.
+fn apply_prepared_activation(
+    world: &mut World,
+    request: &ProjectActivationRequest,
+    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+) -> ProjectActivationReply {
+    let command = request.command.clone();
     if !world
         .resource::<ProjectActivationAuthorityRuntime>()
         .0
-        .is_current(&prepared.request.session_id.0, &command)
+        .is_current(&request.session_id.0, &command)
     {
-        publish_activation_result(
-            interface,
-            prepared.request,
-            ProjectActivationReply::failed(
-                &command,
-                "stale Project activation completion was ignored",
-            ),
-        );
-        return;
+        return stale_completion_reply(&command);
     }
-    let reply = match prepared.target {
-        Ok(None) => commit_empty_activation(world, &prepared.request, &command),
-        Ok(Some(target)) => activate_prepared_stage(world, &prepared.request, &command, target),
+    match target {
+        Ok(None) => commit_empty_activation(world, request, &command),
+        Ok(Some(target)) => activate_prepared_stage(world, request, &command, target),
         Err(error) => ProjectActivationReply::failed(&command, error),
-    };
-    publish_activation_result(interface, prepared.request, reply);
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn apply_prepared_activation_for_test(
+    world: &mut World,
+    request: &ProjectActivationRequest,
+    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+) -> ProjectActivationReply {
+    apply_prepared_activation(world, request, target)
 }
 
 fn commit_empty_activation(
@@ -134,11 +146,10 @@ fn activate_prepared_stage(
     command: &project_protocol::ProjectActivationCommand,
     target: crate::project::service::ProjectStageActivationTarget,
 ) -> ProjectActivationReply {
-    let activation =
-        match ProjectStageActivation::open(&request.session_id.0, command, target.clone()) {
-            Ok(activation) => activation,
-            Err(error) => return ProjectActivationReply::failed(command, error),
-        };
+    let activation = match ProjectStageActivation::open(command, target.clone()) {
+        Ok(activation) => activation,
+        Err(error) => return ProjectActivationReply::failed(command, error),
+    };
     let cache_context = cache_context_for(&target);
     match activate_open_stage_with_cache_context_for_generation(
         world,

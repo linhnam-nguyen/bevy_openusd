@@ -322,10 +322,26 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
         return Ok(authored.to_owned());
     };
 
+    // A package-relative identifier is resolved by the USDZ archive context,
+    // not by the filesystem resolver. Preserve its authored entry name so
+    // `UsdTextureCache` can match it against the explicitly registered root
+    // archive. Converting it to an absolute path would lose that identity.
+    if layer_identifier.contains(".usdz[")
+        || FsPath::new(&layer_identifier)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
+    {
+        return Ok(authored.to_owned());
+    }
+
     // Stage's resolver is intentionally private in the pinned OpenUSD Rust
     // API. With a filesystem layer-stack anchor, the official default
     // resolver reproduces the same relative-path rule for the cache reader.
     let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
+    let anchor_path = FsPath::new(&layer_identifier);
+    if !anchor_path.exists() {
+        return Ok(authored.to_owned());
+    }
     let anchor = ResolvedPath::new(layer_identifier);
     let identifier = resolver.create_identifier(authored, Some(&anchor));
     Ok(resolver

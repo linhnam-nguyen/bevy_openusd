@@ -33,4 +33,6 @@ pub(crate) use queues::{
 };
 pub(crate) use read_model::ViewportReadModelState;
 pub(crate) use scene_index::SceneAnchorIndex;
+#[cfg(test)]
+pub(in crate::viewport) use scene_index::refresh_scene_anchor_index;
 pub(crate) use session_registry::SessionRegistry;

@@ -8,6 +8,7 @@ use crate::read::shade::{
 use super::super::{PrimRoute, ProjectionSeed, RouteCtx, mark_render_projection_dirty};
 use super::consumers::MaterialConsumerIndex;
 use super::material_cache::intern_material;
+use super::provenance::MaterialProjectionProvenance;
 use super::texture_cache::resolve_texture;
 
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
@@ -34,6 +35,12 @@ fn material_patch_relevant(ctx: &RouteCtx, changed: &[&str]) -> bool {
 fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     let binding_path = read_material_binding(ctx.stage, ctx.path).ok().flatten();
     let binding = binding_path.as_ref().map(|path| path.as_str().to_owned());
+    if world
+        .get_resource::<MaterialProjectionProvenance>()
+        .is_none()
+    {
+        world.init_resource::<MaterialProjectionProvenance>();
+    }
     if world.get_resource::<MaterialConsumerIndex>().is_none() {
         world.init_resource::<MaterialConsumerIndex>();
     }
@@ -51,19 +58,33 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     let material = binding_path.as_ref().and_then(|binding_path| {
         if let Some(handle) = world
             .get_resource_mut::<ProjectionSeed>()
-            .and_then(|mut seeds| seeds.take_material(ctx.prim_str()))
+            .and_then(|mut seeds| seeds.take_authoritative_material(ctx.prim_str()))
             && world
                 .resource::<Assets<StandardMaterial>>()
                 .contains(&handle)
         {
+            world
+                .resource_mut::<MaterialProjectionProvenance>()
+                .mark_authored(ctx.prim_str());
             return Some(handle);
         }
         super::record_descriptor_read(world);
         let descriptor = read_preview_material(ctx.stage, binding_path)
             .ok()
             .flatten()?;
-        intern_material(world, binding_path.as_str(), &descriptor)
+        let handle = intern_material(world, binding_path.as_str(), &descriptor);
+        if handle.is_some() {
+            world
+                .resource_mut::<MaterialProjectionProvenance>()
+                .mark_authored(ctx.prim_str());
+        }
+        handle
     });
+    if material.is_none() {
+        world
+            .resource_mut::<MaterialProjectionProvenance>()
+            .mark_fallback(ctx.prim_str());
+    }
     let Some(handle) = material.or_else(|| {
         world
             .get::<Mesh3d>(entity)

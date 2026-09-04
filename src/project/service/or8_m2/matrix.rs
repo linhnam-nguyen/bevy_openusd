@@ -107,6 +107,7 @@ fn execute(
         .map_err(|error| format!("open C8 service: {error}"))?;
     let fixture = fixture::create(&mut service, &projects_root)
         .map_err(|error| format!("create C8 fixture: {error}"))?;
+    fixture::seed_bim_metadata(&fixture)?;
     let (bevy_assets, external_assets) = assets::default_roots();
     let dictionary = assets::inventory(&bevy_assets, &external_assets)?;
     let sources = assets::resolve_fixtures(&dictionary, &bevy_assets, &external_assets)?;

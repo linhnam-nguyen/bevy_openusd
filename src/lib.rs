@@ -5,3 +5,10 @@
 
 #[path = "project_api.rs"]
 pub mod project;
+
+// Keep the library and usdview binary on the same application composition.
+// Project recovery diagnostics reference the viewport counter resource, and
+// one composition avoids test-only module topology that can hide release
+// compilation errors.
+#[path = "viewport/mod.rs"]
+pub(crate) mod viewport;

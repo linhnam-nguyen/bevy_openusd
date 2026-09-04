@@ -4,13 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use openusd::usd::{PrimPredicate, Stage};
+use openusd::usd::Stage;
 use project_protocol::{
     ProjectActivationCommand, ProjectReadError, ProjectReadErrorCode, ProjectStageTarget,
 };
-use usd_model::SnapshotSource;
 use usd_project::ProjectId;
-use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::ProjectApplicationService;
 use crate::project::{
@@ -238,30 +236,17 @@ fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectStageSessionSnapshot {
-    pub project_id: ProjectId,
-    pub target: ProjectStageTarget,
-    pub generation: u64,
-    pub stage_path: PathBuf,
-    pub hierarchy_paths: Vec<String>,
-    pub bim_snapshot_id: String,
-    pub bim_entity_paths: Vec<String>,
-}
-
 /// Production candidate for the Project stage/session boundary.
 ///
-/// The render host and the OR8 matrix use this same OpenUSD stage, hierarchy,
-/// and semantic/BIM extraction before a candidate is committed. Keeping the
-/// opened Stage in the candidate avoids a second Stage::open on activation.
+/// The candidate owns one opened and composition-validated OpenUSD Stage. The
+/// Bevy lifecycle remains the sole producer of stage-derived hierarchy and
+/// semantic/BIM resources after installation.
 pub struct ProjectStageActivation {
-    snapshot: ProjectStageSessionSnapshot,
     stage: Stage,
 }
 
 impl ProjectStageActivation {
     pub fn open(
-        session_id: &str,
         command: &ProjectActivationCommand,
         target: ProjectStageActivationTarget,
     ) -> Result<Self, String> {
@@ -269,50 +254,13 @@ impl ProjectStageActivation {
             return Err("activation target does not match its command".to_owned());
         }
         let stage = open_activation_stage(&target.path)?;
-        let mut hierarchy_paths = Vec::new();
-        stage
-            .traverse(PrimPredicate::DEFAULT, |path| {
-                hierarchy_paths.push(path.as_str().to_owned())
-            })
-            .map_err(|error| format!("traverse activated Stage: {error}"))?;
         if !stage.composition_errors().is_empty() {
             return Err(format!(
                 "activated Stage has composition errors: {:?}",
                 stage.composition_errors()
             ));
         }
-        let semantic = SemanticExtractor::new(SemanticConfig::for_nvidia_revit_connector())
-            .extract(
-                &stage,
-                SnapshotSource::Working {
-                    session: session_id.to_owned(),
-                    live_revision: command.generation,
-                },
-            )
-            .map_err(|error| format!("extract activated Stage semantics: {error}"))?;
-        let mut bim_entity_paths = semantic
-            .entities
-            .values()
-            .filter(|entity| entity.semantic.is_bim_entity())
-            .map(|entity| entity.prim_path.clone())
-            .collect::<Vec<_>>();
-        bim_entity_paths.sort();
-        Ok(Self {
-            snapshot: ProjectStageSessionSnapshot {
-                project_id: command.project_id,
-                target: command.target.clone(),
-                generation: command.generation,
-                stage_path: target.path,
-                hierarchy_paths,
-                bim_snapshot_id: semantic.snapshot_id.0,
-                bim_entity_paths,
-            },
-            stage,
-        })
-    }
-
-    pub fn snapshot(&self) -> &ProjectStageSessionSnapshot {
-        &self.snapshot
+        Ok(Self { stage })
     }
 
     pub fn into_stage(self) -> Stage {

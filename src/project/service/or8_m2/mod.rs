@@ -20,6 +20,8 @@ mod matrix_steps;
 mod matrix_verify;
 mod registration;
 mod rng;
+#[cfg(test)]
+mod source_equivalence;
 
 #[cfg(test)]
 mod c1_tests;

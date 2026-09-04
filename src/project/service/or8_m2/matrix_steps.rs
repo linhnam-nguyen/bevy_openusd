@@ -9,10 +9,7 @@ use project_protocol::{
 use usd_project::SceneId;
 
 use crate::project::{
-    service::{
-        ProjectActivationAuthority, ProjectApplicationService, ProjectModelPreparationQueue,
-        ProjectStageActivation,
-    },
+    service::{ProjectApplicationService, ProjectModelPreparationQueue},
     storage::ProjectStorageLayout,
 };
 
@@ -255,8 +252,10 @@ fn activate(context: &mut Context) -> Result<(), String> {
     let manifest_before = read_manifest(context)?;
     let tree_before = read_tree(&context.service, context.fixture.project.id)?;
     let expected_latest_scene = eligible[eligible.len() - 1];
-    let mut authority = ProjectActivationAuthority::default();
+    let mut production = crate::viewport::ProductionActivationWorld::new();
+    production.replace_selection(viewport_protocol::SceneAnchor::active_session("/SceneRoot"));
     let mut stale_completion = None;
+    let mut latest_target = None;
     for (index, scene_id) in eligible.into_iter().enumerate() {
         let generation = index as u64 + 1;
         let request_id = format!("m2-c8-activate-{index}");
@@ -283,64 +282,66 @@ fn activate(context: &mut Context) -> Result<(), String> {
                     .failure(format!("activation resolution: {error}"))
             })?
             .ok_or_else(|| context.trace.failure("activation returned no Scene target"))?;
-        if !authority.observe_request("m2-c8-session", &command) {
+        if !production.admit("m2-c8-session", &command) {
             return Err(context.trace.failure("activation request was not admitted"));
         }
-        let target_snapshot = target.clone();
-        let activation =
-            ProjectStageActivation::open("m2-c8-session", &command, target).map_err(|error| {
-                context
-                    .trace
-                    .failure(format!("activation completion: {error}"))
-            })?;
-        let snapshot = activation.snapshot().clone();
-        if !authority.commit("m2-c8-session", &command) {
-            return Err(context
-                .trace
-                .failure("activation completion was not committed"));
-        }
-        if snapshot.project_id != context.fixture.project.id
-            || snapshot.target != command.target
-            || snapshot.generation != generation
-            || snapshot.stage_path != target_snapshot.path
-            || snapshot.hierarchy_paths.is_empty()
-            || snapshot.bim_snapshot_id.is_empty()
-            || !snapshot
-                .bim_entity_paths
-                .iter()
-                .all(|path| snapshot.hierarchy_paths.iter().any(|item| item == path))
-        {
-            return Err(context
-                .trace
-                .failure("active Scene/session identity is incomplete"));
-        }
-        context.trace.operation(format!(
-            "active snapshot generation={} stage={} bim_snapshot={} bim_entities={}",
-            snapshot.generation,
-            snapshot.stage_path.display(),
-            snapshot.bim_snapshot_id,
-            snapshot.bim_entity_paths.len()
-        ));
         if index == 1 {
-            stale_completion = Some(command);
+            stale_completion = Some((command.clone(), target.clone()));
         }
+        latest_target = Some(target.clone());
+        let reply = production.apply("m2-c8-session", &command, Ok(Some(target.clone())));
+        if !matches!(
+            reply.result,
+            project_protocol::ProjectActivationResult::Activated { .. }
+        ) {
+            return Err(context
+                .trace
+                .failure("production activation completion was rejected"));
+        }
+        production.update();
+        let observation = production
+            .observe(&target.path, generation)
+            .map_err(|error| context.trace.failure(error))?;
+        context.trace.operation(format!(
+            "active Bevy generation={} stage={} semantic_snapshot={} bim_snapshot={} hierarchy_nodes={}",
+            observation.generation,
+            observation.stage_path.display(),
+            observation.semantic_snapshot_id,
+            observation.bim_snapshot_id,
+            observation.hierarchy_nodes
+        ));
         if read_manifest(context)? != manifest_before
             || read_tree(&context.service, context.fixture.project.id)? != tree_before
         {
             return Err(context.trace.failure("activation changed Project content"));
         }
     }
-    let stale_command = stale_completion.ok_or_else(|| {
+    let (stale_command, stale_target) = stale_completion.ok_or_else(|| {
         context
             .trace
             .failure("stale activation candidate is missing")
     })?;
-    if authority.commit("m2-c8-session", &stale_command) {
+    let latest_target = latest_target
+        .ok_or_else(|| context.trace.failure("latest activation target is missing"))?;
+    let before_stale = production
+        .observe(&latest_target.path, 3)
+        .map_err(|error| context.trace.failure(error))?;
+    let reply = production.apply("m2-c8-session", &stale_command, Ok(Some(stale_target)));
+    if !matches!(
+        reply.result,
+        project_protocol::ProjectActivationResult::Failed { .. }
+    ) {
+        return Err(context.trace.failure("stale Scene completion was accepted"));
+    }
+    let after_stale = production
+        .observe(&latest_target.path, 3)
+        .map_err(|error| context.trace.failure(error))?;
+    if before_stale != after_stale {
         return Err(context
             .trace
-            .failure("stale Scene completion replaced the latest active identity"));
+            .failure("stale Scene completion changed production Bevy resources"));
     }
-    let active = authority.active().ok_or_else(|| {
+    let active = production.active().ok_or_else(|| {
         context
             .trace
             .failure("active Scene/session snapshot is missing")

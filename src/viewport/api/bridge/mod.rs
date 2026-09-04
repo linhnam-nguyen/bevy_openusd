@@ -14,6 +14,7 @@
 mod bim_commands;
 mod bim_edit;
 mod bim_properties;
+mod bim_properties_lifecycle;
 mod bim_search;
 mod commands;
 pub(crate) mod convert;

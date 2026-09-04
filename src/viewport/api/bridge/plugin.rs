@@ -3,6 +3,7 @@ use usd_bevy::LiveStage;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 
 use super::ViewerSettingsState;
+use super::bim_properties_lifecycle::{PendingBimProperties, replay_pending_bim_properties};
 use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
 use super::scene_query::{
     dispatch_scene_query_commands, publish_scene_query_results, publish_stage_load_state,
@@ -28,6 +29,7 @@ use crate::viewport::semantic::{
     drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use crate::viewport::session::StageInfo;
+use crate::viewport::session::rehydrate_activation_presentation;
 
 /// Installs the in-process implementation of the public viewport contract.
 pub(crate) struct ViewportBridgePlugin;
@@ -53,6 +55,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<SemanticSyncState>()
             .init_resource::<SemanticDiffState>()
             .init_resource::<SceneSearchRequests>()
+            .init_resource::<PendingBimProperties>()
             .init_resource::<EditorHistories>()
             .init_resource::<RuntimeMutationCoordinator>()
             .init_resource::<RecoverySettings>()
@@ -73,6 +76,16 @@ impl Plugin for ViewportBridgePlugin {
             .add_systems(
                 Update,
                 super::super::scene_index::refresh_scene_anchor_index
+                    .in_set(ViewportBridgeSet::RefreshSceneIndex),
+            )
+            .add_systems(
+                Update,
+                (
+                    rehydrate_activation_presentation,
+                    replay_pending_bim_properties,
+                )
+                    .chain()
+                    .after(super::super::scene_index::refresh_scene_anchor_index)
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
             // LiveStagePlugin drains and reprojects in Update. PostUpdate is

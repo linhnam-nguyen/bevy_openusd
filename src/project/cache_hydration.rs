@@ -248,7 +248,7 @@ pub(crate) fn hydrate_project_cache(
             let handle = material_handles
                 .get(material_id)
                 .with_context(|| format!("hydrated material {material_id} was not allocated"))?;
-            seed.insert_material(entity.prim_path.clone(), handle.clone());
+            seed.insert_authoritative_material(entity.prim_path.clone(), handle.clone());
         }
     }
     Ok(true)

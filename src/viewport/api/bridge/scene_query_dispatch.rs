@@ -5,6 +5,7 @@ use viewport_protocol::{
     HierarchySource, PROTOCOL_VERSION, ViewportCommand, ViewportEvent, ViewportEventEnvelope,
 };
 
+use super::super::bim_properties_lifecycle::PendingBimProperties;
 use super::super::helpers::reject;
 use super::super::state::{SceneSearchRequest, SceneSearchRequests};
 use super::super::{bim_properties, bim_search};
@@ -34,6 +35,7 @@ pub(crate) fn dispatch_scene_query_commands(
     mut search_requests: ResMut<SceneSearchRequests>,
     mut outbox: ResMut<ViewportEventOutbox>,
     mut counters: Option<ResMut<RendererCounters>>,
+    mut pending_bim_properties: Option<ResMut<PendingBimProperties>>,
 ) {
     let activation_generation = stage_info
         .as_ref()
@@ -197,6 +199,29 @@ pub(crate) fn dispatch_scene_query_commands(
                 );
             }
             ViewportCommand::RequestBimProperties => {
+                if selection
+                    .as_ref()
+                    .is_none_or(|selection| selection.0.targets.is_empty())
+                    || semantic.as_ref().is_none_or(|semantic| {
+                        semantic.snapshot().is_none() || semantic.shared_bim_index().is_none()
+                    })
+                {
+                    if let Some(pending) = pending_bim_properties.as_deref_mut() {
+                        pending.replace(request_id, activation_generation);
+                    } else {
+                        bim_properties::dispatch(
+                            request_id,
+                            selection.as_deref(),
+                            semantic.as_deref(),
+                            semantic_diff.as_deref(),
+                            &mut outbox,
+                        );
+                    }
+                    continue;
+                }
+                if let Some(pending) = pending_bim_properties.as_deref_mut() {
+                    let _ = pending.take_for(activation_generation);
+                }
                 bim_properties::dispatch(
                     request_id,
                     selection.as_deref(),

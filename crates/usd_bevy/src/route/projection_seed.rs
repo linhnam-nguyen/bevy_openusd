@@ -8,13 +8,24 @@ use bevy::prelude::*;
 #[derive(Resource, Default)]
 pub struct ProjectionSeed {
     meshes: HashMap<String, SeededMesh>,
-    materials: HashMap<String, Handle<StandardMaterial>>,
+    materials: HashMap<String, SeededMaterial>,
 }
 
 #[derive(Clone)]
 pub(crate) struct SeededMesh {
     pub(crate) handle: Handle<Mesh>,
     pub(crate) local_extent: Option<([f32; 3], [f32; 3])>,
+}
+
+#[derive(Clone)]
+struct SeededMaterial {
+    handle: Handle<StandardMaterial>,
+    provenance: MaterialSeedProvenance,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MaterialSeedProvenance {
+    AuthoritativeSourceConversion,
 }
 
 impl ProjectionSeed {
@@ -35,12 +46,18 @@ impl ProjectionSeed {
     }
 
     /// Insert a validated material for one composed USD prim path.
-    pub fn insert_material(
+    pub fn insert_authoritative_material(
         &mut self,
         prim_path: impl Into<String>,
         handle: Handle<StandardMaterial>,
     ) {
-        self.materials.insert(prim_path.into(), handle);
+        self.materials.insert(
+            prim_path.into(),
+            SeededMaterial {
+                handle,
+                provenance: MaterialSeedProvenance::AuthoritativeSourceConversion,
+            },
+        );
     }
 
     /// Drop all unconsumed prepared assets before replacing the active stage.
@@ -63,7 +80,12 @@ impl ProjectionSeed {
         self.meshes.remove(prim_path)
     }
 
-    pub(crate) fn take_material(&mut self, prim_path: &str) -> Option<Handle<StandardMaterial>> {
-        self.materials.remove(prim_path)
+    pub(crate) fn take_authoritative_material(
+        &mut self,
+        prim_path: &str,
+    ) -> Option<Handle<StandardMaterial>> {
+        let seeded = self.materials.remove(prim_path)?;
+        (seeded.provenance == MaterialSeedProvenance::AuthoritativeSourceConversion)
+            .then_some(seeded.handle)
     }
 }

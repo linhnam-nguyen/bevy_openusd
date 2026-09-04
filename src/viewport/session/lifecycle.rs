@@ -18,6 +18,7 @@ mod lifecycle_open;
 #[path = "lifecycle_project_activation.rs"]
 mod project_activation;
 
+pub(in crate::viewport) use lifecycle_invalidation::rehydrate_activation_presentation;
 pub(crate) use project_activation::{
     activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
 };
@@ -242,6 +243,11 @@ fn clear_projected_stage(world: &mut World) {
         let _ = world.despawn(entity);
     }
     *world.resource_mut::<PrimEntities>() = PrimEntities::default();
+    if let Some(mut provenance) =
+        world.get_resource_mut::<usd_bevy::route::material::MaterialProjectionProvenance>()
+    {
+        provenance.clear();
+    }
     world.remove_non_send::<LiveStage>();
     world.resource_mut::<Spawned>().0 = false;
 }

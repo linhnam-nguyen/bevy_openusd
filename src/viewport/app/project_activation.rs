@@ -245,3 +245,20 @@ mod cache_tests;
 #[cfg(test)]
 #[path = "project_activation_production_tests.rs"]
 mod production_tests;
+
+#[cfg(test)]
+pub(crate) use flow::apply_prepared_activation_for_test;
+#[cfg(test)]
+pub(crate) use production_tests::ProductionActivationWorld;
+
+#[cfg(test)]
+pub(crate) fn observe_project_activation_for_test(
+    world: &mut bevy::prelude::World,
+    session_id: &str,
+    command: &project_protocol::ProjectActivationCommand,
+) -> bool {
+    world
+        .resource_mut::<ProjectActivationAuthorityRuntime>()
+        .0
+        .observe_request(session_id, command)
+}

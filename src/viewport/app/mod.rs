@@ -18,4 +18,10 @@ mod project_stage;
 mod runner;
 mod scene;
 mod sync;
+
+#[cfg(test)]
+pub(crate) use project_activation::{
+    ProductionActivationWorld, apply_prepared_activation_for_test,
+    observe_project_activation_for_test,
+};
 pub(crate) use runner::run;

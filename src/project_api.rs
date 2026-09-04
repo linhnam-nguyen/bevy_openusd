@@ -6,6 +6,8 @@
 
 #[path = "project/blob_store.rs"]
 pub(crate) mod blob_store;
+#[path = "project/commit/mod.rs"]
+pub(crate) mod commit;
 
 #[path = "project_api_catalog.rs"]
 pub(crate) mod catalog;
@@ -31,6 +33,8 @@ pub(crate) mod model_import;
 pub(crate) mod model_wrapper;
 #[path = "project/recovery.rs"]
 pub(crate) mod recovery;
+#[path = "project/recovery_worker.rs"]
+pub(crate) mod recovery_worker;
 #[path = "project/runtime_delivery.rs"]
 pub(crate) mod runtime_delivery;
 #[path = "project/runtime_payload.rs"]

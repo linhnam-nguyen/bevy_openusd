@@ -133,7 +133,7 @@ pub(crate) use runtime_authority::{
 pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::{
     ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivation,
-    ProjectStageActivationTarget, ProjectStagePresentationContext, ProjectStageSessionSnapshot,
+    ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 mod scene_inspection;

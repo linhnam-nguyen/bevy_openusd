@@ -46,13 +46,14 @@ pub(super) struct ArchiveIndex {
 }
 
 fn normalized_archive_entry(name: &str) -> String {
-    name.trim_start_matches("./")
+    name.replace('\\', "/")
+        .trim_start_matches("./")
         .trim_start_matches('/')
         .to_owned()
 }
 
 fn archive_entry_matches(entry: &str, requested: &str) -> bool {
-    entry == requested || entry.ends_with(requested) || requested.ends_with(entry)
+    entry == requested
 }
 
 fn canonical_archive_path(path: &Path) -> PathBuf {
@@ -66,7 +67,7 @@ fn push_unique_usdz(files: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
-fn collect_usdz_files(world: &World, manifest_dir: &Path) -> Vec<PathBuf> {
+fn collect_usdz_files(world: &World) -> Vec<PathBuf> {
     let mut usdz_files = Vec::new();
     if let Some(cache) = world.get_resource::<UsdTextureCache>() {
         for path in &cache.archive_paths {
@@ -75,25 +76,6 @@ fn collect_usdz_files(world: &World, manifest_dir: &Path) -> Vec<PathBuf> {
                 .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("usdz"))
             {
                 push_unique_usdz(&mut usdz_files, path.clone());
-            }
-        }
-    }
-
-    let search_dirs = [
-        manifest_dir.join("assets/external"),
-        manifest_dir.join("assets"),
-        PathBuf::from("assets/external"),
-        PathBuf::from("assets"),
-    ];
-    for dir in &search_dirs {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|extension| {
-                    extension.to_string_lossy().eq_ignore_ascii_case("usdz")
-                }) {
-                    push_unique_usdz(&mut usdz_files, path);
-                }
             }
         }
     }
@@ -237,7 +219,10 @@ pub(super) fn read_texture_bytes(
     }
 
     let norm_path = normalized_archive_entry(texture_path);
-    let usdz_files = collect_usdz_files(world, &manifest_dir);
+    // A stage/package is registered by the lifecycle when it becomes active.
+    // Do not discover unrelated repository archives here: the material path
+    // must remain bounded by the packages that own the active stage.
+    let usdz_files = collect_usdz_files(world);
     if world.get_resource::<UsdTextureCache>().is_some() {
         for usdz in &usdz_files {
             let stats = ensure_archive_index(world, usdz);

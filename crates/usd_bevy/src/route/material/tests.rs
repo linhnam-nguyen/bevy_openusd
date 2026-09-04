@@ -126,9 +126,9 @@ fn repository_usdz_texture_scan_is_cached() {
         ..Default::default()
     });
 
-    let first = resolve_texture(&mut world, "textures/checker.png", true)
+    let first = resolve_texture(&mut world, "./textures/checker.png", true)
         .expect("embedded repository texture loads");
-    let second = resolve_texture(&mut world, "textures/checker.png", true)
+    let second = resolve_texture(&mut world, "./textures/checker.png", true)
         .expect("embedded repository texture cache hit");
 
     assert_eq!(first, second);
@@ -166,9 +166,9 @@ fn repository_usdz_archive_index_is_reused_across_variants() {
         ..Default::default()
     });
 
-    let data_handle = resolve_texture(&mut world, "textures/checker.png", false)
+    let data_handle = resolve_texture(&mut world, "./textures/checker.png", false)
         .expect("embedded data texture variant loads");
-    let color_handle = resolve_texture(&mut world, "textures/checker.png", true)
+    let color_handle = resolve_texture(&mut world, "./textures/checker.png", true)
         .expect("embedded sRGB texture variant loads");
 
     assert_ne!(data_handle, color_handle);
@@ -360,4 +360,18 @@ fn material_binding_cache_reuses_and_invalidates_descriptors() {
             cleanup_entities_scanned: 0,
         }
     );
+}
+
+#[test]
+fn archive_lookup_does_not_discover_unregistered_repository_archives() {
+    let mut world = World::new();
+    world.init_resource::<Assets<Image>>();
+    world.insert_resource(UsdTextureCache::default());
+
+    assert!(resolve_texture(&mut world, "unregistered/texture.png", true).is_none());
+    let stats = world.resource::<UsdTextureCache>().stats();
+    assert_eq!(stats.archive_scans, 0);
+    assert_eq!(stats.archive_entries_scanned, 0);
+    assert_eq!(stats.archive_index_builds, 0);
+    assert_eq!(stats.archive_entries_indexed, 0);
 }

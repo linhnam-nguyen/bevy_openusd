@@ -14,6 +14,7 @@ use crate::live::{
     StageChangeBatch, apply_change_batch,
 };
 use crate::route::material::MaterialRouteDiagnostics;
+use crate::route::material::{MaterialProjectionProvenance, MaterialProjectionStatus};
 
 const RED_BOX: &str = "/World/RedBox";
 const RED: &str = "/World/Materials/Red";
@@ -67,7 +68,7 @@ fn persistent_material_seed_is_consumed_before_usd_decode() {
         });
     app.world_mut()
         .resource_mut::<ProjectionSeed>()
-        .insert_material(RED_BOX, seeded.clone());
+        .insert_authoritative_material(RED_BOX, seeded.clone());
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
 
@@ -75,6 +76,12 @@ fn persistent_material_seed_is_consumed_before_usd_decode() {
     assert_eq!(
         app.world().resource::<ProjectionSeed>().pending_materials(),
         0
+    );
+    assert_eq!(
+        app.world()
+            .resource::<MaterialProjectionProvenance>()
+            .status(RED_BOX),
+        Some(MaterialProjectionStatus::AuthoredConversion)
     );
 }
 

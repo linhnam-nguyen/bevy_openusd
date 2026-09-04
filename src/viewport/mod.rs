@@ -6,6 +6,12 @@
 
 mod app;
 
+#[cfg(test)]
+pub(crate) use app::{
+    ProductionActivationWorld, apply_prepared_activation_for_test,
+    observe_project_activation_for_test,
+};
+
 pub(crate) mod animation;
 pub(crate) mod api;
 pub(crate) mod bim;

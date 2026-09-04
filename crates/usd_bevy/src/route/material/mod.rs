@@ -9,11 +9,13 @@ mod archive;
 mod builder;
 mod consumers;
 mod material_cache;
+mod provenance;
 mod texture_cache;
 
 pub use builder::MaterialRoute;
 pub(crate) use consumers::MaterialConsumerIndex;
 pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
+pub use provenance::{MaterialProjectionProvenance, MaterialProjectionStatus};
 pub use texture_cache::{TextureCacheKey, TextureCacheStats, UsdTextureCache};
 
 pub(crate) fn cleanup_retired_materials(world: &mut bevy::ecs::world::World) {
@@ -52,5 +54,7 @@ pub(crate) fn record_descriptor_read(world: &mut bevy::ecs::world::World) {
         .descriptor_reads += 1;
 }
 
+#[cfg(test)]
+mod fallback_tests;
 #[cfg(test)]
 mod tests;
