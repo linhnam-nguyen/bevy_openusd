@@ -79,6 +79,7 @@ pub struct ProgressiveProjectionState {
     pub(super) entities: Vec<Option<Entity>>,
     pub(super) animated: HashSet<String>,
     pub(super) started_at: Option<Instant>,
+    pub(super) planning_time: Duration,
     pub(super) plan_complete_ms: Option<f64>,
     pub(super) planning_updates: u64,
     pub(super) planning_work_items: u64,
@@ -123,6 +124,9 @@ impl ProgressiveProjectionState {
     }
     pub fn plan_complete_ms(&self) -> Option<f64> {
         self.plan_complete_ms
+    }
+    pub fn planning_duration_ms(&self) -> f64 {
+        self.planning_time.as_secs_f64() * 1000.0
     }
     pub fn planning_updates(&self) -> u64 {
         self.planning_updates

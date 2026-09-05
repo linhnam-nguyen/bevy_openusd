@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::LiveStage;
 
-use super::{Spawned, StageHandle, StagePresentationContext};
+use super::{Spawned, StageHandle, StagePresentationContext, lifecycle_invalidation};
 
 pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
     let presentation = world
@@ -14,6 +14,7 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
     {
         cache.clear_active_archives();
     }
+    lifecycle_invalidation::reset_derived_state(world, 0);
     world.insert_resource(StageHandle {
         path: path.clone(),
         error: None,

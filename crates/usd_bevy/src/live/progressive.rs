@@ -142,6 +142,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     state.entities = vec![None];
     state.animated.clear();
     state.started_at = Some(generation_started);
+    state.planning_time = std::time::Duration::ZERO;
     state.plan_complete_ms = None;
     state.planning_updates = 0;
     state.planning_work_items = 0;
@@ -186,10 +187,12 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                 .is_some_and(|builder| next_index >= builder.len())
         };
         if needs_plan_work {
+            let plan_step_start = Instant::now();
             let result = world
                 .get_non_send_mut::<ProjectionPlanBuilder>()
                 .expect("planning state exists")
                 .advance_one();
+            let plan_step_duration = plan_step_start.elapsed();
             processed += 1;
             match result {
                 Ok(_) => {
@@ -197,10 +200,14 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                         .get_non_send::<ProjectionPlanBuilder>()
                         .map_or(0, ProjectionPlanBuilder::len);
                     let mut state = world.resource_mut::<ProgressiveProjectionState>();
+                    state.planning_time += plan_step_duration;
                     state.planning_work_items += 1;
                     state.entities.resize(discovered, None);
                 }
                 Err(error) => {
+                    world
+                        .resource_mut::<ProgressiveProjectionState>()
+                        .planning_time += plan_step_duration;
                     fail_generation(world, error);
                     break;
                 }
@@ -287,9 +294,7 @@ fn finalize_plan(world: &mut World) {
     state.total = plan.len();
     state.plan = Some(plan);
     state.readiness = ProjectionReadiness::Projecting;
-    state.plan_complete_ms = state
-        .started_at
-        .map(|start| start.elapsed().as_secs_f64() * 1000.0);
+    state.plan_complete_ms = Some(state.planning_time.as_secs_f64() * 1000.0);
     bevy::log::debug!(
         plan_ms = state.plan_complete_ms.unwrap_or_default(),
         total = state.total,

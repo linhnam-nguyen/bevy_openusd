@@ -52,15 +52,18 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
         classification.set(None);
     }
 
-    let hierarchy_source = world
-        .get_resource::<crate::viewport::api::ActiveHierarchyProvider>()
-        .map_or(viewport_protocol::HierarchySource::Prim, |provider| {
-            provider.source()
-        });
+    if let Some(mut provider) =
+        world.get_resource_mut::<crate::viewport::api::ActiveHierarchyProvider>()
+    {
+        provider.set(viewport_protocol::HierarchySource::Prim, None);
+    }
     if let Some(mut projection) =
         world.get_resource_mut::<crate::viewport::api::CurrentHierarchyProjection>()
     {
-        *projection = crate::viewport::api::CurrentHierarchyProjection::empty(hierarchy_source, 0);
+        *projection = crate::viewport::api::CurrentHierarchyProjection::empty(
+            viewport_protocol::HierarchySource::Prim,
+            0,
+        );
     }
     if let Some(mut selected) = world.get_resource_mut::<crate::viewport::scene::SelectedTargets>()
     {
