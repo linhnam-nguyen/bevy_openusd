@@ -138,8 +138,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         return;
     }
 
-    let full_rebuild =
-        projection.last_selection_revision.is_none() || scene_changed || topology_changed;
+    let full_rebuild = projection.last_selection_revision.is_none();
     let mut mapping_changed = full_rebuild;
     let mut bounds_changed = full_rebuild || bounds_request_changed;
     let mut aggregate_can_extend = !full_rebuild;

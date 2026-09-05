@@ -1,11 +1,12 @@
 use bevy::prelude::{Resource, World};
-use viewport_protocol::{ClassificationRecipe, SelectionReadModel};
+use viewport_protocol::{ClassificationRecipe, HierarchySource, SelectionReadModel};
 
 /// Presentation intent captured at the activation boundary and consumed only
 /// after the matching semantic/BIM generation is observable.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub(super) struct PendingActivationPresentation {
     pub(super) generation: u64,
+    pub(super) desired_provider: HierarchySource,
     pub(super) classification_recipe: Option<ClassificationRecipe>,
     pub(super) selection: Option<SelectionReadModel>,
 }
@@ -14,6 +15,9 @@ pub(super) struct PendingActivationPresentation {
 /// Source projection starts again from the newly activated LiveStage, while
 /// the selected hierarchy provider remains a user presentation preference.
 pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64) {
+    let desired_provider = world
+        .get_resource::<crate::viewport::api::ActiveHierarchyProvider>()
+        .map_or(HierarchySource::Prim, |provider| provider.source());
     let classification_recipe = world
         .get_resource::<crate::viewport::api::BimClassificationRecipeState>()
         .and_then(|state| state.recipe().cloned())
@@ -28,6 +32,7 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
         .filter(|selection| !selection.targets.is_empty());
     world.insert_resource(PendingActivationPresentation {
         generation: activation_generation,
+        desired_provider,
         classification_recipe,
         selection,
     });
@@ -179,15 +184,47 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         {
             classification.set(Some(recipe.clone()));
         }
+        if pending.desired_provider == viewport_protocol::HierarchySource::BimClassification {
+            if let Some(mut provider) =
+                world.get_resource_mut::<crate::viewport::api::ActiveHierarchyProvider>()
+            {
+                provider.set(
+                    viewport_protocol::HierarchySource::BimClassification,
+                    Some(recipe.clone()),
+                );
+            }
+            let projected = if let (Some(semantic), Some(scene_index)) = (
+                world.get_resource::<crate::viewport::semantic::SemanticSyncState>(),
+                world.get_resource::<crate::viewport::api::SceneAnchorIndex>(),
+            ) && let (Some(snapshot), Some(index)) =
+                (semantic.snapshot(), semantic.shared_bim_index())
+            {
+                let mut service = crate::viewport::bim::BimReadService::with_index(snapshot, index);
+                service
+                    .classification_projection(&recipe)
+                    .ok()
+                    .map(|mut projection| {
+                        crate::viewport::api::refresh_projection_visibility(
+                            &mut projection,
+                            scene_index,
+                        );
+                        projection
+                    })
+            } else {
+                None
+            };
+            if let Some(projection) = projected
+                && let Some(mut current_projection) =
+                    world.get_resource_mut::<crate::viewport::api::CurrentHierarchyProjection>()
+            {
+                *current_projection = projection;
+            }
+        }
+    } else if pending.desired_provider == viewport_protocol::HierarchySource::BimClassification {
         if let Some(mut provider) =
             world.get_resource_mut::<crate::viewport::api::ActiveHierarchyProvider>()
         {
-            let source = provider.source();
-            if source == viewport_protocol::HierarchySource::BimClassification
-                && provider.classification_recipe().is_none()
-            {
-                provider.set(source, Some(recipe));
-            }
+            provider.set(viewport_protocol::HierarchySource::BimClassification, None);
         }
     }
     world.remove_resource::<PendingActivationPresentation>();
