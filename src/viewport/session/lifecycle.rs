@@ -20,7 +20,9 @@ mod lifecycle_open;
 #[path = "lifecycle_project_activation.rs"]
 mod project_activation;
 
-pub(in crate::viewport) use lifecycle_invalidation::rehydrate_activation_presentation;
+pub(in crate::viewport) use lifecycle_invalidation::{
+    PendingActivationPresentation, rehydrate_activation_presentation,
+};
 pub(crate) use project_activation::{
     activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
 };

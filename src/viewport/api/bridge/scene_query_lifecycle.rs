@@ -23,7 +23,9 @@ pub(in crate::viewport) fn refresh_active_hierarchy_projection(
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut color_plan: Option<ResMut<ClassificationColorPlan>>,
 ) {
-    if provider.source() != HierarchySource::BimClassification || !semantic.is_changed() {
+    if provider.source() != HierarchySource::BimClassification
+        || (!semantic.is_changed() && !provider.is_changed() && !scene_index.is_changed())
+    {
         return;
     }
     let (Some(recipe), Some(snapshot), Some(index)) = (

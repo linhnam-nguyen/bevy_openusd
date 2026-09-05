@@ -111,53 +111,52 @@ pub(in crate::viewport) fn sync_selection_outlines(
         return;
     }
 
-    let desired = if key.boundary.0 {
-        projection.as_ref().map_or_else(
-            || {
-                let mut desired = HashSet::new();
-                for target in &selection.0.targets {
-                    let Some(entity) = scene_index.resolve(target) else {
-                        continue;
-                    };
-                    collect_mesh_descendants(entity, &meshes, &mut desired);
-                }
-                desired
-            },
-            |projection| projection.renderables().clone(),
-        )
-    } else {
-        HashSet::new()
-    };
     let boundary_changed = state.last_boundary != Some(key.boundary);
     let projection_changed = state.last_projection_generation != key.projection_generation;
-    let (added, removed) = if !boundary_changed
-        && projection_changed
-        && let Some(projection) = projection.as_ref()
-    {
-        (
-            projection
-                .added_renderables()
-                .iter()
-                .copied()
-                .collect::<Vec<_>>(),
-            projection
-                .removed_renderables()
-                .intersection(&state.applied_entities)
-                .copied()
-                .collect::<Vec<_>>(),
-        )
+    let can_use_projection_delta =
+        !boundary_changed && projection_changed && projection.is_some() && key.boundary.0;
+
+    let (added, removed, desired) = if can_use_projection_delta {
+        let projection = projection.as_ref().expect("checked above");
+        let added = projection
+            .added_renderables()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        let removed = projection
+            .removed_renderables()
+            .intersection(&state.applied_entities)
+            .copied()
+            .collect::<Vec<_>>();
+        (added, removed, HashSet::new())
     } else {
-        (
-            desired
-                .difference(&state.applied_entities)
-                .copied()
-                .collect::<Vec<_>>(),
-            state
-                .applied_entities
-                .difference(&desired)
-                .copied()
-                .collect::<Vec<_>>(),
-        )
+        let desired = if key.boundary.0 {
+            projection.as_ref().map_or_else(
+                || {
+                    let mut desired = HashSet::new();
+                    for target in &selection.0.targets {
+                        let Some(entity) = scene_index.resolve(target) else {
+                            continue;
+                        };
+                        collect_mesh_descendants(entity, &meshes, &mut desired);
+                    }
+                    desired
+                },
+                |projection| projection.renderables().clone(),
+            )
+        } else {
+            HashSet::new()
+        };
+        let added = desired
+            .difference(&state.applied_entities)
+            .copied()
+            .collect::<Vec<_>>();
+        let removed = state
+            .applied_entities
+            .difference(&desired)
+            .copied()
+            .collect::<Vec<_>>();
+        (added, removed, desired)
     };
     let mut to_update = if boundary_changed {
         desired.iter().copied().collect::<Vec<_>>()
@@ -224,8 +223,12 @@ fn apply_pending_outline_work(
         state.pending = Some(work);
         return;
     }
-    state.entities = work.desired.clone();
-    state.applied_entities = work.desired;
+    if !work.desired.is_empty() || !work.key.boundary.0 {
+        state.entities = work.desired.clone();
+        state.applied_entities = work.desired;
+    } else {
+        state.entities = state.applied_entities.clone();
+    }
     state.last_boundary = Some(work.key.boundary);
     state.last_projection_generation = work.key.projection_generation;
     state.last_selection_revision = Some(work.key.selection_revision);

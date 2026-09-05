@@ -18,6 +18,17 @@ use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::session::{StageHandle, StageInfo};
 
+use bevy::ecs::system::SystemParam;
+
+#[derive(SystemParam)]
+pub(crate) struct SceneQuerySemanticParams<'w> {
+    semantic: Option<Res<'w, crate::viewport::semantic::SemanticSyncState>>,
+    semantic_diff: Option<Res<'w, crate::viewport::semantic::SemanticDiffState>>,
+    stage_handle: Option<Res<'w, StageHandle>>,
+    stage_info: Option<Res<'w, StageInfo>>,
+    pending_activation: Option<ResMut<'w, crate::viewport::session::PendingActivationPresentation>>,
+}
+
 /// Routes scene-query commands to the current hierarchy projection.
 pub(crate) fn dispatch_scene_query_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
@@ -25,11 +36,8 @@ pub(crate) fn dispatch_scene_query_commands(
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut provider: Option<ResMut<ActiveHierarchyProvider>>,
     mut bim_classification: Option<ResMut<crate::viewport::api::BimClassificationRecipeState>>,
-    semantic: Option<Res<crate::viewport::semantic::SemanticSyncState>>,
-    semantic_diff: Option<Res<crate::viewport::semantic::SemanticDiffState>>,
+    mut semantic_params: SceneQuerySemanticParams,
     selection: Option<Res<SelectedTargets>>,
-    stage_handle: Option<Res<StageHandle>>,
-    stage_info: Option<Res<StageInfo>>,
     scene_query: Res<SceneQueryService>,
     bim_provenance: Option<Res<BimProvenanceService>>,
     mut search_requests: ResMut<SceneSearchRequests>,
@@ -37,9 +45,14 @@ pub(crate) fn dispatch_scene_query_commands(
     mut counters: Option<ResMut<RendererCounters>>,
     mut pending_bim_properties: Option<ResMut<PendingBimProperties>>,
 ) {
-    let activation_generation = stage_info
+    let activation_generation = semantic_params
+        .stage_info
         .as_ref()
         .map_or(0, |info| info.activation_generation);
+    let semantic = semantic_params.semantic;
+    let semantic_diff = semantic_params.semantic_diff;
+    let stage_handle = semantic_params.stage_handle;
+    let mut pending_activation = semantic_params.pending_activation;
     for envelope in inbox.take_scene_query_commands() {
         let request_id = envelope.request_id;
         if envelope.protocol_version != PROTOCOL_VERSION {
@@ -280,6 +293,12 @@ pub(crate) fn dispatch_scene_query_commands(
                     );
                     continue;
                 };
+                if let Some(pending) = pending_activation.as_deref_mut() {
+                    pending.desired_provider = source;
+                    if classification_recipe.is_some() {
+                        pending.classification_recipe = classification_recipe.clone();
+                    }
+                }
                 let projection = match source {
                     HierarchySource::Prim => Ok(scene_index.prim_projection()),
                     HierarchySource::BimClassification => match (
@@ -309,6 +328,9 @@ pub(crate) fn dispatch_scene_query_commands(
                 }
             }
             ViewportCommand::SetBimClassificationRecipe { recipe } => {
+                if let Some(pending) = pending_activation.as_deref_mut() {
+                    pending.classification_recipe = recipe.clone();
+                }
                 if let Some(bim_classification) = bim_classification.as_deref_mut() {
                     bim_classification.set(recipe);
                 } else {

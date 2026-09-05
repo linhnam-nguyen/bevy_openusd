@@ -3,7 +3,9 @@
 mod lifecycle;
 mod state;
 
-pub(in crate::viewport) use lifecycle::rehydrate_activation_presentation;
+pub(in crate::viewport) use lifecycle::{
+    PendingActivationPresentation, rehydrate_activation_presentation,
+};
 pub(crate) use lifecycle::{
     activate_open_stage_with_cache_context_for_generation, activate_stage,
     activate_stage_with_cache_context, activate_stage_with_cache_context_for_generation,

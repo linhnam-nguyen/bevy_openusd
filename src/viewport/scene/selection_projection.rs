@@ -182,23 +182,71 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
             }
         }
 
-        for target in pending_delta.added {
-            let previous_bounds = projection.target_bounds.get(&target).copied();
+        for target in &pending_delta.added {
+            let previous_bounds = projection.target_bounds.get(target).copied();
             insert_target_projection(
-                &target,
+                target,
                 &scene_index,
                 &hierarchy,
                 &geometry,
                 bounds_requested,
                 &mut projection,
             );
-            if let Some(bounds) = projection.target_bounds.get(&target).copied()
+            if let Some(bounds) = projection.target_bounds.get(target).copied()
                 && previous_bounds.is_none()
             {
                 added_bounds.push(bounds);
             }
             mapping_changed = true;
             bounds_changed |= bounds_requested;
+        }
+
+        if (topology_changed || scene_changed) && pending_delta.added.is_empty() {
+            for target in targets {
+                let previous_renderables = projection
+                    .target_renderables
+                    .get(target)
+                    .cloned()
+                    .unwrap_or_default();
+                let Some(root) = scene_index.resolve(target) else {
+                    if !previous_renderables.is_empty() {
+                        remove_target_renderables(&mut projection, &previous_renderables);
+                        projection.target_renderables.remove(target);
+                        projection.target_bounds.remove(target);
+                        mapping_changed = true;
+                        bounds_changed = true;
+                        aggregate_can_extend = false;
+                    }
+                    continue;
+                };
+                let current_renderables = collect_mesh_descendants(root, &hierarchy);
+                if current_renderables != previous_renderables {
+                    let added = current_renderables
+                        .difference(&previous_renderables)
+                        .copied()
+                        .collect::<HashSet<_>>();
+                    let removed = previous_renderables
+                        .difference(&current_renderables)
+                        .copied()
+                        .collect::<HashSet<_>>();
+                    if !added.is_empty() {
+                        add_target_renderables(&mut projection, &added);
+                    }
+                    if !removed.is_empty() {
+                        remove_target_renderables(&mut projection, &removed);
+                    }
+                    projection
+                        .target_renderables
+                        .insert(target.clone(), current_renderables.clone());
+                    mapping_changed = true;
+                    if bounds_requested {
+                        let next = bounds_for_entities(&current_renderables, &geometry);
+                        replace_target_bounds(&mut projection, target, next);
+                        bounds_changed = true;
+                        aggregate_can_extend = false;
+                    }
+                }
+            }
         }
 
         if bounds_requested && bounds_request_changed {

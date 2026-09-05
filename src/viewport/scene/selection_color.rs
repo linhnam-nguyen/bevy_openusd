@@ -201,7 +201,25 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     }
 
     let projection_changed = state.last_projection_generation != projection_generation;
-    let selected_meshes = if presentation.color_change_enabled {
+    let can_use_projection_delta = projection_changed
+        && projection.is_some()
+        && state
+            .last_presentation
+            .as_ref()
+            .is_some_and(|last| last.0 == presentation.color_change_enabled)
+        && !selection_color_changed;
+
+    let selected_meshes = if can_use_projection_delta {
+        let mut updated = state.selected_meshes.clone();
+        let projection = projection.as_ref().expect("projection is present");
+        for added in projection.added_renderables() {
+            updated.insert(*added);
+        }
+        for removed in projection.removed_renderables() {
+            updated.remove(removed);
+        }
+        updated
+    } else if presentation.color_change_enabled {
         projection.as_ref().map_or_else(
             || {
                 let mut selected_meshes = HashSet::new();
@@ -229,12 +247,6 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     let previous_selected_meshes = &state.selected_meshes;
     let previous_hovered_meshes = &state.hovered_meshes;
     let mut affected = HashSet::new();
-    let can_use_projection_delta = projection_changed
-        && projection.is_some()
-        && state
-            .last_presentation
-            .as_ref()
-            .is_some_and(|last| last.0 == presentation.color_change_enabled);
     if can_use_projection_delta {
         let projection = projection.as_ref().expect("projection is present");
         affected.extend(projection.added_renderables().iter().copied());

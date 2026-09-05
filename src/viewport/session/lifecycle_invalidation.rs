@@ -4,11 +4,11 @@ use viewport_protocol::{ClassificationRecipe, HierarchySource, SelectionReadMode
 /// Presentation intent captured at the activation boundary and consumed only
 /// after the matching semantic/BIM generation is observable.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
-pub(super) struct PendingActivationPresentation {
-    pub(super) generation: u64,
-    pub(super) desired_provider: HierarchySource,
-    pub(super) classification_recipe: Option<ClassificationRecipe>,
-    pub(super) selection: Option<SelectionReadModel>,
+pub(crate) struct PendingActivationPresentation {
+    pub(crate) generation: u64,
+    pub(crate) desired_provider: HierarchySource,
+    pub(crate) classification_recipe: Option<ClassificationRecipe>,
+    pub(crate) selection: Option<SelectionReadModel>,
 }
 
 /// Clears all derived state that is scoped to the stage being replaced.
@@ -171,9 +171,11 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
             .is_some_and(|index| index.revision() > 0)
     {
         // Only a complete projection proves that a retained target disappeared.
-        // A non-empty progressive index is still an incomplete prefix.
-        world.remove_resource::<PendingActivationPresentation>();
-        return;
+        // Clear the pending selection so it does not block classification rehydration.
+        if let Some(pending_mut) = world.get_resource_mut::<PendingActivationPresentation>() {
+            let mut pending_mut = pending_mut;
+            pending_mut.selection = None;
+        }
     } else if pending.selection.is_some() {
         return;
     }
