@@ -59,6 +59,7 @@ impl SceneAnchorIndex {
         )>,
         presentation: Option<&StagePresentationContext>,
     ) -> CurrentHierarchyProjection {
+        self.rebuild_count = self.rebuild_count.saturating_add(1);
         #[derive(Debug)]
         struct Candidate {
             entity: Entity,

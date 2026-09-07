@@ -12,6 +12,7 @@ mod selection;
 mod selection_color;
 mod selection_hover;
 mod selection_outline;
+mod selection_presentation;
 mod selection_projection;
 mod skeleton;
 mod solari;
@@ -49,6 +50,9 @@ pub(in crate::viewport) use selection_hover::HoveredTarget;
 #[allow(unused_imports)]
 pub(in crate::viewport) use selection_outline::SelectionOutline;
 pub(in crate::viewport) use selection_outline::{SelectionOutlineState, sync_selection_outlines};
+pub(in crate::viewport) use selection_presentation::{
+    CoarseSelectionPresentation, SelectionPresentationPolicy,
+};
 pub(in crate::viewport) use selection_projection::{
     SelectedRenderableProjection, sync_selected_renderable_projection,
 };

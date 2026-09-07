@@ -59,6 +59,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
             .init_resource::<SelectionColorOverrideState>()
+            .init_resource::<super::SelectionPresentationPolicy>()
             .init_resource::<HoveredTarget>()
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()

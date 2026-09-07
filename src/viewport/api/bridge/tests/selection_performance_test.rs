@@ -98,7 +98,30 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
         .resource::<SelectedRenderableProjection>()
         .renderables()
         .len();
-    assert_eq!(heavy_renderables, HEAVY_MESH_COUNT);
+    assert!(
+        heavy_renderables < HEAVY_MESH_COUNT,
+        "large-parent selection must yield bounded projection work per update"
+    );
+    let mut updates = 0;
+    while app
+        .world()
+        .resource::<SelectedRenderableProjection>()
+        .is_pending()
+    {
+        app.update();
+        updates += 1;
+        assert!(
+            updates <= 16,
+            "selection projection did not converge promptly"
+        );
+    }
+    assert_eq!(
+        app.world()
+            .resource::<SelectedRenderableProjection>()
+            .renderables()
+            .len(),
+        HEAVY_MESH_COUNT
+    );
     assert_eq!(
         app.world()
             .resource::<SelectedRenderableProjection>()
@@ -120,6 +143,26 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
 
     set_selection(&mut app, light_anchor);
     app.update();
+    assert!(
+        app.world()
+            .resource::<SelectedRenderableProjection>()
+            .renderables()
+            .len()
+            < HEAVY_MESH_COUNT
+    );
+    let mut release_updates = 0;
+    while app
+        .world()
+        .resource::<SelectedRenderableProjection>()
+        .is_pending()
+    {
+        app.update();
+        release_updates += 1;
+        assert!(
+            release_updates <= 16,
+            "selection release did not converge promptly"
+        );
+    }
     let projection = app.world().resource::<SelectedRenderableProjection>();
     assert_eq!(projection.renderables().len(), 1);
     assert!(projection.aggregate_bounds().is_some());
@@ -129,6 +172,19 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
         .clear()
         .expect("clearing the synthetic selection must succeed");
     app.update();
+    let mut clear_updates = 0;
+    while app
+        .world()
+        .resource::<SelectedRenderableProjection>()
+        .is_pending()
+    {
+        app.update();
+        clear_updates += 1;
+        assert!(
+            clear_updates <= 16,
+            "selection clear did not converge promptly"
+        );
+    }
     assert!(
         app.world()
             .resource::<SelectedTargets>()

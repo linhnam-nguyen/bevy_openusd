@@ -2,6 +2,7 @@ use super::*;
 use crate::viewport::api::HierarchyPageIndex;
 use crate::viewport::session::Spawned;
 use bevy::asset::Assets;
+use bevy::ecs::hierarchy::ChildOf;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use usd_bevy::{LiveStage, LiveStagePlugin, LiveStageSet, UsdPlugin};
@@ -9,6 +10,9 @@ use viewport_protocol::{
     HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
     HierarchySource, HierarchyVisibilityState, ViewportEvent,
 };
+
+#[path = "scene_index_incremental_tests.rs"]
+mod incremental_tests;
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
@@ -152,6 +156,34 @@ fn generic_projection_keeps_snapshot_acquisition_constant_time() {
         roots.total,
         projection_elapsed.as_secs_f64() * 1_000.0,
         snapshot_elapsed.as_secs_f64() * 1_000_000.0,
+    );
+}
+
+#[test]
+fn projection_only_children_churn_does_not_rebuild_the_scene_index() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(Update, refresh_scene_anchor_index);
+
+    let root = app
+        .world_mut()
+        .spawn(usd_bevy::UsdPrimRef::new("/World"))
+        .id();
+    app.world_mut().resource_mut::<Spawned>().0 = true;
+    app.update();
+    let rebuilds_after_prim = app.world().resource::<SceneAnchorIndex>().rebuild_count();
+    assert_eq!(rebuilds_after_prim, 1);
+
+    app.world_mut().spawn(ChildOf(root));
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<SceneAnchorIndex>().rebuild_count(),
+        rebuilds_after_prim,
+        "renderer-only child attachment must not trigger a whole-scene index walk"
     );
 }
 

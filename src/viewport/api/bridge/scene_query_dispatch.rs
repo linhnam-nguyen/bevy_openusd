@@ -293,12 +293,6 @@ pub(crate) fn dispatch_scene_query_commands(
                     );
                     continue;
                 };
-                if let Some(pending) = pending_activation.as_deref_mut() {
-                    pending.desired_provider = source;
-                    if classification_recipe.is_some() {
-                        pending.classification_recipe = classification_recipe.clone();
-                    }
-                }
                 let projection = match source {
                     HierarchySource::Prim => Ok(scene_index.prim_projection()),
                     HierarchySource::BimClassification => match (
@@ -322,17 +316,23 @@ pub(crate) fn dispatch_scene_query_commands(
                         let mut projection = projection;
                         refresh_projection_visibility(&mut projection, &scene_index);
                         *current_projection = projection;
-                        provider.set(source, classification_recipe);
+                        provider.set(source, classification_recipe.clone());
+                        if let Some(pending) = pending_activation.as_deref_mut() {
+                            pending.desired_provider = source;
+                            if classification_recipe.is_some() {
+                                pending.classification_recipe = classification_recipe.clone();
+                            }
+                        }
                     }
                     Err(error) => reject(&mut outbox, request_id, error),
                 }
             }
             ViewportCommand::SetBimClassificationRecipe { recipe } => {
-                if let Some(pending) = pending_activation.as_deref_mut() {
-                    pending.classification_recipe = recipe.clone();
-                }
                 if let Some(bim_classification) = bim_classification.as_deref_mut() {
                     bim_classification.set(recipe);
+                    if let Some(pending) = pending_activation.as_deref_mut() {
+                        pending.classification_recipe = bim_classification.recipe().cloned();
+                    }
                 } else {
                     reject(
                         &mut outbox,

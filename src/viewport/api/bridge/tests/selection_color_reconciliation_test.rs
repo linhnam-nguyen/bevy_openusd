@@ -1,7 +1,7 @@
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
-use viewport_protocol::SelectionReadModel;
+use viewport_protocol::{ColorRgb8, SelectionReadModel};
 
 use super::{anchor, set_selection};
 use crate::viewport::scene::{
@@ -36,11 +36,15 @@ fn material_handles(app: &mut App) -> (Handle<StandardMaterial>, Handle<Standard
 
 fn settle_color_work(app: &mut App) {
     for _ in 0..64 {
-        if !app
+        let color_pending = app
             .world()
             .resource::<SelectionColorOverrideState>()
-            .is_pending()
-        {
+            .is_pending();
+        let projection_pending = app
+            .world()
+            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .is_pending();
+        if !color_pending && !projection_pending {
             return;
         }
         app.update();
@@ -103,13 +107,13 @@ fn interrupted_selection_color_reconciles_a_to_b_and_restores_base_materials() {
 
     set_selection(&mut app, range_selection(0));
     app.update();
-    assert_eq!(
-        app.world_mut()
-            .query_filtered::<Entity, With<SelectionColorOverride>>()
-            .iter(app.world())
-            .count(),
-        256
-    );
+    settle_color_work(&mut app);
+    app.world_mut()
+        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .0
+        .selection
+        .selection_color = ColorRgb8::new(0x10, 0x20, 0x30);
+    app.update();
     assert!(
         app.world()
             .resource::<SelectionColorOverrideState>()

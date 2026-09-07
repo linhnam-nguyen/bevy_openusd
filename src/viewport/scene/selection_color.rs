@@ -11,10 +11,16 @@ use bevy::prelude::*;
 use viewport_protocol::{ColorRgb8, SceneAnchor};
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::{SelectedRenderableProjection, SelectedTargets};
+use crate::viewport::scene::{
+    SelectedRenderableProjection, SelectedTargets, SelectionPresentationPolicy,
+};
 
 use super::selection_hover::HoveredTarget;
 use super::selection_outline::collect_mesh_descendants;
+
+#[path = "selection_color_apply.rs"]
+mod apply;
+use apply::apply_pending_color_work;
 
 /// Marks a mesh whose material is currently owned by selection presentation.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +33,7 @@ pub(in crate::viewport) struct SelectionBaseMaterial(
 );
 
 const MAX_PRESENTATION_ENTITIES_PER_UPDATE: usize = 256;
-type PresentationKey = (bool, ColorRgb8, bool, ColorRgb8, Option<SceneAnchor>);
+type PresentationKey = (bool, ColorRgb8, bool, ColorRgb8, Option<SceneAnchor>, bool);
 
 #[derive(Debug, Clone, PartialEq)]
 struct ColorWorkKey {
@@ -40,10 +46,11 @@ struct ColorWorkKey {
 #[derive(Debug, Clone)]
 struct PendingColorWork {
     key: ColorWorkKey,
-    selected_meshes: HashSet<Entity>,
-    hovered_meshes: HashSet<Entity>,
     affected: Vec<Entity>,
     offset: usize,
+    reconcile_all: bool,
+    reconcile_phase: u8,
+    reconcile_offset: usize,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -58,7 +65,10 @@ pub(in crate::viewport) struct SelectionColorOverrideState {
     last_scene_revision: Option<u64>,
     selected_meshes: HashSet<Entity>,
     hovered_meshes: HashSet<Entity>,
+    selected_order: Vec<Entity>,
+    hovered_order: Vec<Entity>,
     applied_owners: HashMap<Entity, PresentationOwner>,
+    applied_order: Vec<Entity>,
     last_projection_generation: Option<u64>,
     pending: Option<PendingColorWork>,
     pub(in crate::viewport) last_affected_entities: usize,
@@ -118,6 +128,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     selection: Res<SelectedTargets>,
     settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
+    policy: Option<Res<SelectionPresentationPolicy>>,
     hovered_target: Res<HoveredTarget>,
     projection: Option<Res<SelectedRenderableProjection>>,
     color_material: Option<Res<SelectionColorMaterial>>,
@@ -137,12 +148,14 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         return;
     };
     let presentation = settings.selection();
+    let coarse = policy.as_ref().is_some_and(|policy| policy.coarse);
     let presentation_key: PresentationKey = (
         presentation.color_change_enabled,
         presentation.selection_color,
         presentation.hover_color_change_enabled,
         presentation.hover_color,
         hovered_target.anchor.clone(),
+        coarse,
     );
     let projection_generation = projection
         .as_ref()
@@ -158,13 +171,16 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         .pending
         .as_ref()
         .is_some_and(|pending| pending.key != key);
-    let superseded_applied = if superseded_pending {
-        state.pending = None;
-        state.applied_owners.keys().copied().collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    if state.pending.is_some() {
+    let reconcile_cursor = superseded_pending
+        .then(|| {
+            state
+                .pending
+                .as_ref()
+                .filter(|pending| pending.reconcile_all)
+                .map(|pending| (pending.reconcile_phase, pending.reconcile_offset))
+        })
+        .flatten();
+    if state.pending.is_some() && !superseded_pending {
         apply_pending_color_work(
             &mut state,
             &mut commands,
@@ -203,83 +219,84 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     let projection_changed = state.last_projection_generation != projection_generation;
     let can_use_projection_delta = projection_changed
         && projection.is_some()
-        && state
-            .last_presentation
-            .as_ref()
-            .is_some_and(|last| last.0 == presentation.color_change_enabled)
-        && !selection_color_changed;
+        && (state.last_projection_generation.is_some()
+            || !state.selected_meshes.is_empty()
+            || state.last_selection_revision.is_some());
 
-    let selected_meshes = if can_use_projection_delta {
-        let mut updated = state.selected_meshes.clone();
+    let mut full_reconcile = superseded_pending;
+    if coarse {
+        state.selected_meshes.clear();
+        state.selected_order.clear();
+        full_reconcile = true;
+    } else if can_use_projection_delta {
         let projection = projection.as_ref().expect("projection is present");
         for added in projection.added_renderables() {
-            updated.insert(*added);
+            if state.selected_meshes.insert(*added) {
+                state.selected_order.push(*added);
+            }
         }
         for removed in projection.removed_renderables() {
-            updated.remove(removed);
+            state.selected_meshes.remove(removed);
         }
-        updated
-    } else if presentation.color_change_enabled {
-        projection.as_ref().map_or_else(
-            || {
-                let mut selected_meshes = HashSet::new();
+    } else {
+        state.selected_meshes.clear();
+        state.selected_order.clear();
+        if presentation.color_change_enabled {
+            if let Some(projection) = projection.as_ref() {
+                for entity in projection.renderables().iter().copied() {
+                    if state.selected_meshes.insert(entity) {
+                        state.selected_order.push(entity);
+                    }
+                }
+            } else {
                 for target in &selection.0.targets {
                     let Some(entity) = scene_index.resolve(target) else {
                         continue;
                     };
-                    collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected_meshes);
+                    let mut selected = HashSet::new();
+                    collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected);
+                    for entity in selected {
+                        if state.selected_meshes.insert(entity) {
+                            state.selected_order.push(entity);
+                        }
+                    }
                 }
-                selected_meshes
-            },
-            |projection| projection.renderables().clone(),
-        )
-    } else {
-        HashSet::new()
-    };
+            }
+        }
+        full_reconcile = true;
+    }
     let mut hovered_meshes = HashSet::new();
-    if presentation.hover_color_change_enabled
+    if !coarse
+        && presentation.hover_color_change_enabled
         && let Some(target) = hovered_target.anchor.as_ref()
         && let Some(entity) = scene_index.resolve(target)
     {
         collect_mesh_descendants(entity, &mesh_hierarchy, &mut hovered_meshes);
     }
 
-    let previous_selected_meshes = &state.selected_meshes;
-    let previous_hovered_meshes = &state.hovered_meshes;
+    if hovered_meshes != state.hovered_meshes {
+        state.hovered_meshes = hovered_meshes;
+        state.hovered_order = state.hovered_meshes.iter().copied().collect();
+        full_reconcile = true;
+    }
     let mut affected = HashSet::new();
     if can_use_projection_delta {
         let projection = projection.as_ref().expect("projection is present");
         affected.extend(projection.added_renderables().iter().copied());
         affected.extend(projection.removed_renderables().iter().copied());
-    } else if previous_selected_meshes != &selected_meshes {
-        affected.extend(
-            previous_selected_meshes
-                .symmetric_difference(&selected_meshes)
-                .copied(),
-        );
+    } else {
+        full_reconcile = true;
     }
-    if previous_hovered_meshes != &hovered_meshes {
-        affected.extend(
-            previous_hovered_meshes
-                .symmetric_difference(&hovered_meshes)
-                .copied(),
-        );
-    }
-    if selection_color_changed {
-        affected.extend(selected_meshes.iter().copied());
-    }
-    if hover_color_changed {
-        affected.extend(hovered_meshes.iter().copied());
-    }
-    affected.extend(superseded_applied);
+    full_reconcile |= selection_color_changed || hover_color_changed;
     let mut affected = affected.into_iter().collect::<Vec<_>>();
     affected.sort_unstable();
     state.pending = Some(PendingColorWork {
         key,
-        selected_meshes,
-        hovered_meshes,
         affected,
         offset: 0,
+        reconcile_all: full_reconcile,
+        reconcile_phase: reconcile_cursor.map_or(0, |(phase, _)| phase),
+        reconcile_offset: reconcile_cursor.map_or(0, |(_, offset)| offset),
     });
     apply_pending_color_work(
         &mut state,
@@ -288,81 +305,6 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         &color_material.0,
         &hover_material.0,
     );
-}
-
-fn apply_pending_color_work(
-    state: &mut SelectionColorOverrideState,
-    commands: &mut Commands,
-    meshes: &mut Query<(
-        Entity,
-        &mut MeshMaterial3d<StandardMaterial>,
-        Option<&SelectionBaseMaterial>,
-        Option<&SelectionColorOverride>,
-    )>,
-    selection_handle: &Handle<StandardMaterial>,
-    hover_handle: &Handle<StandardMaterial>,
-) {
-    let Some(mut work) = state.pending.take() else {
-        return;
-    };
-    let start = work.offset;
-    let end = (start + MAX_PRESENTATION_ENTITIES_PER_UPDATE).min(work.affected.len());
-    for entity in &work.affected[start..end] {
-        let entity = *entity;
-        let Ok((_, mut material, base, marker)) = meshes.get_mut(entity) else {
-            state.applied_owners.remove(&entity);
-            continue;
-        };
-        let desired_owner = presentation_owner(
-            work.selected_meshes.contains(&entity),
-            work.hovered_meshes.contains(&entity),
-        );
-        if let Some(desired_owner) = desired_owner {
-            let desired_handle = match desired_owner {
-                PresentationOwner::Selection => selection_handle,
-                PresentationOwner::Hover => hover_handle,
-            };
-            if let (Some(base), Some(_marker)) = (base, marker)
-                && material.0 != *selection_handle
-                && material.0 != *hover_handle
-                && material.0 != base.0
-            {
-                commands
-                    .entity(entity)
-                    .insert(SelectionBaseMaterial(material.0.clone()));
-            }
-            if marker.is_none() || base.is_none() {
-                commands.entity(entity).insert((
-                    SelectionColorOverride,
-                    SelectionBaseMaterial(material.0.clone()),
-                ));
-            }
-            if material.0 != *desired_handle {
-                material.0 = desired_handle.clone();
-            }
-            state.applied_owners.insert(entity, desired_owner);
-        } else if let (Some(base), Some(_marker)) = (base, marker) {
-            material.0 = base.0.clone();
-            commands
-                .entity(entity)
-                .remove::<(SelectionColorOverride, SelectionBaseMaterial)>();
-            state.applied_owners.remove(&entity);
-        } else {
-            state.applied_owners.remove(&entity);
-        }
-    }
-    work.offset = end;
-    state.last_affected_entities = end - start;
-    if work.offset < work.affected.len() {
-        state.pending = Some(work);
-        return;
-    }
-    state.selected_meshes = work.selected_meshes;
-    state.hovered_meshes = work.hovered_meshes;
-    state.last_selection_revision = Some(work.key.selection_revision);
-    state.last_scene_revision = Some(work.key.scene_revision);
-    state.last_projection_generation = work.key.projection_generation;
-    state.last_presentation = Some(work.key.presentation);
 }
 
 pub(super) fn color_from_rgb8(color: ColorRgb8) -> Color {

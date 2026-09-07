@@ -3,14 +3,13 @@ use std::time::Instant;
 use super::selection_profile_support::settle_selection_presentation;
 use super::*;
 
-use bevy_glacial::prelude::BoundsGizmoTarget;
-use viewport_protocol::SelectionReadModel;
-
 use crate::viewport::scene::{
     SectionBoxGizmoTarget, SectionBoxState, SelectedRenderableProjection, SelectionOutlineState,
     sync_section_box_gizmo_target, sync_section_box_state, sync_selected_renderable_projection,
     sync_selection_outlines,
 };
+use bevy_glacial::prelude::BoundsGizmoTarget;
+use viewport_protocol::{ColorRgb8, SelectionReadModel};
 
 #[test]
 fn selection_projection_reuses_unchanged_targets_and_deltas_only_touch_the_change() {
@@ -66,7 +65,6 @@ fn selection_projection_reuses_unchanged_targets_and_deltas_only_touch_the_chang
     assert_eq!(outlines.last_removed, 1);
     assert_eq!(outlines.last_updated, 0);
 }
-
 #[test]
 fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes() {
     let mut app = super::projection_profile_test::combined_presentation_app(false);
@@ -78,7 +76,25 @@ fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes
         .query_filtered::<Entity, With<SelectionOutline>>()
         .iter(app.world())
         .count();
-    assert_eq!(first_frame_outlines, 256);
+    assert!(first_frame_outlines <= 256);
+    for _ in 0..32 {
+        let projection_pending = app
+            .world()
+            .resource::<SelectedRenderableProjection>()
+            .is_pending();
+        let outline_pending = app.world().resource::<SelectionOutlineState>().is_pending();
+        if !projection_pending && !outline_pending {
+            break;
+        }
+        app.update();
+    }
+
+    app.world_mut()
+        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .0
+        .selection
+        .boundary_color = ColorRgb8::new(0x10, 0x20, 0x30);
+    app.update();
     assert!(app.world().resource::<SelectionOutlineState>().is_pending());
 
     set_selection(
@@ -88,7 +104,7 @@ fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes
             primary: Some(anchor(4_999)),
         },
     );
-    for _ in 0..32 {
+    for _ in 0..64 {
         app.update();
         if !app.world().resource::<SelectionOutlineState>().is_pending() {
             break;
@@ -113,7 +129,6 @@ fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes
         .collect::<Vec<_>>();
     assert_eq!(outlined_paths, vec!["/World/Profile04999".to_owned()]);
 }
-
 #[test]
 fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() {
     let mut app = indexed_scene_app(3);
@@ -262,7 +277,6 @@ fn section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta() 
         idle_fast_path_count + 1
     );
 }
-
 #[test]
 #[ignore = "I1.7.4 settled incremental projection profile; run explicitly with --ignored"]
 fn profile_i1_7_4_settled_incremental_projection_delta() {
@@ -357,7 +371,6 @@ fn profile_i1_7_4_settled_incremental_projection_delta() {
         median_micros(&mut steady_delta_samples)
     );
 }
-
 #[test]
 #[ignore = "I1.7.4 projection-only profile; run explicitly with --ignored"]
 fn profile_i1_7_4_projection_only() {

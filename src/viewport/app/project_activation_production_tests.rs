@@ -94,8 +94,8 @@ impl ProductionActivationWorld {
                 (
                     refresh_scene_anchor_index,
                     synchronize_live_stage,
-                    refresh_active_hierarchy_projection,
                     rehydrate_activation_presentation,
+                    refresh_active_hierarchy_projection,
                 )
                     .chain()
                     .after(usd_bevy::LiveStageSet::Presentation),

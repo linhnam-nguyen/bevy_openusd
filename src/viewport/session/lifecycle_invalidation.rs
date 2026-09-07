@@ -195,32 +195,6 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
                     Some(recipe.clone()),
                 );
             }
-            let projected = if let (Some(semantic), Some(scene_index)) = (
-                world.get_resource::<crate::viewport::semantic::SemanticSyncState>(),
-                world.get_resource::<crate::viewport::api::SceneAnchorIndex>(),
-            ) && let (Some(snapshot), Some(index)) =
-                (semantic.snapshot(), semantic.shared_bim_index())
-            {
-                let mut service = crate::viewport::bim::BimReadService::with_index(snapshot, index);
-                service
-                    .classification_projection(&recipe)
-                    .ok()
-                    .map(|mut projection| {
-                        crate::viewport::api::refresh_projection_visibility(
-                            &mut projection,
-                            scene_index,
-                        );
-                        projection
-                    })
-            } else {
-                None
-            };
-            if let Some(projection) = projected
-                && let Some(mut current_projection) =
-                    world.get_resource_mut::<crate::viewport::api::CurrentHierarchyProjection>()
-            {
-                *current_projection = projection;
-            }
         }
     } else if pending.desired_provider == viewport_protocol::HierarchySource::BimClassification {
         if let Some(mut provider) =

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use bevy::ecs::hierarchy::Children;
+use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
 use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
@@ -22,6 +22,8 @@ use crate::viewport::session::{Spawned, StagePresentationContext};
 mod dense;
 #[path = "scene_index_hierarchy.rs"]
 mod hierarchy;
+#[path = "scene_index_incremental.rs"]
+mod incremental;
 #[path = "scene_index_lookup.rs"]
 mod lookup;
 #[path = "scene_index_rebuild.rs"]
@@ -44,6 +46,10 @@ pub(crate) struct SceneAnchorIndex {
     dense: DenseSceneIndex,
     initialized: bool,
     revision: u64,
+    rebuild_count: u64,
+    incremental_work: u64,
+    parent_by_entity: HashMap<Entity, Entity>,
+    transparent_by_entity: HashMap<Entity, bool>,
 }
 
 /// Dense, session-local scene topology. Protocol strings remain cold fields on
@@ -121,6 +127,15 @@ impl SceneAnchorIndex {
             ..Default::default()
         }
     }
+
+    pub(crate) fn rebuild_count(&self) -> u64 {
+        self.rebuild_count
+    }
+
+    #[cfg(test)]
+    pub(crate) fn incremental_work(&self) -> u64 {
+        self.incremental_work
+    }
 }
 
 /// Rebuilds only after stage entities or tree-visible data changes. This keeps
@@ -140,10 +155,10 @@ pub(crate) fn refresh_scene_anchor_index(
                 Added<UsdTransparentHierarchyNode>,
                 Changed<UsdTransparentHierarchyNode>,
                 Changed<Visibility>,
-                Changed<Children>,
             )>,
         ),
     >,
+    added_prims: Query<Entity, (With<UsdPrimRef>, Added<UsdPrimRef>)>,
     prims: Query<(
         Entity,
         &UsdPrimRef,
@@ -153,6 +168,7 @@ pub(crate) fn refresh_scene_anchor_index(
         Option<&Visibility>,
         Option<&Children>,
     )>,
+    parent_hierarchy: Query<Option<&ChildOf>>,
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
     mut index: ResMut<SceneAnchorIndex>,
@@ -167,18 +183,43 @@ pub(crate) fn refresh_scene_anchor_index(
     let presentation_changed = presentation
         .as_ref()
         .is_some_and(|presentation| presentation.is_changed());
+    let changed_entities = changed_prims.iter().collect::<Vec<_>>();
+    let removed_prim = removed_prims.read().next().is_some();
+    let removed_transparent = removed_transparent.read().next().is_some();
     let changed = spawned.is_changed()
         || presentation_changed
-        || !changed_prims.is_empty()
-        || removed_prims.read().next().is_some()
-        || removed_transparent.read().next().is_some();
+        || !changed_entities.is_empty()
+        || removed_prim
+        || removed_transparent;
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
         *current_projection = CurrentHierarchyProjection::default();
         return;
     }
     if changed || !index.initialized {
-        let prim_projection = index.rebuild(&prims, presentation.as_deref());
+        let added_only = index.initialized
+            && !spawned.is_changed()
+            && !presentation_changed
+            && !removed_prim
+            && !removed_transparent
+            && !changed_entities.is_empty()
+            && changed_entities
+                .iter()
+                .all(|entity| added_prims.get(*entity).is_ok());
+        let prim_projection = if added_only {
+            index
+                .ingest_added(
+                    changed_entities.iter().copied(),
+                    &prims,
+                    &parent_hierarchy,
+                    presentation.as_deref(),
+                )
+                .unwrap_or_else(|| index.rebuild(&prims, presentation.as_deref()))
+        } else {
+            let projection = index.rebuild(&prims, presentation.as_deref());
+            index.record_topology(&prims, &parent_hierarchy);
+            projection
+        };
         if provider
             .as_ref()
             .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
