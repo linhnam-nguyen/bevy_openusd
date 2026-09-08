@@ -52,9 +52,10 @@ pub(super) fn queue_server_event_for_request(
             queue_runtime_blob(state, request_id.as_deref(), blob_id, bytes);
         }
         event => {
-            if !queue_bounded_event(state, request_id.as_deref(), event) {
+            let event_kind = server_event_kind(&event);
+            if let Err(encoded_bytes) = queue_bounded_event(state, request_id.as_deref(), event) {
                 warn!(
-                    "[viewport-data-channel] dropping oversized application event instead of blocking the queue"
+                    "[viewport-data-channel] dropping oversized application event instead of blocking the queue: event_kind={event_kind}, encoded_bytes={encoded_bytes:?}, limit_bytes={MAX_APPLICATION_MESSAGE_BYTES}"
                 );
             }
         }
@@ -77,7 +78,7 @@ pub(super) fn queue_search_results(
         matches: matches.clone(),
         has_more,
     });
-    if queue_bounded_event(state, request_id.as_deref(), event) {
+    if queue_bounded_event(state, request_id.as_deref(), event).is_ok() {
         return;
     }
 
@@ -115,7 +116,7 @@ pub(super) fn queue_search_results(
             matches: vec![result],
             has_more,
         });
-        if queue_bounded_event(state, request_id.as_deref(), fallback) {
+        if queue_bounded_event(state, request_id.as_deref(), fallback).is_ok() {
             return;
         }
     }
@@ -131,7 +132,7 @@ pub(super) fn queue_scene_children_page(
     page: viewport_protocol::SceneChildrenPage,
 ) {
     let event = ServerEvent::Viewport(ViewportEvent::SceneChildren { page: page.clone() });
-    if queue_bounded_event(state, request_id.as_deref(), event) {
+    if queue_bounded_event(state, request_id.as_deref(), event).is_ok() {
         return;
     }
 
@@ -174,14 +175,50 @@ pub(super) fn queue_bounded_event(
     state: &mut ApplicationSessionState,
     request_id: Option<&str>,
     event: ServerEvent,
-) -> bool {
+) -> Result<(), Option<usize>> {
     let envelope = next_server_envelope(state, request_id, event);
-    if encoded_size(&envelope).is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
+    let encoded_bytes = encoded_size(&envelope);
+    if encoded_bytes.is_some_and(|size| size <= MAX_APPLICATION_MESSAGE_BYTES) {
         state.pending_server_events.push_back(envelope);
-        true
+        Ok(())
     } else {
         state.server_sequence = state.server_sequence.saturating_sub(1);
-        false
+        Err(encoded_bytes)
+    }
+}
+
+fn server_event_kind(event: &ServerEvent) -> &'static str {
+    match event {
+        ServerEvent::Handshake(_) => "handshake",
+        ServerEvent::Session(SessionEvent::Ready { .. }) => "session.ready",
+        ServerEvent::Session(SessionEvent::Snapshot { .. }) => "session.snapshot",
+        ServerEvent::Session(_) => "session.other",
+        ServerEvent::Stream(_) => "stream",
+        ServerEvent::Viewport(ViewportEvent::BimSearchResults { .. }) => {
+            "viewport.bim_search_results"
+        }
+        ServerEvent::Viewport(ViewportEvent::BimPropertiesPage { .. }) => {
+            "viewport.bim_properties_page"
+        }
+        ServerEvent::Viewport(ViewportEvent::BimPropertiesError { .. }) => {
+            "viewport.bim_properties_error"
+        }
+        ServerEvent::Viewport(ViewportEvent::BimClassificationFieldCataloguePage { .. }) => {
+            "viewport.bim_classification_field_catalogue_page"
+        }
+        ServerEvent::Viewport(ViewportEvent::BimPropertyProvenanceRead { .. }) => {
+            "viewport.bim_property_provenance_read"
+        }
+        ServerEvent::Viewport(ViewportEvent::HierarchyChildren { .. }) => {
+            "viewport.hierarchy_children"
+        }
+        ServerEvent::Viewport(ViewportEvent::HierarchySearchResults { .. }) => {
+            "viewport.hierarchy_search_results"
+        }
+        ServerEvent::Viewport(ViewportEvent::EditorStageExportChunk { .. }) => {
+            "viewport.editor_stage_export_chunk"
+        }
+        ServerEvent::Viewport(_) => "viewport.other",
     }
 }
 

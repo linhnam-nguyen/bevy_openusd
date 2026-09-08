@@ -38,10 +38,8 @@ use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground
 use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
-
 #[path = "runner_projection.rs"]
 mod runner_projection;
-
 pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
         Ok(options) => options,
@@ -360,7 +358,9 @@ pub(crate) fn run() {
             apply_fly_to,
             sync_selected_instance_identity.before(LiveStageSet::Reconcile),
             follow_mounted_camera,
-            tick_stage_time.after(LiveStageSet::Reconcile),
+            tick_stage_time
+                .after(LiveStageSet::Reconcile)
+                .before(LiveStageSet::Animation),
             hide_meshes_on_startup,
         ),
     )

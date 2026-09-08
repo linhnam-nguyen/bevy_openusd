@@ -20,7 +20,7 @@ pub(super) fn queue_bim_classification_field_catalogue(
     let event = ServerEvent::Viewport(ViewportEvent::BimClassificationFieldCatalogueChanged {
         catalogue: catalogue.clone(),
     });
-    if queue_bounded_event(state, request_id.as_deref(), event) {
+    if queue_bounded_event(state, request_id.as_deref(), event).is_ok() {
         return;
     }
 
@@ -75,11 +75,13 @@ pub(super) fn queue_bim_classification_field_catalogue(
             total_fields,
             fields,
         };
-        if !queue_bounded_event(
+        if queue_bounded_event(
             state,
             request_id.as_deref(),
             ServerEvent::Viewport(ViewportEvent::BimClassificationFieldCataloguePage { page }),
-        ) {
+        )
+        .is_err()
+        {
             warn!(
                 "[viewport-data-channel] BIM classification catalogue page exceeded the application message limit"
             );

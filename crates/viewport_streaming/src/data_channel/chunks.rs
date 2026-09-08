@@ -269,7 +269,9 @@ pub(super) fn queue_compact_snapshot(
         state,
         request_id.as_deref(),
         snapshot_event(snapshot.clone(), session_snapshot),
-    ) {
+    )
+    .is_ok()
+    {
         warn!(
             "[viewport-data-channel] queued a compact snapshot after the full snapshot exceeded the application message limit"
         );
@@ -286,7 +288,7 @@ pub(super) fn queue_compact_snapshot(
     minimal.viewer_settings = snapshot.viewer_settings;
     minimal.physics_running = snapshot.physics_running;
 
-    if !queue_bounded_event(state, None, snapshot_event(minimal, session_snapshot)) {
+    if queue_bounded_event(state, None, snapshot_event(minimal, session_snapshot)).is_err() {
         error!(
             "[viewport-data-channel] failed to queue the bounded minimal snapshot after snapshot compaction"
         );

@@ -4,8 +4,10 @@ use bevy::prelude::*;
 use usd_bevy::{
     AnimatedPrims, LiveStage, ProgressiveProjectionState, ProjectionReadiness, StageTime,
 };
+use viewport_protocol::{TimelineReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::UsdStageTime;
+use crate::viewport::api::ViewportEventOutbox;
 
 /// Advance the viewport clock and publish its current USD time code to the
 /// live route system. `LiveStagePlugin` resamples animated routes when this
@@ -17,6 +19,7 @@ pub(crate) fn tick_stage_time(
     stage: Option<NonSend<LiveStage>>,
     animated: Res<AnimatedPrims>,
     projection: Option<Res<ProgressiveProjectionState>>,
+    mut outbox: Option<ResMut<ViewportEventOutbox>>,
 ) {
     let stage_identity = stage.as_ref().map(|stage| stage.stage_identity());
     if clock.stage_identity() != stage_identity {
@@ -32,7 +35,7 @@ pub(crate) fn tick_stage_time(
     {
         return;
     }
-    if !clock.initialized {
+    let initialized_now = if !clock.initialized {
         clock.start_time_code = stage.stage.start_time_code();
         clock.end_time_code = stage.stage.end_time_code();
         clock.time_codes_per_second = stage.stage.time_codes_per_second().max(1.0);
@@ -42,7 +45,10 @@ pub(crate) fn tick_stage_time(
         }
         clock.playing = has_animation;
         clock.initialized = true;
-    }
+        true
+    } else {
+        false
+    };
 
     if clock.playing {
         clock.seconds += time.delta_secs_f64();
@@ -52,4 +58,19 @@ pub(crate) fn tick_stage_time(
         }
     }
     stage_time.current = clock.current_time_code();
+
+    if initialized_now && let Some(outbox) = outbox.as_deref_mut() {
+        outbox.push(ViewportEventEnvelope::new(
+            None,
+            ViewportEvent::TimelineChanged {
+                timeline: TimelineReadModel {
+                    seconds: clock.seconds,
+                    playing: clock.playing,
+                    start_time_code: clock.start_time_code,
+                    end_time_code: clock.end_time_code,
+                    time_codes_per_second: clock.time_codes_per_second,
+                },
+            },
+        ));
+    }
 }

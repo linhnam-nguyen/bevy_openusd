@@ -26,7 +26,7 @@ pub(super) fn queue_bim_properties(
         properties: properties.clone(),
         diff: diff.clone(),
     });
-    if queue_bounded_event(state, request_id.as_deref(), event) {
+    if queue_bounded_event(state, request_id.as_deref(), event).is_ok() {
         return;
     }
 
@@ -317,11 +317,13 @@ fn queue_error(
         encoded_bytes: encoded_bytes.min(u32::MAX as usize) as u32,
         max_bytes: MAX_APPLICATION_MESSAGE_BYTES.min(u32::MAX as usize) as u32,
     };
-    if !queue_bounded_event(
+    if queue_bounded_event(
         state,
         request_id,
         ServerEvent::Viewport(ViewportEvent::BimPropertiesError { error }),
-    ) {
+    )
+    .is_err()
+    {
         warn!("[viewport-data-channel] BIM property delivery error could not be queued");
     }
 }
