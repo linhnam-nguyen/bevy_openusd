@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::prelude::*;
@@ -40,7 +40,7 @@ fn visual_parent(
     transparent_by_entity: &HashMap<Entity, bool>,
 ) -> Option<Entity> {
     let mut current = parent_by_entity.get(&entity).copied();
-    let mut visited = std::collections::HashSet::new();
+    let mut visited = HashSet::new();
     while let Some(candidate) = current {
         if !visited.insert(candidate) {
             return None;
@@ -82,13 +82,10 @@ impl SceneAnchorIndex {
         }
     }
 
-    /// Ingests a batch containing only newly projected prim rows.
-    ///
-    /// Existing metadata edits, removals, and duplicate-path occurrence
-    /// changes deliberately return `None`, allowing the authoritative full
-    /// rebuild path to preserve its stronger identity guarantees. The common
-    /// progressive unique-path case updates only the changed rows and emits a
-    /// new immutable projection once for the batch.
+    /// Admits only new unique prim rows. Derived tree structures are published
+    /// later by [`Self::flush_incremental_derived`] when the progressive batch
+    /// reaches a quiescent update, preventing a full sort/reindex/projection
+    /// for every streaming batch.
     pub(super) fn ingest_added(
         &mut self,
         entities: impl IntoIterator<Item = Entity>,
@@ -103,7 +100,7 @@ impl SceneAnchorIndex {
         )>,
         parents: &Query<Option<&ChildOf>>,
         presentation: Option<&StagePresentationContext>,
-    ) -> Option<CurrentHierarchyProjection> {
+    ) -> Option<()> {
         struct Addition {
             entity: Entity,
             anchor: SceneAnchor,
@@ -114,6 +111,7 @@ impl SceneAnchorIndex {
         }
 
         let mut additions = Vec::new();
+        let mut batch_paths = HashSet::new();
         for entity in entities {
             let Ok((entity, prim, authored, target, transparent, visibility, _)) =
                 prims.get(entity)
@@ -123,12 +121,15 @@ impl SceneAnchorIndex {
             if prim.path == "/" || self.by_entity.contains_key(&entity) {
                 continue;
             }
-            if !self.occurrence_index.resolve(&prim.path).is_empty() {
+            if !batch_paths.insert(prim.path.clone())
+                || !self.occurrence_index.resolve(&prim.path).is_empty()
+            {
                 return None;
             }
             let parent = parents.get(entity).ok().flatten().map(ChildOf::parent);
-            self.parent_by_entity
-                .extend(parent.map(|parent| (entity, parent)));
+            if let Some(parent) = parent {
+                self.parent_by_entity.insert(entity, parent);
+            }
             self.transparent_by_entity
                 .insert(entity, transparent.is_some());
             additions.push(Addition {
@@ -141,10 +142,9 @@ impl SceneAnchorIndex {
             });
         }
         if additions.is_empty() {
-            return Some(self.prim_projection());
+            return Some(());
         }
 
-        let added_count = additions.len();
         for addition in &additions {
             self.by_anchor
                 .insert(addition.anchor.clone(), addition.entity);
@@ -154,7 +154,8 @@ impl SceneAnchorIndex {
                 .insert(&addition.anchor.prim_path, addition.entity);
         }
 
-        for addition in additions {
+        let mut visual_parents = Vec::new();
+        for addition in &additions {
             if addition.transparent {
                 continue;
             }
@@ -164,21 +165,41 @@ impl SceneAnchorIndex {
                 &self.transparent_by_entity,
             )
             .and_then(|parent| self.by_entity.get(&parent).cloned());
+            let index = self.nodes.len();
             self.nodes.push(PrimNodeReadModel {
-                anchor: addition.anchor,
+                anchor: addition.anchor.clone(),
                 parent: parent.clone(),
-                label: addition.name,
-                display_name: addition.display_name,
+                label: addition.name.clone(),
+                display_name: addition.display_name.clone(),
                 visible: addition.visible,
                 has_children: false,
             });
-            if let Some(parent) = parent
-                && let Some(node) = self.nodes.iter_mut().find(|node| node.anchor == parent)
+            self.node_index_by_anchor
+                .insert(addition.anchor.clone(), index);
+            visual_parents.push(parent);
+        }
+        for parent in visual_parents.into_iter().flatten() {
+            if let Some(index) = self.node_index_by_anchor.get(&parent).copied()
+                && let Some(node) = self.nodes.get_mut(index)
             {
                 node.has_children = true;
             }
         }
 
+        self.incremental_work.admitted_rows = self
+            .incremental_work
+            .admitted_rows
+            .saturating_add(additions.len() as u64);
+        self.revision = self.revision.saturating_add(1);
+        self.initialized = true;
+        self.derived_dirty = true;
+        Some(())
+    }
+
+    /// Coalesces the expensive immutable representations once no new rows
+    /// arrived during this update. The mutable maps above remain authoritative
+    /// for O(1) anchor resolution while this work is deferred.
+    pub(super) fn flush_incremental_derived(&mut self) -> CurrentHierarchyProjection {
         self.nodes.sort_by(|left, right| {
             left.anchor
                 .prim_path
@@ -189,10 +210,23 @@ impl SceneAnchorIndex {
                         .cmp(&right.anchor.instance_context)
                 })
         });
+        self.node_index_by_anchor = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.anchor.clone(), index))
+            .collect();
         self.dense = DenseSceneIndex::from_nodes(&self.nodes, &self.by_anchor);
-        self.incremental_work = self.incremental_work.saturating_add(added_count as u64);
-        self.revision = self.revision.saturating_add(1);
-        self.initialized = true;
-        Some(self.prim_projection())
+        let row_count = self.nodes.len() as u64;
+        self.incremental_work.reindexed_rows = self
+            .incremental_work
+            .reindexed_rows
+            .saturating_add(row_count);
+        self.incremental_work.projected_rows = self
+            .incremental_work
+            .projected_rows
+            .saturating_add(row_count);
+        self.derived_dirty = false;
+        self.prim_projection()
     }
 }

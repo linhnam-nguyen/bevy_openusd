@@ -13,6 +13,7 @@ mod selection_color;
 mod selection_hover;
 mod selection_outline;
 mod selection_presentation;
+mod selection_presentation_proxy;
 mod selection_projection;
 mod skeleton;
 mod solari;
@@ -53,8 +54,12 @@ pub(in crate::viewport) use selection_outline::{SelectionOutlineState, sync_sele
 pub(in crate::viewport) use selection_presentation::{
     CoarseSelectionPresentation, SelectionPresentationPolicy,
 };
+pub(in crate::viewport) use selection_presentation_proxy::{
+    CoarseSelectionProxyState, draw_coarse_selection_proxy, sync_coarse_selection_proxy,
+};
 pub(in crate::viewport) use selection_projection::{
-    SelectedRenderableProjection, sync_selected_renderable_projection,
+    ProjectedWorldBounds, SelectedRenderableProjection, register_selection_projection_observers,
+    sync_selected_renderable_projection,
 };
 pub(crate) use skeleton::{
     HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,

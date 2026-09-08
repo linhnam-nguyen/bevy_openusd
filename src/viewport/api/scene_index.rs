@@ -3,7 +3,7 @@
 //! The map is the only place where a product-facing prim identity meets an
 //! ECS entity. It never leaves the viewport process.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use bevy::ecs::hierarchy::{ChildOf, Children};
@@ -43,13 +43,27 @@ pub(crate) struct SceneAnchorIndex {
     by_entity: HashMap<Entity, SceneAnchor>,
     occurrence_index: SceneOccurrenceIndex,
     nodes: Vec<PrimNodeReadModel>,
+    node_index_by_anchor: HashMap<SceneAnchor, usize>,
     dense: DenseSceneIndex,
     initialized: bool,
+    derived_dirty: bool,
     revision: u64,
     rebuild_count: u64,
-    incremental_work: u64,
+    incremental_work: SceneIndexWorkCounters,
     parent_by_entity: HashMap<Entity, Entity>,
     transparent_by_entity: HashMap<Entity, bool>,
+}
+
+/// Cumulative work performed by the progressive scene-index path.
+///
+/// The counters describe rows actually admitted, reindexed, and materialized
+/// into the immutable projection; they do not substitute a row count for
+/// derived work.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SceneIndexWorkCounters {
+    pub(crate) admitted_rows: u64,
+    pub(crate) reindexed_rows: u64,
+    pub(crate) projected_rows: u64,
 }
 
 /// Dense, session-local scene topology. Protocol strings remain cold fields on
@@ -83,8 +97,14 @@ struct DenseSceneNode {
 impl SceneAnchorIndex {
     pub(crate) fn from_test_nodes(nodes: Vec<PrimNodeReadModel>) -> Self {
         let dense = DenseSceneIndex::from_nodes(&nodes, &HashMap::new());
+        let node_index_by_anchor = nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.anchor.clone(), index))
+            .collect();
         Self {
             nodes,
+            node_index_by_anchor,
             dense,
             initialized: true,
             revision: 1,
@@ -132,8 +152,7 @@ impl SceneAnchorIndex {
         self.rebuild_count
     }
 
-    #[cfg(test)]
-    pub(crate) fn incremental_work(&self) -> u64 {
+    pub(crate) fn incremental_work(&self) -> SceneIndexWorkCounters {
         self.incremental_work
     }
 }
@@ -159,6 +178,7 @@ pub(crate) fn refresh_scene_anchor_index(
         ),
     >,
     added_prims: Query<Entity, (With<UsdPrimRef>, Added<UsdPrimRef>)>,
+    hierarchy_changed: Query<Entity, (With<UsdPrimRef>, Or<(Added<ChildOf>, Changed<ChildOf>)>)>,
     prims: Query<(
         Entity,
         &UsdPrimRef,
@@ -171,6 +191,7 @@ pub(crate) fn refresh_scene_anchor_index(
     parent_hierarchy: Query<Option<&ChildOf>>,
     mut removed_prims: RemovedComponents<UsdPrimRef>,
     mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
+    mut removed_child_of: RemovedComponents<ChildOf>,
     mut index: ResMut<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     provider: Option<Res<super::ActiveHierarchyProvider>>,
@@ -183,17 +204,37 @@ pub(crate) fn refresh_scene_anchor_index(
     let presentation_changed = presentation
         .as_ref()
         .is_some_and(|presentation| presentation.is_changed());
-    let changed_entities = changed_prims.iter().collect::<Vec<_>>();
+    let mut changed_entities = changed_prims.iter().collect::<HashSet<_>>();
+    changed_entities.extend(hierarchy_changed.iter());
     let removed_prim = removed_prims.read().next().is_some();
     let removed_transparent = removed_transparent.read().next().is_some();
+    let removed_child_of = removed_child_of
+        .read()
+        .any(|entity| prims.get(entity).is_ok());
     let changed = spawned.is_changed()
         || presentation_changed
         || !changed_entities.is_empty()
         || removed_prim
-        || removed_transparent;
+        || removed_transparent
+        || removed_child_of;
     if !index.initialized && prims.is_empty() {
         index.initialized = true;
         *current_projection = CurrentHierarchyProjection::default();
+        return;
+    }
+    if !changed && index.derived_dirty {
+        let projection = index.flush_incremental_derived();
+        if provider
+            .as_ref()
+            .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
+        {
+            *current_projection = projection;
+        }
+        info!(
+            "[viewport-scene-index] published coalesced revision={} prims={}",
+            index.revision,
+            index.nodes.len(),
+        );
         return;
     }
     if changed || !index.initialized {
@@ -202,20 +243,30 @@ pub(crate) fn refresh_scene_anchor_index(
             && !presentation_changed
             && !removed_prim
             && !removed_transparent
+            && !removed_child_of
             && !changed_entities.is_empty()
             && changed_entities
                 .iter()
                 .all(|entity| added_prims.get(*entity).is_ok());
-        let prim_projection = if added_only {
-            index
+        if added_only
+            && index
                 .ingest_added(
                     changed_entities.iter().copied(),
                     &prims,
                     &parent_hierarchy,
                     presentation.as_deref(),
                 )
-                .unwrap_or_else(|| index.rebuild(&prims, presentation.as_deref()))
-        } else {
+                .is_some()
+        {
+            info!(
+                "[viewport-scene-index] admitted progressive revision={} prims={}",
+                index.revision,
+                index.nodes.len(),
+            );
+            return;
+        }
+
+        let prim_projection = {
             let projection = index.rebuild(&prims, presentation.as_deref());
             index.record_topology(&prims, &parent_hierarchy);
             projection

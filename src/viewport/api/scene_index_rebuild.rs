@@ -233,6 +233,13 @@ impl SceneAnchorIndex {
         self.by_entity = by_entity;
         self.occurrence_index = occurrence_index;
         self.nodes = nodes;
+        self.node_index_by_anchor = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.anchor.clone(), index))
+            .collect();
+        self.derived_dirty = false;
         self.revision = self.revision.saturating_add(1);
         self.initialized = true;
         CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision)

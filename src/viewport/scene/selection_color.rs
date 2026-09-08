@@ -38,7 +38,9 @@ type PresentationKey = (bool, ColorRgb8, bool, ColorRgb8, Option<SceneAnchor>, b
 #[derive(Debug, Clone, PartialEq)]
 struct ColorWorkKey {
     selection_revision: u64,
-    scene_revision: u64,
+    /// A cached projection already owns target resolution. Global scene churn
+    /// is irrelevant until that authority is absent.
+    scene_revision: Option<u64>,
     projection_generation: Option<u64>,
     presentation: PresentationKey,
 }
@@ -148,7 +150,13 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         return;
     };
     let presentation = settings.selection();
-    let coarse = policy.as_ref().is_some_and(|policy| policy.coarse);
+    let coarse = policy.as_deref().is_some_and(|policy| {
+        policy.uses_coarse(
+            projection
+                .as_ref()
+                .map_or(0, |projection| projection.renderables().len()),
+        )
+    });
     let presentation_key: PresentationKey = (
         presentation.color_change_enabled,
         presentation.selection_color,
@@ -162,7 +170,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         .map(|projection| projection.generation());
     let key = ColorWorkKey {
         selection_revision: selection.revision(),
-        scene_revision: scene_index.revision(),
+        scene_revision: projection.is_none().then(|| scene_index.revision()),
         projection_generation,
         presentation: presentation_key,
     };
@@ -192,7 +200,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     }
     if !superseded_pending
         && state.last_selection_revision == Some(key.selection_revision)
-        && state.last_scene_revision == Some(key.scene_revision)
+        && state.last_scene_revision == key.scene_revision
         && state.last_projection_generation == key.projection_generation
         && state.last_presentation.as_ref() == Some(&key.presentation)
     {

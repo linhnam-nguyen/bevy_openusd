@@ -4,33 +4,42 @@
 //! projection change. Presentation systems consume this shared set instead of
 //! walking every selected hierarchy independently.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use bevy::camera::primitives::Aabb;
 use bevy::ecs::hierarchy::{ChildOf, Children};
+use bevy::ecs::lifecycle::{Insert, Remove};
+use bevy::ecs::observer::On;
 use bevy::prelude::*;
 use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
+use crate::viewport::scene::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};
 
 #[path = "selection_projection_bounds.rs"]
 mod bounds;
 #[path = "selection_projection_membership.rs"]
 mod membership;
+#[path = "selection_projection_topology.rs"]
+mod topology;
 
-use bounds::{aggregate_bounds, bounds_for_entities, replace_target_bounds};
-use membership::{
-    add_target_renderable, advance_pending_removals, advance_pending_targets, containing_targets,
-    reconcile_targets, remove_target_renderable, schedule_targets,
+use bounds::{
+    PendingTargetBounds, advance_pending_bounds, aggregate_bounds, schedule_target_bounds,
 };
+use membership::{
+    advance_pending_removals, advance_pending_targets, reconcile_targets, schedule_targets,
+};
+use topology::advance_pending_topology;
 
 pub(crate) use bounds::ProjectedWorldBounds;
 
 #[derive(Resource, Debug, Default)]
 pub(crate) struct SelectedRenderableProjection {
     target_renderables: HashMap<SceneAnchor, HashSet<Entity>>,
+    /// Stable discovery order lets bounds work advance without re-walking a
+    /// target's membership set after every geometry or topology delta.
+    target_renderable_order: HashMap<SceneAnchor, Vec<Entity>>,
     target_roots: HashMap<SceneAnchor, Entity>,
     roots_by_entity: HashMap<Entity, HashSet<SceneAnchor>>,
     renderable_targets: HashMap<Entity, HashSet<SceneAnchor>>,
@@ -48,12 +57,41 @@ pub(crate) struct SelectedRenderableProjection {
     resolution_count: u64,
     pending_targets: Vec<PendingTargetProjection>,
     pending_removals: Vec<PendingTargetRemoval>,
+    pending_bounds: Vec<PendingTargetBounds>,
+    topology_queue: VecDeque<Entity>,
+    queued_topology: HashMap<Entity, bool>,
+    pending_topology: Option<PendingTopologyProjection>,
+}
+
+#[derive(Debug)]
+struct HierarchyCursor {
+    entity: Entity,
+    next_child: usize,
+    entered: bool,
+}
+
+impl HierarchyCursor {
+    fn new(entity: Entity) -> Self {
+        Self {
+            entity,
+            next_child: 0,
+            entered: false,
+        }
+    }
 }
 
 #[derive(Debug)]
 struct PendingTargetProjection {
     target: SceneAnchor,
-    stack: Vec<Entity>,
+    stack: Vec<HierarchyCursor>,
+    visited: HashSet<Entity>,
+}
+
+#[derive(Debug)]
+struct PendingTopologyProjection {
+    recurse_descendants: bool,
+    processed_single: bool,
+    stack: Vec<HierarchyCursor>,
     visited: HashSet<Entity>,
 }
 
@@ -94,10 +132,80 @@ impl SelectedRenderableProjection {
         self.resolution_count
     }
 
+    fn enqueue_topology(&mut self, entity: Entity, recurse_descendants: bool) {
+        if self.target_roots.is_empty() && self.pending_targets.is_empty() {
+            return;
+        }
+        match self.queued_topology.entry(entity) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() |= recurse_descendants;
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(recurse_descendants);
+                self.topology_queue.push_back(entity);
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn is_pending(&self) -> bool {
-        !self.pending_targets.is_empty() || !self.pending_removals.is_empty()
+        !self.pending_targets.is_empty()
+            || !self.pending_removals.is_empty()
+            || !self.pending_bounds.is_empty()
+            || self.pending_topology.is_some()
+            || !self.topology_queue.is_empty()
     }
+
+    #[cfg(test)]
+    pub(crate) fn pending_hierarchy_depth(&self) -> usize {
+        self.pending_targets
+            .iter()
+            .map(|work| work.stack.len())
+            .sum()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_topology_count(&self) -> usize {
+        self.topology_queue.len() + usize::from(self.pending_topology.is_some())
+    }
+}
+
+/// Registers lifecycle observers that admit topology deltas into the bounded
+/// projection queue. Observers avoid scanning every changed mesh/component in
+/// a frame, and a `ChildOf` change explicitly reconciles its subtree.
+pub(in crate::viewport) fn register_selection_projection_observers(app: &mut App) {
+    app.add_observer(queue_mesh_insert)
+        .add_observer(queue_mesh_remove)
+        .add_observer(queue_child_of_insert)
+        .add_observer(queue_child_of_remove);
+}
+
+fn queue_mesh_insert(
+    event: On<Insert, Mesh3d>,
+    mut projection: ResMut<SelectedRenderableProjection>,
+) {
+    projection.enqueue_topology(event.event_target(), false);
+}
+
+fn queue_mesh_remove(
+    event: On<Remove, Mesh3d>,
+    mut projection: ResMut<SelectedRenderableProjection>,
+) {
+    projection.enqueue_topology(event.event_target(), false);
+}
+
+fn queue_child_of_insert(
+    event: On<Insert, ChildOf>,
+    mut projection: ResMut<SelectedRenderableProjection>,
+) {
+    projection.enqueue_topology(event.event_target(), true);
+}
+
+fn queue_child_of_remove(
+    event: On<Remove, ChildOf>,
+    mut projection: ResMut<SelectedRenderableProjection>,
+) {
+    projection.enqueue_topology(event.event_target(), true);
 }
 
 #[allow(clippy::type_complexity)]
@@ -107,6 +215,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     scene_index: Res<SceneAnchorIndex>,
     mut projection: ResMut<SelectedRenderableProjection>,
     settings: Res<ViewerSettingsState>,
+    policy: Option<Res<SelectionPresentationPolicy>>,
     hierarchy: Query<(Option<&Children>, Option<&Mesh3d>)>,
     geometry: Query<(
         Option<&GlobalTransform>,
@@ -114,15 +223,6 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         Option<&Aabb>,
         Option<&UsdLocalExtent>,
     )>,
-    topology_changed: Query<
-        Entity,
-        Or<(
-            Added<Mesh3d>,
-            Changed<Mesh3d>,
-            Added<ChildOf>,
-            Changed<ChildOf>,
-        )>,
-    >,
     geometry_changed: Query<
         Entity,
         Or<(
@@ -134,8 +234,6 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
             Changed<UsdLocalExtent>,
         )>,
     >,
-    mut removed_meshes: RemovedComponents<Mesh3d>,
-    mut removed_child_of: RemovedComponents<ChildOf>,
     parent_hierarchy: Query<Option<&ChildOf>>,
 ) {
     if let Some(selected_prim) = selected_prim.as_deref_mut()
@@ -147,28 +245,29 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
             .as_ref()
             .and_then(|primary| scene_index.resolve(primary));
     }
+
     let targets = selection.0.targets.clone();
-    let bounds_requested = settings.section_box_enabled();
+    let bounds_requested = settings.section_box_enabled()
+        || policy
+            .as_deref()
+            .is_some_and(|policy| policy.uses_coarse(projection.renderables.len()));
     let scene_revision = scene_index.revision();
     let scene_changed = projection.last_scene_revision != Some(scene_revision);
     let selection_changed = projection.last_selection_revision != Some(selection.revision());
     let bounds_request_changed = projection.bounds_requested != Some(bounds_requested);
-    let topology_entities = topology_changed
-        .iter()
-        .chain(removed_meshes.read())
-        .chain(removed_child_of.read())
-        .collect::<HashSet<_>>();
-    let topology_changed = !topology_entities.is_empty();
-    let geometry_changed = geometry_changed.iter().collect::<HashSet<_>>();
+    let geometry_mutated = bounds_requested && geometry_changed.iter().next().is_some();
     projection.added_renderables.clear();
     projection.removed_renderables.clear();
+
     if !scene_changed
         && !selection_changed
-        && !topology_changed
-        && (!bounds_requested || geometry_changed.is_empty())
+        && !geometry_mutated
         && !bounds_request_changed
         && projection.pending_targets.is_empty()
         && projection.pending_removals.is_empty()
+        && projection.pending_bounds.is_empty()
+        && projection.pending_topology.is_none()
+        && projection.topology_queue.is_empty()
     {
         return;
     }
@@ -180,6 +279,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     if full_rebuild {
         projection.renderables.clear();
         projection.target_renderables.clear();
+        projection.target_renderable_order.clear();
         projection.target_roots.clear();
         projection.roots_by_entity.clear();
         projection.renderable_targets.clear();
@@ -187,90 +287,76 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         projection.renderable_refcounts.clear();
         projection.pending_targets.clear();
         projection.pending_removals.clear();
+        projection.pending_bounds.clear();
+        projection.topology_queue.clear();
+        projection.queued_topology.clear();
+        projection.pending_topology = None;
         schedule_targets(&targets, &scene_index, &mut projection);
-    } else {
-        if selection_changed || scene_changed {
-            let target_mapping_changed = reconcile_targets(&targets, &scene_index, &mut projection);
-            mapping_changed |= target_mapping_changed;
-            bounds_changed |= target_mapping_changed && bounds_requested;
-        }
+    } else if selection_changed || scene_changed {
+        let target_mapping_changed = reconcile_targets(&targets, &scene_index, &mut projection);
+        mapping_changed |= target_mapping_changed;
+        bounds_changed |= target_mapping_changed && bounds_requested;
+    }
 
-        if bounds_requested && bounds_request_changed {
-            for target in &targets {
-                let Some(renderables) = projection.target_renderables.get(target) else {
-                    continue;
-                };
-                let next = bounds_for_entities(renderables, &geometry);
-                replace_target_bounds(&mut projection, target, next);
-            }
+    if bounds_requested && bounds_request_changed {
+        for target in &targets {
+            bounds_changed |= schedule_target_bounds(&mut projection, target);
         }
+    }
 
-        if bounds_requested && !geometry_changed.is_empty() {
-            for target in &targets {
-                let Some(renderables) = projection.target_renderables.get(target) else {
-                    continue;
-                };
-                if renderables
-                    .iter()
-                    .any(|entity| geometry_changed.contains(entity))
-                {
-                    let previous = projection.target_bounds.get(target).copied();
-                    let next = bounds_for_entities(renderables, &geometry);
-                    if next != previous {
-                        bounds_changed = true;
-                        replace_target_bounds(&mut projection, target, next);
-                    }
-                }
+    if bounds_requested && geometry_mutated {
+        for entity in geometry_changed.iter() {
+            let affected_targets = projection
+                .renderable_targets
+                .get(&entity)
+                .cloned()
+                .unwrap_or_default();
+            for target in affected_targets {
+                bounds_changed |= schedule_target_bounds(&mut projection, &target);
             }
         }
     }
 
-    let (walk_changed, walk_bounds_changed) =
-        advance_pending_targets(&mut projection, &hierarchy, &geometry, bounds_requested);
+    let (walk_changed, completed_targets) = advance_pending_targets(&mut projection, &hierarchy);
     mapping_changed |= walk_changed;
-    bounds_changed |= walk_bounds_changed;
+    if bounds_requested {
+        for target in completed_targets {
+            bounds_changed |= schedule_target_bounds(&mut projection, &target);
+        }
+    }
 
     if advance_pending_removals(&mut projection, MAX_PROJECTION_ENTITIES_PER_UPDATE) {
         mapping_changed = true;
     }
 
-    for entity in topology_entities {
-        let current_targets = if hierarchy.get(entity).is_ok_and(|(_, mesh)| mesh.is_some()) {
-            containing_targets(entity, &projection.roots_by_entity, &parent_hierarchy)
-        } else {
-            HashSet::new()
-        };
-        let previous_targets = projection
-            .renderable_targets
-            .get(&entity)
-            .cloned()
-            .unwrap_or_default();
-        for target in previous_targets.difference(&current_targets) {
-            remove_target_renderable(&mut projection, target, entity);
-            mapping_changed = true;
-        }
-        for target in current_targets.difference(&previous_targets) {
-            if add_target_renderable(&mut projection, target, entity) {
-                mapping_changed = true;
-            }
+    let topology = advance_pending_topology(
+        &mut projection,
+        &hierarchy,
+        &parent_hierarchy,
+        MAX_PROJECTION_ENTITIES_PER_UPDATE,
+    );
+    mapping_changed |= topology.mapping_changed;
+    if bounds_requested {
+        for target in topology.changed_targets {
+            bounds_changed |= schedule_target_bounds(&mut projection, &target);
         }
     }
-    if bounds_requested && topology_changed {
-        for target in &targets {
-            if let Some(renderables) = projection.target_renderables.get(target) {
-                let next = bounds_for_entities(renderables, &geometry);
-                replace_target_bounds(&mut projection, target, next);
-                bounds_changed = true;
-            }
-        }
-    }
-    selection.clear_pending_delta();
 
-    if !bounds_requested {
+    if bounds_requested {
+        bounds_changed |= advance_pending_bounds(
+            &mut projection,
+            &geometry,
+            MAX_PROJECTION_ENTITIES_PER_UPDATE,
+        );
+    } else {
+        bounds_changed |=
+            projection.aggregate_bounds.is_some() || !projection.target_bounds.is_empty();
+        projection.pending_bounds.clear();
         projection.target_bounds.clear();
         projection.aggregate_bounds = None;
     }
 
+    selection.clear_pending_delta();
     if mapping_changed {
         projection.generation = projection.generation.saturating_add(1);
     }

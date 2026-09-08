@@ -25,9 +25,15 @@ fn progressive_unique_prim_additions_use_incremental_index_ingestion() {
     }
     app.update();
 
+    // The first quiet update publishes the coalesced dense/protocol views.
+    app.update();
+
     let index = app.world().resource::<SceneAnchorIndex>();
     assert_eq!(index.rebuild_count(), full_rebuilds);
-    assert_eq!(index.incremental_work(), 256);
+    let work = index.incremental_work();
+    assert_eq!(work.admitted_rows, 256);
+    assert!(work.reindexed_rows >= 257);
+    assert!(work.projected_rows >= 257);
     let child = SceneAnchor::active_session("/World/Element127");
     assert!(index.resolve(&child).is_some());
     assert!(

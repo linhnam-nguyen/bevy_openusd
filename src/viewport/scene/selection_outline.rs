@@ -35,7 +35,9 @@ pub(crate) struct SelectionOutline;
 #[derive(Debug, Clone, PartialEq)]
 struct OutlineWorkKey {
     selection_revision: u64,
-    scene_revision: u64,
+    /// A cached projection already owns target resolution. Global scene churn
+    /// is irrelevant until that authority is absent.
+    scene_revision: Option<u64>,
     projection_generation: Option<u64>,
     boundary: (bool, ColorRgb8),
     coarse: bool,
@@ -99,13 +101,19 @@ pub(in crate::viewport) fn sync_selection_outlines(
 ) {
     let presentation = settings.selection();
     let boundary = (presentation.boundary_enabled, presentation.boundary_color);
-    let coarse = policy.as_ref().is_some_and(|policy| policy.coarse);
+    let coarse = policy.as_deref().is_some_and(|policy| {
+        policy.uses_coarse(
+            projection
+                .as_ref()
+                .map_or(0, |projection| projection.renderables().len()),
+        )
+    });
     let projection_generation = projection
         .as_ref()
         .map(|projection| projection.generation());
     let key = OutlineWorkKey {
         selection_revision: selection.revision(),
-        scene_revision: scene_index.revision(),
+        scene_revision: projection.is_none().then(|| scene_index.revision()),
         projection_generation,
         boundary,
         coarse,
@@ -157,7 +165,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
         }
         if state.pending.is_none()
             && state.last_selection_revision == Some(key.selection_revision)
-            && state.last_scene_revision == Some(key.scene_revision)
+            && state.last_scene_revision == key.scene_revision
             && state.last_projection_generation == key.projection_generation
             && state.last_boundary == Some(key.boundary)
             && state.last_coarse == Some(key.coarse)
@@ -199,7 +207,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
         return;
     }
     if state.last_selection_revision == Some(key.selection_revision)
-        && state.last_scene_revision == Some(key.scene_revision)
+        && state.last_scene_revision == key.scene_revision
         && state.last_projection_generation == key.projection_generation
         && state.last_boundary == Some(key.boundary)
         && state.last_coarse == Some(key.coarse)

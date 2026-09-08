@@ -1,13 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use bevy::camera::primitives::Aabb;
-use bevy::ecs::hierarchy::{ChildOf, Children};
+use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
-use super::bounds::{bounds_for_entities, replace_target_bounds};
-use super::{PendingTargetProjection, PendingTargetRemoval, SelectedRenderableProjection};
+use super::{
+    HierarchyCursor, PendingTargetProjection, PendingTargetRemoval, SelectedRenderableProjection,
+};
 
 pub(super) fn schedule_targets(
     targets: &[SceneAnchor],
@@ -41,9 +40,13 @@ fn schedule_target(
         .target_renderables
         .entry(target.clone())
         .or_default();
+    projection
+        .target_renderable_order
+        .entry(target.clone())
+        .or_default();
     projection.pending_targets.push(PendingTargetProjection {
         target: target.clone(),
-        stack: vec![root],
+        stack: vec![HierarchyCursor::new(root)],
         visited: HashSet::new(),
     });
 }
@@ -91,6 +94,10 @@ fn remove_target_projection(
     projection
         .pending_targets
         .retain(|pending| &pending.target != target);
+    projection
+        .pending_bounds
+        .retain(|pending| &pending.target != target);
+    projection.target_renderable_order.remove(target);
     if let Some(root) = projection.target_roots.remove(target)
         && let Some(targets) = projection.roots_by_entity.get_mut(&root)
     {
@@ -135,83 +142,90 @@ pub(super) fn advance_pending_removals(
     changed
 }
 
+pub(super) enum CursorStep {
+    Entity { entity: Entity, mesh_present: bool },
+    Finished,
+}
+
+/// Advances a hierarchy without materializing a parent's full child list.
+/// Each `Children` access contributes only its next child to the retained
+/// depth-first cursor, so direct 10k-child fanouts stay bounded in memory.
+pub(super) fn advance_cursor(
+    stack: &mut Vec<HierarchyCursor>,
+    visited: &mut HashSet<Entity>,
+    hierarchy: &Query<(Option<&Children>, Option<&Mesh3d>)>,
+) -> CursorStep {
+    loop {
+        let Some(cursor) = stack.last() else {
+            return CursorStep::Finished;
+        };
+        let (entity, entered, next_child) = (cursor.entity, cursor.entered, cursor.next_child);
+        if !entered {
+            if let Some(cursor) = stack.last_mut() {
+                cursor.entered = true;
+            }
+            if !visited.insert(entity) {
+                stack.pop();
+                continue;
+            }
+            let mesh_present = hierarchy.get(entity).is_ok_and(|(_, mesh)| mesh.is_some());
+            return CursorStep::Entity {
+                entity,
+                mesh_present,
+            };
+        }
+
+        let next = hierarchy
+            .get(entity)
+            .ok()
+            .and_then(|(children, _)| children.and_then(|children| children.get(next_child)))
+            .copied();
+        if let Some(child) = next {
+            if let Some(cursor) = stack.last_mut() {
+                cursor.next_child += 1;
+            }
+            stack.push(HierarchyCursor::new(child));
+        } else {
+            stack.pop();
+        }
+    }
+}
+
 pub(super) fn advance_pending_targets(
     projection: &mut SelectedRenderableProjection,
     hierarchy: &Query<(Option<&Children>, Option<&Mesh3d>)>,
-    geometry: &Query<(
-        Option<&GlobalTransform>,
-        Option<&Mesh3d>,
-        Option<&Aabb>,
-        Option<&UsdLocalExtent>,
-    )>,
-    bounds_requested: bool,
-) -> (bool, bool) {
+) -> (bool, Vec<SceneAnchor>) {
     let mut budget = super::MAX_PROJECTION_ENTITIES_PER_UPDATE;
     let mut mapping_changed = false;
-    let mut bounds_changed = false;
+    let mut completed_targets = Vec::new();
     while budget > 0 {
-        let Some(work) = projection.pending_targets.last_mut() else {
+        let step = {
+            let Some(work) = projection.pending_targets.last_mut() else {
+                break;
+            };
+            let target = work.target.clone();
+            match advance_cursor(&mut work.stack, &mut work.visited, hierarchy) {
+                CursorStep::Entity {
+                    entity,
+                    mesh_present,
+                } => Some((target, Some((entity, mesh_present)))),
+                CursorStep::Finished => Some((target, None)),
+            }
+        };
+        let Some((target, entity)) = step else {
             break;
         };
-        let Some(entity) = work.stack.pop() else {
-            let target = work.target.clone();
+        let Some((entity, mesh_present)) = entity else {
             projection.pending_targets.pop();
-            if bounds_requested {
-                let bounds = projection
-                    .target_renderables
-                    .get(&target)
-                    .and_then(|renderables| bounds_for_entities(renderables, geometry));
-                replace_target_bounds(projection, &target, bounds);
-                bounds_changed = true;
-            }
+            completed_targets.push(target);
             continue;
         };
         budget -= 1;
-        let Some((target, mesh_present, children)) = (|| {
-            if !work.visited.insert(entity) {
-                return None;
-            }
-            let Ok((children, mesh)) = hierarchy.get(entity) else {
-                return None;
-            };
-            Some((
-                work.target.clone(),
-                mesh.is_some(),
-                children.map(|children| children.iter().collect::<Vec<_>>()),
-            ))
-        })() else {
-            continue;
-        };
         if mesh_present && add_target_renderable(projection, &target, entity) {
             mapping_changed = true;
         }
-        if let Some(children) = children
-            && let Some(work) = projection.pending_targets.last_mut()
-        {
-            work.stack.extend(children);
-        }
     }
-    (mapping_changed, bounds_changed)
-}
-
-pub(super) fn containing_targets(
-    entity: Entity,
-    roots_by_entity: &HashMap<Entity, HashSet<SceneAnchor>>,
-    parents: &Query<Option<&ChildOf>>,
-) -> HashSet<SceneAnchor> {
-    let mut current = Some(entity);
-    let mut visited = HashSet::new();
-    let mut targets = HashSet::new();
-    while let Some(entity) = current {
-        if !visited.insert(entity) {
-            break;
-        }
-        if let Some(roots) = roots_by_entity.get(&entity) {
-            targets.extend(roots.iter().cloned());
-        }
-        current = parents.get(entity).ok().flatten().map(ChildOf::parent);
-    }
-    targets
+    (mapping_changed, completed_targets)
 }
 
 pub(super) fn add_target_renderable(
@@ -227,6 +241,11 @@ pub(super) fn add_target_renderable(
     if !inserted {
         return false;
     }
+    projection
+        .target_renderable_order
+        .entry(target.clone())
+        .or_default()
+        .push(entity);
     projection
         .renderable_targets
         .entry(entity)
@@ -246,14 +265,15 @@ pub(super) fn remove_target_renderable(
     projection: &mut SelectedRenderableProjection,
     target: &SceneAnchor,
     entity: Entity,
-) {
+) -> bool {
     let Some(renderables) = projection.target_renderables.get_mut(target) else {
-        return;
+        return false;
     };
     if !renderables.remove(&entity) {
-        return;
+        return false;
     }
     remove_renderable_membership(projection, target, entity);
+    true
 }
 
 fn remove_renderable_membership(

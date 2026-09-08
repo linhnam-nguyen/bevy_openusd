@@ -108,7 +108,7 @@ pub(super) fn apply_pending_outline_work(
         state.last_boundary = Some(work.key.boundary);
         state.last_projection_generation = work.key.projection_generation;
         state.last_selection_revision = Some(work.key.selection_revision);
-        state.last_scene_revision = Some(work.key.scene_revision);
+        state.last_scene_revision = work.key.scene_revision;
         state.last_coarse = Some(work.key.coarse);
         return;
     }
@@ -148,6 +148,6 @@ pub(super) fn apply_pending_outline_work(
     state.last_boundary = Some(work.key.boundary);
     state.last_projection_generation = work.key.projection_generation;
     state.last_selection_revision = Some(work.key.selection_revision);
-    state.last_scene_revision = Some(work.key.scene_revision);
+    state.last_scene_revision = work.key.scene_revision;
     state.last_coarse = Some(work.key.coarse);
 }

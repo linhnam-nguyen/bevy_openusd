@@ -86,7 +86,7 @@ pub(super) fn apply_pending_color_work(
             .hovered_order
             .retain(|entity| state.hovered_meshes.contains(entity));
         state.last_selection_revision = Some(work.key.selection_revision);
-        state.last_scene_revision = Some(work.key.scene_revision);
+        state.last_scene_revision = work.key.scene_revision;
         state.last_projection_generation = work.key.projection_generation;
         state.last_presentation = Some(work.key.presentation);
         return;
@@ -117,7 +117,7 @@ pub(super) fn apply_pending_color_work(
         return;
     }
     state.last_selection_revision = Some(work.key.selection_revision);
-    state.last_scene_revision = Some(work.key.scene_revision);
+    state.last_scene_revision = work.key.scene_revision;
     state.last_projection_generation = work.key.projection_generation;
     state.last_presentation = Some(work.key.presentation);
 }

@@ -134,6 +134,13 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
         .resource_mut::<crate::viewport::api::ViewerSettingsState>()
         .set_section_box_enabled(true);
     app.update();
+    while app
+        .world()
+        .resource::<SelectedRenderableProjection>()
+        .is_pending()
+    {
+        app.update();
+    }
     assert!(
         app.world()
             .resource::<SelectedRenderableProjection>()

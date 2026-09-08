@@ -15,9 +15,11 @@ use super::selection_color::{
 };
 use super::selection_hover::{HoverPickStats, HoveredTarget, update_hover_target};
 use super::{
-    SectionBoxState, SelectedRenderableProjection, capture_section_box_gizmo_transform,
-    draw_section_box, sync_section_box_clipping, sync_section_box_gizmo_target,
-    sync_section_box_state, sync_selected_renderable_projection,
+    CoarseSelectionProxyState, SectionBoxState, SelectedRenderableProjection,
+    capture_section_box_gizmo_transform, draw_coarse_selection_proxy, draw_section_box,
+    register_selection_projection_observers, sync_coarse_selection_proxy,
+    sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
+    sync_selected_renderable_projection,
 };
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::api::ViewerSettingsState;
@@ -50,6 +52,7 @@ pub struct OverlaysPlugin;
 impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
         super::section_box_clipping::register_embedded_shaders(app);
+        register_selection_projection_observers(app);
         app.init_resource::<DisplayToggles>()
             .init_resource::<super::ClassificationColorPlan>()
             .init_resource::<super::ClassificationColorDiagnostics>()
@@ -60,6 +63,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<EdgeOverlayStats>()
             .init_resource::<SelectionColorOverrideState>()
             .init_resource::<super::SelectionPresentationPolicy>()
+            .init_resource::<CoarseSelectionProxyState>()
             .init_resource::<HoveredTarget>()
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
@@ -81,12 +85,14 @@ impl Plugin for OverlaysPlugin {
                 Update,
                 (
                     sync_selected_renderable_projection,
+                    sync_coarse_selection_proxy,
                     sync_gizmo_size,
                     capture_section_box_gizmo_transform,
                     compute_extent,
                     sync_section_box_state,
                     sync_section_box_gizmo_target,
                     draw_section_box,
+                    draw_coarse_selection_proxy,
                 )
                     .chain()
                     .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
