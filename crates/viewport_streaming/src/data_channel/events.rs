@@ -32,6 +32,9 @@ pub(super) fn queue_server_event_for_request(
         ServerEvent::Viewport(ViewportEvent::SceneChildren { page }) => {
             queue_scene_children_page(state, request_id, page);
         }
+        ServerEvent::Viewport(ViewportEvent::HierarchyChildren { source, page }) => {
+            queue_hierarchy_children_page(state, request_id, source, page);
+        }
         ServerEvent::Viewport(ViewportEvent::BimPropertiesRead { properties, diff }) => {
             queue_bim_properties(state, request_id, properties, diff);
         }
@@ -168,6 +171,64 @@ pub(super) fn queue_scene_children_page(
 
     warn!(
         "[viewport-data-channel] dropping scene child node because it exceeds the application message limit"
+    );
+}
+
+pub(super) fn queue_hierarchy_children_page(
+    state: &mut ApplicationSessionState,
+    request_id: Option<String>,
+    source: viewport_protocol::HierarchySource,
+    page: viewport_protocol::HierarchyChildrenPage,
+) {
+    let event = ServerEvent::Viewport(ViewportEvent::HierarchyChildren {
+        source,
+        page: page.clone(),
+    });
+    let Err(encoded_bytes) = queue_bounded_event(state, request_id.as_deref(), event) else {
+        return;
+    };
+
+    if page.nodes.len() > 1 {
+        let split = page.nodes.len() / 2;
+        let viewport_protocol::HierarchyChildrenPage {
+            source: page_source,
+            parent_id,
+            page,
+            page_size,
+            total,
+            has_more,
+            nodes,
+        } = page;
+        let mut tail = nodes;
+        let head = tail.split_off(split);
+        let first = viewport_protocol::HierarchyChildrenPage {
+            source: page_source,
+            parent_id: parent_id.clone(),
+            page,
+            page_size,
+            total,
+            has_more,
+            nodes: tail,
+        };
+        let second = viewport_protocol::HierarchyChildrenPage {
+            source: page_source,
+            parent_id,
+            page,
+            page_size,
+            total,
+            has_more,
+            nodes: head,
+        };
+        queue_hierarchy_children_page(state, request_id.clone(), source, first);
+        queue_hierarchy_children_page(state, request_id, source, second);
+        return;
+    }
+
+    warn!(
+        "[viewport-data-channel] dropping hierarchy child node because it exceeds the application message limit: encoded_bytes={encoded_bytes:?}, limit_bytes={MAX_APPLICATION_MESSAGE_BYTES}, parent_id={:?}, page={}, node_count={}",
+        page.parent_id,
+        page.page,
+        page.nodes.len()
     );
 }
 

@@ -223,6 +223,65 @@ fn oversized_scene_child_pages_are_split_without_changing_page_identity() {
 }
 
 #[test]
+fn oversized_hierarchy_child_pages_are_split_without_changing_page_identity() {
+    let session = ApplicationSession::new(
+        SessionId::new("session-1"),
+        ViewportReadModel::unloaded("stage.usda"),
+        RenderServerInterface::default(),
+    );
+    let mut state = session.state.lock().unwrap();
+    let parent_id = viewport_protocol::HierarchyNodeId::new("prim:/World/geom:single");
+    let nodes = (0..128)
+        .map(|index| {
+            viewport_protocol::HierarchyNodeReadModel::virtual_node(
+                viewport_protocol::HierarchyNodeId::new(format!(
+                    "prim:/World/geom/child-{index}-with-a-long-name:single"
+                )),
+                Some(parent_id.clone()),
+                format!("child-{index}"),
+                format!("/World/geom/child-{index}-with-a-long-name"),
+                false,
+            )
+        })
+        .collect();
+
+    queue_server_event_for_request(
+        &mut state,
+        Some("children-request".to_owned()),
+        ServerEvent::Viewport(ViewportEvent::HierarchyChildren {
+            source: viewport_protocol::HierarchySource::Prim,
+            page: viewport_protocol::HierarchyChildrenPage {
+                source: viewport_protocol::HierarchySource::Prim,
+                parent_id: Some(parent_id.clone()),
+                page: 0,
+                page_size: viewport_protocol::DEFAULT_SCENE_PAGE_SIZE,
+                total: 128,
+                has_more: false,
+                nodes,
+            },
+        }),
+    );
+
+    assert!(state.pending_server_events.len() > 1);
+    let mut received_nodes = 0;
+    for (sequence_index, envelope) in state.pending_server_events.iter().enumerate() {
+        assert_eq!(envelope.sequence, sequence_index as u64 + 1);
+        assert_eq!(envelope.request_id.as_deref(), Some("children-request"));
+        assert!(encoded_size(envelope).unwrap() <= MAX_APPLICATION_MESSAGE_BYTES);
+        let ServerEvent::Viewport(ViewportEvent::HierarchyChildren { page, .. }) = &envelope.event
+        else {
+            panic!("oversized hierarchy pages must remain hierarchy-child events");
+        };
+        assert_eq!(page.parent_id.as_ref(), Some(&parent_id));
+        assert_eq!(page.page, 0);
+        assert_eq!(page.page_size, viewport_protocol::DEFAULT_SCENE_PAGE_SIZE);
+        assert_eq!(page.total, 128);
+        received_nodes += page.nodes.len();
+    }
+    assert_eq!(received_nodes, 128);
+}
+
+#[test]
 fn runtime_blob_chunks_are_bounded_and_keep_ordered_sequences() {
     let session = ApplicationSession::new(
         SessionId::new("session-1"),
