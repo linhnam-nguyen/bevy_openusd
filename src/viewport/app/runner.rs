@@ -1,6 +1,6 @@
 use super::{cadence, headless, offscreen_resize, project_activation, project_stage, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
-use crate::viewport::animation::{UsdStageTime, tick_stage_time};
+use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
 use crate::viewport::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
@@ -358,13 +358,11 @@ pub(crate) fn run() {
             apply_fly_to,
             sync_selected_instance_identity.before(LiveStageSet::Reconcile),
             follow_mounted_camera,
-            tick_stage_time
-                .after(LiveStageSet::Reconcile)
-                .before(LiveStageSet::Animation),
             hide_meshes_on_startup,
         ),
-    )
-    .add_systems(
+    );
+    animation::configure(&mut app);
+    app.add_systems(
         Update,
         sync_chase_camera.before(bevy_glacial::prelude::build_grid_meshes),
     )

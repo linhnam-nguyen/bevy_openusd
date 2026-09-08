@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{LiveStage, LiveStagePlugin, ProjectionBudget, ProjectionReadiness, UsdPlugin};
 
-use super::{UsdStageTime, tick_stage_time};
+use super::{UsdStageTime, systems::tick_stage_time};
 
 fn asset_path(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
