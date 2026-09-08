@@ -13,7 +13,7 @@ use crate::viewport::scene::{
 
 const HEAVY_PATH: &str = "/World/HeavyGroup";
 const LIGHT_PATH: &str = "/World/LightMesh";
-const HEAVY_MESH_COUNT: usize = 2_048;
+const HEAVY_MESH_COUNT: usize = 10_000;
 
 fn anchor(path: &str) -> SceneAnchor {
     SceneAnchor::active_session(path)
@@ -111,8 +111,8 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
         app.update();
         updates += 1;
         assert!(
-            updates <= 16,
-            "selection projection did not converge promptly"
+            updates <= 160,
+            "selection projection did not converge within the bounded cursor budget"
         );
     }
     assert_eq!(
@@ -166,8 +166,8 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
         app.update();
         release_updates += 1;
         assert!(
-            release_updates <= 16,
-            "selection release did not converge promptly"
+            release_updates <= 64,
+            "selection release did not converge within the bounded removal budget"
         );
     }
     let projection = app.world().resource::<SelectedRenderableProjection>();

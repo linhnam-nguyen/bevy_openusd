@@ -17,6 +17,8 @@ use viewport_protocol::SceneAnchor;
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};
 
+use super::entity_order::EntityOrder;
+
 #[path = "selection_projection_bounds.rs"]
 mod bounds;
 #[path = "selection_projection_membership.rs"]
@@ -30,7 +32,7 @@ use bounds::{
 use membership::{
     advance_pending_removals, advance_pending_targets, reconcile_targets, schedule_targets,
 };
-use topology::advance_pending_topology;
+use topology::{PendingTopologyProjection, advance_pending_topology};
 
 pub(crate) use bounds::ProjectedWorldBounds;
 
@@ -39,7 +41,7 @@ pub(crate) struct SelectedRenderableProjection {
     target_renderables: HashMap<SceneAnchor, HashSet<Entity>>,
     /// Stable discovery order lets bounds work advance without re-walking a
     /// target's membership set after every geometry or topology delta.
-    target_renderable_order: HashMap<SceneAnchor, Vec<Entity>>,
+    target_renderable_order: HashMap<SceneAnchor, EntityOrder>,
     target_roots: HashMap<SceneAnchor, Entity>,
     roots_by_entity: HashMap<Entity, HashSet<SceneAnchor>>,
     renderable_targets: HashMap<Entity, HashSet<SceneAnchor>>,
@@ -61,6 +63,8 @@ pub(crate) struct SelectedRenderableProjection {
     topology_queue: VecDeque<Entity>,
     queued_topology: HashMap<Entity, bool>,
     pending_topology: Option<PendingTopologyProjection>,
+    last_cursor_work: usize,
+    last_topology_work: usize,
 }
 
 #[derive(Debug)]
@@ -83,14 +87,6 @@ impl HierarchyCursor {
 #[derive(Debug)]
 struct PendingTargetProjection {
     target: SceneAnchor,
-    stack: Vec<HierarchyCursor>,
-    visited: HashSet<Entity>,
-}
-
-#[derive(Debug)]
-struct PendingTopologyProjection {
-    recurse_descendants: bool,
-    processed_single: bool,
     stack: Vec<HierarchyCursor>,
     visited: HashSet<Entity>,
 }
@@ -167,6 +163,23 @@ impl SelectedRenderableProjection {
     #[cfg(test)]
     pub(crate) fn pending_topology_count(&self) -> usize {
         self.topology_queue.len() + usize::from(self.pending_topology.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_cursor_work(&self) -> usize {
+        self.last_cursor_work
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_topology_work(&self) -> usize {
+        self.last_topology_work
+    }
+
+    #[cfg(test)]
+    pub(crate) fn target_order_len(&self, target: &SceneAnchor) -> usize {
+        self.target_renderable_order
+            .get(target)
+            .map_or(0, EntityOrder::len)
     }
 }
 
@@ -258,6 +271,8 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     let geometry_mutated = bounds_requested && geometry_changed.iter().next().is_some();
     projection.added_renderables.clear();
     projection.removed_renderables.clear();
+    projection.last_cursor_work = 0;
+    projection.last_topology_work = 0;
 
     if !scene_changed
         && !selection_changed
@@ -305,19 +320,18 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     }
 
     if bounds_requested && geometry_mutated {
-        for entity in geometry_changed.iter() {
-            let affected_targets = projection
-                .renderable_targets
-                .get(&entity)
-                .cloned()
-                .unwrap_or_default();
-            for target in affected_targets {
-                bounds_changed |= schedule_target_bounds(&mut projection, &target);
-            }
+        // Geometry dirtiness is coalesced to the protocol-bounded logical
+        // target set. The expensive renderable walk remains inside the
+        // existing 256-unit target-bounds cursor instead of scanning an
+        // arbitrarily large Changed<> mesh batch in this update.
+        for target in &targets {
+            bounds_changed |= schedule_target_bounds(&mut projection, target);
         }
     }
 
-    let (walk_changed, completed_targets) = advance_pending_targets(&mut projection, &hierarchy);
+    let (walk_changed, completed_targets, cursor_work) =
+        advance_pending_targets(&mut projection, &hierarchy);
+    projection.last_cursor_work = cursor_work;
     mapping_changed |= walk_changed;
     if bounds_requested {
         for target in completed_targets {
@@ -335,6 +349,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
         &parent_hierarchy,
         MAX_PROJECTION_ENTITIES_PER_UPDATE,
     );
+    projection.last_topology_work = topology.work;
     mapping_changed |= topology.mapping_changed;
     if bounds_requested {
         for target in topology.changed_targets {

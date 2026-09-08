@@ -154,6 +154,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
                 .chain()
                 .after(usd_bevy::LiveStageSet::Reconcile),
         );
+    register_scene_index_observers(&mut app);
     app.world_mut()
         .insert_resource(ReloadRequest { requested: false });
     activate_stage_with_cache_context_for_generation(

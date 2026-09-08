@@ -82,8 +82,7 @@ pub(super) fn advance_pending_bounds(
             let next = projection
                 .target_renderable_order
                 .get(&work.target)
-                .and_then(|order| order.get(work.next_renderable))
-                .copied();
+                .and_then(|order| order.get(work.next_renderable));
             if let Some(entity) = next {
                 work.next_renderable += 1;
                 BoundsStep::Renderable {

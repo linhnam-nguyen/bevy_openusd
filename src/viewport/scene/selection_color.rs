@@ -15,6 +15,7 @@ use crate::viewport::scene::{
     SelectedRenderableProjection, SelectedTargets, SelectionPresentationPolicy,
 };
 
+use super::entity_order::EntityOrder;
 use super::selection_hover::HoveredTarget;
 use super::selection_outline::collect_mesh_descendants;
 
@@ -67,10 +68,10 @@ pub(in crate::viewport) struct SelectionColorOverrideState {
     last_scene_revision: Option<u64>,
     selected_meshes: HashSet<Entity>,
     hovered_meshes: HashSet<Entity>,
-    selected_order: Vec<Entity>,
-    hovered_order: Vec<Entity>,
+    selected_order: EntityOrder,
+    hovered_order: EntityOrder,
     applied_owners: HashMap<Entity, PresentationOwner>,
-    applied_order: Vec<Entity>,
+    applied_order: EntityOrder,
     last_projection_generation: Option<u64>,
     pending: Option<PendingColorWork>,
     pub(in crate::viewport) last_affected_entities: usize,
@@ -179,15 +180,6 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         .pending
         .as_ref()
         .is_some_and(|pending| pending.key != key);
-    let reconcile_cursor = superseded_pending
-        .then(|| {
-            state
-                .pending
-                .as_ref()
-                .filter(|pending| pending.reconcile_all)
-                .map(|pending| (pending.reconcile_phase, pending.reconcile_offset))
-        })
-        .flatten();
     if state.pending.is_some() && !superseded_pending {
         apply_pending_color_work(
             &mut state,
@@ -240,11 +232,13 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         let projection = projection.as_ref().expect("projection is present");
         for added in projection.added_renderables() {
             if state.selected_meshes.insert(*added) {
-                state.selected_order.push(*added);
+                debug_assert!(state.selected_order.insert(*added));
             }
         }
         for removed in projection.removed_renderables() {
-            state.selected_meshes.remove(removed);
+            if state.selected_meshes.remove(removed) {
+                debug_assert!(state.selected_order.remove(*removed));
+            }
         }
     } else {
         state.selected_meshes.clear();
@@ -253,7 +247,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
             if let Some(projection) = projection.as_ref() {
                 for entity in projection.renderables().iter().copied() {
                     if state.selected_meshes.insert(entity) {
-                        state.selected_order.push(entity);
+                        debug_assert!(state.selected_order.insert(entity));
                     }
                 }
             } else {
@@ -265,7 +259,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
                     collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected);
                     for entity in selected {
                         if state.selected_meshes.insert(entity) {
-                            state.selected_order.push(entity);
+                            debug_assert!(state.selected_order.insert(entity));
                         }
                     }
                 }
@@ -283,8 +277,11 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     }
 
     if hovered_meshes != state.hovered_meshes {
+        state.hovered_order.clear();
+        for entity in hovered_meshes.iter().copied() {
+            debug_assert!(state.hovered_order.insert(entity));
+        }
         state.hovered_meshes = hovered_meshes;
-        state.hovered_order = state.hovered_meshes.iter().copied().collect();
         full_reconcile = true;
     }
     let mut affected = HashSet::new();
@@ -303,8 +300,11 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         affected,
         offset: 0,
         reconcile_all: full_reconcile,
-        reconcile_phase: reconcile_cursor.map_or(0, |(phase, _)| phase),
-        reconcile_offset: reconcile_cursor.map_or(0, |(_, offset)| offset),
+        // EntityOrder uses swap_remove, so a cursor from an older dense order
+        // cannot be resumed safely after a superseding projection/presentation
+        // change. Reconcile the current order from zero.
+        reconcile_phase: 0,
+        reconcile_offset: 0,
     });
     apply_pending_color_work(
         &mut state,

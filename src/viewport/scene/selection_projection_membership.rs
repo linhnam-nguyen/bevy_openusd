@@ -143,91 +143,107 @@ pub(super) fn advance_pending_removals(
 }
 
 pub(super) enum CursorStep {
-    Entity { entity: Entity, mesh_present: bool },
+    Entity {
+        entity: Entity,
+        mesh_present: bool,
+    },
+    /// One bounded cursor operation occurred without entering a new entity:
+    /// duplicate-frame discard, child inspection/push, or exhausted-frame pop.
+    Progress,
     Finished,
 }
 
-/// Advances a hierarchy without materializing a parent's full child list.
-/// Each `Children` access contributes only its next child to the retained
-/// depth-first cursor, so direct 10k-child fanouts stay bounded in memory.
+/// Advances exactly one hierarchy-cursor operation.
+///
+/// The caller owns the work budget. In particular, this function never loops
+/// over a deep unwind: each push/pop/enter consumes one caller-visible step.
 pub(super) fn advance_cursor(
     stack: &mut Vec<HierarchyCursor>,
     visited: &mut HashSet<Entity>,
     hierarchy: &Query<(Option<&Children>, Option<&Mesh3d>)>,
 ) -> CursorStep {
-    loop {
-        let Some(cursor) = stack.last() else {
-            return CursorStep::Finished;
-        };
-        let (entity, entered, next_child) = (cursor.entity, cursor.entered, cursor.next_child);
-        if !entered {
-            if let Some(cursor) = stack.last_mut() {
-                cursor.entered = true;
-            }
-            if !visited.insert(entity) {
-                stack.pop();
-                continue;
-            }
-            let mesh_present = hierarchy.get(entity).is_ok_and(|(_, mesh)| mesh.is_some());
-            return CursorStep::Entity {
-                entity,
-                mesh_present,
-            };
-        }
+    let Some(cursor) = stack.last() else {
+        return CursorStep::Finished;
+    };
+    let (entity, entered, next_child) = (cursor.entity, cursor.entered, cursor.next_child);
 
-        let next = hierarchy
-            .get(entity)
-            .ok()
-            .and_then(|(children, _)| children.and_then(|children| children.get(next_child)))
-            .copied();
-        if let Some(child) = next {
-            if let Some(cursor) = stack.last_mut() {
-                cursor.next_child += 1;
-            }
-            stack.push(HierarchyCursor::new(child));
-        } else {
-            stack.pop();
+    if !entered {
+        if let Some(cursor) = stack.last_mut() {
+            cursor.entered = true;
         }
+        if !visited.insert(entity) {
+            stack.pop();
+            return CursorStep::Progress;
+        }
+        let mesh_present = hierarchy.get(entity).is_ok_and(|(_, mesh)| mesh.is_some());
+        return CursorStep::Entity {
+            entity,
+            mesh_present,
+        };
     }
+
+    let next = hierarchy
+        .get(entity)
+        .ok()
+        .and_then(|(children, _)| children.and_then(|children| children.get(next_child)))
+        .copied();
+    if let Some(child) = next {
+        if let Some(cursor) = stack.last_mut() {
+            cursor.next_child += 1;
+        }
+        stack.push(HierarchyCursor::new(child));
+    } else {
+        stack.pop();
+    }
+    CursorStep::Progress
 }
 
 pub(super) fn advance_pending_targets(
     projection: &mut SelectedRenderableProjection,
     hierarchy: &Query<(Option<&Children>, Option<&Mesh3d>)>,
-) -> (bool, Vec<SceneAnchor>) {
+) -> (bool, Vec<SceneAnchor>, usize) {
     let mut budget = super::MAX_PROJECTION_ENTITIES_PER_UPDATE;
+    let mut work_done = 0;
     let mut mapping_changed = false;
     let mut completed_targets = Vec::new();
+
     while budget > 0 {
         let step = {
             let Some(work) = projection.pending_targets.last_mut() else {
                 break;
             };
             let target = work.target.clone();
-            match advance_cursor(&mut work.stack, &mut work.visited, hierarchy) {
-                CursorStep::Entity {
-                    entity,
-                    mesh_present,
-                } => Some((target, Some((entity, mesh_present)))),
-                CursorStep::Finished => Some((target, None)),
+            (
+                target,
+                advance_cursor(&mut work.stack, &mut work.visited, hierarchy),
+            )
+        };
+
+        let (target, step) = step;
+        match step {
+            CursorStep::Finished => {
+                projection.pending_targets.pop();
+                completed_targets.push(target);
             }
-        };
-        let Some((target, entity)) = step else {
-            break;
-        };
-        let Some((entity, mesh_present)) = entity else {
-            projection.pending_targets.pop();
-            completed_targets.push(target);
-            continue;
-        };
-        budget -= 1;
-        if mesh_present && add_target_renderable(projection, &target, entity) {
-            mapping_changed = true;
+            CursorStep::Progress => {
+                budget -= 1;
+                work_done += 1;
+            }
+            CursorStep::Entity {
+                entity,
+                mesh_present,
+            } => {
+                budget -= 1;
+                work_done += 1;
+                if mesh_present && add_target_renderable(projection, &target, entity) {
+                    mapping_changed = true;
+                }
+            }
         }
     }
-    (mapping_changed, completed_targets)
-}
 
+    (mapping_changed, completed_targets, work_done)
+}
 pub(super) fn add_target_renderable(
     projection: &mut SelectedRenderableProjection,
     target: &SceneAnchor,
@@ -241,11 +257,15 @@ pub(super) fn add_target_renderable(
     if !inserted {
         return false;
     }
-    projection
+    let ordered = projection
         .target_renderable_order
         .entry(target.clone())
         .or_default()
-        .push(entity);
+        .insert(entity);
+    debug_assert!(
+        ordered,
+        "new target membership must have exactly one order entry"
+    );
     projection
         .renderable_targets
         .entry(entity)
@@ -272,6 +292,18 @@ pub(super) fn remove_target_renderable(
     if !renderables.remove(&entity) {
         return false;
     }
+    if let Some(order) = projection.target_renderable_order.get_mut(target) {
+        let ordered = order.remove(entity);
+        debug_assert!(
+            ordered,
+            "removed target membership must have exactly one order entry"
+        );
+    }
+    // Dense swap-removal changes order indices. Restart only this target's
+    // already-bounded bounds pass; the topology caller will schedule it again.
+    projection
+        .pending_bounds
+        .retain(|pending| &pending.target != target);
     remove_renderable_membership(projection, target, entity);
     true
 }

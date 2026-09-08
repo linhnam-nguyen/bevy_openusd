@@ -19,99 +19,7 @@ pub(super) fn apply_pending_outline_work(
         colour: color_from_rgb8(work.key.boundary.1),
     };
     let mut budget = MAX_PRESENTATION_ENTITIES_PER_UPDATE;
-    if work.reconcile_all {
-        while budget > 0 && work.removed_offset < work.removed.len() {
-            let entity = work.removed[work.removed_offset];
-            work.removed_offset += 1;
-            budget -= 1;
-            if owned_outlines.get(entity).is_ok() {
-                commands
-                    .entity(entity)
-                    .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
-            }
-            state.applied_entities.remove(&entity);
-            state.last_removed += 1;
-        }
-        while budget > 0 && work.updated_offset < work.updated.len() {
-            let entity = work.updated[work.updated_offset];
-            work.updated_offset += 1;
-            budget -= 1;
-            commands.entity(entity).insert((
-                SelectionOutline,
-                outline.clone(),
-                OutlineStencil::default(),
-            ));
-            if state.applied_entities.insert(entity) {
-                state.applied_order.push(entity);
-                state.last_added += 1;
-            } else {
-                state.last_updated += 1;
-            }
-        }
-        if work.removed_offset < work.removed.len() || work.updated_offset < work.updated.len() {
-            state.pending = Some(work);
-            return;
-        }
-        while budget > 0 {
-            if work.reconcile_phase == 0 {
-                if work.reconcile_offset >= state.applied_order.len() {
-                    work.reconcile_phase = 1;
-                    work.reconcile_offset = 0;
-                    continue;
-                }
-                let entity = state.applied_order[work.reconcile_offset];
-                work.reconcile_offset += 1;
-                budget -= 1;
-                if state.desired_entities.contains(&entity) {
-                    commands.entity(entity).insert((
-                        SelectionOutline,
-                        outline.clone(),
-                        OutlineStencil::default(),
-                    ));
-                } else {
-                    if owned_outlines.get(entity).is_ok() {
-                        commands
-                            .entity(entity)
-                            .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
-                    }
-                    state.applied_entities.remove(&entity);
-                    state.last_removed += 1;
-                }
-                continue;
-            }
-            if work.reconcile_offset >= state.desired_order.len() {
-                break;
-            }
-            let entity = state.desired_order[work.reconcile_offset];
-            work.reconcile_offset += 1;
-            budget -= 1;
-            if state.desired_entities.contains(&entity) && state.applied_entities.insert(entity) {
-                state.applied_order.push(entity);
-                commands.entity(entity).insert((
-                    SelectionOutline,
-                    outline.clone(),
-                    OutlineStencil::default(),
-                ));
-                state.last_added += 1;
-            }
-        }
-        if work.reconcile_phase == 0 || work.reconcile_offset < state.desired_order.len() {
-            state.pending = Some(work);
-            return;
-        }
-        state
-            .applied_order
-            .retain(|entity| state.applied_entities.contains(entity));
-        state
-            .desired_order
-            .retain(|entity| state.desired_entities.contains(entity));
-        state.last_boundary = Some(work.key.boundary);
-        state.last_projection_generation = work.key.projection_generation;
-        state.last_selection_revision = Some(work.key.selection_revision);
-        state.last_scene_revision = work.key.scene_revision;
-        state.last_coarse = Some(work.key.coarse);
-        return;
-    }
+
     while budget > 0 && work.removed_offset < work.removed.len() {
         let entity = work.removed[work.removed_offset];
         work.removed_offset += 1;
@@ -121,9 +29,12 @@ pub(super) fn apply_pending_outline_work(
                 .entity(entity)
                 .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
         }
-        state.applied_entities.remove(&entity);
+        if state.applied_entities.remove(&entity) {
+            debug_assert!(state.applied_order.remove(entity));
+        }
         state.last_removed += 1;
     }
+
     while budget > 0 && work.updated_offset < work.updated.len() {
         let entity = work.updated[work.updated_offset];
         work.updated_offset += 1;
@@ -134,17 +45,71 @@ pub(super) fn apply_pending_outline_work(
             OutlineStencil::default(),
         ));
         if state.applied_entities.insert(entity) {
-            state.applied_order.push(entity);
-        }
-        state.last_updated += 1;
-        if work.added.contains(&entity) {
+            debug_assert!(state.applied_order.insert(entity));
             state.last_added += 1;
+        } else {
+            state.last_updated += 1;
         }
     }
+
     if work.removed_offset < work.removed.len() || work.updated_offset < work.updated.len() {
         state.pending = Some(work);
         return;
     }
+
+    if work.reconcile_all {
+        while budget > 0 {
+            if work.reconcile_phase == 0 {
+                let Some(entity) = state.applied_order.get(work.reconcile_offset) else {
+                    work.reconcile_phase = 1;
+                    work.reconcile_offset = 0;
+                    continue;
+                };
+                budget -= 1;
+                if state.desired_entities.contains(&entity) {
+                    commands.entity(entity).insert((
+                        SelectionOutline,
+                        outline.clone(),
+                        OutlineStencil::default(),
+                    ));
+                    work.reconcile_offset += 1;
+                } else {
+                    if owned_outlines.get(entity).is_ok() {
+                        commands
+                            .entity(entity)
+                            .remove::<(SelectionOutline, OutlineVolume, OutlineStencil)>();
+                    }
+                    let removed = state.applied_entities.remove(&entity);
+                    let ordered = state.applied_order.remove(entity);
+                    debug_assert_eq!(removed, ordered);
+                    state.last_removed += 1;
+                    // swap_remove moved a new entity into this same offset.
+                }
+                continue;
+            }
+
+            let Some(entity) = state.desired_order.get(work.reconcile_offset) else {
+                break;
+            };
+            work.reconcile_offset += 1;
+            budget -= 1;
+            if state.desired_entities.contains(&entity) && state.applied_entities.insert(entity) {
+                debug_assert!(state.applied_order.insert(entity));
+                commands.entity(entity).insert((
+                    SelectionOutline,
+                    outline.clone(),
+                    OutlineStencil::default(),
+                ));
+                state.last_added += 1;
+            }
+        }
+
+        if work.reconcile_phase == 0 || work.reconcile_offset < state.desired_order.len() {
+            state.pending = Some(work);
+            return;
+        }
+    }
+
     state.last_boundary = Some(work.key.boundary);
     state.last_projection_generation = work.key.projection_generation;
     state.last_selection_revision = Some(work.key.selection_revision);

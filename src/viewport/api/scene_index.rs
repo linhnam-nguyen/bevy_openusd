@@ -3,20 +3,16 @@
 //! The map is the only place where a product-facing prim identity meets an
 //! ECS entity. It never leaves the viewport process.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 
-use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 #[cfg(test)]
 use viewport_protocol::MAX_SCENE_PAGE_SIZE;
 
-use super::hierarchy::CurrentHierarchyProjection;
 use super::scene_occurrence_index::SceneOccurrenceIndex;
-use crate::viewport::session::{Spawned, StagePresentationContext};
 
 #[path = "scene_index_dense.rs"]
 mod dense;
@@ -28,6 +24,13 @@ mod incremental;
 mod lookup;
 #[path = "scene_index_rebuild.rs"]
 mod rebuild;
+#[path = "scene_index_reconcile.rs"]
+mod reconcile;
+#[path = "scene_index_refresh.rs"]
+mod refresh;
+
+pub(in crate::viewport) use refresh::refresh_scene_anchor_index;
+pub(crate) use refresh::register_scene_index_observers;
 
 /// Returns the current prim-tree node name for a prim path.
 pub(crate) fn prim_name(path: &str) -> &str {
@@ -52,6 +55,10 @@ pub(crate) struct SceneAnchorIndex {
     incremental_work: SceneIndexWorkCounters,
     parent_by_entity: HashMap<Entity, Entity>,
     transparent_by_entity: HashMap<Entity, bool>,
+    pending_additions: VecDeque<Entity>,
+    queued_additions: HashSet<Entity>,
+    reconcile: reconcile::SceneIndexReconcileState,
+    last_refresh_admitted: usize,
 }
 
 /// Cumulative work performed by the progressive scene-index path.
@@ -64,6 +71,7 @@ pub(crate) struct SceneIndexWorkCounters {
     pub(crate) admitted_rows: u64,
     pub(crate) reindexed_rows: u64,
     pub(crate) projected_rows: u64,
+    pub(crate) derived_flushes: u64,
 }
 
 /// Dense, session-local scene topology. Protocol strings remain cold fields on
@@ -155,142 +163,25 @@ impl SceneAnchorIndex {
     pub(crate) fn incremental_work(&self) -> SceneIndexWorkCounters {
         self.incremental_work
     }
-}
 
-/// Rebuilds only after stage entities or tree-visible data changes. This keeps
-/// the protocol boundary from traversing a large scene every frame.
-pub(crate) fn refresh_scene_anchor_index(
-    spawned: Res<Spawned>,
-    changed_prims: Query<
-        Entity,
-        (
-            With<UsdPrimRef>,
-            Or<(
-                Added<UsdPrimRef>,
-                Changed<UsdPrimRef>,
-                Changed<UsdDisplayName>,
-                Added<UsdHierarchyTarget>,
-                Changed<UsdHierarchyTarget>,
-                Added<UsdTransparentHierarchyNode>,
-                Changed<UsdTransparentHierarchyNode>,
-                Changed<Visibility>,
-            )>,
-        ),
-    >,
-    added_prims: Query<Entity, (With<UsdPrimRef>, Added<UsdPrimRef>)>,
-    hierarchy_changed: Query<Entity, (With<UsdPrimRef>, Or<(Added<ChildOf>, Changed<ChildOf>)>)>,
-    prims: Query<(
-        Entity,
-        &UsdPrimRef,
-        Option<&UsdDisplayName>,
-        Option<&UsdHierarchyTarget>,
-        Option<&UsdTransparentHierarchyNode>,
-        Option<&Visibility>,
-        Option<&Children>,
-    )>,
-    parent_hierarchy: Query<Option<&ChildOf>>,
-    mut removed_prims: RemovedComponents<UsdPrimRef>,
-    mut removed_transparent: RemovedComponents<UsdTransparentHierarchyNode>,
-    mut removed_child_of: RemovedComponents<ChildOf>,
-    mut index: ResMut<SceneAnchorIndex>,
-    mut current_projection: ResMut<CurrentHierarchyProjection>,
-    provider: Option<Res<super::ActiveHierarchyProvider>>,
-    presentation: Option<Res<StagePresentationContext>>,
-) {
-    // ScenePatch materialization can happen across a frame boundary after
-    // Spawned flips to true. Treat that lifecycle transition as a rebuild
-    // trigger as well; otherwise a static stage can publish an empty tree
-    // before its projected prim entities are visible to this query.
-    let presentation_changed = presentation
-        .as_ref()
-        .is_some_and(|presentation| presentation.is_changed());
-    let mut changed_entities = changed_prims.iter().collect::<HashSet<_>>();
-    changed_entities.extend(hierarchy_changed.iter());
-    let removed_prim = removed_prims.read().next().is_some();
-    let removed_transparent = removed_transparent.read().next().is_some();
-    let removed_child_of = removed_child_of
-        .read()
-        .any(|entity| prims.get(entity).is_ok());
-    let changed = spawned.is_changed()
-        || presentation_changed
-        || !changed_entities.is_empty()
-        || removed_prim
-        || removed_transparent
-        || removed_child_of;
-    if !index.initialized && prims.is_empty() {
-        index.initialized = true;
-        *current_projection = CurrentHierarchyProjection::default();
-        return;
+    pub(crate) fn pending_addition_count(&self) -> usize {
+        self.pending_additions.len()
     }
-    if !changed && index.derived_dirty {
-        let projection = index.flush_incremental_derived();
-        if provider
-            .as_ref()
-            .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
-        {
-            *current_projection = projection;
-        }
-        info!(
-            "[viewport-scene-index] published coalesced revision={} prims={}",
-            index.revision,
-            index.nodes.len(),
-        );
-        return;
-    }
-    if changed || !index.initialized {
-        let added_only = index.initialized
-            && !spawned.is_changed()
-            && !presentation_changed
-            && !removed_prim
-            && !removed_transparent
-            && !removed_child_of
-            && !changed_entities.is_empty()
-            && changed_entities
-                .iter()
-                .all(|entity| added_prims.get(*entity).is_ok());
-        if added_only
-            && index
-                .ingest_added(
-                    changed_entities.iter().copied(),
-                    &prims,
-                    &parent_hierarchy,
-                    presentation.as_deref(),
-                )
-                .is_some()
-        {
-            info!(
-                "[viewport-scene-index] admitted progressive revision={} prims={}",
-                index.revision,
-                index.nodes.len(),
-            );
-            return;
-        }
 
-        let prim_projection = {
-            let projection = index.rebuild(&prims, presentation.as_deref());
-            index.record_topology(&prims, &parent_hierarchy);
-            projection
-        };
-        if provider
-            .as_ref()
-            .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
-        {
-            *current_projection = prim_projection;
-        }
-        let root_count = index
-            .nodes
-            .iter()
-            .filter(|node| node.parent.is_none())
-            .count();
-        info!(
-            "[viewport-scene-index] rebuilt revision={} prims={} roots={}",
-            index.revision,
-            index.nodes.len(),
-            root_count
-        );
+    pub(crate) fn last_refresh_admitted(&self) -> usize {
+        self.last_refresh_admitted
+    }
+
+    pub(crate) fn last_reconcile_capture_work(&self) -> usize {
+        self.reconcile.last_capture_work()
+    }
+
+    pub(crate) fn reconcile_is_pending(&self) -> bool {
+        self.reconcile.is_pending()
     }
 }
 
+const SCENE_INDEX_ADMISSION_BUDGET: usize = 256;
 #[cfg(test)]
 #[path = "scene_index_tests.rs"]
 mod tests;

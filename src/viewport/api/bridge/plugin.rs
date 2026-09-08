@@ -129,6 +129,7 @@ impl Plugin for ViewportBridgePlugin {
                 Update,
                 reduce_authoritative_events.in_set(ViewportBridgeSet::ReduceEvents),
             );
+        super::super::scene_index::register_scene_index_observers(app);
     }
 }
 

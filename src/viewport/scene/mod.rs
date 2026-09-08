@@ -3,6 +3,7 @@
 mod classification_color;
 mod classification_color_plan;
 mod diff;
+mod entity_order;
 mod ghost;
 mod section_box;
 mod section_box_clipping;

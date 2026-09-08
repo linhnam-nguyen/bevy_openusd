@@ -30,10 +30,20 @@ pub(in crate::viewport) fn sync_coarse_selection_proxy(
     mut state: ResMut<CoarseSelectionProxyState>,
 ) {
     let coarse = policy.uses_coarse(projection.renderables().len());
+    if !coarse {
+        if !state.visible && state.bounds.is_none() {
+            return;
+        }
+        state.visible = false;
+        state.bounds = None;
+        state.generation = state.generation.saturating_add(1);
+        return;
+    }
+
     let bounds = projection
         .aggregate_bounds()
         .or_else(|| root_proxy_bounds(&selection, &scene_index, &roots));
-    let visible = coarse && !selection.0.targets.is_empty() && bounds.is_some();
+    let visible = !selection.0.targets.is_empty() && bounds.is_some();
     if state.visible != visible || state.bounds != bounds {
         state.visible = visible;
         state.bounds = bounds;

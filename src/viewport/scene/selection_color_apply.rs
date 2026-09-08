@@ -21,6 +21,7 @@ pub(super) fn apply_pending_color_work(
     let Some(mut work) = state.pending.take() else {
         return;
     };
+
     if work.reconcile_all {
         let mut budget = MAX_PRESENTATION_ENTITIES_PER_UPDATE;
         while budget > 0 && work.offset < work.affected.len() {
@@ -40,11 +41,12 @@ pub(super) fn apply_pending_color_work(
             state.pending = Some(work);
             return;
         }
+
         while budget > 0 {
             let entity = match work.reconcile_phase {
-                0 => state.applied_order.get(work.reconcile_offset).copied(),
-                1 => state.selected_order.get(work.reconcile_offset).copied(),
-                _ => state.hovered_order.get(work.reconcile_offset).copied(),
+                0 => state.applied_order.get(work.reconcile_offset),
+                1 => state.selected_order.get(work.reconcile_offset),
+                _ => state.hovered_order.get(work.reconcile_offset),
             };
             let Some(entity) = entity else {
                 if work.reconcile_phase >= 2 {
@@ -54,8 +56,9 @@ pub(super) fn apply_pending_color_work(
                 work.reconcile_offset = 0;
                 continue;
             };
-            work.reconcile_offset += 1;
+
             budget -= 1;
+            let phase = work.reconcile_phase;
             apply_color_entity(
                 state,
                 entity,
@@ -64,7 +67,13 @@ pub(super) fn apply_pending_color_work(
                 selection_handle,
                 hover_handle,
             );
+            if phase == 0 && !state.applied_owners.contains_key(&entity) {
+                // O(1) swap_remove moved the next live entry into this offset.
+            } else {
+                work.reconcile_offset += 1;
+            }
         }
+
         if work.reconcile_phase < 2
             || work.reconcile_offset
                 < match work.reconcile_phase {
@@ -76,27 +85,22 @@ pub(super) fn apply_pending_color_work(
             state.pending = Some(work);
             return;
         }
-        state
-            .applied_order
-            .retain(|entity| state.applied_owners.contains_key(entity));
-        state
-            .selected_order
-            .retain(|entity| state.selected_meshes.contains(entity));
-        state
-            .hovered_order
-            .retain(|entity| state.hovered_meshes.contains(entity));
+
         state.last_selection_revision = Some(work.key.selection_revision);
         state.last_scene_revision = work.key.scene_revision;
         state.last_projection_generation = work.key.projection_generation;
         state.last_presentation = Some(work.key.presentation);
         return;
     }
+
     let start = work.offset;
     let end = (start + MAX_PRESENTATION_ENTITIES_PER_UPDATE).min(work.affected.len());
     for entity in &work.affected[start..end] {
         let entity = *entity;
         let Ok((_, material, base, marker)) = meshes.get_mut(entity) else {
-            state.applied_owners.remove(&entity);
+            if state.applied_owners.remove(&entity).is_some() {
+                debug_assert!(state.applied_order.remove(entity));
+            }
             continue;
         };
         apply_color_entity_with_parts(
@@ -136,7 +140,9 @@ fn apply_color_entity(
     hover_handle: &Handle<StandardMaterial>,
 ) {
     let Ok((_, material, base, marker)) = meshes.get_mut(entity) else {
-        state.applied_owners.remove(&entity);
+        if state.applied_owners.remove(&entity).is_some() {
+            debug_assert!(state.applied_order.remove(entity));
+        }
         return;
     };
     apply_color_entity_with_parts(
@@ -189,15 +195,17 @@ fn apply_color_entity_with_parts(
             material.0 = desired_handle.clone();
         }
         if state.applied_owners.insert(entity, desired_owner).is_none() {
-            state.applied_order.push(entity);
+            debug_assert!(state.applied_order.insert(entity));
         }
     } else if let (Some(base), Some(_marker)) = (base, marker) {
         material.0 = base.0.clone();
         commands
             .entity(entity)
             .remove::<(SelectionColorOverride, SelectionBaseMaterial)>();
-        state.applied_owners.remove(&entity);
-    } else {
-        state.applied_owners.remove(&entity);
+        if state.applied_owners.remove(&entity).is_some() {
+            debug_assert!(state.applied_order.remove(entity));
+        }
+    } else if state.applied_owners.remove(&entity).is_some() {
+        debug_assert!(state.applied_order.remove(entity));
     }
 }

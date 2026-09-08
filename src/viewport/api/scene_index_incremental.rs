@@ -9,7 +9,7 @@ use super::super::hierarchy::CurrentHierarchyProjection;
 use super::{DenseSceneIndex, SceneAnchorIndex};
 use crate::viewport::session::StagePresentationContext;
 
-fn display_name(
+pub(super) fn display_name(
     prim: &UsdPrimRef,
     authored: Option<&UsdDisplayName>,
     target: Option<&UsdHierarchyTarget>,
@@ -58,30 +58,6 @@ fn visual_parent(
 }
 
 impl SceneAnchorIndex {
-    pub(super) fn record_topology(
-        &mut self,
-        prims: &Query<(
-            Entity,
-            &UsdPrimRef,
-            Option<&UsdDisplayName>,
-            Option<&UsdHierarchyTarget>,
-            Option<&UsdTransparentHierarchyNode>,
-            Option<&Visibility>,
-            Option<&bevy::ecs::hierarchy::Children>,
-        )>,
-        parents: &Query<Option<&ChildOf>>,
-    ) {
-        self.parent_by_entity.clear();
-        self.transparent_by_entity.clear();
-        for (entity, _, _, _, transparent, _, _) in prims.iter() {
-            if let Some(parent) = parents.get(entity).ok().flatten() {
-                self.parent_by_entity.insert(entity, parent.parent());
-            }
-            self.transparent_by_entity
-                .insert(entity, transparent.is_some());
-        }
-    }
-
     /// Admits only new unique prim rows. Derived tree structures are published
     /// later by [`Self::flush_incremental_derived`] when the progressive batch
     /// reaches a quiescent update, preventing a full sort/reindex/projection
@@ -100,7 +76,7 @@ impl SceneAnchorIndex {
         )>,
         parents: &Query<Option<&ChildOf>>,
         presentation: Option<&StagePresentationContext>,
-    ) -> Option<()> {
+    ) -> Option<usize> {
         struct Addition {
             entity: Entity,
             anchor: SceneAnchor,
@@ -142,7 +118,7 @@ impl SceneAnchorIndex {
             });
         }
         if additions.is_empty() {
-            return Some(());
+            return Some(0);
         }
 
         for addition in &additions {
@@ -193,7 +169,7 @@ impl SceneAnchorIndex {
         self.revision = self.revision.saturating_add(1);
         self.initialized = true;
         self.derived_dirty = true;
-        Some(())
+        Some(additions.len())
     }
 
     /// Coalesces the expensive immutable representations once no new rows
@@ -226,6 +202,8 @@ impl SceneAnchorIndex {
             .incremental_work
             .projected_rows
             .saturating_add(row_count);
+        self.incremental_work.derived_flushes =
+            self.incremental_work.derived_flushes.saturating_add(1);
         self.derived_dirty = false;
         self.prim_projection()
     }

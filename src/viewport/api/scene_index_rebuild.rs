@@ -1,18 +1,39 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy::ecs::hierarchy::Children;
-use bevy::prelude::*;
-use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHierarchyNode};
+use bevy::prelude::Entity;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::super::hierarchy::CurrentHierarchyProjection;
 use super::super::scene_occurrence_index::SceneOccurrenceIndex;
-use super::SceneAnchorIndex;
-use crate::viewport::session::StagePresentationContext;
+use super::DenseSceneIndex;
+
+#[derive(Debug)]
+pub(super) struct SceneIndexCandidate {
+    pub(super) entity: Entity,
+    pub(super) path: String,
+    pub(super) name: String,
+    pub(super) display_name: Option<String>,
+    pub(super) transparent: bool,
+    pub(super) visible: bool,
+    pub(super) parent: Option<Entity>,
+}
+
+pub(super) struct SceneIndexSnapshot {
+    pub(super) by_anchor: HashMap<SceneAnchor, Entity>,
+    pub(super) by_entity: HashMap<Entity, SceneAnchor>,
+    pub(super) occurrence_index: SceneOccurrenceIndex,
+    pub(super) nodes: Vec<PrimNodeReadModel>,
+    pub(super) node_index_by_anchor: HashMap<SceneAnchor, usize>,
+    pub(super) dense: DenseSceneIndex,
+    pub(super) parent_by_entity: HashMap<Entity, Entity>,
+    pub(super) transparent_by_entity: HashMap<Entity, bool>,
+    pub(super) projection: CurrentHierarchyProjection,
+    pub(super) revision: u64,
+}
 
 fn resolve_visual_parent(
     entity: Entity,
-    parent_by_child: &HashMap<Entity, Entity>,
+    parent_by_entity: &HashMap<Entity, Entity>,
     transparent_by_entity: &HashMap<Entity, bool>,
     resolved_by_entity: &mut HashMap<Entity, Option<Entity>>,
 ) -> Option<Entity> {
@@ -20,14 +41,19 @@ fn resolve_visual_parent(
         return *parent;
     }
 
+    let mut visited = HashSet::new();
     let mut transparent_chain = Vec::new();
-    let mut parent = parent_by_child.get(&entity).copied();
+    let mut parent = parent_by_entity.get(&entity).copied();
     while let Some(candidate) = parent {
-        let is_transparent = transparent_by_entity
+        if !visited.insert(candidate) {
+            parent = None;
+            break;
+        }
+        if !transparent_by_entity
             .get(&candidate)
             .copied()
-            .unwrap_or(false);
-        if !is_transparent {
+            .unwrap_or(false)
+        {
             break;
         }
         if let Some(resolved) = resolved_by_entity.get(&candidate) {
@@ -35,7 +61,7 @@ fn resolve_visual_parent(
             break;
         }
         transparent_chain.push(candidate);
-        parent = parent_by_child.get(&candidate).copied();
+        parent = parent_by_entity.get(&candidate).copied();
     }
 
     for transparent in transparent_chain {
@@ -45,203 +71,143 @@ fn resolve_visual_parent(
     parent
 }
 
-impl SceneAnchorIndex {
-    pub(super) fn rebuild(
-        &mut self,
-        prims: &Query<(
-            Entity,
-            &UsdPrimRef,
-            Option<&UsdDisplayName>,
-            Option<&UsdHierarchyTarget>,
-            Option<&UsdTransparentHierarchyNode>,
-            Option<&Visibility>,
-            Option<&Children>,
-        )>,
-        presentation: Option<&StagePresentationContext>,
-    ) -> CurrentHierarchyProjection {
-        self.rebuild_count = self.rebuild_count.saturating_add(1);
-        #[derive(Debug)]
-        struct Candidate {
-            entity: Entity,
-            path: String,
-            name: String,
-            display_name: Option<String>,
-            transparent: bool,
-            visible: bool,
-            children: Vec<Entity>,
-        }
+pub(super) fn build_snapshot(
+    chunks: Vec<Vec<SceneIndexCandidate>>,
+    revision: u64,
+) -> SceneIndexSnapshot {
+    let mut candidates = chunks.into_iter().flatten().collect::<Vec<_>>();
+    let candidate_entities = candidates
+        .iter()
+        .map(|candidate| candidate.entity)
+        .collect::<HashSet<_>>();
+    let parent_by_entity = candidates
+        .iter()
+        .filter_map(|candidate| {
+            candidate
+                .parent
+                .filter(|parent| candidate_entities.contains(parent))
+                .map(|parent| (candidate.entity, parent))
+        })
+        .collect::<HashMap<_, _>>();
+    let transparent_by_entity = candidates
+        .iter()
+        .map(|candidate| (candidate.entity, candidate.transparent))
+        .collect::<HashMap<_, _>>();
 
-        let prim_entities: HashSet<Entity> = prims
-            .iter()
-            .filter(|(_, prim, ..)| prim.path != "/")
-            .map(|(entity, ..)| entity)
-            .collect();
-        let mut candidates: Vec<Candidate> = prims
-            .iter()
-            .filter(|(_, prim, ..)| prim.path != "/")
-            .map(
-                |(entity, prim, display_name, target, transparent, visibility, children)| {
-                    let display_name = display_name.map(|display_name| display_name.0.clone());
-                    let is_presentation_root = presentation.is_some_and(|presentation| {
-                        presentation.root_path.as_deref() == Some(prim.path.as_str())
-                    });
-                    let display_name = if is_presentation_root {
-                        presentation
-                            .and_then(|presentation| presentation.root_name.clone())
-                            .or_else(|| {
-                                target
-                                    .and_then(|target| {
-                                        presentation?.target_name(&target.kind, &target.id)
-                                    })
-                                    .map(str::to_owned)
-                            })
-                            .or(display_name)
-                    } else {
-                        target
-                            .and_then(|target| presentation?.target_name(&target.kind, &target.id))
-                            .map(str::to_owned)
-                            .or(display_name)
-                    };
-                    Candidate {
-                        entity,
-                        path: prim.path.clone(),
-                        name: super::prim_name(&prim.path).to_owned(),
-                        display_name,
-                        transparent: transparent.is_some(),
-                        visible: !matches!(visibility, Some(Visibility::Hidden)),
-                        children: children
-                            .map(|children| {
-                                children
-                                    .iter()
-                                    .filter(|child| prim_entities.contains(child))
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    }
-                },
-            )
-            .collect();
+    let mut resolved_visual_parents = HashMap::with_capacity(candidates.len());
+    for candidate in &candidates {
+        resolve_visual_parent(
+            candidate.entity,
+            &parent_by_entity,
+            &transparent_by_entity,
+            &mut resolved_visual_parents,
+        );
+    }
 
-        let mut parent_by_child = HashMap::new();
-        for candidate in &candidates {
-            for child in &candidate.children {
-                parent_by_child.insert(*child, candidate.entity);
-            }
+    let mut visual_child_counts: HashMap<Entity, usize> = HashMap::new();
+    for candidate in &candidates {
+        if candidate.transparent {
+            continue;
         }
+        if let Some(parent) = resolved_visual_parents
+            .get(&candidate.entity)
+            .copied()
+            .flatten()
+        {
+            *visual_child_counts.entry(parent).or_default() += 1;
+        }
+    }
 
-        let transparent_by_entity: HashMap<Entity, bool> = candidates
-            .iter()
-            .map(|candidate| (candidate.entity, candidate.transparent))
-            .collect();
-        let mut resolved_visual_parents = HashMap::with_capacity(candidates.len());
-        for candidate in &candidates {
-            resolve_visual_parent(
-                candidate.entity,
-                &parent_by_child,
-                &transparent_by_entity,
-                &mut resolved_visual_parents,
-            );
-        }
-        let mut visual_child_counts: HashMap<Entity, usize> = HashMap::new();
-        for candidate in &candidates {
+    let mut path_counts: HashMap<String, usize> = HashMap::new();
+    for candidate in &candidates {
+        *path_counts.entry(candidate.path.clone()).or_default() += 1;
+    }
+    candidates.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.entity.to_bits().cmp(&right.entity.to_bits()))
+    });
+
+    let mut next_occurrence: HashMap<String, usize> = HashMap::new();
+    let mut by_anchor = HashMap::with_capacity(candidates.len());
+    let mut by_entity = HashMap::with_capacity(candidates.len());
+    let mut occurrence_index = SceneOccurrenceIndex::default();
+    for candidate in &candidates {
+        let count = path_counts[&candidate.path];
+        let occurrence = next_occurrence.entry(candidate.path.clone()).or_default();
+        let instance_context = if count > 1 {
+            let context = format!("occurrence-{occurrence}");
+            *occurrence += 1;
+            Some(context)
+        } else {
+            None
+        };
+        let anchor = SceneAnchor {
+            session_id: None,
+            prim_path: candidate.path.clone(),
+            instance_context,
+        };
+        by_anchor.insert(anchor.clone(), candidate.entity);
+        by_entity.insert(candidate.entity, anchor);
+        occurrence_index.insert(&candidate.path, candidate.entity);
+    }
+
+    let mut nodes = candidates
+        .into_iter()
+        .filter_map(|candidate| {
             if candidate.transparent {
-                continue;
+                return None;
             }
-            if let Some(parent) = resolved_visual_parents
+            let anchor = by_entity.get(&candidate.entity)?.clone();
+            let parent = resolved_visual_parents
                 .get(&candidate.entity)
                 .copied()
                 .flatten()
-            {
-                *visual_child_counts.entry(parent).or_default() += 1;
-            }
-        }
-
-        let mut path_counts: HashMap<String, usize> = HashMap::new();
-        for candidate in &candidates {
-            *path_counts.entry(candidate.path.clone()).or_default() += 1;
-        }
-        candidates.sort_by(|left, right| {
-            left.path
-                .cmp(&right.path)
-                .then_with(|| left.entity.to_bits().cmp(&right.entity.to_bits()))
-        });
-
-        let mut next_occurrence: HashMap<String, usize> = HashMap::new();
-        let mut by_anchor = HashMap::with_capacity(candidates.len());
-        let mut by_entity = HashMap::with_capacity(candidates.len());
-        let mut occurrence_index = SceneOccurrenceIndex::default();
-        for candidate in &candidates {
-            let count = path_counts[&candidate.path];
-            let occurrence = next_occurrence.entry(candidate.path.clone()).or_default();
-            let instance_context = if count > 1 {
-                let context = format!("occurrence-{occurrence}");
-                *occurrence += 1;
-                Some(context)
-            } else {
-                None
-            };
-            let anchor = SceneAnchor {
-                session_id: None,
-                prim_path: candidate.path.clone(),
-                instance_context,
-            };
-            by_anchor.insert(anchor.clone(), candidate.entity);
-            by_entity.insert(candidate.entity, anchor);
-            occurrence_index.insert(&candidate.path, candidate.entity);
-        }
-
-        let mut nodes: Vec<PrimNodeReadModel> = candidates
-            .into_iter()
-            .filter_map(|candidate| {
-                if candidate.transparent {
-                    return None;
-                }
-                let anchor = by_entity.get(&candidate.entity)?.clone();
-                let parent = resolved_visual_parents
+                .and_then(|entity| by_entity.get(&entity))
+                .cloned();
+            Some(PrimNodeReadModel {
+                anchor,
+                parent,
+                label: candidate.name,
+                display_name: candidate.display_name,
+                visible: candidate.visible,
+                has_children: visual_child_counts
                     .get(&candidate.entity)
                     .copied()
-                    .flatten()
-                    .and_then(|entity| by_entity.get(&entity))
-                    .cloned();
-                Some(PrimNodeReadModel {
-                    anchor,
-                    parent,
-                    label: candidate.name,
-                    display_name: candidate.display_name,
-                    visible: candidate.visible,
-                    has_children: visual_child_counts
-                        .get(&candidate.entity)
-                        .copied()
-                        .unwrap_or_default()
-                        > 0,
-                })
+                    .unwrap_or_default()
+                    > 0,
             })
-            .collect();
-        nodes.sort_by(|left, right| {
-            left.anchor
-                .prim_path
-                .cmp(&right.anchor.prim_path)
-                .then_with(|| {
-                    left.anchor
-                        .instance_context
-                        .cmp(&right.anchor.instance_context)
-                })
-        });
+        })
+        .collect::<Vec<_>>();
+    nodes.sort_by(|left, right| {
+        left.anchor
+            .prim_path
+            .cmp(&right.anchor.prim_path)
+            .then_with(|| {
+                left.anchor
+                    .instance_context
+                    .cmp(&right.anchor.instance_context)
+            })
+    });
 
-        self.dense = super::DenseSceneIndex::from_nodes(&nodes, &by_anchor);
-        self.by_anchor = by_anchor;
-        self.by_entity = by_entity;
-        self.occurrence_index = occurrence_index;
-        self.nodes = nodes;
-        self.node_index_by_anchor = self
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.anchor.clone(), index))
-            .collect();
-        self.derived_dirty = false;
-        self.revision = self.revision.saturating_add(1);
-        self.initialized = true;
-        CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision)
+    let node_index_by_anchor = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.anchor.clone(), index))
+        .collect();
+    let dense = DenseSceneIndex::from_nodes(&nodes, &by_anchor);
+    let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, revision);
+
+    SceneIndexSnapshot {
+        by_anchor,
+        by_entity,
+        occurrence_index,
+        nodes,
+        node_index_by_anchor,
+        dense,
+        parent_by_entity,
+        transparent_by_entity,
+        projection,
+        revision,
     }
 }

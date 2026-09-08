@@ -25,6 +25,8 @@ use crate::viewport::scene::{
     SelectionPresentationPolicy,
 };
 
+use super::entity_order::EntityOrder;
+
 const SELECTION_OUTLINE_WIDTH: f32 = 3.0;
 const MAX_PRESENTATION_ENTITIES_PER_UPDATE: usize = 256;
 
@@ -61,12 +63,12 @@ pub(in crate::viewport) struct SelectionOutlineState {
     /// The desired set is updated immediately from projection deltas and is
     /// never discarded when an in-flight work item is superseded.
     desired_entities: HashSet<Entity>,
-    desired_order: Vec<Entity>,
+    desired_order: EntityOrder,
     /// The entities that currently have outline work physically applied. A
     /// bounded work item can be interrupted after a prefix has been queued,
     /// so cancellation must reconcile from this set rather than `entities`.
     applied_entities: HashSet<Entity>,
-    applied_order: Vec<Entity>,
+    applied_order: EntityOrder,
     last_boundary: Option<(bool, ColorRgb8)>,
     last_projection_generation: Option<u64>,
     last_selection_revision: Option<u64>,
@@ -193,15 +195,6 @@ pub(in crate::viewport) fn sync_selection_outlines(
         .pending
         .as_ref()
         .is_some_and(|pending| pending.key != key);
-    let reconcile_cursor = superseded_pending
-        .then(|| {
-            state
-                .pending
-                .as_ref()
-                .filter(|pending| pending.reconcile_all)
-                .map(|pending| (pending.reconcile_phase, pending.reconcile_offset))
-        })
-        .flatten();
     if state.pending.is_some() && !superseded_pending {
         apply_pending_outline_work(&mut state, &mut commands, &owned_outlines);
         return;
@@ -237,11 +230,13 @@ pub(in crate::viewport) fn sync_selection_outlines(
             .collect::<Vec<_>>();
         for entity in added.iter().copied() {
             if state.desired_entities.insert(entity) {
-                state.desired_order.push(entity);
+                debug_assert!(state.desired_order.insert(entity));
             }
         }
         for entity in removed.iter().copied() {
-            state.desired_entities.remove(&entity);
+            if state.desired_entities.remove(&entity) {
+                debug_assert!(state.desired_order.remove(entity));
+            }
         }
         (added, removed)
     } else {
@@ -251,7 +246,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
             if let Some(projection) = projection.as_ref() {
                 for entity in projection.renderables().iter().copied() {
                     if state.desired_entities.insert(entity) {
-                        state.desired_order.push(entity);
+                        debug_assert!(state.desired_order.insert(entity));
                     }
                 }
             } else {
@@ -263,7 +258,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
                     collect_mesh_descendants(entity, &meshes, &mut desired);
                     for entity in desired {
                         if state.desired_entities.insert(entity) {
-                            state.desired_order.push(entity);
+                            debug_assert!(state.desired_order.insert(entity));
                         }
                     }
                 }
@@ -293,8 +288,11 @@ pub(in crate::viewport) fn sync_selection_outlines(
         removed_offset: 0,
         updated_offset: 0,
         reconcile_all: boundary_changed || superseded_pending,
-        reconcile_phase: reconcile_cursor.map_or(0, |(phase, _)| phase),
-        reconcile_offset: reconcile_cursor.map_or(0, |(_, offset)| offset),
+        // EntityOrder removes with swap_remove. A superseding job may have
+        // changed the dense order behind an old numeric cursor, so every new
+        // reconciliation starts from the beginning of the current order.
+        reconcile_phase: 0,
+        reconcile_offset: 0,
     });
     apply_pending_outline_work(&mut state, &mut commands, &owned_outlines);
 }

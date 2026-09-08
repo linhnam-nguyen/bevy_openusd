@@ -1,9 +1,10 @@
 //! Bounded sparse topology reconciliation for logical selection projection.
 //!
-//! Split from selection_projection_membership.rs so both responsibilities stay
-//! below the repository source-size hard limit.
+//! Both descendant cursor work and selected-ancestor resolution are resumable.
+//! Every hierarchy push/pop/enter and every parent hop is charged to the same
+//! caller-owned update budget.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use bevy::ecs::hierarchy::{ChildOf, Children};
 use bevy::prelude::*;
@@ -12,11 +13,29 @@ use viewport_protocol::SceneAnchor;
 use super::membership::{
     CursorStep, add_target_renderable, advance_cursor, remove_target_renderable,
 };
-use super::{HierarchyCursor, PendingTopologyProjection, SelectedRenderableProjection};
+use super::{HierarchyCursor, SelectedRenderableProjection};
+
+#[derive(Debug)]
+struct PendingTopologyEntity {
+    entity: Entity,
+    ancestor: Option<Entity>,
+    visited_ancestors: HashSet<Entity>,
+    current_targets: HashSet<SceneAnchor>,
+}
+
+#[derive(Debug)]
+pub(super) struct PendingTopologyProjection {
+    pub(super) recurse_descendants: bool,
+    pub(super) processed_single: bool,
+    pub(super) stack: Vec<HierarchyCursor>,
+    pub(super) visited: HashSet<Entity>,
+    pending_entity: Option<PendingTopologyEntity>,
+}
 
 pub(super) struct TopologyProgress {
     pub(super) mapping_changed: bool,
     pub(super) changed_targets: HashSet<SceneAnchor>,
+    pub(super) work: usize,
 }
 
 pub(super) fn advance_pending_topology(
@@ -28,7 +47,9 @@ pub(super) fn advance_pending_topology(
     let mut progress = TopologyProgress {
         mapping_changed: false,
         changed_targets: HashSet::new(),
+        work: 0,
     };
+
     while budget > 0 {
         if projection.pending_topology.is_none() {
             let Some(root) = projection.topology_queue.pop_front() else {
@@ -40,7 +61,60 @@ pub(super) fn advance_pending_topology(
                 processed_single: false,
                 stack: vec![HierarchyCursor::new(root)],
                 visited: HashSet::new(),
+                pending_entity: None,
             });
+        }
+
+        let advanced_ancestor = {
+            let work = projection
+                .pending_topology
+                .as_mut()
+                .expect("topology work was initialized above");
+            match work.pending_entity.as_mut() {
+                Some(pending) => match pending.ancestor {
+                    Some(ancestor) => {
+                        if !pending.visited_ancestors.insert(ancestor) {
+                            pending.ancestor = None;
+                        } else {
+                            if let Some(roots) = projection.roots_by_entity.get(&ancestor) {
+                                pending.current_targets.extend(roots.iter().cloned());
+                            }
+                            pending.ancestor =
+                                parents.get(ancestor).ok().flatten().map(ChildOf::parent);
+                        }
+                        true
+                    }
+                    None => false,
+                },
+                None => false,
+            }
+        };
+        if advanced_ancestor {
+            budget -= 1;
+            progress.work += 1;
+            continue;
+        }
+
+        let completed_entity = {
+            let work = projection
+                .pending_topology
+                .as_mut()
+                .expect("topology work was initialized above");
+            if work
+                .pending_entity
+                .as_ref()
+                .is_some_and(|pending| pending.ancestor.is_none())
+            {
+                work.pending_entity.take()
+            } else {
+                None
+            }
+        };
+        if let Some(completed) = completed_entity {
+            budget -= 1;
+            progress.work += 1;
+            reconcile_entity_targets(projection, completed, &mut progress);
+            continue;
         }
 
         let step = {
@@ -65,55 +139,58 @@ pub(super) fn advance_pending_topology(
             }
         };
 
-        let CursorStep::Entity {
-            entity,
-            mesh_present,
-        } = step
-        else {
-            projection.pending_topology = None;
-            continue;
-        };
-        budget -= 1;
-        let current_targets = mesh_present
-            .then(|| containing_targets(entity, &projection.roots_by_entity, parents))
-            .unwrap_or_default();
-        let previous_targets = projection
-            .renderable_targets
-            .get(&entity)
-            .cloned()
-            .unwrap_or_default();
-        for target in previous_targets.difference(&current_targets) {
-            if remove_target_renderable(projection, target, entity) {
-                progress.mapping_changed = true;
-                progress.changed_targets.insert(target.clone());
+        match step {
+            CursorStep::Progress => {
+                budget -= 1;
+                progress.work += 1;
             }
-        }
-        for target in current_targets.difference(&previous_targets) {
-            if add_target_renderable(projection, target, entity) {
-                progress.mapping_changed = true;
-                progress.changed_targets.insert(target.clone());
+            CursorStep::Finished => {
+                projection.pending_topology = None;
+            }
+            CursorStep::Entity {
+                entity,
+                mesh_present,
+            } => {
+                budget -= 1;
+                progress.work += 1;
+                projection
+                    .pending_topology
+                    .as_mut()
+                    .expect("topology work was initialized above")
+                    .pending_entity = Some(PendingTopologyEntity {
+                    entity,
+                    ancestor: mesh_present.then_some(entity),
+                    visited_ancestors: HashSet::new(),
+                    current_targets: HashSet::new(),
+                });
             }
         }
     }
+
     progress
 }
 
-pub(super) fn containing_targets(
-    entity: Entity,
-    roots_by_entity: &HashMap<Entity, HashSet<SceneAnchor>>,
-    parents: &Query<Option<&ChildOf>>,
-) -> HashSet<SceneAnchor> {
-    let mut current = Some(entity);
-    let mut visited = HashSet::new();
-    let mut targets = HashSet::new();
-    while let Some(entity) = current {
-        if !visited.insert(entity) {
-            break;
+fn reconcile_entity_targets(
+    projection: &mut SelectedRenderableProjection,
+    completed: PendingTopologyEntity,
+    progress: &mut TopologyProgress,
+) {
+    let previous_targets = projection
+        .renderable_targets
+        .get(&completed.entity)
+        .cloned()
+        .unwrap_or_default();
+
+    for target in previous_targets.difference(&completed.current_targets) {
+        if remove_target_renderable(projection, target, completed.entity) {
+            progress.mapping_changed = true;
+            progress.changed_targets.insert(target.clone());
         }
-        if let Some(roots) = roots_by_entity.get(&entity) {
-            targets.extend(roots.iter().cloned());
-        }
-        current = parents.get(entity).ok().flatten().map(ChildOf::parent);
     }
-    targets
+    for target in completed.current_targets.difference(&previous_targets) {
+        if add_target_renderable(projection, target, completed.entity) {
+            progress.mapping_changed = true;
+            progress.changed_targets.insert(target.clone());
+        }
+    }
 }
