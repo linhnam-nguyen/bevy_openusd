@@ -14,6 +14,7 @@ use usd_project::ProjectId;
 use super::ProjectApplicationService;
 use crate::project::{
     cache::{ProjectCacheIdentity, ProjectCacheTarget},
+    cache_contract::SceneCacheActivation,
     cache_warmer::{ProjectCachePreparation, ProjectCacheWarmQueue},
     scene::authoring::scene_path,
 };
@@ -36,7 +37,7 @@ pub struct ProjectStagePresentationContext {
 /// This type never crosses the frontend or Project wire protocol. It exists
 /// so the render host can hand the resolved path to the existing stage-open
 /// lifecycle without teaching that lifecycle about registries or manifests.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProjectStageActivationTarget {
     pub project_id: ProjectId,
     pub target: ProjectStageTarget,
@@ -44,14 +45,11 @@ pub struct ProjectStageActivationTarget {
     pub path: PathBuf,
     pub(crate) archive_paths: Vec<PathBuf>,
     pub(crate) cache_identity: Option<ProjectCacheIdentity>,
+    pub(crate) scene_cache: Option<SceneCacheActivation>,
     pub(crate) presentation: ProjectStagePresentationContext,
 }
 
-/// Stable identity of the Project stage currently owned by one render host.
-///
-/// The resolved path is deliberately absent: path resolution remains private
-/// to the host, while the active identity is safe to compare with protocol
-/// commands and derived read-model generations.
+/// Stable Project-stage identity; resolved paths remain private to the host.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActiveProjectStage {
     pub project_id: ProjectId,
@@ -199,16 +197,41 @@ impl ProjectApplicationService {
             path,
             archive_paths,
             cache_identity: None,
+            scene_cache: None,
             presentation,
         }))
     }
 
-    /// Probe the resolved target's derived cache on the preparation worker.
-    /// Cache warming is advisory; canonical Stage activation never waits for it.
+    /// Probe the resolved target's derived cache without delaying Stage activation.
     pub(crate) fn prepare_cache_for_activation(
         &self,
         target: &ProjectStageActivationTarget,
-    ) -> (ProjectCachePreparation, Option<ProjectCacheIdentity>) {
+    ) -> (ProjectCachePreparation, Option<ProjectCacheIdentity>, Option<SceneCacheActivation>) {
+        let scene_id = match target.target {
+            ProjectStageTarget::Scene(scene_id)
+            | ProjectStageTarget::ProjectRoot(usd_project::ProjectRoot::Scene(scene_id)) => {
+                Some(scene_id)
+            }
+            _ => None,
+        };
+        if let Some(scene_id) = scene_id {
+            let store = crate::project::cache::SceneCacheStore::new(&target.project_root);
+            let activation = match store.load_activation(scene_id) {
+                Ok(activation) => activation,
+                Err(error) => {
+                    log::warn!(
+                        "Scene cache metadata probe failed for {scene_id} in {}: {error:#}",
+                        target.project_root.display()
+                    );
+                    None
+                }
+            };
+            let state = activation.as_ref().map_or(
+                ProjectCachePreparation::FallbackRequired,
+                |_| ProjectCachePreparation::Ready,
+            );
+            return (state, None, activation);
+        }
         let cache_target = match target.target {
             ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
             ProjectStageTarget::Scene(scene_id) => ProjectCacheTarget::Scene {
@@ -231,7 +254,7 @@ impl ProjectApplicationService {
                     "Project cache activation identity could not be established for {}: {error:#}",
                     target.project_root.display()
                 );
-                return (ProjectCachePreparation::FallbackRequired, None);
+                return (ProjectCachePreparation::FallbackRequired, None, None);
             }
         };
         log::debug!(
@@ -249,7 +272,7 @@ impl ProjectApplicationService {
             probe_started.elapsed().as_secs_f64() * 1_000.0,
             identity.target.key()
         );
-        (state, Some(identity))
+        (state, Some(identity), None)
     }
 }
 

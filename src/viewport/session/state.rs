@@ -3,6 +3,11 @@
 use bevy::prelude::Resource;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use usd_model::HashDigest;
+use usd_project::SceneId;
+
+use crate::project::cache_contract::{SceneCacheActivation, SceneCacheEntry, SceneCacheState};
 
 /// Marker and error state for the active stage request.
 ///
@@ -52,6 +57,42 @@ impl StagePresentationContext {
             .get(&(kind.to_owned(), id.to_owned()))
             .map(String::as_str)
     }
+}
+
+/// Metadata-first Scene activation published before the canonical Stage has
+/// produced a Bevy projection. The entries retain cache-owned identity and
+/// bounds while OpenUSD remains the authority for later source projection.
+#[derive(Resource, Clone, Debug, PartialEq)]
+pub(crate) struct SceneCachePresentation {
+    pub(crate) scene_id: SceneId,
+    pub(crate) generation: u64,
+    pub(crate) state: SceneCacheState,
+    pub(crate) entries: Vec<SceneCacheEntry>,
+}
+
+impl SceneCachePresentation {
+    pub(crate) fn from_activation(activation: &SceneCacheActivation) -> Self {
+        Self {
+            scene_id: activation.descriptor.scene_id,
+            generation: activation.descriptor.generation,
+            state: activation.descriptor.state,
+            entries: activation.index.entries.clone(),
+        }
+    }
+}
+
+/// Background strong source check for a cache-first Scene activation. The
+/// result is consumed on the Bevy main world so stale cache state can never
+/// replace canonical Stage/LiveStage authority.
+#[derive(Resource)]
+pub(crate) struct PendingSceneCacheRevalidation {
+    pub(crate) project_root: PathBuf,
+    pub(crate) scene_id: SceneId,
+    pub(crate) activation_generation: u64,
+    pub(crate) scene_generation: u64,
+    pub(crate) expected_hash: Option<HashDigest>,
+    pub(crate) config_hash: HashDigest,
+    pub(crate) result: Arc<Mutex<Option<Result<HashDigest, String>>>>,
 }
 
 #[derive(Resource, Default, Debug, Clone)]

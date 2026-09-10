@@ -21,7 +21,8 @@ use crate::viewport::scene::{
 use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
 use crate::viewport::session::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
-    apply_load_request, handle_usd_hot_reload, load_stage, spawn_when_ready,
+    apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
+    spawn_when_ready,
 };
 use crate::viewport::transport::{ViewportTransport, parse_launch_options};
 use crate::viewport::ui_frost::ViewerUiPlugin;
@@ -151,7 +152,6 @@ pub(crate) fn run() {
             launch_options.height,
         ));
     }
-
     app.insert_resource(SemanticSyncState::with_config(
         SemanticConfig::for_nvidia_revit_connector(),
     ))
@@ -164,7 +164,6 @@ pub(crate) fn run() {
         .resource_mut::<DisplayToggles>()
         .renderer
         .preferred_fps = Some(launch_options.fps);
-
     if !launch_options.headless {
         app.add_plugins(ViewerKeyboardPlugin)
             .add_plugins(ViewerUiPlugin)
@@ -351,6 +350,9 @@ pub(crate) fn run() {
     app.add_systems(
         Update,
         (
+            poll_scene_cache_revalidation
+                .after(LiveStageSet::Presentation)
+                .before(spawn_when_ready),
             spawn_when_ready.after(LiveStageSet::Presentation),
             fit_camera_once,
             handle_usd_hot_reload,

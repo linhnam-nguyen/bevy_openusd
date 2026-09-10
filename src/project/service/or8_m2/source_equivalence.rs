@@ -182,6 +182,7 @@ fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
         path: adopted_path.clone(),
         archive_paths: Vec::new(),
         cache_identity: None,
+        scene_cache: None,
         presentation: ProjectStagePresentationContext::default(),
     };
     let reply = production.apply(

@@ -25,6 +25,7 @@ pub(in crate::viewport) use lifecycle_invalidation::{
 };
 pub(crate) use project_activation::{
     activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
+    poll_scene_cache_revalidation,
 };
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
@@ -129,6 +130,8 @@ where
         path,
         stage,
         cache_context,
+        None,
+        None,
         None,
         activation_generation,
         presentation,
@@ -260,6 +263,8 @@ fn clear_projected_stage(world: &mut World) {
     }
     world.remove_non_send::<LiveStage>();
     world.remove_resource::<StageMetadataState>();
+    world.remove_resource::<super::PendingSceneCacheRevalidation>();
+    world.remove_resource::<super::SceneCachePresentation>();
     world.resource_mut::<Spawned>().0 = false;
 }
 

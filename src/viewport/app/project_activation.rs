@@ -183,8 +183,10 @@ fn resolve_project_activation_with_cache(
     }
     let mut target = target;
     if let Some(target) = target.as_mut() {
-        let (cache_preparation, identity) = service.prepare_cache_for_activation(target);
+        let (cache_preparation, identity, scene_cache) =
+            service.prepare_cache_for_activation(target);
         target.cache_identity = identity;
+        target.scene_cache = scene_cache;
         match cache_preparation {
             crate::project::cache_warmer::ProjectCachePreparation::Ready => {}
             crate::project::cache_warmer::ProjectCachePreparation::Empty => {

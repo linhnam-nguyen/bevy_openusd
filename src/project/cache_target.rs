@@ -165,6 +165,16 @@ pub(crate) struct SceneCacheIndex {
     pub(crate) entries: Vec<SceneCacheEntry>,
 }
 
+/// Stable cache-first activation snapshot. The descriptor is read before the
+/// index so callers can publish lightweight metadata without opening or
+/// projecting the canonical Stage. OpenUSD remains the authority for any
+/// source revalidation and for all heavy projection payloads.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SceneCacheActivation {
+    pub(crate) descriptor: SceneCacheDescriptorV3,
+    pub(crate) index: SceneCacheIndex,
+}
+
 impl SceneCacheIndex {
     pub(crate) fn validate(&self, scene_id: SceneId, generation: u64) -> Result<()> {
         ensure!(

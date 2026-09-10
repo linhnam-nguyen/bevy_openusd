@@ -86,7 +86,11 @@ fn activation_does_not_wait_for_inflight_cache_warm() {
         resolved.path,
         fs::canonicalize(scene_path).expect("canonical Scene path")
     );
-    assert_eq!(resolved.cache_identity.as_ref(), Some(&identity));
+    assert!(
+        resolved.cache_identity.is_none(),
+        "Scene activation does not compute the legacy full Project identity"
+    );
+    assert!(resolved.scene_cache.is_none());
 }
 
 #[test]
@@ -169,10 +173,8 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
         target.archive_paths,
         vec![fs::canonicalize(package_path).expect("canonical Hummingbird package")]
     );
-    assert!(
-        target.cache_identity.is_some(),
-        "prepared cache identity is carried forward"
-    );
+    assert!(target.cache_identity.is_none());
+    assert!(target.scene_cache.is_none());
 
     let mut production = ProductionActivationWorld::new();
     assert!(production.admit("hummingbird-project-session", &command));

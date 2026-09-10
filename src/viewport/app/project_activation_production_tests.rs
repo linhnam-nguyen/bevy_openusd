@@ -300,6 +300,7 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
             path,
             archive_paths: Vec::new(),
             cache_identity: None,
+            scene_cache: None,
             presentation: ProjectStagePresentationContext::default(),
         };
         if index == 1 {

@@ -152,6 +152,8 @@ fn activate_prepared_stage(
         target.path,
         activation.into_stage(),
         cache_context,
+        target.scene_cache.clone(),
+        Some(target.project_root.clone()),
         Some(target.archive_paths.clone()),
         command.generation,
         StagePresentationContext::from_project(target.presentation),

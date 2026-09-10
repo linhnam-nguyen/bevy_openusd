@@ -12,7 +12,10 @@ use usd_model::HashDigest;
 use usd_project::SceneId;
 use uuid::Uuid;
 
-use super::super::cache_contract::{SceneCacheDescriptorV3, SceneCacheIndex, SceneSpatialIndex};
+use super::super::cache_contract::{
+    SceneCacheActivation, SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState,
+    SceneSpatialIndex,
+};
 use super::super::{
     blob_store::FilesystemBlobStore, catalog::manifest_store::write_bytes_atomic,
     storage::ProjectStorageLayout,
@@ -212,6 +215,43 @@ impl SceneCacheStore {
         Ok(Some(index))
     }
 
+    /// Load the stable metadata-first activation view by SceneId. The
+    /// descriptor is checked before and after the index read so a generation
+    /// rollover cannot publish a mixed descriptor/index pair.
+    pub(crate) fn load_activation(
+        &self,
+        scene_id: SceneId,
+    ) -> Result<Option<SceneCacheActivation>> {
+        let Some(descriptor) = self.load_descriptor(scene_id)? else {
+            return Ok(None);
+        };
+        if !matches!(
+            descriptor.state,
+            SceneCacheState::Partial | SceneCacheState::Ready
+        ) {
+            return Ok(None);
+        }
+        let Some(index) = self.load_index(scene_id)? else {
+            return Ok(None);
+        };
+        let Some(current) = self.load_descriptor(scene_id)? else {
+            return Ok(None);
+        };
+        if current.generation != descriptor.generation
+            || current.index_digest != descriptor.index_digest
+            || !matches!(
+                current.state,
+                SceneCacheState::Partial | SceneCacheState::Ready
+            )
+        {
+            return Ok(None);
+        }
+        Ok(Some(SceneCacheActivation {
+            descriptor: current,
+            index,
+        }))
+    }
+
     pub(crate) fn load_spatial(&self, scene_id: SceneId) -> Result<Option<SceneSpatialIndex>> {
         let Some(descriptor) = self.load_descriptor(scene_id)? else {
             return Ok(None);
@@ -294,5 +334,58 @@ fn remove_file_if_present(path: &Path) -> Result<()> {
         Err(error) => {
             Err(error).with_context(|| format!("remove derived cache file {}", path.display()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::cache_contract::{
+        SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+    };
+    use tempfile::tempdir;
+
+    #[test]
+    fn partial_scene_activation_reads_descriptor_and_index_before_stage_open() {
+        let directory = tempdir().expect("Scene cache test directory");
+        let scene_id = SceneId::new_v4();
+        let config_hash = HashDigest::new([1; HashDigest::BYTE_LEN]);
+        let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, 7, config_hash);
+        descriptor.state = SceneCacheState::Partial;
+        descriptor.source_content_hash = Some(HashDigest::new([2; HashDigest::BYTE_LEN]));
+        let index = SceneCacheIndex {
+            schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION,
+            scene_id,
+            generation: 7,
+            entries: Vec::new(),
+        };
+        let spatial = SceneSpatialIndex {
+            schema_version: SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+            scene_id,
+            generation: 7,
+            entries: Vec::new(),
+        };
+        let store = SceneCacheStore::new(directory.path());
+        let published = store
+            .publish_generation(&descriptor, &index, &spatial)
+            .expect("publish Partial Scene cache");
+
+        let activation = store
+            .load_activation(scene_id)
+            .expect("load Scene activation metadata")
+            .expect("Partial Scene cache is usable");
+        assert_eq!(activation.descriptor, published);
+        assert_eq!(activation.index, index);
+
+        descriptor.state = SceneCacheState::Building;
+        store
+            .publish_descriptor(&descriptor)
+            .expect("publish Building descriptor");
+        assert!(
+            store
+                .load_activation(scene_id)
+                .expect("probe Building Scene cache")
+                .is_none()
+        );
     }
 }
