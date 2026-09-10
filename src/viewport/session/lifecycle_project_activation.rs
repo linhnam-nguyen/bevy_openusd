@@ -231,6 +231,7 @@ fn discard_scene_cache_presentation(world: &mut World, scene_id: usd_project::Sc
         return;
     }
     world.remove_resource::<SceneCachePresentation>();
+    crate::viewport::residency::retire_scene_cache_resources(world);
     let projection_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
         .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);

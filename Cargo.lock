@@ -8835,6 +8835,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rfd",
+ "rstar",
  "serde",
  "serde_json",
  "tempfile",

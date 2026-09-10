@@ -265,6 +265,7 @@ fn clear_projected_stage(world: &mut World) {
     world.remove_resource::<StageMetadataState>();
     world.remove_resource::<super::PendingSceneCacheRevalidation>();
     world.remove_resource::<super::SceneCachePresentation>();
+    crate::viewport::residency::retire_scene_cache_resources(world);
     world.resource_mut::<Spawned>().0 = false;
 }
 
