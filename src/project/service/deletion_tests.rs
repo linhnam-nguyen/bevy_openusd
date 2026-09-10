@@ -69,6 +69,9 @@ fn deleting_scene_preserves_descendant_shared_by_another_parent() {
         )
         .unwrap();
     add_scene_placement(&project_root, other_parent.scene_id, shared.scene_id);
+    let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+    let other_generation = cache.load_descriptor(other_parent.scene_id).unwrap().unwrap().generation;
+    let shared_generation = cache.load_descriptor(shared.scene_id).unwrap().unwrap().generation;
 
     service
         .delete_scene(ProjectDeleteSceneRequest {
@@ -77,6 +80,8 @@ fn deleting_scene_preserves_descendant_shared_by_another_parent() {
         })
         .unwrap();
 
+    assert_eq!(cache.load_descriptor(other_parent.scene_id).unwrap().unwrap().generation, other_generation);
+    assert_eq!(cache.load_descriptor(shared.scene_id).unwrap().unwrap().generation, shared_generation);
     let manifest =
         crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
             .unwrap();

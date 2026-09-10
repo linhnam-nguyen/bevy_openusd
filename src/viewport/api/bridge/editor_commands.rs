@@ -11,6 +11,7 @@ use super::helpers::{
 use super::mutations::apply_runtime_mutations;
 use super::save;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
+use crate::project::{cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue};
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SelectedTargets;
 pub(super) fn apply_editor_command(
@@ -22,6 +23,8 @@ pub(super) fn apply_editor_command(
     semantic_snapshot: Option<&SemanticSnapshot>,
     stage: Option<&LiveStage>,
     save_stage_path: Option<&std::path::Path>,
+    active_project_cache: Option<&ActiveProjectCacheContext>,
+    cache_warm: &ProjectCacheWarmQueue,
     selected_targets: &SelectedTargets,
 ) -> bool {
     let (command, request_id) = match super::bim_commands::try_apply_bim_command(
@@ -333,10 +336,10 @@ pub(super) fn apply_editor_command(
             }
         }
         ViewportCommand::SaveStageAs { filename } => {
-            save::save_stage_as(request_id, outbox, histories, stage, &filename);
+            save::save_stage_as(request_id, outbox, histories, stage, &filename, active_project_cache, cache_warm);
         }
         ViewportCommand::SaveStage => {
-            save::save_current_stage(request_id, outbox, histories, stage, save_stage_path);
+            save::save_current_stage(request_id, outbox, histories, stage, save_stage_path, active_project_cache, cache_warm);
         }
         ViewportCommand::ExportStage => {
             let stage = require_stage!();

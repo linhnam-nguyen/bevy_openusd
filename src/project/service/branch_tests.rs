@@ -81,6 +81,67 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     );
 }
 
+
+#[test]
+fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
+    use crate::project::blob_store::BlobStore;
+
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("project");
+    fs::create_dir_all(&repository).unwrap();
+    run_git(&repository, &["init", "-b", "main"]);
+    run_git(&repository, &["config", "user.name", "USDHub Test"]);
+    run_git(&repository, &["config", "user.email", "test@usdhub.invalid"]);
+    let project_id = ProjectId::new_v4();
+    let extra_scene = usd_project::SceneId::new_v4();
+    let mut manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
+        &repository,
+        &ProjectManifestV1::new(project_id, "Branch Cache", ProjectRoot::Empty, Vec::new(), Vec::new()),
+    ).unwrap();
+    manifest.scenes.push(SceneManifestEntry {
+        id: extra_scene,
+        storage_key: StorageKey::new("extra").unwrap(),
+        display_name: "Extra".to_owned(),
+    });
+    ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    crate::project::scene::authoring::author_scene_atomic(&repository, extra_scene).unwrap();
+    run_git(&repository, &["add", "."]);
+    run_git(&repository, &["commit", "-m", "main with extra scene"]);
+    run_git(&repository, &["checkout", "-b", "reduced"]);
+    let mut reduced = ManifestStore::read_validated(&repository).unwrap().raw().clone();
+    reduced.scenes.retain(|scene| scene.id != extra_scene);
+    ManifestStore::write_manifest_atomic(&repository, &reduced).unwrap();
+    fs::remove_file(crate::project::scene::authoring::scene_path(&repository, extra_scene)).unwrap();
+    run_git(&repository, &["add", "-A"]);
+    run_git(&repository, &["commit", "-m", "remove extra scene"]);
+    run_git(&repository, &["checkout", "main"]);
+
+    let config = crate::project::cache_hydration::default_project_cache_config_hash();
+    let store = crate::project::cache::SceneCacheStore::new(&repository);
+    let root_scene = match manifest.root {
+        ProjectRoot::Scene(scene_id) => scene_id,
+        _ => panic!("test Project has a root Scene"),
+    };
+    let root_generation = store.advance_generation(root_scene, config).unwrap();
+    let generation = store.advance_generation(extra_scene, config).unwrap();
+    let mut descriptor = crate::project::cache_contract::SceneCacheDescriptorV3::invalidated(extra_scene, generation, config);
+    descriptor.state = crate::project::cache_contract::SceneCacheState::Partial;
+    crate::project::cache_warm_runtime::build_and_publish_scene_cache_generation(&repository, &descriptor).unwrap();
+    store.object_store(extra_scene).unwrap().put(b"old-branch-only").unwrap();
+
+    let registry_path = directory.path().join("workspace.json");
+    let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
+    registry.register(project_id, &repository, None).unwrap();
+    let mut service = ProjectApplicationService::open(registry_path).unwrap();
+    service.switch_branch(project_id, "reduced").unwrap();
+
+    assert!(store.load_descriptor(extra_scene).unwrap().is_none());
+    assert_eq!(store.load_descriptor(root_scene).unwrap().unwrap().generation, root_generation);
+    assert!(!crate::project::storage::ProjectStorageLayout::new(&repository).scene_cache_objects_dir(extra_scene).exists());
+    let lookup = fs::read(crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path()).unwrap();
+    assert!(!String::from_utf8_lossy(&lookup).contains(&extra_scene.to_string()));
+}
+
 #[test]
 fn branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data() {
     let directory = tempdir().unwrap();

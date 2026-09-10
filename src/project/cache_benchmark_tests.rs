@@ -53,6 +53,11 @@ fn headless_cache_benchmark_proves_cold_persistent_and_hot_paths() -> Result<()>
         &identity,
     )?;
     let persistent_build_ms = persistent_build_start.elapsed().as_secs_f64() * 1_000.0;
+    let persistent_payload_bytes: u64 = runtime
+        .references()
+        .into_iter()
+        .map(|reference| reference.byte_size)
+        .sum();
     ProjectCacheStore::new(project.path()).publish(&ProjectCacheDescriptor::new(
         identity.clone(),
         ProjectCacheState::Ready,
@@ -141,7 +146,7 @@ fn headless_cache_benchmark_proves_cold_persistent_and_hot_paths() -> Result<()>
     assert!(hot_material.hits > 0, "hot source material cache hits");
 
     eprintln!(
-        "[owner-review-3-c8++] headless-cache benchmark: cold_source_ms={cold_ms:.3}, persistent_build_ms={persistent_build_ms:.3}, persistent_hydration_and_projection_ms={persistent_ms:.3}, hot_session_ms={hot_ms:.3}, cold_mesh_misses={}, cold_material_misses={}, persistent_mesh_seeds={persistent_seed_meshes}, persistent_material_seeds={persistent_seed_materials}, persistent_mesh_misses={}, persistent_material_misses={}, hot_mesh_hits={}, hot_material_hits={}",
+        "[or8-m3-c1] headless-cache baseline: cold_source_ms={cold_ms:.3}, persistent_build_ms={persistent_build_ms:.3}, persistent_hydration_and_projection_ms={persistent_ms:.3}, hot_session_ms={hot_ms:.3}, persistent_payload_bytes={persistent_payload_bytes}, cold_mesh_misses={}, cold_material_misses={}, persistent_mesh_seeds={persistent_seed_meshes}, persistent_material_seeds={persistent_seed_materials}, persistent_mesh_misses={}, persistent_material_misses={}, hot_mesh_hits={}, hot_material_hits={}",
         cold_projection.misses,
         cold_material.misses,
         persistent_projection.misses,

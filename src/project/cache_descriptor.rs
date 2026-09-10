@@ -12,28 +12,11 @@ use uuid::Uuid;
 use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 
 use super::target_content_hash;
+use crate::project::cache_contract::ProjectCacheTarget;
 use crate::project::{catalog::manifest_store::write_bytes_atomic, storage::ProjectStorageLayout};
 
 pub(crate) const PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 2;
 const DESCRIPTORS_DIRECTORY: &str = "descriptors";
-
-/// Stable Project content target used in a cache identity.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) enum ProjectCacheTarget {
-    ProjectRoot,
-    Scene { id: String },
-    Model { id: String },
-}
-
-impl ProjectCacheTarget {
-    pub(crate) fn key(&self) -> String {
-        match self {
-            Self::ProjectRoot => "project".to_owned(),
-            Self::Scene { id } => format!("scene:{}", id),
-            Self::Model { id } => format!("model:{}", id),
-        }
-    }
-}
 
 /// All source and runtime choices that must agree before a descriptor is
 /// reusable.

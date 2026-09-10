@@ -111,6 +111,7 @@ fn delete_definition(
     let previous_manifest = validated.raw().clone();
     let index = read_composition(project_root, &validated)?;
     let plan = build_plan(&index, target);
+    let changed_parent_scene_ids = changed_parents(&index, &plan);
     let mutation_count = plan.removed_placements.len() + plan.scenes.len() + plan.models.len();
     service
         .stage_mutations
@@ -152,8 +153,7 @@ fn delete_definition(
             }),
     );
     let result = (|| {
-        let changed_parents = changed_parents(&index, &plan);
-        for (ordinal, parent_scene_id) in changed_parents.iter().enumerate() {
+        for (ordinal, parent_scene_id) in changed_parent_scene_ids.iter().enumerate() {
             let original =
                 crate::project::scene::authoring::scene_path(project_root, *parent_scene_id);
             let backup = transaction_directory
@@ -165,10 +165,10 @@ fn delete_definition(
             fs::copy(&original, &backup).map_err(|_| delete_error())?;
             backups.push(ParentBackup { original, backup });
         }
-        for parent_scene_id in changed_parents {
+        for parent_scene_id in &changed_parent_scene_ids {
             let original_members = index
                 .members
-                .get(&parent_scene_id)
+                .get(parent_scene_id)
                 .expect("changed parent is indexed");
             let remaining = original_members
                 .iter()
@@ -176,9 +176,9 @@ fn delete_definition(
                 .cloned()
                 .collect::<Vec<_>>();
             crate::project::scene::authoring::replace_scene_members_atomic(
-                &crate::project::scene::authoring::scene_path(project_root, parent_scene_id),
+                &crate::project::scene::authoring::scene_path(project_root, *parent_scene_id),
                 project_root,
-                parent_scene_id,
+                *parent_scene_id,
                 &remaining,
             )
             .map_err(|_| delete_error())?;
@@ -255,27 +255,44 @@ fn delete_definition(
         .iter()
         .map(|(_, placement_id)| *placement_id)
         .collect::<Vec<_>>();
+    let mut cleanup_failed = false;
     for scene_id in &plan.scenes {
-        let _ = service.cache_warm.remove_target_descriptors(
+        if !service.cache_warm.remove_target_descriptors(
             project_root,
             &crate::project::cache::ProjectCacheTarget::Scene {
                 id: scene_id.to_string(),
             },
-        );
+        ) {
+            cleanup_failed = true;
+        }
     }
     for model_id in &plan.models {
-        let _ = service.cache_warm.remove_target_descriptors(
+        if !service.cache_warm.remove_target_descriptors(
             project_root,
             &crate::project::cache::ProjectCacheTarget::Model {
                 id: model_id.to_string(),
             },
-        );
+        ) {
+            cleanup_failed = true;
+        }
     }
-    let _ = service.cache_warm.enqueue_affected(
-        project_root,
-        crate::project::cache::ProjectCacheTarget::ProjectRoot,
-    );
-    let _ = fs::remove_dir_all(&transaction_directory);
+    let mut cache_targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
+    cache_targets.extend(changed_parent_scene_ids.iter().map(|scene_id| {
+        crate::project::cache::ProjectCacheTarget::Scene { id: scene_id.to_string() }
+    }));
+    if service
+        .cache_warm
+        .enqueue_targets_for_mutation(project_root, cache_targets)
+        .is_err()
+    {
+        cleanup_failed = true;
+    }
+    if fs::remove_dir_all(&transaction_directory).is_err() {
+        cleanup_failed = true;
+    }
+    if cleanup_failed {
+        return Err(delete_error());
+    }
     Ok(DeletionResult { placement_ids })
 }
 

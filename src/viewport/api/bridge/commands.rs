@@ -358,6 +358,8 @@ pub(super) fn apply_viewport_commands(
                         .stage_handle
                         .as_ref()
                         .map(|handle| handle.path.as_path()),
+                    state.active_project_cache.as_deref(),
+                    &state.cache_warm,
                     &state.selected_targets,
                 );
             }

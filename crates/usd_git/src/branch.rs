@@ -1,10 +1,10 @@
-use std::{collections::HashSet, fs, path::PathBuf, sync::atomic::AtomicBool};
+use std::{collections::{BTreeMap, BTreeSet, HashSet}, fs, path::{Path, PathBuf}, sync::atomic::AtomicBool};
 
 use gix::bstr::ByteSlice;
 use gix::refs::transaction::{Change, PreviousValue, RefEdit};
 use gix::refs::{FullName, Target};
 
-use crate::{Error, Result};
+use crate::{Error, Result, RevisionId};
 
 use super::Repository;
 
@@ -54,6 +54,56 @@ pub(super) fn working_tree_status(repository: &Repository) -> Result<WorkingTree
             .next()
             .is_some();
     Ok(WorkingTreeStatus { dirty })
+}
+
+
+
+pub(super) fn changed_paths_between(
+    repository: &Repository,
+    from: &RevisionId,
+    to: &RevisionId,
+) -> Result<Vec<PathBuf>> {
+    if from == to {
+        return Ok(Vec::new());
+    }
+    let mut before = BTreeMap::new();
+    let mut after = BTreeMap::new();
+    collect_tree_ids(&repository.commit_for_id(from)?.tree().map_err(Error::git)?, Path::new(""), &mut before)?;
+    collect_tree_ids(&repository.commit_for_id(to)?.tree().map_err(Error::git)?, Path::new(""), &mut after)?;
+    let mut paths = BTreeSet::new();
+    for path in before.keys().chain(after.keys()) {
+        if before.get(path) != after.get(path) {
+            paths.insert(path.clone());
+        }
+    }
+    Ok(paths.into_iter().collect())
+}
+
+fn collect_tree_ids(
+    tree: &gix::Tree<'_>,
+    relative: &Path,
+    out: &mut BTreeMap<PathBuf, gix::ObjectId>,
+) -> Result<()> {
+    for entry in tree.iter() {
+        let entry = entry.map_err(Error::git)?;
+        let filename = std::str::from_utf8(entry.filename().as_ref())
+            .map_err(|_| Error::InvalidPath(relative.join("<non-utf8>")))?;
+        let path = relative.join(filename);
+        match entry.kind() {
+            gix::object::tree::EntryKind::Tree => {
+                collect_tree_ids(&entry.object().map_err(Error::git)?.into_tree(), &path, out)?;
+            }
+            gix::object::tree::EntryKind::Blob
+            | gix::object::tree::EntryKind::BlobExecutable
+            | gix::object::tree::EntryKind::Link => {
+                out.insert(path, entry.object_id());
+            }
+            gix::object::tree::EntryKind::Commit => {
+                out.insert(path, entry.object_id());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn switch_branch(

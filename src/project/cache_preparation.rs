@@ -1,109 +1,124 @@
-use std::{path::Path, time::Duration};
+//! Neutral legacy Project runtime-cache build implementation.
 
-#[cfg(test)]
-use anyhow::Result;
-#[cfg(test)]
-use std::time::Instant;
-use viewport_protocol::RuntimeProfile;
+use std::{collections::HashSet, path::Path};
 
-#[cfg(test)]
-use super::ProjectCacheDescriptor;
-use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheTarget, ProjectCacheWarmQueue};
+use anyhow::{Context, Result, ensure};
+use bevy::{asset::Assets, image::Image, mesh::Mesh, pbr::StandardMaterial, prelude::App};
+use openusd::usd::Stage;
+use usd_model::SnapshotSource;
+use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 
-const CACHE_PREPARATION_POLL: Duration = Duration::from_millis(5);
+use super::cache::ProjectCacheIdentity;
+use crate::project::blob_store::{
+    BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob,
+};
+use crate::project::ghost_cache::prepare_render_blobs;
+use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
+use crate::project::runtime_payload::PreparedRuntimeBlob;
 
-/// Bounded result used by activation preparation before the Bevy world is touched.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ProjectCachePreparation {
-    Ready,
-    Empty,
-    FallbackRequired,
-}
-
-impl ProjectCacheWarmQueue {
-    /// Probe an exact target cache without making it part of activation.
-    ///
-    /// Cache warming is advisory. A miss, partial descriptor, or in-flight
-    /// build immediately selects canonical source projection; the mutation
-    /// paths remain responsible for scheduling background warms.
-    pub(crate) fn prepare_for_activation(
-        &self,
-        project_root: &Path,
-        target: ProjectCacheTarget,
-    ) -> ProjectCachePreparation {
-        let store = super::ProjectCacheStore::new(project_root);
-        let identity = match ProjectCacheIdentity::for_project(
-            project_root,
-            target,
-            RuntimeProfile::NativeMedium,
-            super::super::cache_compatibility::project_runtime_cache_config_hash(
-                usd_semantic::SemanticConfig::default().hash(),
-            ),
-        ) {
-            Ok(identity) => identity,
-            Err(error) => {
-                log::warn!(
-                    "Project cache activation identity could not be established for {}: {error:#}",
-                    project_root.display()
-                );
-                return ProjectCachePreparation::FallbackRequired;
-            }
-        };
-        Self::probe_for_activation(&store, &identity)
-    }
-
-    /// Inspect one already-computed identity. This deliberately performs no
-    /// queue operation and no wait, so the caller can carry the identity into
-    /// the main-world activation without hashing the target again.
-    pub(crate) fn probe_for_activation(
-        store: &super::ProjectCacheStore,
-        identity: &ProjectCacheIdentity,
-    ) -> ProjectCachePreparation {
-        match store.load(identity) {
-            Ok(Some(descriptor)) => match descriptor.state {
-                ProjectCacheState::Ready => ProjectCachePreparation::Ready,
-                ProjectCacheState::Empty => ProjectCachePreparation::Empty,
-                ProjectCacheState::FallbackRequired
-                | ProjectCacheState::Building
-                | ProjectCacheState::Partial => ProjectCachePreparation::FallbackRequired,
-            },
-            Ok(None) => ProjectCachePreparation::FallbackRequired,
-            Err(error) => {
-                log::warn!(
-                    "Project cache activation descriptor is unavailable for {}: {error:#}",
-                    identity.target.key()
-                );
-                ProjectCachePreparation::FallbackRequired
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn wait_for(
-    _queue: &ProjectCacheWarmQueue,
+pub(super) fn build_runtime_cache(
     project_root: &Path,
-    target: &ProjectCacheTarget,
-) -> Result<Option<ProjectCacheDescriptor>> {
-    let identity = ProjectCacheIdentity::for_project(
-        project_root,
-        target.clone(),
-        RuntimeProfile::NativeMedium,
-        super::super::cache_compatibility::project_runtime_cache_config_hash(
-            usd_semantic::SemanticConfig::default().hash(),
-        ),
+    path: &Path,
+    identity: &ProjectCacheIdentity,
+) -> Result<RuntimeManifest> {
+    let stage_path = path
+        .to_str()
+        .context("canonical Project stage path must be valid UTF-8")?;
+    let stage = Stage::open(stage_path).context("open canonical Project stage for cache warm")?;
+    let config = usd_semantic::SemanticConfig::default();
+    let mut snapshot = usd_semantic::SemanticExtractor::new(config).extract(
+        &stage,
+        SnapshotSource::GitCommit {
+            oid: identity.target_content_hash.to_string(),
+        },
     )?;
-    let store = super::ProjectCacheStore::new(project_root);
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if let Some(descriptor) = store.load(&identity)? {
-            if descriptor.state != ProjectCacheState::Building {
-                return Ok(Some(descriptor));
-            }
-        }
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-        std::thread::sleep(CACHE_PREPARATION_POLL);
+    let live = usd_bevy::LiveStage::new(stage);
+    let (prepared_meshes, prepared_runtime_payloads) = {
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::UsdPlugin);
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<Image>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+        app.init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>();
+        let world = app.world_mut();
+        let mut prim_entities = usd_bevy::PrimEntities::default();
+        usd_bevy::project_stage(world, &live, &mut prim_entities);
+        let prepared_meshes = prepare_render_blobs(world, &mut snapshot);
+        let prepared_runtime_payloads = crate::project::runtime_payload::prepare_runtime_payloads_for_stage(
+            world,
+            &live.stage,
+            &snapshot,
+        );
+        (prepared_meshes, prepared_runtime_payloads)
+    };
+    ensure!(
+        prepared_runtime_payloads.complete,
+        "canonical Project stage has incomplete runtime material or texture coverage"
+    );
+
+    let store = FilesystemBlobStore::new(project_root.join(OBJECTS_DIRECTORY))?;
+    let mut persisted = HashSet::new();
+    for prepared in &prepared_meshes {
+        persist_mesh_blob(&store, prepared, &mut persisted)?;
     }
+    for prepared in prepared_runtime_payloads
+        .materials
+        .iter()
+        .chain(prepared_runtime_payloads.textures.iter())
+    {
+        persist_runtime_blob(&store, prepared, &mut persisted)?;
+    }
+    let bundle = build_runtime_delivery_with_payloads(
+        &store,
+        &snapshot,
+        RuntimeProfile::NativeMedium,
+        &prepared_runtime_payloads,
+    )?;
+    for (blob_id, bytes) in &bundle.blobs {
+        if !persisted.insert(blob_id.clone()) {
+            continue;
+        }
+        let stored = store.put(bytes)?;
+        ensure!(
+            stored.0 == *blob_id,
+            "runtime cache digest mismatch for {blob_id}"
+        );
+    }
+    Ok(bundle.manifest)
+}
+
+fn persist_mesh_blob(
+    store: &FilesystemBlobStore,
+    prepared: &PreparedMeshBlob,
+    persisted: &mut HashSet<String>,
+) -> Result<()> {
+    if !persisted.insert(prepared.blob_id.0.clone()) {
+        return Ok(());
+    }
+    let stored = store.put(&prepared.bytes)?;
+    ensure!(
+        stored == prepared.blob_id,
+        "prepared mesh digest {} was stored as {}",
+        prepared.blob_id.0,
+        stored.0
+    );
+    Ok(())
+}
+
+fn persist_runtime_blob(
+    store: &FilesystemBlobStore,
+    prepared: &PreparedRuntimeBlob,
+    persisted: &mut HashSet<String>,
+) -> Result<()> {
+    if !persisted.insert(prepared.blob_id.0.clone()) {
+        return Ok(());
+    }
+    let stored = store.put(&prepared.bytes)?;
+    ensure!(
+        stored == prepared.blob_id,
+        "prepared runtime digest {} was stored as {}",
+        prepared.blob_id.0,
+        stored.0
+    );
+    Ok(())
 }

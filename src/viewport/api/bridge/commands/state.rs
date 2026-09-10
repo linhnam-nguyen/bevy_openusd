@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 
 use super::super::state::{EditorHistories, RuntimeMutationCoordinator};
+use crate::project::{cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
@@ -48,6 +49,8 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub configuration: ParamSet<'w, 's, (Res<'w, StageInfo>, Option<ResMut<'w, RendererCadence>>)>,
     pub stage: Option<NonSend<'w, LiveStage>>,
     pub stage_handle: Option<Res<'w, StageHandle>>,
+    pub active_project_cache: Option<Res<'w, ActiveProjectCacheContext>>,
+    pub cache_warm: Local<'s, ProjectCacheWarmQueue>,
     pub semantic: Option<Res<'w, SemanticSyncState>>,
     pub bim_field_catalogue: Option<Res<'w, BimClassificationFieldCatalogueState>>,
     pub spawned: Res<'w, Spawned>,

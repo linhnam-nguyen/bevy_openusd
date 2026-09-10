@@ -15,8 +15,10 @@ pub mod units;
 
 pub use config::{IdentityConfig, SemanticConfig};
 pub use extractor::{SemanticExtractor, extract_stage};
+pub use geometry::extract_geometry;
 pub use identity::resolve_identity;
-pub use metadata::canonical_value;
+pub use metadata::{canonical_value, extract_metadata};
+pub use transform::extract_transform;
 pub use nvidia::{
     NvidiaRevitClassificationConfig, NvidiaRevitConfig, NvidiaRevitIdentityConfig,
     NvidiaRevitMeasurementMapping, nvidia_revit_property_descriptor,

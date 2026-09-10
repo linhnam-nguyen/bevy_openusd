@@ -39,7 +39,6 @@ fn project_commit_publishes_revision_and_clears_authoritative_worktree() {
         "Create Project baseline\n"
     );
 }
-
 #[test]
 fn scene_commit_targets_scene_scope_and_returns_new_revision() {
     let directory = tempdir().unwrap();
@@ -64,6 +63,13 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
             "Architecture",
         )
         .unwrap();
+    let sibling = service
+        .create_scene(project.id, ProjectWriteTarget::Project(project.id), "MEP")
+        .unwrap();
+    let project_root = parent.join("Scene Commit Project");
+    let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+    let scene_generation = cache.load_descriptor(scene.scene_id).unwrap().unwrap().generation;
+    let sibling_generation = cache.load_descriptor(sibling.scene_id).unwrap().unwrap().generation;
 
     let response = service
         .commit(ProjectCommitRequest {
@@ -74,6 +80,8 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
         .unwrap();
 
     assert_eq!(response.project.id, project.id);
+    assert!(cache.load_descriptor(scene.scene_id).unwrap().unwrap().generation > scene_generation);
+    assert_eq!(cache.load_descriptor(sibling.scene_id).unwrap().unwrap().generation, sibling_generation);
     assert_eq!(response.repository.head.unwrap().id, response.revision.id);
     assert!(!response.repository.dirty);
     assert_eq!(response.revision.id.len(), 40);
@@ -234,4 +242,39 @@ fn commit_rejects_empty_message_without_changing_repository() {
     ));
     let repository = usd_git::Repository::open(parent.join("Message Project")).unwrap();
     assert!(repository.head().unwrap().is_none());
+}
+
+#[test]
+fn project_commit_advances_only_scene_owned_paths_changed_by_the_commit() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let mut service = ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let project = service.create_project(&parent, "Precise Project Commit").unwrap();
+    service.commit(ProjectCommitRequest {
+        project_id: project.id,
+        target: ProjectCommitTarget::Project,
+        message: "baseline".to_owned(),
+    }).unwrap();
+    let changed = service.create_scene(project.id, ProjectWriteTarget::Project(project.id), "Changed").unwrap();
+    let sibling = service.create_scene(project.id, ProjectWriteTarget::Project(project.id), "Sibling").unwrap();
+    service.commit(ProjectCommitRequest {
+        project_id: project.id,
+        target: ProjectCommitTarget::Project,
+        message: "add scenes".to_owned(),
+    }).unwrap();
+    let project_root = parent.join("Precise Project Commit");
+    let store = crate::project::cache::SceneCacheStore::new(&project_root);
+    let changed_generation = store.load_descriptor(changed.scene_id).unwrap().unwrap().generation;
+    let sibling_generation = store.load_descriptor(sibling.scene_id).unwrap().unwrap().generation;
+
+    add_scene_marker(&project_root, changed.scene_id, "OnlyChangedScene");
+    service.commit(ProjectCommitRequest {
+        project_id: project.id,
+        target: ProjectCommitTarget::Project,
+        message: "change one scene".to_owned(),
+    }).unwrap();
+
+    assert!(store.load_descriptor(changed.scene_id).unwrap().unwrap().generation > changed_generation);
+    assert_eq!(store.load_descriptor(sibling.scene_id).unwrap().unwrap().generation, sibling_generation);
 }

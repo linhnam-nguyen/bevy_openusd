@@ -1,262 +1,356 @@
-//! Target-scoped source closure hashing for Project runtime caches.
+//! Neutral persistent Scene-cache contracts and immutable Project lookup.
 
-use std::{
-    collections::HashSet,
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::collections::{HashMap, HashSet};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, ensure};
+use serde::{Deserialize, Serialize};
+use usd_model::{BlobId, Bounds3, HashDigest, TransformSignature};
+use usd_project::{ModelId, SceneId, SceneMemberId, ScenePlacementTransform};
 
-use super::ProjectCacheTarget;
-
-struct TargetHashEntry {
-    relative: String,
-    kind: String,
-    path: Option<PathBuf>,
-    inline: Vec<u8>,
+/// Stable Project content target used in cache identities and source-closure hashing.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum ProjectCacheTarget {
+    ProjectRoot,
+    Scene { id: String },
+    Model { id: String },
 }
 
-/// Hash only the canonical files that compose one Project target.
-///
-/// This is deliberately narrower than [`super::cache::fingerprint_project`].
-/// A Scene cache includes its authored Scene layer and recursively referenced
-/// Scene/Model targets; a Model cache includes its wrapper and materialized
-/// source closure. Unrelated siblings therefore keep their reusable
-/// descriptors.
-pub(crate) fn target_content_hash(
-    project_root: &Path,
-    target: &ProjectCacheTarget,
-) -> Result<usd_model::HashDigest> {
-    let manifest =
-        crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)
-            .context("read Project manifest for target cache identity")?;
-    let root = fs::canonicalize(project_root)
-        .with_context(|| format!("canonicalize Project root {}", project_root.display()))?;
-    let mut files = Vec::new();
-    let mut visited = HashSet::new();
-    collect_target_files(&root, &manifest, target, &mut visited, &mut files)?;
-    files.sort_by(|left, right| {
-        left.relative
-            .cmp(&right.relative)
-            .then_with(|| left.kind.cmp(&right.kind))
-    });
-
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"usdhub-project-target-closure-v1");
-    for entry in files {
-        hasher.update(entry.kind.as_bytes());
-        hasher.update(entry.relative.as_bytes());
-        if let Some(path) = entry.path {
-            let metadata = fs::metadata(&path)
-                .with_context(|| format!("read Project target metadata {}", path.display()))?;
-            hasher.update(&metadata.len().to_le_bytes());
-            let mut file = fs::File::open(&path)
-                .with_context(|| format!("open Project target {}", path.display()))?;
-            let mut buffer = [0_u8; 64 * 1024];
-            loop {
-                let read = file
-                    .read(&mut buffer)
-                    .with_context(|| format!("read Project target {}", path.display()))?;
-                if read == 0 {
-                    break;
-                }
-                hasher.update(&buffer[..read]);
-            }
-        } else {
-            hasher.update(&(entry.inline.len() as u64).to_le_bytes());
-            hasher.update(&entry.inline);
+impl ProjectCacheTarget {
+    pub(crate) fn key(&self) -> String {
+        match self {
+            Self::ProjectRoot => "project".to_owned(),
+            Self::Scene { id } => format!("scene:{}", id),
+            Self::Model { id } => format!("model:{}", id),
         }
     }
-    Ok(usd_model::HashDigest::new(*hasher.finalize().as_bytes()))
 }
 
-fn collect_target_files(
-    project_root: &Path,
-    manifest: &usd_project::ValidatedProjectManifest,
-    target: &ProjectCacheTarget,
-    visited: &mut HashSet<String>,
-    files: &mut Vec<TargetHashEntry>,
-) -> Result<()> {
-    if !visited.insert(target.key()) {
-        return Ok(());
-    }
-    files.push(TargetHashEntry {
-        relative: format!("@target/{}", target.key()),
-        kind: "target".to_owned(),
-        path: None,
-        inline: Vec::new(),
-    });
-    if let Some(name) = target_display_name(manifest, target) {
-        files.push(TargetHashEntry {
-            relative: format!("@name/{}", target.key()),
-            kind: "name".to_owned(),
-            path: None,
-            inline: name.into_bytes(),
-        });
-    }
-    match target {
-        ProjectCacheTarget::ProjectRoot => match &manifest.raw().root {
-            usd_project::ProjectRoot::Empty => {}
-            usd_project::ProjectRoot::Scene(id) => collect_target_files(
-                project_root,
-                manifest,
-                &ProjectCacheTarget::Scene { id: id.to_string() },
-                visited,
-                files,
-            )?,
-            usd_project::ProjectRoot::Model(id) => collect_target_files(
-                project_root,
-                manifest,
-                &ProjectCacheTarget::Model { id: id.to_string() },
-                visited,
-                files,
-            )?,
-        },
-        ProjectCacheTarget::Scene { id } => {
-            let scene = manifest
-                .scenes()
-                .iter()
-                .find(|scene| scene.id.to_string() == *id)
-                .with_context(|| format!("Scene cache target {id} is not in the manifest"))?;
-            let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
-            collect_one_file(project_root, &path, files)?;
-            let imported_directory =
-                crate::project::storage::ProjectStorageLayout::new(project_root)
-                    .readable_scene_import_dir(scene.id);
-            match fs::symlink_metadata(&imported_directory) {
-                Ok(metadata) => {
-                    ensure!(
-                        metadata.is_dir() && !metadata.file_type().is_symlink(),
-                        "Project imported Scene closure must be a regular directory: {}",
-                        imported_directory.display()
-                    );
-                    collect_target_directory(project_root, &imported_directory, files)?;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(error).with_context(|| {
-                        format!(
-                            "read imported Scene closure {}",
-                            imported_directory.display()
-                        )
-                    });
-                }
-            }
-            for member in crate::project::scene::authoring::read_scene_members(&path, scene.id)? {
-                let child = match member.target {
-                    usd_project::SceneMemberTarget::Scene(child) => ProjectCacheTarget::Scene {
-                        id: child.to_string(),
-                    },
-                    usd_project::SceneMemberTarget::Model(model) => ProjectCacheTarget::Model {
-                        id: model.to_string(),
-                    },
-                };
-                collect_target_files(project_root, manifest, &child, visited, files)?;
-            }
-        }
-        ProjectCacheTarget::Model { id } => {
-            let model = manifest
-                .models()
-                .iter()
-                .find(|model| model.id.to_string() == *id)
-                .with_context(|| format!("Model cache target {id} is not in the manifest"))?;
-            let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model.id);
-            let directory = wrapper
-                .parent()
-                .context("canonical Model wrapper has no parent directory")?;
-            collect_target_directory(project_root, directory, files)?;
+pub(crate) const SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 3;
+pub(crate) const SCENE_CACHE_INDEX_SCHEMA_VERSION: u16 = 2;
+pub(crate) const SCENE_SPATIAL_INDEX_SCHEMA_VERSION: u16 = 1;
+pub(crate) const PROJECT_CACHE_INDEX_SCHEMA_VERSION: u16 = 2;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum SceneSourceStamp {
+    GitRevision { revision: String },
+    ManagedGeneration { generation: u64 },
+    ExternalFile {
+        modified_unix_nanos: u64,
+        byte_len: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SceneCacheState {
+    Empty,
+    Building,
+    Partial,
+    Ready,
+    FallbackRequired,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SceneCacheDescriptorV3 {
+    pub(crate) schema_version: u16,
+    pub(crate) scene_id: SceneId,
+    pub(crate) generation: u64,
+    pub(crate) source_stamp: SceneSourceStamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source_content_hash: Option<HashDigest>,
+    pub(crate) config_hash: HashDigest,
+    pub(crate) state: SceneCacheState,
+    pub(crate) prim_count: u64,
+    pub(crate) cacheable_count: u64,
+    pub(crate) estimated_cpu_bytes: u64,
+    pub(crate) estimated_gpu_bytes: u64,
+    pub(crate) index_digest: HashDigest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) spatial_digest: Option<HashDigest>,
+}
+
+impl SceneCacheDescriptorV3 {
+    pub(crate) fn invalidated(scene_id: SceneId, generation: u64, config_hash: HashDigest) -> Self {
+        Self {
+            schema_version: SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION,
+            scene_id,
+            generation,
+            source_stamp: SceneSourceStamp::ManagedGeneration { generation },
+            source_content_hash: None,
+            config_hash,
+            state: SceneCacheState::Building,
+            prim_count: 0,
+            cacheable_count: 0,
+            estimated_cpu_bytes: 0,
+            estimated_gpu_bytes: 0,
+            index_digest: HashDigest::new([0; HashDigest::BYTE_LEN]),
+            spatial_digest: None,
         }
     }
-    Ok(())
-}
 
-fn target_display_name(
-    manifest: &usd_project::ValidatedProjectManifest,
-    target: &ProjectCacheTarget,
-) -> Option<String> {
-    match target {
-        ProjectCacheTarget::ProjectRoot => Some(manifest.raw().name.clone()),
-        ProjectCacheTarget::Scene { id } => manifest
-            .scenes()
-            .iter()
-            .find(|scene| scene.id.to_string() == *id)
-            .map(|scene| scene.display_name.clone()),
-        ProjectCacheTarget::Model { id } => manifest
-            .models()
-            .iter()
-            .find(|model| model.id.to_string() == *id)
-            .map(|model| model.display_name.clone()),
+    pub(crate) fn validate(&self) -> Result<()> {
+        ensure!(
+            self.schema_version == SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION,
+            "unsupported Scene cache descriptor schema version {}",
+            self.schema_version
+        );
+        ensure!(
+            self.cacheable_count <= self.prim_count,
+            "Scene cacheable prim count exceeds total prim count"
+        );
+        Ok(())
     }
 }
 
-fn collect_one_file(
-    project_root: &Path,
-    path: &Path,
-    files: &mut Vec<TargetHashEntry>,
-) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)
-        .with_context(|| format!("read Project target metadata {}", path.display()))?;
-    ensure!(
-        metadata.is_file() && !metadata.file_type().is_symlink(),
-        "Project target must be a regular non-symlink file: {}",
-        path.display()
-    );
-    let relative = path
-        .strip_prefix(project_root)
-        .with_context(|| format!("relativize Project target {}", path.display()))?;
-    files.push(TargetHashEntry {
-        relative: relative.to_string_lossy().replace('\\', "/"),
-        kind: "file".to_owned(),
-        path: Some(path.to_path_buf()),
-        inline: Vec::new(),
-    });
-    Ok(())
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) enum SceneCacheOccurrence {
+    PrimPath(String),
+    Member(SceneMemberId),
 }
 
-fn collect_target_directory(
-    root: &Path,
-    directory: &Path,
-    files: &mut Vec<TargetHashEntry>,
-) -> Result<()> {
-    let mut entries = fs::read_dir(directory)
-        .with_context(|| format!("read Project target directory {}", directory.display()))?
-        .collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let path = entry.path();
-        let relative = path
-            .strip_prefix(root)
-            .with_context(|| format!("relativize Project target path {}", path.display()))?
-            .to_string_lossy()
-            .replace('\\', "/");
-        let metadata = fs::symlink_metadata(&path)
-            .with_context(|| format!("read Project target metadata {}", path.display()))?;
-        if metadata.file_type().is_symlink() {
-            let target = fs::read_link(&path)
-                .with_context(|| format!("read Project target symlink {}", path.display()))?;
-            files.push(TargetHashEntry {
-                relative,
-                kind: "symlink".to_owned(),
-                path: None,
-                inline: target.to_string_lossy().into_owned().into_bytes(),
-            });
-        } else if metadata.is_dir() {
-            collect_target_directory(root, &path, files)?;
-        } else if metadata.is_file() {
-            files.push(TargetHashEntry {
-                relative,
-                kind: "file".to_owned(),
-                path: Some(path),
-                inline: Vec::new(),
-            });
-        } else {
-            bail!(
-                "unsupported Project target filesystem entry {}",
-                path.display()
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct SceneCacheAddress {
+    pub(crate) scene_id: SceneId,
+    pub(crate) occurrence: SceneCacheOccurrence,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) enum CachedTransform {
+    Prim(TransformSignature),
+    Placement(ScenePlacementTransform),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SceneCacheBlobRef {
+    pub(crate) blob_id: BlobId,
+    pub(crate) byte_size: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) enum SceneCacheEntryKind {
+    OwnedPrim { prim_path: String },
+    ChildScene { scene_id: SceneId, member_id: SceneMemberId },
+    ChildModel { model_id: ModelId, member_id: SceneMemberId },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) struct SceneCacheEntry {
+    pub(crate) address: SceneCacheAddress,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) parent: Option<u32>,
+    pub(crate) transform: CachedTransform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) bounds: Option<Bounds3>,
+    pub(crate) cacheable: bool,
+    pub(crate) bim_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) geometry: Option<SceneCacheBlobRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) material: Option<SceneCacheBlobRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) animation: Option<SceneCacheBlobRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) semantic_key: Option<String>,
+    pub(crate) kind: SceneCacheEntryKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) content_hash: Option<HashDigest>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) struct SceneCacheIndex {
+    pub(crate) schema_version: u16,
+    pub(crate) scene_id: SceneId,
+    pub(crate) generation: u64,
+    pub(crate) entries: Vec<SceneCacheEntry>,
+}
+
+impl SceneCacheIndex {
+    pub(crate) fn validate(&self, scene_id: SceneId, generation: u64) -> Result<()> {
+        ensure!(
+            self.schema_version == SCENE_CACHE_INDEX_SCHEMA_VERSION,
+            "unsupported Scene cache index schema version {}",
+            self.schema_version
+        );
+        ensure!(self.scene_id == scene_id, "Scene cache index SceneId mismatch");
+        ensure!(self.generation == generation, "Scene cache index generation mismatch");
+        ensure!(
+            self.entries.windows(2).all(|pair| pair[0].address < pair[1].address),
+            "Scene cache index addresses must be unique and strictly ordered"
+        );
+        for (index, entry) in self.entries.iter().enumerate() {
+            ensure!(
+                entry.address.scene_id == self.scene_id,
+                "Scene cache entry belongs to a different Scene"
             );
+            if let Some(parent) = entry.parent {
+                ensure!(
+                    (parent as usize) < self.entries.len() && parent as usize != index,
+                    "Scene cache parent index is invalid"
+                );
+            }
+            if let Some(geometry) = &entry.geometry {
+                ensure!(entry.cacheable, "Scene cache geometry must be cacheable");
+                let digest = HashDigest::from_hex(&geometry.blob_id.0)
+                    .map_err(|_| anyhow::anyhow!("Scene cache geometry blob id is invalid"))?;
+                ensure!(
+                    entry.content_hash == Some(digest),
+                    "Scene cache content hash must match geometry blob"
+                );
+            }
         }
+        Ok(())
     }
-    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) struct SceneSpatialEntry {
+    pub(crate) address: SceneCacheAddress,
+    pub(crate) bounds: Bounds3,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub(crate) struct SceneSpatialIndex {
+    pub(crate) schema_version: u16,
+    pub(crate) scene_id: SceneId,
+    pub(crate) generation: u64,
+    pub(crate) entries: Vec<SceneSpatialEntry>,
+}
+
+impl SceneSpatialIndex {
+    pub(crate) fn validate(&self, scene_id: SceneId, generation: u64) -> Result<()> {
+        ensure!(
+            self.schema_version == SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+            "unsupported Scene spatial index schema version {}",
+            self.schema_version
+        );
+        ensure!(self.scene_id == scene_id, "Scene spatial index SceneId mismatch");
+        ensure!(self.generation == generation, "Scene spatial index generation mismatch");
+        ensure!(
+            self.entries.windows(2).all(|pair| pair[0].address < pair[1].address),
+            "Scene spatial index addresses must be unique and strictly ordered"
+        );
+        ensure!(
+            self.entries.iter().all(|entry| entry.address.scene_id == self.scene_id),
+            "Scene spatial entry belongs to a different Scene"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) enum CacheObjectRef {
+    OwnedPrim {
+        prim_path: String,
+        geometry: Option<SceneCacheBlobRef>,
+        material: Option<SceneCacheBlobRef>,
+        animation: Option<SceneCacheBlobRef>,
+        semantic_key: Option<String>,
+        content_hash: Option<HashDigest>,
+    },
+    ChildScene { scene_id: SceneId, member_id: SceneMemberId },
+    ChildModel { model_id: ModelId, member_id: SceneMemberId },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct SceneObjectKey {
+    pub(crate) scene_id: SceneId,
+    pub(crate) content_hash: HashDigest,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ProjectCacheLookup {
+    by_address: HashMap<SceneCacheAddress, CacheObjectRef>,
+    by_hash: HashMap<SceneObjectKey, Vec<SceneCacheAddress>>,
+    generations: HashMap<SceneId, u64>,
+}
+
+impl ProjectCacheLookup {
+    pub(crate) fn from_scene_indexes(indexes: &[SceneCacheIndex]) -> Result<Self> {
+        let mut by_address = HashMap::new();
+        let mut by_hash: HashMap<SceneObjectKey, Vec<SceneCacheAddress>> = HashMap::new();
+        let mut generations = HashMap::new();
+        let mut scenes = HashSet::new();
+        for index in indexes {
+            ensure!(
+                scenes.insert(index.scene_id),
+                "Project cache lookup cannot merge multiple generations of one Scene"
+            );
+            index.validate(index.scene_id, index.generation)?;
+            generations.insert(index.scene_id, index.generation);
+            for entry in &index.entries {
+                let object = cache_object_ref(entry);
+                ensure!(
+                    by_address.insert(entry.address.clone(), object).is_none(),
+                    "duplicate Project cache address"
+                );
+                if let Some(content_hash) = entry.content_hash {
+                    by_hash
+                        .entry(SceneObjectKey {
+                            scene_id: index.scene_id,
+                            content_hash,
+                        })
+                        .or_default()
+                        .push(entry.address.clone());
+                }
+            }
+        }
+        for addresses in by_hash.values_mut() {
+            addresses.sort();
+        }
+        Ok(Self {
+            by_address,
+            by_hash,
+            generations,
+        })
+    }
+
+    pub(crate) fn get(&self, address: &SceneCacheAddress) -> Option<&CacheObjectRef> {
+        self.by_address.get(address)
+    }
+
+    pub(crate) fn addresses_for_hash(&self, key: SceneObjectKey) -> &[SceneCacheAddress] {
+        self.by_hash.get(&key).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    pub(crate) fn persistent_rows(&self) -> Vec<(SceneCacheAddress, CacheObjectRef)> {
+        let mut rows = self
+            .by_address
+            .iter()
+            .map(|(address, object)| (address.clone(), object.clone()))
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| left.0.cmp(&right.0));
+        rows
+    }
+
+    pub(crate) fn persistent_generations(&self) -> Vec<(SceneId, u64)> {
+        let mut generations = self
+            .generations
+            .iter()
+            .map(|(scene_id, generation)| (*scene_id, *generation))
+            .collect::<Vec<_>>();
+        generations.sort_by_key(|(scene_id, _)| *scene_id);
+        generations
+    }
+}
+
+fn cache_object_ref(entry: &SceneCacheEntry) -> CacheObjectRef {
+    match &entry.kind {
+        SceneCacheEntryKind::OwnedPrim { prim_path } => CacheObjectRef::OwnedPrim {
+            prim_path: prim_path.clone(),
+            geometry: entry.geometry.clone(),
+            material: entry.material.clone(),
+            animation: entry.animation.clone(),
+            semantic_key: entry.semantic_key.clone(),
+            content_hash: entry.content_hash,
+        },
+        SceneCacheEntryKind::ChildScene { scene_id, member_id } => CacheObjectRef::ChildScene {
+            scene_id: *scene_id,
+            member_id: *member_id,
+        },
+        SceneCacheEntryKind::ChildModel { model_id, member_id } => CacheObjectRef::ChildModel {
+            model_id: *model_id,
+            member_id: *member_id,
+        },
+    }
 }

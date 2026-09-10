@@ -244,18 +244,12 @@ pub(super) fn rename(
         let _ = fs::remove_dir_all(&transaction_directory);
         return Err(error);
     }
-    let cache_target = match &target {
-        ProjectWriteTarget::Project(_) => crate::project::cache::ProjectCacheTarget::ProjectRoot,
-        ProjectWriteTarget::Scene(id) => {
-            crate::project::cache::ProjectCacheTarget::Scene { id: id.to_string() }
-        }
-        ProjectWriteTarget::Model(id) => {
-            crate::project::cache::ProjectCacheTarget::Model { id: id.to_string() }
-        }
-    };
-    let _ = service
-        .cache_warm
-        .enqueue_affected(project_root, cache_target);
+    if matches!(target, ProjectWriteTarget::Project(_)) {
+        let _ = service.cache_warm.enqueue(
+            project_root,
+            crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        );
+    }
     let _ = fs::remove_dir_all(&transaction_directory);
     Ok(ProjectRenameResponse { project, target })
 }

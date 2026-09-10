@@ -57,8 +57,9 @@ pub(super) fn commit(
         });
     }
 
+    let previous_revision = repository.head().map_err(|_| repository_error())?;
     let staging = tempfile::tempdir().map_err(|_| commit_error())?;
-    if let Some(head) = repository.head().map_err(|_| repository_error())? {
+    if let Some(head) = previous_revision.as_ref() {
         repository
             .materialize_revision(head.id(), staging.path())
             .map_err(|_| commit_error())?;
@@ -94,6 +95,28 @@ pub(super) fn commit(
     let revision = repository
         .create_commit(CommitRequest::new(request.message.trim(), staging.path()))
         .map_err(|_| commit_error())?;
+    let changed_paths = match previous_revision
+        .as_ref()
+        .map(|previous| repository.changed_paths_between(previous.id(), &revision))
+        .transpose()
+    {
+        Ok(changed_paths) => changed_paths,
+        Err(error) => {
+            if crate::project::cache_warmer::enqueue_project_targets_fail_closed(
+                &service.cache_warm,
+                &project_root,
+            ) {
+                log::warn!(
+                    "Project commit changed-path classification failed after commit publication; conservatively established all Scene cache generation boundaries: {error}"
+                );
+            } else {
+                log::error!(
+                    "Project commit changed-path classification failed after commit publication and conservative Scene cache invalidation could not be established: {error}"
+                );
+            }
+            return Err(repository_error());
+        }
+    };
     if let Some(snapshot) = runtime_snapshot.as_ref() {
         if let Err(error) = persist_semantic_snapshot(
             &project_root,
@@ -129,7 +152,41 @@ pub(super) fn commit(
         .map_err(|_| commit_error())?;
     project.counts = counts;
     project.repository = repository_summary.clone();
-    let _ = service.cache_warm.enqueue_project_targets(&project_root);
+    let cache_invalidation = match request.target {
+        ProjectCommitTarget::Project => match changed_paths {
+            Some(paths) => {
+                let mut targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
+                targets.extend(
+                    crate::project::cache_warmer::cache_targets_for_changed_paths(
+                        &project_root,
+                        &committed_manifest,
+                        &paths,
+                    ),
+                );
+                service
+                    .cache_warm
+                    .enqueue_targets_for_mutation(&project_root, targets)
+            }
+            None => service
+                .cache_warm
+                .enqueue_project_targets_for_mutation(&project_root),
+        },
+        ProjectCommitTarget::Scene(scene_id) => service.cache_warm.enqueue_targets_for_mutation(
+            &project_root,
+            vec![
+                crate::project::cache::ProjectCacheTarget::Scene {
+                    id: scene_id.to_string(),
+                },
+                crate::project::cache::ProjectCacheTarget::ProjectRoot,
+            ],
+        ),
+    };
+    if let Err(error) = cache_invalidation {
+        log::error!(
+            "Project commit cache invalidation could not establish a safe Scene boundary: {error:#}"
+        );
+        return Err(repository_error());
+    }
     Ok(ProjectCommitResponse {
         project,
         repository: repository_summary,

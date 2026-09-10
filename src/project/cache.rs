@@ -13,16 +13,20 @@ use usd_git::GitRepository;
 
 use super::storage::{CACHE_DIRECTORY, PROJECT_METADATA_DIRECTORY, RECOVERY_DIRECTORY};
 
+pub(crate) use super::cache_contract::{
+    ProjectCacheTarget, SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION, SceneCacheDescriptorV3,
+    SceneCacheState, SceneSourceStamp,
+};
+
 #[path = "cache_descriptor.rs"]
 mod descriptor;
-#[path = "cache_target.rs"]
-mod target;
-
+#[path = "cache_scene_store.rs"]
+mod scene_store;
+pub(crate) use super::source_closure::target_content_hash;
 pub(crate) use descriptor::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
-    ProjectCacheTarget,
 };
-pub(crate) use target::target_content_hash;
+pub(crate) use scene_store::SceneCacheStore;
 
 /// Source identity used by a Project runtime-cache descriptor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

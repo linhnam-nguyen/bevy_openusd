@@ -34,7 +34,6 @@ fn empty_project_is_warmed_without_a_stage_open_failure() -> Result<()> {
     assert_eq!(descriptor.state, ProjectCacheState::Empty);
     Ok(())
 }
-
 #[test]
 fn fresh_project_import_warms_root_scene_and_model_to_ready() -> Result<()> {
     let directory = tempdir()?;
@@ -165,156 +164,33 @@ fn duplicate_warm_requests_are_coalesced() -> Result<()> {
 }
 
 #[test]
-fn affected_scene_targets_include_composed_ancestors_and_root() -> Result<()> {
+fn affected_targets_preserve_scene_and_model_owned_boundaries() -> Result<()> {
     let directory = tempdir()?;
-    usd_git::Repository::init(directory.path())?;
-    let project_id = usd_project::ProjectId::new_v4();
-    let root_scene = usd_project::SceneId::new_v4();
-    let child_scene = usd_project::SceneId::new_v4();
-    let manifest = usd_project::ProjectManifestV1::new(
-        project_id,
-        "Warm Project",
-        usd_project::ProjectRoot::Scene(root_scene),
-        vec![
-            usd_project::SceneManifestEntry {
-                id: root_scene,
-                storage_key: usd_project::StorageKey::new("root").unwrap(),
-                display_name: "Root".to_owned(),
-            },
-            usd_project::SceneManifestEntry {
-                id: child_scene,
-                storage_key: usd_project::StorageKey::new("child").unwrap(),
-                display_name: "Child".to_owned(),
-            },
-        ],
-        Vec::new(),
-    );
-    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    crate::project::scene::authoring::author_scene_atomic_with_members(
-        directory.path(),
-        root_scene,
-        &[usd_project::SceneMember {
-            id: usd_project::SceneMemberId::new_v4(),
-            target: usd_project::SceneMemberTarget::Scene(child_scene),
-            name: None,
-            transform: Default::default(),
-        }],
-    )?;
-    crate::project::scene::authoring::author_scene_atomic_with_members(
-        directory.path(),
-        child_scene,
-        &[],
-    )?;
-
-    let targets = affected_targets(
-        directory.path(),
-        &ProjectCacheTarget::Scene {
-            id: child_scene.to_string(),
-        },
-    )?;
-    let keys = targets
-        .into_iter()
-        .map(|target| target.key())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        keys,
-        vec![
-            format!("scene:{child_scene}"),
-            format!("scene:{root_scene}"),
-            "project".to_owned(),
-        ]
-    );
-    Ok(())
-}
-
-#[test]
-fn affected_model_targets_include_composed_scene_ancestors_but_not_siblings() -> Result<()> {
-    let directory = tempdir()?;
-    usd_git::Repository::init(directory.path())?;
-    let project_id = usd_project::ProjectId::new_v4();
-    let root_scene = usd_project::SceneId::new_v4();
-    let child_scene = usd_project::SceneId::new_v4();
-    let sibling_scene = usd_project::SceneId::new_v4();
+    let scene_id = usd_project::SceneId::new_v4();
     let model_id = usd_project::ModelId::new_v4();
-    let manifest = usd_project::ProjectManifestV1::new(
-        project_id,
-        "Warm Project",
-        usd_project::ProjectRoot::Scene(root_scene),
-        vec![
-            usd_project::SceneManifestEntry {
-                id: root_scene,
-                storage_key: usd_project::StorageKey::new("root").unwrap(),
-                display_name: "Root".to_owned(),
-            },
-            usd_project::SceneManifestEntry {
-                id: child_scene,
-                storage_key: usd_project::StorageKey::new("child").unwrap(),
-                display_name: "Child".to_owned(),
-            },
-            usd_project::SceneManifestEntry {
-                id: sibling_scene,
-                storage_key: usd_project::StorageKey::new("sibling").unwrap(),
-                display_name: "Sibling".to_owned(),
-            },
-        ],
-        vec![usd_project::ModelManifestEntry {
-            id: model_id,
-            source_kind: usd_project::ModelSourceKind::Usd,
-            storage_key: usd_project::StorageKey::new("model").unwrap(),
-            display_name: "Model".to_owned(),
-        }],
-    );
-    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    crate::project::scene::authoring::author_scene_atomic_with_members(
-        directory.path(),
-        root_scene,
-        &[usd_project::SceneMember {
-            id: usd_project::SceneMemberId::new_v4(),
-            target: usd_project::SceneMemberTarget::Scene(child_scene),
-            name: None,
-            transform: Default::default(),
-        }],
-    )?;
-    crate::project::scene::authoring::author_scene_atomic_with_members(
-        directory.path(),
-        child_scene,
-        &[usd_project::SceneMember {
-            id: usd_project::SceneMemberId::new_v4(),
-            target: usd_project::SceneMemberTarget::Model(model_id),
-            name: None,
-            transform: Default::default(),
-        }],
-    )?;
-    crate::project::scene::authoring::author_scene_atomic_with_members(
-        directory.path(),
-        sibling_scene,
-        &[],
-    )?;
 
-    let targets = affected_targets(
+    let scene_keys = affected_targets(
         directory.path(),
-        &ProjectCacheTarget::Model {
-            id: model_id.to_string(),
-        },
-    )?;
-    let keys = targets
-        .into_iter()
-        .map(|target| target.key())
-        .collect::<Vec<_>>();
-    let mut expected = vec![
-        format!("model:{model_id}"),
-        format!("scene:{child_scene}"),
-        format!("scene:{root_scene}"),
-        "project".to_owned(),
-    ];
-    expected[1..3].sort();
-    assert_eq!(keys, expected);
-    assert!(!keys.contains(&format!("scene:{sibling_scene}")));
+        &ProjectCacheTarget::Scene { id: scene_id.to_string() },
+    )?
+    .into_iter()
+    .map(|target| target.key())
+    .collect::<Vec<_>>();
+    assert_eq!(scene_keys, vec![format!("scene:{scene_id}"), "project".to_owned()]);
+
+    let model_keys = affected_targets(
+        directory.path(),
+        &ProjectCacheTarget::Model { id: model_id.to_string() },
+    )?
+    .into_iter()
+    .map(|target| target.key())
+    .collect::<Vec<_>>();
+    assert_eq!(model_keys, vec![format!("model:{model_id}"), "project".to_owned()]);
     Ok(())
 }
 
 #[test]
-fn target_content_warm_keys_change_with_target_content() -> Result<()> {
+fn target_content_identity_changes_with_target_content() -> Result<()> {
     let directory = tempdir()?;
     usd_git::Repository::init(directory.path())?;
     let scene_id = SceneId::new_v4();
@@ -347,6 +223,124 @@ fn target_content_warm_keys_change_with_target_content() -> Result<()> {
         RuntimeProfile::NativeMedium,
         crate::project::cache_hydration::default_project_cache_config_hash(),
     )?;
-    assert_ne!(identity_key(&first), identity_key(&second));
+    assert_ne!(first, second);
+    Ok(())
+}
+
+#[test]
+fn scene_owned_identity_excludes_child_payload_and_presentation_names() -> Result<()> {
+    use usd_project::{SceneManifestEntry, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform, StorageKey};
+
+    let directory = tempdir()?;
+    let parent_scene = SceneId::new_v4();
+    let child_scene = SceneId::new_v4();
+    let member_id = SceneMemberId::new_v4();
+    let mut manifest = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Owned Identity",
+        ProjectRoot::Scene(parent_scene),
+        vec![
+            SceneManifestEntry { id: parent_scene, storage_key: StorageKey::new("Parent")?, display_name: "Parent".to_owned() },
+            SceneManifestEntry { id: child_scene, storage_key: StorageKey::new("Child")?, display_name: "Child".to_owned() },
+        ],
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+    let child_path = crate::project::scene::authoring::author_scene_atomic(directory.path(), child_scene)?;
+    let parent_member = SceneMember {
+        id: member_id,
+        target: SceneMemberTarget::Scene(child_scene),
+        name: Some("Child".to_owned()),
+        transform: ScenePlacementTransform::IDENTITY,
+    };
+    let parent_path = crate::project::scene::authoring::author_scene_atomic_with_members(
+        directory.path(), parent_scene, std::slice::from_ref(&parent_member),
+    )?;
+    let identity = |scene_id: SceneId| ProjectCacheIdentity::for_project(
+        directory.path(),
+        ProjectCacheTarget::Scene { id: scene_id.to_string() },
+        RuntimeProfile::NativeMedium,
+        crate::project::cache_hydration::default_project_cache_config_hash(),
+    );
+    let parent_before = identity(parent_scene)?;
+    let child_before = identity(child_scene)?;
+
+    let stage = openusd::usd::Stage::open(child_path.to_string_lossy().as_ref())?;
+    stage.define_prim("/SceneRoot/Changed")?.set_type_name("Xform")?;
+    let temporary = child_path.with_extension("changed.usda");
+    stage.root_layer().export(temporary.to_string_lossy().as_ref())?;
+    fs::rename(temporary, &child_path)?;
+    let child_after_content = identity(child_scene)?;
+    assert_ne!(child_before, child_after_content);
+    assert_eq!(parent_before, identity(parent_scene)?);
+
+    crate::project::scene::authoring::update_display_name_atomic(&child_path, "/SceneRoot", "Renamed")?;
+    crate::project::scene::authoring::update_member_display_name_atomic(
+        &parent_path, parent_scene, member_id, "Renamed",
+    )?;
+    manifest.scenes.iter_mut().find(|scene| scene.id == child_scene).unwrap().display_name = "Renamed".to_owned();
+    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+    assert_eq!(child_after_content, identity(child_scene)?);
+    assert_eq!(parent_before, identity(parent_scene)?);
+
+    let placed_member = SceneMember {
+        transform: ScenePlacementTransform::from_translation([1.0, 0.0, 0.0]),
+        ..parent_member
+    };
+    crate::project::scene::authoring::author_scene_atomic_with_members(
+        directory.path(), parent_scene, &[placed_member],
+    )?;
+    assert_ne!(parent_before, identity(parent_scene)?);
+    assert_eq!(child_after_content, identity(child_scene)?);
+    Ok(())
+}
+
+
+#[test]
+fn scene_owned_identity_does_not_import_child_model_payload() -> Result<()> {
+    use usd_project::{ModelId, ModelManifestEntry, ModelSourceKind, SceneManifestEntry, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform, StorageKey};
+
+    let directory = tempdir()?;
+    let scene_id = SceneId::new_v4();
+    let model_id = ModelId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Model Child Identity",
+        ProjectRoot::Scene(scene_id),
+        vec![SceneManifestEntry { id: scene_id, storage_key: StorageKey::new("Parent")?, display_name: "Parent".to_owned() }],
+        vec![ModelManifestEntry { id: model_id, source_kind: ModelSourceKind::Usd, storage_key: StorageKey::new("ChildModel")?, display_name: "Child Model".to_owned() }],
+    );
+    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+    let wrapper = crate::project::model_wrapper::model_wrapper_path(directory.path(), model_id);
+    fs::create_dir_all(wrapper.parent().unwrap())?;
+    fs::write(&wrapper, "#usda 1.0\n(defaultPrim = \"ModelRoot\")\ndef Xform \"ModelRoot\" {}\n")?;
+    crate::project::scene::authoring::author_scene_atomic_with_members(
+        directory.path(),
+        scene_id,
+        &[SceneMember {
+            id: SceneMemberId::new_v4(),
+            target: SceneMemberTarget::Model(model_id),
+            name: Some("Child Model".to_owned()),
+            transform: ScenePlacementTransform::IDENTITY,
+        }],
+    )?;
+    let identity = |target| ProjectCacheIdentity::for_project(
+        directory.path(), target, RuntimeProfile::NativeMedium,
+        crate::project::cache_hydration::default_project_cache_config_hash(),
+    );
+    let parent_before = identity(ProjectCacheTarget::Scene { id: scene_id.to_string() })?;
+    let model_before = identity(ProjectCacheTarget::Model { id: model_id.to_string() })?;
+    let stage = openusd::usd::Stage::open(wrapper.to_string_lossy().as_ref())?;
+    stage.define_prim("/ModelRoot/Changed")?.set_type_name("Xform")?;
+    let temporary = wrapper.with_extension("changed.usda");
+    stage.root_layer().export(temporary.to_string_lossy().as_ref())?;
+    fs::rename(temporary, &wrapper)?;
+    let model_after_content = identity(ProjectCacheTarget::Model { id: model_id.to_string() })?;
+    assert_eq!(parent_before, identity(ProjectCacheTarget::Scene { id: scene_id.to_string() })?);
+    assert_ne!(model_before, model_after_content);
+
+    crate::project::scene::authoring::update_display_name_atomic(&wrapper, "/ModelRoot", "Renamed Model")?;
+    assert_eq!(parent_before, identity(ProjectCacheTarget::Scene { id: scene_id.to_string() })?);
+    assert_eq!(model_after_content, identity(ProjectCacheTarget::Model { id: model_id.to_string() })?);
     Ok(())
 }

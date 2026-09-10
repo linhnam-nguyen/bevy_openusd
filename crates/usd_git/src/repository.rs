@@ -43,6 +43,9 @@ pub trait GitRepository {
     /// The prefix uses Git's repository-relative slash-separated path format.
     fn has_tracked_path_prefix(&self, prefix: &str) -> Result<bool>;
 
+    /// Return tracked paths whose Git object identity differs between two commits.
+    fn changed_paths_between(&self, from: &RevisionId, to: &RevisionId) -> Result<Vec<PathBuf>>;
+
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo>;
 
     /// Return at most `limit` commits reachable from `id`, newest first.
@@ -204,6 +207,10 @@ impl GitRepository for Repository {
             })
             .next()
             .is_some())
+    }
+
+    fn changed_paths_between(&self, from: &RevisionId, to: &RevisionId) -> Result<Vec<PathBuf>> {
+        branch::changed_paths_between(self, from, to)
     }
 
     fn read_commit(&self, id: &RevisionId) -> Result<CommitInfo> {

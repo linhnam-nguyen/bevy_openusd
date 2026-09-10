@@ -174,12 +174,19 @@ fn publish_model_inner(
             },
         )?;
     }
-    let _ = service.cache_warm.enqueue_affected(
-        project_root,
-        crate::project::cache::ProjectCacheTarget::Model {
-            id: published.id.to_string(),
-        },
-    );
+    let mut cache_targets = vec![
+        crate::project::cache::ProjectCacheTarget::Model { id: published.id.to_string() },
+        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+    ];
+    if let Some(parent_scene_id) = parent_scene_id {
+        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene { id: parent_scene_id.to_string() });
+    }
+    let _ = service
+        .cache_warm
+        .enqueue_targets_for_mutation(project_root, cache_targets)
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure,
+        })?;
 
     Ok(ProjectModelWriteResponse {
         project,
