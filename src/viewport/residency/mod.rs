@@ -8,6 +8,7 @@ mod projection;
 mod repair;
 mod repair_phase;
 mod repair_persistence;
+mod selection;
 mod spatial;
 mod worker;
 
@@ -28,6 +29,7 @@ use repair::{
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
 };
 use repair_persistence::TargetedRepairPersistenceWorker;
+use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
 use worker::CachedResidencyWorker;
 
 pub(crate) use authority::{
@@ -45,6 +47,7 @@ impl Plugin for ResidencyPlugin {
             .init_resource::<TargetedRepairQueue>()
             .init_resource::<TargetedRepairPersistenceWorker>()
             .init_resource::<CachedResidencyWorker>()
+            .init_resource::<SelectionResidencyState>()
             .insert_resource(RenderAssetBytesPerFrame::new(
                 DEFAULT_UPLOAD_BYTES_PER_FRAME,
             ))
@@ -52,6 +55,7 @@ impl Plugin for ResidencyPlugin {
                 Update,
                 (
                     sync_scene_cache_candidates,
+                    sync_selected_residency,
                     update_camera_residency,
                     drain_cached_residency_completions,
                     drain_targeted_repair_persistence_completions,
@@ -177,6 +181,7 @@ fn release_retired_render_assets(
 }
 
 pub(crate) fn retire_scene_cache_resources(world: &mut World) {
+    release_selected_residency(world);
     let released = world
         .get_resource_mut::<ResidencyAuthority>()
         .map(|mut authority| {

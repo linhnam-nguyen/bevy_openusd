@@ -5,6 +5,18 @@ use super::super::spatial::{CameraCandidateIndex, SceneSpatialPayload};
 use super::{ActiveScene, DEFAULT_LOADER_CAPACITY, ResidencyAuthority};
 
 impl ResidencyAuthority {
+    pub(crate) fn register_scene_generation(&mut self, scene_id: SceneId, generation: u64) {
+        self.scene_generations.insert(scene_id, generation);
+    }
+
+    pub(crate) fn generation_for(&self, key: &super::ScenePayloadKey) -> Option<u64> {
+        self.records.get(key).map(|record| record.generation)
+    }
+
+    pub(crate) fn is_terminal_failure(&self, key: super::ScenePayloadKey, generation: u64) -> bool {
+        self.terminal_failures.contains(&(key, generation))
+    }
+
     pub(crate) fn retire(&mut self) {
         self.retire_all_residency();
     }
@@ -81,20 +93,8 @@ mod tests {
         });
         let mut assets = Assets::<Mesh>::default();
         authority.install_scene(scene, 91, Vec::new());
-        assert!(authority.request_reason(
-            first,
-            ResidencyReason::CameraNear,
-            91,
-            4,
-            4,
-        ));
-        assert!(authority.request_reason(
-            second,
-            ResidencyReason::CameraNear,
-            91,
-            1,
-            1,
-        ));
+        assert!(authority.request_reason(first, ResidencyReason::CameraNear, 91, 4, 4,));
+        assert!(authority.request_reason(second, ResidencyReason::CameraNear, 91, 1, 1,));
         let first_job = authority.begin_next_load().expect("first ready job");
         let second_job = authority.begin_next_load().expect("second ready job");
         assert!(authority.complete_cpu(first_job.key, 91, 4, 4));
@@ -130,16 +130,13 @@ mod tests {
         let mut assets = Assets::<Mesh>::default();
         authority.install_scene(scene, 92, Vec::new());
 
-        assert!(authority.request_reason(
-            occupied,
-            ResidencyReason::CameraNear,
-            92,
-            8,
-            8,
-        ));
+        assert!(authority.request_reason(occupied, ResidencyReason::CameraNear, 92, 8, 8,));
         let occupied_job = authority.begin_next_load().expect("occupied job");
         assert!(authority.complete_cpu(occupied_job.key, 92, 8, 8));
-        assert_eq!(authority.pump_uploads(&mut assets, Some(16)), vec![occupied]);
+        assert_eq!(
+            authority.pump_uploads(&mut assets, Some(16)),
+            vec![occupied]
+        );
         assert_eq!(authority.accounted_bytes(), (8, 8));
 
         assert!(authority.request_reason(larger, ResidencyReason::CameraNear, 92, 4, 4));
@@ -150,7 +147,10 @@ mod tests {
         assert!(authority.complete_cpu(smaller_job.key, 92, 1, 1));
 
         assert_eq!(authority.pump_uploads(&mut assets, Some(16)), vec![smaller]);
-        assert_eq!(authority.state(&larger), Some(PayloadResidencyState::CpuReady));
+        assert_eq!(
+            authority.state(&larger),
+            Some(PayloadResidencyState::CpuReady)
+        );
         assert_eq!(authority.ready_for_upload.front(), Some(&larger));
         assert_eq!(authority.ready_for_upload.len(), 1);
         assert_eq!(authority.ready_upload_membership.len(), 1);
@@ -180,8 +180,14 @@ mod tests {
             .begin_next_load()
             .expect("later job fits remaining CPU capacity");
         assert_eq!(later_job.key, later);
-        assert_eq!(authority.state(&active), Some(PayloadResidencyState::CpuReady));
-        assert_eq!(authority.state(&blocked), Some(PayloadResidencyState::Queued));
+        assert_eq!(
+            authority.state(&active),
+            Some(PayloadResidencyState::CpuReady)
+        );
+        assert_eq!(
+            authority.state(&blocked),
+            Some(PayloadResidencyState::Queued)
+        );
         assert_eq!(authority.loader.peek().map(|job| job.key), Some(blocked));
         assert_eq!(authority.queue_len(), 1);
         assert_eq!(authority.cpu_used, 6);
