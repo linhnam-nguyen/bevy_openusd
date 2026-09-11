@@ -163,18 +163,16 @@ impl SceneCacheStore {
 
     pub(crate) fn publish_generation_if_current(
         &self,
+        expected: &SceneCacheDescriptorV3,
         descriptor: &SceneCacheDescriptorV3,
         index: &SceneCacheIndex,
         spatial: &SceneSpatialIndex,
     ) -> Result<Option<SceneCacheDescriptorV3>> {
-        let scene_lock = scene_generation_lock(self.layout.scene_cache_dir(descriptor.scene_id));
+        let scene_lock = scene_generation_lock(self.layout.scene_cache_dir(expected.scene_id));
         let _guard = scene_lock
             .lock()
             .expect("Scene generation lock is not poisoned");
-        if !self
-            .load_descriptor(descriptor.scene_id)?
-            .is_some_and(|current| current.generation == descriptor.generation)
-        {
+        if self.load_descriptor(expected.scene_id)?.as_ref() != Some(expected) {
             return Ok(None);
         }
         self.publish_generation(descriptor, index, spatial)
@@ -338,54 +336,5 @@ fn remove_file_if_present(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::project::cache_contract::{
-        SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    };
-    use tempfile::tempdir;
-
-    #[test]
-    fn partial_scene_activation_reads_descriptor_and_index_before_stage_open() {
-        let directory = tempdir().expect("Scene cache test directory");
-        let scene_id = SceneId::new_v4();
-        let config_hash = HashDigest::new([1; HashDigest::BYTE_LEN]);
-        let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, 7, config_hash);
-        descriptor.state = SceneCacheState::Partial;
-        descriptor.source_content_hash = Some(HashDigest::new([2; HashDigest::BYTE_LEN]));
-        let index = SceneCacheIndex {
-            schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION,
-            scene_id,
-            generation: 7,
-            entries: Vec::new(),
-        };
-        let spatial = SceneSpatialIndex {
-            schema_version: SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-            scene_id,
-            generation: 7,
-            entries: Vec::new(),
-        };
-        let store = SceneCacheStore::new(directory.path());
-        let published = store
-            .publish_generation(&descriptor, &index, &spatial)
-            .expect("publish Partial Scene cache");
-
-        let activation = store
-            .load_activation(scene_id)
-            .expect("load Scene activation metadata")
-            .expect("Partial Scene cache is usable");
-        assert_eq!(activation.descriptor, published);
-        assert_eq!(activation.index, index);
-
-        descriptor.state = SceneCacheState::Building;
-        store
-            .publish_descriptor(&descriptor)
-            .expect("publish Building descriptor");
-        assert!(
-            store
-                .load_activation(scene_id)
-                .expect("probe Building Scene cache")
-                .is_none()
-        );
-    }
-}
+#[path = "cache_scene_store_tests.rs"]
+mod tests;

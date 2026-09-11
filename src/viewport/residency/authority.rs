@@ -13,6 +13,7 @@ use crate::project::cache_contract::SceneCacheEntry;
 use super::camera::CameraSample;
 use super::loader::{BoundedLoader, LoadJob};
 use super::lru::WarmLru;
+use super::repair_phase::RepairPhase;
 use super::spatial::{CameraCandidateIndex, SceneSpatialPayload};
 
 #[path = "authority_camera.rs"]
@@ -39,6 +40,7 @@ pub(crate) enum PayloadResidencyState {
     Unloaded,
     Queued,
     Loading,
+    RepairWaiting,
     CpuReady,
     GpuResident,
     Warm,
@@ -91,6 +93,7 @@ pub(crate) struct ResidencyAuthority {
     scene_generations: HashMap<SceneId, u64>,
     records: HashMap<ScenePayloadKey, PayloadRecord>,
     loader: BoundedLoader<ScenePayloadKey>,
+    repair_phases: HashMap<(ScenePayloadKey, u64), RepairPhase>,
     terminal_failures: HashSet<(ScenePayloadKey, u64)>,
     ready_for_upload: VecDeque<ScenePayloadKey>,
     ready_upload_membership: HashSet<ScenePayloadKey>,
@@ -118,6 +121,7 @@ impl ResidencyAuthority {
             scene_generations: HashMap::new(),
             records: HashMap::new(),
             loader: BoundedLoader::new(DEFAULT_LOADER_CAPACITY),
+            repair_phases: HashMap::new(),
             terminal_failures: HashSet::new(),
             ready_for_upload: VecDeque::new(),
             ready_upload_membership: HashSet::new(),
@@ -132,7 +136,6 @@ impl ResidencyAuthority {
             released_render_assets: Vec::new(),
         }
     }
-
     pub(crate) fn budgets(&self) -> ResidencyBudgets {
         self.budgets
     }
@@ -176,6 +179,7 @@ impl ResidencyAuthority {
             PayloadResidencyState::Unloaded
                 | PayloadResidencyState::Queued
                 | PayloadResidencyState::Loading
+                | PayloadResidencyState::RepairWaiting
         ) {
             record.cpu_bytes = cpu_bytes;
             record.gpu_bytes = gpu_bytes;
@@ -212,7 +216,6 @@ impl ResidencyAuthority {
         }
         true
     }
-
     pub(crate) fn remove_reason(
         &mut self,
         key: ScenePayloadKey,
@@ -237,6 +240,7 @@ impl ResidencyAuthority {
         if has_reasons {
             return true;
         }
+        self.repair_phases.remove(&(key, generation));
         if was_cpu_ready {
             self.remove_ready_upload(&key);
         }
@@ -255,38 +259,34 @@ impl ResidencyAuthority {
                 self.loader.cancel(&key);
                 record.state = PayloadResidencyState::Unloaded;
             }
+            PayloadResidencyState::RepairWaiting => {
+                record.state = PayloadResidencyState::Unloaded;
+            }
             _ => {}
         }
         self.evict_to_budget();
         true
     }
-
     pub(crate) fn state(&self, key: &ScenePayloadKey) -> Option<PayloadResidencyState> {
         self.records.get(key).map(|record| record.state)
     }
-
     pub(crate) fn reasons(&self, key: &ScenePayloadKey) -> Option<&BTreeSet<ResidencyReason>> {
         self.records.get(key).map(|record| &record.reasons)
     }
-
     pub(crate) fn accounted_bytes(&self) -> (u64, u64) {
         (self.cpu_used, self.gpu_used)
     }
-
     pub(crate) fn queue_len(&self) -> usize {
         self.loader.len()
     }
-
     pub(crate) fn warm_len(&self) -> usize {
         self.warm.len()
     }
-
     pub(crate) fn render_asset_id(&self, key: &ScenePayloadKey) -> Option<AssetId<Mesh>> {
         self.records
             .get(key)
             .and_then(|record| record.render_handle.as_ref().map(|handle| handle.id()))
     }
-
     pub(crate) fn render_handle(&self, key: &ScenePayloadKey) -> Option<Handle<Mesh>> {
         self.records
             .get(key)
@@ -296,7 +296,6 @@ impl ResidencyAuthority {
     pub(crate) fn take_released_render_assets(&mut self) -> Vec<AssetId<Mesh>> {
         std::mem::take(&mut self.released_render_assets)
     }
-
     fn enqueue_ready_upload(&mut self, key: ScenePayloadKey) {
         if self.ready_upload_membership.insert(key) {
             self.ready_for_upload.push_back(key);

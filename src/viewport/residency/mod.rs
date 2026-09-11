@@ -5,6 +5,9 @@ mod camera;
 mod loader;
 mod lru;
 mod projection;
+mod repair;
+mod repair_phase;
+mod repair_persistence;
 mod spatial;
 mod worker;
 
@@ -18,7 +21,13 @@ use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::viewport::scene::SectionBoxState;
 use crate::viewport::session::SceneCachePresentation;
 
+use loader::LoadJob;
 use projection::SceneResidencyProjection;
+use repair::{
+    TargetedRepairQueue, drain_cached_residency_completions,
+    drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
+};
+use repair_persistence::TargetedRepairPersistenceWorker;
 use worker::CachedResidencyWorker;
 
 pub(crate) use authority::{
@@ -33,6 +42,8 @@ impl Plugin for ResidencyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ResidencyAuthority>()
             .init_resource::<SceneResidencyProjection>()
+            .init_resource::<TargetedRepairQueue>()
+            .init_resource::<TargetedRepairPersistenceWorker>()
             .init_resource::<CachedResidencyWorker>()
             .insert_resource(RenderAssetBytesPerFrame::new(
                 DEFAULT_UPLOAD_BYTES_PER_FRAME,
@@ -43,6 +54,8 @@ impl Plugin for ResidencyPlugin {
                     sync_scene_cache_candidates,
                     update_camera_residency,
                     drain_cached_residency_completions,
+                    drain_targeted_repair_persistence_completions,
+                    process_targeted_residency_repairs,
                     dispatch_cached_residency_loads,
                     pump_residency_uploads,
                 )
@@ -56,10 +69,12 @@ fn sync_scene_cache_candidates(
     mut authority: ResMut<ResidencyAuthority>,
     mut assets: ResMut<Assets<Mesh>>,
     mut projection: ResMut<SceneResidencyProjection>,
+    mut repairs: ResMut<TargetedRepairQueue>,
     mut commands: Commands,
 ) {
     let Some(presentation) = presentation else {
         authority.retire();
+        repairs.clear();
         projection.retire(&mut commands);
         release_retired_render_assets(&mut authority, &mut assets, &mut projection, &mut commands);
         return;
@@ -67,6 +82,7 @@ fn sync_scene_cache_candidates(
     if !presentation.is_changed() {
         return;
     }
+    repairs.clear();
     let payloads = spatial::scene_payloads(&presentation.entries);
     authority.install_scene(
         presentation.scene_id,
@@ -111,22 +127,6 @@ fn update_camera_residency(
         frustum: projection.compute_frustum(global_transform),
         section_box,
     });
-}
-
-fn drain_cached_residency_completions(
-    worker: Res<CachedResidencyWorker>,
-    mut authority: ResMut<ResidencyAuthority>,
-) {
-    for completion in worker.drain_completions() {
-        match completion.result {
-            Ok(Some(mesh)) => {
-                let _ = authority.complete_cached_cpu(completion.job, mesh);
-            }
-            Ok(None) | Err(_) => {
-                let _ = authority.suppress_failed_load(&completion.job);
-            }
-        }
-    }
 }
 
 fn dispatch_cached_residency_loads(
@@ -187,6 +187,9 @@ pub(crate) fn retire_scene_cache_resources(world: &mut World) {
     if let Some(mut projection) = world.remove_resource::<SceneResidencyProjection>() {
         projection.retire_world(world);
         world.insert_resource(projection);
+    }
+    if let Some(mut repairs) = world.get_resource_mut::<TargetedRepairQueue>() {
+        repairs.clear();
     }
     if let Some(mut assets) = world.get_resource_mut::<Assets<Mesh>>() {
         for asset_id in released {

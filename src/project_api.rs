@@ -21,6 +21,8 @@ pub(crate) mod cache;
 pub(crate) mod cache_contract;
 #[path = "project/cache_compatibility.rs"]
 pub(crate) mod cache_compatibility;
+#[path = "project/cache_demand_projection.rs"]
+pub(crate) mod cache_demand_projection;
 #[path = "project/cache_hydration.rs"]
 pub(crate) mod cache_hydration;
 #[path = "project/cache_preparation.rs"]

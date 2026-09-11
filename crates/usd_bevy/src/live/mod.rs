@@ -31,7 +31,10 @@ pub use path::{
 pub use performance::PerformanceCounters;
 pub use progressive_state::{ProgressiveProjectionState, ProjectionBudget, ProjectionReadiness};
 pub use project_readiness::{ProjectOpenReadiness, ProjectOpenReadinessState};
-pub use projection::{ProjectionStats, collect_stage_subtree_paths, project_stage};
+pub use projection::{
+    ProjectionStats, TargetedRenderPayload, collect_stage_subtree_paths,
+    extract_render_payloads_for_paths, project_paths, project_stage,
+};
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};

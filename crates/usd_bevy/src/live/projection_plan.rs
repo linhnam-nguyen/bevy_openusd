@@ -1,9 +1,9 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use openusd::usd::Stage;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
-use super::path::validate_prim_path;
+use super::path::{parent_path, validate_prim_path};
 
 /// One deterministic unit of initial projection work.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -168,6 +168,62 @@ impl ProjectionPlan {
                 pending.push_back((path, index));
             }
         }
+        Ok(Self { entries })
+    }
+
+    /// Build a parent-before-child plan for exact requested prim paths.
+    ///
+    /// Unlike [`Self::from_stage`] and [`Self::from_subtree`], this never
+    /// traverses children. Namespace ancestors are included only so the
+    /// requested prim can be projected into the existing ECS hierarchy.
+    pub fn from_paths(stage: &Stage, requested_paths: &[&str]) -> Result<Self> {
+        let mut requested = BTreeSet::new();
+        for raw_path in requested_paths {
+            let path = validate_prim_path(raw_path)?;
+            ensure!(path != "/", "targeted projection cannot request stage root");
+            let prim = stage.prim(openusd::sdf::path(&path)?);
+            ensure!(prim.is_active()?, "targeted prim {path} is inactive");
+            ensure!(prim.is_defined()?, "targeted prim {path} is undefined");
+            ensure!(!prim.is_abstract()?, "targeted prim {path} is abstract");
+            requested.insert(path);
+        }
+
+        let mut paths = BTreeSet::from(["/".to_string()]);
+        for path in requested {
+            let mut current = path.as_str();
+            loop {
+                paths.insert(current.to_string());
+                if current == "/" {
+                    break;
+                }
+                current = parent_path(current);
+            }
+        }
+
+        let mut ordered = paths.into_iter().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| {
+            let left_depth = left
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .count();
+            let right_depth = right
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .count();
+            left_depth.cmp(&right_depth).then_with(|| left.cmp(right))
+        });
+        let indexes = ordered
+            .iter()
+            .enumerate()
+            .map(|(index, path)| (path.clone(), index))
+            .collect::<HashMap<_, _>>();
+        let entries = ordered
+            .into_iter()
+            .map(|path| ProjectionPlanEntry {
+                parent: (path != "/").then(|| indexes[parent_path(&path)]),
+                path,
+            })
+            .collect();
         Ok(Self { entries })
     }
 

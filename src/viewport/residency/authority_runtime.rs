@@ -33,6 +33,7 @@ impl ResidencyAuthority {
             .collect::<Vec<_>>();
         self.released_render_assets.extend(released);
         self.loader = BoundedLoader::new(DEFAULT_LOADER_CAPACITY);
+        self.repair_phases.clear();
         self.terminal_failures.clear();
         self.ready_for_upload.clear();
         self.ready_upload_membership.clear();

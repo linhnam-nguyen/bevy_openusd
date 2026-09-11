@@ -166,7 +166,8 @@ fn build_and_publish_scene_cache_generation_inner(
         .filter_map(|entry| entry.geometry.as_ref())
         .map(|blob| blob.byte_size)
         .sum();
-    let mut descriptor = descriptor.clone();
+    let expected_descriptor = descriptor.clone();
+    let mut descriptor = expected_descriptor.clone();
     descriptor.prim_count = index.entries.len() as u64;
     descriptor.cacheable_count = index.entries.iter().filter(|entry| entry.cacheable).count() as u64;
     descriptor.estimated_cpu_bytes = payload_bytes;
@@ -180,7 +181,10 @@ fn build_and_publish_scene_cache_generation_inner(
     }
     let store = SceneCacheStore::new(project_root);
     if managed {
-        if store.publish_generation_if_current(&descriptor, &index, &spatial)?.is_none() {
+        if store
+            .publish_generation_if_current(&expected_descriptor, &descriptor, &index, &spatial)?
+            .is_none()
+        {
             return Ok(None);
         }
     } else {
@@ -202,6 +206,9 @@ pub(crate) fn publish_project_cache_lookup(
     let bytes = serde_json::to_vec(&payload).context("encode Project cache index")?;
     let layout = crate::project::storage::ProjectStorageLayout::new(project_root);
     let path = layout.project_cache_index_path();
+    if fs::read(&path).is_ok_and(|current| current == bytes) {
+        return Ok(bytes);
+    }
     let parent = path.parent().context("Project cache index has no parent directory")?;
     fs::create_dir_all(parent).context("create Project cache directory")?;
     let temporary = parent.join(format!(".project-index.{}.tmp", Uuid::new_v4()));
@@ -268,7 +275,7 @@ fn member_entries(
         .collect()
 }
 
-fn assign_parent_indexes(entries: &mut [SceneCacheEntry]) -> Result<()> {
+pub(crate) fn assign_parent_indexes(entries: &mut [SceneCacheEntry]) -> Result<()> {
     let path_indexes = entries
         .iter()
         .enumerate()
@@ -287,7 +294,7 @@ fn assign_parent_indexes(entries: &mut [SceneCacheEntry]) -> Result<()> {
     Ok(())
 }
 
-fn build_spatial_index(index: &SceneCacheIndex) -> SceneSpatialIndex {
+pub(crate) fn build_spatial_index(index: &SceneCacheIndex) -> SceneSpatialIndex {
     SceneSpatialIndex {
         schema_version: SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
         scene_id: index.scene_id,

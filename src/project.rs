@@ -5,6 +5,7 @@ pub(crate) mod cache;
 #[path = "project/cache_target.rs"]
 pub(crate) mod cache_contract;
 pub(crate) mod cache_compatibility;
+pub(crate) mod cache_demand_projection;
 pub(crate) mod cache_hydration;
 pub(crate) mod cache_preparation;
 pub(crate) mod cache_warm_runtime;

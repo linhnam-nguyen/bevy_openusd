@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{Result, ensure};
+use bevy::mesh::Mesh;
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use super::animation::{AnimatedPrims, prim_is_animated};
 use super::index::PrimEntities;
@@ -68,6 +69,140 @@ pub fn collect_stage_subtree_paths(stage: &Stage, root: &str) -> Result<Vec<Stri
         }
     })?;
     Ok(collected)
+}
+
+/// A render payload extracted for one explicitly requested prim path.
+#[derive(Debug)]
+pub struct TargetedRenderPayload {
+    pub path: String,
+    pub mesh: Mesh,
+    pub local_bounds: Option<usd_model::Bounds3>,
+}
+
+/// Read renderable geometry only for the requested paths.
+///
+/// The caller owns persistence. This boundary deliberately does not walk the
+/// stage or inspect cache objects, so a selection can extract one uncached
+/// object without re-projecting or rehashing already-resident geometry.
+pub fn extract_render_payloads_for_paths(
+    stage: &Stage,
+    requested_paths: &[&str],
+) -> Result<Vec<TargetedRenderPayload>> {
+    let mut paths = BTreeSet::new();
+    for raw_path in requested_paths {
+        let path = validate_prim_path(raw_path)?;
+        ensure!(path != "/", "targeted extraction cannot request stage root");
+        let sdf_path = openusd::sdf::path(&path)?;
+        let prim = stage.prim(sdf_path);
+        ensure!(prim.is_active()?, "targeted prim {path} is inactive");
+        ensure!(prim.is_defined()?, "targeted prim {path} is undefined");
+        ensure!(!prim.is_abstract()?, "targeted prim {path} is abstract");
+        paths.insert(path);
+    }
+
+    let mut payloads = Vec::new();
+    for path in paths {
+        let sdf_path = openusd::sdf::path(&path)?;
+        let Some(read) = crate::read::geom::read_mesh(stage, &sdf_path)? else {
+            continue;
+        };
+        let local_bounds = read
+            .extent
+            .map(|[min, max]| usd_model::Bounds3 {
+                min: min.map(f64::from),
+                max: max.map(f64::from),
+            })
+            .or_else(|| bounds_from_points(&read.points));
+        payloads.push(TargetedRenderPayload {
+            path,
+            mesh: crate::mesh::mesh_from_usd(&read),
+            local_bounds,
+        });
+    }
+    Ok(payloads)
+}
+
+fn bounds_from_points(points: &[[f32; 3]]) -> Option<usd_model::Bounds3> {
+    let first = points.first().copied()?;
+    let mut min = first.map(f64::from);
+    let mut max = min;
+    for point in points.iter().skip(1) {
+        let point = point.map(f64::from);
+        for axis in 0..3 {
+            min[axis] = min[axis].min(point[axis]);
+            max[axis] = max[axis].max(point[axis]);
+        }
+    }
+    Some(usd_model::Bounds3 { min, max })
+}
+
+/// Project exact requested paths and their namespace ancestors.
+///
+/// Existing ancestors are reused. Existing requested entities are re-routed
+/// after payload loading so placeholders receive their newly composed schema
+/// data, while no full-stage walk or change-batch drain is performed.
+pub fn project_paths(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    requested_paths: &[&str],
+) -> Result<usize> {
+    let normalized = requested_paths
+        .iter()
+        .map(|path| validate_prim_path(path))
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        normalized.iter().all(|path| path != "/"),
+        "targeted projection cannot request stage root"
+    );
+    if normalized.is_empty() {
+        return Ok(0);
+    }
+    let requested = normalized
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    for path in &normalized {
+        if path == "/" {
+            continue;
+        }
+        let sdf_path = openusd::sdf::path(path)?;
+        if !live.stage.prim(sdf_path).is_loaded()? {
+            live.load_payload(path);
+        }
+    }
+    let plan =
+        ProjectionPlan::from_paths(&live.stage, &requested.iter().copied().collect::<Vec<_>>())?;
+    let registry = registry_of(world);
+    world.init_resource::<PathStore>();
+    let mut materialized = 0;
+    for entry in plan.entries() {
+        let existing = {
+            let paths = world.resource::<PathStore>();
+            map.entity(&paths, entry.path())
+        };
+        if let Some(entity) = existing {
+            if requested.contains(entry.path()) {
+                if let Ok(path) = openusd::sdf::path(entry.path()) {
+                    registry.project_prim(&live.stage, &path, world, entity);
+                }
+            }
+            continue;
+        }
+        let parent = {
+            let paths = world.resource::<PathStore>();
+            entry
+                .parent_index()
+                .and_then(|_| map.entity(&paths, parent_path(entry.path())))
+                .or_else(|| map.entity(&paths, "/"))
+        };
+        project_plan_entry(world, &live.stage, &registry, map, entry, parent);
+        materialized += 1;
+    }
+    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        counters.projection_paths_planned(plan.len() as u64);
+    }
+    Ok(materialized)
 }
 
 /// Snapshot the registry out of the world (Arc-cheap `Clone`), falling back to
