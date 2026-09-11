@@ -53,6 +53,18 @@ impl SceneCacheStore {
         FilesystemBlobStore::new(self.layout.scene_cache_objects_dir(scene_id))
     }
 
+    pub(crate) fn with_generation_lock<T>(
+        &self,
+        scene_id: SceneId,
+        operation: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let scene_lock = scene_generation_lock(self.layout.scene_cache_dir(scene_id));
+        let _guard = scene_lock
+            .lock()
+            .expect("Scene generation lock is not poisoned");
+        operation()
+    }
+
     pub(crate) fn advance_generation(
         &self,
         scene_id: SceneId,

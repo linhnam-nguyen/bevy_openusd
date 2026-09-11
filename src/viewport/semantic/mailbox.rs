@@ -3,7 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use usd_model::{SemanticSnapshot, SnapshotSource};
 
-use super::query::SemanticQuery;
+use super::query::{DistinctFieldKeys, SemanticQuery};
 use super::types::SemanticIncrementalUpdate;
 
 pub(crate) const STATE_MAILBOX_CAPACITY: usize = 8;
@@ -29,9 +29,16 @@ pub(crate) struct SemanticQueryCommand {
 }
 
 #[derive(Debug)]
+pub(crate) struct SemanticDistinctFieldKeysCommand {
+    pub(crate) request_id: String,
+    pub(crate) query: DistinctFieldKeys,
+}
+
+#[derive(Debug)]
 pub(crate) enum SemanticMailboxCommand {
     State(SemanticStateCommand),
     Query(SemanticQueryCommand),
+    DistinctFieldKeys(SemanticDistinctFieldKeysCommand),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,13 +175,37 @@ impl SemanticMailbox {
         Ok(())
     }
 
+    pub(crate) fn submit_distinct_field_keys(
+        &self,
+        request_id: String,
+        query: DistinctFieldKeys,
+    ) -> Result<(), MailboxSubmitError> {
+        let Ok(mut state) = self.state.lock() else {
+            return Err(MailboxSubmitError::Closed);
+        };
+        if state.closed {
+            return Err(MailboxSubmitError::Closed);
+        }
+        if state.query_count >= QUERY_MAILBOX_CAPACITY {
+            return Err(MailboxSubmitError::QueueFull);
+        }
+        state.commands.push_back(SemanticMailboxCommand::DistinctFieldKeys(
+            SemanticDistinctFieldKeysCommand { request_id, query },
+        ));
+        state.query_count += 1;
+        state.query_high_water = state.query_high_water.max(state.query_count as u64);
+        self.wake.notify_one();
+        Ok(())
+    }
+
     pub(crate) fn recv(&self) -> Option<SemanticMailboxCommand> {
         let mut state = self.state.lock().ok()?;
         loop {
             if let Some(command) = state.commands.pop_front() {
                 match command {
                     SemanticMailboxCommand::State(_) => state.state_count -= 1,
-                    SemanticMailboxCommand::Query(_) => state.query_count -= 1,
+                    SemanticMailboxCommand::Query(_)
+                    | SemanticMailboxCommand::DistinctFieldKeys(_) => state.query_count -= 1,
                 }
                 return Some(command);
             }

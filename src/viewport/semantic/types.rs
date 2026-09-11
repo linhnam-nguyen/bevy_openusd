@@ -1,6 +1,6 @@
 use usd_model::{EntitySnapshot, HashDigest, SnapshotId, SnapshotSource};
 
-use super::query::SemanticQueryResult;
+use super::query::{DistinctFieldKeysResult, SemanticQueryResult};
 
 #[derive(Debug)]
 pub(crate) struct SemanticIncrementalUpdate {
@@ -25,6 +25,10 @@ pub(crate) enum SemanticResponse {
     QueryResult {
         request_id: String,
         result: SemanticQueryResult,
+    },
+    DistinctFieldKeys {
+        request_id: String,
+        result: DistinctFieldKeysResult,
     },
     Failed {
         request_id: String,

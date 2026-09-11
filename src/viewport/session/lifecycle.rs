@@ -17,6 +17,8 @@ mod lifecycle_invalidation;
 mod lifecycle_metadata;
 #[path = "lifecycle_open.rs"]
 mod lifecycle_open;
+#[path = "lifecycle_prim_count.rs"]
+mod prim_count;
 #[path = "lifecycle_project_activation.rs"]
 mod project_activation;
 
@@ -133,6 +135,7 @@ where
         None,
         None,
         None,
+        None,
         activation_generation,
         presentation,
     )
@@ -162,6 +165,7 @@ pub(crate) fn spawn_when_ready(world: &mut World) {
     else {
         return;
     };
+    prim_count::update(world, session_id);
     let projection_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
         .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
@@ -192,19 +196,15 @@ pub(crate) fn spawn_when_ready(world: &mut World) {
         .get_resource::<AnimatedPrims>()
         .map(|animated| animated.0.len())
         .unwrap_or_default();
-    let requested_path = {
-        let requested = world.resource::<RequestedAsset>();
-        requested.root.join(&requested.name)
-    };
     let default_prim = stage.default_prim().map(|prim| format!("/{prim}"));
     {
         let mut info = world.resource_mut::<StageInfo>();
-        info.path = requested_path.to_string_lossy().into_owned();
         info.default_prim = default_prim.clone();
         info.layer_count = 1;
         info.animated_prim_count = animated_count;
         info.skel_animation_count = 0;
     }
+    prim_count::publish_projected_count(world, session_id, prim_count.saturating_sub(1));
 
     world.resource_mut::<Spawned>().0 = true;
     world.insert_resource(StageMetadataState {
@@ -265,6 +265,7 @@ fn clear_projected_stage(world: &mut World) {
     world.remove_resource::<StageMetadataState>();
     world.remove_resource::<super::PendingSceneCacheRevalidation>();
     world.remove_resource::<super::SceneCachePresentation>();
+    world.remove_resource::<super::SceneDerivedMetadata>();
     crate::viewport::residency::retire_scene_cache_resources(world);
     world.resource_mut::<Spawned>().0 = false;
 }

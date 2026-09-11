@@ -39,6 +39,8 @@ pub(crate) mod link;
 pub(crate) mod model_import;
 #[path = "project/model_wrapper.rs"]
 pub(crate) mod model_wrapper;
+#[path = "project/prim_count.rs"]
+pub(crate) mod prim_count;
 #[path = "project/recovery.rs"]
 pub(crate) mod recovery;
 #[path = "project/recovery_worker.rs"]

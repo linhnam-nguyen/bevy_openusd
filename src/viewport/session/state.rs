@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::{SceneCacheActivation, SceneCacheEntry, SceneCacheState};
+use crate::project::cache_contract::{
+    SceneCacheActivation, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheState,
+};
 
 /// Marker and error state for the active stage request.
 ///
@@ -95,12 +97,115 @@ pub(crate) struct PendingSceneCacheRevalidation {
     pub(crate) result: Arc<Mutex<Option<Result<HashDigest, String>>>>,
 }
 
+/// Generation-owned derived metadata for the active Scene snapshot.
+///
+/// `StageInfo` mirrors this state for the existing viewport read model, but it
+/// is not the authority for asynchronous prim-count results. Every inspection
+/// result must match this identity before it can update the Scene-owned value.
+#[derive(Resource, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SceneDerivedMetadata {
+    pub(crate) scene_id: Option<SceneId>,
+    pub(crate) cache_project_root: Option<PathBuf>,
+    pub(crate) cache_descriptor: Option<SceneCacheDescriptorV3>,
+    pub(crate) cache_generation: Option<u64>,
+    pub(crate) cache_state: Option<SceneCacheState>,
+    pub(crate) path: PathBuf,
+    pub(crate) activation_generation: u64,
+    pub(crate) session_id: Option<u64>,
+    pub(crate) prim_count: usize,
+    pub(crate) prim_count_ready: bool,
+    pub(crate) prim_count_pending: bool,
+    pub(crate) prim_count_attempts: u8,
+    pub(crate) prim_count_terminal: bool,
+    pub(crate) prim_count_error: Option<String>,
+}
+
+impl SceneDerivedMetadata {
+    pub(crate) fn uncached(path: PathBuf) -> Self {
+        Self {
+            scene_id: None,
+            cache_project_root: None,
+            cache_descriptor: None,
+            cache_generation: None,
+            cache_state: None,
+            path,
+            activation_generation: 0,
+            session_id: None,
+            prim_count: 0,
+            prim_count_ready: false,
+            prim_count_pending: false,
+            prim_count_attempts: 0,
+            prim_count_terminal: false,
+            prim_count_error: None,
+        }
+    }
+
+    pub(crate) fn from_activation(
+        path: PathBuf,
+        activation_generation: u64,
+        owner: Option<(PathBuf, SceneId)>,
+        cache: Option<&SceneCacheActivation>,
+        descriptor: Option<SceneCacheDescriptorV3>,
+    ) -> Self {
+        let descriptor = descriptor.or_else(|| cache.map(|activation| activation.descriptor.clone()));
+        let scene_id = owner
+            .as_ref()
+            .map(|(_, scene_id)| scene_id.clone())
+            .or_else(|| descriptor.as_ref().map(|descriptor| descriptor.scene_id.clone()));
+        let cache_generation = descriptor.as_ref().map(|descriptor| descriptor.generation);
+        let cache_state = descriptor.as_ref().map(|descriptor| descriptor.state);
+        let prim_count = descriptor
+            .as_ref()
+            .map_or(0, |descriptor| descriptor.prim_count as usize);
+        let ready = descriptor.as_ref().is_some_and(|descriptor| {
+            descriptor.prim_count_ready || descriptor.state == SceneCacheState::Ready
+        });
+        Self {
+            scene_id,
+            cache_project_root: owner.as_ref().map(|(root, _)| root.clone()),
+            cache_descriptor: descriptor,
+            cache_generation,
+            cache_state,
+            path,
+            activation_generation,
+            session_id: None,
+            prim_count,
+            prim_count_ready: ready,
+            prim_count_pending: false,
+            prim_count_attempts: 0,
+            prim_count_terminal: false,
+            prim_count_error: None,
+        }
+    }
+
+    pub(crate) fn bind_session(&mut self, session_id: u64) {
+        if self.session_id == Some(session_id) {
+            return;
+        }
+        self.session_id = Some(session_id);
+        self.prim_count_pending = false;
+        self.prim_count_attempts = 0;
+        self.prim_count_terminal = false;
+        self.prim_count_error = None;
+        if !self.cache_descriptor.as_ref().is_some_and(|descriptor| {
+            descriptor.prim_count_ready || descriptor.state == SceneCacheState::Ready
+        }) {
+            self.prim_count_ready = false;
+        }
+    }
+}
+
 #[derive(Resource, Default, Debug, Clone)]
 pub struct StageInfo {
     /// Project activation generation that owns the current Stage snapshot.
     /// Zero denotes a stage opened outside the Project activation protocol.
     pub activation_generation: u64,
     pub path: String,
+    /// Metadata-only prim count. Cache-first activation supplies this from the
+    /// Scene descriptor; uncached activation fills it asynchronously.
+    pub prim_count: usize,
+    pub prim_count_ready: bool,
+    pub prim_count_pending: bool,
     pub default_prim: Option<String>,
     pub layer_count: usize,
     pub variant_count: usize,

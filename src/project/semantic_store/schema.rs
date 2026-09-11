@@ -1,6 +1,6 @@
 //! Durable semantic-store schema.
 
-pub(crate) const SCHEMA_VERSION: i64 = 3;
+pub(crate) const SCHEMA_VERSION: i64 = 4;
 
 pub(crate) const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS entities (
     family           TEXT,
     type_name        TEXT,
     type_id          TEXT,
+    bim_enabled      INTEGER NOT NULL DEFAULT 0,
     transform_hash   TEXT NOT NULL,
     topology_hash    TEXT,
     shape_hash       TEXT,

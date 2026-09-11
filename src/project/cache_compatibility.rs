@@ -302,6 +302,7 @@ mod tests {
             config_hash: HashDigest::new([3; HashDigest::BYTE_LEN]),
             state: SceneCacheState::Partial,
             prim_count: 8,
+            prim_count_ready: false,
             cacheable_count: 5,
             estimated_cpu_bytes: 1_024,
             estimated_gpu_bytes: 2_048,

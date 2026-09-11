@@ -29,6 +29,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     cache_context: Option<ActiveProjectCacheContext>,
     scene_cache: Option<SceneCacheActivation>,
     scene_cache_project_root: Option<std::path::PathBuf>,
+    scene_owner_id: Option<usd_project::SceneId>,
     archive_paths: Option<Vec<std::path::PathBuf>>,
     activation_generation: u64,
     presentation: StagePresentationContext,
@@ -139,8 +140,16 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         path: path.clone(),
         error: None,
     });
-    world.resource_mut::<StageInfo>().path = path.to_string_lossy().into_owned();
-    world.resource_mut::<StageInfo>().activation_generation = activation_generation;
+    super::prim_count::initialize_for_activation(
+        world,
+        &path,
+        activation_generation,
+        scene_cache_project_root
+            .as_ref()
+            .zip(scene_owner_id)
+            .map(|(root, scene_id)| (root.clone(), scene_id)),
+        scene_cache.as_ref(),
+    );
     world.resource_mut::<Spawned>().0 = false;
     world.insert_resource(presentation);
     if let Some(context) = cache_context {

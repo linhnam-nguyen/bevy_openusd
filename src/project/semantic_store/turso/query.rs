@@ -35,7 +35,7 @@ impl TursoSemanticStore {
 
         let mut sql = format!(
             "SELECT e.entity_key, e.prim_path, e.display_name, e.category,
-                    e.family, e.type_name, e.tx_mm, e.ty_mm, e.tz_mm
+                    e.family, e.type_name, e.bim_enabled, e.tx_mm, e.ty_mm, e.tz_mm
              FROM entities e {where_sql}"
         );
         append_order_by(&mut sql, query);
@@ -62,10 +62,11 @@ impl TursoSemanticStore {
                 category: nullable_text(&row, 3)?,
                 family: nullable_text(&row, 4)?,
                 type_name: nullable_text(&row, 5)?,
+                bim_enabled: row.get::<i64>(6)? != 0,
                 translation_mm: [
-                    nullable_integer(&row, 6)?.unwrap_or_default(),
                     nullable_integer(&row, 7)?.unwrap_or_default(),
                     nullable_integer(&row, 8)?.unwrap_or_default(),
+                    nullable_integer(&row, 9)?.unwrap_or_default(),
                 ],
             });
         }

@@ -17,7 +17,10 @@ mod worker;
 #[cfg(test)]
 pub(in crate::viewport::semantic) use crate::viewport::api::RenderServerInterface;
 pub(crate) use diff::SemanticDiffState;
-pub(crate) use query::{GroupField, SemanticFilter, SemanticQuery, SemanticQueryResult};
+pub(crate) use query::{
+    DistinctFieldKeys, DistinctFieldKeysResult, GroupField, SemanticFilter, SemanticKey,
+    SemanticQuery, SemanticQueryResult,
+};
 pub(crate) use state::SemanticSyncState;
 pub(crate) use sync::RuntimeDeliveryRuntime;
 #[cfg(test)]

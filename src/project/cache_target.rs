@@ -62,6 +62,8 @@ pub(crate) struct SceneCacheDescriptorV3 {
     pub(crate) config_hash: HashDigest,
     pub(crate) state: SceneCacheState,
     pub(crate) prim_count: u64,
+    #[serde(default)]
+    pub(crate) prim_count_ready: bool,
     pub(crate) cacheable_count: u64,
     pub(crate) estimated_cpu_bytes: u64,
     pub(crate) estimated_gpu_bytes: u64,
@@ -81,6 +83,7 @@ impl SceneCacheDescriptorV3 {
             config_hash,
             state: SceneCacheState::Building,
             prim_count: 0,
+            prim_count_ready: false,
             cacheable_count: 0,
             estimated_cpu_bytes: 0,
             estimated_gpu_bytes: 0,

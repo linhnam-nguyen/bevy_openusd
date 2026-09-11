@@ -2,8 +2,8 @@ use anyhow::Result;
 use usd_model::EntityKey;
 
 use super::super::{
-    GroupField, SemanticFilter, SemanticQuery, SemanticResponse, SemanticSubmitError,
-    SemanticWorkingStore,
+    DistinctFieldKeys, GroupField, SemanticFilter, SemanticKey, SemanticQuery, SemanticResponse,
+    SemanticSubmitError, SemanticWorkingStore,
 };
 use super::fixtures::{response, snapshot};
 use std::time::Duration;
@@ -73,6 +73,34 @@ fn schema_query_supports_grouping_and_pagination() -> Result<()> {
     assert_eq!(result.rows.len(), 1);
     assert!(!result.groups.is_empty());
     assert!(result.has_more);
+    Ok(())
+}
+
+#[test]
+fn distinct_field_keys_are_selected_without_geometry_access() -> Result<()> {
+    let store = SemanticWorkingStore::default();
+    assert!(store.submit_snapshot("load-distinct-fields", snapshot()?));
+    let _ = response(&store);
+    assert!(store.submit_distinct_field_keys(
+        "query-distinct-fields",
+        DistinctFieldKeys {
+            selection: Some(vec![
+                SemanticKey::Category,
+                SemanticKey::Property("userProperties:name".to_owned()),
+                SemanticKey::Property("missing".to_owned()),
+            ]),
+        },
+    ));
+    let SemanticResponse::DistinctFieldKeys { result, .. } = response(&store) else {
+        panic!("expected distinct field result")
+    };
+    assert!(result
+        .keys
+        .contains(&SemanticKey::Property("userProperties:name".to_owned())));
+    assert!(!result
+        .keys
+        .contains(&SemanticKey::Property("missing".to_owned())));
+    assert!(!result.keys.contains(&SemanticKey::Category));
     Ok(())
 }
 

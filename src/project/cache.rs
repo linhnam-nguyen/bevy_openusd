@@ -22,11 +22,14 @@ pub(crate) use super::cache_contract::{
 mod descriptor;
 #[path = "cache_scene_store.rs"]
 mod scene_store;
+#[path = "cache_scene_prim_count.rs"]
+mod scene_prim_count;
 pub(crate) use super::source_closure::target_content_hash;
 pub(crate) use descriptor::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
 };
 pub(crate) use scene_store::SceneCacheStore;
+pub(crate) use scene_prim_count::{PrimCountPublication, publish_prim_count_if_current};
 
 /// Source identity used by a Project runtime-cache descriptor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -147,6 +147,13 @@ fn activate_prepared_stage(
         Err(error) => return ProjectActivationReply::failed(command, error),
     };
     let cache_context = cache_context_for(&target);
+    let scene_owner_id = match &target.target {
+        project_protocol::ProjectStageTarget::Scene(scene_id)
+        | project_protocol::ProjectStageTarget::ProjectRoot(usd_project::ProjectRoot::Scene(
+            scene_id,
+        )) => Some(scene_id.clone()),
+        _ => None,
+    };
     match activate_open_stage_with_cache_context_for_generation(
         world,
         target.path,
@@ -154,6 +161,7 @@ fn activate_prepared_stage(
         cache_context,
         target.scene_cache.clone(),
         Some(target.project_root.clone()),
+        scene_owner_id,
         Some(target.archive_paths.clone()),
         command.generation,
         StagePresentationContext::from_project(target.presentation),

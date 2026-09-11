@@ -14,9 +14,9 @@ pub(super) async fn insert_entity(
         .execute(
             "INSERT INTO entities
                 (snapshot_id, entity_key, identity_source, prim_path, display_name,
-                 category, family, type_name, type_id, transform_hash, topology_hash,
-                 shape_hash, metadata_hash, full_hash, tx_mm, ty_mm, tz_mm)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                 category, family, type_name, type_id, bim_enabled, transform_hash,
+                 topology_hash, shape_hash, metadata_hash, full_hash, tx_mm, ty_mm, tz_mm)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             turso::params![
                 snapshot.snapshot_id.0.clone(),
                 entity.key.0.clone(),
@@ -27,6 +27,7 @@ pub(super) async fn insert_entity(
                 optional_text(entity.semantic.family.as_deref()),
                 optional_text(entity.semantic.type_name.as_deref()),
                 optional_text(entity.semantic.type_id.as_deref()),
+                turso::Value::Integer(entity.semantic.is_bim_entity() as i64),
                 entity.transform.hash.to_hex(),
                 geometry.map(|value| value.topology_hash.to_hex()),
                 geometry.map(|value| value.shape_hash.to_hex()),

@@ -24,10 +24,10 @@ impl TursoSemanticStore {
             .build()
             .await
             .with_context(|| format!("opening Turso semantic store at {}", path.display()))?;
-        let connection = database
+        let mut connection = database
             .connect()
             .context("connecting to Turso semantic store")?;
-        migration::apply(&connection).await?;
+        migration::apply(&mut connection).await?;
         Ok(Self {
             _database: database,
             connection,

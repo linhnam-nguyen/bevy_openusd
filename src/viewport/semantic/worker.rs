@@ -6,9 +6,9 @@ use usd_model::SemanticSnapshot;
 
 use super::mailbox::{
     MailboxSubmitError, RESPONSE_MAILBOX_CAPACITY, SemanticMailbox, SemanticMailboxCommand,
-    SemanticQueryCommand, SemanticStateCommand,
+    SemanticDistinctFieldKeysCommand, SemanticQueryCommand, SemanticStateCommand,
 };
-use super::query::SemanticQuery;
+use super::query::{DistinctFieldKeys, SemanticQuery};
 use super::store::SemanticDatabase;
 use super::types::{SemanticIncrementalUpdate, SemanticResponse};
 
@@ -59,6 +59,16 @@ impl SemanticWorkingStore {
 
     pub(crate) fn submit_query(&self, request_id: impl Into<String>, query: SemanticQuery) -> bool {
         self.try_submit_query(request_id, query).is_ok()
+    }
+
+    pub(crate) fn submit_distinct_field_keys(
+        &self,
+        request_id: impl Into<String>,
+        query: DistinctFieldKeys,
+    ) -> bool {
+        self.mailbox
+            .submit_distinct_field_keys(request_id.into(), query)
+            .is_ok()
     }
 
     pub(crate) fn try_submit_query(
@@ -239,6 +249,27 @@ fn semantic_worker(
                     "query",
                 )
             }
+            SemanticMailboxCommand::DistinctFieldKeys(SemanticDistinctFieldKeysCommand {
+                request_id,
+                query,
+            }) => {
+                let result = database.as_ref().map_or_else(
+                    || Err("semantic database is unavailable".to_owned()),
+                    |database| {
+                        runtime
+                            .block_on(database.distinct_field_keys(&query))
+                            .map_err(|error| error.to_string())
+                    },
+                );
+                (
+                    request_id,
+                    result.map(|result| SemanticResponse::DistinctFieldKeys {
+                        request_id: String::new(),
+                        result,
+                    }),
+                    "distinct field keys",
+                )
+            }
         };
 
         let response = match result {
@@ -253,6 +284,10 @@ fn semantic_worker(
                         ..
                     }
                     | SemanticResponse::QueryResult {
+                        request_id: response_id,
+                        ..
+                    }
+                    | SemanticResponse::DistinctFieldKeys {
                         request_id: response_id,
                         ..
                     } => *response_id = request_id,

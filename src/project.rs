@@ -16,6 +16,7 @@ pub(crate) mod ghost_cache;
 pub(crate) mod link;
 pub(crate) mod model_import;
 pub(crate) mod model_wrapper;
+pub(crate) mod prim_count;
 pub(crate) mod recovery;
 pub(crate) mod recovery_worker;
 pub(crate) mod runtime_delivery;

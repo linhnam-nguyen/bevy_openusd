@@ -24,14 +24,14 @@ impl SemanticDatabase {
             .build()
             .await
             .context("opening in-memory Turso database")?;
-        let connection = database
+        let mut connection = database
             .connect()
             .context("connecting to in-memory Turso database")?;
         connection
             .execute_batch(SCHEMA_SQL)
             .await
             .context("applying semantic Turso schema")?;
-        migrate(&connection)
+        migrate(&mut connection)
             .await
             .context("migrating semantic Turso schema")?;
         Ok(Self {

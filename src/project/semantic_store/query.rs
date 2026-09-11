@@ -61,7 +61,26 @@ pub(crate) struct SemanticQueryRow {
     pub category: Option<String>,
     pub family: Option<String>,
     pub type_name: Option<String>,
+    pub bim_enabled: bool,
     pub translation_mm: [i64; 3],
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum SemanticKey {
+    Category,
+    Family,
+    TypeName,
+    Property(String),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct DistinctFieldKeys {
+    pub selection: Option<Vec<SemanticKey>>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct DistinctFieldKeysResult {
+    pub keys: Vec<SemanticKey>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

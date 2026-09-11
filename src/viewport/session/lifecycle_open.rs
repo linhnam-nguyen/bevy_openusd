@@ -15,6 +15,7 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
         cache.clear_active_archives();
     }
     lifecycle_invalidation::reset_derived_state(world, 0);
+    super::prim_count::initialize_for_uncached(world, path.clone());
     world.insert_resource(StageHandle {
         path: path.clone(),
         error: None,

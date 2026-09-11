@@ -14,8 +14,8 @@ use usd_model::{EntityKey, EntitySnapshot, SemanticSnapshot, SnapshotId, Snapsho
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 pub(crate) use query::{
-    GroupField, SemanticFilter, SemanticGroup, SemanticQuery, SemanticQueryResult,
-    SemanticQueryRow, SortField,
+    DistinctFieldKeys, DistinctFieldKeysResult, GroupField, SemanticFilter, SemanticGroup,
+    SemanticKey, SemanticQuery, SemanticQueryResult, SemanticQueryRow, SortField,
 };
 
 mod query;
