@@ -6,11 +6,14 @@ use bevy::prelude::*;
 use viewport_protocol::SceneAnchor;
 
 use crate::project::{
-    cache::SceneCacheStore,
     cache_contract::{
-        CacheObjectRef, ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheAddress,
-        SceneCacheIndex, SceneCacheOccurrence,
+        CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
     },
+};
+#[cfg(test)]
+use crate::project::{
+    cache::SceneCacheStore,
+    cache_contract::{SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheIndex},
     cache_hydration::ActiveProjectCacheContext,
     catalog::manifest_store::ManifestStore,
 };
@@ -64,7 +67,7 @@ impl SelectionResidencyState {
 
 pub(crate) fn sync_selected_residency(
     presentation: Option<Res<SceneCachePresentation>>,
-    cache_context: Option<Res<ActiveProjectCacheContext>>,
+    runtime_lookup: Option<Res<ProjectCacheLookup>>,
     selection: Res<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     mut authority: ResMut<ResidencyAuthority>,
@@ -86,7 +89,7 @@ pub(crate) fn sync_selected_residency(
         state.clear();
         state.generation = Some(generation);
         state.selection_revision = Some(selection.revision());
-        state.lookup = build_lookup(&presentation, cache_context.as_deref());
+        state.lookup = runtime_lookup.as_deref().cloned();
         if let Some(lookup) = state.lookup.as_ref() {
             for (scene_id, scene_generation) in lookup.persistent_generations() {
                 authority.register_scene_generation(scene_id, scene_generation);
@@ -121,6 +124,7 @@ pub(crate) fn release_selected_residency(world: &mut World) {
     world.insert_resource(state);
 }
 
+#[cfg(test)]
 fn build_lookup(
     presentation: &SceneCachePresentation,
     context: Option<&ActiveProjectCacheContext>,
@@ -191,48 +195,43 @@ fn selected_payload_at(
                     scene_id,
                     blob_hash: *blob_hash,
                 },
-                generation: lookup
-                    .persistent_generations()
-                    .into_iter()
-                    .find_map(|(id, generation)| (id == scene_id).then_some(generation))?,
+                generation: lookup.generation(scene_id)?,
                 cpu_bytes,
                 gpu_bytes,
             });
         }
     }
 
-    for (address, object) in lookup.persistent_rows() {
-        let SceneCacheOccurrence::Member(member_id) = address.occurrence else {
-            continue;
-        };
-        let CacheObjectRef::ChildScene {
-            scene_id: child_scene,
-            ..
-        } = object
-        else {
-            continue;
-        };
-        if address.scene_id == scene_id
-            && let Some(child_path) = child_scene_path(prim_path, member_id)
-            && let Some(payload) = selected_payload_at(lookup, child_scene, &child_path, visited)
-        {
-            return Some(payload);
-        }
+    if let Some((member_id, child_path)) = nested_member_route(prim_path)
+        && let Some(child_scene) = lookup.child_scene_for_member(scene_id, member_id)
+        && let Some(payload) = selected_payload_at(lookup, child_scene, &child_path, visited)
+    {
+        return Some(payload);
     }
     None
 }
 
-fn child_scene_path(prim_path: &str, member_id: usd_project::SceneMemberId) -> Option<String> {
-    let prefixes = [
-        crate::project::scene::authoring::scene_member_path(member_id),
-        crate::project::scene::authoring::legacy_scene_member_path(member_id),
-    ];
-    prefixes.into_iter().find_map(|prefix| {
-        let root = format!("{prefix}/SceneRoot");
-        prim_path
-            .strip_prefix(&root)
-            .map(|suffix| format!("/SceneRoot{suffix}"))
-    })
+fn nested_member_route(prim_path: &str) -> Option<(usd_project::SceneMemberId, String)> {
+    let member_path = prefix_suffix(prim_path)?;
+    let member_id = member_path
+        .split('/')
+        .next()
+        .and_then(|segment| segment.strip_prefix("Member_"))
+        .and_then(|value| usd_project::SceneMemberId::parse(value).ok())?;
+    let child_path = member_path
+        .split_once("/SceneRoot")
+        .map(|(_, suffix)| format!("/SceneRoot{suffix}"))?;
+    Some((member_id, child_path))
+}
+
+fn prefix_suffix(prim_path: &str) -> Option<&str> {
+    let marker = if prim_path.starts_with("/SceneRoot/Members/") {
+        "/SceneRoot/Members/"
+    } else {
+        "/SceneRoot/"
+    };
+    let suffix = prim_path.strip_prefix(marker)?;
+    suffix.contains("/SceneRoot/").then_some(suffix)
 }
 
 fn fill_selection_queue(

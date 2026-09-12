@@ -163,6 +163,16 @@ pub(crate) fn prepare_runtime_payloads(
     prepare_runtime_payloads_with_filter(world, snapshot, |_| true)
 }
 
+/// Capture authored materials for an explicit Scene-owned path set after the
+/// normal USD material route has projected those paths.
+pub(crate) fn prepare_runtime_payloads_for_paths(
+    world: &mut World,
+    paths: &[String],
+) -> PreparedRuntimePayloads {
+    let snapshot_paths = paths.iter().map(String::as_str).collect::<HashSet<_>>();
+    prepare_runtime_payloads_with_path_set(world, &snapshot_paths, |_| true)
+}
+
 /// Capture only authored material bindings for a canonical Stage warm.
 ///
 /// The normal route attaches one shared fallback material to unbound meshes;
@@ -200,6 +210,14 @@ fn prepare_runtime_payloads_with_filter<F: Fn(&str) -> bool>(
         .values()
         .map(|entity| entity.prim_path.as_str())
         .collect::<HashSet<_>>();
+    prepare_runtime_payloads_with_path_set(world, &snapshot_paths, include)
+}
+
+fn prepare_runtime_payloads_with_path_set<F: Fn(&str) -> bool>(
+    world: &mut World,
+    snapshot_paths: &HashSet<&str>,
+    include: F,
+) -> PreparedRuntimePayloads {
     let provenance = world
         .get_resource::<usd_bevy::route::material::MaterialProjectionProvenance>()
         .cloned();

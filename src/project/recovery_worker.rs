@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::Instant;
 
 use bevy::prelude::Resource;
@@ -176,10 +176,23 @@ fn send_recovery_result(
     result: RecoveryResult,
     result_backpressure: &AtomicU64,
 ) -> bool {
+    send_recovery_result_with_hook(results, result, result_backpressure, || {})
+}
+
+fn send_recovery_result_with_hook<F>(
+    results: &mpsc::SyncSender<RecoveryResult>,
+    result: RecoveryResult,
+    result_backpressure: &AtomicU64,
+    on_full: F,
+) -> bool
+where
+    F: FnOnce(),
+{
     match results.try_send(result) {
         Ok(()) => true,
         Err(mpsc::TrySendError::Full(result)) => {
             result_backpressure.fetch_add(1, Ordering::Relaxed);
+            on_full();
             results.send(result).is_ok()
         }
         Err(mpsc::TrySendError::Disconnected(_)) => false,
@@ -261,11 +274,14 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(RECOVERY_RESULT_CAPACITY);
         let result_backpressure = Arc::new(AtomicU64::new(0));
         let completed = Arc::new(AtomicU64::new(0));
+        let full_reached = Arc::new(AtomicU64::new(0));
         let worker_backpressure = Arc::clone(&result_backpressure);
         let worker_completed = Arc::clone(&completed);
+        let worker_full_reached = Arc::clone(&full_reached);
         let worker = std::thread::spawn(move || {
             for revision in 1..=(RECOVERY_RESULT_CAPACITY as u64 + 1) {
-                assert!(send_recovery_result(
+                let full_signal = Arc::clone(&worker_full_reached);
+                assert!(send_recovery_result_with_hook(
                     &sender,
                     RecoveryResult {
                         session_id: 1,
@@ -282,21 +298,22 @@ mod tests {
                         worker_ms: 0.0,
                     },
                     &worker_backpressure,
+                    move || full_signal.store(revision, Ordering::Release),
                 ));
                 worker_completed.fetch_add(1, Ordering::Release);
             }
         });
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-        while completed.load(Ordering::Acquire) < RECOVERY_RESULT_CAPACITY as u64
+        while full_reached.load(Ordering::Acquire) != RECOVERY_RESULT_CAPACITY as u64 + 1
             && std::time::Instant::now() < deadline
         {
             std::thread::yield_now();
         }
         assert_eq!(
-            completed.load(Ordering::Acquire),
-            RECOVERY_RESULT_CAPACITY as u64,
-            "worker must block on a full result queue, not terminate"
+            full_reached.load(Ordering::Acquire),
+            RECOVERY_RESULT_CAPACITY as u64 + 1,
+            "worker must observe a full result queue before the drain"
         );
 
         for revision in 1..=RECOVERY_RESULT_CAPACITY as u64 {

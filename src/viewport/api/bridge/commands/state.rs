@@ -18,7 +18,9 @@ use crate::viewport::scene::{
     ClassificationColorPlan, SelectedPrim, SelectedTargets, SolariCapability,
 };
 use crate::viewport::semantic::SemanticSyncState;
-use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageHandle, StageInfo};
+use crate::viewport::session::{
+    LoaderTuning, ReloadRequest, SceneCacheOwnershipContext, Spawned, StageHandle, StageInfo,
+};
 
 /// Groups the command system's independently-owned resources into one
 /// [`SystemParam`], keeping the system within Bevy's top-level parameter
@@ -50,6 +52,7 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub stage: Option<NonSend<'w, LiveStage>>,
     pub stage_handle: Option<Res<'w, StageHandle>>,
     pub active_project_cache: Option<Res<'w, ActiveProjectCacheContext>>,
+    pub scene_cache_owner: Option<Res<'w, SceneCacheOwnershipContext>>,
     pub cache_warm: Local<'s, ProjectCacheWarmQueue>,
     pub semantic: Option<Res<'w, SemanticSyncState>>,
     pub bim_field_catalogue: Option<Res<'w, BimClassificationFieldCatalogueState>>,

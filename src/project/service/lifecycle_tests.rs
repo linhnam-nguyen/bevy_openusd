@@ -37,11 +37,10 @@ fn create_project_keeps_head_unborn_and_registers_last() {
     assert!(project_root.join(".usdhub/cache").is_dir());
     assert!(project_root.join(".usdhub/recovery").is_dir());
     assert_eq!(fs::read(parent.join("keep.txt")).unwrap(), b"user data");
-    assert!(
-        fs::read_to_string(project_root.join(".gitignore"))
-            .unwrap()
-            .contains(".usdhub/\n")
-    );
+    let gitignore = fs::read_to_string(project_root.join(".gitignore")).unwrap();
+    assert!(gitignore.contains(".usdhub/cache/\n"));
+    assert!(gitignore.contains(".usdhub/recovery/\n"));
+    assert!(!gitignore.lines().any(|line| line.trim() == ".usdhub/"));
     assert_eq!(
         WorkspaceRegistry::load(registry_path)
             .unwrap()

@@ -162,6 +162,9 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         {
             selected_prim.0 = primary;
         }
+        if let Some(mut pending_mut) = world.get_resource_mut::<PendingActivationPresentation>() {
+            pending_mut.selection = None;
+        }
     } else if pending.selection.is_some()
         && world
             .get_resource::<usd_bevy::ProgressiveProjectionState>()
@@ -176,8 +179,19 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
             let mut pending_mut = pending_mut;
             pending_mut.selection = None;
         }
-    } else if pending.selection.is_some() {
-        return;
+    } else if let Some(selection) = pending.selection.clone() {
+        // Keep the logical selection visible while the entity-backed Scene
+        // index catches up.  The provider and BIM projection do not require
+        // a resolved Bevy entity, and the pending record remains authoritative
+        // for the later entity resolution pass.
+        let Some(mut selected) =
+            world.get_resource_mut::<crate::viewport::scene::SelectedTargets>()
+        else {
+            return;
+        };
+        if selected.replace(selection).is_err() {
+            return;
+        }
     }
 
     if let Some(recipe) = pending.classification_recipe {
@@ -203,5 +217,10 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
             provider.set(viewport_protocol::HierarchySource::BimClassification, None);
         }
     }
-    world.remove_resource::<PendingActivationPresentation>();
+    if world
+        .get_resource::<PendingActivationPresentation>()
+        .is_some_and(|pending| pending.selection.is_none())
+    {
+        world.remove_resource::<PendingActivationPresentation>();
+    }
 }

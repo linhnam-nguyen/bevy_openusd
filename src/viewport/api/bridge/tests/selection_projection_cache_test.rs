@@ -45,7 +45,7 @@ fn selection_projection_reuses_unchanged_targets_and_deltas_only_touch_the_chang
     let outlines = app.world().resource::<SelectionOutlineState>();
     assert_eq!(outlines.last_added, 1);
     assert_eq!(outlines.last_removed, 0);
-    assert_eq!(outlines.last_updated, 1);
+    assert_eq!(outlines.last_updated, 0);
 
     set_selection(
         &mut app,

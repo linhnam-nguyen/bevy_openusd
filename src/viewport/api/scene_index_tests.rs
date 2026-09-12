@@ -174,8 +174,9 @@ fn projection_only_children_churn_does_not_rebuild_the_scene_index() {
         .id();
     app.world_mut().resource_mut::<Spawned>().0 = true;
     app.update();
+    app.update();
     let rebuilds_after_prim = app.world().resource::<SceneAnchorIndex>().rebuild_count();
-    assert_eq!(rebuilds_after_prim, 1);
+    assert_eq!(rebuilds_after_prim, 0);
 
     app.world_mut().spawn(ChildOf(root));
     app.update();

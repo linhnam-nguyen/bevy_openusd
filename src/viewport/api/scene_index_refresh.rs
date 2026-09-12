@@ -27,8 +27,15 @@ pub(crate) fn register_scene_index_observers(app: &mut App) {
         .add_observer(queue_child_of_remove);
 }
 
-fn queue_scene_prim_insert(event: On<Insert, UsdPrimRef>, mut index: ResMut<SceneAnchorIndex>) {
+fn queue_scene_prim_insert(
+    event: On<Insert, UsdPrimRef>,
+    prims: Query<&UsdPrimRef>,
+    mut index: ResMut<SceneAnchorIndex>,
+) {
     let entity = event.event_target();
+    if prims.get(entity).is_ok_and(|prim| prim.path == "/") {
+        return;
+    }
     if index.reconcile.contains(entity) {
         index.reconcile.request();
     } else if index.queued_additions.insert(entity) {
@@ -165,11 +172,23 @@ pub(in crate::viewport) fn refresh_scene_anchor_index(
     }
 
     if index.pending_additions.is_empty() {
-        for entity in unindexed_prims.iter().take(SCENE_INDEX_ADMISSION_BUDGET) {
+        for entity in unindexed_prims
+            .iter()
+            .filter(|entity| {
+                prims
+                    .get(*entity)
+                    .is_ok_and(|(_, prim, ..)| prim.path != "/")
+            })
+            .take(SCENE_INDEX_ADMISSION_BUDGET)
+        {
             if index.queued_additions.insert(entity) {
                 index.pending_additions.push_back(entity);
             }
         }
+    }
+
+    if !index.initialized && index.pending_additions.is_empty() {
+        index.initialized = true;
     }
 
     if !index.pending_additions.is_empty() {
@@ -225,11 +244,9 @@ pub(in crate::viewport) fn refresh_scene_anchor_index(
         return;
     }
 
-    if !index.initialized {
-        index.initialized = true;
-        *current_projection = CurrentHierarchyProjection::default();
-        return;
-    }
+    // Startup intentionally keeps the public projection coherent: partial
+    // authority admission remains private until the bounded queue drains and
+    // the coalesced derived view is published below.
 
     if index.derived_dirty && projection_is_settled(progressive.as_deref()) {
         let projection = index.flush_incremental_derived();

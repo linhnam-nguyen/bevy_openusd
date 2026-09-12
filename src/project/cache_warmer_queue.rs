@@ -53,6 +53,7 @@ struct LatestWarmInner {
     latest: HashMap<WarmKey, super::WarmTarget>,
     scheduled: HashSet<WarmKey>,
     dirty_projects: BTreeSet<PathBuf>,
+    failures: HashMap<WarmKey, String>,
 }
 
 impl LatestWarmState {
@@ -68,6 +69,7 @@ impl LatestWarmState {
     ) -> bool {
         let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
         loop {
+            inner.failures.remove(&key);
             let known = inner.latest.contains_key(&key) || inner.scheduled.contains(&key);
             if !known && inner.latest.len() >= WARM_LATEST_CAPACITY {
                 if target.scene_generation.is_none() { return false; }
@@ -122,6 +124,25 @@ impl LatestWarmState {
         self.inner.lock().expect("Project cache warm state is not poisoned").scheduled.remove(key);
         self.idle.notify_all();
         if let Some(sender) = sender { self.retry_unscheduled(sender); }
+    }
+
+    pub(super) fn record_failure(&self, key: &WarmKey, error: String) {
+        self.inner
+            .lock()
+            .expect("Project cache warm state is not poisoned")
+            .failures
+            .insert(key.clone(), error);
+        self.idle.notify_all();
+    }
+
+    fn failure_for_project(&self, project_root: &Path) -> Option<String> {
+        self.inner
+            .lock()
+            .expect("Project cache warm state is not poisoned")
+            .failures
+            .iter()
+            .find(|(key, _)| key.0 == project_root)
+            .map(|(_, error)| error.clone())
     }
 
     fn retry_unscheduled(&self, sender: &mpsc::SyncSender<super::WarmJob>) {
@@ -184,7 +205,9 @@ impl LatestWarmState {
             let busy = inner.latest.keys().any(|(root, _)| root == project_root)
                 || inner.scheduled.iter().any(|(root, _)| root == project_root)
                 || inner.dirty_projects.contains(project_root);
-            if !busy { return true; }
+            if !busy {
+                return !inner.failures.keys().any(|(root, _)| root == project_root);
+            }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() { return false; }
             let (next, wait) = self.idle.wait_timeout(inner, remaining).expect("Project cache warm state is not poisoned");
@@ -192,7 +215,8 @@ impl LatestWarmState {
             if wait.timed_out() {
                 return !inner.latest.keys().any(|(root, _)| root == project_root)
                     && !inner.scheduled.iter().any(|(root, _)| root == project_root)
-                    && !inner.dirty_projects.contains(project_root);
+                    && !inner.dirty_projects.contains(project_root)
+                    && !inner.failures.keys().any(|(root, _)| root == project_root);
             }
         }
     }
@@ -272,6 +296,10 @@ impl ProjectCacheWarmQueue {
         self.state.latest.wait_for_project_idle(project_root, timeout)
     }
 
+    pub(crate) fn last_warm_failure(&self, project_root: &Path) -> Option<String> {
+        self.state.latest.failure_for_project(project_root)
+    }
+
     pub(crate) fn prepare_for_activation(
         &self,
         project_root: &Path,
@@ -349,7 +377,10 @@ fn worker_loop(
     while let Ok(job) = receiver.recv() {
         if let Some(target) = latest.take_latest(&job.key) {
             if let Err(error) = super::warm_target(&job.key.0, &target) {
-                log::warn!("Project cache warm failed for {} ({}): {error:#}", job.key.0.display(), target.target.key());
+                let message = format!("{error:#}");
+                latest.record_failure(&job.key, message.clone());
+                super::mark_warm_failure_terminal(&job.key.0, &target);
+                log::warn!("Project cache warm failed for {} ({}): {message}", job.key.0.display(), target.target.key());
             }
         }
         let sender = sender.lock().expect("Project cache warm sender is not poisoned").clone();

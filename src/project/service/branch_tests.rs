@@ -10,6 +10,9 @@ use usd_project::{
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
 
+#[path = "branch_repository_truth_tests.rs"]
+mod repository_truth;
+
 #[test]
 fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     let directory = tempdir().unwrap();
@@ -36,6 +39,7 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     )
     .unwrap();
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    crate::project::storage::install_managed_ignore(&repository).unwrap();
     fs::write(repository.join("branch.txt"), b"main").unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main Project"]);
@@ -66,6 +70,10 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
             .unwrap()
             .as_deref(),
         Some("feature")
+    );
+
+    repository_truth::assert_managed_runtime_is_ignored_but_project_metadata_is_dirty(
+        &repository,
     );
 
     fs::write(repository.join("branch.txt"), b"local edit").unwrap();
@@ -104,14 +112,15 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
         display_name: "Extra".to_owned(),
     });
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
-    crate::project::scene::authoring::author_scene_atomic(&repository, extra_scene).unwrap();
+    crate::project::storage::install_managed_ignore(&repository).unwrap();
+    let extra_scene_path = crate::project::scene::authoring::author_scene_atomic(&repository, extra_scene).unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main with extra scene"]);
     run_git(&repository, &["checkout", "-b", "reduced"]);
     let mut reduced = ManifestStore::read_validated(&repository).unwrap().raw().clone();
     reduced.scenes.retain(|scene| scene.id != extra_scene);
     ManifestStore::write_manifest_atomic(&repository, &reduced).unwrap();
-    fs::remove_file(crate::project::scene::authoring::scene_path(&repository, extra_scene)).unwrap();
+    fs::remove_file(extra_scene_path).unwrap();
     run_git(&repository, &["add", "-A"]);
     run_git(&repository, &["commit", "-m", "remove extra scene"]);
     run_git(&repository, &["checkout", "main"]);

@@ -28,13 +28,11 @@ use usd_project::{
     ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, SceneMemberId,
     ScenePlacementTransform, StorageKey,
 };
-
 fn digest(value: usize) -> HashDigest {
     let mut bytes = [0; HashDigest::BYTE_LEN];
     bytes[..8].copy_from_slice(&(value as u64).to_le_bytes());
     HashDigest::new(bytes)
 }
-
 fn owned_entry(
     scene: SceneId,
     path: &str,
@@ -100,10 +98,12 @@ fn selection_app(
     index: SceneAnchorIndex,
     scene: SceneCachePresentation,
 ) -> App {
+    let lookup = build_lookup(&scene, None).expect("active Scene lookup builds");
     let mut app = App::new();
     app.insert_resource(selection)
         .insert_resource(index)
         .insert_resource(scene)
+        .insert_resource(lookup)
         .insert_resource(ResidencyAuthority::default())
         .init_resource::<SelectionResidencyState>()
         .add_systems(Update, sync_selected_residency);
@@ -202,7 +202,9 @@ fn production_selection_app(
     root: &Path,
     live: usd_bevy::LiveStage,
 ) -> App {
+    let lookup = build_lookup(&scene, Some(&context(root))).expect("Project lookup builds");
     let mut app = selection_app(selection, index, scene);
+    app.insert_resource(lookup);
     app.insert_resource(context(root))
         .insert_resource(CachedResidencyWorker::new())
         .insert_resource(TargetedRepairPersistenceWorker::new())
@@ -221,7 +223,6 @@ fn production_selection_app(
     );
     app
 }
-
 fn single_target_fixture(
     scene: SceneId,
     path: &str,
@@ -248,7 +249,6 @@ fn single_target_fixture(
     };
     (selection, target, index, state)
 }
-
 #[test]
 #[rustfmt::skip]
 fn production_selection_follows_distinct_child_members_through_c7_repair() -> anyhow::Result<()> {

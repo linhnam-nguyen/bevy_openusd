@@ -7,7 +7,8 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use bevy_mod_outline::{OutlineStencil, OutlineVolume};
+#[cfg(test)]
+use bevy_mod_outline::OutlineVolume;
 use viewport_protocol::ColorRgb8;
 #[cfg(test)]
 use viewport_protocol::SelectionPresentationSettings;
@@ -95,27 +96,20 @@ pub(in crate::viewport) fn sync_selection_outlines(
     settings: Res<ViewerSettingsState>,
     scene_index: Res<SceneAnchorIndex>,
     policy: Option<Res<SelectionPresentationPolicy>>,
-    projection: Option<Res<SelectedRenderableProjection>>,
+    projection: Res<SelectedRenderableProjection>,
     mut state: ResMut<SelectionOutlineState>,
     mut commands: Commands,
-    meshes: Query<(Option<&Mesh3d>, Option<&Children>)>,
     owned_outlines: Query<(), With<SelectionOutline>>,
 ) {
     let presentation = settings.selection();
     let boundary = (presentation.boundary_enabled, presentation.boundary_color);
     let coarse = policy.as_deref().is_some_and(|policy| {
-        policy.uses_coarse(
-            projection
-                .as_ref()
-                .map_or(0, |projection| projection.renderables().len()),
-        )
+        policy.uses_coarse(projection.renderables().len())
     });
-    let projection_generation = projection
-        .as_ref()
-        .map(|projection| projection.generation());
+    let projection_generation = Some(projection.generation());
     let key = OutlineWorkKey {
         selection_revision: selection.revision(),
-        scene_revision: projection.is_none().then(|| scene_index.revision()),
+        scene_revision: None,
         projection_generation,
         boundary,
         coarse,
@@ -210,14 +204,12 @@ pub(in crate::viewport) fn sync_selection_outlines(
 
     let boundary_changed = state.last_boundary != Some(key.boundary);
     let projection_changed = state.last_projection_generation != key.projection_generation;
-    let can_use_projection_delta = projection_changed
-        && projection.is_some()
-        && (state.last_projection_generation.is_some()
-            || !state.desired_entities.is_empty()
-            || state.last_selection_revision.is_some());
+    // Selection replacement remains bounded because projection membership is
+    // the sole desired-set authority. Its added/removed deltas are themselves
+    // produced by the resumable projection cursor.
+    let can_use_projection_delta = projection_changed;
 
     let (added, removed) = if can_use_projection_delta {
-        let projection = projection.as_ref().expect("checked above");
         let added = projection
             .added_renderables()
             .iter()
@@ -240,41 +232,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
         }
         (added, removed)
     } else {
-        state.desired_entities.clear();
-        state.desired_order.clear();
-        if key.boundary.0 {
-            if let Some(projection) = projection.as_ref() {
-                for entity in projection.renderables().iter().copied() {
-                    if state.desired_entities.insert(entity) {
-                        debug_assert!(state.desired_order.insert(entity));
-                    }
-                }
-            } else {
-                for target in &selection.0.targets {
-                    let Some(entity) = scene_index.resolve(target) else {
-                        continue;
-                    };
-                    let mut desired = HashSet::new();
-                    collect_mesh_descendants(entity, &meshes, &mut desired);
-                    for entity in desired {
-                        if state.desired_entities.insert(entity) {
-                            debug_assert!(state.desired_order.insert(entity));
-                        }
-                    }
-                }
-            }
-        }
-        let added = state
-            .desired_entities
-            .difference(&state.applied_entities)
-            .copied()
-            .collect::<Vec<_>>();
-        let removed = state
-            .applied_entities
-            .difference(&state.desired_entities)
-            .copied()
-            .collect::<Vec<_>>();
-        (added, removed)
+        (Vec::new(), Vec::new())
     };
     let mut to_update = added.clone();
     to_update.sort_unstable();
@@ -287,7 +245,7 @@ pub(in crate::viewport) fn sync_selection_outlines(
         updated: to_update,
         removed_offset: 0,
         updated_offset: 0,
-        reconcile_all: boundary_changed || superseded_pending,
+        reconcile_all: boundary_changed,
         // EntityOrder removes with swap_remove. A superseding job may have
         // changed the dense order behind an old numeric cursor, so every new
         // reconciliation starts from the beginning of the current order.

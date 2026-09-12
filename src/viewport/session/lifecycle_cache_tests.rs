@@ -1,4 +1,4 @@
-use std::{fs, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{fs, sync::{Arc, Mutex}, thread, time::{Duration, Instant}};
 
 use bevy::prelude::World;
 use openusd::usd::Stage;
@@ -12,7 +12,7 @@ use super::{
     activate_stage_with_cache_context_for_test,
 };
 use crate::project::cache_contract::{SceneCacheDescriptorV3, SceneCacheState};
-use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget};
+use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::cache_hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
@@ -112,10 +112,41 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     let queue = crate::project::cache_warmer::ProjectCacheWarmQueue::default();
     assert!(queue.enqueue(project.path(), target.clone()));
     assert!(queue.wait_for_project_idle(project.path(), Duration::from_secs(2)));
-    assert_eq!(
-        queue.prepare_for_activation(project.path(), target.clone()),
-        crate::project::cache_warmer::ProjectCachePreparation::Ready
+    let scene_store = SceneCacheStore::new(project.path());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let descriptor = loop {
+        let descriptor = scene_store
+            .load_descriptor(scene_id)
+            .expect("load warmed Scene cache descriptor")
+            .expect("Scene cache warm must publish a descriptor");
+        if !matches!(descriptor.state, SceneCacheState::Building) {
+            break descriptor;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Scene cache warm must publish a terminal descriptor; descriptor={descriptor:?}"
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    assert!(matches!(
+        descriptor.state,
+        SceneCacheState::Partial | SceneCacheState::Ready
+    ));
+    let activation = scene_store
+        .load_activation(scene_id)
+        .expect("load Scene cache activation");
+    assert!(
+        activation.is_some(),
+        "Scene cache warm completes; descriptor={:?}",
+        scene_store
+            .load_descriptor(scene_id)
+            .expect("load Scene cache descriptor")
     );
+    let activation = activation.expect("Scene cache warm completes");
+    assert!(matches!(
+        activation.descriptor.state,
+        SceneCacheState::Partial | SceneCacheState::Ready
+    ));
     let context = ActiveProjectCacheContext::new(
         project.path().to_path_buf(),
         target,

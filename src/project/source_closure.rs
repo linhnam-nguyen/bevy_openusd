@@ -169,6 +169,13 @@ fn collect_target_files(
                 .iter()
                 .find(|scene| scene.id.to_string() == *id)
                 .with_context(|| format!("Scene cache target {id} is not in the manifest"))?;
+            files.push(TargetHashEntry {
+                relative: format!("@name/scene/{id}"),
+                kind: "name".to_owned(),
+                path: None,
+                inline: scene.display_name.as_bytes().to_vec(),
+                presentation_filtered: false,
+            });
             let path = crate::project::scene::authoring::scene_path(project_root, scene.id);
             collect_one_file(project_root, &path, files, true)?;
             let imported_directory =
@@ -200,6 +207,13 @@ fn collect_target_files(
                 .iter()
                 .find(|model| model.id.to_string() == *id)
                 .with_context(|| format!("Model cache target {id} is not in the manifest"))?;
+            files.push(TargetHashEntry {
+                relative: format!("@name/model/{id}"),
+                kind: "name".to_owned(),
+                path: None,
+                inline: model.display_name.as_bytes().to_vec(),
+                presentation_filtered: false,
+            });
             let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model.id);
             collect_one_file(project_root, &wrapper, files, true)?;
             let imported_directory = crate::project::storage::ProjectStorageLayout::new(project_root)
@@ -241,11 +255,46 @@ fn collect_one_file(
 fn hash_managed_layer(path: &Path, hasher: &mut blake3::Hasher) -> Result<()> {
     let file = fs::File::open(path)
         .with_context(|| format!("open managed Project target {}", path.display()))?;
-    for line in BufReader::new(file).split(b'\n') {
-        let line = line.with_context(|| format!("read managed Project target {}", path.display()))?;
+    let lines = BufReader::new(file)
+        .split(b'\n')
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("read managed Project target {}", path.display()))?;
+    let mut normalized: Vec<Vec<u8>> = Vec::with_capacity(lines.len());
+    let mut index = 0;
+    while index < lines.len() {
+        let line = &lines[index];
         let mut start = 0;
         while start < line.len() && matches!(line[start], b' ' | b'\t') { start += 1; }
-        if line[start..].starts_with(b"string ui:displayName =") { continue; }
+        if line[start..].starts_with(b"string ui:displayName =")
+            || line[start..].starts_with(b"ui:displayName =")
+        {
+            let previous_ends_open = if index > 0 {
+                let previous = &lines[index - 1];
+                let mut end = previous.len();
+                while end > 0 && matches!(previous[end - 1], b' ' | b'\t') { end -= 1; }
+                end > 0 && previous[end - 1] == b'('
+            } else {
+                false
+            };
+            if index > 0
+                && index + 1 < lines.len()
+                && previous_ends_open
+                && lines[index + 1].iter().all(|byte| *byte == b' ' || *byte == b'\t' || *byte == b')')
+            {
+                if let Some(previous) = normalized.last_mut() {
+                    while previous.last().is_some_and(|byte| *byte == b' ' || *byte == b'\t' || *byte == b'(') {
+                        previous.pop();
+                    }
+                }
+                index += 1;
+            }
+            index += 1;
+            continue;
+        }
+        normalized.push(line.clone());
+        index += 1;
+    }
+    for line in normalized {
         hasher.update(&(line.len() as u64).to_le_bytes());
         hasher.update(&line);
     }

@@ -16,7 +16,7 @@ fn progressive_unique_prim_additions_use_incremental_index_ingestion() {
         .id();
     app.update();
     let full_rebuilds = app.world().resource::<SceneAnchorIndex>().rebuild_count();
-    assert_eq!(full_rebuilds, 1);
+    assert_eq!(full_rebuilds, 0);
 
     for index in 0..256 {
         app.world_mut().spawn((
@@ -32,7 +32,7 @@ fn progressive_unique_prim_additions_use_incremental_index_ingestion() {
     let index = app.world().resource::<SceneAnchorIndex>();
     assert_eq!(index.rebuild_count(), full_rebuilds);
     let work = index.incremental_work();
-    assert_eq!(work.admitted_rows, 256);
+    assert_eq!(work.admitted_rows, 257);
     assert_eq!(work.derived_flushes, 1);
     assert!(work.reindexed_rows >= 257);
     assert!(work.projected_rows >= 257);
@@ -90,7 +90,7 @@ fn ten_thousand_prim_additions_are_admitted_with_a_hard_per_update_cap() {
     app.update();
     let index = app.world().resource::<SceneAnchorIndex>();
     assert_eq!(index.rebuild_count(), rebuilds);
-    assert_eq!(index.incremental_work().admitted_rows, COUNT as u64);
+    assert_eq!(index.incremental_work().admitted_rows, (COUNT + 1) as u64);
     assert_eq!(index.incremental_work().derived_flushes, 1);
     assert!(
         index
@@ -184,4 +184,68 @@ fn ten_thousand_prim_full_reconciliation_capture_is_hard_capped() {
         index.visibility_for_anchor(&SceneAnchor::active_session("/World/Reconcile09999")),
         viewport_protocol::HierarchyVisibilityState::Hidden
     );
+}
+
+#[test]
+fn initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_capacity() {
+    const COUNT: usize = 513;
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
+
+    app.world_mut().spawn(usd_bevy::UsdPrimRef::new("/"));
+    let root = app
+        .world_mut()
+        .spawn(usd_bevy::UsdPrimRef::new("/World"))
+        .id();
+    for number in 0..COUNT {
+        app.world_mut().spawn((
+            usd_bevy::UsdPrimRef::new(format!("/World/Initial{number:04}")),
+            ChildOf(root),
+        ));
+    }
+
+    let mut updates = 0;
+    loop {
+        app.update();
+        updates += 1;
+        let index = app.world().resource::<SceneAnchorIndex>();
+        assert!(
+            index.last_refresh_admitted() <= SCENE_INDEX_ADMISSION_BUDGET,
+            "initial Scene-index admission exceeded the hard update budget"
+        );
+        if index
+            .resolve(&SceneAnchor::active_session("/World/Initial0512"))
+            .is_some()
+        {
+            break;
+        }
+        assert!(updates <= 8, "bounded initial Scene-index ingestion did not converge");
+    }
+
+    app.update();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.incremental_work().admitted_rows, (COUNT + 1) as u64);
+    assert_eq!(index.roots_read_model().total_prims, (COUNT + 1) as u32);
+    assert_eq!(index.last_refresh_admitted(), 0);
+    assert!(index.resolve(&SceneAnchor::active_session("/World")).is_some());
+    assert!(
+        index
+            .resolve(&SceneAnchor::active_session("/"))
+            .is_none(),
+        "virtual root must not consume a Scene-index entity slot"
+    );
+
+    // A renderer-only child attachment is projection-only churn and must not
+    // restart the bounded authority ingestion or a whole-index rebuild.
+    let rebuilds = index.rebuild_count();
+    app.world_mut().spawn(ChildOf(root));
+    app.update();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.rebuild_count(), rebuilds);
+    assert!(index.last_refresh_admitted() <= SCENE_INDEX_ADMISSION_BUDGET);
 }

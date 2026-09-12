@@ -81,6 +81,7 @@ impl SelectionColorOverrideState {
     pub(in crate::viewport) fn is_pending(&self) -> bool {
         self.pending.is_some()
     }
+
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -133,7 +134,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     scene_index: Res<SceneAnchorIndex>,
     policy: Option<Res<SelectionPresentationPolicy>>,
     hovered_target: Res<HoveredTarget>,
-    projection: Option<Res<SelectedRenderableProjection>>,
+    projection: Res<SelectedRenderableProjection>,
     color_material: Option<Res<SelectionColorMaterial>>,
     hover_material: Option<Res<HoverColorMaterial>>,
     mut state: ResMut<SelectionColorOverrideState>,
@@ -152,11 +153,7 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     };
     let presentation = settings.selection();
     let coarse = policy.as_deref().is_some_and(|policy| {
-        policy.uses_coarse(
-            projection
-                .as_ref()
-                .map_or(0, |projection| projection.renderables().len()),
-        )
+        policy.uses_coarse(projection.renderables().len())
     });
     let presentation_key: PresentationKey = (
         presentation.color_change_enabled,
@@ -166,12 +163,10 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         hovered_target.anchor.clone(),
         coarse,
     );
-    let projection_generation = projection
-        .as_ref()
-        .map(|projection| projection.generation());
+    let projection_generation = Some(projection.generation());
     let key = ColorWorkKey {
         selection_revision: selection.revision(),
-        scene_revision: projection.is_none().then(|| scene_index.revision()),
+        scene_revision: None,
         projection_generation,
         presentation: presentation_key,
     };
@@ -217,19 +212,12 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
     }
 
     let projection_changed = state.last_projection_generation != projection_generation;
-    let can_use_projection_delta = projection_changed
-        && projection.is_some()
-        && (state.last_projection_generation.is_some()
-            || !state.selected_meshes.is_empty()
-            || state.last_selection_revision.is_some());
-
-    let mut full_reconcile = superseded_pending;
+    let mut full_reconcile = false;
     if coarse {
         state.selected_meshes.clear();
         state.selected_order.clear();
         full_reconcile = true;
-    } else if can_use_projection_delta {
-        let projection = projection.as_ref().expect("projection is present");
+    } else if projection_changed {
         for added in projection.added_renderables() {
             if state.selected_meshes.insert(*added) {
                 debug_assert!(state.selected_order.insert(*added));
@@ -240,32 +228,6 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
                 debug_assert!(state.selected_order.remove(*removed));
             }
         }
-    } else {
-        state.selected_meshes.clear();
-        state.selected_order.clear();
-        if presentation.color_change_enabled {
-            if let Some(projection) = projection.as_ref() {
-                for entity in projection.renderables().iter().copied() {
-                    if state.selected_meshes.insert(entity) {
-                        debug_assert!(state.selected_order.insert(entity));
-                    }
-                }
-            } else {
-                for target in &selection.0.targets {
-                    let Some(entity) = scene_index.resolve(target) else {
-                        continue;
-                    };
-                    let mut selected = HashSet::new();
-                    collect_mesh_descendants(entity, &mesh_hierarchy, &mut selected);
-                    for entity in selected {
-                        if state.selected_meshes.insert(entity) {
-                            debug_assert!(state.selected_order.insert(entity));
-                        }
-                    }
-                }
-            }
-        }
-        full_reconcile = true;
     }
     let mut hovered_meshes = HashSet::new();
     if !coarse
@@ -285,12 +247,9 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         full_reconcile = true;
     }
     let mut affected = HashSet::new();
-    if can_use_projection_delta {
-        let projection = projection.as_ref().expect("projection is present");
+    if projection_changed {
         affected.extend(projection.added_renderables().iter().copied());
         affected.extend(projection.removed_renderables().iter().copied());
-    } else {
-        full_reconcile = true;
     }
     full_reconcile |= selection_color_changed || hover_color_changed;
     let mut affected = affected.into_iter().collect::<Vec<_>>();

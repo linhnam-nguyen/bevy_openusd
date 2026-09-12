@@ -238,7 +238,7 @@ impl SceneAnchorIndex {
     }
 }
 
-fn capture_candidate(
+pub(super) fn capture_candidate(
     entity: Entity,
     prims: &Query<(
         Entity,

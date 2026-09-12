@@ -88,11 +88,12 @@ fn managed_generation_cas_rejects_same_generation_descriptor_mutation() {
 fn concurrent_distinct_payload_cas_loser_preserves_winner_for_retry() {
     let directory = tempdir().expect("Scene cache test directory");
     let scene_id = SceneId::new_v4();
-    let descriptor = SceneCacheDescriptorV3::invalidated(
+    let mut descriptor = SceneCacheDescriptorV3::invalidated(
         scene_id,
         12,
         HashDigest::new([6; HashDigest::BYTE_LEN]),
     );
+    descriptor.state = SceneCacheState::Partial;
     let empty = SceneCacheIndex {
         schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION,
         scene_id,
@@ -119,7 +120,7 @@ fn concurrent_distinct_payload_cas_loser_preserves_winner_for_retry() {
         .expect("first payload wins CAS");
 
     let loser_index = SceneCacheIndex {
-        entries: vec![owned_entry(scene_id, "/SceneRoot/Loser")],
+        entries: vec![owned_entry(scene_id, "/SceneRoot/ZLoser")],
         ..empty
     };
     assert!(
@@ -158,7 +159,7 @@ fn concurrent_distinct_payload_cas_loser_preserves_winner_for_retry() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(paths, ["/SceneRoot/Winner", "/SceneRoot/Loser"]);
+    assert_eq!(paths, ["/SceneRoot/Winner", "/SceneRoot/ZLoser"]);
 }
 
 fn owned_entry(scene_id: SceneId, path: &str) -> SceneCacheEntry {

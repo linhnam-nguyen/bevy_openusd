@@ -8,7 +8,7 @@ mod tests {
     use crate::project::cache_hydration::{ActiveProjectCacheContext, default_project_cache_config_hash};
     use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::session::StageHandle;
+    use crate::viewport::session::{SceneCacheOwnershipContext, StageHandle};
 
     use super::super::support::command_test_app;
 
@@ -139,6 +139,27 @@ mod tests {
     }
 
     #[test]
+    fn canonical_project_scene_save_advances_generation_without_legacy_cache_context() {
+        let (directory, mut app, scene_id, _, _) = project_scene_app();
+        let store = SceneCacheStore::new(directory.path());
+        let before = store.load_descriptor(scene_id).unwrap().unwrap().generation;
+        let config_hash = default_project_cache_config_hash();
+        app.world_mut().remove_resource::<ActiveProjectCacheContext>();
+        app.world_mut().insert_resource(SceneCacheOwnershipContext {
+            project_root: directory.path().to_path_buf(),
+            scene_id,
+            config_hash,
+        });
+
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStage);
+        app.update();
+
+        assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before);
+    }
+
+    #[test]
     fn save_stage_as_invalidates_only_when_destination_is_canonical_project_scene() {
         let (directory, mut app, scene_id, _, canonical) = project_scene_app();
         let store = SceneCacheStore::new(directory.path());
@@ -179,6 +200,7 @@ mod tests {
             Some(&live),
             Some(&path),
             Some(&context),
+            None,
             &queue,
         );
         assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before);

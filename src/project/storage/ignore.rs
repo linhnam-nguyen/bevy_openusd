@@ -9,7 +9,8 @@ pub(crate) const MANAGED_IGNORE_END: &str = "# END USDHub managed local state";
 
 const MANAGED_IGNORE_BLOCK: &str = concat!(
     "# BEGIN USDHub managed local state\n",
-    ".usdhub/\n",
+    ".usdhub/cache/\n",
+    ".usdhub/recovery/\n",
     "# END USDHub managed local state\n",
 );
 
@@ -154,7 +155,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first.starts_with(existing));
-        assert_eq!(first.iter().filter(|byte| **byte == b'\n').count(), 5);
+        assert_eq!(first.iter().filter(|byte| **byte == b'\n').count(), 6);
     }
 
     #[test]
@@ -163,7 +164,7 @@ mod tests {
         let merged = merge_managed_ignore(existing).unwrap();
         assert_eq!(
             String::from_utf8(merged).unwrap(),
-            "keep-before\n# BEGIN USDHub managed local state\n.usdhub/\n# END USDHub managed local state\nkeep-after\n"
+            "keep-before\n# BEGIN USDHub managed local state\n.usdhub/cache/\n.usdhub/recovery/\n# END USDHub managed local state\nkeep-after\n"
         );
     }
 

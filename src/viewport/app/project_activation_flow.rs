@@ -142,6 +142,13 @@ fn activate_prepared_stage(
     command: &project_protocol::ProjectActivationCommand,
     target: crate::project::service::ProjectStageActivationTarget,
 ) -> ProjectActivationReply {
+    if let Some(scene_cache) = target.scene_cache.as_ref() {
+        crate::viewport::session::publish_scene_cache_presentation_before_stage_open(
+            world,
+            &target.project_root,
+            scene_cache,
+        );
+    }
     let activation = match ProjectStageActivation::open(command, target.clone()) {
         Ok(activation) => activation,
         Err(error) => return ProjectActivationReply::failed(command, error),

@@ -33,11 +33,12 @@ fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() 
         &manifest,
     )
     .unwrap();
+    crate::project::storage::install_managed_ignore(&repository).unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "valid main"]);
 
     run_git(&repository, &["checkout", "-b", "broken"]);
-    std::fs::remove_file(repository.join(".usdhub/project.json")).unwrap();
+    std::fs::remove_file(repository.join("project.json")).unwrap();
     run_git(&repository, &["add", "-A"]);
     run_git(&repository, &["commit", "-m", "invalid previous Project"]);
     run_git(&repository, &["checkout", "main"]);
@@ -95,10 +96,12 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
     )
     .unwrap();
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    crate::project::storage::install_managed_ignore(&repository).unwrap();
     let root_scene = match manifest.root {
         ProjectRoot::Scene(scene_id) => scene_id,
         _ => panic!("protected root Scene expected"),
     };
+    crate::project::storage::install_managed_ignore(&repository).unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main Project"]);
     run_git(&repository, &["branch", "broken-feature"]);

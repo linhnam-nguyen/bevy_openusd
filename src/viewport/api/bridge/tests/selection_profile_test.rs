@@ -18,10 +18,10 @@ use crate::viewport::scene::{
     HoverColorMaterial, SectionBoxState, SelectedTargets, SelectionColorMaterial,
     SelectionColorOverride, SelectionColorOverrideState, SelectionOutline, SelectionOutlineState,
     aggregate_selection_bounds, selected_renderable_entities, sync_section_box_state,
-    sync_selection_color_overrides, sync_selection_outlines,
+    sync_selected_renderable_projection, sync_selection_color_overrides, sync_selection_outlines,
 };
 use crate::viewport::session::{Spawned, StageInfo};
-use selection_profile_support::repeat_selection_updates;
+use selection_profile_support::{repeat_selection_updates, settle_scene_index};
 
 const PROFILE_SIZES: [usize; 6] = [1, 10, 100, 256, 1_000, 5_000];
 const PROTOCOL_PROFILE_SIZES: [usize; 8] = [1, 10, 100, 255, 256, 257, 1_000, 5_000];
@@ -69,6 +69,7 @@ fn indexed_scene_app(size: usize) -> App {
     }
     app.world_mut().resource_mut::<Spawned>().0 = true;
     app.update();
+    settle_scene_index(&mut app, size);
     app
 }
 
@@ -257,7 +258,11 @@ fn profile_outline() {
     for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.init_resource::<SelectionOutlineState>()
-            .add_systems(Update, sync_selection_outlines);
+            .init_resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .add_systems(
+                Update,
+                (sync_selected_renderable_projection, sync_selection_outlines).chain(),
+            );
         app.update();
         let value = selection(size);
         let (micros, max_update, settle_frames) =
@@ -306,7 +311,8 @@ fn profile_color() {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.init_resource::<Assets<StandardMaterial>>()
             .init_resource::<SelectionColorOverrideState>()
-            .init_resource::<HoveredTarget>();
+            .init_resource::<HoveredTarget>()
+            .init_resource::<crate::viewport::scene::SelectedRenderableProjection>();
         let base = app
             .world_mut()
             .resource_mut::<Assets<StandardMaterial>>()
@@ -336,7 +342,10 @@ fn profile_color() {
             .0
             .selection
             .color_change_enabled = true;
-        app.add_systems(Update, sync_selection_color_overrides);
+        app.add_systems(
+            Update,
+            (sync_selected_renderable_projection, sync_selection_color_overrides).chain(),
+        );
         app.update();
         let value = selection(size);
         let (micros, max_update, settle_frames) =

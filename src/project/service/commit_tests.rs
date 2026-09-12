@@ -49,13 +49,6 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
     let project = service
         .create_project(&parent, "Scene Commit Project")
         .unwrap();
-    service
-        .commit(ProjectCommitRequest {
-            project_id: project.id,
-            target: ProjectCommitTarget::Project,
-            message: "Create Project baseline".to_owned(),
-        })
-        .unwrap();
     let scene = service
         .create_scene(
             project.id,
@@ -68,8 +61,17 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
         .unwrap();
     let project_root = parent.join("Scene Commit Project");
     let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "Create Project baseline".to_owned(),
+        })
+        .unwrap();
     let scene_generation = cache.load_descriptor(scene.scene_id).unwrap().unwrap().generation;
     let sibling_generation = cache.load_descriptor(sibling.scene_id).unwrap().unwrap().generation;
+    add_scene_marker(&project_root, scene.scene_id, "ArchitectureChanged");
 
     let response = service
         .commit(ProjectCommitRequest {

@@ -189,6 +189,7 @@ fn release_retired_render_assets(
 }
 
 pub(crate) fn retire_scene_cache_resources(world: &mut World) {
+    world.remove_resource::<crate::project::cache_scene_hydration::SceneAnimationPayloads>();
     release_selected_residency(world);
     let released = world
         .get_resource_mut::<ResidencyAuthority>()

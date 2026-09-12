@@ -35,6 +35,9 @@ use crate::viewport::session::rehydrate_activation_presentation;
 use crate::viewport::session::{Spawned, StageInfo, StagePresentationContext};
 use usd_project::ProjectRoot;
 
+#[path = "project_activation_cache_first_tests.rs"]
+mod cache_first_tests;
+
 pub(crate) struct ProductionActivationWorld {
     app: App,
 }

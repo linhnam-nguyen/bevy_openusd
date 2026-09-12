@@ -293,7 +293,7 @@ fn material_texture_ids(material: &RuntimeMaterialBlob) -> [Option<&str>; 5] {
     ]
 }
 
-fn standard_material(
+pub(crate) fn standard_material(
     material: &RuntimeMaterialBlob,
     texture_handles: &HashMap<String, bevy::asset::Handle<bevy::image::Image>>,
 ) -> Result<StandardMaterial> {

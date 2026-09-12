@@ -25,6 +25,7 @@ fn select(app: &mut App, target: SceneAnchor) {
             primary: Some(target),
         })
         .expect("selection satisfies the protocol invariant");
+    app.update();
 }
 
 fn base_app() -> App {

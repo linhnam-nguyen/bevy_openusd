@@ -1,11 +1,35 @@
 use std::time::Instant;
 
 use bevy::prelude::{App, World};
+use crate::viewport::api::SceneAnchorIndex;
 use viewport_protocol::SelectionReadModel;
 
 use super::{SelectionColorOverrideState, SelectionOutlineState, set_selection};
 
 const REPEATS: usize = 5;
+
+pub(super) fn settle_scene_index(app: &mut App, size: usize) {
+    for _ in 0..=size {
+        if app
+            .world()
+            .resource::<SceneAnchorIndex>()
+            .incremental_work()
+            .admitted_rows
+            >= size as u64
+        {
+            break;
+        }
+        app.update();
+    }
+    assert_eq!(
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .incremental_work()
+            .admitted_rows,
+        size as u64
+    );
+    app.update();
+}
 
 fn presentation_pending(app: &World) -> bool {
     app.get_resource::<SelectionOutlineState>()

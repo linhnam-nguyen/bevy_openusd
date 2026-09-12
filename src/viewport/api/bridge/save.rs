@@ -16,6 +16,7 @@ use crate::project::{
     storage::ProjectStorageLayout,
 };
 use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::session::SceneCacheOwnershipContext;
 
 pub(super) fn save_stage_as(
     request_id: String,
@@ -24,6 +25,7 @@ pub(super) fn save_stage_as(
     stage: Option<&LiveStage>,
     filename: &str,
     active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
     cache_warm: &ProjectCacheWarmQueue,
 ) {
     let Some(stage) = stage else {
@@ -38,6 +40,7 @@ pub(super) fn save_stage_as(
         filename,
         EditorOperation::SaveStageAs,
         active_project_cache,
+        scene_cache_owner,
         cache_warm,
     );
 }
@@ -48,6 +51,7 @@ pub(super) fn save_current_stage(
     stage: Option<&LiveStage>,
     path: Option<&Path>,
     active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
     cache_warm: &ProjectCacheWarmQueue,
 ) {
     let Some(stage) = stage else {
@@ -67,6 +71,7 @@ pub(super) fn save_current_stage(
         &filename,
         EditorOperation::SaveStage,
         active_project_cache,
+        scene_cache_owner,
         cache_warm,
     );
 }
@@ -79,6 +84,7 @@ fn persist(
     filename: &str,
     operation: EditorOperation,
     active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
     cache_warm: &ProjectCacheWarmQueue,
 ) {
     if let Err(error) = usd_bevy::authoring::save_stage_as(&stage.stage, filename) {
@@ -86,7 +92,12 @@ fn persist(
         return;
     }
     if let Err(error) =
-        invalidate_owned_scene_after_save(Path::new(filename), active_project_cache, cache_warm)
+        invalidate_owned_scene_after_save(
+            Path::new(filename),
+            active_project_cache,
+            scene_cache_owner,
+            cache_warm,
+        )
     {
         reject(outbox, request_id, error.to_string());
         return;
@@ -98,27 +109,35 @@ fn persist(
 fn invalidate_owned_scene_after_save(
     destination: &Path,
     active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
     cache_warm: &ProjectCacheWarmQueue,
 ) -> Result<()> {
-    let Some(context) = active_project_cache else {
+    let Some(destination) = fs::canonicalize(destination).ok() else {
         return Ok(());
     };
-    let Ok(destination) = fs::canonicalize(destination) else {
+    let (project_root, expected_scene_id) = if let Some(owner) = scene_cache_owner {
+        (owner.project_root.clone(), Some(owner.scene_id.clone()))
+    } else if let Some(context) = active_project_cache {
+        (context.project_root.clone(), None)
+    } else {
         return Ok(());
     };
-    let Ok(manifest) = ManifestStore::read_validated(&context.project_root) else {
+    let Ok(manifest) = ManifestStore::read_validated(&project_root) else {
         return Ok(());
     };
-    let layout = ProjectStorageLayout::new(&context.project_root);
+    let layout = ProjectStorageLayout::new(&project_root);
     let owner = manifest.scenes().iter().find(|scene| {
         let path = layout.readable_scene_path(manifest.raw(), scene);
-        fs::canonicalize(path).is_ok_and(|path| path == destination)
+        expected_scene_id
+            .as_ref()
+            .is_none_or(|expected| expected == &scene.id)
+            && fs::canonicalize(path).is_ok_and(|path| path == destination)
     });
     let Some(scene) = owner else {
         return Ok(());
     };
     if !cache_warm.enqueue_targets_for_mutation(
-        &context.project_root,
+        &project_root,
         vec![ProjectCacheTarget::Scene {
             id: scene.id.to_string(),
         }],

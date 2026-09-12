@@ -211,6 +211,15 @@ pub(crate) fn binding_of(stage: &Stage, mesh_path: &Path) -> Option<SkelBinding>
     bindings.into_iter().find(|b| b.prim == mesh_path.as_str())
 }
 
+/// Resolve the typed animation source for one skinned mesh without exposing
+/// the binding-discovery implementation to application cache adapters.
+pub fn animation_query_for_mesh(stage: &Stage, mesh_path: &Path) -> Option<SkelAnimQuery> {
+    let binding = binding_of(stage, mesh_path)?;
+    let skel_path = binding.skeleton.clone()?;
+    let anim_path = animation_source(stage, &skel_path, &binding)?;
+    SkelAnimQuery::new(stage, anim_path).ok().flatten()
+}
+
 /// Read primary blend-shape offsets once. Inbetween evaluation remains on the
 /// CPU compatibility route; native playback uses these static primary targets.
 pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendShapeData> {

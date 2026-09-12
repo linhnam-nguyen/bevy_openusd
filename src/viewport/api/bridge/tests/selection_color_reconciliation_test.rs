@@ -6,7 +6,7 @@ use viewport_protocol::{ColorRgb8, SelectionReadModel};
 use super::{anchor, set_selection};
 use crate::viewport::scene::{
     SelectionBaseMaterial, SelectionColorMaterial, SelectionColorOverride,
-    SelectionColorOverrideState,
+    SelectionColorOverrideState, SelectionOutlineState,
 };
 
 const SELECTION_SIZE: usize = 1_000;
@@ -48,8 +48,24 @@ fn settle_color_work(app: &mut App) {
             return;
         }
         app.update();
+        assert_presentation_budget(app);
     }
     panic!("selection color work did not settle within the bounded test budget");
+}
+
+fn assert_presentation_budget(app: &App) {
+    assert!(
+        app.world()
+            .resource::<SelectionColorOverrideState>()
+            .last_affected_entities
+            <= 256,
+        "selection color preparation exceeded its per-update budget"
+    );
+    let outline = app.world().resource::<SelectionOutlineState>();
+    assert!(
+        outline.last_added + outline.last_removed + outline.last_updated <= 256,
+        "selection outline preparation exceeded its per-update budget"
+    );
 }
 
 fn assert_only_range_is_selected(
@@ -114,6 +130,7 @@ fn interrupted_selection_color_reconciles_a_to_b_and_restores_base_materials() {
         .selection
         .selection_color = ColorRgb8::new(0x10, 0x20, 0x30);
     app.update();
+    assert_presentation_budget(&app);
     assert!(
         app.world()
             .resource::<SelectionColorOverrideState>()
@@ -133,15 +150,23 @@ fn repeated_superseding_selection_color_work_leaves_only_the_final_range_owned()
 
     set_selection(&mut app, range_selection(0));
     app.update();
+    assert_presentation_budget(&app);
     set_selection(&mut app, range_selection(2_000));
     app.update();
+    assert_presentation_budget(&app);
     assert!(
         app.world()
-            .resource::<SelectionColorOverrideState>()
+            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
             .is_pending()
+            || app
+                .world()
+                .resource::<SelectionColorOverrideState>()
+                .is_pending(),
+        "superseding selection must retain bounded projection or presentation work"
     );
     set_selection(&mut app, range_selection(4_000));
     app.update();
+    assert_presentation_budget(&app);
     settle_color_work(&mut app);
 
     assert_only_range_is_selected(&mut app, 4_000, &base_handle, &selection_handle);
@@ -154,15 +179,23 @@ fn reverting_to_the_last_completed_selection_reconciles_partial_color_work() {
 
     set_selection(&mut app, range_selection(0));
     app.update();
+    assert_presentation_budget(&app);
     set_selection(&mut app, range_selection(2_000));
     app.update();
+    assert_presentation_budget(&app);
     assert!(
         app.world()
-            .resource::<SelectionColorOverrideState>()
+            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
             .is_pending()
+            || app
+                .world()
+                .resource::<SelectionColorOverrideState>()
+                .is_pending(),
+        "superseding selection must retain bounded projection or presentation work"
     );
     set_selection(&mut app, range_selection(0));
     app.update();
+    assert_presentation_budget(&app);
     settle_color_work(&mut app);
 
     assert_only_range_is_selected(&mut app, 0, &base_handle, &selection_handle);

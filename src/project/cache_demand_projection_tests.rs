@@ -34,7 +34,7 @@ fn payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows() {
             SceneCacheEntry {
                 address: SceneCacheAddress {
                     scene_id,
-                    occurrence: SceneCacheOccurrence::Member(SceneMemberId::new_v4()),
+                    occurrence: SceneCacheOccurrence::PrimPath("/SceneRoot/0Composed".to_owned()),
                 },
                 parent: None,
                 transform: CachedTransform::Placement(
@@ -83,13 +83,15 @@ fn payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows() {
         entries: Vec::new(),
     };
     let store = SceneCacheStore::new(directory.path());
+    let mut descriptor = SceneCacheDescriptorV3::invalidated(
+        scene_id,
+        4,
+        HashDigest::new([9; HashDigest::BYTE_LEN]),
+    );
+    descriptor.state = SceneCacheState::Partial;
     store
         .publish_generation(
-            &SceneCacheDescriptorV3::invalidated(
-                scene_id,
-                4,
-                HashDigest::new([9; HashDigest::BYTE_LEN]),
-            ),
+            &descriptor,
             &index,
             &spatial,
         )

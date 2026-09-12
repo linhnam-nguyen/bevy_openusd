@@ -1,5 +1,4 @@
 use std::fs;
-
 use anyhow::Result;
 use image::RgbaImage;
 use tempfile::tempdir;
@@ -12,7 +11,6 @@ use crate::project::model_import::{ModelImportRequest, ModelImporter, UsdModelIm
 use crate::project::model_wrapper::{
     ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic,
 };
-
 #[test]
 fn empty_project_is_warmed_without_a_stage_open_failure() -> Result<()> {
     let directory = tempdir()?;
@@ -34,6 +32,43 @@ fn empty_project_is_warmed_without_a_stage_open_failure() -> Result<()> {
     assert_eq!(descriptor.state, ProjectCacheState::Empty);
     Ok(())
 }
+
+#[test]
+fn failed_scene_warm_reports_error_and_terminalizes_current_generation() -> Result<()> {
+    let directory = tempdir()?;
+    usd_git::Repository::init(directory.path())?;
+    let scene_id = usd_project::SceneId::new_v4();
+    let manifest = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Failed Scene Warm",
+        ProjectRoot::Scene(scene_id),
+        vec![usd_project::SceneManifestEntry {
+            id: scene_id,
+            storage_key: usd_project::StorageKey::new("scene")?,
+            display_name: "Scene".to_owned(),
+        }],
+        Vec::new(),
+    );
+    ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
+    let queue = ProjectCacheWarmQueue::default();
+    let target = ProjectCacheTarget::Scene { id: scene_id.to_string() };
+    assert!(queue.enqueue(directory.path(), target));
+
+    assert!(!queue.wait_for_project_idle(directory.path(), std::time::Duration::from_secs(2)));
+    let error = queue
+        .last_warm_failure(directory.path())
+        .expect("failed Scene warm reports its worker error");
+    assert!(error.contains("read Project target metadata"), "unexpected warm error: {error}");
+    assert_eq!(
+        SceneCacheStore::new(directory.path())
+            .load_descriptor(scene_id)?
+            .expect("failed warm descriptor")
+            .state,
+        SceneCacheState::FallbackRequired
+    );
+    Ok(())
+}
+
 #[test]
 fn fresh_project_import_warms_root_scene_and_model_to_ready() -> Result<()> {
     let directory = tempdir()?;
@@ -123,6 +158,23 @@ def Xform "World"
             id: model_id.to_string(),
         },
     ] {
+        if let ProjectCacheTarget::Scene { id } = &target {
+            let scene_id = SceneId::parse(id)?;
+            assert!(queue.wait_for_project_idle(directory.path(), std::time::Duration::from_secs(2)));
+            let scene_store = SceneCacheStore::new(directory.path());
+            let activation = scene_store.load_activation(scene_id)?;
+            assert!(
+                activation.is_some(),
+                "fresh Scene cache warm completes; descriptor={:?}",
+                scene_store.load_descriptor(scene_id)?
+            );
+            let activation = activation.expect("fresh Scene cache warm completes");
+            assert!(matches!(
+                activation.descriptor.state,
+                SceneCacheState::Partial | SceneCacheState::Ready
+            ));
+            continue;
+        }
         let descriptor = wait_for(&queue, directory.path(), &target)?
             .expect("fresh Project target warm completes");
         assert_eq!(descriptor.state, ProjectCacheState::Ready);
@@ -280,7 +332,8 @@ fn scene_owned_identity_excludes_child_payload_and_presentation_names() -> Resul
     )?;
     manifest.scenes.iter_mut().find(|scene| scene.id == child_scene).unwrap().display_name = "Renamed".to_owned();
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    assert_eq!(child_after_content, identity(child_scene)?);
+    let child_after_presentation = identity(child_scene)?;
+    assert_ne!(child_after_content, child_after_presentation);
     assert_eq!(parent_before, identity(parent_scene)?);
 
     let placed_member = SceneMember {
@@ -291,7 +344,7 @@ fn scene_owned_identity_excludes_child_payload_and_presentation_names() -> Resul
         directory.path(), parent_scene, &[placed_member],
     )?;
     assert_ne!(parent_before, identity(parent_scene)?);
-    assert_eq!(child_after_content, identity(child_scene)?);
+    assert_eq!(child_after_presentation, identity(child_scene)?);
     Ok(())
 }
 

@@ -359,6 +359,7 @@ pub(super) fn apply_viewport_commands(
                         .as_ref()
                         .map(|handle| handle.path.as_path()),
                     state.active_project_cache.as_deref(),
+                    state.scene_cache_owner.as_deref(),
                     &state.cache_warm,
                     &state.selected_targets,
                 );

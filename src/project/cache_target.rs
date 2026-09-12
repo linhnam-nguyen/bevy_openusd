@@ -1,7 +1,5 @@
 //! Neutral persistent Scene-cache contracts and immutable Project lookup.
 
-use std::collections::{HashMap, HashSet};
-
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use usd_model::{BlobId, Bounds3, HashDigest, TransformSignature};
@@ -265,105 +263,6 @@ pub(crate) enum CacheObjectRef {
     ChildModel { model_id: ModelId, member_id: SceneMemberId },
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct SceneObjectKey {
-    pub(crate) scene_id: SceneId,
-    pub(crate) content_hash: HashDigest,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct ProjectCacheLookup {
-    by_address: HashMap<SceneCacheAddress, CacheObjectRef>,
-    by_hash: HashMap<SceneObjectKey, Vec<SceneCacheAddress>>,
-    generations: HashMap<SceneId, u64>,
-}
-
-impl ProjectCacheLookup {
-    pub(crate) fn from_scene_indexes(indexes: &[SceneCacheIndex]) -> Result<Self> {
-        let mut by_address = HashMap::new();
-        let mut by_hash: HashMap<SceneObjectKey, Vec<SceneCacheAddress>> = HashMap::new();
-        let mut generations = HashMap::new();
-        let mut scenes = HashSet::new();
-        for index in indexes {
-            ensure!(
-                scenes.insert(index.scene_id),
-                "Project cache lookup cannot merge multiple generations of one Scene"
-            );
-            index.validate(index.scene_id, index.generation)?;
-            generations.insert(index.scene_id, index.generation);
-            for entry in &index.entries {
-                let object = cache_object_ref(entry);
-                ensure!(
-                    by_address.insert(entry.address.clone(), object).is_none(),
-                    "duplicate Project cache address"
-                );
-                if let Some(content_hash) = entry.content_hash {
-                    by_hash
-                        .entry(SceneObjectKey {
-                            scene_id: index.scene_id,
-                            content_hash,
-                        })
-                        .or_default()
-                        .push(entry.address.clone());
-                }
-            }
-        }
-        for addresses in by_hash.values_mut() {
-            addresses.sort();
-        }
-        Ok(Self {
-            by_address,
-            by_hash,
-            generations,
-        })
-    }
-
-    pub(crate) fn get(&self, address: &SceneCacheAddress) -> Option<&CacheObjectRef> {
-        self.by_address.get(address)
-    }
-
-    pub(crate) fn addresses_for_hash(&self, key: SceneObjectKey) -> &[SceneCacheAddress] {
-        self.by_hash.get(&key).map(Vec::as_slice).unwrap_or(&[])
-    }
-
-    pub(crate) fn persistent_rows(&self) -> Vec<(SceneCacheAddress, CacheObjectRef)> {
-        let mut rows = self
-            .by_address
-            .iter()
-            .map(|(address, object)| (address.clone(), object.clone()))
-            .collect::<Vec<_>>();
-        rows.sort_by(|left, right| left.0.cmp(&right.0));
-        rows
-    }
-
-    pub(crate) fn persistent_generations(&self) -> Vec<(SceneId, u64)> {
-        let mut generations = self
-            .generations
-            .iter()
-            .map(|(scene_id, generation)| (*scene_id, *generation))
-            .collect::<Vec<_>>();
-        generations.sort_by_key(|(scene_id, _)| *scene_id);
-        generations
-    }
-}
-
-fn cache_object_ref(entry: &SceneCacheEntry) -> CacheObjectRef {
-    match &entry.kind {
-        SceneCacheEntryKind::OwnedPrim { prim_path } => CacheObjectRef::OwnedPrim {
-            prim_path: prim_path.clone(),
-            geometry: entry.geometry.clone(),
-            material: entry.material.clone(),
-            animation: entry.animation.clone(),
-            semantic_key: entry.semantic_key.clone(),
-            content_hash: entry.content_hash,
-        },
-        SceneCacheEntryKind::ChildScene { scene_id, member_id } => CacheObjectRef::ChildScene {
-            scene_id: *scene_id,
-            member_id: *member_id,
-        },
-        SceneCacheEntryKind::ChildModel { model_id, member_id } => CacheObjectRef::ChildModel {
-            model_id: *model_id,
-            member_id: *member_id,
-        },
-    }
-}
+#[path = "cache_lookup.rs"]
+mod cache_lookup;
+pub(crate) use cache_lookup::{ProjectCacheLookup, SceneObjectKey};

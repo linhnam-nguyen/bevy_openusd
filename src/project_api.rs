@@ -27,8 +27,14 @@ pub(crate) mod cache_demand_projection;
 pub(crate) mod cache_hydration;
 #[path = "project/cache_preparation.rs"]
 pub(crate) mod cache_preparation;
+#[path = "project/cache_scene_build.rs"]
+pub(crate) mod cache_scene_build;
+#[path = "project/cache_scene_hydration.rs"]
+pub(crate) mod cache_scene_hydration;
 #[path = "project/cache_warm_runtime.rs"]
 pub(crate) mod cache_warm_runtime;
+#[path = "project/cache_scene_payload.rs"]
+pub(crate) mod cache_scene_payload;
 #[path = "project/cache_warmer.rs"]
 pub(crate) mod cache_warmer;
 #[path = "project/ghost_cache/mod.rs"]

@@ -235,6 +235,25 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
     Ok(())
 }
 
+fn mark_warm_failure_terminal(project_root: &Path, target: &WarmTarget) {
+    let ProjectCacheTarget::Scene { id } = &target.target else { return; };
+    let Some(generation) = target.scene_generation else { return; };
+    let Ok(scene_id) = SceneId::parse(id) else { return; };
+    let store = SceneCacheStore::new(project_root);
+    let Ok(Some(mut descriptor)) = store.load_descriptor(scene_id) else { return; };
+    if descriptor.generation != generation || descriptor.state != SceneCacheState::Building {
+        return;
+    }
+    descriptor.state = SceneCacheState::FallbackRequired;
+    if let Err(error) = store.publish_descriptor(&descriptor) {
+        log::error!(
+            "failed to terminalize Scene cache warm failure for {} generation {}: {error:#}",
+            scene_id,
+            generation
+        );
+    }
+}
+
 fn warm_scene_target(
     project_root: &Path,
     id: &str,

@@ -72,6 +72,17 @@ pub(crate) struct SceneCachePresentation {
     pub(crate) entries: Vec<SceneCacheEntry>,
 }
 
+/// Explicit Scene-V3 cache ownership for mutation lifecycle boundaries.
+///
+/// This remains available even when the legacy Project cache context is absent,
+/// so canonical Scene saves can advance their owned generation directly.
+#[derive(Resource, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SceneCacheOwnershipContext {
+    pub(crate) project_root: PathBuf,
+    pub(crate) scene_id: SceneId,
+    pub(crate) config_hash: HashDigest,
+}
+
 impl SceneCachePresentation {
     pub(crate) fn from_activation(activation: &SceneCacheActivation) -> Self {
         Self {
