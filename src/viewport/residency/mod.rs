@@ -1,15 +1,17 @@
 //! Centralized Scene payload residency for the native viewport.
 
+mod animation;
 mod authority;
 mod camera;
 mod loader;
 mod lru;
 mod projection;
 mod repair;
-mod repair_phase;
 mod repair_persistence;
+mod repair_phase;
 mod selection;
 mod spatial;
+mod viewpoint;
 mod worker;
 
 use bevy::asset::Assets;
@@ -22,6 +24,7 @@ use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::viewport::scene::SectionBoxState;
 use crate::viewport::session::SceneCachePresentation;
 
+use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;
 use projection::SceneResidencyProjection;
 use repair::{
@@ -30,6 +33,7 @@ use repair::{
 };
 use repair_persistence::TargetedRepairPersistenceWorker;
 use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
+use viewpoint::{ActiveViewpointResidencyState, sync_active_viewpoint_residency};
 use worker::CachedResidencyWorker;
 
 pub(crate) use authority::{
@@ -47,6 +51,8 @@ impl Plugin for ResidencyPlugin {
             .init_resource::<TargetedRepairQueue>()
             .init_resource::<TargetedRepairPersistenceWorker>()
             .init_resource::<CachedResidencyWorker>()
+            .init_resource::<AnimationResidencyState>()
+            .init_resource::<ActiveViewpointResidencyState>()
             .init_resource::<SelectionResidencyState>()
             .insert_resource(RenderAssetBytesPerFrame::new(
                 DEFAULT_UPLOAD_BYTES_PER_FRAME,
@@ -55,6 +61,8 @@ impl Plugin for ResidencyPlugin {
                 Update,
                 (
                     sync_scene_cache_candidates,
+                    sync_animation_residency,
+                    sync_active_viewpoint_residency,
                     sync_selected_residency,
                     update_camera_residency,
                     drain_cached_residency_completions,
