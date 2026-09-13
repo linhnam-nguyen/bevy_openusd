@@ -14,7 +14,8 @@ use super::camera::CameraSample;
 use super::loader::{BoundedLoader, LoadJob};
 use super::lru::WarmLru;
 use super::repair_phase::RepairPhase;
-use super::spatial::{CameraCandidateIndex, SceneSpatialPayload};
+use super::spatial::CameraCandidateIndex;
+use super::catalog::PayloadLoadMask;
 
 #[path = "authority_camera.rs"]
 mod authority_camera;
@@ -22,6 +23,12 @@ mod authority_camera;
 mod authority_loading;
 #[path = "authority_runtime.rs"]
 mod authority_runtime;
+#[path = "authority_capacity.rs"]
+mod authority_capacity;
+#[path = "authority_completion.rs"]
+mod authority_completion;
+#[path = "authority_payloads.rs"]
+mod authority_payloads;
 
 pub(crate) const DEFAULT_LOADER_CAPACITY: usize = 256;
 pub(crate) const DEFAULT_UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
@@ -74,6 +81,10 @@ struct PayloadRecord {
     generation: u64,
     state: PayloadResidencyState,
     reasons: BTreeSet<ResidencyReason>,
+    requested_mask: PayloadLoadMask,
+    satisfied_mask: PayloadLoadMask,
+    queued_mask: PayloadLoadMask,
+    in_flight_mask: PayloadLoadMask,
     cpu_bytes: u64,
     gpu_bytes: u64,
     cpu_payload: Option<Mesh>,
@@ -98,6 +109,7 @@ pub(crate) struct ResidencyAuthority {
     ready_for_upload: VecDeque<ScenePayloadKey>,
     ready_upload_membership: HashSet<ScenePayloadKey>,
     warm: WarmLru<ScenePayloadKey>,
+    pending_loads: BTreeSet<ScenePayloadKey>,
     cpu_used: u64,
     cpu_reserved: u64,
     gpu_used: u64,
@@ -126,6 +138,7 @@ impl ResidencyAuthority {
             ready_for_upload: VecDeque::new(),
             ready_upload_membership: HashSet::new(),
             warm: WarmLru::default(),
+            pending_loads: BTreeSet::new(),
             cpu_used: 0,
             cpu_reserved: 0,
             gpu_used: 0,
@@ -138,6 +151,13 @@ impl ResidencyAuthority {
     }
     pub(crate) fn budgets(&self) -> ResidencyBudgets {
         self.budgets
+    }
+
+    pub(crate) fn load_mask(&self, key: &ScenePayloadKey) -> PayloadLoadMask {
+        self.records
+            .get(key)
+            .map(|record| record.requested_mask)
+            .unwrap_or(PayloadLoadMask::GEOMETRY)
     }
     pub(crate) fn set_budgets(&mut self, budgets: ResidencyBudgets) {
         self.budgets = budgets;
@@ -166,6 +186,10 @@ impl ResidencyAuthority {
             generation,
             state: PayloadResidencyState::Unloaded,
             reasons: BTreeSet::new(),
+            requested_mask: PayloadLoadMask::default(),
+            satisfied_mask: PayloadLoadMask::default(),
+            queued_mask: PayloadLoadMask::default(),
+            in_flight_mask: PayloadLoadMask::default(),
             cpu_bytes,
             gpu_bytes,
             cpu_payload: None,
@@ -185,36 +209,23 @@ impl ResidencyAuthority {
             record.gpu_bytes = gpu_bytes;
         }
         record.reasons.insert(reason);
+        record.requested_mask = record
+            .requested_mask
+            .union(PayloadLoadMask::for_reason(reason));
         if suppressed {
             return false;
         }
         if was_warm {
-            let needs_upload = {
-                record.state = if record.render_handle.is_some() {
+            record.state = if record.render_handle.is_some() {
                     PayloadResidencyState::GpuResident
                 } else {
                     PayloadResidencyState::CpuReady
                 };
-                record.state == PayloadResidencyState::CpuReady
-            };
-            if needs_upload {
+            if record.state == PayloadResidencyState::CpuReady {
                 self.enqueue_ready_upload(key);
             }
-            return true;
         }
-        if record.state == PayloadResidencyState::Unloaded {
-            let accepted = self.loader.enqueue(LoadJob {
-                key,
-                generation,
-                cpu_bytes,
-                gpu_bytes,
-            });
-            if accepted {
-                record.state = PayloadResidencyState::Queued;
-            }
-            return accepted;
-        }
-        true
+        self.enqueue_missing_load(key)
     }
     pub(crate) fn remove_reason(
         &mut self,
@@ -235,12 +246,29 @@ impl ResidencyAuthority {
         let has_reasons = {
             let record = self.records.get_mut(&key).expect("record still exists");
             record.reasons.remove(&reason);
+            record.requested_mask = record
+                .reasons
+                .iter()
+                .fold(PayloadLoadMask::default(), |mask, reason| {
+                    mask.union(PayloadLoadMask::for_reason(*reason))
+                });
             !record.reasons.is_empty()
         };
         if has_reasons {
             return true;
         }
         self.repair_phases.remove(&(key, generation));
+        self.pending_loads.remove(&key);
+        let queued_mask = self
+            .records
+            .get(&key)
+            .map_or(PayloadLoadMask::default(), |record| record.queued_mask);
+        if !queued_mask.is_empty() {
+            self.loader.cancel(&key);
+            if let Some(record) = self.records.get_mut(&key) {
+                record.queued_mask = PayloadLoadMask::default();
+            }
+        }
         if was_cpu_ready {
             self.remove_ready_upload(&key);
         }
@@ -256,7 +284,6 @@ impl ResidencyAuthority {
                 self.warm.insert(key, record.cpu_bytes, 0, false);
             }
             PayloadResidencyState::Queued => {
-                self.loader.cancel(&key);
                 record.state = PayloadResidencyState::Unloaded;
             }
             PayloadResidencyState::RepairWaiting => {
@@ -273,6 +300,7 @@ impl ResidencyAuthority {
     pub(crate) fn reasons(&self, key: &ScenePayloadKey) -> Option<&BTreeSet<ResidencyReason>> {
         self.records.get(key).map(|record| &record.reasons)
     }
+
     pub(crate) fn accounted_bytes(&self) -> (u64, u64) {
         (self.cpu_used, self.gpu_used)
     }
@@ -296,36 +324,6 @@ impl ResidencyAuthority {
     pub(crate) fn take_released_render_assets(&mut self) -> Vec<AssetId<Mesh>> {
         std::mem::take(&mut self.released_render_assets)
     }
-    fn enqueue_ready_upload(&mut self, key: ScenePayloadKey) {
-        if self.ready_upload_membership.insert(key) {
-            self.ready_for_upload.push_back(key);
-        }
-    }
-
-    fn remove_ready_upload(&mut self, key: &ScenePayloadKey) {
-        if !self.ready_upload_membership.remove(key) {
-            return;
-        }
-        let position = self.ready_for_upload.iter().position(|queued| queued == key);
-        debug_assert!(position.is_some());
-        if let Some(position) = position {
-            let _ = self.ready_for_upload.remove(position);
-        }
-    }
-
-    fn pop_ready_upload(&mut self) -> Option<ScenePayloadKey> {
-        let key = self.ready_for_upload.pop_front()?;
-        let removed = self.ready_upload_membership.remove(&key);
-        debug_assert!(removed);
-        Some(key)
-    }
-
-    fn requeue_ready_upload_front(&mut self, key: ScenePayloadKey) {
-        if self.ready_upload_membership.insert(key) {
-            self.ready_for_upload.push_front(key);
-        }
-    }
-
     pub(crate) fn payload_key(entry: &SceneCacheEntry) -> Option<ScenePayloadKey> {
         entry.content_hash.map(|blob_hash| ScenePayloadKey {
             scene_id: entry.address.scene_id,
@@ -347,53 +345,11 @@ impl ResidencyAuthority {
             .is_some_and(|current| *current == generation)
     }
 
-    fn evict_to_budget(&mut self) {
-        while self.cpu_used > self.budgets.cpu_bytes || self.gpu_used > self.budgets.gpu_bytes {
-            if !self.evict_oldest_warm() {
-                break;
-            }
-        }
-    }
-
-    fn evict_oldest_warm(&mut self) -> bool {
-        let Some((key, cpu_bytes, gpu_bytes)) = self.warm.pop_oldest_unpinned() else {
-            return false;
-        };
-        self.cpu_used = self.cpu_used.saturating_sub(cpu_bytes);
-        self.gpu_used = self.gpu_used.saturating_sub(gpu_bytes);
-        if let Some(record) = self.records.get_mut(&key) {
-            record.state = PayloadResidencyState::Unloaded;
-            record.cpu_payload = None;
-            if let Some(handle) = record.render_handle.take() {
-                self.released_render_assets.push(handle.id());
-            }
-        }
-        true
-    }
-
-    fn can_fit_cpu(&self, bytes: u64) -> bool {
-        self.cpu_used <= self.budgets.cpu_bytes
-            && self.cpu_reserved <= self.budgets.cpu_bytes - self.cpu_used
-            && bytes <= self.budgets.cpu_bytes - self.cpu_used - self.cpu_reserved
-    }
-
-    fn can_fit_gpu(&self, bytes: u64) -> bool {
-        self.gpu_used <= self.budgets.gpu_bytes && bytes <= self.budgets.gpu_bytes - self.gpu_used
-    }
-
-    fn ensure_capacity(&mut self, cpu_bytes: u64, gpu_bytes: u64) -> bool {
-        if cpu_bytes > self.budgets.cpu_bytes || gpu_bytes > self.budgets.gpu_bytes {
-            return false;
-        }
-        while !self.can_fit_cpu(cpu_bytes) || !self.can_fit_gpu(gpu_bytes) {
-            if !self.evict_oldest_warm() {
-                return false;
-            }
-        }
-        true
-    }
 }
 
 #[cfg(test)]
 #[path = "authority_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "authority_payload_satisfaction_tests.rs"]
+mod payload_satisfaction_tests;

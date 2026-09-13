@@ -1,8 +1,9 @@
 use bevy::prelude::World;
 
 use crate::project::cache_contract::SceneCacheActivation;
+use super::SceneCacheOwnershipContext;
 
-pub(crate) fn publish_scene_cache_presentation_before_stage_open(
+pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
     world: &mut World,
     project_root: &std::path::Path,
     activation: &SceneCacheActivation,
@@ -10,6 +11,15 @@ pub(crate) fn publish_scene_cache_presentation_before_stage_open(
     if !is_current(Some(project_root), activation) {
         return false;
     }
+    world.insert_resource(SceneCacheOwnershipContext {
+        project_root: project_root.to_path_buf(),
+        scene_id: activation.descriptor.scene_id,
+        config_hash: activation.descriptor.config_hash,
+    });
+    world.insert_resource(crate::viewport::session::CachePresentationGate::waiting(
+        activation.descriptor.scene_id,
+        activation.descriptor.generation,
+    ));
     super::scene_presentation::publish_scene_cache_presentation(world, activation, Some(project_root));
     true
 }

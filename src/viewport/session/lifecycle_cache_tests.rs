@@ -1,5 +1,7 @@
 use std::{fs, sync::{Arc, Mutex}, thread, time::{Duration, Instant}};
 
+use bevy::asset::{Assets, RenderAssetUsages};
+use bevy::mesh::{Mesh, PrimitiveTopology};
 use bevy::prelude::World;
 use openusd::usd::Stage;
 use tempfile::tempdir;
@@ -8,17 +10,29 @@ use usd_model::HashDigest;
 use viewport_protocol::{PrimNodeReadModel, RuntimeProfile, SceneAnchor};
 
 use super::{
-    Spawned, StageInfo, activate_stage_with_cache_context, poll_scene_cache_revalidation,
-    activate_stage_with_cache_context_for_test,
+    Spawned, StageInfo, StageInstallMode, activate_open_stage_with_cache_context_for_generation,
+    activate_stage_with_cache_context, activate_stage_with_cache_context_for_test,
+    install_scene_cache_bootstrap_before_stage_open, poll_scene_cache_revalidation,
 };
-use crate::project::cache_contract::{SceneCacheDescriptorV3, SceneCacheState};
+use crate::project::cache_contract::{
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+    ProjectCacheLookup, SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState,
+    SceneSpatialIndex,
+};
 use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::cache_hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::viewport::api::CurrentHierarchyProjection;
-use crate::viewport::session::{PendingSceneCacheRevalidation, SceneCachePresentation};
+use crate::viewport::residency::{ResidencyAuthority, ResidencyReason, ScenePayloadKey,
+    SceneResidencyProjection};
+use crate::viewport::session::{
+    PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
+    StagePresentationContext,
+};
+
+const CACHE_WARM_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[test]
 fn corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage() {
@@ -111,9 +125,9 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     };
     let queue = crate::project::cache_warmer::ProjectCacheWarmQueue::default();
     assert!(queue.enqueue(project.path(), target.clone()));
-    assert!(queue.wait_for_project_idle(project.path(), Duration::from_secs(2)));
+    assert!(queue.wait_for_project_idle(project.path(), CACHE_WARM_TEST_TIMEOUT));
     let scene_store = SceneCacheStore::new(project.path());
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + CACHE_WARM_TEST_TIMEOUT;
     let descriptor = loop {
         let descriptor = scene_store
             .load_descriptor(scene_id)
@@ -324,3 +338,6 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
         scene_generation + 1
     );
 }
+
+#[path = "lifecycle_cache_preservation_tests.rs"]
+mod preservation_tests;

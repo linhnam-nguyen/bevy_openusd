@@ -291,7 +291,7 @@ fn activate(context: &mut Context) -> Result<(), String> {
         latest_target = Some(target.clone());
         let reply = production.apply("m2-c8-session", &command, Ok(Some(target.clone())));
         if !matches!(
-            reply.result,
+            reply.expect("activation completion reply").result,
             project_protocol::ProjectActivationResult::Activated { .. }
         ) {
             return Err(context
@@ -328,7 +328,7 @@ fn activate(context: &mut Context) -> Result<(), String> {
         .map_err(|error| context.trace.failure(error))?;
     let reply = production.apply("m2-c8-session", &stale_command, Ok(Some(stale_target)));
     if !matches!(
-        reply.result,
+        reply.expect("stale activation completion reply").result,
         project_protocol::ProjectActivationResult::Failed { .. }
     ) {
         return Err(context.trace.failure("stale Scene completion was accepted"));

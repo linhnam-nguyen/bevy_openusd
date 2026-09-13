@@ -184,7 +184,7 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
         Ok(Some(target.clone())),
     );
     assert!(matches!(
-        reply.result,
+        reply.expect("activation completion reply").result,
         project_protocol::ProjectActivationResult::Activated { .. }
     ));
 

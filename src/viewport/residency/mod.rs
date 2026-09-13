@@ -3,6 +3,7 @@
 mod animation;
 mod authority;
 mod camera;
+mod catalog;
 mod loader;
 mod lru;
 mod projection;
@@ -22,11 +23,11 @@ use bevy::render::render_asset::RenderAssetBytesPerFrame;
 
 use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::viewport::scene::SectionBoxState;
-use crate::viewport::session::SceneCachePresentation;
+use crate::viewport::session::{SceneCacheOwnershipContext, SceneCachePresentation};
 
 use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;
-use projection::SceneResidencyProjection;
+pub(crate) use projection::SceneResidencyProjection;
 use repair::{
     TargetedRepairQueue, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
@@ -34,12 +35,13 @@ use repair::{
 use repair_persistence::TargetedRepairPersistenceWorker;
 use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
 use viewpoint::{ActiveViewpointResidencyState, sync_active_viewpoint_residency};
-use worker::CachedResidencyWorker;
+use worker::{CachedResidencyWorker, LoadedScenePayloadQueue, install_loaded_scene_payloads};
 
 pub(crate) use authority::{
     DEFAULT_UPLOAD_BYTES_PER_FRAME, PayloadResidencyState, ResidencyAuthority, ResidencyBudgets,
     ResidencyReason, ScenePayloadKey,
 };
+pub(crate) use catalog::{PayloadLoadMask, ScenePayloadCatalog, ScenePayloadDescriptor};
 pub(crate) use camera::{CameraAdmission, CameraSample, SectionBoxClipPlanes};
 
 pub(crate) struct ResidencyPlugin;
@@ -47,10 +49,12 @@ pub(crate) struct ResidencyPlugin;
 impl Plugin for ResidencyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ResidencyAuthority>()
+            .init_resource::<ScenePayloadCatalog>()
             .init_resource::<SceneResidencyProjection>()
             .init_resource::<TargetedRepairQueue>()
             .init_resource::<TargetedRepairPersistenceWorker>()
             .init_resource::<CachedResidencyWorker>()
+            .init_resource::<LoadedScenePayloadQueue>()
             .init_resource::<AnimationResidencyState>()
             .init_resource::<ActiveViewpointResidencyState>()
             .init_resource::<SelectionResidencyState>()
@@ -65,6 +69,7 @@ impl Plugin for ResidencyPlugin {
                     sync_active_viewpoint_residency,
                     sync_selected_residency,
                     update_camera_residency,
+                    install_loaded_scene_payloads,
                     drain_cached_residency_completions,
                     drain_targeted_repair_persistence_completions,
                     process_targeted_residency_repairs,
@@ -81,11 +86,13 @@ fn sync_scene_cache_candidates(
     mut authority: ResMut<ResidencyAuthority>,
     mut assets: ResMut<Assets<Mesh>>,
     mut projection: ResMut<SceneResidencyProjection>,
+    mut catalog: ResMut<ScenePayloadCatalog>,
     mut repairs: ResMut<TargetedRepairQueue>,
     mut commands: Commands,
 ) {
     let Some(presentation) = presentation else {
         authority.retire();
+        *catalog = ScenePayloadCatalog::default();
         repairs.clear();
         projection.retire(&mut commands);
         release_retired_render_assets(&mut authority, &mut assets, &mut projection, &mut commands);
@@ -96,6 +103,15 @@ fn sync_scene_cache_candidates(
     }
     repairs.clear();
     let payloads = spatial::scene_payloads(&presentation.entries);
+    match ScenePayloadCatalog::from_presentation(&presentation) {
+        Ok(next) => *catalog = next,
+        Err(error) => {
+            bevy::log::warn!(
+                "[viewport-residency] rejected invalid Scene payload catalog: {error}"
+            );
+            *catalog = ScenePayloadCatalog::default();
+        }
+    }
     authority.install_scene(
         presentation.scene_id,
         presentation.generation,
@@ -142,23 +158,46 @@ fn update_camera_residency(
 }
 
 fn dispatch_cached_residency_loads(
-    cache_context: Option<Res<ActiveProjectCacheContext>>,
+    scene_owner: Option<Res<SceneCacheOwnershipContext>>,
+    legacy_cache: Option<Res<ActiveProjectCacheContext>>,
+    catalog: Option<Res<ScenePayloadCatalog>>,
     worker: Res<CachedResidencyWorker>,
     mut authority: ResMut<ResidencyAuthority>,
 ) {
-    let Some(cache_context) = cache_context else {
+    let Some(project_root) = active_cache_project_root(
+        scene_owner.as_deref(),
+        legacy_cache.as_deref(),
+    ) else {
         return;
     };
     if !worker.is_available() {
         return;
     }
-    let project_root = cache_context.project_root.clone();
+    authority.retry_pending_loads();
     while let Some(job) = authority.begin_next_load() {
-        if let Err(job) = worker.dispatch(project_root.clone(), job) {
+        let mask = authority.load_mask(&job.key);
+        let descriptors = catalog
+            .as_deref()
+            .map_or_else(Vec::new, |catalog| catalog.descriptors_for(job.key).to_vec());
+        if let Err(job) = worker.dispatch_with_payloads(
+            project_root.clone(),
+            job,
+            mask,
+            descriptors,
+        ) {
             let _ = authority.defer_load(job);
             break;
         }
     }
+}
+
+pub(crate) fn active_cache_project_root(
+    scene_owner: Option<&SceneCacheOwnershipContext>,
+    legacy_cache: Option<&ActiveProjectCacheContext>,
+) -> Option<std::path::PathBuf> {
+    scene_owner
+        .map(|owner| owner.project_root.clone())
+        .or_else(|| legacy_cache.map(|context| context.project_root.clone()))
 }
 
 fn pump_residency_uploads(
@@ -190,6 +229,9 @@ fn release_retired_render_assets(
 
 pub(crate) fn retire_scene_cache_resources(world: &mut World) {
     world.remove_resource::<crate::project::cache_scene_hydration::SceneAnimationPayloads>();
+    if let Some(mut catalog) = world.get_resource_mut::<ScenePayloadCatalog>() {
+        *catalog = ScenePayloadCatalog::default();
+    }
     release_selected_residency(world);
     let released = world
         .get_resource_mut::<ResidencyAuthority>()
@@ -217,6 +259,9 @@ mod tests {
     use super::*;
     use bevy::asset::RenderAssetUsages;
     use bevy::mesh::PrimitiveTopology;
+    use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget};
+    use crate::project::cache_hydration::ActiveProjectCacheContext;
+    use crate::viewport::session::SceneCacheOwnershipContext;
     use usd_model::HashDigest;
     use usd_project::SceneId;
 
@@ -244,8 +289,10 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(authority);
         world.insert_resource(Assets::<Mesh>::default());
+        world.init_resource::<ScenePayloadCatalog>();
         retire_scene_cache_resources(&mut world);
 
+        assert!(world.get_resource::<ScenePayloadCatalog>().is_some());
         let mut authority = world.resource_mut::<ResidencyAuthority>();
         assert_eq!(authority.state(&key), None);
         assert_eq!(authority.accounted_bytes(), (0, 0));
@@ -256,5 +303,35 @@ mod tests {
                 RenderAssetUsages::default()
             ),
         ));
+    }
+
+    #[test]
+    fn scene_v3_owner_root_precedes_legacy_project_cache_root() {
+        let scene = SceneId::new_v4();
+        let owner_root = std::path::PathBuf::from("/tmp/scene-v3-owner");
+        let legacy_root = std::path::PathBuf::from("/tmp/legacy-project-cache");
+        let owner = SceneCacheOwnershipContext {
+            project_root: owner_root.clone(),
+            scene_id: scene,
+            config_hash: HashDigest::new([1; HashDigest::BYTE_LEN]),
+        };
+        let legacy = ActiveProjectCacheContext::from_identity(
+            legacy_root.clone(),
+            ProjectCacheIdentity {
+                target: ProjectCacheTarget::ProjectRoot,
+                target_content_hash: HashDigest::new([2; HashDigest::BYTE_LEN]),
+                profile: viewport_protocol::RuntimeProfile::NativeMedium,
+                config_hash: HashDigest::new([3; HashDigest::BYTE_LEN]),
+            },
+        );
+
+        assert_eq!(
+            active_cache_project_root(Some(&owner), Some(&legacy)),
+            Some(owner_root)
+        );
+        assert_eq!(
+            active_cache_project_root(None, Some(&legacy)),
+            Some(legacy_root)
+        );
     }
 }

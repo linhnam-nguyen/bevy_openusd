@@ -191,7 +191,7 @@ fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
         Ok(Some(target.clone())),
     );
     assert!(matches!(
-        reply.result,
+        reply.expect("activation completion reply").result,
         project_protocol::ProjectActivationResult::Activated { .. }
     ));
     for _ in 0..10_000 {

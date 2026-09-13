@@ -10,7 +10,7 @@ use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{App, Update, World};
-use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
+use project_protocol::{ProjectActivationCommand, ProjectStageTarget};
 use tempfile::tempdir;
 use usd_bevy::{LiveStage, PendingStageChanges, PrimEntities};
 use usd_semantic::SemanticConfig;
@@ -26,7 +26,8 @@ use crate::project::service::{
 };
 use crate::viewport::api::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
-    SceneAnchorIndex, refresh_active_hierarchy_projection, refresh_scene_anchor_index,
+    RenderServerInterface, SceneAnchorIndex, refresh_active_hierarchy_projection,
+    refresh_scene_anchor_index,
 };
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
@@ -91,6 +92,7 @@ impl ProductionActivationWorld {
             .insert_resource(Spawned::default())
             .insert_resource(StageInfo::default())
             .insert_resource(StagePresentationContext::default())
+            .insert_resource(RenderServerInterface::default())
             .insert_resource(super::ProjectActivationAuthorityRuntime::default())
             .add_systems(
                 Update,
@@ -106,6 +108,10 @@ impl ProductionActivationWorld {
         app.add_systems(
             Update,
             crate::viewport::animation::tick_stage_time.after(usd_bevy::LiveStageSet::Presentation),
+        );
+        app.add_systems(
+            Update,
+            crate::viewport::app::project_activation::continue_deferred_stage_activation_for_test,
         );
         Self { app }
     }
@@ -123,7 +129,7 @@ impl ProductionActivationWorld {
         session_id: &str,
         command: &ProjectActivationCommand,
         target: Result<Option<ProjectStageActivationTarget>, String>,
-    ) -> ProjectActivationReply {
+    ) -> Option<project_protocol::ProjectActivationReply> {
         let request = ProjectActivationRequest {
             session_id: viewport_protocol::SessionId::new(session_id),
             command: command.clone(),
@@ -133,6 +139,17 @@ impl ProductionActivationWorld {
 
     pub(crate) fn update(&mut self) {
         self.app.update();
+    }
+
+    pub(crate) fn mark_cache_rendered_for_test(&mut self) {
+        let world = self.app.world_mut();
+        let (scene_id, generation) = {
+            let gate = world.resource::<crate::viewport::session::CachePresentationGate>();
+            (gate.scene_id.clone(), gate.generation)
+        };
+        world
+            .resource_mut::<crate::viewport::session::CachePresentationGate>()
+            .observe_rendered_frame(scene_id, generation);
     }
 
     pub(crate) fn replace_selection(&mut self, target: SceneAnchor) {
@@ -310,7 +327,9 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
             stale_completion = Some((command.clone(), target.clone()));
         }
         latest_target = Some(target.clone());
-        let reply = production.apply("production-session", &command, Ok(Some(target.clone())));
+        let reply = production
+            .apply("production-session", &command, Ok(Some(target.clone())))
+            .expect("uncached activation replies in the same update");
         assert!(matches!(
             reply.result,
             project_protocol::ProjectActivationResult::Activated { .. }
@@ -341,7 +360,9 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
     let before_stale = production
         .observe(&latest_target.path, 3)
         .expect("generation 3 resources before stale completion");
-    let reply = production.apply("production-session", &stale_command, Ok(Some(stale_target)));
+    let reply = production
+        .apply("production-session", &stale_command, Ok(Some(stale_target)))
+        .expect("stale activation replies in the same update");
     assert!(matches!(
         reply.result,
         project_protocol::ProjectActivationResult::Failed { .. }
@@ -358,7 +379,9 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
         ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
     );
     assert!(production.admit("production-session", &empty));
-    let reply = production.apply("production-session", &empty, Ok(None));
+    let reply = production
+        .apply("production-session", &empty, Ok(None))
+        .expect("empty activation replies in the same update");
     assert!(matches!(
         reply.result,
         project_protocol::ProjectActivationResult::Activated { .. }

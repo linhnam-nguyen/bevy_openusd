@@ -19,6 +19,23 @@ use crate::project::{
     scene::authoring::scene_path,
 };
 
+/// Result of the compile-time OpenUSD Stage thread-safety probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StageSendProbeOutcome {
+    NotSend,
+}
+
+/// OpenUSD `Stage` is intentionally kept on the Bevy/main-world side of the
+/// activation boundary. The probe below must continue to fail to compile if
+/// the dependency ever changes its thread-safety contract.
+///
+/// ```compile_fail
+/// fn requires_send<T: Send>() {}
+/// requires_send::<openusd::usd::Stage>();
+/// ```
+pub(crate) const OPENUSD_STAGE_SEND_PROBE: StageSendProbeOutcome =
+    StageSendProbeOutcome::NotSend;
+
 #[path = "stage_archive.rs"]
 mod stage_archive;
 
@@ -364,37 +381,5 @@ fn open_activation_stage(path: &Path) -> Result<Stage, String> {
 }
 
 #[cfg(test)]
-mod authority_tests {
-    use super::*;
-    use usd_project::SceneId;
-
-    fn command(generation: u64) -> ProjectActivationCommand {
-        ProjectActivationCommand::new(
-            format!("authority-{generation}"),
-            generation,
-            ProjectId::new_v4(),
-            ProjectStageTarget::Scene(SceneId::new_v4()),
-        )
-    }
-
-    #[test]
-    fn stale_completion_cannot_replace_latest_active_identity() {
-        let mut authority = ProjectActivationAuthority::default();
-        let first = command(1);
-        let second = command(2);
-
-        assert!(authority.observe_request("session", &first));
-        assert!(authority.commit("session", &first));
-        assert!(authority.observe_request("session", &second));
-        assert!(!authority.commit("session", &first));
-        assert!(authority.commit("session", &second));
-        assert_eq!(
-            authority.active(),
-            Some(&ActiveProjectStage {
-                project_id: second.project_id,
-                target: second.target,
-                generation: 2,
-            })
-        );
-    }
-}
+#[path = "stage_activation_authority_tests.rs"]
+mod authority_tests;

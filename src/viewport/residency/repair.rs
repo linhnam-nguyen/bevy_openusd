@@ -9,14 +9,16 @@ use crate::project::cache_demand_projection::{
     extract_scene_payloads_for_repair, owned_prim_path_for_payload,
 };
 use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::viewport::session::SceneCacheOwnershipContext;
 
 use super::authority::{ResidencyAuthority, ScenePayloadKey};
+use super::active_cache_project_root;
 use super::loader::LoadJob;
 use super::repair_phase::RepairPhase;
 use super::repair_persistence::{
     TargetedRepairPersistenceRequest, TargetedRepairPersistenceWorker,
 };
-use super::worker::CachedResidencyWorker;
+use super::worker::{CachedResidencyWorker, LoadedScenePayloadQueue, queue_loaded_scene_payloads};
 
 #[path = "repair_handoff.rs"]
 mod repair_handoff;
@@ -43,11 +45,17 @@ pub(crate) struct TargetedRepairRequest {
 }
 
 pub(crate) fn drain_cached_residency_completions(
-    cache_context: Option<Res<ActiveProjectCacheContext>>,
+    scene_owner: Option<Res<SceneCacheOwnershipContext>>,
+    legacy_cache: Option<Res<ActiveProjectCacheContext>>,
     worker: Res<CachedResidencyWorker>,
     mut authority: ResMut<ResidencyAuthority>,
     mut repairs: ResMut<TargetedRepairQueue>,
+    mut payload_queue: Option<ResMut<LoadedScenePayloadQueue>>,
 ) {
+    let project_root = active_cache_project_root(
+        scene_owner.as_deref(),
+        legacy_cache.as_deref(),
+    );
     for completion in worker.drain_completions() {
         if !authority.load_is_current(&completion.job) {
             continue;
@@ -55,10 +63,25 @@ pub(crate) fn drain_cached_residency_completions(
         match completion.result {
             Ok(Some(mesh)) => {
                 authority.clear_repair_phase(&completion.job);
-                let _ = authority.complete_cached_cpu(completion.job, mesh);
+                let payloads = completion.payloads;
+                let job = completion.job.clone();
+                if authority.complete_cached_cpu_with_mask(completion.job, mesh, completion.mask) {
+                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut()) {
+                        queue_loaded_scene_payloads(queue, job, payloads);
+                    }
+                }
+            }
+            Ok(None) if !completion.mask.geometry => {
+                let payloads = completion.payloads;
+                let job = completion.job.clone();
+                if authority.complete_cached_payloads(&completion.job, completion.mask) {
+                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut()) {
+                        queue_loaded_scene_payloads(queue, job, payloads);
+                    }
+                }
             }
             Ok(None) => enqueue_missing_payload_repair(
-                cache_context.as_ref(),
+                project_root.as_deref(),
                 &mut authority,
                 &mut repairs,
                 completion.job,
@@ -71,7 +94,7 @@ pub(crate) fn drain_cached_residency_completions(
 }
 
 fn enqueue_missing_payload_repair(
-    cache_context: Option<&Res<ActiveProjectCacheContext>>,
+    project_root: Option<&std::path::Path>,
     authority: &mut ResidencyAuthority,
     repairs: &mut TargetedRepairQueue,
     job: LoadJob<ScenePayloadKey>,
@@ -81,17 +104,17 @@ fn enqueue_missing_payload_repair(
     }
     let phase = authority.take_repair_phase(&job);
     let request = if phase.is_scene_payload() {
-        let (project_root, path) = match cache_context {
-            Some(cache_context) => match owned_prim_path_for_payload(
-                &cache_context.project_root,
+        let (project_root, path) = match project_root {
+            Some(project_root) => match owned_prim_path_for_payload(
+                project_root,
                 job.key.scene_id,
                 job.key.blob_hash,
             ) {
                 Ok(OwnedPrimPathResolution::Ready(path)) => {
-                    (Some(cache_context.project_root.clone()), Some(path))
+                    (Some(project_root.to_path_buf()), Some(path))
                 }
                 Ok(OwnedPrimPathResolution::Waiting) => {
-                    (Some(cache_context.project_root.clone()), None)
+                    (Some(project_root.to_path_buf()), None)
                 }
                 Ok(OwnedPrimPathResolution::Rejected) => {
                     let _ = authority.suppress_repair(&job);
@@ -120,9 +143,7 @@ fn enqueue_missing_payload_repair(
             let _ = authority.reject_repair(&job);
             return;
         };
-        if cache_context.as_ref().is_some_and(|context| {
-            context.project_root.as_path() != phase_root.as_path()
-        }) {
+        if project_root.is_some_and(|root| root != phase_root.as_path()) {
             let _ = authority.reject_repair(&job);
             return;
         }
@@ -154,12 +175,17 @@ fn enqueue_missing_payload_repair(
 }
 
 pub(crate) fn process_targeted_residency_repairs(
-    cache_context: Option<Res<ActiveProjectCacheContext>>,
+    scene_owner: Option<Res<SceneCacheOwnershipContext>>,
+    legacy_cache: Option<Res<ActiveProjectCacheContext>>,
     persistence: Res<TargetedRepairPersistenceWorker>,
     mut authority: ResMut<ResidencyAuthority>,
     mut repairs: ResMut<TargetedRepairQueue>,
     live: Option<NonSend<usd_bevy::LiveStage>>,
 ) {
+    let active_root = active_cache_project_root(
+        scene_owner.as_deref(),
+        legacy_cache.as_deref(),
+    );
     let mut attempts = repairs.len();
     let mut dispatched = 0;
     while attempts > 0 {
@@ -170,11 +196,11 @@ pub(crate) fn process_targeted_residency_repairs(
         if !authority.repair_waiting_is_current(&request.job) {
             continue;
         }
-        let Some(cache_context) = cache_context.as_ref() else {
+        let Some(project_root) = active_root.as_deref() else {
             repairs.push_back(request);
             break;
         };
-        let project_root = cache_context.project_root.clone();
+        let project_root = project_root.to_path_buf();
         if request.project_root.as_ref() != Some(&project_root) {
             if !request.phase.is_scene_payload() {
                 let _ = authority.reject_repair(&request.job);

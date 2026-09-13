@@ -31,7 +31,8 @@ use super::super::repair_persistence::{
 use super::super::repair_phase::RepairPhase;
 use super::super::worker::CachedResidencyWorker;
 use super::super::{
-    PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadKey,
+    PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadCatalog,
+    ScenePayloadKey,
 };
 use super::{
     TargetedRepairQueue, TargetedRepairRequest, drain_cached_residency_completions,
@@ -206,6 +207,7 @@ fn wait_persistence(
 }
 fn process_once(world: &mut World) {
     let mut state: SystemState<(
+        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<TargetedRepairPersistenceWorker>,
         ResMut<ResidencyAuthority>,
@@ -213,9 +215,16 @@ fn process_once(world: &mut World) {
         Option<NonSend<usd_bevy::LiveStage>>,
     )> = SystemState::new(world);
     {
-        let (context, persistence, authority, repairs, live) =
+        let (scene_owner, context, persistence, authority, repairs, live) =
             state.get_mut(world).expect("repair process resources are present");
-        process_targeted_residency_repairs(context, persistence, authority, repairs, live);
+        process_targeted_residency_repairs(
+            scene_owner,
+            context,
+            persistence,
+            authority,
+            repairs,
+            live,
+        );
     }
     state.apply(world);
 }
@@ -232,100 +241,50 @@ fn drain_persistence_once(world: &mut World) {
     state.apply(world);
 }
 fn dispatch_cached_once(world: &mut World) {
+    world.init_resource::<ScenePayloadCatalog>();
     let mut state: SystemState<(
+        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
+        Option<Res<ScenePayloadCatalog>>,
         Res<CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,
     )> = SystemState::new(world);
     {
-        let (context, worker, authority) = state.get_mut(world).expect("cached resources");
-        super::super::dispatch_cached_residency_loads(context, worker, authority);
+        let (scene_owner, context, catalog, worker, authority) =
+            state.get_mut(world).expect("cached resources");
+        super::super::dispatch_cached_residency_loads(
+            scene_owner,
+            context,
+            catalog,
+            worker,
+            authority,
+        );
     }
     state.apply(world);
 }
 fn drain_cached_once(world: &mut World) {
+    world.init_resource::<super::super::worker::LoadedScenePayloadQueue>();
     let mut state: SystemState<(
+        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,
         ResMut<TargetedRepairQueue>,
+        Option<ResMut<super::super::worker::LoadedScenePayloadQueue>>,
     )> = SystemState::new(world);
     {
-        let (context, worker, authority, repairs) = state.get_mut(world).expect("cached drains");
-        drain_cached_residency_completions(context, worker, authority, repairs);
+        let (scene_owner, context, worker, authority, repairs, payload_queue) =
+            state.get_mut(world).expect("cached drains");
+        drain_cached_residency_completions(
+            scene_owner,
+            context,
+            worker,
+            authority,
+            repairs,
+            payload_queue,
+        );
     }
     state.apply(world);
-}
-#[test]
-fn waiting_key_rotates_while_ready_key_reaches_real_persistence() -> Result<()> {
-    let directory = tempfile::tempdir()?;
-    let scene = SceneId::new_v4();
-    let ready_mesh = mesh();
-    let ready_hash = hash_for(&ready_mesh);
-    let waiting_hash = HashDigest::new([20; HashDigest::BYTE_LEN]);
-    let index = owner_index_for_entries(
-        scene,
-        1,
-        vec![(waiting_hash, "/SceneRoot/Waiting"), (ready_hash, "/SceneRoot/Ready")],
-    );
-    let mut descriptor = SceneCacheDescriptorV3::invalidated(
-        scene,
-        1,
-        HashDigest::new([17; HashDigest::BYTE_LEN]),
-    );
-    descriptor.state = SceneCacheState::Partial;
-    let spatial = SceneSpatialIndex {
-        schema_version: SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-        scene_id: scene,
-        generation: 1,
-        entries: Vec::new(),
-    };
-    let expected = SceneCacheStore::new(directory.path())
-        .publish_generation(&descriptor, &index, &spatial)?;
-    let waiting = load_job(scene, waiting_hash, 1);
-    let ready = load_job(scene, ready_hash, 1);
-    let mut authority = waiting_authority(&waiting);
-    assert!(authority.request_reason(
-        ready.key,
-        ResidencyReason::CameraNear,
-        1,
-        ready.cpu_bytes,
-        ready.gpu_bytes,
-    ));
-    let ready_loading = authority.begin_next_load().expect("ready job starts");
-    assert!(authority.wait_for_repair(&ready_loading));
-    let mut repairs = TargetedRepairQueue::default();
-    assert!(repairs.enqueue(repair_request(directory.path(), waiting)));
-    assert!(repairs.enqueue(TargetedRepairRequest {
-        project_root: Some(directory.path().to_path_buf()),
-        path: Some("/SceneRoot/Ready".to_owned()),
-        extraction: Some(TargetedSceneRepair {
-            expected_descriptor: expected,
-            payloads: vec![usd_bevy::TargetedRenderPayload {
-                path: "/SceneRoot/Ready".to_owned(),
-                mesh: ready_mesh,
-                local_bounds: None,
-            }],
-        }),
-        lookup_only: false,
-        phase: RepairPhase::NeedScenePayload,
-        job: ready_loading.clone(),
-    }));
-
-    let mut world = World::new();
-    world.insert_resource(context(directory.path()));
-    world.insert_resource(TargetedRepairPersistenceWorker::new());
-    world.insert_resource(authority);
-    world.insert_resource(repairs);
-    process_once(&mut world);
-    assert_eq!(world.resource::<TargetedRepairQueue>().len(), 1);
-    let completion = wait_persistence(world.resource::<TargetedRepairPersistenceWorker>());
-    assert_eq!(completion.job.key, ready.key);
-    assert!(matches!(
-        completion.result,
-        Ok(TargetedPersistenceOutcome::Published { .. })
-    ));
-    Ok(())
 }
 #[test]
 fn real_repair_pipeline_reaches_gpu_residency() -> Result<()> {
@@ -397,3 +356,6 @@ fn real_repair_pipeline_reaches_gpu_residency() -> Result<()> {
     );
     Ok(())
 }
+
+#[path = "repair_integration_queue_tests.rs"]
+mod queue_tests;

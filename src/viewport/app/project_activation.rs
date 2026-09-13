@@ -24,6 +24,8 @@ use crate::project::service::ProjectApplicationService;
 mod flow;
 #[path = "project_activation_queue.rs"]
 mod queue;
+#[path = "cache_presentation_render.rs"]
+mod cache_presentation_render;
 
 use queue::{ActivationCancellation, LatestActivationQueue};
 
@@ -47,6 +49,16 @@ struct ProjectActivationPreparation {
 struct PreparedProjectActivation {
     request: ProjectActivationRequest,
     target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+}
+
+/// Cache-first activation continuation. The bootstrap is committed in one
+/// update, then the canonical Stage is opened in a later update so Bevy gets
+/// a render opportunity before the potentially blocking OpenUSD boundary.
+#[derive(Resource)]
+pub(super) struct PendingCanonicalStageActivation {
+    pub(super) request: ProjectActivationRequest,
+    pub(super) target: crate::project::service::ProjectStageActivationTarget,
+    pub(super) wait_for_next_update: bool,
 }
 
 impl Drop for ProjectStageActivationRuntime {
@@ -206,6 +218,7 @@ fn resolve_project_activation_with_cache(
 }
 
 pub(super) fn install(app: &mut App) {
+    cache_presentation_render::install(app);
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
         .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(
@@ -213,6 +226,12 @@ pub(super) fn install(app: &mut App) {
             flow::process_project_activations
                 .before(usd_bevy::LiveStageSet::Project)
                 .before(crate::viewport::session::spawn_when_ready),
+        )
+        .add_systems(
+            Update,
+            flow::continue_deferred_stage_activation
+                .after(flow::process_project_activations)
+                .before(usd_bevy::LiveStageSet::Project),
         );
 }
 
@@ -310,6 +329,8 @@ mod production_tests;
 
 #[cfg(test)]
 pub(crate) use flow::apply_prepared_activation_for_test;
+#[cfg(test)]
+pub(crate) use flow::continue_deferred_stage_activation_for_test;
 #[cfg(test)]
 pub(crate) use production_tests::ProductionActivationWorld;
 

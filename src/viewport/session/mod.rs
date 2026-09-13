@@ -2,6 +2,8 @@
 
 mod lifecycle;
 mod state;
+#[path = "cache_presentation_gate.rs"]
+mod cache_presentation_gate;
 
 pub(in crate::viewport) use lifecycle::{
     PendingActivationPresentation, rehydrate_activation_presentation,
@@ -10,8 +12,9 @@ pub(crate) use lifecycle::{
     activate_open_stage_with_cache_context_for_generation, activate_stage,
     activate_stage_with_cache_context, activate_stage_with_cache_context_for_generation,
     apply_load_request, clear_active_stage_for_generation, handle_usd_hot_reload, load_stage,
-    poll_scene_cache_revalidation, publish_scene_cache_presentation_before_stage_open,
-    spawn_when_ready,
+    discard_scene_cache_bootstrap, install_scene_cache_bootstrap_before_stage_open,
+    poll_scene_cache_revalidation,
+    spawn_when_ready, StageInstallMode,
 };
 pub(crate) use state::{
     LoadRequest, LoaderTuning, PendingSceneCacheRevalidation, ReloadRequest, RequestedAsset,
@@ -19,3 +22,4 @@ pub(crate) use state::{
     StageCameraData, StageCameraInfo, StageCameraProjection, StageHandle, StageInfo,
     StagePresentationContext, VariantSetInfo,
 };
+pub(crate) use cache_presentation_gate::CachePresentationGate;

@@ -6,20 +6,24 @@
 
 use bevy::prelude::World;
 use project_protocol::ProjectActivationReply;
-use viewport_streaming::{
-    ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
-};
+use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::service::ProjectStageActivation;
 use crate::viewport::api::RenderServerInterface;
 use crate::viewport::session::{
-    StagePresentationContext, activate_open_stage_with_cache_context_for_generation,
+    StageInstallMode, StagePresentationContext,
+    activate_open_stage_with_cache_context_for_generation,
 };
 
 use super::{
     PreparedProjectActivation, ProjectActivationAuthorityRuntime, ProjectStageActivationRuntime,
 };
+use helpers::{
+    cache_context_for, publish_activation_result, rollback_cache_bootstrap, scene_owner_id,
+};
+
+#[path = "project_activation_flow_helpers.rs"]
+mod helpers;
 
 /// Submits queued Project activations for preparation and applies prepared
 /// results on the Bevy main world.
@@ -48,6 +52,9 @@ pub(super) fn process_project_activations(world: &mut World) {
                 ),
             );
             continue;
+        }
+        if let Some(pending) = world.remove_resource::<super::PendingCanonicalStageActivation>() {
+            rollback_cache_bootstrap(world, &pending.target);
         }
         if let Some(mut projection) =
             world.get_resource_mut::<usd_bevy::ProgressiveProjectionState>()
@@ -83,8 +90,16 @@ fn publish_prepared_result(
     interface: &viewport_streaming::RenderServerInterface,
     prepared: PreparedProjectActivation,
 ) {
-    let reply = apply_prepared_activation(world, &prepared.request, prepared.target);
-    publish_activation_result(interface, prepared.request, reply);
+    if let ActivationProgress::Reply(reply) =
+        apply_prepared_activation(world, &prepared.request, prepared.target)
+    {
+        publish_activation_result(interface, prepared.request, reply);
+    }
+}
+
+enum ActivationProgress {
+    Reply(ProjectActivationReply),
+    Deferred,
 }
 
 /// Applies one prepared completion through the production Bevy-world
@@ -94,19 +109,19 @@ fn apply_prepared_activation(
     world: &mut World,
     request: &ProjectActivationRequest,
     target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
-) -> ProjectActivationReply {
+) -> ActivationProgress {
     let command = request.command.clone();
     if !world
         .resource::<ProjectActivationAuthorityRuntime>()
         .0
         .is_current(&request.session_id.0, &command)
     {
-        return stale_completion_reply(&command);
+        return ActivationProgress::Reply(stale_completion_reply(&command));
     }
     match target {
-        Ok(None) => commit_empty_activation(world, request, &command),
+        Ok(None) => ActivationProgress::Reply(commit_empty_activation(world, request, &command)),
         Ok(Some(target)) => activate_prepared_stage(world, request, &command, target),
-        Err(error) => ProjectActivationReply::failed(&command, error),
+        Err(error) => ActivationProgress::Reply(ProjectActivationReply::failed(&command, error)),
     }
 }
 
@@ -115,8 +130,11 @@ pub(crate) fn apply_prepared_activation_for_test(
     world: &mut World,
     request: &ProjectActivationRequest,
     target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
-) -> ProjectActivationReply {
-    apply_prepared_activation(world, request, target)
+) -> Option<ProjectActivationReply> {
+    match apply_prepared_activation(world, request, target) {
+        ActivationProgress::Reply(reply) => Some(reply),
+        ActivationProgress::Deferred => None,
+    }
 }
 
 fn commit_empty_activation(
@@ -141,17 +159,27 @@ fn activate_prepared_stage(
     request: &ProjectActivationRequest,
     command: &project_protocol::ProjectActivationCommand,
     target: crate::project::service::ProjectStageActivationTarget,
-) -> ProjectActivationReply {
+) -> ActivationProgress {
     if let Some(scene_cache) = target.scene_cache.as_ref() {
-        crate::viewport::session::publish_scene_cache_presentation_before_stage_open(
+        let installed = crate::viewport::session::install_scene_cache_bootstrap_before_stage_open(
             world,
             &target.project_root,
             scene_cache,
         );
+        if installed {
+            world.insert_resource(super::PendingCanonicalStageActivation {
+                request: request.clone(),
+                target,
+                wait_for_next_update: true,
+            });
+            return ActivationProgress::Deferred;
+        }
     }
     let activation = match ProjectStageActivation::open(command, target.clone()) {
         Ok(activation) => activation,
-        Err(error) => return ProjectActivationReply::failed(command, error),
+        Err(error) => {
+            return ActivationProgress::Reply(ProjectActivationReply::failed(command, error));
+        }
     };
     let cache_context = cache_context_for(&target);
     let scene_owner_id = match &target.target {
@@ -172,6 +200,7 @@ fn activate_prepared_stage(
         Some(target.archive_paths.clone()),
         command.generation,
         StagePresentationContext::from_project(target.presentation),
+        StageInstallMode::Fresh,
     ) {
         Ok(()) => {
             if world
@@ -179,39 +208,151 @@ fn activate_prepared_stage(
                 .0
                 .commit(&request.session_id.0, command)
             {
-                ProjectActivationReply::activated(command)
+                ActivationProgress::Reply(ProjectActivationReply::activated(command))
             } else {
-                stale_completion_reply(command)
+                ActivationProgress::Reply(stale_completion_reply(command))
             }
         }
-        Err(error) => ProjectActivationReply::failed(command, error),
+        Err(error) => ActivationProgress::Reply(ProjectActivationReply::failed(command, error)),
     }
+}
+
+/// Opens a cache-first canonical Stage only after the bootstrap update has
+/// completed. The final protocol reply is emitted here, never at bootstrap.
+pub(super) fn continue_deferred_stage_activation(world: &mut World) {
+    let Some(mut pending) = world.remove_resource::<super::PendingCanonicalStageActivation>()
+    else {
+        return;
+    };
+    if pending.wait_for_next_update {
+        pending.wait_for_next_update = false;
+        world.insert_resource(pending);
+        return;
+    }
+
+    let can_open = if let Some(mut gate) =
+        world.get_resource_mut::<crate::viewport::session::CachePresentationGate>()
+    {
+        gate.can_open_stage()
+    } else if let Some(scene_cache) = pending.target.scene_cache.as_ref() {
+        let mut gate = crate::viewport::session::CachePresentationGate::waiting(
+            scene_cache.descriptor.scene_id,
+            scene_cache.descriptor.generation,
+        );
+        let can_open = gate.can_open_stage();
+        world.insert_resource(gate);
+        can_open
+    } else {
+        true
+    };
+    if !can_open {
+        world.insert_resource(pending);
+        return;
+    }
+
+    let Some(interface) = world
+        .get_resource::<RenderServerInterface>()
+        .map(RenderServerInterface::shared)
+    else {
+        world.insert_resource(pending);
+        return;
+    };
+    let command = pending.request.command.clone();
+    if !world
+        .resource::<ProjectActivationAuthorityRuntime>()
+        .0
+        .is_current(&pending.request.session_id.0, &command)
+    {
+        rollback_cache_bootstrap(world, &pending.target);
+        publish_activation_result(
+            &interface,
+            pending.request,
+            stale_completion_reply(&command),
+        );
+        return;
+    }
+
+    let scene_owner_id = scene_owner_id(&pending.target);
+    let target = pending.target;
+    let rollback_target = target.clone();
+    let activation = match ProjectStageActivation::open(&command, target.clone()) {
+        Ok(activation) => activation,
+        Err(error) => {
+            rollback_cache_bootstrap(world, &target);
+            publish_activation_result(
+                &interface,
+                pending.request,
+                ProjectActivationReply::failed(&command, error),
+            );
+            return;
+        }
+    };
+    if !world
+        .resource::<ProjectActivationAuthorityRuntime>()
+        .0
+        .is_current(&pending.request.session_id.0, &command)
+    {
+        rollback_cache_bootstrap(world, &target);
+        publish_activation_result(
+            &interface,
+            pending.request,
+            stale_completion_reply(&command),
+        );
+        return;
+    }
+
+    let path = target.path.clone();
+    let cache_context = cache_context_for(&target);
+    let scene_cache = target.scene_cache.clone();
+    let project_root = target.project_root.clone();
+    let archive_paths = target.archive_paths.clone();
+    let presentation = StagePresentationContext::from_project(target.presentation.clone());
+    let result = activate_open_stage_with_cache_context_for_generation(
+        world,
+        path,
+        activation.into_stage(),
+        cache_context,
+        scene_cache,
+        Some(project_root),
+        scene_owner_id,
+        Some(archive_paths),
+        command.generation,
+        presentation,
+        StageInstallMode::ContinueCacheFirst,
+    );
+    let reply = match result {
+        Ok(()) if world
+            .resource_mut::<ProjectActivationAuthorityRuntime>()
+            .0
+            .commit(&pending.request.session_id.0, &command) =>
+        ProjectActivationReply::activated(&command),
+        Ok(()) => {
+            if world
+                .get_resource::<crate::viewport::session::StageInfo>()
+                .is_some_and(|info| info.activation_generation == command.generation)
+            {
+                crate::viewport::session::clear_active_stage_for_generation(
+                    world,
+                    command.generation,
+                );
+            }
+            stale_completion_reply(&command)
+        }
+        Err(error) => {
+            rollback_cache_bootstrap(world, &rollback_target);
+            ProjectActivationReply::failed(&command, error)
+        }
+    };
+    publish_activation_result(&interface, pending.request, reply);
+}
+
+#[cfg(test)]
+pub(crate) fn continue_deferred_stage_activation_for_test(world: &mut World) {
+    continue_deferred_stage_activation(world);
 }
 
 fn stale_completion_reply(
     command: &project_protocol::ProjectActivationCommand,
 ) -> ProjectActivationReply {
     ProjectActivationReply::failed(command, "stale Project activation completion was ignored")
-}
-
-fn cache_context_for(
-    target: &crate::project::service::ProjectStageActivationTarget,
-) -> Option<ActiveProjectCacheContext> {
-    target.cache_identity.clone().map(|identity| {
-        ActiveProjectCacheContext::from_identity(target.project_root.clone(), identity)
-    })
-}
-
-fn publish_activation_result(
-    interface: &viewport_streaming::RenderServerInterface,
-    request: ProjectActivationRequest,
-    reply: ProjectActivationReply,
-) {
-    let result = RoutedProjectActivationResult {
-        session_id: request.session_id,
-        reply,
-    };
-    if let Err(error) = interface.publish_project_activation_result(result) {
-        bevy::log::error!("[project-activation] could not publish activation result: {error:?}");
-    }
 }

@@ -6,11 +6,10 @@ use bevy::prelude::*;
 use usd_project::SceneId;
 
 use crate::project::cache_contract::SceneCacheEntryKind;
-use crate::project::cache_scene_hydration::SceneAnimationPayloads;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::session::SceneCachePresentation;
 
-use super::{ResidencyAuthority, ResidencyReason, ScenePayloadKey};
+use super::{ResidencyAuthority, ResidencyReason, ScenePayloadCatalog, ScenePayloadKey};
 
 pub(crate) const ANIMATION_LOOKAHEAD: usize = 64;
 
@@ -33,7 +32,7 @@ pub(crate) struct AnimationResidencyState {
 
 pub(crate) fn sync_animation_residency(
     presentation: Option<Res<SceneCachePresentation>>,
-    cached_payloads: Option<Res<SceneAnimationPayloads>>,
+    catalog: Res<ScenePayloadCatalog>,
     clock: Option<Res<UsdStageTime>>,
     mut authority: ResMut<ResidencyAuthority>,
     mut state: ResMut<AnimationResidencyState>,
@@ -48,11 +47,10 @@ pub(crate) fn sync_animation_residency(
         || presentation.is_changed();
     if scene_changed {
         state.release(&mut authority);
-        let cached_payloads = cached_payloads.as_deref().filter(|payloads| {
-            payloads.scene_id == Some(presentation.scene_id)
-                && payloads.generation == Some(presentation.generation)
-        });
-        state.rebuild(&presentation, cached_payloads);
+        let catalog = (catalog.scene_id == Some(presentation.scene_id)
+            && catalog.generation == Some(presentation.generation))
+            .then_some(catalog.as_ref());
+        state.rebuild(&presentation, catalog);
         authority.register_scene_generation(presentation.scene_id, presentation.generation);
     }
 
@@ -67,14 +65,14 @@ impl AnimationResidencyState {
     fn rebuild(
         &mut self,
         presentation: &SceneCachePresentation,
-        cached_payloads: Option<&SceneAnimationPayloads>,
+        catalog: Option<&ScenePayloadCatalog>,
     ) {
         self.scene_id = Some(presentation.scene_id);
         self.generation = Some(presentation.generation);
         self.cursor = 0;
-        let Some(cached_payloads) = cached_payloads.filter(|payloads| {
-            payloads.scene_id == Some(presentation.scene_id)
-                && payloads.generation == Some(presentation.generation)
+        let Some(catalog) = catalog.filter(|catalog| {
+            catalog.scene_id == Some(presentation.scene_id)
+                && catalog.generation == Some(presentation.generation)
         }) else {
             self.candidates.clear();
             return;
@@ -88,19 +86,23 @@ impl AnimationResidencyState {
                     return None;
                 }
                 let _animation = entry.animation.as_ref()?;
-                if entry.address.scene_id != presentation.scene_id
-                    || !cached_payloads.by_address.contains_key(&entry.address)
-                {
+                if entry.address.scene_id != presentation.scene_id {
                     return None;
                 }
                 let geometry = entry.geometry.as_ref()?;
                 let blob_hash = entry.content_hash?;
+                let key = ScenePayloadKey {
+                    scene_id: entry.address.scene_id,
+                    blob_hash,
+                };
+                if !catalog.descriptors_for(key).iter().any(|descriptor| {
+                    descriptor.address == entry.address && descriptor.animation.is_some()
+                }) {
+                    return None;
+                }
                 let resident_bytes = geometry.byte_size.saturating_add(_animation.byte_size);
                 Some(AnimationPayload {
-                    key: ScenePayloadKey {
-                        scene_id: entry.address.scene_id,
-                        blob_hash,
-                    },
+                    key,
                     generation: presentation.generation,
                     cpu_bytes: ResidencyAuthority::conservative_resident_footprint(resident_bytes)
                         .0,

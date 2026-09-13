@@ -116,7 +116,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         latest_target = Some(target.clone());
         let reply = production.apply("c4-session", &command, Ok(Some(target.clone())));
         if !matches!(
-            reply.result,
+            reply.expect("activation completion reply").result,
             project_protocol::ProjectActivationResult::Activated { .. }
         ) {
             return Err(trace.failure("production activation completion was rejected"));
@@ -155,7 +155,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
         .map_err(|error| trace.failure(error))?;
     let reply = production.apply("c4-session", &stale_command, Ok(Some(stale_target)));
     if !matches!(
-        reply.result,
+        reply.expect("stale activation completion reply").result,
         project_protocol::ProjectActivationResult::Failed { .. }
     ) {
         return Err(trace.failure("stale Scene completion was accepted"));

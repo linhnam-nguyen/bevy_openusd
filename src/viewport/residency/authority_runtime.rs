@@ -50,6 +50,7 @@ impl ResidencyAuthority {
         self.ready_for_upload.clear();
         self.ready_upload_membership.clear();
         self.warm.clear();
+        self.pending_loads.clear();
         self.records.clear();
         self.scene_generations.clear();
         self.cpu_used = 0;

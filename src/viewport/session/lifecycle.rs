@@ -27,7 +27,8 @@ pub(in crate::viewport) use lifecycle_invalidation::{
 };
 pub(crate) use project_activation::{
     activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
-    poll_scene_cache_revalidation, publish_scene_cache_presentation_before_stage_open,
+    discard_scene_cache_bootstrap, install_scene_cache_bootstrap_before_stage_open,
+    poll_scene_cache_revalidation, StageInstallMode,
 };
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
@@ -138,6 +139,7 @@ where
         None,
         activation_generation,
         presentation,
+        project_activation::StageInstallMode::Fresh,
     )
 }
 
@@ -242,7 +244,7 @@ pub(crate) fn apply_load_request(mut request: ResMut<LoadRequest>) {
     }
 }
 
-fn clear_projected_stage(world: &mut World) {
+pub(super) fn clear_live_stage_projection(world: &mut World) {
     let entities: Vec<Entity> = world
         .get_resource::<PrimEntities>()
         .zip(world.get_resource::<PathStore>())
@@ -264,11 +266,15 @@ fn clear_projected_stage(world: &mut World) {
     world.remove_non_send::<LiveStage>();
     world.remove_resource::<StageMetadataState>();
     world.remove_resource::<super::PendingSceneCacheRevalidation>();
+    world.resource_mut::<Spawned>().0 = false;
+}
+
+fn clear_projected_stage(world: &mut World) {
+    clear_live_stage_projection(world);
         world.remove_resource::<super::SceneCachePresentation>();
         world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
     world.remove_resource::<super::SceneDerivedMetadata>();
     crate::viewport::residency::retire_scene_cache_resources(world);
-    world.resource_mut::<Spawned>().0 = false;
 }
 
 #[cfg(test)]

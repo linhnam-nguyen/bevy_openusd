@@ -1,4 +1,3 @@
-use bevy::asset::Assets;
 use bevy::mesh::Mesh;
 
 #[cfg(test)]
@@ -8,7 +7,7 @@ use bevy::mesh::PrimitiveTopology;
 
 use super::super::loader::LoadJob;
 use super::super::repair_phase::RepairPhase;
-use super::{PayloadResidencyState, ResidencyAuthority, ScenePayloadKey};
+use super::{PayloadLoadMask, PayloadResidencyState, ResidencyAuthority, ScenePayloadKey};
 
 impl ResidencyAuthority {
     pub(crate) fn take_repair_phase(&mut self, job: &LoadJob<ScenePayloadKey>) -> RepairPhase {
@@ -22,10 +21,10 @@ impl ResidencyAuthority {
     }
 
     pub(crate) fn load_is_current(&self, job: &LoadJob<ScenePayloadKey>) -> bool {
-        self.generation_is_current(job.key.scene_id, job.generation)
+            self.generation_is_current(job.key.scene_id, job.generation)
             && self.records.get(&job.key).is_some_and(|record| {
                 record.generation == job.generation
-                    && record.state == PayloadResidencyState::Loading
+                    && !record.in_flight_mask.is_empty()
             })
     }
 
@@ -43,6 +42,7 @@ impl ResidencyAuthority {
         }
         self.cpu_reserved = self.cpu_reserved.saturating_sub(job.cpu_bytes);
         if let Some(record) = self.records.get_mut(&job.key) {
+            record.in_flight_mask = PayloadLoadMask::default();
             record.state = PayloadResidencyState::RepairWaiting;
             return true;
         }
@@ -54,11 +54,24 @@ impl ResidencyAuthority {
         job: &LoadJob<ScenePayloadKey>,
         phase: RepairPhase,
     ) -> bool {
-        if !self.repair_waiting_is_current(job) || !self.loader.enqueue(job.clone()) {
+        if !self.repair_waiting_is_current(job) {
+            return false;
+        }
+        let queued_mask = self
+            .records
+            .get(&job.key)
+            .map(|record| {
+                self.load_mask(&job.key)
+                    .missing_from(record.satisfied_mask)
+            })
+            .filter(|mask| !mask.is_empty())
+            .unwrap_or(PayloadLoadMask::GEOMETRY);
+        if !self.loader.enqueue(job.clone()) {
             return false;
         }
         self.repair_phases.insert((job.key, job.generation), phase);
         if let Some(record) = self.records.get_mut(&job.key) {
+            record.queued_mask = queued_mask;
             record.state = PayloadResidencyState::Queued;
             return true;
         }
@@ -75,6 +88,7 @@ impl ResidencyAuthority {
             .get(&job.key)
             .is_some_and(|record| record.reasons.contains(&super::ResidencyReason::CameraNear));
         if let Some(record) = self.records.get_mut(&job.key) {
+            record.in_flight_mask = PayloadLoadMask::default();
             record.state = PayloadResidencyState::Unloaded;
             record.cpu_payload = None;
         }
@@ -92,6 +106,7 @@ impl ResidencyAuthority {
         self.terminal_failures.insert((job.key, job.generation));
         self.camera_retry_keys.remove(&job.key);
         if let Some(record) = self.records.get_mut(&job.key) {
+            record.in_flight_mask = PayloadLoadMask::default();
             record.state = PayloadResidencyState::Unloaded;
             record.cpu_payload = None;
             return true;
@@ -109,18 +124,22 @@ impl ResidencyAuthority {
             // An individually oversized payload is deterministically skipped;
             // it can never fit without violating the hard budget contract.
             if next.cpu_bytes > self.budgets.cpu_bytes || next.gpu_bytes > self.budgets.gpu_bytes {
-                if let Some(record) = self.records.get_mut(&next.key) {
-                    if record.generation == next.generation
-                        && record.state == PayloadResidencyState::Queued
-                    {
+            if let Some(record) = self.records.get_mut(&next.key) {
+                if record.generation == next.generation
+                    && !record.queued_mask.is_empty()
+                {
+                    record.queued_mask = PayloadLoadMask::default();
+                    if !record.satisfied_mask.geometry {
                         record.state = PayloadResidencyState::Unloaded;
                     }
                 }
+            }
                 continue;
             }
             let valid = self.records.get(&next.key).is_some_and(|record| {
                 record.generation == next.generation
-                    && record.state == PayloadResidencyState::Queued
+                    && !record.queued_mask.is_empty()
+                    && record.in_flight_mask.is_empty()
             });
             if !valid {
                 continue;
@@ -133,7 +152,12 @@ impl ResidencyAuthority {
             let Some(record) = self.records.get_mut(&next.key) else {
                 return Some(next);
             };
-            record.state = PayloadResidencyState::Loading;
+            let queued_mask = record.queued_mask;
+            record.queued_mask = PayloadLoadMask::default();
+            record.in_flight_mask = queued_mask;
+            if !record.satisfied_mask.geometry {
+                record.state = PayloadResidencyState::Loading;
+            }
             self.cpu_reserved = self.cpu_reserved.saturating_add(next.cpu_bytes);
             return Some(next);
         }
@@ -149,16 +173,19 @@ impl ResidencyAuthority {
         cpu_bytes: u64,
         gpu_bytes: u64,
     ) -> bool {
-        self.complete_cpu_payload(key, generation, cpu_bytes, gpu_bytes, Some(test_mesh()))
-    }
-
-    pub(crate) fn complete_cached_cpu(
-        &mut self,
-        job: LoadJob<ScenePayloadKey>,
-        mesh: Mesh,
-    ) -> bool {
-        let (cpu_bytes, gpu_bytes) = resident_mesh_footprint(&mesh);
-        self.complete_cpu_payload(job.key, job.generation, cpu_bytes, gpu_bytes, Some(mesh))
+        let mask = self.in_flight_mask(&key);
+        self.complete_cpu_payload(
+            key,
+            generation,
+            cpu_bytes,
+            gpu_bytes,
+            if mask.is_empty() {
+                PayloadLoadMask::GEOMETRY
+            } else {
+                mask
+            },
+            Some(test_mesh()),
+        )
     }
 
     pub(crate) fn defer_load(&mut self, job: LoadJob<ScenePayloadKey>) -> bool {
@@ -167,20 +194,33 @@ impl ResidencyAuthority {
         }
         let record_key = job.key;
         let valid = self.records.get(&record_key).is_some_and(|record| {
-            record.generation == job.generation && record.state == PayloadResidencyState::Loading
+            record.generation == job.generation && !record.in_flight_mask.is_empty()
         });
         if !valid {
             return false;
         }
+        let (in_flight_mask, previous_state) = self
+            .records
+            .get(&record_key)
+            .map(|record| (record.in_flight_mask, record.state))
+            .unwrap_or((PayloadLoadMask::default(), PayloadResidencyState::Unloaded));
         self.cpu_reserved = self.cpu_reserved.saturating_sub(job.cpu_bytes);
         if !self.loader.enqueue(job) {
             if let Some(record) = self.records.get_mut(&record_key) {
-                record.state = PayloadResidencyState::Unloaded;
+                record.in_flight_mask = PayloadLoadMask::default();
+                record.queued_mask = PayloadLoadMask::default();
+                if previous_state == PayloadResidencyState::Loading {
+                    record.state = PayloadResidencyState::Unloaded;
+                }
             }
             return false;
         }
         if let Some(record) = self.records.get_mut(&record_key) {
-            record.state = PayloadResidencyState::Queued;
+            record.in_flight_mask = PayloadLoadMask::default();
+            record.queued_mask = in_flight_mask;
+            if previous_state == PayloadResidencyState::Loading {
+                record.state = PayloadResidencyState::Queued;
+            }
         }
         true
     }
@@ -190,19 +230,26 @@ impl ResidencyAuthority {
             return false;
         }
         let valid = self.records.get(&job.key).is_some_and(|record| {
-            record.generation == job.generation && record.state == PayloadResidencyState::Loading
+            record.generation == job.generation && !record.in_flight_mask.is_empty()
         });
         if !valid {
             return false;
         }
         self.clear_repair_phase(job);
         self.cpu_reserved = self.cpu_reserved.saturating_sub(job.cpu_bytes);
+        let preserve_resident_geometry = self
+            .records
+            .get(&job.key)
+            .is_some_and(|record| record.satisfied_mask.geometry);
         let retry_camera = {
             let Some(record) = self.records.get_mut(&job.key) else {
                 return false;
             };
-            record.state = PayloadResidencyState::Unloaded;
-            record.cpu_payload = None;
+            record.in_flight_mask = PayloadLoadMask::default();
+            if !preserve_resident_geometry {
+                record.state = PayloadResidencyState::Unloaded;
+                record.cpu_payload = None;
+            }
             record.reasons.contains(&super::ResidencyReason::CameraNear)
         };
         if retry_camera {
@@ -216,7 +263,7 @@ impl ResidencyAuthority {
             return false;
         }
         let valid = self.records.get(&job.key).is_some_and(|record| {
-            record.generation == job.generation && record.state == PayloadResidencyState::Loading
+            record.generation == job.generation && !record.in_flight_mask.is_empty()
         });
         if !valid {
             return false;
@@ -225,143 +272,21 @@ impl ResidencyAuthority {
         self.cpu_reserved = self.cpu_reserved.saturating_sub(job.cpu_bytes);
         self.terminal_failures.insert((job.key, job.generation));
         self.camera_retry_keys.remove(&job.key);
+        let preserve_resident_geometry = self
+            .records
+            .get(&job.key)
+            .is_some_and(|record| record.satisfied_mask.geometry);
         let Some(record) = self.records.get_mut(&job.key) else {
             return false;
         };
-        record.state = PayloadResidencyState::Unloaded;
-        record.cpu_payload = None;
+        record.in_flight_mask = PayloadLoadMask::default();
+        if !preserve_resident_geometry {
+            record.state = PayloadResidencyState::Unloaded;
+            record.cpu_payload = None;
+        }
         true
     }
 
-    pub(crate) fn pump_uploads(
-        &mut self,
-        assets: &mut Assets<Mesh>,
-        render_budget: Option<usize>,
-    ) -> Vec<ScenePayloadKey> {
-        let mut remaining = self
-            .budgets
-            .upload_bytes_per_frame
-            .min(render_budget.unwrap_or(usize::MAX));
-        let mut uploaded = Vec::new();
-        for _ in 0..self.ready_for_upload.len() {
-            let Some(key) = self.pop_ready_upload() else {
-                break;
-            };
-            let Some((gpu_bytes, cpu_bytes, has_reasons)) = self
-                .records
-                .get(&key)
-                .filter(|record| record.state == PayloadResidencyState::CpuReady)
-                .map(|record| {
-                    (
-                        record.gpu_bytes,
-                        record.cpu_bytes,
-                        !record.reasons.is_empty(),
-                    )
-                })
-            else {
-                continue;
-            };
-            let required = usize::try_from(gpu_bytes).unwrap_or(usize::MAX);
-            if required > remaining && !uploaded.is_empty() {
-                self.requeue_ready_upload_front(key);
-                break;
-            }
-            if !self.ensure_capacity(0, gpu_bytes) {
-                if gpu_bytes > self.budgets.gpu_bytes {
-                    self.cpu_used = self.cpu_used.saturating_sub(cpu_bytes);
-                    if let Some(record) = self.records.get_mut(&key) {
-                        record.state = PayloadResidencyState::Unloaded;
-                        record.cpu_payload = None;
-                    }
-                    continue;
-                }
-                if self.ready_upload_membership.insert(key) {
-                    self.ready_for_upload.push_back(key);
-                }
-                continue;
-            }
-            remaining = if required > remaining {
-                0
-            } else {
-                remaining.saturating_sub(required)
-            };
-            let Some(record) = self.records.get_mut(&key) else {
-                continue;
-            };
-            let Some(mesh) = record.cpu_payload.take() else {
-                continue;
-            };
-            // Inserting the decoded cache payload into Bevy's Assets<Mesh> is
-            // the owner boundary. Bevy's RenderAssetBytesPerFrame then
-            // throttles the actual render-world transfer.
-            let handle = assets.add(mesh);
-            record.render_handle = Some(handle);
-            self.gpu_used += gpu_bytes;
-            record.state = PayloadResidencyState::GpuResident;
-            uploaded.push(key);
-            if !has_reasons {
-                record.state = PayloadResidencyState::Warm;
-                self.warm.insert(key, cpu_bytes, gpu_bytes, false);
-            }
-        }
-        self.evict_to_budget();
-        uploaded
-    }
-
-    fn complete_cpu_payload(
-        &mut self,
-        key: ScenePayloadKey,
-        generation: u64,
-        cpu_bytes: u64,
-        gpu_bytes: u64,
-        cpu_payload: Option<Mesh>,
-    ) -> bool {
-        if !self.generation_is_current(key.scene_id, generation) {
-            return false;
-        }
-        let Some(reserved_bytes) = self
-            .records
-            .get(&key)
-            .filter(|record| {
-                record.generation == generation && record.state == PayloadResidencyState::Loading
-            })
-            .map(|record| record.cpu_bytes)
-        else {
-            return false;
-        };
-        self.repair_phases.remove(&(key, generation));
-        self.cpu_reserved = self.cpu_reserved.saturating_sub(reserved_bytes);
-        if !self.ensure_capacity(cpu_bytes, 0) || gpu_bytes > self.budgets.gpu_bytes {
-            if let Some(record) = self.records.get_mut(&key) {
-                record.state = PayloadResidencyState::Unloaded;
-                record.cpu_payload = None;
-            }
-            return false;
-        }
-        let has_reasons = {
-            let Some(record) = self.records.get_mut(&key) else {
-                return false;
-            };
-            record.cpu_bytes = cpu_bytes;
-            record.gpu_bytes = gpu_bytes;
-            record.cpu_payload = cpu_payload;
-            let has_reasons = !record.reasons.is_empty();
-            record.state = if has_reasons {
-                PayloadResidencyState::CpuReady
-            } else {
-                PayloadResidencyState::Warm
-            };
-            has_reasons
-        };
-        self.cpu_used += cpu_bytes;
-        if has_reasons {
-            self.enqueue_ready_upload(key);
-        } else {
-            self.warm.insert(key, cpu_bytes, 0, false);
-        }
-        self.evict_to_budget();
-        true
-    }
 }
 
 pub(super) fn resident_mesh_footprint(mesh: &Mesh) -> (u64, u64) {

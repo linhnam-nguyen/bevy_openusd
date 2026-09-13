@@ -125,7 +125,9 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
     let worker = super::super::worker::CachedResidencyWorker::with_completion_for_test(
         super::super::worker::LoadCompletion {
             job: load.clone(),
+            mask: super::super::PayloadLoadMask::GEOMETRY,
             result: Ok(None),
+            payloads: None,
         },
     );
     let mut world = World::new();
@@ -133,17 +135,27 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
     world.insert_resource(worker);
     world.insert_resource(authority);
     world.insert_resource(TargetedRepairQueue::default());
+    world.init_resource::<super::super::worker::LoadedScenePayloadQueue>();
     let mut state: SystemState<(
+        Option<Res<super::super::super::session::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<super::super::worker::CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,
         ResMut<TargetedRepairQueue>,
+        Option<ResMut<super::super::worker::LoadedScenePayloadQueue>>,
     )> = SystemState::new(&mut world);
     {
-        let (context, worker, authority, repairs) = state
+        let (scene_owner, context, worker, authority, repairs, payload_queue) = state
             .get_mut(&mut world)
             .expect("completion-drain resources are present");
-        drain_cached_residency_completions(context, worker, authority, repairs);
+        drain_cached_residency_completions(
+            scene_owner,
+            context,
+            worker,
+            authority,
+            repairs,
+            payload_queue,
+        );
     }
     state.apply(&mut world);
 

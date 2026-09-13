@@ -81,6 +81,49 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
     }
 }
 
+/// Resets only source/semantic state while a validated Scene-cache
+/// presentation remains visible during canonical LiveStage installation.
+/// Cache-owned hierarchy, selection intent, lookup, residency, and resident
+/// mesh handles intentionally keep their lifetimes across this boundary.
+pub(super) fn reset_source_derived_state(world: &mut World, activation_generation: u64) {
+    let desired_provider = world
+        .get_resource::<crate::viewport::api::ActiveHierarchyProvider>()
+        .map_or(HierarchySource::Prim, |provider| provider.source());
+    let classification_recipe = world
+        .get_resource::<crate::viewport::api::BimClassificationRecipeState>()
+        .and_then(|state| state.recipe().cloned())
+        .or_else(|| {
+            world
+                .get_resource::<crate::viewport::api::ActiveHierarchyProvider>()
+                .and_then(|provider| provider.classification_recipe().cloned())
+        });
+    let selection = world
+        .get_resource::<crate::viewport::scene::SelectedTargets>()
+        .map(|selected| selected.0.clone())
+        .filter(|selection| !selection.targets.is_empty());
+    world.insert_resource(PendingActivationPresentation {
+        generation: activation_generation,
+        desired_provider,
+        classification_recipe,
+        selection,
+    });
+
+    if let Some(mut semantic) =
+        world.get_resource_mut::<crate::viewport::semantic::SemanticSyncState>()
+    {
+        semantic.reset_for_activation(activation_generation);
+    }
+    if let Some(mut diff) = world.get_resource_mut::<crate::viewport::semantic::SemanticDiffState>()
+    {
+        diff.reset_for_activation();
+    }
+    if let Some(mut catalogue) =
+        world.get_resource_mut::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
+    {
+        catalogue.clear();
+    }
+}
+
 /// Reconciles retained presentation intent after the current generation has
 /// produced both semantic/BIM state and a usable scene-anchor index. No timer
 /// or blind retry is involved: the pending record remains until its source

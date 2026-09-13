@@ -22,9 +22,15 @@ use crate::viewport::session::{
 };
 #[path = "lifecycle_scene_cache.rs"]
 mod scene_cache;
-pub(crate) use scene_cache::publish_scene_cache_presentation_before_stage_open;
+pub(crate) use scene_cache::install_scene_cache_bootstrap_before_stage_open;
 #[path = "lifecycle_scene_presentation.rs"]
 mod scene_presentation;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StageInstallMode {
+    Fresh,
+    ContinueCacheFirst,
+}
 
 /// Installs a Stage that was already opened and validated by the Project
 /// activation candidate. The opened Stage is moved directly into LiveStage so
@@ -40,6 +46,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     archive_paths: Option<Vec<std::path::PathBuf>>,
     activation_generation: u64,
     presentation: StagePresentationContext,
+    install_mode: StageInstallMode,
 ) -> Result<(), String> {
     let install_started = Instant::now();
     let root = path
@@ -51,6 +58,18 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         .and_then(|name| name.to_str())
         .ok_or_else(|| "resolved Project stage has no valid filename".to_owned())?
         .to_owned();
+    let scene_cache = scene_cache.filter(|activation| {
+        scene_cache::is_current(scene_cache_project_root.as_deref(), activation)
+    });
+    let preserve_cache = install_mode == StageInstallMode::ContinueCacheFirst
+        && scene_cache.as_ref().is_some_and(|activation| {
+            world
+                .get_resource::<SceneCachePresentation>()
+                .is_some_and(|presentation| {
+                    presentation.scene_id == activation.descriptor.scene_id
+                        && presentation.generation == activation.descriptor.generation
+                })
+        });
     let cache_context = cache_context.and_then(|context| {
         if !context.should_revalidate() {
             return Some(context);
@@ -93,7 +112,9 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     {
         cache.replace_active_archives(archive_paths);
     }
-    if let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>() {
+    if !preserve_cache
+        && let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>()
+    {
         seed.clear();
     }
     if let Some(context) = cache_context.as_ref() {
@@ -114,9 +135,6 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
             }
         }
     }
-    let scene_cache = scene_cache.filter(|activation| {
-        scene_cache::is_current(scene_cache_project_root.as_deref(), activation)
-    });
     let scene_cache_owner = scene_cache_project_root
         .as_ref()
         .zip(scene_owner_id.as_ref())
@@ -129,29 +147,12 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
                     cache.descriptor.config_hash
                 }),
         });
-    super::clear_projected_stage(world);
-    lifecycle_invalidation::reset_derived_state(world, activation_generation);
-    if let (Some(scene_cache), Some(project_root)) =
-        (scene_cache.as_ref(), scene_cache_project_root.as_deref())
-    {
-        match crate::project::cache_scene_hydration::hydrate_scene_cache_payloads(
-            world,
-            project_root,
-            scene_cache,
-        ) {
-            Ok(true) => info!(
-                "hydrated Scene material/texture cache for {}",
-                scene_cache.descriptor.scene_id
-            ),
-            Ok(false) => bevy::log::debug!(
-                "[project-cache] no renderer Scene payloads for {}; continuing with source projection",
-                scene_cache.descriptor.scene_id
-            ),
-            Err(error) => bevy::log::warn!(
-                "[project-cache] Scene payload hydration failed for {}; continuing with source projection: {error:#}",
-                scene_cache.descriptor.scene_id
-            ),
-        }
+    if preserve_cache {
+        super::clear_live_stage_projection(world);
+        lifecycle_invalidation::reset_source_derived_state(world, activation_generation);
+    } else {
+        super::clear_projected_stage(world);
+        lifecycle_invalidation::reset_derived_state(world, activation_generation);
     }
     world.insert_resource(RequestedAsset { name, root });
     world.insert_resource(StageHandle {
@@ -180,7 +181,9 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     } else {
         world.remove_resource::<SceneCacheOwnershipContext>();
     }
-    if let Some(scene_cache) = scene_cache.as_ref() {
+    if !preserve_cache
+        && let Some(scene_cache) = scene_cache.as_ref()
+    {
         scene_presentation::publish_scene_cache_presentation(
             world,
             scene_cache,
@@ -188,6 +191,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         );
     }
     world.insert_non_send(LiveStage::new(stage));
+    world.remove_resource::<crate::viewport::session::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
     {
@@ -242,7 +246,7 @@ fn install_scene_cache_revalidation(
         bevy::log::warn!(
             "[project-cache] Scene source revalidation worker could not start for {scene_id}: {error}; canonical LiveStage remains authoritative"
         );
-        discard_scene_cache_presentation(world, scene_id, scene_generation);
+        discard_scene_cache_bootstrap(world, scene_id, scene_generation);
         return;
     }
     world.insert_resource(PendingSceneCacheRevalidation {
@@ -255,7 +259,11 @@ fn install_scene_cache_revalidation(
         result,
     });
 }
-fn discard_scene_cache_presentation(world: &mut World, scene_id: usd_project::SceneId, generation: u64) {
+pub(crate) fn discard_scene_cache_bootstrap(
+    world: &mut World,
+    scene_id: usd_project::SceneId,
+    generation: u64,
+) {
     let matches = world
         .get_resource::<SceneCachePresentation>()
         .is_some_and(|presentation| {
@@ -265,6 +273,13 @@ fn discard_scene_cache_presentation(world: &mut World, scene_id: usd_project::Sc
         return;
     }
     world.remove_resource::<SceneCachePresentation>();
+    world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
+    if world
+        .get_resource::<SceneCacheOwnershipContext>()
+        .is_some_and(|owner| owner.scene_id == scene_id)
+    {
+        world.remove_resource::<SceneCacheOwnershipContext>();
+    }
     crate::viewport::residency::retire_scene_cache_resources(world);
     let projection_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
@@ -302,7 +317,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
                 "[project-cache] Scene source revalidation result was poisoned; canonical LiveStage remains authoritative"
             );
             world.remove_resource::<PendingSceneCacheRevalidation>();
-            discard_scene_cache_presentation(world, scene_id, scene_generation);
+            discard_scene_cache_bootstrap(world, scene_id, scene_generation);
             return;
         }
     };
@@ -345,7 +360,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
                 "[project-cache] could not inspect Scene cache generation {scene_generation} for {scene_id}: {error:#}"
             ),
         }
-        discard_scene_cache_presentation(world, scene_id, scene_generation);
+        discard_scene_cache_bootstrap(world, scene_id, scene_generation);
         bevy::log::warn!(
             "[project-cache] rejected stale Scene metadata generation {scene_generation} for {scene_id}; canonical LiveStage projection continues"
         );
