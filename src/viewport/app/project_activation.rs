@@ -322,6 +322,9 @@ mod tests {
     }
 }
 
+#[path = "project_activation_animation_diagnostic_tests.rs"]
+#[cfg(test)]
+mod animation_diagnostic_tests;
 #[cfg(test)]
 #[path = "project_activation_cache_tests.rs"]
 mod cache_tests;
