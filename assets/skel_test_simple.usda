@@ -12,6 +12,9 @@
 
 def SkelRoot "Test"
 {
+    rel skel:skeleton = </Test/Skel>
+    rel skel:animationSource = </Test/Skel/Anim>
+
     def Skeleton "Skel"
     {
         uniform token[] joints = ["Root", "Root/Tip"]

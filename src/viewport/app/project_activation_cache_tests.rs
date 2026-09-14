@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bevy::prelude::Transform;
 use project_protocol::{ProjectActivationCommand, ProjectStageTarget};
 use tempfile::tempdir;
 use usd_project::{
@@ -201,7 +202,7 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
             break;
         }
     }
-    let world = production.world();
+    let world = production.world_mut();
     let state = world.resource::<usd_bevy::ProgressiveProjectionState>();
     assert!(saw_first_geometry, "Hummingbird reached first geometry");
     assert!(
@@ -238,4 +239,91 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
             .archive_misses,
         0
     );
+    let joint_count = world
+        .query::<&usd_bevy::route::skel::UsdJoint>()
+        .iter(world)
+        .count();
+    let driver_count = world
+        .query::<&usd_bevy::route::skel::UsdSkelAnimDriver>()
+        .iter(world)
+        .count();
+    assert!(
+        joint_count > 0 && driver_count > 0,
+        "Project wrapper must project skeletal animation bindings (joints={joint_count}, drivers={driver_count}, animated={:?})",
+        world.resource::<usd_bevy::AnimatedPrims>().0
+    );
+
+    let (start, end) = {
+        let live = world
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("canonical Project LiveStage");
+        (live.stage.start_time_code(), live.stage.end_time_code())
+    };
+    let t0 = start + (end - start) * 0.25;
+    let t1 = start + (end - start) * 0.75;
+    let transform_t0 = seek_project_time(&mut production, t0);
+    let transform_t1 = seek_project_time(&mut production, t1);
+    let transform_round_trip = seek_project_time(&mut production, t0);
+    assert_ne!(
+        transform_t0, transform_t1,
+        "Project Scene wrapper must preserve visible transform animation"
+    );
+    assert_eq!(
+        transform_t0, transform_round_trip,
+        "Project animation must round-trip deterministically"
+    );
+}
+
+fn seek_project_time(production: &mut ProductionActivationWorld, time_code: f64) -> u64 {
+    {
+        let mut clock = production
+            .world_mut()
+            .resource_mut::<crate::viewport::animation::UsdStageTime>();
+        clock.playing = false;
+        clock.seconds = (time_code - clock.start_time_code) / clock.time_codes_per_second;
+    }
+    production.update();
+    production.update();
+    let world = production.world_mut();
+    let mut query = world.query::<(&usd_bevy::prim_ref::UsdPrimRef, &Transform)>();
+    let mut transforms = query
+        .iter(world)
+        .map(|(prim, transform)| (prim.path.clone(), *transform))
+        .collect::<Vec<_>>();
+    let mut joints = world.query::<(&usd_bevy::route::skel::UsdJoint, &Transform)>();
+    transforms.extend(
+        joints
+            .iter(world)
+            .map(|(joint, transform)| (format!("joint:{}", joint.path), *transform)),
+    );
+    transforms.sort_by(|(left, _), (right, _)| left.cmp(right));
+    project_transform_signature(&transforms)
+}
+
+fn project_transform_signature(samples: &[(String, Transform)]) -> u64 {
+    const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
+    const FNV_PRIME: u64 = 1_099_511_628_211;
+    let mut hash = FNV_OFFSET;
+    for (path, transform) in samples {
+        for byte in (path.len() as u64)
+            .to_le_bytes()
+            .iter()
+            .chain(path.as_bytes())
+        {
+            hash = (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME);
+        }
+        for value in transform
+            .translation
+            .to_array()
+            .into_iter()
+            .chain(transform.rotation.to_array())
+            .chain(transform.scale.to_array())
+        {
+            let quantized = (f64::from(value) * 1_000_000.0).round() as i64;
+            for byte in quantized.to_le_bytes() {
+                hash = (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
+            }
+        }
+    }
+    hash
 }

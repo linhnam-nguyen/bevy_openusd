@@ -73,6 +73,155 @@ fn stage_time_uses_prebound_animation_without_structural_work() {
 }
 
 #[test]
+fn replacement_stage_with_same_start_time_receives_initial_animation_sample() {
+    let stage_a = crate::snippet::UsdSnippet::new(
+        r#"#usda 1.0
+(
+    startTimeCode = 0
+    endTimeCode = 1
+)
+def Xform "World"
+{
+    def Xform "Animated"
+    {
+        float xformOp:rotateY.timeSamples = {
+            0: 0,
+            1: 90,
+        }
+        uniform token[] xformOpOrder = ["xformOp:rotateY"]
+    }
+}
+"#,
+    )
+    .open_stage()
+    .expect("stage A opens");
+    let stage_b = crate::snippet::UsdSnippet::new(
+        r#"#usda 1.0
+(
+    startTimeCode = 0
+    endTimeCode = 1
+)
+def Xform "World"
+{
+    def Xform "Animated"
+    {
+        float xformOp:rotateY.timeSamples = {
+            0: 180,
+            1: 270,
+        }
+        uniform token[] xformOpOrder = ["xformOp:rotateY"]
+    }
+}
+"#,
+    )
+    .open_stage()
+    .expect("stage B opens");
+
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .add_plugins(bevy::transform::TransformPlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(LiveStage::new(stage_a));
+    app.update();
+    app.world_mut()
+        .resource_mut::<PerformanceCounters>()
+        .enabled = true;
+    app.world_mut()
+        .resource_mut::<PerformanceCounters>()
+        .reset();
+
+    let replacement_identity = {
+        let mut live = app
+            .world_mut()
+            .get_non_send_mut::<LiveStage>()
+            .expect("live stage");
+        live.replace_stage(stage_b);
+        live.stage_identity()
+    };
+    for _ in 0..32 {
+        app.update();
+        let state = app
+            .world()
+            .resource::<crate::live::ProgressiveProjectionState>();
+        if state.readiness() == crate::live::ProjectionReadiness::Ready
+            && state.session_id() == Some(replacement_identity.0)
+        {
+            break;
+        }
+    }
+
+    assert_eq!(
+        app.world().resource::<crate::route::StageTime>().current,
+        0.0
+    );
+    assert_eq!(
+        app.world()
+            .resource::<PerformanceCounters>()
+            .animation_runtime_samples,
+        1,
+        "a new stage must be sampled even when its numeric start time matches the old stage"
+    );
+}
+
+#[test]
+fn composed_skeletal_fixture_samples_joint_motion() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/skel_test_composed.usda");
+    let stage = Stage::open(path.to_str().expect("fixture path is valid"))
+        .expect("composed skeletal fixture opens");
+    let mut app = App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .add_plugins(bevy::transform::TransformPlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>();
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    for _ in 0..32 {
+        app.update();
+        let joint_count = {
+            let world = app.world_mut();
+            let mut query = world.query::<&crate::route::skel::UsdJoint>();
+            query.iter(world).count()
+        };
+        if joint_count >= 2 {
+            break;
+        }
+    }
+
+    let (driver_count, rotations_authored) = {
+        let world = app.world_mut();
+        let mut query = world.query::<&crate::route::skel::UsdSkelAnimDriver>();
+        let drivers = query.iter(world).collect::<Vec<_>>();
+        (
+            drivers.len(),
+            drivers.iter().any(|driver| driver.has_rotations),
+        )
+    };
+    assert!(
+        driver_count > 0 && rotations_authored,
+        "composed fixture must build a rotation-bearing animation driver (drivers={driver_count}, rotations={rotations_authored})"
+    );
+    let before = joint_transform(&mut app, "Root/Tip");
+    app.world_mut().resource_mut::<StageTime>().current = 30.0;
+    app.update();
+    let after = joint_transform(&mut app, "Root/Tip");
+    assert_ne!(before.rotation, after.rotation);
+}
+
+fn joint_transform(app: &mut App, path: &str) -> Transform {
+    let world = app.world_mut();
+    let mut query = world.query::<(&crate::route::skel::UsdJoint, &Transform)>();
+    query
+        .iter(world)
+        .find(|(joint, _)| joint.path == path)
+        .map(|(_, transform)| *transform)
+        .unwrap_or_else(|| panic!("joint {path} was projected"))
+}
+
+#[test]
 fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
     let usda = r#"#usda 1.0
 (

@@ -35,9 +35,10 @@ pub(crate) fn author_scene_wrapper_to_path(
         authored_layer_path,
         source_asset_path,
     )?;
-    let source_prim = stage
-        .define_prim(source_path.as_str())?
-        .set_type_name("Xform")?;
+    // Keep the referenced root schema visible to the composed stage.  A
+    // source may be a SkelRoot; forcing this wrapper prim to Xform hides that
+    // schema and prevents native animation binding discovery after adoption.
+    let source_prim = stage.define_prim(source_path.as_str())?;
     author_source_references(&stage, &source_prim, &source_asset_path, source_prims)?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
@@ -74,7 +75,6 @@ fn author_source_references(
     for (index, source_path) in source_prims.iter().enumerate() {
         stage
             .define_prim(format!("/SceneRoot/Source/Root_{index}").as_str())?
-            .set_type_name("Xform")?
             .set_metadata(
                 REFERENCES_FIELD,
                 Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {

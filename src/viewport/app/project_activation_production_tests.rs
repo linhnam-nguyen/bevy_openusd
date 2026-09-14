@@ -41,7 +41,7 @@ mod cache_first_tests;
 #[path = "project_activation_cache_handoff_tests.rs"]
 mod cache_handoff_tests;
 #[path = "project_activation_production_support.rs"]
-mod production_support;
+pub(super) mod production_support;
 
 pub(crate) struct ProductionActivationWorld {
     app: App,

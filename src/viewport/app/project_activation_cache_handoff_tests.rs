@@ -232,43 +232,63 @@ fn cache_first_handoff_uses_render_schedule_before_retiring_projection() {
     }
 
     production.update();
-    let world = production.world_mut();
-    let live = world
-        .get_non_send::<LiveStage>()
-        .expect("canonical LiveStage");
-    assert_eq!(live.stage_identity(), live_identity_before);
-    assert_eq!(world.resource::<PrimEntities>().len(), prim_count_before);
-    assert!(world.resource::<PrimEntities>().len() > 0);
+    {
+        let world = production.world_mut();
+        let live = world
+            .get_non_send::<LiveStage>()
+            .expect("canonical LiveStage");
+        assert_eq!(live.stage_identity(), live_identity_before);
+        assert_eq!(world.resource::<PrimEntities>().len(), prim_count_before);
+        assert!(world.resource::<PrimEntities>().len() > 0);
+        assert_eq!(
+            world
+                .resource::<usd_bevy::ProgressiveProjectionState>()
+                .readiness(),
+            usd_bevy::ProjectionReadiness::Ready
+        );
+        assert_eq!(
+            world
+                .resource::<SceneResidencyProjection>()
+                .active_entity_count_for_test(),
+            0
+        );
+        assert_eq!(
+            world
+                .query::<&SceneResidencyOccurrence>()
+                .iter(world)
+                .count(),
+            0
+        );
+        assert!(world.get_resource::<SceneCachePresentation>().is_none());
+        assert!(
+            world
+                .get_resource::<crate::viewport::session::PendingCanonicalVisualHandoff>()
+                .is_none()
+        );
+        assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
+        assert!(
+            world
+                .resource::<crate::viewport::animation::UsdStageTime>()
+                .playing
+        );
+    }
+
+    let (start, end) = {
+        let live = production
+            .world()
+            .get_non_send::<LiveStage>()
+            .expect("canonical LiveStage");
+        (live.stage.start_time_code(), live.stage.end_time_code())
+    };
+    let t0 = start + (end - start) * 0.25;
+    let t1 = start + (end - start) * 0.75;
+    let at_t0 = super::production_support::seek_animation_signature(&mut production, t0);
+    let at_t1 = super::production_support::seek_animation_signature(&mut production, t1);
+    let round_trip = super::production_support::seek_animation_signature(&mut production, t0);
+    assert_ne!(at_t0, at_t1, "cache-first handoff must preserve motion");
     assert_eq!(
-        world
-            .resource::<usd_bevy::ProgressiveProjectionState>()
-            .readiness(),
-        usd_bevy::ProjectionReadiness::Ready
-    );
-    assert_eq!(
-        world
-            .resource::<SceneResidencyProjection>()
-            .active_entity_count_for_test(),
-        0
-    );
-    assert_eq!(
-        world
-            .query::<&SceneResidencyOccurrence>()
-            .iter(world)
-            .count(),
-        0
-    );
-    assert!(world.get_resource::<SceneCachePresentation>().is_none());
-    assert!(
-        world
-            .get_resource::<crate::viewport::session::PendingCanonicalVisualHandoff>()
-            .is_none()
-    );
-    assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
-    assert!(
-        world
-            .resource::<crate::viewport::animation::UsdStageTime>()
-            .playing
+        at_t0, round_trip,
+        "cache-first handoff animation must round-trip deterministically"
     );
 }
 
