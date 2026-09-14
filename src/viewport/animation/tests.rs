@@ -104,7 +104,7 @@ fn authored_sample_points(stage: ReadyStage) -> [f64; 2] {
     [stage.start + span * 0.25, stage.start + span * 0.75]
 }
 
-fn seek_paused(app: &mut App, time_code: f64) {
+fn seek_paused(app: &mut App, time_code: f64) -> f64 {
     let seconds = {
         let clock = app.world().resource::<UsdStageTime>();
         (time_code - clock.start_time_code) / clock.time_codes_per_second
@@ -122,6 +122,7 @@ fn seek_paused(app: &mut App, time_code: f64) {
     let current = app.world().resource::<usd_bevy::StageTime>().current;
     assert!((current - time_code).abs() < 1e-9);
     assert!(!app.world().resource::<UsdStageTime>().playing);
+    current
 }
 
 fn animated_transforms(app: &mut App) -> Vec<(String, Transform)> {
@@ -148,7 +149,68 @@ fn animated_transforms(app: &mut App) -> Vec<(String, Transform)> {
             .iter(world)
             .map(|(joint, transform)| (format!("joint:{}", joint.path), *transform)),
     );
+    output.sort_by(|(left, _), (right, _)| left.cmp(right));
     output
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct QuantizedTransform {
+    translation: [i64; 3],
+    rotation: [i64; 4],
+    scale: [i64; 3],
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TransformSignature {
+    samples: Vec<(String, QuantizedTransform)>,
+    hash: u64,
+}
+
+fn quantize(value: f32) -> i64 {
+    const SCALE: f64 = 1_000_000.0;
+    assert!(
+        value.is_finite(),
+        "animation transform component must be finite"
+    );
+    (f64::from(value) * SCALE).round() as i64
+}
+
+fn quantized_transform(transform: &Transform) -> QuantizedTransform {
+    QuantizedTransform {
+        translation: transform.translation.to_array().map(quantize),
+        rotation: transform.rotation.to_array().map(quantize),
+        scale: transform.scale.to_array().map(quantize),
+    }
+}
+
+fn fnv1a_update(hash: &mut u64, bytes: &[u8]) {
+    const FNV_PRIME: u64 = 1_099_511_628_211;
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(FNV_PRIME);
+    }
+}
+
+fn transform_signature(samples: &[(String, Transform)]) -> TransformSignature {
+    const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
+    let samples = samples
+        .iter()
+        .map(|(path, transform)| (path.clone(), quantized_transform(transform)))
+        .collect::<Vec<_>>();
+    let mut hash = FNV_OFFSET_BASIS;
+    for (path, transform) in &samples {
+        fnv1a_update(&mut hash, &(path.len() as u64).to_le_bytes());
+        fnv1a_update(&mut hash, path.as_bytes());
+        for component in transform
+            .translation
+            .iter()
+            .chain(transform.rotation.iter())
+            .chain(transform.scale.iter())
+        {
+            fnv1a_update(&mut hash, &component.to_le_bytes());
+        }
+    }
+    TransformSignature { samples, hash }
 }
 
 #[test]
@@ -216,4 +278,41 @@ fn hummingbird_replacement_resets_and_restarts_real_playback() {
         before_restart,
         "Hummingbird playback must restart after static replacement"
     );
+}
+
+#[test]
+fn hummingbird_paused_seek_round_trip_has_stable_transform_signature() {
+    let mut app = playback_app();
+    app.world_mut()
+        .insert_non_send(LiveStage::new(open_stage(&asset_path("hummingbird.usdz"))));
+    let stage = settle_stage(&mut app, true);
+    let [t0, t1] = authored_sample_points(stage);
+    assert!(t1 > t0, "authored sample points must advance in time");
+
+    let at_t0 = {
+        let current = seek_paused(&mut app, t0);
+        assert!((current - t0).abs() < 1e-9);
+        let samples = animated_transforms(&mut app);
+        assert!(!samples.is_empty(), "Hummingbird samples must be non-empty");
+        transform_signature(&samples)
+    };
+    let at_t1 = {
+        let current = seek_paused(&mut app, t1);
+        assert!((current - t1).abs() < 1e-9);
+        let samples = animated_transforms(&mut app);
+        assert!(!samples.is_empty(), "Hummingbird samples must be non-empty");
+        transform_signature(&samples)
+    };
+    assert_ne!(at_t0.hash, at_t1.hash, "t0 and t1 must render differently");
+    assert_ne!(
+        at_t0.samples, at_t1.samples,
+        "t0 and t1 samples must differ"
+    );
+
+    let round_trip = {
+        let current = seek_paused(&mut app, t0);
+        assert!((current - t0).abs() < 1e-9);
+        transform_signature(&animated_transforms(&mut app))
+    };
+    assert_eq!(at_t0, round_trip, "paused t0 seek must round-trip exactly");
 }
