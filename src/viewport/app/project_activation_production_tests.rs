@@ -33,7 +33,7 @@ use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::semantic::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 use crate::viewport::session::rehydrate_activation_presentation;
-use crate::viewport::session::{Spawned, StageInfo, StagePresentationContext};
+use crate::viewport::session::{Spawned, StageInfo, StagePresentationContext, spawn_when_ready};
 use usd_project::ProjectRoot;
 
 #[path = "project_activation_cache_first_tests.rs"]
@@ -139,6 +139,8 @@ impl ProductionActivationWorld {
 
     pub(crate) fn update(&mut self) {
         self.app.update();
+        spawn_when_ready(self.app.world_mut());
+        super::canonical_visual_handoff::observe_canonical_visual_handoff(self.app.world_mut());
     }
 
     pub(crate) fn mark_cache_rendered_for_test(&mut self) {
@@ -150,6 +152,10 @@ impl ProductionActivationWorld {
         world
             .resource_mut::<crate::viewport::session::CachePresentationGate>()
             .observe_rendered_frame(scene_id, generation);
+    }
+
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        self.app.world_mut()
     }
 
     pub(crate) fn replace_selection(&mut self, target: SceneAnchor) {

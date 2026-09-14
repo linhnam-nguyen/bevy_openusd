@@ -56,6 +56,7 @@ pub(super) fn process_project_activations(world: &mut World) {
         if let Some(pending) = world.remove_resource::<super::PendingCanonicalStageActivation>() {
             rollback_cache_bootstrap(world, &pending.target);
         }
+        super::canonical_visual_handoff::cancel(world);
         if let Some(mut projection) =
             world.get_resource_mut::<usd_bevy::ProgressiveProjectionState>()
         {

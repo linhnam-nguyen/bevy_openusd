@@ -263,6 +263,41 @@ mod tests {
     }
 
     #[test]
+    fn retire_world_despawns_active_cache_occurrences() {
+        let scene = SceneId::new_v4();
+        let occurrence = payload(scene, SceneMemberId::new_v4());
+        let key = occurrence.payload_key;
+        let mut projection = SceneResidencyProjection::default();
+        projection.install_scene(&[occurrence]);
+
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        let handle = world.resource_mut::<Assets<Mesh>>().add(Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        ));
+        let mut queue = CommandQueue::default();
+        {
+            let mut commands = Commands::new(&mut queue, &world);
+            projection.attach_payload(key, handle, &mut commands);
+        }
+        queue.apply(&mut world);
+        assert_eq!(projection.active_entity_count(), 1);
+
+        projection.retire_world(&mut world);
+
+        assert_eq!(projection.active_entity_count(), 0);
+        assert_eq!(projection.entry_count(), 0);
+        assert_eq!(
+            world
+                .query::<&SceneResidencyOccurrence>()
+                .iter(&world)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn projection_uses_resolved_scene_space_transform() {
         let scene = SceneId::new_v4();
         let mut occurrence = payload(scene, SceneMemberId::new_v4());

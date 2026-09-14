@@ -18,7 +18,8 @@ use super::{
     lifecycle_invalidation,
 };
 use crate::viewport::session::{
-    PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
+    PendingCanonicalVisualHandoff, PendingSceneCacheRevalidation, SceneCacheOwnershipContext,
+    SceneCachePresentation,
 };
 #[path = "lifecycle_scene_cache.rs"]
 mod scene_cache;
@@ -191,6 +192,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         );
     }
     world.insert_non_send(LiveStage::new(stage));
+    PendingCanonicalVisualHandoff::sync_for_activation(world, preserve_cache, activation_generation, scene_cache.as_ref());
     world.remove_resource::<crate::viewport::session::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
@@ -272,6 +274,7 @@ pub(crate) fn discard_scene_cache_bootstrap(
     if !matches {
         return;
     }
+    PendingCanonicalVisualHandoff::cancel_if_matches(world, &scene_id, generation);
     world.remove_resource::<SceneCachePresentation>();
     world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
     if world

@@ -26,6 +26,8 @@ mod flow;
 mod queue;
 #[path = "cache_presentation_render.rs"]
 mod cache_presentation_render;
+#[path = "canonical_visual_handoff.rs"]
+mod canonical_visual_handoff;
 
 use queue::{ActivationCancellation, LatestActivationQueue};
 
@@ -219,6 +221,7 @@ fn resolve_project_activation_with_cache(
 
 pub(super) fn install(app: &mut App) {
     cache_presentation_render::install(app);
+    canonical_visual_handoff::install(app);
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
         .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(

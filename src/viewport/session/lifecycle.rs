@@ -266,6 +266,7 @@ pub(super) fn clear_live_stage_projection(world: &mut World) {
     world.remove_non_send::<LiveStage>();
     world.remove_resource::<StageMetadataState>();
     world.remove_resource::<super::PendingSceneCacheRevalidation>();
+    world.remove_resource::<super::PendingCanonicalVisualHandoff>();
     world.resource_mut::<Spawned>().0 = false;
 }
 

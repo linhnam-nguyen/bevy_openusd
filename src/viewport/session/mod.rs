@@ -4,6 +4,8 @@ mod lifecycle;
 mod state;
 #[path = "cache_presentation_gate.rs"]
 mod cache_presentation_gate;
+#[path = "visual_handoff_state.rs"]
+mod visual_handoff_state;
 
 pub(in crate::viewport) use lifecycle::{
     PendingActivationPresentation, rehydrate_activation_presentation,
@@ -22,4 +24,5 @@ pub(crate) use state::{
     StageCameraData, StageCameraInfo, StageCameraProjection, StageHandle, StageInfo,
     StagePresentationContext, VariantSetInfo,
 };
+pub(crate) use visual_handoff_state::PendingCanonicalVisualHandoff;
 pub(crate) use cache_presentation_gate::CachePresentationGate;

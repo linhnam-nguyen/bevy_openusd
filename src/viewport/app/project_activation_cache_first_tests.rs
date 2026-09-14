@@ -113,6 +113,10 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
             .get_resource::<SceneCachePresentation>()
             .is_none()
     );
+    assert!(production
+        .world()
+        .get_resource::<crate::viewport::session::PendingCanonicalVisualHandoff>()
+        .is_none());
 }
 
 #[test]
@@ -331,33 +335,54 @@ fn cache_first_activation_does_not_fake_canonical_animation_readiness() {
         production.update();
     }
 
-    let world = production.world();
-    assert_eq!(
-        world
-            .resource::<usd_bevy::ProgressiveProjectionState>()
-            .readiness(),
-        usd_bevy::ProjectionReadiness::Ready
-    );
-    let live = world
-        .get_non_send::<LiveStage>()
-        .expect("canonical LiveStage");
-    assert_eq!(
-        live.stage.root_layer().identifier(),
-        fs::canonicalize(&scene_path)
-            .expect("canonical Scene wrapper")
-            .to_string_lossy()
-    );
-    assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
-    assert!(
-        world
+    {
+        let world = production.world();
+        assert_eq!(
+            world
+                .resource::<usd_bevy::ProgressiveProjectionState>()
+                .readiness(),
+            usd_bevy::ProjectionReadiness::Ready
+        );
+        let pending = world
+            .resource::<crate::viewport::session::PendingCanonicalVisualHandoff>();
+        assert!(pending.canonical_ready);
+        assert!(!pending.canonical_frame_rendered);
+        assert!(world
+            .get_resource::<SceneCachePresentation>()
+            .is_some());
+        let live = world
+            .get_non_send::<LiveStage>()
+            .expect("canonical LiveStage");
+        assert_eq!(
+            live.stage.root_layer().identifier(),
+            fs::canonicalize(&scene_path)
+                .expect("canonical Scene wrapper")
+                .to_string_lossy()
+        );
+        assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
+        assert!(world
             .resource::<crate::viewport::animation::UsdStageTime>()
-            .playing
-    );
-    assert!(
-        world
+            .playing);
+        assert!(world
             .resource::<super::super::ProjectActivationAuthorityRuntime>()
             .0
             .active()
-            .is_some()
-    );
+            .is_some());
+    }
+
+    production
+        .world_mut()
+        .resource_mut::<crate::viewport::session::PendingCanonicalVisualHandoff>()
+        .mark_canonical_frame_rendered();
+    production.update();
+    let world = production.world();
+    assert!(world
+        .get_resource::<SceneCachePresentation>()
+        .is_none());
+    assert!(world
+        .get_resource::<crate::viewport::session::PendingCanonicalVisualHandoff>()
+        .is_none());
+    assert!(world.get_non_send::<LiveStage>().is_some());
+    assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
+    assert!(world.resource::<crate::viewport::animation::UsdStageTime>().playing);
 }
