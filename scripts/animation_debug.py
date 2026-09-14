@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import signal
@@ -76,6 +77,11 @@ MATRIX = (
         "description": "paused deterministic t0 to t1 to t0 round trip",
         "scenario": "scenario_g_seek_round_trip",
     },
+    {
+        "id": "H",
+        "description": "actual compact animation-debug protocol event size",
+        "scenario": "scenario_h_protocol_message_size",
+    },
 )
 
 SUPPLEMENTAL_REQUIRED = (
@@ -92,6 +98,10 @@ SUPPLEMENTAL_REQUIRED = (
 def tail(value: str) -> str:
     value = value.strip()
     return value[-MAX_OUTPUT_CHARS:] if value else ""
+
+
+def finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def command_result(
@@ -184,10 +194,7 @@ def overall_status(
     matrix_pass = all(row.get("status") == PASS for row in matrix)
     supplemental_pass = all(check.get("status") == PASS for check in supplemental)
     preflight_pass = all(check.get("status") in {PASS, WARN} for check in preflight)
-    fault_pass = fault_report.get("status") == PASS or (
-        fault_report.get("status") == WARN
-        and fault_report.get("requested") is None
-    )
+    fault_pass = fault_report.get("status") == PASS
     return PASS if matrix_pass and supplemental_pass and preflight_pass and fault_pass else FAIL
 
 
@@ -303,8 +310,8 @@ def focused_test(check_id: str, filter_name: str, failure_code: str) -> dict[str
     )
 
 
-def backend_animation_command(output: Path) -> list[str]:
-    return [
+def backend_animation_command(output: Path, fault: str | None = None) -> list[str]:
+    command = [
         "cargo",
         "run",
         "--bin",
@@ -321,8 +328,11 @@ def backend_animation_command(output: Path) -> list[str]:
         "--animation-debug",
         "--animation-debug-output",
         str(output),
-        "assets/external/hummingbird.usdz",
     ]
+    if fault is not None:
+        command.extend(["--animation-debug-fault", fault])
+    command.append("assets/external/hummingbird.usdz")
+    return command
 
 
 def parse_backend_report(
@@ -396,12 +406,18 @@ def load_client_evidence(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def run_backend_only(output: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
+def run_backend_only(
+    output: Path, fault: str | None = None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    check_id = "fault_backend_render_command" if fault else "scenario_b_hummingbird_render_command"
+    failure_code = "FAULT_BACKEND_COMMAND_FAILED" if fault else "HEADLESS_RENDER_COMMAND_FAILED"
     command_check = command_result(
-        "scenario_b_hummingbird_render_command",
-        backend_animation_command(output),
+        check_id,
+        backend_animation_command(output, fault),
         ROOT,
-        "HEADLESS_RENDER_COMMAND_FAILED",
+        failure_code,
         timeout_seconds=240,
     )
     return command_check, parse_backend_report(output, command_check)
@@ -542,7 +558,7 @@ def run_backend_render(
     finally:
         stop_processes(processes)
         report = parse_backend_report(output, command_check)
-        if report is None and runtime["status"] == UNAVAILABLE:
+        if runtime["status"] == UNAVAILABLE:
             fallback_check, report = run_backend_only(output)
             command_check = fallback_check
         if client_evidence is None:
@@ -567,16 +583,29 @@ def hummingbird_render_scenario(report: dict[str, Any] | None, command_check: di
         }
     server = report.get("server_evidence", {})
     pairwise = report.get("pairwise_render_mad_luma", {})
+    thresholds = report.get("thresholds", {})
     t0 = server.get("t0") or {}
     t1 = server.get("t1") or {}
+    repeat_mad = pairwise.get("hummingbird_t0_round_trip")
+    repeat_threshold = thresholds.get("hummingbird_max_repeat_mad")
+    motion_mad = pairwise.get("hummingbird_t0_t1")
+    motion_threshold = thresholds.get("hummingbird_min_mad")
     required = {
         "stage_ready": t0.get("stage_ready") is True and t1.get("stage_ready") is True,
         "animated_prim_count": (report.get("animated_prim_count") or 0) > 0,
         "hash_t0_differs_from_t1": server.get("hash_t0_differs_from_t1") is True,
         "sequence_t1_after_t0": server.get("sequence_t1_after_t0") is True,
         "sequence_round_trip_after_t1": server.get("sequence_round_trip_after_t1") is True,
-        "hummingbird_t0_t1_mad": isinstance(pairwise.get("hummingbird_t0_t1"), (int, float)),
-        "hummingbird_round_trip_mad": isinstance(pairwise.get("hummingbird_t0_round_trip"), (int, float)),
+        "hummingbird_motion_mad_finite": finite_number(motion_mad),
+        "hummingbird_motion_threshold_finite": finite_number(motion_threshold),
+        "hummingbird_motion_mad_reaches_threshold": finite_number(motion_mad)
+        and finite_number(motion_threshold)
+        and motion_mad >= motion_threshold,
+        "hummingbird_repeat_mad_finite": finite_number(repeat_mad),
+        "hummingbird_repeat_threshold_finite": finite_number(repeat_threshold),
+        "hummingbird_repeat_mad_within_threshold": finite_number(repeat_mad)
+        and finite_number(repeat_threshold)
+        and repeat_mad <= repeat_threshold,
     }
     status = PASS if all(required.values()) and command_check.get("exit_code") == 0 else FAIL
     return {
@@ -584,6 +613,84 @@ def hummingbird_render_scenario(report: dict[str, Any] | None, command_check: di
         "status": status,
         "failure_code": None if status == PASS else "HEADLESS_RENDER_EVIDENCE_INCOMPLETE",
         "evidence": {"required": required, "backend_report": report},
+    }
+
+
+def static_negative_scenario(
+    semantic_check: dict[str, Any], report: dict[str, Any] | None, command_check: dict[str, Any]
+) -> dict[str, Any]:
+    if report is None:
+        return {
+            "id": "scenario_d_static",
+            "status": FAIL,
+            "failure_code": command_check.get("failure_code"),
+        }
+    server = report.get("server_evidence", {})
+    pairwise = report.get("pairwise_render_mad_luma", {})
+    thresholds = report.get("thresholds", {})
+    static_t0 = server.get("static_t0") or {}
+    static_t1 = server.get("static_t1") or {}
+    static_mad = pairwise.get("static_t0_t1")
+    static_threshold = thresholds.get("static_max_mad")
+    required = {
+        "semantic_static_test": semantic_check.get("status") == PASS,
+        "static_samples_present": bool(static_t0) and bool(static_t1),
+        "static_stage_ready": static_t0.get("stage_ready") is True and static_t1.get("stage_ready") is True,
+        "static_animated_count_zero": static_t0.get("animated_prim_count") == 0
+        and static_t1.get("animated_prim_count") == 0,
+        "static_sequence_advances": server.get("static_sequence_advances") is True,
+        "static_mad_finite": finite_number(static_mad),
+        "static_threshold_finite": finite_number(static_threshold),
+        "static_mad_within_threshold": finite_number(static_mad)
+        and finite_number(static_threshold)
+        and static_mad <= static_threshold,
+        "backend_command_passed": command_check.get("exit_code") == 0,
+    }
+    status = PASS if all(required.values()) else FAIL
+    return {
+        "id": "scenario_d_static",
+        "status": status,
+        "failure_code": None if status == PASS else "STATIC_NEGATIVE_CONTROL_FAILED",
+        "evidence": {"required": required, "semantic_check": semantic_check, "backend_report": report},
+    }
+
+
+def seek_round_trip_scenario(
+    transform_check: dict[str, Any], report: dict[str, Any] | None, command_check: dict[str, Any]
+) -> dict[str, Any]:
+    if report is None:
+        return {
+            "id": "scenario_g_seek_round_trip",
+            "status": FAIL,
+            "failure_code": command_check.get("failure_code"),
+        }
+    server = report.get("server_evidence", {})
+    pairwise = report.get("pairwise_render_mad_luma", {})
+    thresholds = report.get("thresholds", {})
+    repeat_mad = pairwise.get("hummingbird_t0_round_trip")
+    repeat_threshold = thresholds.get("hummingbird_max_repeat_mad")
+    required = {
+        "semantic_transform_test": transform_check.get("status") == PASS,
+        "selected_samples_present": all(
+            isinstance(server.get(name), dict) for name in ("t0", "t1", "t0_round_trip")
+        ),
+        "sequence_t1_after_t0": server.get("sequence_t1_after_t0") is True,
+        "sequence_round_trip_after_t1": server.get("sequence_round_trip_after_t1") is True,
+        "transform_t0_differs_from_t1": server.get("transform_t0_differs_from_t1") is True,
+        "transform_round_trip_matches_t0": server.get("transform_round_trip_matches_t0") is True,
+        "repeat_mad_finite": finite_number(repeat_mad),
+        "repeat_threshold_finite": finite_number(repeat_threshold),
+        "repeat_mad_within_threshold": finite_number(repeat_mad)
+        and finite_number(repeat_threshold)
+        and repeat_mad <= repeat_threshold,
+        "backend_command_passed": command_check.get("exit_code") == 0,
+    }
+    status = PASS if all(required.values()) else FAIL
+    return {
+        "id": "scenario_g_seek_round_trip",
+        "status": status,
+        "failure_code": None if status == PASS else "PAUSED_SEEK_ROUND_TRIP_FAILED",
+        "evidence": {"required": required, "semantic_check": transform_check, "backend_report": report},
     }
 
 
@@ -659,42 +766,40 @@ def client_animation_scenario(
     }
 
 
-def fault_verification(requested: str | None, expected: str | None = None, observed: str | None = None) -> dict[str, Any]:
-    if requested is None:
-        return {
-            "id": "fault_injection",
-            "status": WARN,
-            "failure_code": None,
-            "reason": "No fault was requested; B0-M0 evidence was not mutated.",
-            "requested": None,
-        }
-    if expected is None or observed is None:
-        return unavailable(
-            "fault_injection",
-            f"Requested fault {requested!r}, but no executable harness is available.",
-            "FAULT_INJECTION_UNAVAILABLE",
-        )
-    status = PASS if expected == observed else FAIL
+def fault_verification(
+    fault_name: str, expected_layer: str, report: dict[str, Any] | None
+) -> dict[str, Any]:
+    observed_layer = report.get("failure_layer") if report is not None else None
+    generated_fault = report.get("diagnostic_fault") if report is not None else None
+    status = (
+        PASS
+        if report is not None
+        and report.get("pass") is False
+        and generated_fault == fault_name
+        and observed_layer == expected_layer
+        else FAIL
+    )
     return {
         "id": "fault_injection",
         "status": status,
         "failure_code": None if status == PASS else "FAULT_CLASSIFICATION_MISMATCH",
-        "requested": requested,
-        "expected": expected,
-        "observed": observed,
+        "fault": fault_name,
+        "expected": expected_layer,
+        "observed": observed_layer,
+        "generated_fault": generated_fault,
     }
 
 
 def decision_table() -> list[dict[str, Any]]:
     return [
-        {"when": "all A-G rows are PASS", "decision": "eligible", "failure_code": None},
+        {"when": "all A-H rows are PASS and the generated fault is classified", "decision": "eligible", "failure_code": None},
         {"when": "any required row is UNAVAILABLE or ERROR", "decision": "FAIL", "failure_code": "MATRIX_EVIDENCE_MISSING"},
-        {"when": "an explicitly requested fault is unavailable", "decision": "FAIL", "failure_code": "FAULT_INJECTION_UNAVAILABLE"},
+        {"when": "the generated fault report is missing or misclassified", "decision": "FAIL", "failure_code": "FAULT_CLASSIFICATION_MISMATCH"},
         {"when": "preflight or supplemental check is FAIL", "decision": "FAIL", "failure_code": "CHECK_FAILED"},
     ]
 
 
-def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict[str, Any], int]:
+def build_report(output: Path) -> tuple[dict[str, Any], int]:
     preflight = run_preflight()
     scenarios: dict[str, dict[str, Any]] = {}
     scenarios["scenario_a_hummingbird_stage"] = focused_test(
@@ -702,7 +807,7 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         "viewport::animation::tests::hummingbird_native_stage_evaluation_is_animated",
         "NATIVE_STAGE_EVALUATION_FAILED",
     )
-    scenarios["scenario_d_static"] = focused_test(
+    static_semantic_check = focused_test(
         "scenario_d_static",
         "viewport::animation::tests::static_stage_is_negative_animation_control",
         "STATIC_NEGATIVE_CONTROL_FAILED",
@@ -717,7 +822,7 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         "viewport::app::project_activation::production_tests::cache_first_tests::cache_first_activation_does_not_fake_canonical_animation_readiness",
         "CACHE_FIRST_CANONICAL_READINESS_FAILED",
     )
-    scenarios["scenario_g_seek_round_trip"] = focused_test(
+    transform_semantic_check = focused_test(
         "scenario_g_seek_round_trip",
         "viewport::animation::tests::hummingbird_paused_seek_round_trip_has_stable_transform_signature",
         "PAUSED_SEEK_ROUND_TRIP_FAILED",
@@ -728,6 +833,12 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         backend_report_path
     )
     scenarios["scenario_b_hummingbird_render"] = hummingbird_render_scenario(backend_report, render_command)
+    scenarios["scenario_d_static"] = static_negative_scenario(
+        static_semantic_check, backend_report, render_command
+    )
+    scenarios["scenario_g_seek_round_trip"] = seek_round_trip_scenario(
+        transform_semantic_check, backend_report, render_command
+    )
     scenarios["scenario_c_hummingbird_client"] = client_animation_scenario(
         backend_report,
         render_command,
@@ -735,17 +846,31 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         client_evidence,
     )
 
+    protocol_check = command_result(
+        "protocol_debug_message_size",
+        [
+            "cargo",
+            "test",
+            "-p",
+            "viewport_protocol",
+            "animation_debug::tests::actual_debug_event_stays_below_one_kibibyte",
+        ],
+        ROOT,
+        "PROTOCOL_DEBUG_MESSAGE_SIZE_FAILED",
+    )
+    scenarios["scenario_h_protocol_message_size"] = {
+        "id": "scenario_h_protocol_message_size",
+        "status": protocol_check["status"],
+        "failure_code": protocol_check.get("failure_code"),
+        "evidence": protocol_check,
+    }
+
     matrix = [
         matrix_row(entry["id"], entry["description"], scenarios.get(entry["scenario"]))
         for entry in MATRIX
     ]
     supplemental = [
-        command_result(
-            "protocol_debug_message_size",
-            ["cargo", "test", "-p", "viewport_protocol", "animation_debug::tests::actual_debug_event_stays_below_one_kibibyte"],
-            ROOT,
-            "PROTOCOL_DEBUG_MESSAGE_SIZE_FAILED",
-        ),
+        protocol_check,
         command_result(
             "existing_animation_tests",
             ["cargo", "test", "-p", "usdview", "--lib", "viewport::animation"],
@@ -787,7 +912,18 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
             "client_evidence_present": client_evidence is not None,
         },
     ]
-    fault = fault_verification(requested_fault)
+    fault_report_path = ROOT / "target/animation-debug-fault.json"
+    fault_command, fault_backend_report = run_backend_only(
+        fault_report_path, fault="freeze-transform-evidence"
+    )
+    fault = fault_verification(
+        "freeze_transform_evidence", "ANIMATION_EVALUATION_STATIC", fault_backend_report
+    )
+    fault["command"] = fault_command
+    fault["report_path"] = str(fault_report_path)
+    if fault_command.get("status") != PASS:
+        fault["status"] = FAIL
+        fault["failure_code"] = fault_command.get("failure_code", "FAULT_BACKEND_COMMAND_FAILED")
     status = overall_status(matrix, supplemental, preflight, fault)
     failure_codes = sorted(
         {
@@ -823,7 +959,8 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
             "A and D-G are focused native/backend harnesses; they do not prove browser presentation.",
             "B is PASS only when the real headless Hummingbird report contains selected server samples and progression evidence.",
             "C is PASS only when the real Tauri/WebView client reports receive, decode, and compositor or labelled fallback delivery evidence; frontend unit/WASM checks do not substitute for it.",
-            "Fault verification remains informationally unavailable unless a fault is explicitly requested and a harness exercises the normal classifier.",
+            "H is backed by the actual serialized AnimationDebugServerSample protocol event and remains below one KiB without frame bytes.",
+            "The automatic freeze-transform-evidence run must be classified by the normal report classifier as ANIMATION_EVALUATION_STATIC.",
         ],
         "report_path": str(output),
     }
@@ -840,14 +977,10 @@ def main() -> int:
         default=ROOT / "target/animation-debug-report.json",
         help="JSON report path (default: target/animation-debug-report.json)",
     )
-    parser.add_argument(
-        "--fault",
-        help="Name a requested fault; reported UNAVAILABLE until a real fault harness exists",
-    )
     args = parser.parse_args()
     output = args.output if args.output.is_absolute() else ROOT / args.output
     try:
-        report, status = build_report(output, args.fault)
+        report, status = build_report(output)
     except (OSError, ValueError, TypeError) as error:
         print(f"animation-debug failed before report completion: {error}", file=sys.stderr)
         return 1

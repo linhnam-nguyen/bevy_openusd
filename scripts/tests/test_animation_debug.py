@@ -23,7 +23,15 @@ def matrix_rows():
 
 class AnimationDebugMatrixTests(unittest.TestCase):
     def test_all_required_rows_and_gates_are_green_only_together(self):
-        fault = MODULE.fault_verification("test_fault", "CLIENT_DECODE_STALLED", "CLIENT_DECODE_STALLED")
+        fault = MODULE.fault_verification(
+            "test_fault",
+            "CLIENT_DECODE_STALLED",
+            {
+                "pass": False,
+                "diagnostic_fault": "test_fault",
+                "failure_layer": "CLIENT_DECODE_STALLED",
+            },
+        )
         self.assertEqual(
             MODULE.overall_status(matrix_rows(), [], [], fault), MODULE.PASS
         )
@@ -59,17 +67,31 @@ class AnimationDebugMatrixTests(unittest.TestCase):
         )
 
     def test_fault_mismatch_is_red_and_matching_fault_is_green(self):
-        mismatch = MODULE.fault_verification("test_fault", "CLIENT_DECODE_STALLED", "CLIENT_PRESENTATION_STALLED")
+        mismatch = MODULE.fault_verification(
+            "test_fault",
+            "CLIENT_DECODE_STALLED",
+            {
+                "pass": False,
+                "diagnostic_fault": "test_fault",
+                "failure_layer": "CLIENT_PRESENTATION_STALLED",
+            },
+        )
         self.assertEqual(mismatch["status"], MODULE.FAIL)
-        match = MODULE.fault_verification("test_fault", "CLIENT_DECODE_STALLED", "CLIENT_DECODE_STALLED")
+        match = MODULE.fault_verification(
+            "test_fault",
+            "CLIENT_DECODE_STALLED",
+            {
+                "pass": False,
+                "diagnostic_fault": "test_fault",
+                "failure_layer": "CLIENT_DECODE_STALLED",
+            },
+        )
         self.assertEqual(match["status"], MODULE.PASS)
 
-    def test_unrequested_fault_check_is_informational(self):
-        fault = MODULE.fault_verification(None)
-        self.assertEqual(fault["status"], MODULE.WARN)
-        self.assertEqual(
-            MODULE.overall_status(matrix_rows(), [], [], fault), MODULE.PASS
-        )
+    def test_missing_generated_fault_report_is_red(self):
+        fault = MODULE.fault_verification("test_fault", "CLIENT_DECODE_STALLED", None)
+        self.assertEqual(fault["status"], MODULE.FAIL)
+        self.assertEqual(fault["failure_code"], "FAULT_CLASSIFICATION_MISMATCH")
 
     def test_render_row_uses_selected_hummingbird_samples(self):
         report = {
@@ -86,10 +108,101 @@ class AnimationDebugMatrixTests(unittest.TestCase):
                 "hummingbird_t0_t1": 34.0,
                 "hummingbird_t0_round_trip": 0.0,
             },
+            "thresholds": {
+                "hummingbird_min_mad": 1.0,
+                "hummingbird_max_repeat_mad": 2.0,
+            },
         }
         command = {"exit_code": 0}
         result = MODULE.hummingbird_render_scenario(report, command)
         self.assertEqual(result["status"], MODULE.PASS)
+
+    def test_render_row_enforces_report_thresholds(self):
+        def report(motion, repeat):
+            return {
+                "animated_prim_count": 1,
+                "server_evidence": {
+                    "t0": {"stage_ready": True},
+                    "t1": {"stage_ready": True},
+                    "hash_t0_differs_from_t1": True,
+                    "sequence_t1_after_t0": True,
+                    "sequence_round_trip_after_t1": True,
+                },
+                "pairwise_render_mad_luma": {
+                    "hummingbird_t0_t1": motion,
+                    "hummingbird_t0_round_trip": repeat,
+                },
+                "thresholds": {
+                    "hummingbird_min_mad": 1.0,
+                    "hummingbird_max_repeat_mad": 2.0,
+                },
+            }
+
+        command = {"exit_code": 0}
+        self.assertEqual(
+            MODULE.hummingbird_render_scenario(report(0.5, 0.0), command)["status"],
+            MODULE.FAIL,
+        )
+        self.assertEqual(
+            MODULE.hummingbird_render_scenario(report(2.0, 2.1), command)["status"],
+            MODULE.FAIL,
+        )
+        self.assertEqual(
+            MODULE.hummingbird_render_scenario(report(2.0, 0.0), command)["status"],
+            MODULE.PASS,
+        )
+
+    def test_static_row_requires_semantic_and_render_negative_control(self):
+        report = {
+            "server_evidence": {
+                "static_t0": {"stage_ready": True, "animated_prim_count": 0},
+                "static_t1": {"stage_ready": True, "animated_prim_count": 0},
+                "static_sequence_advances": True,
+            },
+            "pairwise_render_mad_luma": {"static_t0_t1": 0.0},
+            "thresholds": {"static_max_mad": 1.0},
+        }
+        semantic = scenario("scenario_d_static")
+        self.assertEqual(
+            MODULE.static_negative_scenario(semantic, report, {"exit_code": 0})["status"],
+            MODULE.PASS,
+        )
+        report["pairwise_render_mad_luma"]["static_t0_t1"] = 2.0
+        self.assertEqual(
+            MODULE.static_negative_scenario(semantic, report, {"exit_code": 0})["status"],
+            MODULE.FAIL,
+        )
+
+    def test_round_trip_row_requires_both_transform_and_render_proof(self):
+        report = {
+            "server_evidence": {
+                "t0": {},
+                "t1": {},
+                "t0_round_trip": {},
+                "sequence_t1_after_t0": True,
+                "sequence_round_trip_after_t1": True,
+                "transform_t0_differs_from_t1": True,
+                "transform_round_trip_matches_t0": True,
+            },
+            "pairwise_render_mad_luma": {"hummingbird_t0_round_trip": 0.0},
+            "thresholds": {"hummingbird_max_repeat_mad": 2.0},
+        }
+        semantic = scenario("scenario_g_seek_round_trip")
+        self.assertEqual(
+            MODULE.seek_round_trip_scenario(semantic, report, {"exit_code": 0})["status"],
+            MODULE.PASS,
+        )
+        report["pairwise_render_mad_luma"]["hummingbird_t0_round_trip"] = 3.0
+        self.assertEqual(
+            MODULE.seek_round_trip_scenario(semantic, report, {"exit_code": 0})["status"],
+            MODULE.FAIL,
+        )
+        report["pairwise_render_mad_luma"]["hummingbird_t0_round_trip"] = 0.0
+        semantic = scenario("scenario_g_seek_round_trip", MODULE.FAIL)
+        self.assertEqual(
+            MODULE.seek_round_trip_scenario(semantic, report, {"exit_code": 0})["status"],
+            MODULE.FAIL,
+        )
 
     def test_client_row_accepts_labelled_fallback_delivery_proof(self):
         report = {

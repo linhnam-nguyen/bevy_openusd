@@ -71,6 +71,7 @@ pub(super) fn build_report(world: &mut World) -> serde_json::Value {
             "hummingbird_restart": runtime.restart_identity.map(identity_value),
         },
         "stage_ready": stage_ready,
+        "diagnostic_fault": runtime.fault.report_name(),
         "diagnostic_error": runtime.diagnostic_error,
         "animated_prim_count": runtime.server_snapshots.first()
             .and_then(|sample| sample.animated_prim_count),
@@ -145,6 +146,8 @@ fn server_evidence(snapshots: &[viewport_protocol::AnimationDebugSnapshot]) -> s
         "sequence_t1_after_t0": t0.zip(t1).and_then(|(a, b)| Some(b.render_sequence? > a.render_sequence?)),
         "sequence_round_trip_after_t1": t1.zip(round_trip).and_then(|(a, b)| Some(b.render_sequence? > a.render_sequence?)),
         "static_sequence_advances": static_t0.zip(static_t1).and_then(|(a, b)| Some(b.render_sequence? > a.render_sequence?)),
+        "transform_t0_differs_from_t1": t0.zip(t1).and_then(|(a, b)| Some(a.transform_hash? != b.transform_hash?)),
+        "transform_round_trip_matches_t0": t0.zip(round_trip).and_then(|(a, b)| Some(a.transform_hash? == b.transform_hash?)),
     })
 }
 

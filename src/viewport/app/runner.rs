@@ -24,7 +24,7 @@ use crate::viewport::session::{
     apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
     spawn_when_ready,
 };
-use crate::viewport::transport::{ViewportTransport, parse_launch_options};
+use crate::viewport::transport::ViewportTransport;
 use crate::viewport::ui_frost::ViewerUiPlugin;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
@@ -39,16 +39,12 @@ use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground
 use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
+#[path = "runner_animation.rs"]
+mod runner_animation;
 #[path = "runner_projection.rs"]
 mod runner_projection;
 pub(crate) fn run() {
-    let launch_options = match parse_launch_options(std::env::args().skip(1)) {
-        Ok(options) => options,
-        Err(error) => {
-            eprintln!("usdview: {error}");
-            std::process::exit(2);
-        }
-    };
+    let launch_options = runner_animation::parse_options();
     let (asset_path, asset_root) = resolve_requested_asset(launch_options.asset_argument.clone());
     let mut app = App::new();
     configure_dlss(&mut app);
@@ -190,19 +186,14 @@ pub(crate) fn run() {
         let (stream_frame_tx, stream_frame_rx) =
             std::sync::mpsc::sync_channel::<viewport_streaming::VideoFrame>(4);
         let frame_metrics = viewport_streaming::FrameTransportMetrics::default();
-        if launch_options.headless {
-            app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
-                sender: stream_frame_tx,
-                metrics: frame_metrics.clone(),
-                frame_signature: launch_options.animation_debug,
-            });
-            if launch_options.animation_debug {
-                app.add_plugins(
-                    crate::viewport::diagnostics::animation_debug::AnimationDebugPlugin {
-                        output_path: launch_options.animation_debug_output.clone(),
-                    },
-                );
-            }
+        if let Err(error) = runner_animation::configure(
+            &mut app,
+            &launch_options,
+            stream_frame_tx,
+            frame_metrics.clone(),
+        ) {
+            eprintln!("usdview: {error}");
+            std::process::exit(2);
         }
         let stage_display_name = std::path::Path::new(&asset_path)
             .file_name()

@@ -41,6 +41,7 @@ pub(crate) struct LaunchOptions {
     pub(crate) benchmark_measurement_complete_file: Option<String>,
     pub(crate) animation_debug: bool,
     pub(crate) animation_debug_output: Option<String>,
+    pub(crate) animation_debug_fault: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -67,6 +68,7 @@ impl Default for LaunchOptions {
             benchmark_measurement_complete_file: None,
             animation_debug: false,
             animation_debug_output: None,
+            animation_debug_fault: None,
         }
     }
 }
@@ -115,6 +117,15 @@ where
                 arguments
                     .next()
                     .ok_or_else(|| "--animation-debug-output requires a file path".to_owned())?,
+            );
+            continue;
+        }
+
+        if parse_options && argument == "--animation-debug-fault" {
+            options.animation_debug_fault = Some(
+                arguments
+                    .next()
+                    .ok_or_else(|| "--animation-debug-fault requires a fault name".to_owned())?,
             );
             continue;
         }
@@ -317,6 +328,10 @@ where
             }
             if let Some(path) = argument.strip_prefix("--animation-debug-output=") {
                 options.animation_debug_output = Some(path.to_string());
+                continue;
+            }
+            if let Some(fault) = argument.strip_prefix("--animation-debug-fault=") {
+                options.animation_debug_fault = Some(fault.to_string());
                 continue;
             }
             if argument.starts_with('-') {

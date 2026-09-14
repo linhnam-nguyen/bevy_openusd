@@ -61,6 +61,16 @@ pub(super) fn emit_server_snapshot(world: &mut World, id: FrameSampleId) {
                 && state.session_id() == Some(identity.0)
                 && world.resource::<UsdStageTime>().stage_identity() == Some(identity)
         });
+    let observed_transform_hash = super::report::transform_hash(world);
+    let transform_hash = {
+        let mut runtime = world.resource_mut::<AnimationDebugRuntime>();
+        super::fault::apply_transform_evidence(
+            runtime.fault,
+            id,
+            observed_transform_hash,
+            &mut runtime.t0_transform_hash,
+        )
+    };
     let snapshot = AnimationDebugSnapshot {
         sample: Some(super::report::protocol_sample_id(id)),
         stage_session_id: Some(identity.0),
@@ -72,7 +82,7 @@ pub(super) fn emit_server_snapshot(world: &mut World, id: FrameSampleId) {
         time_code: world
             .get_resource::<usd_bevy::StageTime>()
             .map(|time| time.current),
-        transform_hash: super::report::transform_hash(world),
+        transform_hash,
         render_sequence: Some(capture.sequence),
         render_hash: Some(capture.sample.hash),
         render_mean_luma: Some(capture.sample.mean_luma),

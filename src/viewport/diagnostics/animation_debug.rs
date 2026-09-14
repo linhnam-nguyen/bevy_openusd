@@ -12,8 +12,12 @@ use viewport_protocol::AnimationDebugSnapshot;
 
 #[path = "capture.rs"]
 mod capture;
+#[path = "fault.rs"]
+mod fault;
 #[path = "report.rs"]
 mod report;
+
+pub(crate) use fault::AnimationDebugFault;
 
 use crate::viewport::{
     animation::UsdStageTime,
@@ -60,11 +64,13 @@ pub(crate) struct AnimationDebugRuntime {
     expected_projection_generation: Option<u64>,
     initial_times: Option<(f64, f64, f64)>,
     static_times: Option<(f64, f64)>,
+    fault: AnimationDebugFault,
+    t0_transform_hash: Option<u64>,
     diagnostic_error: Option<String>,
 }
 
 impl AnimationDebugRuntime {
-    fn new(output_path: Option<String>) -> Self {
+    fn new(output_path: Option<String>, fault: AnimationDebugFault) -> Self {
         Self {
             client_snapshots: Vec::with_capacity(5),
             server_snapshots: Vec::with_capacity(5),
@@ -78,6 +84,8 @@ impl AnimationDebugRuntime {
             expected_projection_generation: None,
             initial_times: None,
             static_times: None,
+            fault,
+            t0_transform_hash: None,
             diagnostic_error: None,
         }
     }
@@ -85,17 +93,21 @@ impl AnimationDebugRuntime {
 
 pub(crate) struct AnimationDebugPlugin {
     pub(crate) output_path: Option<String>,
+    pub(crate) fault: AnimationDebugFault,
 }
 
 impl Plugin for AnimationDebugPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(AnimationDebugRuntime::new(self.output_path.clone()))
-            .add_systems(
-                Update,
-                drive_animation_debug
-                    .after(usd_bevy::LiveStageSet::Animation)
-                    .before(crate::viewport::api::ViewportBridgeSet::ReduceEvents),
-            );
+        app.insert_resource(AnimationDebugRuntime::new(
+            self.output_path.clone(),
+            self.fault,
+        ))
+        .add_systems(
+            Update,
+            drive_animation_debug
+                .after(usd_bevy::LiveStageSet::Animation)
+                .before(crate::viewport::api::ViewportBridgeSet::ReduceEvents),
+        );
     }
 }
 

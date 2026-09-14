@@ -139,3 +139,17 @@ fn animation_debug_flags_are_opt_in_and_keep_the_output_path_separate() {
         Some("target/debug.json".to_owned())
     );
 }
+
+#[test]
+fn animation_debug_fault_is_preserved_but_is_inert_without_debug_mode() {
+    let options = parse_launch_options(vec![
+        "--animation-debug-fault=freeze-transform-evidence".to_owned(),
+    ])
+    .unwrap();
+
+    assert!(!options.animation_debug);
+    assert_eq!(
+        options.animation_debug_fault,
+        Some("freeze-transform-evidence".to_owned())
+    );
+}
