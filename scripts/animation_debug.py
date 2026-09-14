@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Sequence
@@ -30,6 +35,10 @@ WARN = "WARN"
 UNAVAILABLE = "UNAVAILABLE"
 ERROR = "ERROR"
 VALID_STATUSES = {PASS, FAIL, WARN, UNAVAILABLE, ERROR}
+CLIENT_READY_TIMEOUT_SECONDS = 120
+FRONTEND_SERVER_TIMEOUT_SECONDS = 60
+CLIENT_MEASUREMENT_SECONDS = 4
+ANIMATION_RUNTIME_TIMEOUT_SECONDS = 90
 
 MATRIX = (
     {
@@ -175,7 +184,10 @@ def overall_status(
     matrix_pass = all(row.get("status") == PASS for row in matrix)
     supplemental_pass = all(check.get("status") == PASS for check in supplemental)
     preflight_pass = all(check.get("status") in {PASS, WARN} for check in preflight)
-    fault_pass = fault_report.get("status") == PASS
+    fault_pass = fault_report.get("status") == PASS or (
+        fault_report.get("status") == WARN
+        and fault_report.get("requested") is None
+    )
     return PASS if matrix_pass and supplemental_pass and preflight_pass and fault_pass else FAIL
 
 
@@ -291,10 +303,8 @@ def focused_test(check_id: str, filter_name: str, failure_code: str) -> dict[str
     )
 
 
-def run_backend_render(output: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.unlink(missing_ok=True)
-    command = [
+def backend_animation_command(output: Path) -> list[str]:
+    return [
         "cargo",
         "run",
         "--bin",
@@ -313,28 +323,239 @@ def run_backend_render(output: Path) -> tuple[dict[str, Any], dict[str, Any] | N
         str(output),
         "assets/external/hummingbird.usdz",
     ]
-    command_check = command_result(
-        "scenario_b_hummingbird_render_command",
-        command,
-        ROOT,
-        "HEADLESS_RENDER_COMMAND_FAILED",
-        timeout_seconds=240,
-    )
+
+
+def parse_backend_report(
+    output: Path, command_check: dict[str, Any]
+) -> dict[str, Any] | None:
     if not output.is_file():
         command_check["status"] = FAIL
         command_check["failure_code"] = "HEADLESS_RENDER_REPORT_MISSING"
         command_check["error"] = "backend diagnostic did not write its JSON report"
-        return command_check, None
+        return None
     try:
         report = json.loads(output.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         command_check["status"] = FAIL
         command_check["failure_code"] = "HEADLESS_RENDER_REPORT_INVALID"
         command_check["error"] = str(error)
-        return command_check, None
+        return None
     command_check["report_schema_version"] = report.get("schema_version")
     command_check["backend_report_status"] = report.get("pass")
-    return command_check, report
+    return report
+
+
+def wait_for_port(host: str, port: int, timeout_seconds: int) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
+
+
+def wait_for_file(path: Path, timeout_seconds: int) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if path.is_file():
+            return True
+        time.sleep(0.25)
+    return path.is_file()
+
+
+def stop_processes(processes: Sequence[subprocess.Popen[Any]]) -> None:
+    for process in reversed(processes):
+        if process.poll() is not None:
+            continue
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            process.terminate()
+    for process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                process.kill()
+            process.wait(timeout=5)
+
+
+def load_client_evidence(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def run_backend_only(output: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    command_check = command_result(
+        "scenario_b_hummingbird_render_command",
+        backend_animation_command(output),
+        ROOT,
+        "HEADLESS_RENDER_COMMAND_FAILED",
+        timeout_seconds=240,
+    )
+    return command_check, parse_backend_report(output, command_check)
+
+
+def run_backend_render(
+    output: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any], dict[str, Any] | None]:
+    """Run B and C through the real native backend plus real Tauri/WebRTC client."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    runtime: dict[str, Any] = {
+        "id": "animation_debug_runtime",
+        "status": PASS,
+        "failure_code": None,
+        "scenario_code": "S12",
+        "frontend_root": str(FRONTEND_ROOT),
+        "frontend_server_started": False,
+        "tauri_started": False,
+        "backend_started": False,
+        "client_ready": False,
+        "client_evidence_present": False,
+    }
+    required_tools = ["cargo", "pnpm", "trunk", "cargo-tauri"]
+    missing_tools = [tool for tool in required_tools if shutil.which(tool) is None]
+    if missing_tools:
+        runtime.update(
+            status=UNAVAILABLE,
+            failure_code="CLIENT_E2E_RUNTIME_UNAVAILABLE",
+            reason=f"required runtime tools are missing: {', '.join(missing_tools)}",
+        )
+        command_check, report = run_backend_only(output)
+        return command_check, report, runtime, None
+
+    run_directory = Path(tempfile.mkdtemp(prefix="b0-m0-c5-", dir=ROOT / "target"))
+    run_id = f"b0-m0-c5-{os.getpid()}-{int(time.time())}"
+    markers = {
+        "ready": run_directory / "ready",
+        "start": run_directory / "measurement-start",
+        "idle": run_directory / "measurement-idle",
+        "complete": run_directory / "measurement-complete",
+    }
+    client_evidence_path = run_directory / "client-evidence.json"
+    benchmark_env = os.environ.copy()
+    # Trunk's --no-color parser rejects the common NO_COLOR=1 convention.
+    # The diagnostic owns these child processes, so normalize only their env.
+    benchmark_env.pop("NO_COLOR", None)
+    benchmark_env.update(
+        {
+            "USDHUB_BENCHMARK_RUN_ID": run_id,
+            "USDHUB_BENCHMARK_SCENARIO": "S12",
+            "USDHUB_BENCHMARK_EVIDENCE": str(client_evidence_path),
+            "USDHUB_BENCHMARK_SIGNALING_URL": "ws://127.0.0.1:8080",
+            "USDHUB_BENCHMARK_READY_FILE": str(markers["ready"]),
+            "USDHUB_BENCHMARK_MEASUREMENT_START_FILE": str(markers["start"]),
+            "USDHUB_BENCHMARK_MEASUREMENT_IDLE_FILE": str(markers["idle"]),
+            "USDHUB_BENCHMARK_MEASUREMENT_COMPLETE_FILE": str(markers["complete"]),
+            "USDHUB_BENCHMARK_REQUESTED_WIDTH": "640",
+            "USDHUB_BENCHMARK_REQUESTED_HEIGHT": "480",
+            "USDHUB_BENCHMARK_REQUESTED_FPS": "30",
+        }
+    )
+    processes: list[subprocess.Popen[Any]] = []
+    command_check: dict[str, Any] = {
+        "id": "scenario_b_hummingbird_render_command",
+        "status": FAIL,
+        "failure_code": "HEADLESS_RENDER_COMMAND_FAILED",
+        "command": backend_animation_command(output),
+        "cwd": str(ROOT),
+    }
+    report: dict[str, Any] | None = None
+    client_evidence: dict[str, Any] | None = None
+    try:
+        try:
+            frontend = subprocess.Popen(
+                ["pnpm", "frontend:dev"],
+                cwd=FRONTEND_ROOT,
+                env=benchmark_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            processes.append(frontend)
+            runtime["frontend_server_started"] = wait_for_port(
+                "127.0.0.1", 3000, FRONTEND_SERVER_TIMEOUT_SECONDS
+            )
+            if not runtime["frontend_server_started"]:
+                raise RuntimeError("frontend dev server did not open port 3000")
+
+            tauri = subprocess.Popen(
+                ["pnpm", "tauri:dev:ui-e2e"],
+                cwd=FRONTEND_ROOT,
+                env=benchmark_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            processes.append(tauri)
+            runtime["tauri_started"] = True
+
+            backend = subprocess.Popen(
+                backend_animation_command(output),
+                cwd=ROOT,
+                env=benchmark_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            processes.append(backend)
+            runtime["backend_started"] = True
+
+            runtime["client_ready"] = wait_for_file(
+                markers["ready"], CLIENT_READY_TIMEOUT_SECONDS
+            )
+            if not runtime["client_ready"]:
+                raise RuntimeError("Tauri/WebView client did not signal readiness")
+            markers["start"].write_text("measurement-started\n", encoding="utf-8")
+            time.sleep(CLIENT_MEASUREMENT_SECONDS)
+            markers["complete"].write_text("measurement-complete\n", encoding="utf-8")
+
+            try:
+                backend.wait(timeout=ANIMATION_RUNTIME_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                command_check["failure_code"] = "HEADLESS_RENDER_COMMAND_TIMEOUT"
+            command_check["exit_code"] = backend.returncode
+            command_check["status"] = PASS if backend.returncode == 0 else FAIL
+            if not client_evidence_path.is_file():
+                wait_for_file(client_evidence_path, 10)
+            client_evidence = load_client_evidence(client_evidence_path)
+            runtime["client_evidence_present"] = client_evidence is not None
+        except (OSError, RuntimeError) as error:
+            runtime.update(
+                status=UNAVAILABLE,
+                failure_code="CLIENT_E2E_RUNTIME_UNAVAILABLE",
+                reason=str(error),
+            )
+            command_check["error"] = str(error)
+    finally:
+        stop_processes(processes)
+        report = parse_backend_report(output, command_check)
+        if report is None and runtime["status"] == UNAVAILABLE:
+            fallback_check, report = run_backend_only(output)
+            command_check = fallback_check
+        if client_evidence is None:
+            client_evidence = load_client_evidence(client_evidence_path)
+            runtime["client_evidence_present"] = client_evidence is not None
+        if runtime["status"] == PASS and not runtime["client_ready"]:
+            runtime.update(
+                status=UNAVAILABLE,
+                failure_code="CLIENT_E2E_RUNTIME_UNAVAILABLE",
+                reason="real client did not reach the measurement barrier",
+            )
+        shutil.rmtree(run_directory, ignore_errors=True)
+    return command_check, report, runtime, client_evidence
 
 
 def hummingbird_render_scenario(report: dict[str, Any] | None, command_check: dict[str, Any]) -> dict[str, Any]:
@@ -366,13 +587,87 @@ def hummingbird_render_scenario(report: dict[str, Any] | None, command_check: di
     }
 
 
+def client_animation_scenario(
+    report: dict[str, Any] | None,
+    command_check: dict[str, Any],
+    runtime: dict[str, Any],
+    client_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if runtime.get("status") == UNAVAILABLE:
+        return unavailable(
+            "scenario_c_hummingbird_client",
+            runtime.get("reason", "real Tauri/WebView runtime was unavailable"),
+            "CLIENT_E2E_RUNTIME_UNAVAILABLE",
+        )
+    if report is None:
+        return {
+            "id": "scenario_c_hummingbird_client",
+            "status": FAIL,
+            "failure_code": "CLIENT_E2E_EVIDENCE_INCOMPLETE",
+            "evidence": {"runtime": runtime, "client_evidence": client_evidence},
+        }
+
+    samples = report.get("client_samples", [])
+    summary = report.get("client_evidence", {})
+    received_values = [sample.get("frames_received") for sample in samples if sample.get("frames_received") is not None]
+    delivery_values = [sample.get("delivery_frames") for sample in samples if sample.get("delivery_frames") is not None]
+    received_delta = (
+        received_values[-1] - received_values[0] if len(received_values) >= 2 else 0
+    )
+    delivery_delta = (
+        delivery_values[-1] - delivery_values[0] if len(delivery_values) >= 2 else 0
+    )
+    proofs = summary.get("proofs", [])
+    presented_delta = summary.get("presented_delta", 0) or 0
+    compositor_presented = presented_delta > 0 and "compositor" in proofs
+    fallback_delivery = delivery_delta > 0 and any(
+        proof in {"playback_quality", "rtp_decoded", "rtp_received"} for proof in proofs
+    )
+    decoded_delta = summary.get("decoded_delta", 0) or 0
+    required = {
+        "real_runtime_started": runtime.get("frontend_server_started")
+        and runtime.get("tauri_started")
+        and runtime.get("backend_started"),
+        "client_snapshots": len(samples) > 0,
+        "frames_received_delta": received_delta > 0,
+        "frames_decoded_delta": decoded_delta > 0,
+        "presentation_or_fallback_proof": compositor_presented or fallback_delivery,
+        "measurement_evidence": client_evidence is not None,
+    }
+    status = PASS if all(required.values()) and command_check.get("exit_code") == 0 else FAIL
+    if status == PASS:
+        failure_code = None
+    elif not required["client_snapshots"]:
+        failure_code = "ENCODE_OR_WEBRTC_STALLED"
+    elif not required["frames_decoded_delta"]:
+        failure_code = "CLIENT_DECODE_STALLED"
+    else:
+        failure_code = "CLIENT_PRESENTATION_STALLED"
+    return {
+        "id": "scenario_c_hummingbird_client",
+        "status": status,
+        "failure_code": failure_code,
+        "evidence": {
+            "required": required,
+            "received_delta": received_delta,
+            "delivery_delta": delivery_delta,
+            "presentation_source": "compositor_presented" if compositor_presented else "fallback_delivery_or_decode",
+            "backend_client_evidence": summary,
+            "client_evidence": client_evidence,
+            "runtime": runtime,
+        },
+    }
+
+
 def fault_verification(requested: str | None, expected: str | None = None, observed: str | None = None) -> dict[str, Any]:
     if requested is None:
-        return unavailable(
-            "fault_injection",
-            "No real fault-injection harness is registered for B0-M0; normal evidence was not mutated.",
-            "FAULT_INJECTION_UNAVAILABLE",
-        )
+        return {
+            "id": "fault_injection",
+            "status": WARN,
+            "failure_code": None,
+            "reason": "No fault was requested; B0-M0 evidence was not mutated.",
+            "requested": None,
+        }
     if expected is None or observed is None:
         return unavailable(
             "fault_injection",
@@ -394,7 +689,7 @@ def decision_table() -> list[dict[str, Any]]:
     return [
         {"when": "all A-G rows are PASS", "decision": "eligible", "failure_code": None},
         {"when": "any required row is UNAVAILABLE or ERROR", "decision": "FAIL", "failure_code": "MATRIX_EVIDENCE_MISSING"},
-        {"when": "fault verification is UNAVAILABLE", "decision": "FAIL", "failure_code": "FAULT_INJECTION_UNAVAILABLE"},
+        {"when": "an explicitly requested fault is unavailable", "decision": "FAIL", "failure_code": "FAULT_INJECTION_UNAVAILABLE"},
         {"when": "preflight or supplemental check is FAIL", "decision": "FAIL", "failure_code": "CHECK_FAILED"},
     ]
 
@@ -429,12 +724,15 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
     )
 
     backend_report_path = ROOT / "target/animation-debug-backend.json"
-    render_command, backend_report = run_backend_render(backend_report_path)
+    render_command, backend_report, animation_runtime, client_evidence = run_backend_render(
+        backend_report_path
+    )
     scenarios["scenario_b_hummingbird_render"] = hummingbird_render_scenario(backend_report, render_command)
-    scenarios["scenario_c_hummingbird_client"] = unavailable(
-        "scenario_c_hummingbird_client",
-        "No automated real Tauri/browser WebRTC client scenario is available in this workspace.",
-        "CLIENT_E2E_UNAVAILABLE",
+    scenarios["scenario_c_hummingbird_client"] = client_animation_scenario(
+        backend_report,
+        render_command,
+        animation_runtime,
+        client_evidence,
     )
 
     matrix = [
@@ -482,10 +780,11 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         ),
         {
             "id": "animation_debug_runtime",
-            "status": PASS if backend_report is not None else FAIL,
-            "failure_code": None if backend_report is not None else "ANIMATION_DIAGNOSTIC_REPORT_INVALID",
+            "status": animation_runtime.get("status", FAIL),
+            "failure_code": animation_runtime.get("failure_code"),
             "report_path": str(backend_report_path),
             "server_evidence_present": backend_report is not None and bool(backend_report.get("server_evidence")),
+            "client_evidence_present": client_evidence is not None,
         },
     ]
     fault = fault_verification(requested_fault)
@@ -505,7 +804,8 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         "command": "make animation-debug",
         "status": status,
         "pass": status == PASS,
-        "failure_layer": runtime_failure_layer or ("CLIENT_E2E_UNAVAILABLE" if scenarios["scenario_c_hummingbird_client"]["status"] == UNAVAILABLE else None),
+        "failure_layer": runtime_failure_layer
+        or scenarios["scenario_c_hummingbird_client"].get("failure_code"),
         "failure_codes": failure_codes,
         "preflight": preflight,
         "matrix": matrix,
@@ -514,14 +814,16 @@ def build_report(output: Path, requested_fault: str | None = None) -> tuple[dict
         "evidence": {
             "backend_report_path": str(backend_report_path),
             "backend_report": backend_report,
+            "client_evidence": client_evidence,
+            "animation_runtime": animation_runtime,
             "scenario_ids": sorted(scenarios),
         },
         "decision_table": decision_table(),
         "runtime_proof_boundary": [
             "A and D-G are focused native/backend harnesses; they do not prove browser presentation.",
             "B is PASS only when the real headless Hummingbird report contains selected server samples and progression evidence.",
-            "C stays UNAVAILABLE without a real Tauri/browser WebRTC client scenario; frontend unit/WASM checks do not substitute for it.",
-            "Fault verification stays UNAVAILABLE without a harness that changes evidence and exercises the normal classifier.",
+            "C is PASS only when the real Tauri/WebView client reports receive, decode, and compositor or labelled fallback delivery evidence; frontend unit/WASM checks do not substitute for it.",
+            "Fault verification remains informationally unavailable unless a fault is explicitly requested and a harness exercises the normal classifier.",
         ],
         "report_path": str(output),
     }

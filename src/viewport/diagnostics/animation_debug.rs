@@ -23,18 +23,22 @@ use crate::viewport::{
     },
 };
 
-/// Calibration constants are deliberately conservative: the motion floor is
-/// below the smallest observed fixture delta, while repeat/static ceilings are
-/// above the fixed-camera readback noise band. Recalibration must update these
-/// constants and the report together.
+const SEEK_EPSILON: f64 = 1e-9;
+
+/// Calibration constants are deliberately conservative and frozen from three
+/// native headless 640x480 Metal runs on 2026-09-14. Each run observed
+/// Hummingbird t0-to-t1 MAD `34.673828125`, round-trip MAD `0.0`, and static
+/// control MAD `0.0`. Recalibration must update these constants and the report
+/// together; a current run is evidence, not calibration history.
 pub(crate) const HUMMINGBIRD_MIN_MAD: f64 = 1.0;
 pub(crate) const HUMMINGBIRD_MAX_REPEAT_MAD: f64 = 2.0;
 pub(crate) const STATIC_MAX_MAD: f64 = 1.0;
 const DIAGNOSTIC_TIMEOUT: Duration = Duration::from_secs(45);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum DebugPhase {
     WaitingForAnimatedStage,
+    WaitingForEvaluation { id: FrameSampleId, time_code: f64 },
     Capturing(FrameSampleId),
     WaitingForStaticStage,
     WaitingForRestartStage,
@@ -109,6 +113,9 @@ fn drive_animation_debug(world: &mut World) {
     let phase = world.resource::<AnimationDebugRuntime>().phase;
     match phase {
         DebugPhase::WaitingForAnimatedStage => start_animated_samples(world),
+        DebugPhase::WaitingForEvaluation { id, time_code } => {
+            arm_capture_after_evaluation(world, id, time_code)
+        }
         DebugPhase::WaitingForStaticStage => start_static_samples(world),
         DebugPhase::WaitingForRestartStage => {
             let expected = world.resource::<AnimationDebugRuntime>().expected_identity;
@@ -152,7 +159,7 @@ fn start_animated_samples(world: &mut World) {
     runtime.initial_times = Some((t0, t1, fps));
     let _ = prim_count;
     drop(runtime);
-    arm_capture(world, FrameSampleId::T0, t0);
+    request_seek(world, FrameSampleId::T0, t0);
 }
 
 fn start_static_samples(world: &mut World) {
@@ -171,7 +178,7 @@ fn start_static_samples(world: &mut World) {
     runtime.static_times = Some((t0, t1));
     runtime.static_identity = Some(identity);
     drop(runtime);
-    arm_capture(world, FrameSampleId::StaticT0, t0);
+    request_seek(world, FrameSampleId::StaticT0, t0);
 }
 
 fn advance_capture(world: &mut World, id: FrameSampleId) {
@@ -190,7 +197,7 @@ fn advance_capture(world: &mut World, id: FrameSampleId) {
                 .initial_times
                 .unwrap()
                 .1;
-            arm_capture(world, FrameSampleId::T1, t1);
+            request_seek(world, FrameSampleId::T1, t1);
         }
         FrameSampleId::T1 => {
             let t0 = world
@@ -198,7 +205,7 @@ fn advance_capture(world: &mut World, id: FrameSampleId) {
                 .initial_times
                 .unwrap()
                 .0;
-            arm_capture(world, FrameSampleId::T0RoundTrip, t0);
+            request_seek(world, FrameSampleId::T0RoundTrip, t0);
         }
         FrameSampleId::T0RoundTrip => replace_with_static_stage(world),
         FrameSampleId::StaticT0 => {
@@ -207,7 +214,7 @@ fn advance_capture(world: &mut World, id: FrameSampleId) {
                 .static_times
                 .unwrap()
                 .1;
-            arm_capture(world, FrameSampleId::StaticT1, t1);
+            request_seek(world, FrameSampleId::StaticT1, t1);
         }
         FrameSampleId::StaticT1 => restart_hummingbird(world),
     }
@@ -279,7 +286,26 @@ fn record_failure(world: &mut World, message: String) {
     capture::finish_report(world);
 }
 
-fn arm_capture(world: &mut World, id: FrameSampleId, time_code: f64) {
+fn request_seek(world: &mut World, id: FrameSampleId, time_code: f64) {
+    let Some(mut clock) = world.get_resource_mut::<UsdStageTime>() else {
+        record_failure(
+            world,
+            "animation diagnostic found no viewport clock".to_owned(),
+        );
+        return;
+    };
+    clock.playing = false;
+    clock.seconds = (time_code - clock.start_time_code) / clock.time_codes_per_second;
+    drop(clock);
+    world.resource_mut::<AnimationDebugRuntime>().phase =
+        DebugPhase::WaitingForEvaluation { id, time_code };
+}
+
+fn arm_capture_after_evaluation(world: &mut World, id: FrameSampleId, time_code: f64) {
+    let current = world.resource::<usd_bevy::StageTime>().current;
+    if !time_code_matches(current, time_code) {
+        return;
+    }
     let sequence = world
         .resource::<FrameTransportResource>()
         .0
@@ -290,11 +316,21 @@ fn arm_capture(world: &mut World, id: FrameSampleId, time_code: f64) {
         capture::finish_report(world);
         return;
     }
-    let Some(mut clock) = world.get_resource_mut::<UsdStageTime>() else {
-        capture::finish_report(world);
-        return;
-    };
-    clock.playing = false;
-    clock.seconds = (time_code - clock.start_time_code) / clock.time_codes_per_second;
     world.resource_mut::<AnimationDebugRuntime>().phase = DebugPhase::Capturing(id);
+}
+
+fn time_code_matches(current: f64, requested: f64) -> bool {
+    current.is_finite() && requested.is_finite() && (current - requested).abs() <= SEEK_EPSILON
+}
+
+#[cfg(test)]
+mod tests {
+    use super::time_code_matches;
+
+    #[test]
+    fn diagnostic_capture_requires_requested_time_evaluation() {
+        assert!(!time_code_matches(0.0, 12.5));
+        assert!(time_code_matches(12.5, 12.5));
+        assert!(!time_code_matches(f64::NAN, 12.5));
+    }
 }

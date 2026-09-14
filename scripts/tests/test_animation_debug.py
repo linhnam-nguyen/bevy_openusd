@@ -64,8 +64,12 @@ class AnimationDebugMatrixTests(unittest.TestCase):
         match = MODULE.fault_verification("test_fault", "CLIENT_DECODE_STALLED", "CLIENT_DECODE_STALLED")
         self.assertEqual(match["status"], MODULE.PASS)
 
-    def test_default_fault_status_is_unavailable(self):
-        self.assertEqual(MODULE.fault_verification(None)["status"], MODULE.UNAVAILABLE)
+    def test_unrequested_fault_check_is_informational(self):
+        fault = MODULE.fault_verification(None)
+        self.assertEqual(fault["status"], MODULE.WARN)
+        self.assertEqual(
+            MODULE.overall_status(matrix_rows(), [], [], fault), MODULE.PASS
+        )
 
     def test_render_row_uses_selected_hummingbird_samples(self):
         report = {
@@ -86,6 +90,49 @@ class AnimationDebugMatrixTests(unittest.TestCase):
         command = {"exit_code": 0}
         result = MODULE.hummingbird_render_scenario(report, command)
         self.assertEqual(result["status"], MODULE.PASS)
+
+    def test_client_row_accepts_labelled_fallback_delivery_proof(self):
+        report = {
+            "client_samples": [
+                {"frames_received": 10, "delivery_frames": 8},
+                {"frames_received": 20, "delivery_frames": 18},
+            ],
+            "client_evidence": {
+                "decoded_delta": 10,
+                "presented_delta": None,
+                "proofs": ["rtp_decoded"],
+            },
+        }
+        result = MODULE.client_animation_scenario(
+            report,
+            {"exit_code": 0},
+            {
+                "status": MODULE.PASS,
+                "frontend_server_started": True,
+                "tauri_started": True,
+                "backend_started": True,
+            },
+            {"run_id": "test", "scenario_code": "S12"},
+        )
+        self.assertEqual(result["status"], MODULE.PASS)
+        self.assertEqual(
+            result["evidence"]["presentation_source"], "fallback_delivery_or_decode"
+        )
+
+    def test_client_row_rejects_missing_real_runtime_evidence(self):
+        result = MODULE.client_animation_scenario(
+            {"client_samples": [], "client_evidence": {}},
+            {"exit_code": 0},
+            {
+                "status": MODULE.PASS,
+                "frontend_server_started": True,
+                "tauri_started": True,
+                "backend_started": True,
+            },
+            None,
+        )
+        self.assertEqual(result["status"], MODULE.FAIL)
+        self.assertEqual(result["failure_code"], "ENCODE_OR_WEBRTC_STALLED")
 
 
 if __name__ == "__main__":

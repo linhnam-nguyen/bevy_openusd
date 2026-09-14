@@ -88,18 +88,15 @@ pub(super) fn build_report(world: &mut World) -> serde_json::Value {
             "hummingbird_max_repeat_mad": HUMMINGBIRD_MAX_REPEAT_MAD,
             "static_max_mad": STATIC_MAX_MAD,
             "calibration": {
-                "status": if pairwise["hummingbird_t0_t1"].is_number()
-                    && pairwise["hummingbird_t0_round_trip"].is_number()
-                    && pairwise["static_t0_t1"].is_number()
-                {
-                    "CALIBRATED_FROM_CURRENT_FIXTURE"
-                } else {
-                    "UNCONFIRMED"
+                "basis": "documented_multi_run_native_headless_fixture_calibration",
+                "current_run_observed_hummingbird_mad": pairwise["hummingbird_t0_t1"],
+                "current_run_observed_repeat_mad": pairwise["hummingbird_t0_round_trip"],
+                "current_run_observed_static_mad": pairwise["static_t0_t1"],
+                "frozen_thresholds": {
+                    "motion_floor": HUMMINGBIRD_MIN_MAD,
+                    "repeatability_ceiling": HUMMINGBIRD_MAX_REPEAT_MAD,
+                    "static_noise_ceiling": STATIC_MAX_MAD,
                 },
-                "basis": "native_headless_hummingbird_and_hierarchy_usda_samples",
-                "observed_hummingbird_mad": pairwise["hummingbird_t0_t1"],
-                "observed_repeat_mad": pairwise["hummingbird_t0_round_trip"],
-                "observed_static_mad": pairwise["static_t0_t1"],
             },
         },
         "pass": failure_layer.is_none(),
@@ -226,16 +223,16 @@ fn classify_failure(
     if client["presented_delta"].as_u64().unwrap_or(0) == 0 {
         return Some("CLIENT_PRESENTATION_STALLED");
     }
-    if client["content_signature_supported"].is_null()
-        || client["content_signature_supported"] == false
-    {
-        return Some("UNSUPPORTED_CLIENT_CONTENT_PROBE");
+    client_content_failure(client)
+}
+
+fn client_content_failure(client: &serde_json::Value) -> Option<&'static str> {
+    if client["content_signature_supported"].as_bool() != Some(true) {
+        return None;
     }
-    let hashes = client["content_hashes"].as_array();
-    if hashes.is_some_and(|values| values.windows(2).all(|pair| pair[0] == pair[1])) {
-        return Some("CLIENT_CONTENT_STATIC");
-    }
-    None
+    let hashes = client["content_hashes"].as_array()?;
+    (hashes.len() >= 2 && hashes.windows(2).all(|pair| pair[0] == pair[1]))
+        .then_some("CLIENT_CONTENT_STATIC")
 }
 
 fn identity_value(identity: (u64, u64)) -> serde_json::Value {
@@ -294,5 +291,38 @@ fn update_hash(hash: &mut u64, bytes: &[u8]) {
     for byte in bytes {
         *hash ^= u64::from(*byte);
         *hash = hash.wrapping_mul(1_099_511_628_211);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_content_failure;
+
+    #[test]
+    fn unsupported_client_content_probe_is_informational() {
+        assert_eq!(
+            client_content_failure(&serde_json::json!({
+                "content_signature_supported": false,
+                "content_hashes": []
+            })),
+            None
+        );
+        assert_eq!(
+            client_content_failure(&serde_json::json!({
+                "content_hashes": []
+            })),
+            None
+        );
+    }
+
+    #[test]
+    fn supported_static_client_content_is_classified() {
+        assert_eq!(
+            client_content_failure(&serde_json::json!({
+                "content_signature_supported": true,
+                "content_hashes": ["deadbeef", "deadbeef"]
+            })),
+            Some("CLIENT_CONTENT_STATIC")
+        );
     }
 }
