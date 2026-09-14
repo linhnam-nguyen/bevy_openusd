@@ -29,7 +29,7 @@ $(info Project: $(PROJECT_NAME) v$(PROJECT_VERSION))
 $(info Display: $(BACKEND) backend)
 $(info ------------------------------------------)
 
-.PHONY: build b compile c run r serve-web build-web test t test-all check check-all check-source-size check-performance-regressions bench-render-smoke harden bench clean docs release help h
+.PHONY: build b compile c run r serve-web build-web test t test-all check check-all check-source-size check-performance-regressions animation-debug bench-render-smoke harden bench clean docs release help h
 
 build:
 	@$(CARGO) build $(APP_TARGET)
@@ -74,6 +74,11 @@ check-all:
 
 check-performance-regressions:
 	@python3 -B scripts/check_performance_regressions.py
+
+ANIMATION_DEBUG_REPORT ?= target/animation-debug-report.json
+
+animation-debug:
+	@python3 -B scripts/animation_debug.py --output "$(ANIMATION_DEBUG_REPORT)"
 
 bench-render-smoke:
 	@python3 -B scripts/bench_render_smoke.py
@@ -125,6 +130,7 @@ help:
 	@echo "  check        Check the same app target as build/run (usdview)"
 	@echo "  check-all    Check the full workspace all-target suite"
 	@echo "  check-performance-regressions  Validate deterministic M10 performance invariants"
+	@echo "  animation-debug  Run B0-M0 diagnostics and write a versioned JSON report"
 	@echo "  bench-render-smoke  Run one fresh headless release render smoke"
 	@echo "  harden       Run diff whitespace check + fmt/check + strict clippy + all-feature tests"
 	@echo "  bench        Run benchmarks"
