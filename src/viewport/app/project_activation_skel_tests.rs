@@ -18,6 +18,17 @@ use super::super::ProductionActivationWorld;
 fn project_wrapper_preserves_external_skel_animation_dependency() {
     let source_fixture =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skel_test_composed.usda");
+    run_project_wrapper_skel_regression(&source_fixture, &["/Animations", "/Character"]);
+}
+
+#[test]
+fn project_wrapper_preserves_external_skel_animation_dependency_with_default_prim() {
+    let source_fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skel_test_composed_default_prim.usda");
+    run_project_wrapper_skel_regression(&source_fixture, &["/Animations", "/Character"]);
+}
+
+fn run_project_wrapper_skel_regression(source_fixture: &Path, expected_root_prims: &[&str]) {
     let directory = tempdir().expect("temporary skeletal Project");
     let source = directory.path().join("external-skel.usda");
     fs::copy(&source_fixture, &source).expect("copy skeletal source fixture");
@@ -35,7 +46,13 @@ fn project_wrapper_preserves_external_skel_animation_dependency() {
     ManifestStore::write_manifest_atomic(&project_root, &base_manifest)
         .expect("write skeletal Project manifest");
     let inspection = inspect_composition(&source).expect("inspect skeletal source");
-    assert_eq!(inspection.root_prims, vec!["/Animations", "/Character"]);
+    assert_eq!(
+        inspection.root_prims,
+        expected_root_prims
+            .iter()
+            .map(|path| (*path).to_owned())
+            .collect::<Vec<_>>()
+    );
 
     let adopted = adopt_scene_atomic(SceneAdoptionRequest {
         project_root: &project_root,
