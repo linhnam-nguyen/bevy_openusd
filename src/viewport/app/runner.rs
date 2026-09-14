@@ -194,6 +194,7 @@ pub(crate) fn run() {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
                 sender: stream_frame_tx,
                 metrics: frame_metrics.clone(),
+                frame_signature: false,
             });
         }
         let stage_display_name = std::path::Path::new(&asset_path)

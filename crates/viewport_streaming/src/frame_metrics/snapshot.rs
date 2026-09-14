@@ -37,4 +37,12 @@ pub struct FrameTransportSnapshot {
     pub readback_to_encoder_worker_max_ms: Option<f64>,
     pub readback_to_encoder_push_avg_ms: Option<f64>,
     pub readback_to_encoder_push_max_ms: Option<f64>,
+    #[serde(default)]
+    pub frame_signature_hash: Option<u64>,
+    #[serde(default)]
+    pub frame_signature_frames: u64,
+    #[serde(default)]
+    pub frame_signature_mad_frames: u64,
+    #[serde(default)]
+    pub frame_signature_mad_luma: Option<f64>,
 }

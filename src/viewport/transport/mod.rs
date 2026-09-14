@@ -3,6 +3,7 @@
 use viewport_protocol::CodecId;
 
 pub(crate) mod frame_capture;
+pub(crate) mod frame_signature;
 pub(crate) mod webrtc;
 
 pub(crate) use frame_capture::{

@@ -1,4 +1,5 @@
 mod latency;
+mod signature;
 mod snapshot;
 
 #[cfg(test)]
@@ -9,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use latency::{LatencyAccumulator, average_ms, nanos_to_ms};
+use signature::FrameSignatureMetrics;
 pub use snapshot::FrameTransportSnapshot;
 
 /// Monotonic identity and render/readback timestamps carried with one raw frame.
@@ -49,6 +51,7 @@ struct FrameTransportMetricsInner {
     readback_to_encoder_queue: LatencyAccumulator,
     readback_to_encoder_worker: LatencyAccumulator,
     readback_to_encoder_push: LatencyAccumulator,
+    frame_signatures: FrameSignatureMetrics,
 }
 
 /// Cross-thread metrics for the render/readback/encode data plane.
@@ -87,6 +90,7 @@ impl Default for FrameTransportMetrics {
                 readback_to_encoder_queue: LatencyAccumulator::default(),
                 readback_to_encoder_worker: LatencyAccumulator::default(),
                 readback_to_encoder_push: LatencyAccumulator::default(),
+                frame_signatures: FrameSignatureMetrics::default(),
             }),
         }
     }
@@ -255,6 +259,10 @@ impl FrameTransportMetrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_frame_signature(&self, hash: u64, mad_luma: Option<f64>) {
+        self.inner.frame_signatures.record(hash, mad_luma);
+    }
+
     /// Resets the measured window without resetting the process-wide sequence.
     pub fn reset(&self) {
         self.inner
@@ -287,6 +295,7 @@ impl FrameTransportMetrics {
         self.inner.readback_to_encoder_queue.reset();
         self.inner.readback_to_encoder_worker.reset();
         self.inner.readback_to_encoder_push.reset();
+        self.inner.frame_signatures.reset();
     }
 
     pub fn snapshot(&self) -> FrameTransportSnapshot {
@@ -303,6 +312,12 @@ impl FrameTransportMetrics {
             self.inner.readback_to_encoder_worker.snapshot();
         let (encoder_push_count, encoder_push_total, encoder_push_max) =
             self.inner.readback_to_encoder_push.snapshot();
+        let (
+            frame_signature_hash,
+            frame_signature_frames,
+            frame_signature_mad_frames,
+            frame_signature_mad_luma,
+        ) = self.inner.frame_signatures.snapshot();
         let readback_completions = self.inner.readback_completions.load(Ordering::Relaxed);
         let encoder_pushed = self.inner.encoder_pushed.load(Ordering::Relaxed);
 
@@ -347,6 +362,10 @@ impl FrameTransportMetrics {
             readback_to_encoder_worker_max_ms: nanos_to_ms(encoder_worker_max),
             readback_to_encoder_push_avg_ms: average_ms(encoder_push_count, encoder_push_total),
             readback_to_encoder_push_max_ms: nanos_to_ms(encoder_push_max),
+            frame_signature_hash,
+            frame_signature_frames,
+            frame_signature_mad_frames,
+            frame_signature_mad_luma,
         }
     }
 

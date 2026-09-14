@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, mpsc::SyncSender};
 use viewport_streaming::{FrameTrace, FrameTransportMetrics, VideoFrame};
 
+use super::frame_signature::{FrameSignatureDiagnostic, SIGNATURE_SAMPLE_COUNT};
 const MAX_PENDING_READBACK_TRACES: usize = 8;
 
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
@@ -85,6 +86,7 @@ impl FrameReadbackCorrelation {
 pub struct FrameCapturePlugin {
     pub sender: SyncSender<VideoFrame>,
     pub metrics: FrameTransportMetrics,
+    pub frame_signature: bool,
 }
 
 impl Plugin for FrameCapturePlugin {
@@ -95,6 +97,9 @@ impl Plugin for FrameCapturePlugin {
         .insert_resource(FrameTransportResource(self.metrics.clone()))
         .insert_resource(FrameReadbackCorrelation::new(self.metrics.clone()))
         .add_systems(Startup, setup_frame_readback);
+        if self.frame_signature {
+            app.insert_resource(FrameSignatureDiagnostic::default());
+        }
     }
 }
 
@@ -106,7 +111,7 @@ fn setup_frame_readback(
     let metrics = metrics.0.clone();
     commands
         .spawn(Readback::texture(target.image_handle.clone()))
-        .observe(move |mut event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut correlation: ResMut<FrameReadbackCorrelation>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>| {
+        .observe(move |mut event: On<ReadbackComplete>, sink: Res<FrameCaptureSink>, target: Res<OffscreenTarget>, mut correlation: ResMut<FrameReadbackCorrelation>, mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>, mut signature: Option<ResMut<FrameSignatureDiagnostic>>| {
             let Some(trace) = correlation.take_readback_trace() else {
                 metrics.record_readback_identity_miss();
                 return;
@@ -134,6 +139,13 @@ fn setup_frame_readback(
             };
 
             metrics.record_captured(readback_bytes, repacked);
+            record_frame_signature(
+                signature.as_deref_mut(),
+                &metrics,
+                &rgba,
+                target.width,
+                target.height,
+            );
             let frame = VideoFrame {
                 rgba: Arc::new(rgba),
                 width: target.width,
@@ -155,6 +167,23 @@ fn setup_frame_readback(
                 metrics.record_queued(trace);
             }
         });
+}
+
+fn record_frame_signature(
+    diagnostic: Option<&mut FrameSignatureDiagnostic>,
+    metrics: &FrameTransportMetrics,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) {
+    let Some(signature) = diagnostic.and_then(|diagnostic| diagnostic.sample(rgba, width, height))
+    else {
+        return;
+    };
+    let mad_luma = signature
+        .mad_luma_sum
+        .map(|sum| sum as f64 / SIGNATURE_SAMPLE_COUNT as f64);
+    metrics.record_frame_signature(signature.hash, mad_luma);
 }
 
 fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(Vec<u8>, bool)> {
@@ -188,7 +217,11 @@ fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(V
 
 #[cfg(test)]
 mod tests {
-    use super::{FrameReadbackCorrelation, MAX_PENDING_READBACK_TRACES, unpack_rgba_readback};
+    use super::super::frame_signature::FrameSignatureDiagnostic;
+    use super::{
+        FrameReadbackCorrelation, MAX_PENDING_READBACK_TRACES, record_frame_signature,
+        unpack_rgba_readback,
+    };
     use bevy::render::renderer::RenderDevice;
     use viewport_streaming::FrameTransportMetrics;
 
@@ -290,5 +323,24 @@ mod tests {
             unpack_rgba_readback(data.clone(), width, height),
             Some((data, false))
         );
+    }
+
+    #[test]
+    fn frame_signature_is_opt_in_at_the_repacked_rgba_boundary() {
+        let metrics = FrameTransportMetrics::default();
+        let mut diagnostic = FrameSignatureDiagnostic::default();
+        let frame = vec![32; 128 * 96 * 4];
+
+        record_frame_signature(Some(&mut diagnostic), &metrics, &frame, 128, 96);
+        record_frame_signature(Some(&mut diagnostic), &metrics, &frame, 128, 96);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.frame_signature_frames, 2);
+        assert_eq!(snapshot.frame_signature_mad_frames, 1);
+        assert_eq!(snapshot.frame_signature_mad_luma, Some(0.0));
+
+        let disabled_metrics = FrameTransportMetrics::default();
+        record_frame_signature(None, &disabled_metrics, &frame, 128, 96);
+        assert_eq!(disabled_metrics.snapshot().frame_signature_frames, 0);
     }
 }

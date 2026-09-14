@@ -79,3 +79,22 @@ fn snapshot_reports_measured_fps_and_stage_semantics() {
     assert!(snapshot.readback_to_encoder_worker_avg_ms.is_some());
     assert!(snapshot.readback_to_encoder_push_avg_ms.is_some());
 }
+
+#[test]
+fn frame_signature_snapshot_preserves_zero_mad_presence() {
+    let metrics = FrameTransportMetrics::default();
+
+    metrics.record_frame_signature(41, None);
+    metrics.record_frame_signature(42, Some(0.0));
+
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.frame_signature_hash, Some(42));
+    assert_eq!(snapshot.frame_signature_frames, 2);
+    assert_eq!(snapshot.frame_signature_mad_frames, 1);
+    assert_eq!(snapshot.frame_signature_mad_luma, Some(0.0));
+
+    metrics.reset();
+    let reset_snapshot = metrics.snapshot();
+    assert_eq!(reset_snapshot.frame_signature_hash, None);
+    assert_eq!(reset_snapshot.frame_signature_mad_luma, None);
+}
