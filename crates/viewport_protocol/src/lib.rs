@@ -26,7 +26,8 @@ pub mod stream;
 pub mod viewport;
 
 pub use animation_debug::{
-    AnimationDebugMessage, AnimationDebugMessageKind, AnimationDebugSnapshot,
+    AnimationDebugMessage, AnimationDebugMessageKind, AnimationDebugSampleId,
+    AnimationDebugSnapshot, AnimationPresentationProof,
 };
 pub use authorization::{
     AuthorizationPolicy, AuthorizationValidationError, DeliveryMode, HistoryPermission,

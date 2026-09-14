@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run the B0-M0 animation diagnostics and emit one machine-readable report.
+"""Run the B0-M0 animation diagnostic and emit one machine-readable report.
 
-The command is intentionally diagnostic-first: it runs focused CPU/build gates
-for the backend and frontend, records the exact branches and commits under
-test, and never claims browser, GPU, Tauri, WebRTC, or production proof.
+The command runs the focused build gates and then invokes the opt-in backend
+diagnostic. The JSON report preserves the real C1-C4 evidence chain; absent
+browser or GPU evidence is reported as a stable failure layer, never inferred.
 """
 
 from __future__ import annotations
@@ -40,6 +40,8 @@ FAILURE_CODES = {
     "backend_protocol_debug": "BACKEND_PROTOCOL_DEBUG_TEST_FAILED",
     "frontend_webrtc": "FRONTEND_WEBRTC_TEST_FAILED",
     "frontend_wasm": "FRONTEND_WASM_CHECK_FAILED",
+    "runtime_diagnostic": "ANIMATION_DIAGNOSTIC_RUNTIME_FAILED",
+    "runtime_report": "ANIMATION_DIAGNOSTIC_REPORT_INVALID",
 }
 
 MATRIX = (
@@ -61,12 +63,12 @@ MATRIX = (
     {
         "id": "D",
         "description": "static stage negative animation control",
-        "checks": ("backend_animation",),
+        "checks": ("runtime_diagnostic",),
     },
     {
         "id": "E",
         "description": "Hummingbird to static to Hummingbird replacement",
-        "checks": ("backend_animation",),
+        "checks": ("runtime_diagnostic",),
     },
     {
         "id": "F",
@@ -76,7 +78,7 @@ MATRIX = (
     {
         "id": "G",
         "description": "paused deterministic t0 to t1 to t0 round trip",
-        "checks": ("backend_seek",),
+        "checks": ("backend_seek", "runtime_diagnostic"),
     },
     {
         "id": "H",
@@ -133,6 +135,66 @@ def command_result(
         result["stdout_tail"] = tail(completed.stdout)
         result["stderr_tail"] = tail(completed.stderr)
     return result
+
+
+def runtime_result(output: Path, injected_failure: bool = False) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    output.unlink(missing_ok=True)
+    command = (
+        "cargo",
+        "run",
+        "--bin",
+        "usdview",
+        "--",
+        "--headless",
+        "--webrtc",
+        "--width",
+        "640",
+        "--height",
+        "480",
+        "--fps",
+        "30",
+        "--animation-debug",
+        "--animation-debug-output",
+        str(output),
+        "assets/external/hummingbird.usdz",
+    )
+    if injected_failure:
+        return (
+            {
+                "id": "runtime_diagnostic",
+                "status": "FAIL",
+                "failure_code": FAILURE_CODES["runtime_diagnostic"],
+                "command": list(command),
+                "cwd": str(ROOT),
+                "exit_code": None,
+                "injected": True,
+            },
+            None,
+        )
+    check = command_result(
+        "runtime_diagnostic",
+        command,
+        ROOT,
+        FAILURE_CODES["runtime_diagnostic"],
+        timeout_seconds=180,
+    )
+    if not output.is_file():
+        check["status"] = "FAIL"
+        check["failure_code"] = FAILURE_CODES["runtime_report"]
+        check["error"] = "backend diagnostic did not write its JSON report"
+        return check, None
+    try:
+        evidence = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        check["status"] = "FAIL"
+        check["failure_code"] = FAILURE_CODES["runtime_report"]
+        check["error"] = f"invalid backend diagnostic JSON: {error}"
+        return check, None
+    check["diagnostic_status"] = "PASS" if evidence.get("pass") else "FAIL"
+    if not evidence.get("pass"):
+        check["status"] = "FAIL"
+        check["failure_code"] = evidence.get("failure_layer") or FAILURE_CODES["runtime_diagnostic"]
+    return check, evidence
 
 
 def branch_result(repo_id: str, repo: Path) -> tuple[dict[str, Any], dict[str, str]]:
@@ -379,6 +441,15 @@ def build_report(
         else:
             checks.append(command_result(check_id, command, cwd, failure_code))
 
+    runtime_output = ROOT / "target/animation-debug-backend.json"
+    runtime_check, runtime_evidence = runtime_result(
+        runtime_output,
+        injected_failure=injected_failure == "runtime_diagnostic",
+    )
+    checks.append(runtime_check)
+    evidence["animation_debug_report"] = runtime_evidence
+    evidence["animation_debug_report_path"] = str(runtime_output)
+
     failures = sorted(
         {
             check["failure_code"]
@@ -407,6 +478,12 @@ def build_report(
         "milestone": "B0-M0",
         "command": "make animation-debug",
         "status": status,
+        "pass": status == "PASS",
+        "failure_layer": (
+            evidence.get("animation_debug_report", {}).get("failure_layer")
+            if evidence.get("animation_debug_report")
+            else (failures[0] if failures else None)
+        ),
         "failure_codes": failures,
         "injected_failure": injected_failure,
         "warnings": warnings,
@@ -415,7 +492,9 @@ def build_report(
         "matrix": matrix,
         "decision_table": decision_table(),
         "runtime_proof_boundary": [
-            "CPU tests and compile checks do not prove browser, GPU, Tauri, WebRTC, or production behavior."
+            "The backend JSON proves only the layers with populated runtime evidence.",
+            "CPU tests and compile checks do not prove browser, GPU, Tauri, WebRTC, or production behavior.",
+            "A missing client snapshot or client content probe remains a classified failure, not an inferred pass.",
         ],
         "report_path": str(output),
     }

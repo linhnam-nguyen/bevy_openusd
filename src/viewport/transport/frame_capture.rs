@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, mpsc::SyncSender};
 use viewport_streaming::{FrameTrace, FrameTransportMetrics, VideoFrame};
 
-use super::frame_signature::{FrameSignatureDiagnostic, SIGNATURE_SAMPLE_COUNT};
+use super::frame_signature::FrameSignatureDiagnostic;
 const MAX_PENDING_READBACK_TRACES: usize = 8;
 
 /// Channel sink resource for pushing rendered video frames to the WebRTC encoder.
@@ -142,6 +142,7 @@ fn setup_frame_readback(
             record_frame_signature(
                 signature.as_deref_mut(),
                 &metrics,
+                trace.sequence,
                 &rgba,
                 target.width,
                 target.height,
@@ -172,18 +173,23 @@ fn setup_frame_readback(
 fn record_frame_signature(
     diagnostic: Option<&mut FrameSignatureDiagnostic>,
     metrics: &FrameTransportMetrics,
+    sequence: u64,
     rgba: &[u8],
     width: u32,
     height: u32,
 ) {
-    let Some(signature) = diagnostic.and_then(|diagnostic| diagnostic.sample(rgba, width, height))
-    else {
+    let Some(diagnostic) = diagnostic else {
         return;
     };
-    let mad_luma = signature
-        .mad_luma_sum
-        .map(|sum| sum as f64 / SIGNATURE_SAMPLE_COUNT as f64);
-    metrics.record_frame_signature(signature.hash, mad_luma);
+    let Some(signature) = diagnostic.sample(sequence, rgba, width, height) else {
+        return;
+    };
+    metrics.record_frame_signature(
+        sequence,
+        signature.hash,
+        signature.mean_luma,
+        diagnostic.last_adjacent_mad_luma(),
+    );
 }
 
 fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(Vec<u8>, bool)> {
@@ -217,7 +223,7 @@ fn unpack_rgba_readback(mut data: Vec<u8>, width: u32, height: u32) -> Option<(V
 
 #[cfg(test)]
 mod tests {
-    use super::super::frame_signature::FrameSignatureDiagnostic;
+    use super::super::frame_signature::{FrameSampleId, FrameSignatureDiagnostic};
     use super::{
         FrameReadbackCorrelation, MAX_PENDING_READBACK_TRACES, record_frame_signature,
         unpack_rgba_readback,
@@ -331,16 +337,19 @@ mod tests {
         let mut diagnostic = FrameSignatureDiagnostic::default();
         let frame = vec![32; 128 * 96 * 4];
 
-        record_frame_signature(Some(&mut diagnostic), &metrics, &frame, 128, 96);
-        record_frame_signature(Some(&mut diagnostic), &metrics, &frame, 128, 96);
+        diagnostic.arm(FrameSampleId::T0, 1);
+        record_frame_signature(Some(&mut diagnostic), &metrics, 1, &frame, 128, 96);
+        diagnostic.arm(FrameSampleId::T1, 2);
+        record_frame_signature(Some(&mut diagnostic), &metrics, 2, &frame, 128, 96);
 
         let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.frame_signature_sequence, Some(2));
         assert_eq!(snapshot.frame_signature_frames, 2);
         assert_eq!(snapshot.frame_signature_mad_frames, 1);
         assert_eq!(snapshot.frame_signature_mad_luma, Some(0.0));
 
         let disabled_metrics = FrameTransportMetrics::default();
-        record_frame_signature(None, &disabled_metrics, &frame, 128, 96);
+        record_frame_signature(None, &disabled_metrics, 1, &frame, 128, 96);
         assert_eq!(disabled_metrics.snapshot().frame_signature_frames, 0);
     }
 }

@@ -84,11 +84,13 @@ fn snapshot_reports_measured_fps_and_stage_semantics() {
 fn frame_signature_snapshot_preserves_zero_mad_presence() {
     let metrics = FrameTransportMetrics::default();
 
-    metrics.record_frame_signature(41, None);
-    metrics.record_frame_signature(42, Some(0.0));
+    metrics.record_frame_signature(41, 41, 11.0, None);
+    metrics.record_frame_signature(42, 42, 12.0, Some(0.0));
 
     let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.frame_signature_sequence, Some(42));
     assert_eq!(snapshot.frame_signature_hash, Some(42));
+    assert_eq!(snapshot.frame_signature_mean_luma, Some(12.0));
     assert_eq!(snapshot.frame_signature_frames, 2);
     assert_eq!(snapshot.frame_signature_mad_frames, 1);
     assert_eq!(snapshot.frame_signature_mad_luma, Some(0.0));

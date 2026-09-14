@@ -239,6 +239,7 @@ impl ViewportCommand {
             Self::SetVariantSelection { .. }
             | Self::ResetVariantSelection { .. }
             | Self::RequestSnapshot
+            | Self::SubmitAnimationDebugClientSnapshot { .. }
             | Self::RequestBimClassificationFieldCatalogue { .. }
             | Self::RequestSceneChildren { .. }
             | Self::SearchScene { .. }

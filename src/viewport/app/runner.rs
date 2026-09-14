@@ -194,8 +194,15 @@ pub(crate) fn run() {
             app.add_plugins(crate::viewport::transport::FrameCapturePlugin {
                 sender: stream_frame_tx,
                 metrics: frame_metrics.clone(),
-                frame_signature: false,
+                frame_signature: launch_options.animation_debug,
             });
+            if launch_options.animation_debug {
+                app.add_plugins(
+                    crate::viewport::diagnostics::animation_debug::AnimationDebugPlugin {
+                        output_path: launch_options.animation_debug_output.clone(),
+                    },
+                );
+            }
         }
         let stage_display_name = std::path::Path::new(&asset_path)
             .file_name()

@@ -295,6 +295,16 @@ fn prepare_runtime_payloads_if_server(
     world: &mut World,
     snapshot: &SemanticSnapshot,
 ) -> crate::project::runtime_payload::PreparedRuntimePayloads {
+    // The animation diagnostic measures the render/media path. Avoid preparing
+    // the unrelated material and texture delivery payload while it is active;
+    // that work can dominate the headless run without changing the pixels used
+    // by the named frame samples.
+    if world
+        .get_resource::<crate::viewport::diagnostics::animation_debug::AnimationDebugRuntime>()
+        .is_some()
+    {
+        return Default::default();
+    }
     if world.get_resource::<RenderServerInterface>().is_none() {
         return Default::default();
     }

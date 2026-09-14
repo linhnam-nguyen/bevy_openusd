@@ -39,6 +39,8 @@ pub(crate) struct LaunchOptions {
     pub(crate) benchmark_measurement_start_file: Option<String>,
     pub(crate) benchmark_measurement_idle_file: Option<String>,
     pub(crate) benchmark_measurement_complete_file: Option<String>,
+    pub(crate) animation_debug: bool,
+    pub(crate) animation_debug_output: Option<String>,
 }
 
 impl Default for LaunchOptions {
@@ -63,6 +65,8 @@ impl Default for LaunchOptions {
             benchmark_measurement_start_file: None,
             benchmark_measurement_idle_file: None,
             benchmark_measurement_complete_file: None,
+            animation_debug: false,
+            animation_debug_output: None,
         }
     }
 }
@@ -98,6 +102,20 @@ where
 
         if parse_options && argument == "--webrtc" {
             options.transport = Some(ViewportTransport::WebRtc);
+            continue;
+        }
+
+        if parse_options && argument == "--animation-debug" {
+            options.animation_debug = true;
+            continue;
+        }
+
+        if parse_options && argument == "--animation-debug-output" {
+            options.animation_debug_output = Some(
+                arguments
+                    .next()
+                    .ok_or_else(|| "--animation-debug-output requires a file path".to_owned())?,
+            );
             continue;
         }
 
@@ -295,6 +313,10 @@ where
             }
             if let Some(path) = argument.strip_prefix("--benchmark-measurement-complete-file=") {
                 options.benchmark_measurement_complete_file = Some(path.to_string());
+                continue;
+            }
+            if let Some(path) = argument.strip_prefix("--animation-debug-output=") {
+                options.animation_debug_output = Some(path.to_string());
                 continue;
             }
             if argument.starts_with('-') {

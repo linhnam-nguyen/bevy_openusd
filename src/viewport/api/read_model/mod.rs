@@ -162,6 +162,7 @@ impl ViewportReadModelState {
             | ViewportEvent::BimClassificationFieldCataloguePage { .. }
             | ViewportEvent::BimPropertyProvenanceRead { .. }
             | ViewportEvent::Ready { .. }
+            | ViewportEvent::AnimationDebugServerSample { .. }
             | ViewportEvent::CameraTransitionStarted { .. }
             | ViewportEvent::HierarchyVisibilityChanged { .. }
             | ViewportEvent::CommandRejected { .. } => {}

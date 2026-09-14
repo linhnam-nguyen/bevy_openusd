@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PROTOCOL_VERSION, RequestId};
+use crate::{AnimationDebugSnapshot, PROTOCOL_VERSION, RequestId};
 
 use super::bim::{BimPropertyMutation, BimSearchQuery, ClassificationRecipe};
 use super::editor::{EditorValue, RuntimeMutationBatch};
@@ -15,6 +15,9 @@ use super::read_models::{
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub enum ViewportCommand {
     RequestSnapshot,
+    SubmitAnimationDebugClientSnapshot {
+        snapshot: AnimationDebugSnapshot,
+    },
     /// Requests the current model-wide BIM classification catalogue. This is
     /// idempotent and separate from selection-scoped properties so a
     /// reconnecting client can hydrate state produced before it joined.

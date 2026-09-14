@@ -23,6 +23,9 @@ use state::ApplyViewportCommandState;
 pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,
+    mut animation_debug: Option<
+        ResMut<crate::viewport::diagnostics::animation_debug::AnimationDebugRuntime>,
+    >,
     mut state: ApplyViewportCommandState<'_, '_>,
 ) {
     while let Some(envelope) = inbox.pop() {
@@ -54,6 +57,19 @@ pub(super) fn apply_viewport_commands(
             continue;
         };
         match command {
+            ViewportCommand::SubmitAnimationDebugClientSnapshot { snapshot } => {
+                if let Some(runtime) = animation_debug.as_mut() {
+                    if runtime.client_snapshots.len() < 5 {
+                        runtime.client_snapshots.push(snapshot);
+                    }
+                } else {
+                    reject(
+                        &mut outbox,
+                        request_id,
+                        "animation debug is disabled".to_owned(),
+                    );
+                }
+            }
             ViewportCommand::RequestSnapshot => {
                 emit_snapshot(
                     &mut outbox,

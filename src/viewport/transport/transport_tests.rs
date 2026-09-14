@@ -124,3 +124,18 @@ fn mesh_profile_benchmark_flag_enables_profile_mode() {
     assert!(options.benchmark);
     assert!(options.benchmark_mesh_profile);
 }
+
+#[test]
+fn animation_debug_flags_are_opt_in_and_keep_the_output_path_separate() {
+    let options = parse_launch_options(vec![
+        "--animation-debug".to_owned(),
+        "--animation-debug-output=target/debug.json".to_owned(),
+    ])
+    .unwrap();
+
+    assert!(options.animation_debug);
+    assert_eq!(
+        options.animation_debug_output,
+        Some("target/debug.json".to_owned())
+    );
+}

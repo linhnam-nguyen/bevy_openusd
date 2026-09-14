@@ -259,10 +259,6 @@ impl FrameTransportMetrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_frame_signature(&self, hash: u64, mad_luma: Option<f64>) {
-        self.inner.frame_signatures.record(hash, mad_luma);
-    }
-
     /// Resets the measured window without resetting the process-wide sequence.
     pub fn reset(&self) {
         self.inner
@@ -313,7 +309,9 @@ impl FrameTransportMetrics {
         let (encoder_push_count, encoder_push_total, encoder_push_max) =
             self.inner.readback_to_encoder_push.snapshot();
         let (
+            frame_signature_sequence,
             frame_signature_hash,
+            frame_signature_mean_luma,
             frame_signature_frames,
             frame_signature_mad_frames,
             frame_signature_mad_luma,
@@ -362,7 +360,9 @@ impl FrameTransportMetrics {
             readback_to_encoder_worker_max_ms: nanos_to_ms(encoder_worker_max),
             readback_to_encoder_push_avg_ms: average_ms(encoder_push_count, encoder_push_total),
             readback_to_encoder_push_max_ms: nanos_to_ms(encoder_push_max),
+            frame_signature_sequence,
             frame_signature_hash,
+            frame_signature_mean_luma,
             frame_signature_frames,
             frame_signature_mad_frames,
             frame_signature_mad_luma,

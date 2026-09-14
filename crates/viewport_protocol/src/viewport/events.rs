@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PROTOCOL_VERSION, RequestId};
+use crate::{AnimationDebugSnapshot, PROTOCOL_VERSION, RequestId};
 
 use super::bim::{
     BimClassificationFieldCataloguePage, BimPropertiesDeliveryError, BimPropertiesPage,
@@ -24,6 +24,9 @@ use super::read_models::{
 pub enum ViewportEvent {
     Ready {
         protocol_version: u16,
+    },
+    AnimationDebugServerSample {
+        snapshot: AnimationDebugSnapshot,
     },
     Snapshot {
         state: Box<ViewportReadModel>,
