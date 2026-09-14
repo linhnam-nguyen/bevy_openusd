@@ -46,24 +46,12 @@ pub struct AnimationDebugSnapshot {
     pub client_content_hash: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AnimationDebugMessage {
-    pub kind: AnimationDebugMessageKind,
-    pub snapshot: AnimationDebugSnapshot,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AnimationDebugMessageKind {
-    Snapshot,
-    Failure,
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        AnimationDebugMessage, AnimationDebugMessageKind, AnimationDebugSampleId,
-        AnimationDebugSnapshot, AnimationPresentationProof,
+    use super::{AnimationDebugSampleId, AnimationDebugSnapshot, AnimationPresentationProof};
+    use crate::{
+        ViewportWireMessage, encode_json_line,
+        viewport::{ViewportEvent, ViewportEventEnvelope},
     };
 
     const MAX_DEBUG_MESSAGE_BYTES: usize = 1_024;
@@ -92,15 +80,18 @@ mod tests {
     }
 
     #[test]
-    fn fully_populated_debug_message_stays_below_one_kibibyte() {
-        let message = AnimationDebugMessage {
-            kind: AnimationDebugMessageKind::Snapshot,
-            snapshot: complete_snapshot(),
-        };
-        let encoded = serde_json::to_vec(&message).expect("debug message serializes");
+    fn actual_debug_event_stays_below_one_kibibyte() {
+        let message = ViewportWireMessage::Event(ViewportEventEnvelope::new(
+            None,
+            ViewportEvent::AnimationDebugServerSample {
+                snapshot: complete_snapshot(),
+            },
+        ));
+        let encoded = encode_json_line(&message).expect("debug event serializes");
 
         assert!(encoded.len() < MAX_DEBUG_MESSAGE_BYTES);
-        assert!(!encoded.windows(4).any(|window| window == b"rgba"));
-        assert!(!encoded.windows(7).any(|window| window == b"luma"));
+        assert!(!encoded.contains("\"rgba\""));
+        assert!(!encoded.contains("\"pixels\""));
+        assert!(!encoded.contains("\"transforms\""));
     }
 }

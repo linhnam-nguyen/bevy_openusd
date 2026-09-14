@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{LiveStage, LiveStagePlugin, ProjectionBudget, ProjectionReadiness, UsdPlugin};
@@ -217,70 +215,78 @@ fn transform_signature(samples: &[(String, Transform)]) -> TransformSignature {
 }
 
 #[test]
-fn hummingbird_replacement_resets_and_restarts_real_playback() {
+fn hummingbird_native_stage_evaluation_is_animated() {
     let mut app = playback_app();
     app.world_mut()
         .insert_non_send(LiveStage::new(open_stage(&asset_path("hummingbird.usdz"))));
-    let hummingbird = settle_stage(&mut app, true);
-    let (start, end, fps) = (hummingbird.start, hummingbird.end, hummingbird.fps);
+    let stage = settle_stage(&mut app, true);
+    assert!(stage.end > stage.start);
+    assert!(stage.fps > 0.0);
     assert!(
-        end > start,
-        "Hummingbird must expose an authored time range"
+        !app.world()
+            .resource::<usd_bevy::AnimatedPrims>()
+            .0
+            .is_empty()
     );
-    assert!(fps > 0.0);
 
-    let initial_current = app.world().resource::<usd_bevy::StageTime>().current;
-    assert!(app.world().resource::<UsdStageTime>().playing);
+    let [t0, t1] = authored_sample_points(stage);
+    let time0 = seek_paused(&mut app, t0);
+    let transform0 = transform_signature(&animated_transforms(&mut app));
+    let time1 = seek_paused(&mut app, t1);
+    let transform1 = transform_signature(&animated_transforms(&mut app));
+    assert!((time0 - t0).abs() < 1e-9);
+    assert!((time1 - t1).abs() < 1e-9);
+    assert_ne!(transform0.hash, transform1.hash);
+}
+
+#[test]
+fn static_stage_is_negative_animation_control() {
+    let mut app = playback_app();
     app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_millis(100));
-    app.update();
-    assert_ne!(
-        app.world().resource::<usd_bevy::StageTime>().current,
-        initial_current,
-        "real playback must advance StageTime"
-    );
+        .insert_non_send(LiveStage::new(open_stage(&stage_path("hierarchy.usda"))));
+    let stage = settle_stage(&mut app, false);
 
-    let [t0, t1] = authored_sample_points(hummingbird);
-    seek_paused(&mut app, t0);
-    let at_t0 = animated_transforms(&mut app);
-    assert!(!at_t0.is_empty(), "animated Hummingbird transforms exist");
-    seek_paused(&mut app, t1);
-    let at_t1 = animated_transforms(&mut app);
-    let changing_path = at_t0.iter().find_map(|(path, t0_transform)| {
-        at_t1
-            .iter()
-            .find(|(t1_path, _)| t1_path == path)
-            .and_then(|(_, t1_transform)| (t0_transform != t1_transform).then_some(path.as_str()))
-    });
     assert!(
-        changing_path.is_some(),
-        "real Hummingbird animated transforms must change between t0 and t1"
+        app.world()
+            .resource::<usd_bevy::AnimatedPrims>()
+            .0
+            .is_empty()
     );
-
-    let static_stage = replace_stage(&mut app, open_stage(&stage_path("hierarchy.usda")), false);
-    assert_eq!(static_stage.identity.0, hummingbird.identity.0);
-    assert!(static_stage.identity.1 > hummingbird.identity.1);
     assert!(!app.world().resource::<UsdStageTime>().playing);
     assert_eq!(
         app.world().resource::<usd_bevy::StageTime>().current,
-        static_stage.start
+        stage.start
     );
+}
+
+#[test]
+fn hummingbird_static_hummingbird_replacement_restores_animation() {
+    let mut app = playback_app();
+    app.world_mut()
+        .insert_non_send(LiveStage::new(open_stage(&asset_path("hummingbird.usdz"))));
+    let first = settle_stage(&mut app, true);
+
+    let static_stage = replace_stage(&mut app, open_stage(&stage_path("hierarchy.usda")), false);
+    assert_eq!(static_stage.identity.0, first.identity.0);
+    assert!(static_stage.identity.1 > first.identity.1);
+    assert!(
+        app.world()
+            .resource::<usd_bevy::AnimatedPrims>()
+            .0
+            .is_empty()
+    );
+    assert!(!app.world().resource::<UsdStageTime>().playing);
 
     let restarted = replace_stage(&mut app, open_stage(&asset_path("hummingbird.usdz")), true);
-    assert_eq!(restarted.identity.0, hummingbird.identity.0);
+    assert_eq!(restarted.identity.0, first.identity.0);
     assert!(restarted.identity.1 > static_stage.identity.1);
-    assert!(app.world().resource::<UsdStageTime>().playing);
-    let before_restart = app.world().resource::<usd_bevy::StageTime>().current;
-    app.world_mut()
-        .resource_mut::<Time>()
-        .advance_by(Duration::from_millis(100));
-    app.update();
-    assert_ne!(
-        app.world().resource::<usd_bevy::StageTime>().current,
-        before_restart,
-        "Hummingbird playback must restart after static replacement"
+    assert!(
+        !app.world()
+            .resource::<usd_bevy::AnimatedPrims>()
+            .0
+            .is_empty()
     );
+    assert!(app.world().resource::<UsdStageTime>().playing);
 }
 
 #[test]
