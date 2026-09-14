@@ -27,6 +27,8 @@ use crate::viewport::session::{SceneCacheOwnershipContext, SceneCachePresentatio
 
 use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;
+#[cfg(test)]
+pub(crate) use projection::SceneResidencyOccurrence;
 pub(crate) use projection::SceneResidencyProjection;
 use repair::{
     TargetedRepairQueue, drain_cached_residency_completions,
@@ -34,6 +36,8 @@ use repair::{
 };
 use repair_persistence::TargetedRepairPersistenceWorker;
 use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
+#[cfg(test)]
+pub(crate) use spatial::SceneSpatialPayload;
 use viewpoint::{ActiveViewpointResidencyState, sync_active_viewpoint_residency};
 use worker::{CachedResidencyWorker, LoadedScenePayloadQueue, install_loaded_scene_payloads};
 

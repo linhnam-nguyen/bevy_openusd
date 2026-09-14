@@ -5,11 +5,12 @@ use std::{
 };
 
 use bevy::asset::AssetApp;
-use bevy::ecs::schedule::IntoScheduleConfigs;
+use bevy::ecs::schedule::{IntoScheduleConfigs, ScheduleLabel};
 use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{App, Update, World};
+use bevy::render::{Render, RenderApp, extract_plugin::ExtractPlugin};
 use project_protocol::{ProjectActivationCommand, ProjectStageTarget};
 use tempfile::tempdir;
 use usd_bevy::{LiveStage, PendingStageChanges, PrimEntities};
@@ -20,7 +21,6 @@ use viewport_protocol::{
 };
 use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
@@ -38,6 +38,10 @@ use usd_project::ProjectRoot;
 
 #[path = "project_activation_cache_first_tests.rs"]
 mod cache_first_tests;
+#[path = "project_activation_cache_handoff_tests.rs"]
+mod cache_handoff_tests;
+#[path = "project_activation_production_support.rs"]
+mod production_support;
 
 pub(crate) struct ProductionActivationWorld {
     app: App,
@@ -64,6 +68,7 @@ impl ProductionActivationWorld {
         provider.set(HierarchySource::BimClassification, Some(recipe));
         let mut app = App::new();
         app.add_plugins(bevy::MinimalPlugins)
+            .add_plugins(ExtractPlugin::default())
             .add_plugins(bevy::asset::AssetPlugin::default())
             .add_plugins(usd_bevy::UsdPlugin)
             .add_plugins(usd_bevy::LiveStagePlugin)
@@ -71,6 +76,7 @@ impl ProductionActivationWorld {
             .init_asset::<Image>()
             .init_asset::<StandardMaterial>()
             .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
+            .init_resource::<crate::viewport::residency::SceneResidencyProjection>()
             .insert_resource(usd_bevy::ProjectionBudget::bounded(
                 32,
                 Duration::from_millis(8),
@@ -113,6 +119,11 @@ impl ProductionActivationWorld {
             Update,
             crate::viewport::app::project_activation::continue_deferred_stage_activation_for_test,
         );
+        app.add_systems(Update, spawn_when_ready);
+        super::canonical_visual_handoff::install(&mut app);
+        app.get_sub_app_mut(RenderApp)
+            .expect("render test sub-app")
+            .update_schedule = Some(Render.intern());
         Self { app }
     }
 
@@ -139,8 +150,6 @@ impl ProductionActivationWorld {
 
     pub(crate) fn update(&mut self) {
         self.app.update();
-        spawn_when_ready(self.app.world_mut());
-        super::canonical_visual_handoff::observe_canonical_visual_handoff(self.app.world_mut());
     }
 
     pub(crate) fn mark_cache_rendered_for_test(&mut self) {
@@ -152,10 +161,6 @@ impl ProductionActivationWorld {
         world
             .resource_mut::<crate::viewport::session::CachePresentationGate>()
             .observe_rendered_frame(scene_id, generation);
-    }
-
-    pub(crate) fn world_mut(&mut self) -> &mut World {
-        self.app.world_mut()
     }
 
     pub(crate) fn replace_selection(&mut self, target: SceneAnchor) {
@@ -173,43 +178,16 @@ impl ProductionActivationWorld {
         self.app.world()
     }
 
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        self.app.world_mut()
+    }
+
     pub(crate) fn active(&self) -> Option<ActiveProjectStage> {
         self.world()
             .resource::<super::ProjectActivationAuthorityRuntime>()
             .0
             .active()
             .cloned()
-    }
-
-    fn assert_empty_activation(
-        &self,
-        project_id: usd_project::ProjectId,
-        target: ProjectStageTarget,
-    ) {
-        let world = self.world();
-        assert!(world.get_non_send::<LiveStage>().is_none());
-        assert!(world.get_resource::<ActiveProjectCacheContext>().is_none());
-        let stage_info = world.resource::<StageInfo>();
-        assert_eq!(stage_info.activation_generation, 4);
-        assert!(stage_info.path.is_empty());
-        let semantic = world.resource::<SemanticSyncState>();
-        assert!(semantic.snapshot().is_none());
-        assert!(semantic.shared_bim_index().is_none());
-        assert!(
-            world
-                .resource::<CurrentHierarchyProjection>()
-                .snapshot()
-                .nodes
-                .is_empty()
-        );
-        assert_eq!(
-            self.active(),
-            Some(ActiveProjectStage {
-                project_id,
-                target,
-                generation: 4,
-            })
-        );
     }
 
     pub(crate) fn observe(
@@ -340,6 +318,12 @@ fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
             reply.result,
             project_protocol::ProjectActivationResult::Activated { .. }
         ));
+        assert!(
+            production
+                .world()
+                .get_resource::<crate::viewport::session::PendingCanonicalVisualHandoff>()
+                .is_none()
+        );
         production.update();
         let observation = production
             .observe(&target.path, generation)

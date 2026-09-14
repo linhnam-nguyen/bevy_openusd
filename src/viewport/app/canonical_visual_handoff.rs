@@ -131,7 +131,11 @@ fn collect_canonical_frame_complete(
     let Some(identity) = witness.identity.as_ref() else {
         return;
     };
-    let Some(mut pending) = main_world.get_resource_mut::<PendingCanonicalVisualHandoff>() else {
+    mark_main_world_frame_rendered(&mut main_world, identity);
+}
+
+fn mark_main_world_frame_rendered(world: &mut World, identity: &HandoffIdentity) {
+    let Some(mut pending) = world.get_resource_mut::<PendingCanonicalVisualHandoff>() else {
         return;
     };
     mark_rendered_if_matching(&mut pending, identity);
@@ -188,6 +192,21 @@ fn mark_witness(witness: &mut CanonicalVisualHandoffRenderWitness) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::asset::{Assets, RenderAssetUsages};
+    use bevy::ecs::system::Commands;
+    use bevy::ecs::world::CommandQueue;
+    use bevy::mesh::{Mesh, PrimitiveTopology};
+    use std::path::PathBuf;
+    use usd_model::{Bounds3, HashDigest};
+    use usd_project::SceneMemberId;
+
+    use crate::project::cache_contract::{
+        SceneCacheAddress, SceneCacheOccurrence, SceneCacheState,
+    };
+    use crate::viewport::residency::{
+        ScenePayloadKey, SceneResidencyOccurrence, SceneResidencyProjection, SceneSpatialPayload,
+    };
+    use crate::viewport::session::{SceneCacheOwnershipContext, SceneCachePresentation};
     use usd_project::SceneId;
 
     #[test]
@@ -202,10 +221,60 @@ mod tests {
     }
 
     #[test]
-    fn stale_render_witness_cannot_mark_a_newer_handoff() {
+    fn stale_render_witness_preserves_newer_world_state() {
         let old_scene = SceneId::new_v4();
         let new_scene = SceneId::new_v4();
-        let mut pending = PendingCanonicalVisualHandoff::new(8, (12, 1), new_scene, 4);
+        let payload = SceneSpatialPayload {
+            address: SceneCacheAddress {
+                scene_id: new_scene,
+                occurrence: SceneCacheOccurrence::Member(SceneMemberId::new_v4()),
+            },
+            payload_key: ScenePayloadKey {
+                scene_id: new_scene,
+                blob_hash: HashDigest::new([7; HashDigest::BYTE_LEN]),
+            },
+            transform: usd_project::ScenePlacementTransform::IDENTITY,
+            bounds: Bounds3 {
+                min: [-1.0; 3],
+                max: [1.0; 3],
+            },
+            cpu_bytes: 8,
+            gpu_bytes: 8,
+        };
+        let mut projection = SceneResidencyProjection::default();
+        projection.install_scene(std::slice::from_ref(&payload));
+        let mut world = World::new();
+        world.insert_resource(Assets::<Mesh>::default());
+        let handle = world.resource_mut::<Assets<Mesh>>().add(Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        ));
+        let mut queue = CommandQueue::default();
+        {
+            let mut commands = Commands::new(&mut queue, &world);
+            projection.attach_payload(payload.payload_key, handle, &mut commands);
+        }
+        queue.apply(&mut world);
+        world.insert_resource(projection);
+        world.insert_resource(PendingCanonicalVisualHandoff::new(8, (12, 1), new_scene, 4));
+        world.insert_resource(SceneCachePresentation {
+            scene_id: new_scene,
+            generation: 4,
+            state: SceneCacheState::Partial,
+            entries: Vec::new(),
+        });
+        world.insert_resource(SceneCacheOwnershipContext {
+            project_root: PathBuf::from("/cache/new"),
+            scene_id: new_scene,
+            config_hash: HashDigest::new([4; HashDigest::BYTE_LEN]),
+        });
+        let active_before = world
+            .resource::<SceneResidencyProjection>()
+            .active_entity_count_for_test();
+        let occurrence_count_before = world
+            .query::<&SceneResidencyOccurrence>()
+            .iter(&world)
+            .count();
         let stale = HandoffIdentity {
             activation_generation: 7,
             live_stage_identity: (11, 1),
@@ -213,9 +282,31 @@ mod tests {
             scene_cache_generation: 3,
         };
 
-        mark_rendered_if_matching(&mut pending, &stale);
+        mark_main_world_frame_rendered(&mut world, &stale);
 
-        assert!(!pending.canonical_frame_rendered);
+        assert!(
+            !world
+                .resource::<PendingCanonicalVisualHandoff>()
+                .canonical_frame_rendered
+        );
+        assert_eq!(world.resource::<SceneCachePresentation>().generation, 4);
+        assert_eq!(
+            world.resource::<SceneCacheOwnershipContext>().scene_id,
+            new_scene
+        );
+        assert_eq!(
+            world
+                .resource::<SceneResidencyProjection>()
+                .active_entity_count_for_test(),
+            active_before
+        );
+        assert_eq!(
+            world
+                .query::<&SceneResidencyOccurrence>()
+                .iter(&world)
+                .count(),
+            occurrence_count_before
+        );
     }
 
     fn snapshot_canonical_handoff_value(

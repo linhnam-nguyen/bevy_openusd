@@ -152,7 +152,7 @@ impl SceneResidencyProjection {
     }
 
     #[cfg(test)]
-    fn active_entity_count(&self) -> usize {
+    pub(crate) fn active_entity_count_for_test(&self) -> usize {
         self.entries
             .values()
             .filter(|entry| entry.entity.is_some())
@@ -231,7 +231,7 @@ mod tests {
         }
         queue.apply(&mut world);
         assert_eq!(projection.entry_count(), 66);
-        assert_eq!(projection.active_entity_count(), 2);
+        assert_eq!(projection.active_entity_count_for_test(), 2);
         assert_eq!(projection.payload_occurrences.get(&key).map(Vec::len), Some(2));
         assert_eq!(projection.asset_occurrences.get(&handle.id()).map(Vec::len), Some(2));
         let mut query = world.query::<(&Mesh3d, &SceneResidencyOccurrence)>();
@@ -249,7 +249,7 @@ mod tests {
             projection.release_asset(handle.id(), &mut commands);
         }
         queue.apply(&mut world);
-        assert_eq!(projection.active_entity_count(), 0);
+        assert_eq!(projection.active_entity_count_for_test(), 0);
         assert_eq!(projection.entry_count(), 66);
         assert_eq!(projection.payload_occurrences.get(&key).map(Vec::len), Some(2));
         assert!(!projection.asset_occurrences.contains_key(&handle.id()));
@@ -282,11 +282,11 @@ mod tests {
             projection.attach_payload(key, handle, &mut commands);
         }
         queue.apply(&mut world);
-        assert_eq!(projection.active_entity_count(), 1);
+        assert_eq!(projection.active_entity_count_for_test(), 1);
 
         projection.retire_world(&mut world);
 
-        assert_eq!(projection.active_entity_count(), 0);
+        assert_eq!(projection.active_entity_count_for_test(), 0);
         assert_eq!(projection.entry_count(), 0);
         assert_eq!(
             world
