@@ -1,21 +1,32 @@
 use std::{fs, path::Path};
 
+use bevy::asset::{Assets, RenderAssetUsages};
+use bevy::ecs::system::Commands;
+use bevy::ecs::world::CommandQueue;
+use bevy::mesh::{Mesh, PrimitiveTopology};
 use project_protocol::{ProjectActivationCommand, ProjectStageTarget};
 use tempfile::tempdir;
 use usd_bevy::{LiveStage, PrimEntities};
-use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
+use usd_model::{Bounds3, HashDigest};
+use usd_project::{
+    ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, SceneMemberId,
+    StorageKey,
+};
 
 use super::ProductionActivationWorld;
 use crate::project::cache::SceneCacheStore;
 use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
-    SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheAddress,
+    SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheOccurrence, SceneCacheState,
+    SceneSpatialIndex,
 };
 use crate::project::cache_hydration::default_project_cache_config_hash;
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::scene::{adoption_authoring, authoring};
 use crate::project::service::{ProjectStageActivationTarget, ProjectStagePresentationContext};
-use crate::viewport::residency::{SceneResidencyOccurrence, SceneResidencyProjection};
+use crate::viewport::residency::{
+    ScenePayloadKey, SceneResidencyOccurrence, SceneResidencyProjection, SceneSpatialPayload,
+};
 use crate::viewport::session::SceneCachePresentation;
 
 #[test]
@@ -138,6 +149,7 @@ fn cache_first_handoff_uses_render_schedule_before_retiring_projection() {
             .readiness(),
         usd_bevy::ProjectionReadiness::Ready
     );
+    install_visible_cache_occurrence(&mut production, scene_id);
 
     production.update();
     assert!(production.world().get_non_send::<LiveStage>().is_none());
@@ -156,7 +168,7 @@ fn cache_first_handoff_uses_render_schedule_before_retiring_projection() {
     }
 
     let (live_identity_before, prim_count_before) = {
-        let world = production.world();
+        let world = production.world_mut();
         assert_eq!(
             world
                 .resource::<usd_bevy::ProgressiveProjectionState>()
@@ -167,6 +179,19 @@ fn cache_first_handoff_uses_render_schedule_before_retiring_projection() {
         assert!(pending.canonical_ready);
         assert!(!pending.canonical_frame_rendered);
         assert!(world.get_resource::<SceneCachePresentation>().is_some());
+        assert!(
+            world
+                .resource::<SceneResidencyProjection>()
+                .active_entity_count_for_test()
+                > 0
+        );
+        assert_eq!(
+            world
+                .query::<&SceneResidencyOccurrence>()
+                .iter(world)
+                .count(),
+            1
+        );
         let live = world
             .get_non_send::<LiveStage>()
             .expect("canonical LiveStage");
@@ -245,4 +270,40 @@ fn cache_first_handoff_uses_render_schedule_before_retiring_projection() {
             .resource::<crate::viewport::animation::UsdStageTime>()
             .playing
     );
+}
+
+fn install_visible_cache_occurrence(production: &mut ProductionActivationWorld, scene_id: SceneId) {
+    let payload = SceneSpatialPayload {
+        address: SceneCacheAddress {
+            scene_id,
+            occurrence: SceneCacheOccurrence::Member(SceneMemberId::new_v4()),
+        },
+        payload_key: ScenePayloadKey {
+            scene_id,
+            blob_hash: HashDigest::new([9; HashDigest::BYTE_LEN]),
+        },
+        transform: usd_project::ScenePlacementTransform::IDENTITY,
+        bounds: Bounds3 {
+            min: [-1.0; 3],
+            max: [1.0; 3],
+        },
+        cpu_bytes: 8,
+        gpu_bytes: 8,
+    };
+    let world = production.world_mut();
+    let handle = world.resource_mut::<Assets<Mesh>>().add(Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    ));
+    let mut projection = world
+        .remove_resource::<SceneResidencyProjection>()
+        .expect("cache projection resource");
+    projection.install_scene(std::slice::from_ref(&payload));
+    let mut queue = CommandQueue::default();
+    {
+        let mut commands = Commands::new(&mut queue, &*world);
+        projection.attach_payload(payload.payload_key, handle, &mut commands);
+    }
+    queue.apply(world);
+    world.insert_resource(projection);
 }
