@@ -158,10 +158,12 @@ fn client_evidence(snapshots: &[viewport_protocol::AnimationDebugSnapshot]) -> s
     let first_presented = presented.clone().next();
     let last_presented = presented.last();
     let decoded = snapshots.iter().filter_map(|sample| sample.frames_decoded);
+    let delivery = snapshots.iter().filter_map(|sample| sample.delivery_frames);
     serde_json::json!({
         "sample_count": snapshots.len(),
         "presented_delta": first_presented.zip(last_presented).map(|(first, last)| last.saturating_sub(first)),
         "decoded_delta": decoded.clone().next().zip(decoded.last()).map(|(first, last)| last.saturating_sub(first)),
+        "delivery_delta": delivery.clone().next().zip(delivery.last()).map(|(first, last)| last.saturating_sub(first)),
         "proofs": snapshots.iter().filter_map(|sample| sample.presentation_proof).collect::<Vec<_>>(),
         "content_signature_supported": snapshots.iter().find_map(|sample| sample.client_content_signature_supported),
         "content_hashes": snapshots.iter().filter_map(|sample| sample.client_content_hash).map(|hash| format!("{hash:016x}")).collect::<Vec<_>>(),
@@ -223,10 +225,34 @@ fn classify_failure(
     if client["decoded_delta"].as_u64().unwrap_or(0) == 0 {
         return Some("CLIENT_DECODE_STALLED");
     }
-    if client["presented_delta"].as_u64().unwrap_or(0) == 0 {
-        return Some("CLIENT_PRESENTATION_STALLED");
+    if let Some(failure) = client_presentation_failure(client) {
+        return Some(failure);
     }
     client_content_failure(client)
+}
+
+fn client_presentation_failure(client: &serde_json::Value) -> Option<&'static str> {
+    let proofs = client["proofs"].as_array();
+    let has_compositor_proof = proofs.is_some_and(|proofs| {
+        proofs
+            .iter()
+            .any(|proof| proof.as_str() == Some("compositor"))
+    });
+    if has_compositor_proof {
+        return (client["presented_delta"].as_u64().unwrap_or(0) == 0)
+            .then_some("CLIENT_PRESENTATION_STALLED");
+    }
+
+    let has_delivery_fallback = proofs.is_some_and(|proofs| {
+        proofs.iter().any(|proof| {
+            matches!(
+                proof.as_str(),
+                Some("playback_quality" | "rtp_decoded" | "rtp_received")
+            )
+        })
+    });
+    (!has_delivery_fallback || client["delivery_delta"].as_u64().unwrap_or(0) == 0)
+        .then_some("CLIENT_PRESENTATION_STALLED")
 }
 
 fn client_content_failure(client: &serde_json::Value) -> Option<&'static str> {
@@ -298,34 +324,5 @@ fn update_hash(hash: &mut u64, bytes: &[u8]) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::client_content_failure;
-
-    #[test]
-    fn unsupported_client_content_probe_is_informational() {
-        assert_eq!(
-            client_content_failure(&serde_json::json!({
-                "content_signature_supported": false,
-                "content_hashes": []
-            })),
-            None
-        );
-        assert_eq!(
-            client_content_failure(&serde_json::json!({
-                "content_hashes": []
-            })),
-            None
-        );
-    }
-
-    #[test]
-    fn supported_static_client_content_is_classified() {
-        assert_eq!(
-            client_content_failure(&serde_json::json!({
-                "content_signature_supported": true,
-                "content_hashes": ["deadbeef", "deadbeef"]
-            })),
-            Some("CLIENT_CONTENT_STATIC")
-        );
-    }
-}
+#[path = "report_tests.rs"]
+mod tests;

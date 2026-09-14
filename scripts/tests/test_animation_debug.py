@@ -59,6 +59,21 @@ class AnimationDebugMatrixTests(unittest.TestCase):
             ),
             MODULE.FAIL,
         )
+
+    def test_backend_failure_cannot_be_reported_as_top_level_pass(self):
+        fault = {"status": MODULE.PASS}
+        self.assertEqual(
+            MODULE.overall_status(
+                matrix_rows(), [], [], fault, {"pass": False}
+            ),
+            MODULE.FAIL,
+        )
+        self.assertEqual(
+            MODULE.overall_status(
+                matrix_rows(), [], [], fault, {"pass": True}
+            ),
+            MODULE.PASS,
+        )
         self.assertEqual(
             MODULE.overall_status(
                 matrix_rows(), [], [{"status": MODULE.FAIL}], fault

@@ -190,12 +190,18 @@ def overall_status(
     supplemental: Sequence[dict[str, Any]],
     preflight: Sequence[dict[str, Any]],
     fault_report: dict[str, Any],
+    backend_report: dict[str, Any] | None = None,
 ) -> str:
     matrix_pass = all(row.get("status") == PASS for row in matrix)
     supplemental_pass = all(check.get("status") == PASS for check in supplemental)
     preflight_pass = all(check.get("status") in {PASS, WARN} for check in preflight)
     fault_pass = fault_report.get("status") == PASS
-    return PASS if matrix_pass and supplemental_pass and preflight_pass and fault_pass else FAIL
+    backend_pass = backend_report is None or backend_report.get("pass") is True
+    return (
+        PASS
+        if matrix_pass and supplemental_pass and preflight_pass and fault_pass and backend_pass
+        else FAIL
+    )
 
 
 def branch_result(repo_id: str, repo: Path) -> dict[str, Any]:
@@ -924,7 +930,7 @@ def build_report(output: Path) -> tuple[dict[str, Any], int]:
     if fault_command.get("status") != PASS:
         fault["status"] = FAIL
         fault["failure_code"] = fault_command.get("failure_code", "FAULT_BACKEND_COMMAND_FAILED")
-    status = overall_status(matrix, supplemental, preflight, fault)
+    status = overall_status(matrix, supplemental, preflight, fault, backend_report)
     failure_codes = sorted(
         {
             item.get("failure_code")
