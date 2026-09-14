@@ -98,6 +98,17 @@ fn hummingbird_replacement_resets_and_restarts_real_playback() {
         .insert_non_send(LiveStage::new(open_stage(&asset_path("hummingbird.usdz"))));
     settle(&mut app);
 
+    let live_identity = app
+        .world()
+        .get_non_send::<LiveStage>()
+        .expect("canonical live stage")
+        .stage_identity();
+    let projection = app
+        .world()
+        .resource::<usd_bevy::ProgressiveProjectionState>();
+    assert_eq!(projection.readiness(), ProjectionReadiness::Ready);
+    assert_eq!(projection.session_id(), Some(live_identity.0));
+
     let (start, end, fps) = {
         let live = app.world().get_non_send::<LiveStage>().expect("live stage");
         (
