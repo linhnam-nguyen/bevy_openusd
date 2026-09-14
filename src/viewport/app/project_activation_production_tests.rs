@@ -42,6 +42,10 @@ mod cache_first_tests;
 mod cache_handoff_tests;
 #[path = "project_activation_production_support.rs"]
 pub(super) mod production_support;
+#[path = "project_activation_render_parity_support.rs"]
+mod render_parity_support;
+#[path = "project_activation_render_parity_tests.rs"]
+mod render_parity_tests;
 
 pub(crate) struct ProductionActivationWorld {
     app: App,
