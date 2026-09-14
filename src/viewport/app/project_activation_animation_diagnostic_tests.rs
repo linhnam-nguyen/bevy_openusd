@@ -148,7 +148,11 @@ fn cached_hummingbird_native_binding_replaces_seeded_meshes() {
     let mut mesh_entities = world.query::<(Entity, &Mesh3d, &usd_bevy::prim_ref::UsdPrimRef)>();
     let mesh_count = mesh_entities.iter(world).count();
     let mut skinned_count = 0;
-    for (entity, _, _) in mesh_entities.iter(world) {
+    let mut seeded_entity = None;
+    for (entity, _, prim) in mesh_entities.iter(world) {
+        if prim.path == skinned_path {
+            seeded_entity = Some(entity);
+        }
         if world
             .get::<bevy::mesh::skinning::SkinnedMesh>(entity)
             .is_some()
@@ -166,6 +170,14 @@ fn cached_hummingbird_native_binding_replaces_seeded_meshes() {
     assert!(mesh_count > 0, "cached Project produced renderable meshes");
     assert!(joint_count > 0, "cached Project produced native joints");
     assert!(skinned_count > 0, "cached Project attached native skinning");
+    let seeded_entity = seeded_entity.expect("seeded prim resolves to a canonical mesh entity");
+    let seeded_skin = world
+        .get::<bevy::mesh::skinning::SkinnedMesh>(seeded_entity)
+        .expect("seeded prim has native skinning");
+    assert!(
+        !seeded_skin.joints.is_empty(),
+        "seeded prim has non-empty native skin joints"
+    );
 }
 
 fn skinned_paths(scene_path: &Path) -> Vec<String> {

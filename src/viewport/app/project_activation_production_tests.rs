@@ -113,7 +113,9 @@ impl ProductionActivationWorld {
             );
         app.add_systems(
             Update,
-            crate::viewport::animation::tick_stage_time.after(usd_bevy::LiveStageSet::Presentation),
+            crate::viewport::animation::tick_stage_time
+                .after(usd_bevy::LiveStageSet::Reconcile)
+                .before(usd_bevy::LiveStageSet::Animation),
         );
         app.add_systems(
             Update,
