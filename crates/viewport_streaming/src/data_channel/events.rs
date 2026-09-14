@@ -58,7 +58,8 @@ pub(super) fn queue_server_event_for_request(
             let event_kind = server_event_kind(&event);
             if let Err(encoded_bytes) = queue_bounded_event(state, request_id.as_deref(), event) {
                 warn!(
-                    "[viewport-data-channel] dropping oversized application event instead of blocking the queue: event_kind={event_kind}, encoded_bytes={encoded_bytes:?}, limit_bytes={MAX_APPLICATION_MESSAGE_BYTES}"
+                    "[viewport-data-channel] dropping oversized application event instead of blocking the queue: event_kind={event_kind}, encoded_bytes={encoded_bytes:?}, limit_bytes={MAX_APPLICATION_MESSAGE_BYTES}, request_id={:?}",
+                    request_id.as_deref()
                 );
             }
         }

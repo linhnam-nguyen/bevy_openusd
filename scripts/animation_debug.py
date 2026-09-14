@@ -35,9 +35,55 @@ FAILURE_CODES = {
     "backend_signature": "BACKEND_FRAME_SIGNATURE_TEST_FAILED",
     "backend_streaming": "BACKEND_STREAMING_TEST_FAILED",
     "backend_compile": "BACKEND_COMPILE_FAILED",
+    "backend_cache_first": "BACKEND_CACHE_FIRST_TEST_FAILED",
+    "backend_seek": "BACKEND_SEEK_TEST_FAILED",
+    "backend_protocol_debug": "BACKEND_PROTOCOL_DEBUG_TEST_FAILED",
     "frontend_webrtc": "FRONTEND_WEBRTC_TEST_FAILED",
     "frontend_wasm": "FRONTEND_WASM_CHECK_FAILED",
 }
+
+MATRIX = (
+    {
+        "id": "A",
+        "description": "real Hummingbird native/backend stage evaluation",
+        "checks": ("backend_animation",),
+    },
+    {
+        "id": "B",
+        "description": "real Hummingbird headless/offscreen render signature boundary",
+        "checks": ("backend_capture", "backend_signature"),
+    },
+    {
+        "id": "C",
+        "description": "WebRTC/Tauri delivery and presentation progress",
+        "checks": ("frontend_webrtc", "frontend_wasm"),
+    },
+    {
+        "id": "D",
+        "description": "static stage negative animation control",
+        "checks": ("backend_animation",),
+    },
+    {
+        "id": "E",
+        "description": "Hummingbird to static to Hummingbird replacement",
+        "checks": ("backend_animation",),
+    },
+    {
+        "id": "F",
+        "description": "cache-first presentation to canonical LiveStage Ready",
+        "checks": ("backend_cache_first",),
+    },
+    {
+        "id": "G",
+        "description": "paused deterministic t0 to t1 to t0 round trip",
+        "checks": ("backend_seek",),
+    },
+    {
+        "id": "H",
+        "description": "bounded application animation-debug message serialization",
+        "checks": ("backend_protocol_debug",),
+    },
+)
 
 
 def tail(value: str) -> str:
@@ -194,7 +240,9 @@ def decision_table() -> list[dict[str, Any]]:
     ]
 
 
-def build_report(output: Path) -> tuple[dict[str, Any], int]:
+def build_report(
+    output: Path, injected_failure: str | None = None
+) -> tuple[dict[str, Any], int]:
     checks: list[dict[str, Any]] = []
     evidence: dict[str, Any] = {}
 
@@ -264,6 +312,38 @@ def build_report(output: Path) -> tuple[dict[str, Any], int]:
             FAILURE_CODES["backend_compile"],
         ),
         (
+            "backend_cache_first",
+            (
+                "cargo",
+                "test",
+                "-p",
+                "usdview",
+                "--lib",
+                "viewport::animation::tests::cache_first_presentation_is_not_canonical_animation_readiness",
+            ),
+            ROOT,
+            FAILURE_CODES["backend_cache_first"],
+        ),
+        (
+            "backend_seek",
+            (
+                "cargo",
+                "test",
+                "-p",
+                "usdview",
+                "--lib",
+                "viewport::animation::tests::hummingbird_paused_seek_round_trip_has_stable_transform_signature",
+            ),
+            ROOT,
+            FAILURE_CODES["backend_seek"],
+        ),
+        (
+            "backend_protocol_debug",
+            ("cargo", "test", "-p", "viewport_protocol", "animation_debug"),
+            ROOT,
+            FAILURE_CODES["backend_protocol_debug"],
+        ),
+        (
             "frontend_webrtc",
             ("cargo", "test", "-p", "usd_hub_desktop", "platform::webrtc::stats"),
             FRONTEND_ROOT,
@@ -284,7 +364,20 @@ def build_report(output: Path) -> tuple[dict[str, Any], int]:
         ),
     ]
     for check_id, command, cwd, failure_code in commands:
-        checks.append(command_result(check_id, command, cwd, failure_code))
+        if injected_failure == check_id:
+            checks.append(
+                {
+                    "id": check_id,
+                    "status": "FAIL",
+                    "failure_code": failure_code,
+                    "command": list(command),
+                    "cwd": str(cwd),
+                    "exit_code": None,
+                    "injected": True,
+                }
+            )
+        else:
+            checks.append(command_result(check_id, command, cwd, failure_code))
 
     failures = sorted(
         {
@@ -294,15 +387,32 @@ def build_report(output: Path) -> tuple[dict[str, Any], int]:
         }
     )
     status = "FAIL" if failures else "PASS"
+    check_status = {
+        check["id"]: check["status"] for check in checks if "status" in check
+    }
+    matrix = [
+        {
+            **entry,
+            "checks": list(entry["checks"]),
+            "status": (
+                "FAIL"
+                if any(check_status.get(check_id) == "FAIL" for check_id in entry["checks"])
+                else "PASS"
+            ),
+        }
+        for entry in MATRIX
+    ]
     report = {
         "schema_version": SCHEMA_VERSION,
         "milestone": "B0-M0",
         "command": "make animation-debug",
         "status": status,
         "failure_codes": failures,
+        "injected_failure": injected_failure,
         "warnings": warnings,
         "evidence": evidence,
         "checks": checks,
+        "matrix": matrix,
         "decision_table": decision_table(),
         "runtime_proof_boundary": [
             "CPU tests and compile checks do not prove browser, GPU, Tauri, WebRTC, or production behavior."
@@ -322,10 +432,15 @@ def main() -> int:
         default=ROOT / "target/animation-debug-report.json",
         help="JSON report path (default: target/animation-debug-report.json)",
     )
+    parser.add_argument(
+        "--inject-failure",
+        choices=sorted(FAILURE_CODES),
+        help="Inject one named check failure to verify report classification",
+    )
     args = parser.parse_args()
     output = args.output if args.output.is_absolute() else ROOT / args.output
     try:
-        report, status = build_report(output)
+        report, status = build_report(output, args.inject_failure)
     except (OSError, ValueError, TypeError) as error:
         print(f"animation-debug failed before report completion: {error}", file=sys.stderr)
         return 1

@@ -6,6 +6,9 @@ use usd_bevy::{LiveStage, LiveStagePlugin, ProjectionBudget, ProjectionReadiness
 
 use super::{UsdStageTime, systems::tick_stage_time};
 
+#[path = "tests/cache_first.rs"]
+mod cache_first;
+
 fn asset_path(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("assets/external")

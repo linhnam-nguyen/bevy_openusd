@@ -10,6 +10,7 @@ pub const PROTOCOL_VERSION: u16 = 11;
 
 pub use usd_model::{BimPropertyDescriptor, BimPropertyScope, CanonicalValue, UnitId};
 
+pub mod animation_debug;
 pub mod authorization;
 pub mod capabilities;
 pub mod codec;
@@ -24,6 +25,9 @@ pub mod semantic_sync;
 pub mod stream;
 pub mod viewport;
 
+pub use animation_debug::{
+    AnimationDebugMessage, AnimationDebugMessageKind, AnimationDebugSnapshot,
+};
 pub use authorization::{
     AuthorizationPolicy, AuthorizationValidationError, DeliveryMode, HistoryPermission,
     ModelDownloadPermission, RuntimeProfile, SemanticPropertyScope,
