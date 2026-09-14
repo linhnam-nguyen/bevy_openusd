@@ -12,6 +12,9 @@ const SCENE_ROOT_PRIM: &str = "SceneRoot";
 const SOURCE_PRIM: &str = "Source";
 const REFERENCES_FIELD: &str = "references";
 
+#[path = "adoption_composition.rs"]
+mod composition;
+
 pub(crate) fn author_scene_wrapper_to_path(
     path: &Path,
     project_root: &Path,
@@ -39,7 +42,15 @@ pub(crate) fn author_scene_wrapper_to_path(
     // source may be a SkelRoot; forcing this wrapper prim to Xform hides that
     // schema and prevents native animation binding discovery after adoption.
     let source_prim = stage.define_prim(source_path.as_str())?;
-    author_source_references(&stage, &source_prim, &source_asset_path, source_prims)?;
+    let preserve_cross_root_dependencies =
+        composition::source_has_cross_root_relationship(source_metadata_path, source_prims)?;
+    author_source_references(
+        &stage,
+        &source_prim,
+        &source_asset_path,
+        source_prims,
+        preserve_cross_root_dependencies,
+    )?;
     crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
     crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
     crate::project::spatial::author_source_binding_role(&source_prim, linked_source)?;
@@ -55,11 +66,26 @@ fn author_source_references(
     source_prim: &openusd::usd::Prim,
     source_asset_path: &str,
     source_prims: &[String],
+    preserve_cross_root_dependencies: bool,
 ) -> Result<()> {
     ensure!(
         !source_prims.is_empty(),
         "Scene source has no entrypoint prims"
     );
+    if preserve_cross_root_dependencies {
+        // A per-root reference remaps absolute relationship targets into each
+        // isolated Root_i namespace.  Reference the source layer root once so
+        // cross-root USD relationships retain their authored topology.
+        source_prim.clone().set_metadata(
+            REFERENCES_FIELD,
+            Value::ReferenceListOp(sdf::ReferenceListOp::prepended([sdf::Reference {
+                asset_path: source_asset_path.to_owned(),
+                prim_path: sdf::path("/")?,
+                ..Default::default()
+            }])),
+        )?;
+        return Ok(());
+    }
     if source_prims.len() == 1 {
         source_prim.clone().set_metadata(
             REFERENCES_FIELD,

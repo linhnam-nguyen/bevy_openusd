@@ -327,3 +327,7 @@ fn project_transform_signature(samples: &[(String, Transform)]) -> u64 {
     }
     hash
 }
+
+#[cfg(test)]
+#[path = "project_activation_skel_tests.rs"]
+mod skel_tests;

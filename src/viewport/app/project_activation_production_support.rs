@@ -43,7 +43,7 @@ impl ProductionActivationWorld {
     }
 }
 
-pub(super) fn seek_animation_signature(
+pub(crate) fn seek_animation_signature(
     production: &mut ProductionActivationWorld,
     time_code: f64,
 ) -> u64 {
@@ -76,6 +76,12 @@ pub(super) fn seek_animation_signature(
     );
     samples.sort_by(|(left, _), (right, _)| left.cmp(right));
     transform_signature(&samples)
+}
+
+impl ProductionActivationWorld {
+    pub(crate) fn seek_animation_signature(&mut self, time_code: f64) -> u64 {
+        seek_animation_signature(self, time_code)
+    }
 }
 
 fn transform_signature(samples: &[(String, Transform)]) -> u64 {
