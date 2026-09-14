@@ -32,7 +32,9 @@ fn playback_app() -> App {
         .init_resource::<UsdStageTime>()
         .add_systems(
             Update,
-            tick_stage_time.after(usd_bevy::LiveStageSet::Reconcile),
+            tick_stage_time
+                .after(usd_bevy::LiveStageSet::Reconcile)
+                .before(usd_bevy::LiveStageSet::Animation),
         );
     app
 }
