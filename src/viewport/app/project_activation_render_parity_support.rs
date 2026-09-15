@@ -1,7 +1,7 @@
 use std::sync::mpsc::sync_channel;
 
 use bevy::{
-    app::First,
+    app::{First, Last},
     camera::Hdr,
     core_pipeline::tonemapping::Tonemapping,
     ecs::schedule::ScheduleLabel,
@@ -23,7 +23,9 @@ use crate::viewport::{
     app::headless::HeadlessRenderPlugin,
     bim::BimClassificationFieldCatalogueState,
     camera::{ArcballCamera, apply_rig},
-    diagnostics::performance::{RendererCounters, start_frame_timing_system},
+    diagnostics::performance::{
+        RendererCounters, collect_renderer_counters_system, start_frame_timing_system,
+    },
     scene::{SceneExtent, SelectedPrim, SelectedTargets, extent::compute_extent},
     semantic::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage},
     session::{
@@ -96,6 +98,7 @@ impl RenderActivationWorld {
         .insert_resource(super::super::ProjectActivationAuthorityRuntime::default())
         .init_resource::<RendererCounters>()
         .add_systems(First, start_frame_timing_system)
+        .add_systems(Last, collect_renderer_counters_system)
         .add_systems(
             Update,
             (
