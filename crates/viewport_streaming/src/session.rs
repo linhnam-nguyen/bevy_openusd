@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use viewport_protocol::{SessionId, SessionRole};
+use viewport_protocol::{CodecId, SessionId, SessionRole};
 
 use crate::RenderServerInterface;
 use crate::VideoFrame;
@@ -145,6 +145,7 @@ impl WebRtcSessionManager {
                     connection_id,
                     reply_tx,
                     initial_viewport,
+                    supported_codecs,
                 } => {
                     if sessions.contains_key(&connection_id) {
                         send_error(
@@ -168,6 +169,7 @@ impl WebRtcSessionManager {
                         runtime_handle.clone(),
                         self.interface.clone(),
                         initial_viewport,
+                        supported_codecs,
                         admission.clone(),
                     ) {
                         Ok(session) => session,

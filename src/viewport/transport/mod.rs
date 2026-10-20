@@ -1,6 +1,9 @@
 //! Render-server transport selection and adapters for the viewport process.
 
-use viewport_protocol::CodecId;
+use viewport_protocol::{
+    CodecId,
+    stream::{MAX_FPS, MIN_FPS},
+};
 
 pub(crate) mod frame_capture;
 pub(crate) mod webrtc;
@@ -26,6 +29,7 @@ pub(crate) struct LaunchOptions {
     pub(crate) height: u32,
     pub(crate) fps: u32,
     pub(crate) codec: CodecId,
+    pub(crate) auto_codec: bool,
     pub(crate) benchmark: bool,
     pub(crate) benchmark_renderer_matrix: bool,
     pub(crate) benchmark_mesh_profile: bool,
@@ -48,8 +52,9 @@ impl Default for LaunchOptions {
             headless: false,
             width: 1920,
             height: 1080,
-            fps: 60,
+            fps: MAX_FPS,
             codec: CodecId::H264,
+            auto_codec: true,
             benchmark: false,
             benchmark_renderer_matrix: false,
             benchmark_mesh_profile: false,
@@ -78,7 +83,7 @@ where
     let mut options = LaunchOptions {
         width: 1920,
         height: 1080,
-        fps: 60,
+        fps: MAX_FPS,
         ..Default::default()
     };
     let mut arguments = arguments.into_iter();
@@ -119,11 +124,15 @@ where
         }
 
         if parse_options && argument == "--fps" {
-            options.fps = arguments
+            let fps = arguments
                 .next()
                 .ok_or_else(|| "--fps requires an integer".to_owned())?
                 .parse()
                 .map_err(|error| format!("invalid FPS: {error}"))?;
+            if !(MIN_FPS..=MAX_FPS).contains(&fps) {
+                return Err(format!("--fps must be between {MIN_FPS} and {MAX_FPS}"));
+            }
+            options.fps = fps;
             continue;
         }
 
@@ -135,17 +144,17 @@ where
                 "performance" => {
                     options.width = 1920;
                     options.height = 1080;
-                    options.fps = 120;
+                    options.fps = MAX_FPS;
                 }
                 "quality" => {
                     options.width = 2560;
                     options.height = 1440;
-                    options.fps = 60;
+                    options.fps = MAX_FPS;
                 }
                 "adaptive" => {
                     options.width = 1280;
                     options.height = 720;
-                    options.fps = 60;
+                    options.fps = MAX_FPS;
                 }
                 other => return Err(format!("unknown preset `{other}`")),
             }
@@ -155,8 +164,8 @@ where
         if parse_options && argument == "--codec" {
             let codec = arguments
                 .next()
-                .ok_or_else(|| "--codec requires h264|h265|av1".to_owned())?;
-            options.codec = parse_codec(&codec)?;
+                .ok_or_else(|| "--codec requires auto|h264|h265|av1".to_owned())?;
+            apply_codec_option(&mut options, &codec)?;
             continue;
         }
 
@@ -265,7 +274,7 @@ where
                 continue;
             }
             if let Some(codec) = argument.strip_prefix("--codec=") {
-                options.codec = parse_codec(codec)?;
+                apply_codec_option(&mut options, codec)?;
                 continue;
             }
             if let Some(sc) = argument.strip_prefix("--benchmark-scenario=") {
@@ -318,13 +327,24 @@ fn parse_transport(value: &str) -> Result<ViewportTransport, String> {
     }
 }
 
+fn apply_codec_option(options: &mut LaunchOptions, value: &str) -> Result<(), String> {
+    if value == "auto" {
+        options.auto_codec = true;
+        return Ok(());
+    }
+
+    options.codec = parse_codec(value)?;
+    options.auto_codec = false;
+    Ok(())
+}
+
 fn parse_codec(value: &str) -> Result<CodecId, String> {
     match value {
         "h264" => Ok(CodecId::H264),
         "h265" => Ok(CodecId::H265),
         "av1" => Ok(CodecId::Av1),
         unsupported => Err(format!(
-            "unsupported codec `{unsupported}`; available codecs: `h264`, `h265`, `av1`"
+            "unsupported codec `{unsupported}`; available codecs: `auto`, `h264`, `h265`, `av1`"
         )),
     }
 }

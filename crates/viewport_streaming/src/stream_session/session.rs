@@ -3,12 +3,12 @@ use gstreamer::prelude::*;
 use log::{debug, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use viewport_protocol::{SessionId, ViewportMetrics, ViewportReadModel};
+use viewport_protocol::{CodecId, SessionId, ViewportMetrics, ViewportReadModel};
 
 use crate::RenderServerInterface;
 use crate::config::StreamingConfig;
 use crate::data_channel::DataChannelSet;
-use crate::encode::{EncodePipeline, VideoCodec};
+use crate::encode::{CodecCapabilities, EncodePipeline, VideoCodec};
 use crate::session::SessionAdmission;
 use crate::signaling::SignalingMessage;
 
@@ -36,6 +36,7 @@ impl StreamingSession {
         runtime_handle: tokio::runtime::Handle,
         interface: RenderServerInterface,
         initial_viewport: Option<ViewportMetrics>,
+        supported_codecs: Vec<CodecId>,
         admission: SessionAdmission,
     ) -> Result<Self> {
         config
@@ -43,6 +44,11 @@ impl StreamingSession {
             .validate()
             .map_err(|error| anyhow::anyhow!("invalid streaming authorization policy: {error}"))?;
         let mut session_config = config.clone();
+        let mut stream_limits = viewport_protocol::StreamLimits::default();
+        stream_limits.max_fps = config.fps.clamp(
+            viewport_protocol::stream::MIN_FPS,
+            viewport_protocol::stream::MAX_FPS,
+        );
         if let Some(shared_metrics) = frame_router.current_metrics() {
             session_config.width = shared_metrics.requested_width;
             session_config.height = shared_metrics.requested_height;
@@ -52,9 +58,7 @@ impl StreamingSession {
                 session_config.width, session_config.height, session_config.fps
             );
         } else if let Some(initial_viewport) = initial_viewport {
-            let normalized = viewport_protocol::ServerCapabilities::for_codec(config.codec)
-                .stream_limits
-                .normalize(&initial_viewport);
+            let normalized = stream_limits.normalize(&initial_viewport);
             session_config.width = normalized.requested_width;
             session_config.height = normalized.requested_height;
             session_config.fps = normalized.preferred_fps.unwrap_or(config.fps);
@@ -64,18 +68,90 @@ impl StreamingSession {
             );
         }
 
-        let codec = VideoCodec::try_from(session_config.codec)?;
-        let encoder = Arc::new(EncodePipeline::new(&session_config, codec)?);
-        encoder.prepare_video_offer(session_config.width, session_config.height)?;
+        if !config.auto_codec && !supported_codecs.contains(&config.codec) {
+            anyhow::bail!(
+                "requested codec {:?} was forced, but the client did not advertise it; client receive codecs are {:?}",
+                config.codec,
+                supported_codecs
+            );
+        }
+
+        let capabilities = CodecCapabilities::probe();
+        let candidates = if config.auto_codec {
+            capabilities.auto_candidates(&supported_codecs)
+        } else {
+            capabilities.candidates_for_codec(config.codec)
+        };
+        if candidates.is_empty() {
+            anyhow::bail!(
+                "no GStreamer encoder is available for the requested/client-compatible codec set; requested={:?}, client={:?}",
+                if config.auto_codec {
+                    None
+                } else {
+                    Some(config.codec)
+                },
+                supported_codecs
+            );
+        }
+
+        let mut encoder_selection = None;
+        let mut candidate_errors = Vec::new();
+        for candidate in candidates {
+            let codec = VideoCodec::try_from(candidate.codec)?;
+            let encoder = match EncodePipeline::new_with_encoder(
+                &session_config,
+                codec,
+                candidate.factory_name.clone(),
+            ) {
+                Ok(encoder) => encoder,
+                Err(error) => {
+                    candidate_errors.push(format!("{}: {error:#}", candidate.factory_name));
+                    warn!(
+                        "[viewport-session] encoder candidate {} failed to initialize: {error:#}",
+                        candidate.factory_name
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) =
+                encoder.prepare_video_offer(session_config.width, session_config.height)
+            {
+                candidate_errors.push(format!("{}: {error:#}", candidate.factory_name));
+                warn!(
+                    "[viewport-session] encoder candidate {} failed to prepare its offer: {error:#}",
+                    candidate.factory_name
+                );
+                encoder.shutdown();
+                continue;
+            }
+
+            info!(
+                "[viewport-session] selected {:?} encoder `{}` ({:?}) from client codecs {:?}",
+                candidate.codec, candidate.factory_name, candidate.tier, supported_codecs
+            );
+            session_config.codec = candidate.codec;
+            session_config.auto_codec = false;
+            encoder_selection = Some(Arc::new(encoder));
+            break;
+        }
+        let encoder = encoder_selection.ok_or_else(|| {
+            anyhow::anyhow!(
+                "all compatible encoder candidates failed to initialize: {}",
+                candidate_errors.join("; ")
+            )
+        })?;
         let webrtc = encoder.webrtc();
         install_ice_forwarding(&webrtc, reply_tx, runtime_handle);
 
         let session_id = SessionId::new(format!("session-{connection_id}"));
+        let mut server_capabilities =
+            viewport_protocol::ServerCapabilities::for_codec(session_config.codec);
+        server_capabilities.stream_limits.max_fps = stream_limits.max_fps;
         let application = crate::data_channel::ApplicationSession::new_with_capabilities(
             session_id.clone(),
             ViewportReadModel::unloaded(session_config.stage_display_name.clone()),
             interface.clone(),
-            viewport_protocol::ServerCapabilities::for_codec(session_config.codec),
+            server_capabilities,
             session_config.authorization.clone(),
             admission,
         );

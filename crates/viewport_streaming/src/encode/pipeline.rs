@@ -30,17 +30,23 @@ impl EncodePipeline {
         gstreamer::init().context("Failed to initialize GStreamer")?;
 
         let caps = CodecCapabilities::probe();
-        let encoder_name = match codec {
-            VideoCodec::H265 => caps
-                .h265_encoder
-                .context("No H.265 encoder available in GStreamer registry")?,
-            VideoCodec::AV1 => caps
-                .av1_encoder
-                .context("No AV1 encoder available in GStreamer registry")?,
-            VideoCodec::H264 => caps
-                .h264_encoder
-                .context("No H.264 encoder available in GStreamer registry")?,
-        };
+        let encoder_name = caps
+            .candidates_for_codec(codec.into())
+            .into_iter()
+            .next()
+            .map(|candidate| candidate.factory_name)
+            .with_context(|| format!("No {:?} encoder available in GStreamer registry", codec))?;
+
+        Self::new_with_encoder(config, codec, encoder_name)
+    }
+
+    /// Builds a pipeline with a specific probed encoder factory.
+    pub(crate) fn new_with_encoder(
+        config: &StreamingConfig,
+        codec: VideoCodec,
+        encoder_name: String,
+    ) -> Result<Self> {
+        gstreamer::init().context("Failed to initialize GStreamer")?;
 
         info!(
             "[viewport-encode] Creating pipeline with codec {:?} using encoder `{}`",

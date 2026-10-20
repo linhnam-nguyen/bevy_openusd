@@ -207,6 +207,7 @@ pub(crate) fn run() {
             height: launch_options.height,
             fps: launch_options.fps,
             codec: launch_options.codec,
+            auto_codec: launch_options.auto_codec,
             ..Default::default()
         };
         std::thread::spawn(move || {

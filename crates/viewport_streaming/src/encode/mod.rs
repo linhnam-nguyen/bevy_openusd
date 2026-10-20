@@ -7,7 +7,7 @@
 mod caps;
 mod pipeline;
 
-pub use caps::{CodecCapabilities, VideoCodec};
+pub use caps::{CodecCapabilities, EncoderCandidate, EncoderTier, VideoCodec};
 pub use pipeline::EncodePipeline;
 
 #[cfg(test)]

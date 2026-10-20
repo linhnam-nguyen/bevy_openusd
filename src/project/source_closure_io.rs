@@ -27,6 +27,9 @@ pub(super) fn copy_file_synced(source: &Path, destination: &Path) -> Result<()> 
             .context("write source closure file")?;
     }
     output.sync_all().context("sync source closure file")?;
+    // Opening a directory as a `File` is supported on Unix, but Windows
+    // rejects it with ACCESS_DENIED even when the directory is writable.
+    #[cfg(unix)]
     if let Some(parent) = destination.parent() {
         let directory = File::open(parent).context("open source closure directory")?;
         directory

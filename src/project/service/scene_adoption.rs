@@ -325,8 +325,10 @@ fn adopt_scene_inner(
             linked_source,
         },
     )
-    .map_err(|error| ProjectWriteError::Failed {
-        code: adoption_error_code(&error),
+    .map_err(|error| {
+        let code = adoption_error_code(&error);
+        eprintln!("Scene adoption failed ({code:?}): {error:#}");
+        ProjectWriteError::Failed { code }
     })?;
     let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {

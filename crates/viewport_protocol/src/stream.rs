@@ -27,8 +27,9 @@ pub enum CodecId {
     Av1,
 }
 
-/// Server-side dimensions and rate limits. These are validation metadata, not
-/// an instruction to resize the renderer.
+/// Server-side dimensions and rate limits. An omitted FPS preference selects
+/// the server's maximum, allowing the receiver to opt into its full advertised
+/// refresh budget while still permitting a lower explicit target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamLimits {
     pub min_width: u32,
@@ -97,9 +98,11 @@ impl StreamLimits {
             device_pixel_ratio: metrics.device_pixel_ratio,
             requested_width: width,
             requested_height: height,
-            preferred_fps: metrics
-                .preferred_fps
-                .map(|fps| fps.clamp(self.min_fps, self.max_fps)),
+            preferred_fps: Some(
+                metrics
+                    .preferred_fps
+                    .map_or(self.max_fps, |fps| fps.clamp(self.min_fps, self.max_fps)),
+            ),
             generation: metrics.generation,
         }
     }
@@ -125,7 +128,7 @@ impl Default for ViewportMetrics {
             device_pixel_ratio: 1.0,
             requested_width: 1280,
             requested_height: 720,
-            preferred_fps: Some(60),
+            preferred_fps: None,
             generation: 1,
         }
     }

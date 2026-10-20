@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
-use viewport_protocol::ViewportMetrics;
+use viewport_protocol::{CodecId, ViewportMetrics};
 
 use crate::config::StreamingConfig;
 
@@ -25,6 +25,9 @@ pub enum SignalingMessage {
         token: Option<String>,
         #[serde(default)]
         viewport: Option<ViewportMetrics>,
+        /// Codecs the client can receive in a video RTP stream.
+        #[serde(default)]
+        codecs: Option<Vec<CodecId>>,
     },
     Offer {
         sdp: String,
@@ -50,6 +53,7 @@ pub enum SessionCommand {
         connection_id: u64,
         reply_tx: mpsc::Sender<SignalingMessage>,
         initial_viewport: Option<ViewportMetrics>,
+        supported_codecs: Vec<CodecId>,
     },
     ReceivedAnswer {
         connection_id: u64,
@@ -157,7 +161,11 @@ async fn handle_connection(
         };
 
         match parsed {
-            SignalingMessage::Join { token, viewport } => {
+            SignalingMessage::Join {
+                token,
+                viewport,
+                codecs,
+            } => {
                 if joined {
                     let _ = reply_tx
                         .send(SignalingMessage::Error {
@@ -181,11 +189,19 @@ async fn handle_connection(
                 }
 
                 joined = true;
+                let supported_codecs = if let Some(codecs) = codecs {
+                    codecs
+                } else {
+                    // Keep signaling clients predating codec discovery on the
+                    // conservative interoperable path.
+                    vec![CodecId::H264]
+                };
                 if session_tx
                     .send(SessionCommand::ClientConnected {
                         connection_id,
                         reply_tx: reply_tx.clone(),
                         initial_viewport: viewport,
+                        supported_codecs,
                     })
                     .await
                     .is_err()

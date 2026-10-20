@@ -2,6 +2,24 @@ use anyhow::{Context, Result};
 use log::info;
 use viewport_protocol::CodecId;
 
+const CODEC_PRIORITY: [CodecId; 3] = [CodecId::Av1, CodecId::H265, CodecId::H264];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EncoderTier {
+    /// NVIDIA NVENC is a known discrete-GPU encoder family.
+    KnownDiscreteGpu,
+    /// Hardware encoder factory whose adapter type is not exposed by GStreamer.
+    OtherHardware,
+    Software,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncoderCandidate {
+    pub codec: CodecId,
+    pub factory_name: String,
+    pub tier: EncoderTier,
+}
+
 /// Supported video encoding formats negotiated over WebRTC SDP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoCodec {
@@ -41,6 +59,7 @@ pub struct CodecCapabilities {
     pub h265_encoder: Option<String>,
     pub av1_encoder: Option<String>,
     pub h264_encoder: Option<String>,
+    pub candidates: Vec<EncoderCandidate>,
 }
 
 fn init_gstreamer_env() {
@@ -73,42 +92,120 @@ impl CodecCapabilities {
         init_gstreamer_env();
         let _ = gstreamer::init();
 
+        let candidates = [CodecId::Av1, CodecId::H265, CodecId::H264]
+            .into_iter()
+            .flat_map(encoder_candidates)
+            .collect::<Vec<_>>();
+
         Self {
-            h265_encoder: find_first_encoder(&[
-                "vulkanh265enc", // Vulkan Video Encode (Cross-vendor: AMD/NVIDIA/Intel)
-                "nvh265enc",     // NVIDIA NVENC (Linux/Windows)
-                "amfh265enc",    // AMD AMF (Windows)
-                "vah265enc",     // AMD/Intel VAAPI (Linux)
-                "vtenc_h265",    // Apple VideoToolbox (macOS)
-                "x265enc",       // Software fallback
-            ]),
-            av1_encoder: find_first_encoder(&[
-                "vulkanav1enc", // Vulkan Video AV1 Encode (Cross-vendor)
-                "nvav1enc",     // NVIDIA RTX 40+ NVENC
-                "amfav1enc",    // AMD RDNA 3 / RX 7000+ AMF (Windows)
-                "vaav1enc",     // AMD RDNA 3 / Intel Arc VAAPI (Linux)
-                "svtav1enc",    // Software fallback
-            ]),
-            h264_encoder: find_first_encoder(&[
-                "vulkanh264enc", // Vulkan Video H.264 Encode
-                "nvh264enc",     // NVIDIA NVENC
-                "amfh264enc",    // AMD AMF
-                "vah264enc",     // AMD/Intel VAAPI
-                "x264enc",       // Software fallback
-                "vtenc_h264",    // Apple VideoToolbox
-            ]),
+            h265_encoder: first_factory(&candidates, CodecId::H265),
+            av1_encoder: first_factory(&candidates, CodecId::Av1),
+            h264_encoder: first_factory(&candidates, CodecId::H264),
+            candidates,
         }
+    }
+
+    /// Candidates are ranked GPU tier first, then AV1, H.265, and H.264.
+    /// Software encoders are considered only after hardware candidates.
+    pub fn auto_candidates(&self, client_codecs: &[CodecId]) -> Vec<EncoderCandidate> {
+        let mut candidates = self
+            .candidates
+            .iter()
+            .filter(|candidate| client_codecs.contains(&candidate.codec))
+            .cloned()
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|candidate| {
+            (
+                candidate.tier,
+                CODEC_PRIORITY
+                    .iter()
+                    .position(|codec| *codec == candidate.codec)
+                    .unwrap_or(usize::MAX),
+            )
+        });
+        candidates
+    }
+
+    /// Returns every available host encoder for an explicitly requested codec.
+    pub fn candidates_for_codec(&self, codec: CodecId) -> Vec<EncoderCandidate> {
+        let mut candidates = self
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.codec == codec)
+            .cloned()
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|candidate| candidate.tier);
+        candidates
     }
 }
 
-pub(super) fn find_first_encoder(candidates: &[&str]) -> Option<String> {
-    for &name in candidates {
-        if gstreamer::ElementFactory::find(name).is_some() {
-            info!("[viewport-encode] Found encoder element: {name}");
-            return Some(name.to_string());
-        }
+fn encoder_candidates(codec: CodecId) -> Vec<EncoderCandidate> {
+    let factories: &[&str] = match codec {
+        CodecId::Av1 => &[
+            "nvav1enc",     // NVIDIA NVENC (discrete)
+            "amfav1enc",    // AMD AMF (discrete GPU or APU)
+            "qsvav1enc",    // Intel oneVPL/QSV (Arc or integrated)
+            "vulkanav1enc", // Vulkan Video (adapter type varies)
+            "vaav1enc",     // VA-API (adapter type varies)
+            "svtav1enc",    // Software fallback
+        ],
+        CodecId::H265 => &[
+            "nvh265enc",     // NVIDIA NVENC (discrete)
+            "amfh265enc",    // AMD AMF (discrete GPU or APU)
+            "qsvh265enc",    // Intel oneVPL/QSV (Arc or integrated)
+            "vulkanh265enc", // Vulkan Video (adapter type varies)
+            "vah265enc",     // VA-API (adapter type varies)
+            "vtenc_h265",    // Apple VideoToolbox
+            "x265enc",       // Software fallback
+        ],
+        CodecId::H264 => &[
+            "nvh264enc",     // NVIDIA NVENC (discrete)
+            "amfh264enc",    // AMD AMF (discrete GPU or APU)
+            "qsvh264enc",    // Intel oneVPL/QSV (Arc or integrated)
+            "vulkanh264enc", // Vulkan Video (adapter type varies)
+            "vah264enc",     // VA-API (adapter type varies)
+            "vtenc_h264",    // Apple VideoToolbox
+            "x264enc",       // Software fallback
+        ],
+        CodecId::Vp8 | CodecId::Vp9 => return Vec::new(),
+    };
+
+    factories
+        .iter()
+        .filter(|name| gstreamer::ElementFactory::find(name).is_some())
+        .map(|name| {
+            let tier = classify_encoder(name);
+            info!(
+                "[viewport-encode] Found {:?} {:?} encoder element: {name}",
+                codec, tier
+            );
+            EncoderCandidate {
+                codec,
+                factory_name: (*name).to_owned(),
+                tier,
+            }
+        })
+        .collect()
+}
+
+fn first_factory(candidates: &[EncoderCandidate], codec: CodecId) -> Option<String> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.codec == codec)
+        .map(|candidate| candidate.factory_name.clone())
+}
+
+fn classify_encoder(factory_name: &str) -> EncoderTier {
+    if factory_name.starts_with("nv") {
+        EncoderTier::KnownDiscreteGpu
+    } else if matches!(factory_name, "x264enc" | "x265enc" | "svtav1enc") {
+        EncoderTier::Software
+    } else {
+        // AMF, QSV, Vulkan, VA-API, and VideoToolbox can target either
+        // integrated or discrete adapters; the factory name alone does not
+        // expose that distinction.
+        EncoderTier::OtherHardware
     }
-    None
 }
 
 pub(super) fn raw_video_caps(width: u32, height: u32, fps: u32) -> Result<gstreamer::Caps> {
