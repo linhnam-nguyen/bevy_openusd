@@ -278,7 +278,9 @@ fn delete_definition(
     }
     let mut cache_targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
     cache_targets.extend(changed_parent_scene_ids.iter().map(|scene_id| {
-        crate::project::cache::ProjectCacheTarget::Scene { id: scene_id.to_string() }
+        crate::project::cache::ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        }
     }));
     if service
         .cache_warm

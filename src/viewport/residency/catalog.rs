@@ -84,9 +84,7 @@ pub(crate) struct ScenePayloadCatalog {
 }
 
 impl ScenePayloadCatalog {
-    pub(crate) fn from_presentation(
-        presentation: &SceneCachePresentation,
-    ) -> Result<Self, String> {
+    pub(crate) fn from_presentation(presentation: &SceneCachePresentation) -> Result<Self, String> {
         let mut catalog = Self {
             scene_id: Some(presentation.scene_id),
             generation: Some(presentation.generation),
@@ -117,20 +115,21 @@ impl ScenePayloadCatalog {
                 scene_id: presentation.scene_id,
                 blob_hash,
             };
-            catalog.by_key.entry(key).or_default().push(ScenePayloadDescriptor {
-                address: entry.address.clone(),
-                prim_path: prim_path.clone(),
-                material: entry.material.clone(),
-                animation: entry.animation.clone(),
-            });
+            catalog
+                .by_key
+                .entry(key)
+                .or_default()
+                .push(ScenePayloadDescriptor {
+                    address: entry.address.clone(),
+                    prim_path: prim_path.clone(),
+                    material: entry.material.clone(),
+                    animation: entry.animation.clone(),
+                });
         }
         Ok(catalog)
     }
 
-    pub(crate) fn descriptors_for(
-        &self,
-        key: ScenePayloadKey,
-    ) -> &[ScenePayloadDescriptor] {
+    pub(crate) fn descriptors_for(&self, key: ScenePayloadKey) -> &[ScenePayloadDescriptor] {
         self.by_key.get(&key).map(Vec::as_slice).unwrap_or(&[])
     }
 

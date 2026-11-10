@@ -224,7 +224,10 @@ fn initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_cap
         {
             break;
         }
-        assert!(updates <= 8, "bounded initial Scene-index ingestion did not converge");
+        assert!(
+            updates <= 8,
+            "bounded initial Scene-index ingestion did not converge"
+        );
     }
 
     app.update();
@@ -232,11 +235,13 @@ fn initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_cap
     assert_eq!(index.incremental_work().admitted_rows, (COUNT + 1) as u64);
     assert_eq!(index.roots_read_model().total_prims, (COUNT + 1) as u32);
     assert_eq!(index.last_refresh_admitted(), 0);
-    assert!(index.resolve(&SceneAnchor::active_session("/World")).is_some());
     assert!(
         index
-            .resolve(&SceneAnchor::active_session("/"))
-            .is_none(),
+            .resolve(&SceneAnchor::active_session("/World"))
+            .is_some()
+    );
+    assert!(
+        index.resolve(&SceneAnchor::active_session("/")).is_none(),
         "virtual root must not consume a Scene-index entity slot"
     );
 

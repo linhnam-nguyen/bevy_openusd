@@ -4,8 +4,10 @@ mod tests {
     use viewport_protocol::*;
 
     use crate::project::cache::{ProjectCacheTarget, SceneCacheStore};
+    use crate::project::cache_hydration::{
+        ActiveProjectCacheContext, default_project_cache_config_hash,
+    };
     use crate::project::cache_warmer::ProjectCacheWarmQueue;
-    use crate::project::cache_hydration::{ActiveProjectCacheContext, default_project_cache_config_hash};
     use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::session::{SceneCacheOwnershipContext, StageHandle};
@@ -104,8 +106,11 @@ mod tests {
         crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
             directory.path(),
             &manifest,
-        ).unwrap();
-        let path = crate::project::scene::authoring::author_scene_atomic(directory.path(), root_scene).unwrap();
+        )
+        .unwrap();
+        let path =
+            crate::project::scene::authoring::author_scene_atomic(directory.path(), root_scene)
+                .unwrap();
         crate::project::scene::authoring::author_scene_atomic(directory.path(), sibling).unwrap();
         let config = default_project_cache_config_hash();
         let store = SceneCacheStore::new(directory.path());
@@ -113,15 +118,26 @@ mod tests {
         store.advance_generation(sibling, config).unwrap();
         let context = ActiveProjectCacheContext::new(
             directory.path().to_path_buf(),
-            ProjectCacheTarget::Scene { id: root_scene.to_string() },
+            ProjectCacheTarget::Scene {
+                id: root_scene.to_string(),
+            },
             viewport_protocol::RuntimeProfile::NativeMedium,
             config,
-        ).unwrap();
+        )
+        .unwrap();
         let stage = Stage::open(path.to_string_lossy().as_ref()).unwrap();
-        stage.define_prim("/SceneRoot/SavedChange").unwrap().set_type_name("Xform").unwrap();
+        stage
+            .define_prim("/SceneRoot/SavedChange")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
         let mut app = command_test_app();
-        app.world_mut().insert_non_send(usd_bevy::LiveStage::new(stage));
-        app.world_mut().insert_resource(StageHandle { path: path.clone(), error: None });
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
+        app.world_mut().insert_resource(StageHandle {
+            path: path.clone(),
+            error: None,
+        });
         app.world_mut().insert_resource(context);
         (directory, app, root_scene, sibling, path)
     }
@@ -132,10 +148,15 @@ mod tests {
         let store = SceneCacheStore::new(directory.path());
         let before = store.load_descriptor(scene_id).unwrap().unwrap().generation;
         let sibling_before = store.load_descriptor(sibling).unwrap().unwrap().generation;
-        app.world_mut().resource_mut::<ViewportCommandInbox>().send(ViewportCommand::SaveStage);
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStage);
         app.update();
         assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before);
-        assert_eq!(store.load_descriptor(sibling).unwrap().unwrap().generation, sibling_before);
+        assert_eq!(
+            store.load_descriptor(sibling).unwrap().unwrap().generation,
+            sibling_before
+        );
     }
 
     #[test]
@@ -144,7 +165,8 @@ mod tests {
         let store = SceneCacheStore::new(directory.path());
         let before = store.load_descriptor(scene_id).unwrap().unwrap().generation;
         let config_hash = default_project_cache_config_hash();
-        app.world_mut().remove_resource::<ActiveProjectCacheContext>();
+        app.world_mut()
+            .remove_resource::<ActiveProjectCacheContext>();
         app.world_mut().insert_resource(SceneCacheOwnershipContext {
             project_root: directory.path().to_path_buf(),
             scene_id,
@@ -165,19 +187,25 @@ mod tests {
         let store = SceneCacheStore::new(directory.path());
         let before = store.load_descriptor(scene_id).unwrap().unwrap().generation;
         let external = directory.path().join("export-copy.usda");
-        app.world_mut().resource_mut::<ViewportCommandInbox>().send(ViewportCommand::SaveStageAs {
-            filename: external.to_string_lossy().into_owned(),
-        });
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: external.to_string_lossy().into_owned(),
+            });
         app.update();
-        assert_eq!(store.load_descriptor(scene_id).unwrap().unwrap().generation, before);
+        assert_eq!(
+            store.load_descriptor(scene_id).unwrap().unwrap().generation,
+            before
+        );
 
-        app.world_mut().resource_mut::<ViewportCommandInbox>().send(ViewportCommand::SaveStageAs {
-            filename: canonical.to_string_lossy().into_owned(),
-        });
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: canonical.to_string_lossy().into_owned(),
+            });
         app.update();
         assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before);
     }
-
 
     #[test]
     fn canonical_save_succeeds_and_advances_generation_when_warm_worker_is_unavailable() {
@@ -187,7 +215,11 @@ mod tests {
         let store = SceneCacheStore::new(directory.path());
         let before = store.load_descriptor(scene_id).unwrap().unwrap().generation;
         let stage = Stage::open(path.to_string_lossy().as_ref()).unwrap();
-        stage.define_prim("/SceneRoot/BackpressureSave").unwrap().set_type_name("Xform").unwrap();
+        stage
+            .define_prim("/SceneRoot/BackpressureSave")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
         let live = usd_bevy::LiveStage::new(stage);
         let queue = ProjectCacheWarmQueue::default();
         queue.shutdown_without_waiting();
@@ -206,8 +238,10 @@ mod tests {
         assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before);
         assert!(matches!(
             outbox.pop().unwrap().event,
-            ViewportEvent::EditorCommandCompleted { operation: EditorOperation::SaveStage, .. }
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SaveStage,
+                ..
+            }
         ));
     }
-
 }

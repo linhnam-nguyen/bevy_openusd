@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(not(windows))]
 #[test]
 fn interrupted_model_publication_preserves_the_legacy_wrapper() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -29,6 +30,7 @@ fn interrupted_model_publication_preserves_the_legacy_wrapper() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 #[test]
 fn failed_rollback_preserves_transaction_for_a_later_attempt() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -65,6 +67,7 @@ fn failed_rollback_preserves_transaction_for_a_later_attempt() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 #[test]
 fn committed_manifest_wins_over_a_stale_legacy_manifest_after_restart() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -100,6 +103,7 @@ fn committed_manifest_wins_over_a_stale_legacy_manifest_after_restart() -> Resul
     Ok(())
 }
 
+#[cfg(not(windows))]
 #[test]
 fn invalid_canonical_manifest_preserves_recovery_transaction() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -129,6 +133,7 @@ fn invalid_canonical_manifest_preserves_recovery_transaction() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 #[test]
 fn missing_canonical_target_preserves_recovery_transaction() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -159,5 +164,38 @@ fn missing_canonical_target_preserves_recovery_transaction() -> Result<()> {
     super::super::recover_interrupted_migration(root, Some(&migrated_manifest))?;
     assert!(!transaction_directory.exists());
     assert!(layout.legacy_manifest_path().is_file());
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn pending_recovery_is_rejected_without_changing_journal_or_backup_state() -> Result<()> {
+    let _guard = MIGRATION_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let fixture = legacy_fixture();
+    let root = fixture.directory.path();
+    let transaction_directory = ProjectStorageLayout::new(root)
+        .metadata_dir()
+        .join(".transactions")
+        .join("migration-pending");
+    let journal_path = transaction_directory.join(super::super::journal::JOURNAL_FILE);
+    let backup_path = transaction_directory.join("backup/scenes/original.usda");
+    let journal_bytes = b"pre-existing migration journal";
+    let backup_bytes = b"pre-existing migration backup";
+    fs::create_dir_all(backup_path.parent().expect("backup file has a parent"))?;
+    fs::write(&journal_path, journal_bytes)?;
+    fs::write(&backup_path, backup_bytes)?;
+    let before = snapshot_project_tree(root)?;
+
+    let error = super::super::recover_interrupted_migration(root, Some(&fixture.manifest))
+        .expect_err("Windows pending recovery must fail closed");
+    assert!(
+        format!("{error:#}").contains("unsupported on Windows"),
+        "expected explicit Windows unsupported result, got: {error:#}"
+    );
+    assert_eq!(snapshot_project_tree(root)?, before);
+    assert_eq!(fs::read(&journal_path)?, journal_bytes);
+    assert_eq!(fs::read(&backup_path)?, backup_bytes);
     Ok(())
 }

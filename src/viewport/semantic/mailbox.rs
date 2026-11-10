@@ -189,9 +189,11 @@ impl SemanticMailbox {
         if state.query_count >= QUERY_MAILBOX_CAPACITY {
             return Err(MailboxSubmitError::QueueFull);
         }
-        state.commands.push_back(SemanticMailboxCommand::DistinctFieldKeys(
-            SemanticDistinctFieldKeysCommand { request_id, query },
-        ));
+        state
+            .commands
+            .push_back(SemanticMailboxCommand::DistinctFieldKeys(
+                SemanticDistinctFieldKeysCommand { request_id, query },
+            ));
         state.query_count += 1;
         state.query_high_water = state.query_high_water.max(state.query_count as u64);
         self.wake.notify_one();

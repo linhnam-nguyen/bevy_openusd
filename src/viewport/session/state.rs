@@ -158,11 +158,16 @@ impl SceneDerivedMetadata {
         cache: Option<&SceneCacheActivation>,
         descriptor: Option<SceneCacheDescriptorV3>,
     ) -> Self {
-        let descriptor = descriptor.or_else(|| cache.map(|activation| activation.descriptor.clone()));
+        let descriptor =
+            descriptor.or_else(|| cache.map(|activation| activation.descriptor.clone()));
         let scene_id = owner
             .as_ref()
             .map(|(_, scene_id)| scene_id.clone())
-            .or_else(|| descriptor.as_ref().map(|descriptor| descriptor.scene_id.clone()));
+            .or_else(|| {
+                descriptor
+                    .as_ref()
+                    .map(|descriptor| descriptor.scene_id.clone())
+            });
         let cache_generation = descriptor.as_ref().map(|descriptor| descriptor.generation);
         let cache_state = descriptor.as_ref().map(|descriptor| descriptor.state);
         let prim_count = descriptor

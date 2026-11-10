@@ -4,12 +4,12 @@ use bevy::prelude::*;
 use std::path::Path;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
+use super::SceneCachePresentation;
 use crate::project::cache_contract::{
-    ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation, SceneCacheEntryKind,
-    SceneCacheIndex,
+    ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
+    SceneCacheEntryKind, SceneCacheIndex,
 };
 use crate::viewport::api::CurrentHierarchyProjection;
-use super::SceneCachePresentation;
 
 pub(super) fn publish_scene_cache_presentation(
     world: &mut World,
@@ -98,8 +98,8 @@ fn install_project_cache_lookup(
 mod tests {
     use super::*;
     use crate::project::cache_contract::{
-        CachedTransform, SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntry,
-        SceneCacheOccurrence, SCENE_CACHE_INDEX_SCHEMA_VERSION,
+        CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheAddress, SceneCacheBlobRef,
+        SceneCacheEntry, SceneCacheOccurrence,
     };
     use usd_project::ScenePlacementTransform;
 
@@ -168,10 +168,12 @@ mod tests {
         };
         publish_scene_cache_presentation(&mut app.world_mut(), &activation, None);
         let projection = app.world().resource::<CurrentHierarchyProjection>();
-        assert!(projection
-            .snapshot()
-            .nodes
-            .iter()
-            .any(|node| node.has_children));
+        assert!(
+            projection
+                .snapshot()
+                .nodes
+                .iter()
+                .any(|node| node.has_children)
+        );
     }
 }

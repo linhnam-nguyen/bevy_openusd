@@ -21,10 +21,9 @@ impl ResidencyAuthority {
     }
 
     pub(crate) fn load_is_current(&self, job: &LoadJob<ScenePayloadKey>) -> bool {
-            self.generation_is_current(job.key.scene_id, job.generation)
+        self.generation_is_current(job.key.scene_id, job.generation)
             && self.records.get(&job.key).is_some_and(|record| {
-                record.generation == job.generation
-                    && !record.in_flight_mask.is_empty()
+                record.generation == job.generation && !record.in_flight_mask.is_empty()
             })
     }
 
@@ -60,10 +59,7 @@ impl ResidencyAuthority {
         let queued_mask = self
             .records
             .get(&job.key)
-            .map(|record| {
-                self.load_mask(&job.key)
-                    .missing_from(record.satisfied_mask)
-            })
+            .map(|record| self.load_mask(&job.key).missing_from(record.satisfied_mask))
             .filter(|mask| !mask.is_empty())
             .unwrap_or(PayloadLoadMask::GEOMETRY);
         if !self.loader.enqueue(job.clone()) {
@@ -124,16 +120,14 @@ impl ResidencyAuthority {
             // An individually oversized payload is deterministically skipped;
             // it can never fit without violating the hard budget contract.
             if next.cpu_bytes > self.budgets.cpu_bytes || next.gpu_bytes > self.budgets.gpu_bytes {
-            if let Some(record) = self.records.get_mut(&next.key) {
-                if record.generation == next.generation
-                    && !record.queued_mask.is_empty()
-                {
-                    record.queued_mask = PayloadLoadMask::default();
-                    if !record.satisfied_mask.geometry {
-                        record.state = PayloadResidencyState::Unloaded;
+                if let Some(record) = self.records.get_mut(&next.key) {
+                    if record.generation == next.generation && !record.queued_mask.is_empty() {
+                        record.queued_mask = PayloadLoadMask::default();
+                        if !record.satisfied_mask.geometry {
+                            record.state = PayloadResidencyState::Unloaded;
+                        }
                     }
                 }
-            }
                 continue;
             }
             let valid = self.records.get(&next.key).is_some_and(|record| {
@@ -286,7 +280,6 @@ impl ResidencyAuthority {
         }
         true
     }
-
 }
 
 pub(super) fn resident_mesh_footprint(mesh: &Mesh) -> (u64, u64) {

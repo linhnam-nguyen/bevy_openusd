@@ -122,12 +122,7 @@ impl ResidencyAuthority {
             }) else {
                 continue;
             };
-            if self.request_camera_near(
-                key,
-                generation,
-                cpu_bytes,
-                gpu_bytes,
-            ) {
+            if self.request_camera_near(key, generation, cpu_bytes, gpu_bytes) {
                 progressed = true;
             }
         }

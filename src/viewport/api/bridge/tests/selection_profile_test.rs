@@ -344,7 +344,11 @@ fn profile_color() {
             .color_change_enabled = true;
         app.add_systems(
             Update,
-            (sync_selected_renderable_projection, sync_selection_color_overrides).chain(),
+            (
+                sync_selected_renderable_projection,
+                sync_selection_color_overrides,
+            )
+                .chain(),
         );
         app.update();
         let value = selection(size);

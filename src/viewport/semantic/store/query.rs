@@ -43,9 +43,7 @@ impl SemanticDatabase {
         let mut keys = BTreeSet::new();
         for key in candidates {
             let present = match &key {
-                SemanticKey::Category => self
-                    .field_present(&snapshot_id, "category")
-                    .await?,
+                SemanticKey::Category => self.field_present(&snapshot_id, "category").await?,
                 SemanticKey::Family => self.field_present(&snapshot_id, "family").await?,
                 SemanticKey::TypeName => self.field_present(&snapshot_id, "type_name").await?,
                 SemanticKey::Property(name) => {

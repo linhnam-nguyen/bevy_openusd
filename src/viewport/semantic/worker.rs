@@ -5,8 +5,8 @@ use bevy::prelude::Resource;
 use usd_model::SemanticSnapshot;
 
 use super::mailbox::{
-    MailboxSubmitError, RESPONSE_MAILBOX_CAPACITY, SemanticMailbox, SemanticMailboxCommand,
-    SemanticDistinctFieldKeysCommand, SemanticQueryCommand, SemanticStateCommand,
+    MailboxSubmitError, RESPONSE_MAILBOX_CAPACITY, SemanticDistinctFieldKeysCommand,
+    SemanticMailbox, SemanticMailboxCommand, SemanticQueryCommand, SemanticStateCommand,
 };
 use super::query::{DistinctFieldKeys, SemanticQuery};
 use super::store::SemanticDatabase;

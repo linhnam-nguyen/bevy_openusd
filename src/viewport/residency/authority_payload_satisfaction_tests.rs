@@ -17,13 +17,7 @@ fn resident_non_animation_payload(
     key: ScenePayloadKey,
     generation: u64,
 ) -> bevy::asset::AssetId<Mesh> {
-    assert!(authority.request_reason(
-        key,
-        ResidencyReason::Selected,
-        generation,
-        8,
-        8,
-    ));
+    assert!(authority.request_reason(key, ResidencyReason::Selected, generation, 8, 8,));
     let _job = authority.begin_next_load().expect("geometry load");
     assert!(authority.complete_cpu(key, generation, 8, 8));
     assert_eq!(authority.pump_uploads(assets, None), vec![key]);
@@ -40,13 +34,7 @@ fn animation_demand_queues_supplement_without_replacing_resident_mesh() {
     let resident_mesh = resident_non_animation_payload(&mut authority, &mut assets, key, 1);
 
     assert!(authority.remove_reason(key, ResidencyReason::Selected, 1));
-    assert!(authority.request_reason(
-        key,
-        ResidencyReason::AnimationRequired,
-        1,
-        8,
-        8,
-    ));
+    assert!(authority.request_reason(key, ResidencyReason::AnimationRequired, 1, 8, 8,));
     assert!(authority.requested_mask(&key).animation);
     assert_eq!(authority.queue_len(), 1);
     let supplement = authority.begin_next_load().expect("animation supplement");
@@ -76,13 +64,7 @@ fn demand_expansion_while_geometry_loads_follows_up_with_animation() {
     assert!(authority.request_reason(key, ResidencyReason::Selected, 2, 8, 8));
     let geometry = authority.begin_next_load().expect("geometry load");
 
-    assert!(authority.request_reason(
-        key,
-        ResidencyReason::AnimationRequired,
-        2,
-        8,
-        8,
-    ));
+    assert!(authority.request_reason(key, ResidencyReason::AnimationRequired, 2, 8, 8,));
     assert_eq!(authority.queue_len(), 0);
     assert!(authority.complete_cpu(key, 2, 8, 8));
     let supplement = authority
@@ -101,24 +83,12 @@ fn animation_already_loading_reconciles_without_duplicate_supplement() {
     authority.install_scene(scene, 4, Vec::new());
     let resident_mesh = resident_non_animation_payload(&mut authority, &mut assets, key, 4);
 
-    assert!(authority.request_reason(
-        key,
-        ResidencyReason::AnimationRequired,
-        4,
-        8,
-        8,
-    ));
+    assert!(authority.request_reason(key, ResidencyReason::AnimationRequired, 4, 8, 8,));
     let animation = authority.begin_next_load().expect("animation load");
     assert!(authority.in_flight_mask(&key).animation);
     assert_eq!(authority.queue_len(), 0);
 
-    assert!(authority.request_reason(
-        key,
-        ResidencyReason::ActiveViewpoint,
-        4,
-        8,
-        8,
-    ));
+    assert!(authority.request_reason(key, ResidencyReason::ActiveViewpoint, 4, 8, 8,));
     assert_eq!(authority.queue_len(), 0);
     assert!(authority.complete_cached_payloads(
         &animation,

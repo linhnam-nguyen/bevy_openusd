@@ -8,6 +8,5 @@ use super::cache_scene_payload::SceneAnimationBlob;
 pub(crate) struct SceneAnimationPayloads {
     pub(crate) scene_id: Option<usd_project::SceneId>,
     pub(crate) generation: Option<u64>,
-    pub(crate) by_address:
-        HashMap<super::cache_contract::SceneCacheAddress, SceneAnimationBlob>,
+    pub(crate) by_address: HashMap<super::cache_contract::SceneCacheAddress, SceneAnimationBlob>,
 }

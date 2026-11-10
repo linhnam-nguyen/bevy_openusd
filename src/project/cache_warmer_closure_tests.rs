@@ -239,16 +239,24 @@ fn stale_scene_generation_is_rejected_before_strong_identity_or_stage_open() -> 
     let config_hash = crate::project::cache_hydration::default_project_cache_config_hash();
     let store = SceneCacheStore::new(directory.path());
     let stale_generation = store.advance_generation(scene_id, config_hash)?;
-    assert_eq!(store.advance_generation(scene_id, config_hash)?, stale_generation + 1);
+    assert_eq!(
+        store.advance_generation(scene_id, config_hash)?,
+        stale_generation + 1
+    );
 
     let target = WarmTarget {
-        target: ProjectCacheTarget::Scene { id: scene_id.to_string() },
+        target: ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        },
         scene_generation: Some(stale_generation),
         build_generation: 1,
     };
     warm_target(directory.path(), &target)?;
     assert!(!crate::project::scene::authoring::scene_path(directory.path(), scene_id).exists());
-    assert_eq!(store.load_descriptor(scene_id)?.unwrap().generation, stale_generation + 1);
+    assert_eq!(
+        store.load_descriptor(scene_id)?.unwrap().generation,
+        stale_generation + 1
+    );
     Ok(())
 }
 
@@ -275,21 +283,30 @@ fn stale_managed_scene_generation_cannot_publish() -> Result<()> {
     let generation = store.advance_generation(scene_id, config_hash)?;
     let identity = ProjectCacheIdentity::for_project(
         directory.path(),
-        ProjectCacheTarget::Scene { id: scene_id.to_string() },
+        ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        },
         RuntimeProfile::NativeMedium,
         config_hash,
     )?;
     let mut stale = SceneCacheDescriptorV3::invalidated(scene_id, generation, config_hash);
     stale.source_content_hash = Some(identity.target_content_hash);
     stale.state = SceneCacheState::Partial;
-    assert_eq!(store.advance_generation(scene_id, config_hash)?, generation + 1);
+    assert_eq!(
+        store.advance_generation(scene_id, config_hash)?,
+        generation + 1
+    );
 
-    assert!(crate::project::cache_warm_runtime::build_and_publish_managed_scene_cache_generation(
-        directory.path(),
-        &stale,
-    )?
-    .is_none());
-    let current = store.load_descriptor(scene_id)?.expect("newer invalidation survives");
+    assert!(
+        crate::project::cache_warm_runtime::build_and_publish_managed_scene_cache_generation(
+            directory.path(),
+            &stale,
+        )?
+        .is_none()
+    );
+    let current = store
+        .load_descriptor(scene_id)?
+        .expect("newer invalidation survives");
     assert_eq!(current.generation, generation + 1);
     assert_eq!(current.state, SceneCacheState::Building);
     Ok(())
@@ -308,16 +325,32 @@ fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
         "Deletion Cache",
         ProjectRoot::Scene(scene_a),
         vec![
-            usd_project::SceneManifestEntry { id: scene_a, storage_key: StorageKey::new("a")?, display_name: "A".to_owned() },
-            usd_project::SceneManifestEntry { id: scene_b, storage_key: StorageKey::new("b")?, display_name: "B".to_owned() },
+            usd_project::SceneManifestEntry {
+                id: scene_a,
+                storage_key: StorageKey::new("a")?,
+                display_name: "A".to_owned(),
+            },
+            usd_project::SceneManifestEntry {
+                id: scene_b,
+                storage_key: StorageKey::new("b")?,
+                display_name: "B".to_owned(),
+            },
         ],
         Vec::new(),
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
     let config_hash = crate::project::cache_hydration::default_project_cache_config_hash();
     let store = SceneCacheStore::new(directory.path());
-    store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(scene_a, 1, config_hash))?;
-    store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(scene_b, 1, config_hash))?;
+    store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(
+        scene_a,
+        1,
+        config_hash,
+    ))?;
+    store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(
+        scene_b,
+        1,
+        config_hash,
+    ))?;
     store.object_store(scene_a)?.put(b"keep")?;
     store.object_store(scene_b)?.put(b"delete")?;
     let layout = crate::project::storage::ProjectStorageLayout::new(directory.path());
@@ -330,7 +363,9 @@ fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
     let queue = ProjectCacheWarmQueue::default();
     assert!(queue.remove_target_descriptors(
         directory.path(),
-        &ProjectCacheTarget::Scene { id: scene_b.to_string() },
+        &ProjectCacheTarget::Scene {
+            id: scene_b.to_string()
+        },
     ));
     assert!(!layout.scene_cache_dir(scene_b).exists());
     assert!(!layout.scene_cache_objects_dir(scene_b).exists());
@@ -359,11 +394,16 @@ fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> 
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
     crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
     let store = SceneCacheStore::new(directory.path());
-    store.advance_generation(scene_id, crate::project::cache_hydration::default_project_cache_config_hash())?;
+    store.advance_generation(
+        scene_id,
+        crate::project::cache_hydration::default_project_cache_config_hash(),
+    )?;
     store.object_store(scene_id)?.put(b"owned-before-delete")?;
 
     let scene_lock = scene_lifecycle_lock(directory.path(), scene_id);
-    let guard = scene_lock.lock().expect("Scene lifecycle test lock is not poisoned");
+    let guard = scene_lock
+        .lock()
+        .expect("Scene lifecycle test lock is not poisoned");
     let queue = ProjectCacheWarmQueue::default();
     let root = directory.path().to_path_buf();
     let (started_tx, started_rx) = std::sync::mpsc::channel();
@@ -372,7 +412,9 @@ fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> 
         started_tx.send(()).unwrap();
         let removed = queue.remove_target_descriptors(
             &root,
-            &ProjectCacheTarget::Scene { id: scene_id.to_string() },
+            &ProjectCacheTarget::Scene {
+                id: scene_id.to_string(),
+            },
         );
         done_tx.send(removed).unwrap();
     });
@@ -382,6 +424,10 @@ fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> 
     assert!(done_rx.recv_timeout(Duration::from_secs(1)).unwrap());
     worker.join().unwrap();
     assert!(store.load_descriptor(scene_id)?.is_none());
-    assert!(!crate::project::storage::ProjectStorageLayout::new(directory.path()).scene_cache_objects_dir(scene_id).exists());
+    assert!(
+        !crate::project::storage::ProjectStorageLayout::new(directory.path())
+            .scene_cache_objects_dir(scene_id)
+            .exists()
+    );
     Ok(())
 }

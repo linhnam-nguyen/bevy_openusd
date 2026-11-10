@@ -15,9 +15,9 @@ use crate::project::cache_demand_projection::{
 
 use super::authority::ScenePayloadKey;
 use super::loader::LoadJob;
-use super::repair_phase::RepairPhase;
-use super::repair::TargetedRepairRequest;
 use super::repair::TARGETED_REPAIR_PERSISTENCE_QUEUE_CAPACITY as QUEUE_CAPACITY;
+use super::repair::TargetedRepairRequest;
+use super::repair_phase::RepairPhase;
 
 #[derive(Debug)]
 pub(crate) struct TargetedRepairPersistenceRequest {

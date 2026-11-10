@@ -1,29 +1,3 @@
-use std::path::Path;
-use std::thread;
-use std::time::Duration;
-use anyhow::Result;
-use bevy::asset::{Assets, RenderAssetUsages};
-use bevy::ecs::system::SystemState;
-use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
-use bevy::prelude::{NonSend, Res, ResMut, World};
-use usd_model::HashDigest;
-use usd_project::{
-    ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, StorageKey,
-};
-use viewport_protocol::RuntimeProfile;
-use crate::project::blob_store::prepare_mesh_payload;
-use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
-use crate::project::cache_contract::{
-    CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
-    SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
-};
-use crate::project::cache_demand_projection::{
-    TargetedPersistenceOutcome, TargetedSceneRepair,
-};
-use crate::project::cache_hydration::ActiveProjectCacheContext;
-use crate::project::catalog::manifest_store::ManifestStore;
-use usd_bevy::UsdSnippet;
 use super::super::loader::LoadJob;
 use super::super::repair_persistence::{
     TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
@@ -38,8 +12,35 @@ use super::{
     TargetedRepairQueue, TargetedRepairRequest, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
 };
+use crate::project::blob_store::prepare_mesh_payload;
+use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
+use crate::project::cache_contract::{
+    CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+    SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
+    SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
+};
+use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, TargetedSceneRepair};
+use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::catalog::manifest_store::ManifestStore;
+use anyhow::Result;
+use bevy::asset::{Assets, RenderAssetUsages};
+use bevy::ecs::system::SystemState;
+use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
+use bevy::prelude::{NonSend, Res, ResMut, World};
+use std::path::Path;
+use std::thread;
+use std::time::Duration;
+use usd_bevy::UsdSnippet;
+use usd_model::HashDigest;
+use usd_project::{
+    ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, StorageKey,
+};
+use viewport_protocol::RuntimeProfile;
 fn mesh() -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(
         Mesh::ATTRIBUTE_POSITION,
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
@@ -52,7 +53,9 @@ fn live_stage(path: &str) -> Result<usd_bevy::LiveStage> {
         "#usda 1.0\n\ndef Xform \"SceneRoot\" {{\n    def Mesh \"{}\" {{\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n    }}\n}}\n",
         path.rsplit('/').next().unwrap_or("Owned")
     );
-    Ok(usd_bevy::LiveStage::new(UsdSnippet::new(source).open_stage()?))
+    Ok(usd_bevy::LiveStage::new(
+        UsdSnippet::new(source).open_stage()?,
+    ))
 }
 fn hash_for(mesh: &Mesh) -> HashDigest {
     let prepared = prepare_mesh_payload(mesh).expect("test mesh prepares");
@@ -215,8 +218,9 @@ fn process_once(world: &mut World) {
         Option<NonSend<usd_bevy::LiveStage>>,
     )> = SystemState::new(world);
     {
-        let (scene_owner, context, persistence, authority, repairs, live) =
-            state.get_mut(world).expect("repair process resources are present");
+        let (scene_owner, context, persistence, authority, repairs, live) = state
+            .get_mut(world)
+            .expect("repair process resources are present");
         process_targeted_residency_repairs(
             scene_owner,
             context,

@@ -11,10 +11,12 @@ use super::helpers::{
 use super::mutations::apply_runtime_mutations;
 use super::save;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
-use crate::project::{cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue};
+use crate::project::{
+    cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue,
+};
 use crate::viewport::api::ViewportEventOutbox;
-use crate::viewport::session::SceneCacheOwnershipContext;
 use crate::viewport::scene::SelectedTargets;
+use crate::viewport::session::SceneCacheOwnershipContext;
 pub(super) fn apply_editor_command(
     command: ViewportCommand,
     request_id: String,
@@ -338,10 +340,28 @@ pub(super) fn apply_editor_command(
             }
         }
         ViewportCommand::SaveStageAs { filename } => {
-            save::save_stage_as(request_id, outbox, histories, stage, &filename, active_project_cache, scene_cache_owner, cache_warm);
+            save::save_stage_as(
+                request_id,
+                outbox,
+                histories,
+                stage,
+                &filename,
+                active_project_cache,
+                scene_cache_owner,
+                cache_warm,
+            );
         }
         ViewportCommand::SaveStage => {
-            save::save_current_stage(request_id, outbox, histories, stage, save_stage_path, active_project_cache, scene_cache_owner, cache_warm);
+            save::save_current_stage(
+                request_id,
+                outbox,
+                histories,
+                stage,
+                save_stage_path,
+                active_project_cache,
+                scene_cache_owner,
+                cache_warm,
+            );
         }
         ViewportCommand::ExportStage => {
             let stage = require_stage!();

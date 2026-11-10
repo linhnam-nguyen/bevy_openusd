@@ -8,7 +8,7 @@ use tempfile::tempdir;
 use usd_git::GitRepository;
 use usd_project::{ProjectContentNode, ProjectRoot};
 
-use super::{ProjectApplicationService, ProjectModelPreparationQueue};
+use super::{ProjectApplicationService, ProjectModelPreparationQueue, configured_initial_branch};
 
 #[test]
 fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
@@ -25,7 +25,7 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
     let repository = usd_git::Repository::open(&project_root).unwrap();
     assert_eq!(
         repository.current_branch().unwrap().as_deref(),
-        Some("main")
+        Some(configured_initial_branch().as_str())
     );
     assert!(
         repository.head().unwrap().is_none(),

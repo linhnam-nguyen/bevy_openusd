@@ -1,11 +1,11 @@
 //! R-tree-backed Scene payload candidates for camera residency.
 
+use crate::project::cache_contract::{CachedTransform, SceneCacheAddress, SceneCacheEntry};
 use bevy::camera::primitives::Aabb;
 use bevy::math::{Mat4, Quat, Vec3};
 use rstar::{AABB, RTree, RTreeObject};
 use usd_model::{Bounds3, TransformSignature};
 use usd_project::ScenePlacementTransform;
-use crate::project::cache_contract::{CachedTransform, SceneCacheAddress, SceneCacheEntry};
 
 use super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::camera::CameraAdmission;
@@ -61,7 +61,8 @@ pub(crate) fn scene_payloads(entries: &[SceneCacheEntry]) -> Vec<SceneSpatialPay
             let geometry = entry.geometry.as_ref()?;
             let bounds = entry.bounds?;
             let matrix = resolve_scene_matrix(index, entries, &mut resolved, &mut visiting);
-            let (cpu_bytes, gpu_bytes) = ResidencyAuthority::conservative_resident_footprint(geometry.byte_size);
+            let (cpu_bytes, gpu_bytes) =
+                ResidencyAuthority::conservative_resident_footprint(geometry.byte_size);
             Some(SceneSpatialPayload {
                 address: entry.address.clone(),
                 payload_key,
@@ -101,7 +102,9 @@ fn resolve_scene_matrix(
 }
 fn cached_transform_matrix(transform: &CachedTransform) -> Mat4 {
     match transform {
-        CachedTransform::Placement(transform) => Mat4::from_cols_array(&transform.0.map(|value| value as f32)),
+        CachedTransform::Placement(transform) => {
+            Mat4::from_cols_array(&transform.0.map(|value| value as f32))
+        }
         CachedTransform::Prim(signature) => prim_transform_matrix(signature),
     }
 }
@@ -109,11 +112,13 @@ fn scene_transform(matrix: Mat4) -> ScenePlacementTransform {
     ScenePlacementTransform(matrix.to_cols_array().map(f64::from))
 }
 fn prim_transform_matrix(signature: &TransformSignature) -> Mat4 {
-    let translation = signature
-        .translation_mm
-        .map(|value| value as f32 / 1_000.0);
-    let rotation = signature.rotation_quantized.map(|value| value as f32 / 100_000.0);
-    let scale = signature.scale_quantized.map(|value| value as f32 / 10_000.0);
+    let translation = signature.translation_mm.map(|value| value as f32 / 1_000.0);
+    let rotation = signature
+        .rotation_quantized
+        .map(|value| value as f32 / 100_000.0);
+    let scale = signature
+        .scale_quantized
+        .map(|value| value as f32 / 10_000.0);
     Mat4::from_scale_rotation_translation(
         Vec3::from_array(scale),
         Quat::from_xyzw(rotation[1], rotation[2], rotation[3], rotation[0]),
@@ -240,8 +245,8 @@ fn intersects_clip_planes(min: [f64; 3], max: [f64; 3], planes: [[f64; 4]; 6]) -
 mod tests {
     use super::*;
     use bevy::camera::primitives::Frustum;
-    use bevy::math::primitives::{HalfSpace, ViewFrustum};
     use bevy::math::Vec4;
+    use bevy::math::primitives::{HalfSpace, ViewFrustum};
     use usd_model::{BlobId, HashDigest};
     use usd_project::{SceneId, SceneMemberId, ScenePlacementTransform};
 
@@ -304,7 +309,12 @@ mod tests {
         let scene_id = SceneId::new_v4();
         let parent_transform = ScenePlacementTransform::from_trs(
             [10.0, 2.0, 0.0],
-            [std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0, std::f64::consts::FRAC_1_SQRT_2],
+            [
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+                0.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ],
             [2.0, 1.0, 1.0],
         );
         let child_transform = ScenePlacementTransform::from_translation([1.0, 0.0, 0.0]);
@@ -320,7 +330,12 @@ mod tests {
                 "/SceneRoot/Parent/Child".to_owned(),
             ),
         };
-        let parent = cache_entry(parent_address, None, CachedTransform::Placement(parent_transform), None);
+        let parent = cache_entry(
+            parent_address,
+            None,
+            CachedTransform::Placement(parent_transform),
+            None,
+        );
         let child = cache_entry(
             child_address,
             Some(0),

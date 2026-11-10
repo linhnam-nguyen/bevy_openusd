@@ -1,5 +1,9 @@
 use super::*;
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "requires Mac-only external USD development assets"
+)]
 #[test]
 fn c8_runs_the_full_projects_lifecycle_matrix_for_all_sixteen_seeds() {
     let mut selections = Vec::new();

@@ -17,10 +17,10 @@ pub(crate) mod scene;
 
 #[path = "project/cache.rs"]
 pub(crate) mod cache;
-#[path = "project/cache_target.rs"]
-pub(crate) mod cache_contract;
 #[path = "project/cache_compatibility.rs"]
 pub(crate) mod cache_compatibility;
+#[path = "project/cache_target.rs"]
+pub(crate) mod cache_contract;
 #[path = "project/cache_demand_projection.rs"]
 pub(crate) mod cache_demand_projection;
 #[path = "project/cache_hydration.rs"]
@@ -31,10 +31,10 @@ pub(crate) mod cache_preparation;
 pub(crate) mod cache_scene_build;
 #[path = "project/cache_scene_hydration.rs"]
 pub(crate) mod cache_scene_hydration;
-#[path = "project/cache_warm_runtime.rs"]
-pub(crate) mod cache_warm_runtime;
 #[path = "project/cache_scene_payload.rs"]
 pub(crate) mod cache_scene_payload;
+#[path = "project/cache_warm_runtime.rs"]
+pub(crate) mod cache_warm_runtime;
 #[path = "project/cache_warmer.rs"]
 pub(crate) mod cache_warmer;
 #[path = "project/ghost_cache/mod.rs"]

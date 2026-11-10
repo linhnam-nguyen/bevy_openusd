@@ -1,4 +1,9 @@
-use std::{fs, sync::{Arc, Mutex}, thread, time::{Duration, Instant}};
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
+};
 
 use bevy::asset::{Assets, RenderAssetUsages};
 use bevy::mesh::{Mesh, PrimitiveTopology};
@@ -14,19 +19,19 @@ use super::{
     activate_stage_with_cache_context, activate_stage_with_cache_context_for_test,
     install_scene_cache_bootstrap_before_stage_open, poll_scene_cache_revalidation,
 };
-use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    ProjectCacheLookup, SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState,
-    SceneSpatialIndex,
-};
 use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
+use crate::project::cache_contract::{
+    ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
+    SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
+};
 use crate::project::cache_hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::viewport::api::CurrentHierarchyProjection;
-use crate::viewport::residency::{ResidencyAuthority, ResidencyReason, ScenePayloadKey,
-    SceneResidencyProjection};
+use crate::viewport::residency::{
+    ResidencyAuthority, ResidencyReason, ScenePayloadKey, SceneResidencyProjection,
+};
 use crate::viewport::session::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
     StagePresentationContext,
@@ -250,15 +255,19 @@ fn poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_s
     poll_scene_cache_revalidation(&mut world);
 
     assert!(world.get_non_send::<LiveStage>().is_some());
-    assert!(world
-        .get_resource::<PendingSceneCacheRevalidation>()
-        .is_none());
+    assert!(
+        world
+            .get_resource::<PendingSceneCacheRevalidation>()
+            .is_none()
+    );
     assert!(world.get_resource::<SceneCachePresentation>().is_none());
-    assert!(world
-        .resource::<CurrentHierarchyProjection>()
-        .snapshot()
-        .nodes
-        .is_empty());
+    assert!(
+        world
+            .resource::<CurrentHierarchyProjection>()
+            .snapshot()
+            .nodes
+            .is_empty()
+    );
 }
 
 #[test]
@@ -320,15 +329,19 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
 
     assert!(result.lock().expect("result slot remains usable").is_none());
     assert!(world.get_non_send::<LiveStage>().is_some());
-    assert!(world
-        .get_resource::<PendingSceneCacheRevalidation>()
-        .is_none());
+    assert!(
+        world
+            .get_resource::<PendingSceneCacheRevalidation>()
+            .is_none()
+    );
     assert!(world.get_resource::<SceneCachePresentation>().is_none());
-    assert!(world
-        .resource::<CurrentHierarchyProjection>()
-        .snapshot()
-        .nodes
-        .is_empty());
+    assert!(
+        world
+            .resource::<CurrentHierarchyProjection>()
+            .snapshot()
+            .nodes
+            .is_empty()
+    );
     assert_eq!(
         store
             .load_descriptor(scene_id)

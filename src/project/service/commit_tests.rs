@@ -1,5 +1,6 @@
 use project_protocol::{ProjectCommitRequest, ProjectCommitTarget, ProjectWriteTarget};
 use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 use usd_git::GitRepository;
 
@@ -69,8 +70,16 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
             message: "Create Project baseline".to_owned(),
         })
         .unwrap();
-    let scene_generation = cache.load_descriptor(scene.scene_id).unwrap().unwrap().generation;
-    let sibling_generation = cache.load_descriptor(sibling.scene_id).unwrap().unwrap().generation;
+    let scene_generation = cache
+        .load_descriptor(scene.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
+    let sibling_generation = cache
+        .load_descriptor(sibling.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
     add_scene_marker(&project_root, scene.scene_id, "ArchitectureChanged");
 
     let response = service
@@ -82,10 +91,35 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
         .unwrap();
 
     assert_eq!(response.project.id, project.id);
-    assert!(cache.load_descriptor(scene.scene_id).unwrap().unwrap().generation > scene_generation);
-    assert_eq!(cache.load_descriptor(sibling.scene_id).unwrap().unwrap().generation, sibling_generation);
+    assert!(
+        cache
+            .load_descriptor(scene.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation
+            > scene_generation
+    );
+    assert_eq!(
+        cache
+            .load_descriptor(sibling.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation,
+        sibling_generation
+    );
     assert_eq!(response.repository.head.unwrap().id, response.revision.id);
-    assert!(!response.repository.dirty);
+    if response.repository.dirty {
+        let git_status = Command::new("git")
+            .args(["status", "--porcelain=v1", "--untracked-files=all"])
+            .current_dir(&project_root)
+            .output()
+            .expect("inspect Project status after scene commit");
+        assert!(git_status.status.success(), "git status failed");
+        panic!(
+            "repository remains dirty after scene commit: {}",
+            String::from_utf8_lossy(&git_status.stdout)
+        );
+    }
     assert_eq!(response.revision.id.len(), 40);
 }
 
@@ -251,32 +285,150 @@ fn project_commit_advances_only_scene_owned_paths_changed_by_the_commit() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
-    let mut service = ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
-    let project = service.create_project(&parent, "Precise Project Commit").unwrap();
-    service.commit(ProjectCommitRequest {
-        project_id: project.id,
-        target: ProjectCommitTarget::Project,
-        message: "baseline".to_owned(),
-    }).unwrap();
-    let changed = service.create_scene(project.id, ProjectWriteTarget::Project(project.id), "Changed").unwrap();
-    let sibling = service.create_scene(project.id, ProjectWriteTarget::Project(project.id), "Sibling").unwrap();
-    service.commit(ProjectCommitRequest {
-        project_id: project.id,
-        target: ProjectCommitTarget::Project,
-        message: "add scenes".to_owned(),
-    }).unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let project = service
+        .create_project(&parent, "Precise Project Commit")
+        .unwrap();
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "baseline".to_owned(),
+        })
+        .unwrap();
+    let changed = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "Changed",
+        )
+        .unwrap();
+    let sibling = service
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "Sibling",
+        )
+        .unwrap();
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "add scenes".to_owned(),
+        })
+        .unwrap();
     let project_root = parent.join("Precise Project Commit");
     let store = crate::project::cache::SceneCacheStore::new(&project_root);
-    let changed_generation = store.load_descriptor(changed.scene_id).unwrap().unwrap().generation;
-    let sibling_generation = store.load_descriptor(sibling.scene_id).unwrap().unwrap().generation;
+    let changed_generation = store
+        .load_descriptor(changed.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
+    let sibling_generation = store
+        .load_descriptor(sibling.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
 
     add_scene_marker(&project_root, changed.scene_id, "OnlyChangedScene");
-    service.commit(ProjectCommitRequest {
-        project_id: project.id,
-        target: ProjectCommitTarget::Project,
-        message: "change one scene".to_owned(),
-    }).unwrap();
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "change one scene".to_owned(),
+        })
+        .unwrap();
 
-    assert!(store.load_descriptor(changed.scene_id).unwrap().unwrap().generation > changed_generation);
-    assert_eq!(store.load_descriptor(sibling.scene_id).unwrap().unwrap().generation, sibling_generation);
+    assert!(
+        store
+            .load_descriptor(changed.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation
+            > changed_generation
+    );
+    assert_eq!(
+        store
+            .load_descriptor(sibling.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation,
+        sibling_generation
+    );
+}
+
+#[test]
+fn excluded_project_metadata_descendants_match_path_components() {
+    let directory = tempdir().unwrap();
+    let parent = directory.path().join("projects");
+    fs::create_dir(&parent).unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
+    let project = service
+        .create_project(&parent, "Metadata Exclusion Project")
+        .unwrap();
+    let project_root = parent.join("Metadata Exclusion Project");
+
+    service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "baseline metadata exclusion project".to_owned(),
+        })
+        .unwrap();
+
+    let managed_paths = ["cache", "recovery", "links", ".transactions"].map(|directory| {
+        std::path::Path::new(".usdhub")
+            .join(directory)
+            .join("nested/state.bin")
+    });
+    let sibling_paths = [
+        "cache-old",
+        "recovery-old",
+        "links-old",
+        ".transactions-old",
+    ]
+    .map(|directory| {
+        std::path::Path::new(".usdhub")
+            .join(directory)
+            .join("nested/state.bin")
+    });
+
+    for path in managed_paths.iter().chain(&sibling_paths) {
+        let absolute = project_root.join(path);
+        fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+        fs::write(absolute, b"runtime metadata").unwrap();
+    }
+
+    let response = service
+        .commit(ProjectCommitRequest {
+            project_id: project.id,
+            target: ProjectCommitTarget::Project,
+            message: "verify metadata exclusions".to_owned(),
+        })
+        .unwrap();
+
+    let repository = usd_git::Repository::open(&project_root).unwrap();
+    let materialized = tempdir().unwrap();
+    repository
+        .materialize_revision(
+            &usd_git::RevisionId::new(response.revision.id),
+            materialized.path(),
+        )
+        .unwrap();
+
+    for path in &managed_paths {
+        assert!(
+            !materialized.path().join(path).exists(),
+            "managed metadata descendant was committed: {path:?}"
+        );
+    }
+    for path in &sibling_paths {
+        assert_eq!(
+            fs::read(materialized.path().join(path)).unwrap(),
+            b"runtime metadata",
+            "similarly named sibling path should remain eligible: {path:?}"
+        );
+    }
 }

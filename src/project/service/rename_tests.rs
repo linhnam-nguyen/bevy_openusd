@@ -30,7 +30,11 @@ fn scene_rename_updates_the_manifest_and_every_placement_mirror() {
             "Architecture",
         )
         .unwrap();
-    let generation = crate::project::cache::SceneCacheStore::new(&project_root).load_descriptor(scene.scene_id).unwrap().unwrap().generation;
+    let generation = crate::project::cache::SceneCacheStore::new(&project_root)
+        .load_descriptor(scene.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
 
     service
         .rename(
@@ -40,7 +44,14 @@ fn scene_rename_updates_the_manifest_and_every_placement_mirror() {
         )
         .unwrap();
 
-    assert_eq!(crate::project::cache::SceneCacheStore::new(&project_root).load_descriptor(scene.scene_id).unwrap().unwrap().generation, generation);
+    assert_eq!(
+        crate::project::cache::SceneCacheStore::new(&project_root)
+            .load_descriptor(scene.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation,
+        generation
+    );
     let manifest = ManifestStore::read_validated(&project_root).unwrap();
     assert_eq!(
         manifest.scene(scene.scene_id).unwrap().display_name,

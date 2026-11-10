@@ -20,12 +20,12 @@ use crate::project::cache_warmer::ProjectCacheWarmQueue;
 use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
 
+#[path = "cache_presentation_render.rs"]
+mod cache_presentation_render;
 #[path = "project_activation_flow.rs"]
 mod flow;
 #[path = "project_activation_queue.rs"]
 mod queue;
-#[path = "cache_presentation_render.rs"]
-mod cache_presentation_render;
 
 use queue::{ActivationCancellation, LatestActivationQueue};
 

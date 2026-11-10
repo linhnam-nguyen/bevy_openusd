@@ -1,8 +1,8 @@
 use bevy::asset::Assets;
 use bevy::mesh::Mesh;
 
-use super::authority_loading::resident_mesh_footprint;
 use super::super::loader::LoadJob;
+use super::authority_loading::resident_mesh_footprint;
 use super::{PayloadLoadMask, PayloadResidencyState, ResidencyAuthority, ScenePayloadKey};
 
 impl ResidencyAuthority {
@@ -51,16 +51,18 @@ impl ResidencyAuthority {
             return false;
         }
         self.cpu_reserved = self.cpu_reserved.saturating_sub(job.cpu_bytes);
-        let Some((became_warm, cpu_bytes, gpu_bytes)) = self.records.get_mut(&job.key).map(|record| {
-            record.in_flight_mask = PayloadLoadMask::default();
-            record.satisfied_mask = record.satisfied_mask.union(mask);
-            let became_warm = record.reasons.is_empty()
-                && record.state == PayloadResidencyState::GpuResident;
-            if became_warm {
-                record.state = PayloadResidencyState::Warm;
-            }
-            (became_warm, record.cpu_bytes, record.gpu_bytes)
-        }) else {
+        let Some((became_warm, cpu_bytes, gpu_bytes)) =
+            self.records.get_mut(&job.key).map(|record| {
+                record.in_flight_mask = PayloadLoadMask::default();
+                record.satisfied_mask = record.satisfied_mask.union(mask);
+                let became_warm =
+                    record.reasons.is_empty() && record.state == PayloadResidencyState::GpuResident;
+                if became_warm {
+                    record.state = PayloadResidencyState::Warm;
+                }
+                (became_warm, record.cpu_bytes, record.gpu_bytes)
+            })
+        else {
             return false;
         };
         if became_warm {

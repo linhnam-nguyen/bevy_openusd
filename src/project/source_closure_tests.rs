@@ -1,9 +1,11 @@
 use std::{
     fs,
-    os::unix::fs::symlink,
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 
 use anyhow::{Context, Result};
 use openusd::{
@@ -280,6 +282,7 @@ fn fingerprint_ignores_unrelated_neighbors_but_tracks_dependencies() -> Result<(
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn symlinked_source_is_rejected() -> Result<()> {
     let directory = tempdir()?;

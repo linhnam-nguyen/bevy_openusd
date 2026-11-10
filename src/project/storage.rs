@@ -21,7 +21,9 @@ pub(crate) use layout::{
     CACHE_DIRECTORY, CACHE_OBJECTS_RELATIVE_PATH, PROJECT_METADATA_DIRECTORY, ProjectStorageLayout,
     RECOVERY_DIRECTORY, authored_relative_asset_path, authored_relative_project_asset_path,
 };
-pub(crate) use migration::{migrate_legacy_project, recover_interrupted_migration};
+pub(crate) use migration::{
+    ensure_legacy_migration_supported, migrate_legacy_project, recover_interrupted_migration,
+};
 
 const SCENE_CACHE_DIRECTORY: &str = "scenes";
 const SCENE_CACHE_DESCRIPTOR_FILE: &str = "descriptor.json";

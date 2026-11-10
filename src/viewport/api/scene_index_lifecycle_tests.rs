@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
 use bevy::app::App;
 use project_protocol::ProjectStageTarget;
@@ -71,9 +72,34 @@ fn assert_project_names(app: &App, root_name: &str) {
     );
 }
 
-fn update_until_projected(app: &mut App) {
-    for _ in 0..8 {
+fn update_until_projected(app: &mut App, expected_root_name: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
         app.update();
+        let index = app.world().resource::<SceneAnchorIndex>();
+        let root_projected = index
+            .roots_read_model()
+            .prims
+            .iter()
+            .find(|node| node.anchor.prim_path == "/SceneRoot")
+            .is_some_and(|root| root.display_name.as_deref() == Some(expected_root_name));
+        let visible_names = index
+            .nodes
+            .iter()
+            .filter_map(|node| node.display_name.as_deref())
+            .collect::<BTreeSet<_>>();
+        let semantic_names_projected = [expected_root_name, "Sc1", "Sc2", "Kitchen_set"]
+            .iter()
+            .all(|expected| visible_names.contains(expected));
+        if root_projected && semantic_names_projected {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for protocol Scene root {expected_root_name:?} and semantic names; read model: {:?}",
+            index.roots_read_model()
+        );
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -165,7 +191,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         StagePresentationContext::from_project(project_target.presentation),
     )
     .expect("Project root activation opens the canonical Stage");
-    update_until_projected(&mut app);
+    update_until_projected(&mut app, "Pro3");
     assert_project_names(&app, "Pro3");
 
     activate_stage_with_cache_context_for_generation(
@@ -176,12 +202,12 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         StagePresentationContext::from_project(direct_target.presentation.clone()),
     )
     .expect("direct Scene activation opens the canonical Stage");
-    update_until_projected(&mut app);
+    update_until_projected(&mut app, "Sc3");
     assert_project_names(&app, "Sc3");
 
     app.world_mut().resource_mut::<ReloadRequest>().requested = true;
     handle_usd_hot_reload(app.world_mut());
-    update_until_projected(&mut app);
+    update_until_projected(&mut app, "Sc3");
     assert_project_names(&app, "Sc3");
 
     let project_context = service
@@ -199,11 +225,11 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         StagePresentationContext::from_project(project_context.presentation),
     )
     .expect("Project root activation remains available after Refresh");
-    update_until_projected(&mut app);
+    update_until_projected(&mut app, "Pro3");
     assert_project_names(&app, "Pro3");
 
     app.world_mut().resource_mut::<ReloadRequest>().requested = true;
     handle_usd_hot_reload(app.world_mut());
-    update_until_projected(&mut app);
+    update_until_projected(&mut app, "Pro3");
     assert_project_names(&app, "Pro3");
 }

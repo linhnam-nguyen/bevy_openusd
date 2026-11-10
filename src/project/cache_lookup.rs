@@ -123,7 +123,9 @@ impl ProjectCacheLookup {
     fn insert_row(&mut self, address: SceneCacheAddress, object: CacheObjectRef) -> Result<()> {
         let scene_id = address.scene_id;
         ensure!(
-            self.by_address.insert(address.clone(), object.clone()).is_none(),
+            self.by_address
+                .insert(address.clone(), object.clone())
+                .is_none(),
             "duplicate Project cache address"
         );
         self.scene_addresses
@@ -135,16 +137,20 @@ impl ProjectCacheLookup {
                 scene_id,
                 content_hash,
             };
-            self.by_hash
-                .entry(key)
-                .or_default()
-                .push(address.clone());
+            self.by_hash.entry(key).or_default().push(address.clone());
             self.scene_hashes.entry(scene_id).or_default().push(key);
         }
-        if let CacheObjectRef::ChildScene { scene_id: child, member_id } = object {
+        if let CacheObjectRef::ChildScene {
+            scene_id: child,
+            member_id,
+        } = object
+        {
             let key = (scene_id, member_id);
             self.child_members.insert(key, child);
-            self.scene_member_keys.entry(scene_id).or_default().push(key);
+            self.scene_member_keys
+                .entry(scene_id)
+                .or_default()
+                .push(key);
         }
         Ok(())
     }
@@ -191,11 +197,17 @@ fn cache_object_ref(entry: &SceneCacheEntry) -> CacheObjectRef {
             semantic_key: entry.semantic_key.clone(),
             content_hash: entry.content_hash,
         },
-        SceneCacheEntryKind::ChildScene { scene_id, member_id } => CacheObjectRef::ChildScene {
+        SceneCacheEntryKind::ChildScene {
+            scene_id,
+            member_id,
+        } => CacheObjectRef::ChildScene {
             scene_id: *scene_id,
             member_id: *member_id,
         },
-        SceneCacheEntryKind::ChildModel { model_id, member_id } => CacheObjectRef::ChildModel {
+        SceneCacheEntryKind::ChildModel {
+            model_id,
+            member_id,
+        } => CacheObjectRef::ChildModel {
             model_id: *model_id,
             member_id: *member_id,
         },
@@ -237,7 +249,11 @@ mod tests {
         }
     }
 
-    fn child_entry(parent_scene: SceneId, member_id: SceneMemberId, child: SceneId) -> SceneCacheEntry {
+    fn child_entry(
+        parent_scene: SceneId,
+        member_id: SceneMemberId,
+        child: SceneId,
+    ) -> SceneCacheEntry {
         SceneCacheEntry {
             address: SceneCacheAddress {
                 scene_id: parent_scene,
@@ -278,11 +294,7 @@ mod tests {
         let unrelated = SceneId::new_v4();
         let member = SceneMemberId::new_v4();
         let parent_index = index(parent, 1, vec![child_entry(parent, member, child)]);
-        let child_index = index(
-            child,
-            4,
-            vec![owned_entry(child, "/SceneRoot/Leaf", 1)],
-        );
+        let child_index = index(child, 4, vec![owned_entry(child, "/SceneRoot/Leaf", 1)]);
         let unrelated_index = index(
             unrelated,
             8,

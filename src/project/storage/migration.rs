@@ -22,6 +22,8 @@ mod recovery;
 
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
 pub(super) const LEGACY_MODEL_MARKER: &str = ".legacy-model.usda";
+#[cfg(windows)]
+pub(super) const WINDOWS_MIGRATION_UNSUPPORTED: &str = "Legacy Project migration and pending migration recovery are unsupported on Windows until the required directory durability contract can be provided";
 
 struct SceneMove {
     id: SceneId,
@@ -58,6 +60,7 @@ pub(crate) fn migrate_legacy_project(
     project_root: &Path,
     manifest: &ProjectManifestV1,
 ) -> Result<()> {
+    ensure_legacy_migration_supported()?;
     let layout = ProjectStorageLayout::new(project_root);
     let migrated_manifest = manifest
         .clone()
@@ -128,6 +131,16 @@ pub(crate) fn migrate_legacy_project(
     )?;
     recovery::finalize_committed_migration(project_root, &plan.transaction_directory, &journal)?;
     recovery::remove_transaction_directory(&plan.transaction_directory)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn ensure_legacy_migration_supported() -> Result<()> {
+    anyhow::bail!(WINDOWS_MIGRATION_UNSUPPORTED);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn ensure_legacy_migration_supported() -> Result<()> {
     Ok(())
 }
 

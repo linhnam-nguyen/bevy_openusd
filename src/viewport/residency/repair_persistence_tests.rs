@@ -15,22 +15,23 @@ use crate::project::cache_contract::{
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_demand_projection::{
-    TargetedPersistenceOutcome, TargetedSceneRepair,
-};
+use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, TargetedSceneRepair};
 use crate::project::catalog::manifest_store::ManifestStore;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
 
+use super::super::ScenePayloadKey;
 use super::super::loader::LoadJob;
 use super::super::repair_persistence::{
     TargetedRepairPersistenceCompletion, TargetedRepairPersistenceRequest,
     TargetedRepairPersistenceWorker,
 };
 use super::super::repair_phase::RepairPhase;
-use super::super::ScenePayloadKey;
 
 fn mesh() -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(
         Mesh::ATTRIBUTE_POSITION,
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
@@ -106,13 +107,11 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         generation: 1,
         entries: Vec::new(),
     };
-    let mut input = SceneCacheDescriptorV3::invalidated(
-        scene,
-        1,
-        HashDigest::new([31; HashDigest::BYTE_LEN]),
-    );
+    let mut input =
+        SceneCacheDescriptorV3::invalidated(scene, 1, HashDigest::new([31; HashDigest::BYTE_LEN]));
     input.state = SceneCacheState::Partial;
-    let expected = SceneCacheStore::new(directory.path()).publish_generation(&input, &index, &spatial)?;
+    let expected =
+        SceneCacheStore::new(directory.path()).publish_generation(&input, &index, &spatial)?;
     let job = LoadJob {
         key: ScenePayloadKey {
             scene_id: scene,
@@ -123,21 +122,23 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         gpu_bytes: 1,
     };
     let worker = TargetedRepairPersistenceWorker::new();
-    worker.dispatch(TargetedRepairPersistenceRequest {
-        project_root: directory.path().to_path_buf(),
-        path: path.to_owned(),
-        extraction: TargetedSceneRepair {
-            expected_descriptor: expected,
-            payloads: vec![usd_bevy::TargetedRenderPayload {
-                path: path.to_owned(),
-                mesh: source_mesh,
-                local_bounds: None,
-            }],
-        },
-        lookup_only: false,
-        phase: RepairPhase::NeedScenePayload,
-        job: job.clone(),
-    }).expect("full repair enters bounded persistence");
+    worker
+        .dispatch(TargetedRepairPersistenceRequest {
+            project_root: directory.path().to_path_buf(),
+            path: path.to_owned(),
+            extraction: TargetedSceneRepair {
+                expected_descriptor: expected,
+                payloads: vec![usd_bevy::TargetedRenderPayload {
+                    path: path.to_owned(),
+                    mesh: source_mesh,
+                    local_bounds: None,
+                }],
+            },
+            lookup_only: false,
+            phase: RepairPhase::NeedScenePayload,
+            job: job.clone(),
+        })
+        .expect("full repair enters bounded persistence");
     let published_completion = wait(&worker);
     let published = match &published_completion.result {
         Ok(TargetedPersistenceOutcome::Published {
@@ -159,21 +160,23 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         .expect("full repair wrote geometry once");
 
     write_manifest(directory.path(), scene)?;
-    worker.dispatch(TargetedRepairPersistenceRequest {
-        project_root: directory.path().to_path_buf(),
-        path: path.to_owned(),
-        extraction: TargetedSceneRepair {
-            expected_descriptor: published.clone(),
-            payloads: Vec::new(),
-        },
-        lookup_only: true,
-        phase: RepairPhase::NeedProjectLookup {
+    worker
+        .dispatch(TargetedRepairPersistenceRequest {
             project_root: directory.path().to_path_buf(),
             path: path.to_owned(),
-            expected_descriptor: published.clone(),
-        },
-        job: job.clone(),
-    }).expect("lookup-only retry enters bounded persistence");
+            extraction: TargetedSceneRepair {
+                expected_descriptor: published.clone(),
+                payloads: Vec::new(),
+            },
+            lookup_only: true,
+            phase: RepairPhase::NeedProjectLookup {
+                project_root: directory.path().to_path_buf(),
+                path: path.to_owned(),
+                expected_descriptor: published.clone(),
+            },
+            job: job.clone(),
+        })
+        .expect("lookup-only retry enters bounded persistence");
     assert!(matches!(
         wait(&worker).result,
         Ok(TargetedPersistenceOutcome::LookupRepaired)
@@ -186,7 +189,9 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         published
     );
     assert_eq!(
-        objects.get(&usd_model::BlobId(hash.to_string()))?.as_deref(),
+        objects
+            .get(&usd_model::BlobId(hash.to_string()))?
+            .as_deref(),
         Some(object_before.as_slice())
     );
 
@@ -194,37 +199,44 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
     newer_input.config_hash = HashDigest::new([32; HashDigest::BYTE_LEN]);
     let store = SceneCacheStore::new(directory.path());
     let newer = store.publish_generation(&newer_input, &index, &spatial)?;
-    worker.dispatch(TargetedRepairPersistenceRequest {
-        project_root: directory.path().to_path_buf(),
-        path: path.to_owned(),
-        extraction: TargetedSceneRepair {
-            expected_descriptor: published.clone(),
-            payloads: Vec::new(),
-        },
-        lookup_only: true,
-        phase: RepairPhase::NeedProjectLookup {
+    worker
+        .dispatch(TargetedRepairPersistenceRequest {
             project_root: directory.path().to_path_buf(),
             path: path.to_owned(),
-            expected_descriptor: published.clone(),
-        },
-        job: job.clone(),
-    }).expect("stale lookup enters bounded persistence");
-    assert!(matches!(wait(&worker).result, Ok(TargetedPersistenceOutcome::CasLost)));
-    worker.dispatch(TargetedRepairPersistenceRequest {
-        project_root: directory.path().to_path_buf(),
-        path: path.to_owned(),
-        extraction: TargetedSceneRepair {
-            expected_descriptor: newer.clone(),
-            payloads: Vec::new(),
-        },
-        lookup_only: true,
-        phase: RepairPhase::NeedProjectLookup {
+            extraction: TargetedSceneRepair {
+                expected_descriptor: published.clone(),
+                payloads: Vec::new(),
+            },
+            lookup_only: true,
+            phase: RepairPhase::NeedProjectLookup {
+                project_root: directory.path().to_path_buf(),
+                path: path.to_owned(),
+                expected_descriptor: published.clone(),
+            },
+            job: job.clone(),
+        })
+        .expect("stale lookup enters bounded persistence");
+    assert!(matches!(
+        wait(&worker).result,
+        Ok(TargetedPersistenceOutcome::CasLost)
+    ));
+    worker
+        .dispatch(TargetedRepairPersistenceRequest {
             project_root: directory.path().to_path_buf(),
             path: path.to_owned(),
-            expected_descriptor: newer.clone(),
-        },
-        job,
-    }).expect("current lookup enters bounded persistence");
+            extraction: TargetedSceneRepair {
+                expected_descriptor: newer.clone(),
+                payloads: Vec::new(),
+            },
+            lookup_only: true,
+            phase: RepairPhase::NeedProjectLookup {
+                project_root: directory.path().to_path_buf(),
+                path: path.to_owned(),
+                expected_descriptor: newer.clone(),
+            },
+            job,
+        })
+        .expect("current lookup enters bounded persistence");
     assert!(matches!(
         wait(&worker).result,
         Ok(TargetedPersistenceOutcome::ScenePayloadMissing)

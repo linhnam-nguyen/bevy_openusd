@@ -1,5 +1,9 @@
 use super::*;
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "requires Mac-only external USD development assets"
+)]
 #[test]
 fn c3_smoke_exercises_seeded_import_link_composition_for_four_seeds() {
     for seed in rng::M2_SEEDS.iter().take(4).copied() {

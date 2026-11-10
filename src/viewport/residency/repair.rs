@@ -5,29 +5,29 @@ use std::path::PathBuf;
 use bevy::prelude::{NonSend, Res, ResMut};
 
 use crate::project::cache_demand_projection::{
-    OwnedPrimPathResolution, TargetedSceneRepair,
-    extract_scene_payloads_for_repair, owned_prim_path_for_payload,
+    OwnedPrimPathResolution, TargetedSceneRepair, extract_scene_payloads_for_repair,
+    owned_prim_path_for_payload,
 };
 use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::viewport::session::SceneCacheOwnershipContext;
 
-use super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::active_cache_project_root;
+use super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::loader::LoadJob;
-use super::repair_phase::RepairPhase;
 use super::repair_persistence::{
     TargetedRepairPersistenceRequest, TargetedRepairPersistenceWorker,
 };
+use super::repair_phase::RepairPhase;
 use super::worker::{CachedResidencyWorker, LoadedScenePayloadQueue, queue_loaded_scene_payloads};
 
 #[path = "repair_handoff.rs"]
 mod repair_handoff;
+pub(crate) use repair_handoff::{
+    TargetedRepairQueue, drain_targeted_repair_persistence_completions,
+};
 use repair_handoff::{
     enqueue_lookup_repair, enqueue_repair_or_requeue, enqueue_scene_payload_repair,
     retry_cached_load,
-};
-pub(crate) use repair_handoff::{
-    TargetedRepairQueue, drain_targeted_repair_persistence_completions,
 };
 
 pub(crate) const TARGETED_REPAIR_QUEUE_CAPACITY: usize = 8;
@@ -52,10 +52,7 @@ pub(crate) fn drain_cached_residency_completions(
     mut repairs: ResMut<TargetedRepairQueue>,
     mut payload_queue: Option<ResMut<LoadedScenePayloadQueue>>,
 ) {
-    let project_root = active_cache_project_root(
-        scene_owner.as_deref(),
-        legacy_cache.as_deref(),
-    );
+    let project_root = active_cache_project_root(scene_owner.as_deref(), legacy_cache.as_deref());
     for completion in worker.drain_completions() {
         if !authority.load_is_current(&completion.job) {
             continue;
@@ -66,7 +63,8 @@ pub(crate) fn drain_cached_residency_completions(
                 let payloads = completion.payloads;
                 let job = completion.job.clone();
                 if authority.complete_cached_cpu_with_mask(completion.job, mesh, completion.mask) {
-                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut()) {
+                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut())
+                    {
                         queue_loaded_scene_payloads(queue, job, payloads);
                     }
                 }
@@ -75,7 +73,8 @@ pub(crate) fn drain_cached_residency_completions(
                 let payloads = completion.payloads;
                 let job = completion.job.clone();
                 if authority.complete_cached_payloads(&completion.job, completion.mask) {
-                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut()) {
+                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut())
+                    {
                         queue_loaded_scene_payloads(queue, job, payloads);
                     }
                 }
@@ -105,26 +104,25 @@ fn enqueue_missing_payload_repair(
     let phase = authority.take_repair_phase(&job);
     let request = if phase.is_scene_payload() {
         let (project_root, path) = match project_root {
-            Some(project_root) => match owned_prim_path_for_payload(
-                project_root,
-                job.key.scene_id,
-                job.key.blob_hash,
-            ) {
-                Ok(OwnedPrimPathResolution::Ready(path)) => {
-                    (Some(project_root.to_path_buf()), Some(path))
+            Some(project_root) => {
+                match owned_prim_path_for_payload(project_root, job.key.scene_id, job.key.blob_hash)
+                {
+                    Ok(OwnedPrimPathResolution::Ready(path)) => {
+                        (Some(project_root.to_path_buf()), Some(path))
+                    }
+                    Ok(OwnedPrimPathResolution::Waiting) => {
+                        (Some(project_root.to_path_buf()), None)
+                    }
+                    Ok(OwnedPrimPathResolution::Rejected) => {
+                        let _ = authority.suppress_repair(&job);
+                        return;
+                    }
+                    Err(_) => {
+                        let _ = authority.reject_repair(&job);
+                        return;
+                    }
                 }
-                Ok(OwnedPrimPathResolution::Waiting) => {
-                    (Some(project_root.to_path_buf()), None)
-                }
-                Ok(OwnedPrimPathResolution::Rejected) => {
-                    let _ = authority.suppress_repair(&job);
-                    return;
-                }
-                Err(_) => {
-                    let _ = authority.reject_repair(&job);
-                    return;
-                }
-            },
+            }
             None => (None, None),
         };
         TargetedRepairRequest {
@@ -182,10 +180,7 @@ pub(crate) fn process_targeted_residency_repairs(
     mut repairs: ResMut<TargetedRepairQueue>,
     live: Option<NonSend<usd_bevy::LiveStage>>,
 ) {
-    let active_root = active_cache_project_root(
-        scene_owner.as_deref(),
-        legacy_cache.as_deref(),
-    );
+    let active_root = active_cache_project_root(scene_owner.as_deref(), legacy_cache.as_deref());
     let mut attempts = repairs.len();
     let mut dispatched = 0;
     while attempts > 0 {
@@ -309,17 +304,17 @@ pub(crate) fn process_targeted_residency_repairs(
 }
 
 #[cfg(test)]
-#[path = "repair_tests.rs"]
-mod tests;
-#[cfg(test)]
-#[path = "repair_waiting_tests.rs"]
-mod waiting_tests;
-#[cfg(test)]
-#[path = "repair_pressure_tests.rs"]
-mod pressure_tests;
-#[cfg(test)]
 #[path = "repair_integration_tests.rs"]
 mod integration_tests;
 #[cfg(test)]
 #[path = "repair_persistence_tests.rs"]
 mod persistence_tests;
+#[cfg(test)]
+#[path = "repair_pressure_tests.rs"]
+mod pressure_tests;
+#[cfg(test)]
+#[path = "repair_tests.rs"]
+mod tests;
+#[cfg(test)]
+#[path = "repair_waiting_tests.rs"]
+mod waiting_tests;

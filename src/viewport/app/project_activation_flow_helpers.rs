@@ -1,6 +1,8 @@
 use bevy::prelude::World;
 use project_protocol::ProjectActivationReply;
-use viewport_streaming::{ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult};
+use viewport_streaming::{
+    ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
+};
 
 use crate::project::cache_hydration::ActiveProjectCacheContext;
 

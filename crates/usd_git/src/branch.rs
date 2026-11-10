@@ -1,4 +1,9 @@
-use std::{collections::{BTreeMap, BTreeSet, HashSet}, fs, path::{Path, PathBuf}, sync::atomic::AtomicBool};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    fs,
+    path::{Path, PathBuf},
+    sync::atomic::AtomicBool,
+};
 
 use gix::bstr::ByteSlice;
 use gix::refs::transaction::{Change, PreviousValue, RefEdit};
@@ -56,8 +61,6 @@ pub(super) fn working_tree_status(repository: &Repository) -> Result<WorkingTree
     Ok(WorkingTreeStatus { dirty })
 }
 
-
-
 pub(super) fn changed_paths_between(
     repository: &Repository,
     from: &RevisionId,
@@ -68,8 +71,16 @@ pub(super) fn changed_paths_between(
     }
     let mut before = BTreeMap::new();
     let mut after = BTreeMap::new();
-    collect_tree_ids(&repository.commit_for_id(from)?.tree().map_err(Error::git)?, Path::new(""), &mut before)?;
-    collect_tree_ids(&repository.commit_for_id(to)?.tree().map_err(Error::git)?, Path::new(""), &mut after)?;
+    collect_tree_ids(
+        &repository.commit_for_id(from)?.tree().map_err(Error::git)?,
+        Path::new(""),
+        &mut before,
+    )?;
+    collect_tree_ids(
+        &repository.commit_for_id(to)?.tree().map_err(Error::git)?,
+        Path::new(""),
+        &mut after,
+    )?;
     let mut paths = BTreeSet::new();
     for path in before.keys().chain(after.keys()) {
         if before.get(path) != after.get(path) {

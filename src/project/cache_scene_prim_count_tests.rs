@@ -6,8 +6,8 @@ use usd_project::SceneId;
 
 use crate::project::cache::SceneCacheStore;
 use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
+    SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
 use crate::project::storage::ProjectStorageLayout;
 
@@ -29,14 +29,8 @@ fn prim_count_publication_reopens_partial_scene_without_inspection() {
     let expected = store
         .publish_generation(&descriptor, &index, &spatial)
         .expect("publish Partial descriptor");
-    let result = publish_prim_count_if_current(
-        &store,
-        scene_id,
-        Some(&expected),
-        config_hash,
-        5,
-    )
-    .expect("publish background prim count");
+    let result = publish_prim_count_if_current(&store, scene_id, Some(&expected), config_hash, 5)
+        .expect("publish background prim count");
     let PrimCountPublication::Published(published) = result else {
         panic!("fresh Scene generation remains current");
     };
@@ -73,7 +67,9 @@ fn prim_count_publication_rejects_stale_scene_generation() -> anyhow::Result<()>
         PrimCountPublication::Stale
     ));
     assert_eq!(
-        store.load_descriptor(scene_id)?.map(|value| value.generation),
+        store
+            .load_descriptor(scene_id)?
+            .map(|value| value.generation),
         Some(15)
     );
     Ok(())
@@ -143,8 +139,7 @@ fn index_read_failure_does_not_mutate_current_scene_cache() -> anyhow::Result<()
         b"not-json",
     )?;
     assert!(
-        publish_prim_count_if_current(&store, scene_id, Some(&expected), config_hash, 6)
-            .is_err()
+        publish_prim_count_if_current(&store, scene_id, Some(&expected), config_hash, 6).is_err()
     );
     assert_eq!(store.load_descriptor(scene_id)?.unwrap(), expected);
     Ok(())
@@ -172,8 +167,7 @@ fn spatial_read_failure_does_not_mutate_current_scene_cache() -> anyhow::Result<
         b"not-json",
     )?;
     assert!(
-        publish_prim_count_if_current(&store, scene_id, Some(&expected), config_hash, 7)
-            .is_err()
+        publish_prim_count_if_current(&store, scene_id, Some(&expected), config_hash, 7).is_err()
     );
     assert_eq!(store.load_descriptor(scene_id)?.unwrap(), expected);
     Ok(())

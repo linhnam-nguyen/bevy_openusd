@@ -14,7 +14,10 @@ fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() 
     std::fs::create_dir_all(&repository).unwrap();
     run_git(&repository, &["init", "-b", "main"]);
     run_git(&repository, &["config", "user.name", "USDHub Test"]);
-    run_git(&repository, &["config", "user.email", "test@usdhub.invalid"]);
+    run_git(
+        &repository,
+        &["config", "user.email", "test@usdhub.invalid"],
+    );
 
     let project_id = usd_project::ProjectId::new_v4();
     let manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
@@ -115,8 +118,13 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
     let cache = crate::project::cache::SceneCacheStore::new(&repository);
     let config = crate::project::cache_hydration::default_project_cache_config_hash();
     cache.advance_generation(root_scene, config).unwrap();
-    cache.object_store(root_scene).unwrap().put(b"main-only-cache").unwrap();
-    let lookup = crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path();
+    cache
+        .object_store(root_scene)
+        .unwrap()
+        .put(b"main-only-cache")
+        .unwrap();
+    let lookup =
+        crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path();
     fs::create_dir_all(lookup.parent().unwrap()).unwrap();
     fs::write(&lookup, b"stale-main-lookup").unwrap();
 
@@ -141,8 +149,11 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
         Some("broken-feature")
     );
     assert!(cache.load_descriptor(root_scene).unwrap().is_none());
-    assert!(!crate::project::storage::ProjectStorageLayout::new(&repository)
-        .scene_cache_objects_dir(root_scene).exists());
+    assert!(
+        !crate::project::storage::ProjectStorageLayout::new(&repository)
+            .scene_cache_objects_dir(root_scene)
+            .exists()
+    );
     assert!(!lookup.exists());
 
     service
@@ -196,7 +207,9 @@ fn branch_switch_succeeds_with_unavailable_worker_and_bounded_warm_pressure() {
         .unwrap()
         .raw()
         .clone();
-    feature_manifest.scenes.extend(feature_scenes.iter().cloned());
+    feature_manifest
+        .scenes
+        .extend(feature_scenes.iter().cloned());
     ManifestStore::write_manifest_atomic(&repository, &feature_manifest).unwrap();
     for scene in &feature_scenes {
         crate::project::scene::authoring::author_scene_atomic(&repository, scene.id).unwrap();
@@ -218,9 +231,16 @@ fn branch_switch_succeeds_with_unavailable_worker_and_bounded_warm_pressure() {
         .switch_branch(project_id, "feature")
         .expect("worker absence and bounded advisory pressure are non-fatal");
 
-    assert_eq!(response.repository.active_branch.as_deref(), Some("feature"));
     assert_eq!(
-        store.load_descriptor(root_scene).unwrap().unwrap().generation,
+        response.repository.active_branch.as_deref(),
+        Some("feature")
+    );
+    assert_eq!(
+        store
+            .load_descriptor(root_scene)
+            .unwrap()
+            .unwrap()
+            .generation,
         root_generation
     );
     for scene in &feature_scenes {

@@ -11,24 +11,24 @@ use usd_project::SceneId;
 use crate::project::cache_contract::SceneCacheEntry;
 
 use super::camera::CameraSample;
+use super::catalog::PayloadLoadMask;
 use super::loader::{BoundedLoader, LoadJob};
 use super::lru::WarmLru;
 use super::repair_phase::RepairPhase;
 use super::spatial::CameraCandidateIndex;
-use super::catalog::PayloadLoadMask;
 
 #[path = "authority_camera.rs"]
 mod authority_camera;
-#[path = "authority_loading.rs"]
-mod authority_loading;
-#[path = "authority_runtime.rs"]
-mod authority_runtime;
 #[path = "authority_capacity.rs"]
 mod authority_capacity;
 #[path = "authority_completion.rs"]
 mod authority_completion;
+#[path = "authority_loading.rs"]
+mod authority_loading;
 #[path = "authority_payloads.rs"]
 mod authority_payloads;
+#[path = "authority_runtime.rs"]
+mod authority_runtime;
 
 pub(crate) const DEFAULT_LOADER_CAPACITY: usize = 256;
 pub(crate) const DEFAULT_UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
@@ -217,10 +217,10 @@ impl ResidencyAuthority {
         }
         if was_warm {
             record.state = if record.render_handle.is_some() {
-                    PayloadResidencyState::GpuResident
-                } else {
-                    PayloadResidencyState::CpuReady
-                };
+                PayloadResidencyState::GpuResident
+            } else {
+                PayloadResidencyState::CpuReady
+            };
             if record.state == PayloadResidencyState::CpuReady {
                 self.enqueue_ready_upload(key);
             }
@@ -344,12 +344,11 @@ impl ResidencyAuthority {
             .get(&scene_id)
             .is_some_and(|current| *current == generation)
     }
-
 }
 
 #[cfg(test)]
-#[path = "authority_tests.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "authority_payload_satisfaction_tests.rs"]
 mod payload_satisfaction_tests;
+#[cfg(test)]
+#[path = "authority_tests.rs"]
+mod tests;

@@ -50,6 +50,8 @@ impl ManifestStore {
                 .context("validate Project manifest");
         }
         if path == layout.legacy_manifest_path() && !canonical_manifest_present {
+            crate::project::storage::ensure_legacy_migration_supported()
+                .context("migrate legacy Project storage")?;
             crate::project::storage::recover_interrupted_migration(project_root, Some(&migrated))
                 .context("recover interrupted Project storage migration")?;
             crate::project::storage::migrate_legacy_project(project_root, &migrated)

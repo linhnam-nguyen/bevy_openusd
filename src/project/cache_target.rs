@@ -31,8 +31,12 @@ pub(crate) const PROJECT_CACHE_INDEX_SCHEMA_VERSION: u16 = 2;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum SceneSourceStamp {
-    GitRevision { revision: String },
-    ManagedGeneration { generation: u64 },
+    GitRevision {
+        revision: String,
+    },
+    ManagedGeneration {
+        generation: u64,
+    },
     ExternalFile {
         modified_unix_nanos: u64,
         byte_len: u64,
@@ -130,9 +134,17 @@ pub(crate) struct SceneCacheBlobRef {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(crate) enum SceneCacheEntryKind {
-    OwnedPrim { prim_path: String },
-    ChildScene { scene_id: SceneId, member_id: SceneMemberId },
-    ChildModel { model_id: ModelId, member_id: SceneMemberId },
+    OwnedPrim {
+        prim_path: String,
+    },
+    ChildScene {
+        scene_id: SceneId,
+        member_id: SceneMemberId,
+    },
+    ChildModel {
+        model_id: ModelId,
+        member_id: SceneMemberId,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -183,10 +195,18 @@ impl SceneCacheIndex {
             "unsupported Scene cache index schema version {}",
             self.schema_version
         );
-        ensure!(self.scene_id == scene_id, "Scene cache index SceneId mismatch");
-        ensure!(self.generation == generation, "Scene cache index generation mismatch");
         ensure!(
-            self.entries.windows(2).all(|pair| pair[0].address < pair[1].address),
+            self.scene_id == scene_id,
+            "Scene cache index SceneId mismatch"
+        );
+        ensure!(
+            self.generation == generation,
+            "Scene cache index generation mismatch"
+        );
+        ensure!(
+            self.entries
+                .windows(2)
+                .all(|pair| pair[0].address < pair[1].address),
             "Scene cache index addresses must be unique and strictly ordered"
         );
         for (index, entry) in self.entries.iter().enumerate() {
@@ -235,14 +255,24 @@ impl SceneSpatialIndex {
             "unsupported Scene spatial index schema version {}",
             self.schema_version
         );
-        ensure!(self.scene_id == scene_id, "Scene spatial index SceneId mismatch");
-        ensure!(self.generation == generation, "Scene spatial index generation mismatch");
         ensure!(
-            self.entries.windows(2).all(|pair| pair[0].address < pair[1].address),
+            self.scene_id == scene_id,
+            "Scene spatial index SceneId mismatch"
+        );
+        ensure!(
+            self.generation == generation,
+            "Scene spatial index generation mismatch"
+        );
+        ensure!(
+            self.entries
+                .windows(2)
+                .all(|pair| pair[0].address < pair[1].address),
             "Scene spatial index addresses must be unique and strictly ordered"
         );
         ensure!(
-            self.entries.iter().all(|entry| entry.address.scene_id == self.scene_id),
+            self.entries
+                .iter()
+                .all(|entry| entry.address.scene_id == self.scene_id),
             "Scene spatial entry belongs to a different Scene"
         );
         Ok(())
@@ -259,8 +289,14 @@ pub(crate) enum CacheObjectRef {
         semantic_key: Option<String>,
         content_hash: Option<HashDigest>,
     },
-    ChildScene { scene_id: SceneId, member_id: SceneMemberId },
-    ChildModel { model_id: ModelId, member_id: SceneMemberId },
+    ChildScene {
+        scene_id: SceneId,
+        member_id: SceneMemberId,
+    },
+    ChildModel {
+        model_id: ModelId,
+        member_id: SceneMemberId,
+    },
 }
 
 #[path = "cache_lookup.rs"]

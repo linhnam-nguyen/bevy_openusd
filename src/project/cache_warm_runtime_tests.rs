@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Result;
 use image::RgbaImage;
@@ -9,7 +9,9 @@ use openusd::schemas::shade::{Connectable, Material, MaterialBindingAPI, Shader}
 use openusd::sdf;
 use tempfile::tempdir;
 use usd_model::HashDigest;
-use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, StorageKey};
+use usd_project::{
+    ProjectId, ProjectManifestV1, ProjectRoot, SceneId, SceneManifestEntry, StorageKey,
+};
 
 use super::{
     SceneCacheDescriptorV3, SceneCacheStore, build_and_publish_managed_scene_cache_generation,
@@ -72,7 +74,9 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
     *hooks.lock().expect("CAS test hook lock is not poisoned") = Some(BuildPublishHook {
         project_root: directory.path().to_path_buf(),
         callback: Arc::new(move || {
-            built_tx.send(()).expect("CAS test worker reached publish barrier");
+            built_tx
+                .send(())
+                .expect("CAS test worker reached publish barrier");
             hook_release
                 .lock()
                 .expect("CAS test release lock is not poisoned")
@@ -87,18 +91,25 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
         build_and_publish_managed_scene_cache_generation(&root, &worker_descriptor)
     });
 
-    built_rx.recv().expect("runtime publisher built from its snapshot");
+    built_rx
+        .recv()
+        .expect("runtime publisher built from its snapshot");
     let mut winner = descriptor.clone();
     winner.state = SceneCacheState::Ready;
     store.publish_descriptor(&winner)?;
     release_tx.send(()).expect("CAS test worker can resume");
 
-    let result = worker.join().expect("runtime publisher thread did not panic")?;
+    let result = worker
+        .join()
+        .expect("runtime publisher thread did not panic")?;
     *hooks.lock().expect("CAS test hook lock is not poisoned") = None;
 
     assert!(result.is_none(), "stale runtime build must lose the CAS");
     assert_eq!(
-        store.load_descriptor(scene_id)?.expect("winner survives").state,
+        store
+            .load_descriptor(scene_id)?
+            .expect("winner survives")
+            .state,
         SceneCacheState::Ready
     );
     Ok(())
@@ -155,7 +166,10 @@ fn managed_runtime_publisher_preserves_pre_capture_same_generation_evolution() -
         .expect("rebased descriptor is published");
     assert_eq!(published.state, SceneCacheState::Ready);
     assert!(published.prim_count_ready);
-    assert_eq!(published.source_content_hash, Some(caller_source_content_hash));
+    assert_eq!(
+        published.source_content_hash,
+        Some(caller_source_content_hash)
+    );
     Ok(())
 }
 
@@ -179,10 +193,8 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         directory.path(),
         &manifest,
     )?;
-    let scene_path = crate::project::scene::authoring::author_scene_atomic(
-        directory.path(),
-        scene_id,
-    )?;
+    let scene_path =
+        crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
     let texture_path = directory.path().join("scene-diffuse.png");
     RgbaImage::from_pixel(1, 1, image::Rgba([48, 96, 192, 255])).save(&texture_path)?;
     let stage = openusd::usd::Stage::open(scene_path.to_string_lossy().as_ref())?;
@@ -194,7 +206,9 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .set(sdf::Value::token("UsdUVTexture"))?;
     texture
         .create_input("file", "asset")?
-        .set(sdf::Value::AssetPath(texture_path.to_string_lossy().into_owned().into()))?;
+        .set(sdf::Value::AssetPath(
+            texture_path.to_string_lossy().into_owned().into(),
+        ))?;
     texture.create_output("rgb", "float3")?;
     let surface = Shader::define(&stage, "/SceneRoot/Materials/Mat/Surface")?;
     surface
@@ -202,9 +216,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .set(sdf::Value::token("UsdPreviewSurface"))?;
     surface
         .create_input("diffuseColor", "color3f")?
-        .set_connections([sdf::path(
-            "/SceneRoot/Materials/Mat/Texture.outputs:rgb",
-        )?])?;
+        .set_connections([sdf::path("/SceneRoot/Materials/Mat/Texture.outputs:rgb")?])?;
     surface
         .create_input("roughness", "float")?
         .set(sdf::Value::Float(0.35))?;
@@ -245,11 +257,13 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let entry = index
         .entries
         .iter()
-        .find(|entry| matches!(
-            &entry.kind,
-            crate::project::cache_contract::SceneCacheEntryKind::OwnedPrim { prim_path }
-                if prim_path == "/SceneRoot/Renderable"
-        ))
+        .find(|entry| {
+            matches!(
+                &entry.kind,
+                crate::project::cache_contract::SceneCacheEntryKind::OwnedPrim { prim_path }
+                    if prim_path == "/SceneRoot/Renderable"
+            )
+        })
         .expect("Scene mesh cache entry");
     let material_ref = entry.material.as_ref().expect("material blob reference");
     let store = SceneCacheStore::new(directory.path()).object_store(scene_id)?;

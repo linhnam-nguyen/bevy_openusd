@@ -33,8 +33,7 @@ pub(crate) enum StageSendProbeOutcome {
 /// fn requires_send<T: Send>() {}
 /// requires_send::<openusd::usd::Stage>();
 /// ```
-pub(crate) const OPENUSD_STAGE_SEND_PROBE: StageSendProbeOutcome =
-    StageSendProbeOutcome::NotSend;
+pub(crate) const OPENUSD_STAGE_SEND_PROBE: StageSendProbeOutcome = StageSendProbeOutcome::NotSend;
 
 #[path = "stage_archive.rs"]
 mod stage_archive;
@@ -223,7 +222,11 @@ impl ProjectApplicationService {
     pub(crate) fn prepare_cache_for_activation(
         &self,
         target: &ProjectStageActivationTarget,
-    ) -> (ProjectCachePreparation, Option<ProjectCacheIdentity>, Option<SceneCacheActivation>) {
+    ) -> (
+        ProjectCachePreparation,
+        Option<ProjectCacheIdentity>,
+        Option<SceneCacheActivation>,
+    ) {
         let scene_id = match target.target {
             ProjectStageTarget::Scene(scene_id)
             | ProjectStageTarget::ProjectRoot(usd_project::ProjectRoot::Scene(scene_id)) => {
@@ -243,10 +246,11 @@ impl ProjectApplicationService {
                     None
                 }
             };
-            let state = activation.as_ref().map_or(
-                ProjectCachePreparation::FallbackRequired,
-                |_| ProjectCachePreparation::Ready,
-            );
+            let state = activation
+                .as_ref()
+                .map_or(ProjectCachePreparation::FallbackRequired, |_| {
+                    ProjectCachePreparation::Ready
+                });
             return (state, None, activation);
         }
         let cache_target = match target.target {

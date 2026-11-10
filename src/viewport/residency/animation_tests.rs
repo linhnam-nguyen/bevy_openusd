@@ -1,11 +1,11 @@
-use super::*;
 use super::super::{ScenePayloadCatalog, ScenePayloadDescriptor};
-use bevy::asset::Assets;
-use bevy::mesh::Mesh;
+use super::*;
 use crate::project::cache_contract::{
     CachedTransform, SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheOccurrence, SceneCacheState,
 };
+use bevy::asset::Assets;
+use bevy::mesh::Mesh;
 use usd_model::{BlobId, Bounds3, HashDigest};
 use usd_project::{SceneMemberId, ScenePlacementTransform};
 

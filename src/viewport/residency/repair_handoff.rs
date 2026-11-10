@@ -8,11 +8,11 @@ use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, Target
 
 use super::super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::super::loader::LoadJob;
-use super::super::repair_phase::RepairPhase;
 use super::super::repair_persistence::{
     TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
 };
-use super::{TargetedRepairRequest, TARGETED_REPAIR_QUEUE_CAPACITY};
+use super::super::repair_phase::RepairPhase;
+use super::{TARGETED_REPAIR_QUEUE_CAPACITY, TargetedRepairRequest};
 
 #[derive(Debug, Resource, Default)]
 pub(crate) struct TargetedRepairQueue {
@@ -229,14 +229,12 @@ pub(crate) fn drain_targeted_repair_persistence_completions(
                     expected_descriptor,
                 );
             }
-            Ok(TargetedPersistenceOutcome::CasLost | TargetedPersistenceOutcome::ScenePayloadMissing) =>
-                enqueue_scene_payload_repair(
-                    &mut authority,
-                    &mut repairs,
-                    job,
-                    project_root,
-                    path,
-                ),
+            Ok(
+                TargetedPersistenceOutcome::CasLost
+                | TargetedPersistenceOutcome::ScenePayloadMissing,
+            ) => {
+                enqueue_scene_payload_repair(&mut authority, &mut repairs, job, project_root, path)
+            }
             Ok(TargetedPersistenceOutcome::ScenePayloadNotOwned) => {
                 let _ = authority.suppress_repair(&job);
             }

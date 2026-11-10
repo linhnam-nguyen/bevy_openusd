@@ -3,8 +3,8 @@ use crate::project::cache_contract::{SceneCacheAddress, SceneCacheOccurrence};
 use crate::viewport::residency::{camera::CameraAdmission, spatial::SceneSpatialPayload};
 use bevy::asset::Assets;
 use bevy::camera::primitives::Frustum;
-use bevy::math::primitives::{HalfSpace, ViewFrustum};
 use bevy::math::Vec4;
+use bevy::math::primitives::{HalfSpace, ViewFrustum};
 use bevy::mesh::{Indices, Mesh};
 use usd_model::Bounds3;
 use usd_project::{SceneMemberId, ScenePlacementTransform};
@@ -267,7 +267,13 @@ fn decoded_mesh_footprint_replaces_encoded_estimate_before_accounting() {
     });
     let mut assets = Assets::<Mesh>::default();
     authority.install_scene(scene, 61, vec![payload]);
-    assert!(authority.request_reason(key, ResidencyReason::CameraNear, 61, encoded_bytes, encoded_bytes));
+    assert!(authority.request_reason(
+        key,
+        ResidencyReason::CameraNear,
+        61,
+        encoded_bytes,
+        encoded_bytes
+    ));
     let job = authority.begin_next_load().expect("encoded estimate fits");
     assert!(authority.complete_cached_cpu(job, mesh));
     assert_eq!(authority.pump_uploads(&mut assets, None), vec![key]);
@@ -285,7 +291,9 @@ fn terminal_cache_failure_is_suppressed_until_new_scene_generation() {
     let sample = CameraSample::default();
     authority.install_scene(scene, 71, vec![payload.clone()]);
     assert!(authority.update_camera_near(camera_admission(sample)));
-    let failed_job = authority.begin_next_load().expect("cache miss is dispatched");
+    let failed_job = authority
+        .begin_next_load()
+        .expect("cache miss is dispatched");
     assert!(authority.suppress_failed_load(&failed_job));
     assert_eq!(authority.state(&key), Some(PayloadResidencyState::Unloaded));
     assert!(!authority.update_camera_near(camera_admission(sample)));
@@ -293,7 +301,10 @@ fn terminal_cache_failure_is_suppressed_until_new_scene_generation() {
 
     authority.install_scene(scene, 72, vec![payload]);
     assert!(authority.update_camera_near(camera_admission(sample)));
-    assert_eq!(authority.begin_next_load().map(|job| job.generation), Some(72));
+    assert_eq!(
+        authority.begin_next_load().map(|job| job.generation),
+        Some(72)
+    );
 }
 
 #[test]
@@ -340,7 +351,10 @@ fn stationary_camera_refills_active_demand_after_loader_saturation() {
             gpu_bytes: 1,
         });
     }
-    let keys = payloads.iter().map(|payload| payload.payload_key).collect::<Vec<_>>();
+    let keys = payloads
+        .iter()
+        .map(|payload| payload.payload_key)
+        .collect::<Vec<_>>();
     let mut authority = ResidencyAuthority::default();
     authority.install_scene(scene, 51, payloads);
     let sample = CameraSample::default();
@@ -350,9 +364,10 @@ fn stationary_camera_refills_active_demand_after_loader_saturation() {
         assert!(authority.reject_load(&job));
     }
     assert_eq!(authority.queue_len(), 0);
-    assert!(keys.iter().any(|key| {
-        authority.state(key) == Some(PayloadResidencyState::Unloaded)
-    }));
+    assert!(
+        keys.iter()
+            .any(|key| { authority.state(key) == Some(PayloadResidencyState::Unloaded) })
+    );
 
     assert!(authority.update_camera_near(camera_admission(sample)));
     assert_eq!(authority.queue_len(), DEFAULT_LOADER_CAPACITY);
@@ -370,11 +385,5 @@ fn stationary_camera_refills_active_demand_after_loader_saturation() {
     }
 
     authority.install_scene(scene, 52, Vec::new());
-    assert!(!authority.request_reason(
-        keys[0],
-        ResidencyReason::CameraNear,
-        51,
-        1,
-        1,
-    ));
+    assert!(!authority.request_reason(keys[0], ResidencyReason::CameraNear, 51, 1, 1,));
 }

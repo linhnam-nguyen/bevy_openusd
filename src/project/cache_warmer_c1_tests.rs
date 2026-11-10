@@ -76,7 +76,9 @@ fn latest_scene_work_supersedes_and_saturation_retries_without_orphaning() {
     let key_a = (root.clone(), format!("scene:{scene_a}"));
     let key_b = (root.clone(), format!("scene:{scene_b}"));
     let target = |scene_id: SceneId, generation| WarmTarget {
-        target: ProjectCacheTarget::Scene { id: scene_id.to_string() },
+        target: ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        },
         scene_generation: Some(generation),
         build_generation: generation,
     };
@@ -87,12 +89,18 @@ fn latest_scene_work_supersedes_and_saturation_retries_without_orphaning() {
 
     let first = receiver.recv().unwrap();
     assert_eq!(first.key, key_a);
-    assert_eq!(state.take_latest(&first.key).unwrap().scene_generation, Some(2));
+    assert_eq!(
+        state.take_latest(&first.key).unwrap().scene_generation,
+        Some(2)
+    );
     state.finish_and_retry(&first.key, Some(&sender));
 
     let retried = receiver.recv().unwrap();
     assert_eq!(retried.key, key_b);
-    assert_eq!(state.take_latest(&retried.key).unwrap().scene_generation, Some(7));
+    assert_eq!(
+        state.take_latest(&retried.key).unwrap().scene_generation,
+        Some(7)
+    );
 }
 
 #[test]
@@ -101,7 +109,9 @@ fn cross_project_overflow_applies_bounded_backpressure_without_orphaning_generat
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let exact_root = std::path::PathBuf::from("/tmp/usdhub-i19-exact");
     let target = |scene_id: SceneId, generation| WarmTarget {
-        target: ProjectCacheTarget::Scene { id: scene_id.to_string() },
+        target: ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        },
         scene_generation: Some(generation),
         build_generation: generation,
     };
@@ -125,7 +135,10 @@ fn cross_project_overflow_applies_bounded_backpressure_without_orphaning_generat
     }
     assert_eq!(
         state.retained_counts(),
-        (queue::WARM_LATEST_CAPACITY, queue::WARM_DIRTY_PROJECT_CAPACITY)
+        (
+            queue::WARM_LATEST_CAPACITY,
+            queue::WARM_DIRTY_PROJECT_CAPACITY
+        )
     );
 
     let fifth_root = std::path::PathBuf::from("/tmp/usdhub-i19-dirty-fifth");
@@ -144,13 +157,20 @@ fn cross_project_overflow_applies_bounded_backpressure_without_orphaning_generat
     assert!(state.take_latest(&first.key).is_some());
     assert!(waiter.join().expect("bounded producer waiter completes"));
 
-    let fifth_job = receiver.recv().expect("fifth Project retains exact retry ownership");
+    let fifth_job = receiver
+        .recv()
+        .expect("fifth Project retains exact retry ownership");
     assert_eq!(fifth_job.key, fifth_key);
-    let retained = state.take_latest(&fifth_job.key).expect("fifth Project work remains retained");
+    let retained = state
+        .take_latest(&fifth_job.key)
+        .expect("fifth Project work remains retained");
     assert_eq!(retained.scene_generation, Some(77));
     assert_eq!(
         state.retained_counts(),
-        (queue::WARM_LATEST_CAPACITY - 1, queue::WARM_DIRTY_PROJECT_CAPACITY)
+        (
+            queue::WARM_LATEST_CAPACITY - 1,
+            queue::WARM_DIRTY_PROJECT_CAPACITY
+        )
     );
 }
 
@@ -188,11 +208,16 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
     let state = queue::LatestWarmState::new();
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     for (index, scene) in scenes.iter().enumerate() {
-        let key = (directory.path().to_path_buf(), format!("scene:{}", scene.id));
+        let key = (
+            directory.path().to_path_buf(),
+            format!("scene:{}", scene.id),
+        );
         assert!(state.record(
             key,
             WarmTarget {
-                target: ProjectCacheTarget::Scene { id: scene.id.to_string() },
+                target: ProjectCacheTarget::Scene {
+                    id: scene.id.to_string()
+                },
                 scene_generation: Some((index + 1) as u64),
                 build_generation: (index + 1) as u64,
             },
@@ -206,11 +231,17 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
     let mut observed = std::collections::HashSet::new();
     while observed.len() < scenes.len() {
         let job = receiver.recv().expect("bounded scheduler remains live");
-        let target = state.take_latest(&job.key).expect("scheduled key has latest work");
-        let ProjectCacheTarget::Scene { id } = target.target else { panic!("Scene retry expected") };
+        let target = state
+            .take_latest(&job.key)
+            .expect("scheduled key has latest work");
+        let ProjectCacheTarget::Scene { id } = target.target else {
+            panic!("Scene retry expected")
+        };
         let scene_id = SceneId::parse(&id)?;
         observed.insert(scene_id);
-        let mut descriptor = store.load_descriptor(scene_id)?.expect("descriptor remains authoritative");
+        let mut descriptor = store
+            .load_descriptor(scene_id)?
+            .expect("descriptor remains authoritative");
         descriptor.state = SceneCacheState::Partial;
         store.publish_descriptor(&descriptor)?;
         state.finish_and_retry(&job.key, Some(&sender));

@@ -3,8 +3,8 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::thread::{self, JoinHandle};
 
 use bevy::mesh::Mesh;
@@ -15,12 +15,12 @@ use bevy::prelude::Resource;
 use crate::project::blob_store::get_mesh;
 use crate::project::cache::SceneCacheStore;
 use crate::project::cache_contract::SceneCacheAddress;
+use crate::project::cache_scene_hydration::SceneAnimationPayloads;
 use crate::project::cache_scene_payload::SceneAnimationBlob;
 use crate::project::runtime_payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
-use crate::project::cache_scene_hydration::SceneAnimationPayloads;
 
-use super::{PayloadLoadMask, ScenePayloadDescriptor, ScenePayloadKey};
 use super::loader::LoadJob;
+use super::{PayloadLoadMask, ScenePayloadDescriptor, ScenePayloadKey};
 
 #[path = "worker_payloads.rs"]
 mod payloads;
@@ -174,12 +174,7 @@ impl CachedResidencyWorker {
         project_root: PathBuf,
         job: LoadJob<ScenePayloadKey>,
     ) -> Result<(), LoadJob<ScenePayloadKey>> {
-        self.dispatch_with_payloads(
-            project_root,
-            job,
-            PayloadLoadMask::GEOMETRY,
-            Vec::new(),
-        )
+        self.dispatch_with_payloads(project_root, job, PayloadLoadMask::GEOMETRY, Vec::new())
     }
 
     pub(crate) fn dispatch_with_payloads(
@@ -245,9 +240,7 @@ pub(crate) fn install_loaded_scene_payloads(
     mut queue: bevy::prelude::ResMut<LoadedScenePayloadQueue>,
     presentation: Option<bevy::prelude::Res<crate::viewport::session::SceneCachePresentation>>,
     mut images: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::image::Image>>>,
-    mut materials: Option<
-        bevy::prelude::ResMut<bevy::asset::Assets<bevy::pbr::StandardMaterial>>,
-    >,
+    mut materials: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::pbr::StandardMaterial>>>,
     mut seed: Option<bevy::prelude::ResMut<usd_bevy::ProjectionSeed>>,
     mut animation_payloads: Option<bevy::prelude::ResMut<SceneAnimationPayloads>>,
     mut commands: bevy::prelude::Commands,
@@ -301,10 +294,9 @@ pub(crate) fn install_loaded_scene_payloads(
             .collect::<std::collections::HashMap<_, _>>();
         let mut material_handles = Vec::with_capacity(completion.payloads.materials.len());
         for (prim_path, material) in &completion.payloads.materials {
-            let Ok(material) = crate::project::cache_hydration::standard_material(
-                material,
-                &texture_handles,
-            ) else {
+            let Ok(material) =
+                crate::project::cache_hydration::standard_material(material, &texture_handles)
+            else {
                 continue;
             };
             material_handles.push((prim_path.clone(), materials.add(material)));

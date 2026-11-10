@@ -1,7 +1,7 @@
 use bevy::prelude::World;
 
-use crate::project::cache_contract::SceneCacheActivation;
 use super::SceneCacheOwnershipContext;
+use crate::project::cache_contract::SceneCacheActivation;
 
 pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
     world: &mut World,
@@ -20,7 +20,11 @@ pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
         activation.descriptor.scene_id,
         activation.descriptor.generation,
     ));
-    super::scene_presentation::publish_scene_cache_presentation(world, activation, Some(project_root));
+    super::scene_presentation::publish_scene_cache_presentation(
+        world,
+        activation,
+        Some(project_root),
+    );
     true
 }
 
@@ -28,7 +32,9 @@ pub(super) fn is_current(
     project_root: Option<&std::path::Path>,
     activation: &SceneCacheActivation,
 ) -> bool {
-    let Some(project_root) = project_root else { return false; };
+    let Some(project_root) = project_root else {
+        return false;
+    };
     let store = crate::project::cache::SceneCacheStore::new(project_root);
     match store.load_descriptor(activation.descriptor.scene_id) {
         Ok(Some(current)) => {

@@ -125,6 +125,10 @@ fn canonical_revit_source() -> PathBuf {
         .join("../Instance2/external_assets/Omniverse/V1/Projet1.usdc")
 }
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "requires Mac-only external USD development assets"
+)]
 #[test]
 fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
     let source = canonical_revit_source();

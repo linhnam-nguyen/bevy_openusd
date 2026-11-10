@@ -6,8 +6,8 @@ use usd_project::SceneId;
 
 use super::{SceneCacheDescriptorV3, SceneCacheStore};
 use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheIndex, SceneCacheState,
-    SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneSpatialIndex,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheIndex,
+    SceneCacheState, SceneSpatialIndex,
 };
 
 #[derive(Debug)]
@@ -28,16 +28,14 @@ pub(crate) fn publish_prim_count_if_current(
         let current = store.load_descriptor(scene_id)?;
         let mut descriptor = match (expected, current) {
             (None, None) => {
-                let mut descriptor = SceneCacheDescriptorV3::invalidated(
-                    scene_id,
-                    1,
-                    config_hash,
-                );
+                let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, 1, config_hash);
                 descriptor.state = SceneCacheState::Partial;
                 descriptor
             }
             (None, Some(current)) => return Ok(PrimCountPublication::RetryableCurrent(current)),
-            (Some(expected), Some(current)) if compatible_identity(scene_id, expected, &current) => {
+            (Some(expected), Some(current))
+                if compatible_identity(scene_id, expected, &current) =>
+            {
                 current
             }
             (Some(_), Some(_)) | (Some(_), None) => {
@@ -56,8 +54,14 @@ pub(crate) fn publish_prim_count_if_current(
                 descriptor.generation
             ),
         };
-        ensure!(index.scene_id == scene_id, "Scene cache index owner changed");
-        ensure!(index.generation == descriptor.generation, "Scene cache index generation changed");
+        ensure!(
+            index.scene_id == scene_id,
+            "Scene cache index owner changed"
+        );
+        ensure!(
+            index.generation == descriptor.generation,
+            "Scene cache index generation changed"
+        );
         let spatial = match store.load_spatial(scene_id)? {
             Some(spatial) => spatial,
             None if allow_absent_artifacts && descriptor.spatial_digest.is_none() => {
@@ -68,14 +72,25 @@ pub(crate) fn publish_prim_count_if_current(
                 descriptor.generation
             ),
         };
-        ensure!(spatial.scene_id == scene_id, "Scene spatial index owner changed");
-        ensure!(spatial.generation == descriptor.generation, "Scene spatial index generation changed");
-        ensure!(descriptor.cacheable_count <= prim_count, "Scene cache prim count is below indexed entries");
+        ensure!(
+            spatial.scene_id == scene_id,
+            "Scene spatial index owner changed"
+        );
+        ensure!(
+            spatial.generation == descriptor.generation,
+            "Scene spatial index generation changed"
+        );
+        ensure!(
+            descriptor.cacheable_count <= prim_count,
+            "Scene cache prim count is below indexed entries"
+        );
         descriptor.prim_count = prim_count;
         descriptor.prim_count_ready = true;
-        Ok(PrimCountPublication::Published(
-            store.publish_generation(&descriptor, &index, &spatial)?,
-        ))
+        Ok(PrimCountPublication::Published(store.publish_generation(
+            &descriptor,
+            &index,
+            &spatial,
+        )?))
     })
 }
 
@@ -121,10 +136,14 @@ fn spatial_index(index: &SceneCacheIndex) -> SceneSpatialIndex {
         entries: index
             .entries
             .iter()
-            .filter_map(|entry| entry.bounds.map(|bounds| crate::project::cache_contract::SceneSpatialEntry {
-                address: entry.address.clone(),
-                bounds,
-            }))
+            .filter_map(|entry| {
+                entry
+                    .bounds
+                    .map(|bounds| crate::project::cache_contract::SceneSpatialEntry {
+                        address: entry.address.clone(),
+                        bounds,
+                    })
+            })
             .collect(),
     }
 }

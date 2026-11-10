@@ -11,6 +11,7 @@ use super::*;
 use crate::project::blob_store::{BlobStore, FilesystemBlobStore};
 use crate::project::catalog::manifest_store::ManifestStore;
 
+#[cfg(not(windows))]
 #[test]
 fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> {
     let directory = tempdir()?;
@@ -103,5 +104,44 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
             .iter()
             .any(|entity| entity.prim_path == member_path)
     );
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state() -> Result<()> {
+    let directory = tempdir()?;
+    let scene_id = SceneId::new_v4();
+    let legacy_manifest = ProjectManifestV1::new(
+        ProjectId::new_v4(),
+        "Cached Legacy Project",
+        ProjectRoot::Scene(scene_id),
+        vec![usd_project::SceneManifestEntry {
+            id: scene_id,
+            storage_key: usd_project::StorageKey::new("Legacy Scene")?,
+            display_name: "Legacy Scene".to_owned(),
+        }],
+        Vec::new(),
+    );
+    let legacy_path = crate::project::scene::authoring::scene_path(directory.path(), scene_id);
+    crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
+    fs::create_dir_all(directory.path().join(".usdhub"))?;
+    let manifest_path = directory.path().join(".usdhub/project.json");
+    let manifest_bytes = serde_json::to_vec_pretty(&legacy_manifest)?;
+    fs::write(&manifest_path, &manifest_bytes)?;
+    let legacy_scene_bytes = fs::read(&legacy_path)?;
+
+    let error = match ManifestStore::read_validated(directory.path()) {
+        Err(error) => error,
+        Ok(_) => anyhow::bail!("Windows legacy migration must fail closed"),
+    };
+    assert!(
+        format!("{error:#}").contains("unsupported on Windows"),
+        "expected explicit Windows unsupported result, got: {error:#}"
+    );
+    assert_eq!(fs::read(&manifest_path)?, manifest_bytes);
+    assert_eq!(fs::read(&legacy_path)?, legacy_scene_bytes);
+    assert!(!directory.path().join("project.json").exists());
+    assert!(!directory.path().join(".usdhub/.transactions").exists());
     Ok(())
 }

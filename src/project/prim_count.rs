@@ -1,8 +1,8 @@
 //! Bounded asynchronous prim-count inspection for uncached stages.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
 use anyhow::{Context, Result};
 use bevy::prelude::Resource;
@@ -80,7 +80,8 @@ impl PrimCountWorker {
 
 fn prim_count_worker(requests: Receiver<PrimCountRequest>, results: SyncSender<PrimCountResult>) {
     while let Ok(request) = requests.recv() {
-        let count = count_stage_prims(&request.freshness.path).map_err(|error| format!("{error:#}"));
+        let count =
+            count_stage_prims(&request.freshness.path).map_err(|error| format!("{error:#}"));
         if results
             .send(PrimCountResult {
                 freshness: request.freshness,

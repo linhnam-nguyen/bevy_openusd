@@ -49,7 +49,7 @@ pub(crate) fn sync_animation_residency(
         state.release(&mut authority);
         let catalog = (catalog.scene_id == Some(presentation.scene_id)
             && catalog.generation == Some(presentation.generation))
-            .then_some(catalog.as_ref());
+        .then_some(catalog.as_ref());
         state.rebuild(&presentation, catalog);
         authority.register_scene_generation(presentation.scene_id, presentation.generation);
     }

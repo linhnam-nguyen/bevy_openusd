@@ -81,7 +81,6 @@ impl SelectionColorOverrideState {
     pub(in crate::viewport) fn is_pending(&self) -> bool {
         self.pending.is_some()
     }
-
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -152,9 +151,9 @@ pub(in crate::viewport) fn sync_selection_color_overrides(
         return;
     };
     let presentation = settings.selection();
-    let coarse = policy.as_deref().is_some_and(|policy| {
-        policy.uses_coarse(projection.renderables().len())
-    });
+    let coarse = policy
+        .as_deref()
+        .is_some_and(|policy| policy.uses_coarse(projection.renderables().len()));
     let presentation_key: PresentationKey = (
         presentation.color_change_enabled,
         presentation.selection_color,

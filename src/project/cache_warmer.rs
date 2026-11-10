@@ -113,7 +113,9 @@ impl ProjectCacheWarmQueue {
             if let ProjectCacheTarget::Scene { id } = target {
                 let scene_id = SceneId::parse(id).context("parse deleted Scene cache target id")?;
                 let scene_lock = scene_lifecycle_lock(project_root, scene_id);
-                let _guard = scene_lock.lock().expect("Scene cache lifecycle lock is not poisoned");
+                let _guard = scene_lock
+                    .lock()
+                    .expect("Scene cache lifecycle lock is not poisoned");
                 ProjectCacheStore::new(project_root).remove_target(target)?;
                 SceneCacheStore::new(project_root).remove_scene(scene_id)?;
                 super::cache_warm_runtime::publish_current_project_cache_lookup(project_root)?;
@@ -143,21 +145,35 @@ fn project_cache_targets(
     if !matches!(manifest.raw().root, usd_project::ProjectRoot::Empty) {
         targets.push(ProjectCacheTarget::ProjectRoot);
     }
-    targets.extend(manifest.scenes().iter().map(|scene| ProjectCacheTarget::Scene {
-        id: scene.id.to_string(),
-    }));
-    targets.extend(manifest.models().iter().map(|model| ProjectCacheTarget::Model {
-        id: model.id.to_string(),
-    }));
+    targets.extend(
+        manifest
+            .scenes()
+            .iter()
+            .map(|scene| ProjectCacheTarget::Scene {
+                id: scene.id.to_string(),
+            }),
+    );
+    targets.extend(
+        manifest
+            .models()
+            .iter()
+            .map(|model| ProjectCacheTarget::Model {
+                id: model.id.to_string(),
+            }),
+    );
     targets
 }
 
 fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
     if let ProjectCacheTarget::Scene { id } = &target.target {
-        let generation = target.scene_generation.context("Scene warm target missing generation")?;
+        let generation = target
+            .scene_generation
+            .context("Scene warm target missing generation")?;
         let scene_id = SceneId::parse(id).context("parse Scene cache target id")?;
         let scene_lock = scene_lifecycle_lock(project_root, scene_id);
-        let _guard = scene_lock.lock().expect("Scene cache lifecycle lock is not poisoned");
+        let _guard = scene_lock
+            .lock()
+            .expect("Scene cache lifecycle lock is not poisoned");
         let scene_store = SceneCacheStore::new(project_root);
         if !scene_store
             .load_descriptor(scene_id)?
@@ -209,13 +225,15 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
 
     let (state, runtime) = match target_stage_path(project_root, &target.target) {
         Ok(None) => (ProjectCacheState::Empty, None),
-        Ok(Some(path)) => match super::cache_preparation::build_runtime_cache(project_root, &path, &identity) {
-            Ok(manifest) => (ProjectCacheState::Ready, Some(manifest)),
-            Err(error) => {
-                log::warn!("canonical Project stage could not be fully warmed: {error:#}");
-                (ProjectCacheState::FallbackRequired, None)
+        Ok(Some(path)) => {
+            match super::cache_preparation::build_runtime_cache(project_root, &path, &identity) {
+                Ok(manifest) => (ProjectCacheState::Ready, Some(manifest)),
+                Err(error) => {
+                    log::warn!("canonical Project stage could not be fully warmed: {error:#}");
+                    (ProjectCacheState::FallbackRequired, None)
+                }
             }
-        },
+        }
         Err(error) => {
             log::warn!("canonical Project target could not be resolved: {error:#}");
             (ProjectCacheState::FallbackRequired, None)
@@ -236,11 +254,19 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
 }
 
 fn mark_warm_failure_terminal(project_root: &Path, target: &WarmTarget) {
-    let ProjectCacheTarget::Scene { id } = &target.target else { return; };
-    let Some(generation) = target.scene_generation else { return; };
-    let Ok(scene_id) = SceneId::parse(id) else { return; };
+    let ProjectCacheTarget::Scene { id } = &target.target else {
+        return;
+    };
+    let Some(generation) = target.scene_generation else {
+        return;
+    };
+    let Ok(scene_id) = SceneId::parse(id) else {
+        return;
+    };
     let store = SceneCacheStore::new(project_root);
-    let Ok(Some(mut descriptor)) = store.load_descriptor(scene_id) else { return; };
+    let Ok(Some(mut descriptor)) = store.load_descriptor(scene_id) else {
+        return;
+    };
     if descriptor.generation != generation || descriptor.state != SceneCacheState::Building {
         return;
     }
@@ -261,7 +287,8 @@ fn warm_scene_target(
     identity: &ProjectCacheIdentity,
 ) -> Result<()> {
     let scene_id = SceneId::parse(id).context("parse Scene cache target id")?;
-    let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, generation, identity.config_hash);
+    let mut descriptor =
+        SceneCacheDescriptorV3::invalidated(scene_id, generation, identity.config_hash);
     descriptor.source_content_hash = Some(identity.target_content_hash);
     descriptor.state = SceneCacheState::Partial;
     let _ = super::cache_warm_runtime::build_and_publish_managed_scene_cache_generation(
@@ -277,9 +304,8 @@ pub(crate) fn cache_targets_for_changed_paths(
     changed_paths: &[PathBuf],
 ) -> Vec<ProjectCacheTarget> {
     let layout = crate::project::storage::ProjectStorageLayout::new(project_root);
-    let owns = |path: &Path, exact: &Path, directory: &Path| {
-        path == exact || path.starts_with(directory)
-    };
+    let owns =
+        |path: &Path, exact: &Path, directory: &Path| path == exact || path.starts_with(directory);
     let relative = |path: PathBuf| path.strip_prefix(project_root).ok().map(Path::to_path_buf);
     let mut targets = Vec::new();
     for scene in manifest.scenes() {
@@ -288,17 +314,35 @@ pub(crate) fn cache_targets_for_changed_paths(
         } else {
             layout.canonical_scene_path(&scene.storage_key)
         };
-        let Some(scene_path) = relative(scene_path) else { continue; };
-        let Some(imports) = relative(layout.canonical_scene_import_dir(scene.id)) else { continue; };
-        if changed_paths.iter().any(|path| owns(path, &scene_path, &imports)) {
-            targets.push(ProjectCacheTarget::Scene { id: scene.id.to_string() });
+        let Some(scene_path) = relative(scene_path) else {
+            continue;
+        };
+        let Some(imports) = relative(layout.canonical_scene_import_dir(scene.id)) else {
+            continue;
+        };
+        if changed_paths
+            .iter()
+            .any(|path| owns(path, &scene_path, &imports))
+        {
+            targets.push(ProjectCacheTarget::Scene {
+                id: scene.id.to_string(),
+            });
         }
     }
     for model in manifest.models() {
-        let Some(wrapper) = relative(layout.canonical_model_wrapper_path(model)) else { continue; };
-        let Some(imports) = relative(layout.canonical_model_import_dir(model.id)) else { continue; };
-        if changed_paths.iter().any(|path| owns(path, &wrapper, &imports)) {
-            targets.push(ProjectCacheTarget::Model { id: model.id.to_string() });
+        let Some(wrapper) = relative(layout.canonical_model_wrapper_path(model)) else {
+            continue;
+        };
+        let Some(imports) = relative(layout.canonical_model_import_dir(model.id)) else {
+            continue;
+        };
+        if changed_paths
+            .iter()
+            .any(|path| owns(path, &wrapper, &imports))
+        {
+            targets.push(ProjectCacheTarget::Model {
+                id: model.id.to_string(),
+            });
         }
     }
     targets.sort_by_key(ProjectCacheTarget::key);
@@ -363,8 +407,8 @@ mod tests;
 #[path = "cache_warmer_c1_tests.rs"]
 mod c1_tests;
 #[cfg(test)]
-#[path = "cache_warmer_recovery_tests.rs"]
-mod recovery_tests;
-#[cfg(test)]
 #[path = "cache_warmer_lifecycle_tests.rs"]
 mod lifecycle_tests;
+#[cfg(test)]
+#[path = "cache_warmer_recovery_tests.rs"]
+mod recovery_tests;

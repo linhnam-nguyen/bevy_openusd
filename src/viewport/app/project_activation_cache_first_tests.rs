@@ -5,8 +5,8 @@ use usd_bevy::LiveStage;
 use super::ProductionActivationWorld;
 use crate::project::cache::SceneCacheStore;
 use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
+    SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
 use crate::project::cache_hydration::default_project_cache_config_hash;
 use crate::project::service::{ProjectStageActivationTarget, ProjectStagePresentationContext};
@@ -60,7 +60,10 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
     let mut production = ProductionActivationWorld::new();
     assert!(production.admit("cache-first-session", &command));
     let reply = production.apply("cache-first-session", &command, Ok(Some(target)));
-    assert!(reply.is_none(), "cache-first bootstrap must defer its reply");
+    assert!(
+        reply.is_none(),
+        "cache-first bootstrap must defer its reply"
+    );
     assert_eq!(
         production
             .world()
@@ -71,16 +74,22 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
     assert!(production.world().get_non_send::<LiveStage>().is_none());
     production.update();
     assert!(production.world().get_non_send::<LiveStage>().is_none());
-    assert!(!production
-        .world()
-        .resource::<crate::viewport::session::CachePresentationGate>()
-        .rendered());
-    assert!(production
-        .world()
-        .resource::<crate::viewport::api::RenderServerInterface>()
-        .shared()
-        .take_project_activation_result(&viewport_protocol::SessionId::new("cache-first-session"))
-        .is_none());
+    assert!(
+        !production
+            .world()
+            .resource::<crate::viewport::session::CachePresentationGate>()
+            .rendered()
+    );
+    assert!(
+        production
+            .world()
+            .resource::<crate::viewport::api::RenderServerInterface>()
+            .shared()
+            .take_project_activation_result(&viewport_protocol::SessionId::new(
+                "cache-first-session"
+            ))
+            .is_none()
+    );
     production.mark_cache_rendered_for_test();
     production.update();
     let reply = production
@@ -93,7 +102,12 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
         reply.reply.result,
         project_protocol::ProjectActivationResult::Failed { .. }
     ));
-    assert!(production.world().get_resource::<SceneCachePresentation>().is_none());
+    assert!(
+        production
+            .world()
+            .get_resource::<SceneCachePresentation>()
+            .is_none()
+    );
 }
 
 #[test]
@@ -148,7 +162,11 @@ fn stale_cache_first_continuation_rolls_back_without_replacing_newer_authority()
     );
     let mut production = ProductionActivationWorld::new();
     assert!(production.admit("cache-first-session", &first));
-    assert!(production.apply("cache-first-session", &first, Ok(Some(target))).is_none());
+    assert!(
+        production
+            .apply("cache-first-session", &first, Ok(Some(target)))
+            .is_none()
+    );
     assert!(production.admit("cache-first-session", &newer));
     production.update();
     production.mark_cache_rendered_for_test();
@@ -163,5 +181,10 @@ fn stale_cache_first_continuation_rolls_back_without_replacing_newer_authority()
         reply.reply.result,
         project_protocol::ProjectActivationResult::Failed { .. }
     ));
-    assert!(production.world().get_resource::<SceneCachePresentation>().is_none());
+    assert!(
+        production
+            .world()
+            .get_resource::<SceneCachePresentation>()
+            .is_none()
+    );
 }

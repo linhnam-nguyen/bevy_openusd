@@ -5,10 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy::prelude::*;
 use viewport_protocol::SceneAnchor;
 
-use crate::project::{
-    cache_contract::{
-        CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
-    },
+use crate::project::cache_contract::{
+    CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
 };
 #[cfg(test)]
 use crate::project::{

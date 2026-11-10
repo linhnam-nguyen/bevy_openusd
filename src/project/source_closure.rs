@@ -107,7 +107,9 @@ pub(crate) fn target_content_hash(
                     let read = file
                         .read(&mut buffer)
                         .with_context(|| format!("read Project target {}", path.display()))?;
-                    if read == 0 { break; }
+                    if read == 0 {
+                        break;
+                    }
                     hasher.update(&buffer[..read]);
                 }
             }
@@ -216,8 +218,9 @@ fn collect_target_files(
             });
             let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model.id);
             collect_one_file(project_root, &wrapper, files, true)?;
-            let imported_directory = crate::project::storage::ProjectStorageLayout::new(project_root)
-                .readable_model_import_dir(model.id);
+            let imported_directory =
+                crate::project::storage::ProjectStorageLayout::new(project_root)
+                    .readable_model_import_dir(model.id);
             if imported_directory.exists() {
                 collect_target_directory(project_root, &imported_directory, files)?;
             }
@@ -264,14 +267,18 @@ fn hash_managed_layer(path: &Path, hasher: &mut blake3::Hasher) -> Result<()> {
     while index < lines.len() {
         let line = &lines[index];
         let mut start = 0;
-        while start < line.len() && matches!(line[start], b' ' | b'\t') { start += 1; }
+        while start < line.len() && matches!(line[start], b' ' | b'\t') {
+            start += 1;
+        }
         if line[start..].starts_with(b"string ui:displayName =")
             || line[start..].starts_with(b"ui:displayName =")
         {
             let previous_ends_open = if index > 0 {
                 let previous = &lines[index - 1];
                 let mut end = previous.len();
-                while end > 0 && matches!(previous[end - 1], b' ' | b'\t') { end -= 1; }
+                while end > 0 && matches!(previous[end - 1], b' ' | b'\t') {
+                    end -= 1;
+                }
                 end > 0 && previous[end - 1] == b'('
             } else {
                 false
@@ -279,10 +286,15 @@ fn hash_managed_layer(path: &Path, hasher: &mut blake3::Hasher) -> Result<()> {
             if index > 0
                 && index + 1 < lines.len()
                 && previous_ends_open
-                && lines[index + 1].iter().all(|byte| *byte == b' ' || *byte == b'\t' || *byte == b')')
+                && lines[index + 1]
+                    .iter()
+                    .all(|byte| *byte == b' ' || *byte == b'\t' || *byte == b')')
             {
                 if let Some(previous) = normalized.last_mut() {
-                    while previous.last().is_some_and(|byte| *byte == b' ' || *byte == b'\t' || *byte == b'(') {
+                    while previous
+                        .last()
+                        .is_some_and(|byte| *byte == b' ' || *byte == b'\t' || *byte == b'(')
+                    {
                         previous.pop();
                     }
                 }

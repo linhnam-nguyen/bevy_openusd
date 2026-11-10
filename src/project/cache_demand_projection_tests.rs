@@ -90,11 +90,7 @@ fn payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows() {
     );
     descriptor.state = SceneCacheState::Partial;
     store
-        .publish_generation(
-            &descriptor,
-            &index,
-            &spatial,
-        )
+        .publish_generation(&descriptor, &index, &spatial)
         .expect("publish owner Scene cache");
 
     assert_eq!(
@@ -135,9 +131,7 @@ fn current_cache_ready_miss_escalates_to_targeted_scene_repair() {
                 occurrence: SceneCacheOccurrence::PrimPath(path.to_owned()),
             },
             parent: None,
-            transform: CachedTransform::Placement(
-                usd_project::ScenePlacementTransform::IDENTITY,
-            ),
+            transform: CachedTransform::Placement(usd_project::ScenePlacementTransform::IDENTITY),
             bounds: None,
             cacheable: false,
             bim_enabled: false,

@@ -1,4 +1,16 @@
 //! Project-specific LiveStage installation and empty-state invalidation.
+use super::{
+    RequestedAsset, Spawned, StageHandle, StageInfo, StagePresentationContext,
+    lifecycle_invalidation,
+};
+use crate::project::cache_contract::{ProjectCacheTarget, SceneCacheActivation};
+use crate::project::cache_hydration::{
+    ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
+};
+use crate::viewport::api::CurrentHierarchyProjection;
+use crate::viewport::session::{
+    PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
+};
 use bevy::prelude::*;
 use openusd::usd::Stage;
 use std::sync::{Arc, Mutex};
@@ -6,20 +18,6 @@ use std::thread;
 use std::time::Instant;
 use usd_bevy::LiveStage;
 use usd_model::HashDigest;
-use crate::project::cache_contract::{
-    ProjectCacheTarget, SceneCacheActivation,
-};
-use crate::project::cache_hydration::{
-    ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
-};
-use crate::viewport::api::CurrentHierarchyProjection;
-use super::{
-    RequestedAsset, Spawned, StageHandle, StageInfo, StagePresentationContext,
-    lifecycle_invalidation,
-};
-use crate::viewport::session::{
-    PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
-};
 #[path = "lifecycle_scene_cache.rs"]
 mod scene_cache;
 pub(crate) use scene_cache::install_scene_cache_bootstrap_before_stage_open;
@@ -112,8 +110,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     {
         cache.replace_active_archives(archive_paths);
     }
-    if !preserve_cache
-        && let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>()
+    if !preserve_cache && let Some(mut seed) = world.get_resource_mut::<usd_bevy::ProjectionSeed>()
     {
         seed.clear();
     }
@@ -181,9 +178,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     } else {
         world.remove_resource::<SceneCacheOwnershipContext>();
     }
-    if !preserve_cache
-        && let Some(scene_cache) = scene_cache.as_ref()
-    {
+    if !preserve_cache && let Some(scene_cache) = scene_cache.as_ref() {
         scene_presentation::publish_scene_cache_presentation(
             world,
             scene_cache,
@@ -287,14 +282,23 @@ pub(crate) fn discard_scene_cache_bootstrap(
     if !projection_ready
         && let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>()
     {
-        *projection = CurrentHierarchyProjection::empty(viewport_protocol::HierarchySource::Prim, 0);
+        *projection =
+            CurrentHierarchyProjection::empty(viewport_protocol::HierarchySource::Prim, 0);
     }
 }
 /// Completes the background Scene source check without blocking the frame that
 /// admitted the canonical Stage. A changed or unverifiable source invalidates
 /// only the matching Scene generation; LiveStage remains authoritative.
 pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
-    let Some((project_root, scene_id, activation_generation, scene_generation, expected_hash, config_hash, result)) = world
+    let Some((
+        project_root,
+        scene_id,
+        activation_generation,
+        scene_generation,
+        expected_hash,
+        config_hash,
+        result,
+    )) = world
         .get_resource::<PendingSceneCacheRevalidation>()
         .map(|pending| {
             (
@@ -326,11 +330,12 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
     let active_generation = world
         .get_resource::<StageInfo>()
         .map_or(0, |info| info.activation_generation);
-    let matching_presentation = world
-        .get_resource::<SceneCachePresentation>()
-        .is_some_and(|presentation| {
-            presentation.scene_id == scene_id && presentation.generation == scene_generation
-        });
+    let matching_presentation =
+        world
+            .get_resource::<SceneCachePresentation>()
+            .is_some_and(|presentation| {
+                presentation.scene_id == scene_id && presentation.generation == scene_generation
+            });
     if active_generation != activation_generation || !matching_presentation {
         world.remove_resource::<PendingSceneCacheRevalidation>();
         return;

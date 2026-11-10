@@ -37,7 +37,10 @@ impl SceneAnimationBlob {
         let joint_count = self.joint_order.len();
         let blend_shape_count = self.blend_shape_order.len();
         for sample in &self.samples {
-            ensure!(sample.time.is_finite(), "Scene animation time is not finite");
+            ensure!(
+                sample.time.is_finite(),
+                "Scene animation time is not finite"
+            );
             ensure!(
                 sample.translations.len() == joint_count
                     && sample.rotations.len() == joint_count
@@ -67,10 +70,7 @@ impl SceneAnimationBlob {
 /// Extract authored animation sample times for one owned mesh and encode the
 /// evaluated typed components. The source stage remains authoritative; this
 /// is a deterministic cache/residency representation.
-pub(crate) fn prepare_animation_payload(
-    stage: &Stage,
-    mesh_path: &str,
-) -> Result<Option<Vec<u8>>> {
+pub(crate) fn prepare_animation_payload(stage: &Stage, mesh_path: &str) -> Result<Option<Vec<u8>>> {
     let mesh_path = sdf::path(mesh_path)?;
     let Some(query) = usd_bevy::read::skel::animation_query_for_mesh(stage, &mesh_path) else {
         return Ok(None);
@@ -92,10 +92,10 @@ pub(crate) fn prepare_animation_payload(
     let samples = times
         .iter()
         .map(|time| {
-            let (translations, rotations, scales) = query
-                .compute_joint_local_transform_components(stage, TimeCode::new(*time))?;
-            let blend_shape_weights = query
-                .compute_blend_shape_weights(stage, TimeCode::new(*time))?;
+            let (translations, rotations, scales) =
+                query.compute_joint_local_transform_components(stage, TimeCode::new(*time))?;
+            let blend_shape_weights =
+                query.compute_blend_shape_weights(stage, TimeCode::new(*time))?;
             Ok(SceneAnimationSample {
                 time: *time,
                 translations: translations.into_iter().map(Into::into).collect(),

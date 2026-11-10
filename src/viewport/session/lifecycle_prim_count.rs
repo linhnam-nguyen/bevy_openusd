@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::prelude::World;
 
-use crate::project::cache::{
-    PrimCountPublication, SceneCacheStore, publish_prim_count_if_current,
-};
+use crate::project::cache::{PrimCountPublication, SceneCacheStore, publish_prim_count_if_current};
 use crate::project::cache_contract::{SceneCacheActivation, SceneCacheDescriptorV3};
 use crate::project::cache_hydration::default_project_cache_config_hash;
 use crate::project::prim_count::{PrimCountFreshness, PrimCountWorker, SubmitStatus};
@@ -27,18 +25,19 @@ pub(super) fn initialize_for_activation(
     owner: Option<(PathBuf, usd_project::SceneId)>,
     cache: Option<&SceneCacheActivation>,
 ) {
-    let descriptor = owner.as_ref().and_then(|(project_root, scene_id)| {
-        match SceneCacheStore::new(project_root).load_descriptor(scene_id.clone()) {
-            Ok(descriptor) => descriptor,
-            Err(error) => {
-                bevy::log::warn!(
-                    "[project-cache] Scene descriptor probe failed for {}: {error:#}",
-                    scene_id
-                );
-                None
+    let descriptor =
+        owner.as_ref().and_then(|(project_root, scene_id)| {
+            match SceneCacheStore::new(project_root).load_descriptor(scene_id.clone()) {
+                Ok(descriptor) => descriptor,
+                Err(error) => {
+                    bevy::log::warn!(
+                        "[project-cache] Scene descriptor probe failed for {}: {error:#}",
+                        scene_id
+                    );
+                    None
+                }
             }
-        }
-    });
+        });
     world.insert_resource(SceneDerivedMetadata::from_activation(
         path.to_path_buf(),
         activation_generation,
@@ -135,8 +134,7 @@ pub(super) fn update(world: &mut World, session_id: u64) {
                     CachePublication::Rejected => {
                         terminalize(
                             world,
-                            "Scene cache identity changed before prim-count publication"
-                                .to_owned(),
+                            "Scene cache identity changed before prim-count publication".to_owned(),
                         );
                     }
                     CachePublication::Retryable(descriptor) => {
@@ -210,9 +208,11 @@ pub(super) fn update(world: &mut World, session_id: u64) {
 }
 
 fn ensure_current_metadata(world: &mut World, path: PathBuf, activation_generation: u64) {
-    let current = world.get_resource::<SceneDerivedMetadata>().is_some_and(|metadata| {
-        metadata.path == path && metadata.activation_generation == activation_generation
-    });
+    let current = world
+        .get_resource::<SceneDerivedMetadata>()
+        .is_some_and(|metadata| {
+            metadata.path == path && metadata.activation_generation == activation_generation
+        });
     if !current {
         initialize_for_uncached(world, path);
     }
@@ -233,8 +233,8 @@ fn reconcile_retryable_cache(world: &mut World, descriptor: &SceneCacheDescripto
     metadata.cache_generation = Some(descriptor.generation);
     metadata.cache_state = Some(descriptor.state);
     metadata.prim_count = descriptor.prim_count as usize;
-    metadata.prim_count_ready =
-        descriptor.prim_count_ready || descriptor.state == crate::project::cache_contract::SceneCacheState::Ready;
+    metadata.prim_count_ready = descriptor.prim_count_ready
+        || descriptor.state == crate::project::cache_contract::SceneCacheState::Ready;
     metadata.prim_count_pending = false;
     metadata.prim_count_terminal = false;
     metadata.prim_count_error = Some(
@@ -293,15 +293,18 @@ fn publish_scene_cache_count(
         if !metadata.freshness_matches(freshness) {
             return CachePublication::Rejected;
         }
-        let (Some(project_root), Some(scene_id)) =
-            (metadata.cache_project_root.clone(), metadata.scene_id.clone())
-        else {
+        let (Some(project_root), Some(scene_id)) = (
+            metadata.cache_project_root.clone(),
+            metadata.scene_id.clone(),
+        ) else {
             return CachePublication::NotApplicable;
         };
         let config_hash = metadata
             .cache_descriptor
             .as_ref()
-            .map_or_else(default_project_cache_config_hash, |descriptor| descriptor.config_hash);
+            .map_or_else(default_project_cache_config_hash, |descriptor| {
+                descriptor.config_hash
+            });
         (
             project_root,
             scene_id,

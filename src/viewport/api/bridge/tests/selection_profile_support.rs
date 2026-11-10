@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use bevy::prelude::{App, World};
 use crate::viewport::api::SceneAnchorIndex;
+use bevy::prelude::{App, World};
 use viewport_protocol::SelectionReadModel;
 
 use super::{SelectionColorOverrideState, SelectionOutlineState, set_selection};

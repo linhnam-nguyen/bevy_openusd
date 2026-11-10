@@ -18,9 +18,7 @@ pub(crate) enum RepairPhase {
 }
 
 impl RepairPhase {
-    pub(crate) fn lookup_parts(
-        &self,
-    ) -> Option<(&PathBuf, &str, &SceneCacheDescriptorV3)> {
+    pub(crate) fn lookup_parts(&self) -> Option<(&PathBuf, &str, &SceneCacheDescriptorV3)> {
         match self {
             Self::NeedScenePayload => None,
             Self::NeedProjectLookup {

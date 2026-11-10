@@ -94,12 +94,16 @@ fn distinct_field_keys_are_selected_without_geometry_access() -> Result<()> {
     let SemanticResponse::DistinctFieldKeys { result, .. } = response(&store) else {
         panic!("expected distinct field result")
     };
-    assert!(result
-        .keys
-        .contains(&SemanticKey::Property("userProperties:name".to_owned())));
-    assert!(!result
-        .keys
-        .contains(&SemanticKey::Property("missing".to_owned())));
+    assert!(
+        result
+            .keys
+            .contains(&SemanticKey::Property("userProperties:name".to_owned()))
+    );
+    assert!(
+        !result
+            .keys
+            .contains(&SemanticKey::Property("missing".to_owned()))
+    );
     assert!(!result.keys.contains(&SemanticKey::Category));
     Ok(())
 }

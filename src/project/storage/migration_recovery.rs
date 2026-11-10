@@ -45,6 +45,8 @@ pub(crate) fn recover_interrupted_migration(
                     "Project migration journal is not a regular file: {}",
                     journal_path.display()
                 );
+                super::ensure_legacy_migration_supported()?;
+
                 let journal = journal::read(project_root, &journal_path)?;
                 transactions.push((path, journal));
             }

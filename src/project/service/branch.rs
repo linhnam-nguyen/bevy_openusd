@@ -25,24 +25,36 @@ fn switch_branch(
     branch_name: &str,
 ) -> Result<ProjectBranchSwitchResponse, ProjectWriteError> {
     let branch = usd_git::BranchName::new(branch_name.to_owned()).map_err(|_| {
-        ProjectWriteError::Invalid { code: ProjectWriteErrorCode::InvalidBranchName }
+        ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::InvalidBranchName,
+        }
     })?;
-    let entry = service.registry.get(project_id).ok_or(ProjectWriteError::Invalid {
-        code: ProjectWriteErrorCode::SelectionUnavailable,
-    })?;
+    let entry = service
+        .registry
+        .get(project_id)
+        .ok_or(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::SelectionUnavailable,
+        })?;
     let project_root = entry.repository_locator().to_owned();
     let publisher = service.publication_coordinator.publisher(project_id);
     let _guard = publisher.lock().map_err(|_| ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::Busy,
     })?;
 
-    let mut repository = usd_git::Repository::open(&project_root).map_err(|_| {
-        ProjectWriteError::Failed { code: ProjectWriteErrorCode::RepositoryUnavailable }
-    })?;
-    if repository.working_tree_status().map_err(|_| ProjectWriteError::Failed {
-        code: ProjectWriteErrorCode::RepositoryUnavailable,
-    })?.dirty {
-        return Err(ProjectWriteError::Invalid { code: ProjectWriteErrorCode::DirtyWorkingTree });
+    let mut repository =
+        usd_git::Repository::open(&project_root).map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::RepositoryUnavailable,
+        })?;
+    if repository
+        .working_tree_status()
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::RepositoryUnavailable,
+        })?
+        .dirty
+    {
+        return Err(ProjectWriteError::Invalid {
+            code: ProjectWriteErrorCode::DirtyWorkingTree,
+        });
     }
     let previous_manifest = validated_branch_manifest(project_id, &project_root).ok();
     let previous_revision = repository.head().map_err(|_| ProjectWriteError::Failed {
@@ -82,7 +94,9 @@ fn post_switch_projection(
     previous_manifest: Option<&usd_project::ValidatedProjectManifest>,
     previous_revision: Option<&usd_git::RevisionId>,
 ) -> Result<ProjectBranchSwitchResponse, ProjectWriteError> {
-    let current_revision = repository.head().map_err(|_| branch_project_invalid(project_id, project_root))?;
+    let current_revision = repository
+        .head()
+        .map_err(|_| branch_project_invalid(project_id, project_root))?;
     let changed_paths = match (previous_revision, current_revision.as_ref()) {
         (Some(previous), Some(current)) => repository
             .changed_paths_between(previous, current.id())
@@ -94,8 +108,8 @@ fn post_switch_projection(
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
     let manifest = validated_branch_manifest(project_id, project_root)?;
 
-    let previous_scene_ids = previous_branch_scene_ids(project_root, previous_manifest)
-        .map_err(|error| {
+    let previous_scene_ids =
+        previous_branch_scene_ids(project_root, previous_manifest).map_err(|error| {
             log::error!(
                 "previous-branch Scene cache discovery failed for {}: {error:#}",
                 project_root.display()
@@ -108,7 +122,9 @@ fn post_switch_projection(
     {
         let removed = service.cache_warm.remove_target_descriptors(
             project_root,
-            &crate::project::cache::ProjectCacheTarget::Scene { id: scene_id.to_string() },
+            &crate::project::cache::ProjectCacheTarget::Scene {
+                id: scene_id.to_string(),
+            },
         );
         if !removed {
             log::error!(
@@ -120,18 +136,28 @@ fn post_switch_projection(
     }
     let mut cache_targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
     if let Some(previous_manifest) = previous_manifest {
-        cache_targets.extend(crate::project::cache_warmer::cache_targets_for_changed_paths(
-            project_root, previous_manifest, &changed_paths,
-        ));
+        cache_targets.extend(
+            crate::project::cache_warmer::cache_targets_for_changed_paths(
+                project_root,
+                previous_manifest,
+                &changed_paths,
+            ),
+        );
     }
-    cache_targets.extend(crate::project::cache_warmer::cache_targets_for_changed_paths(
-        project_root, &manifest, &changed_paths,
-    ));
+    cache_targets.extend(
+        crate::project::cache_warmer::cache_targets_for_changed_paths(
+            project_root,
+            &manifest,
+            &changed_paths,
+        ),
+    );
     cache_targets.retain(|target| match target {
         crate::project::cache::ProjectCacheTarget::Scene { id } => usd_project::SceneId::parse(id)
-            .ok().is_some_and(|scene_id| manifest.scene(scene_id).is_some()),
+            .ok()
+            .is_some_and(|scene_id| manifest.scene(scene_id).is_some()),
         crate::project::cache::ProjectCacheTarget::Model { id } => usd_project::ModelId::parse(id)
-            .ok().is_some_and(|model_id| manifest.model(model_id).is_some()),
+            .ok()
+            .is_some_and(|model_id| manifest.model(model_id).is_some()),
         crate::project::cache::ProjectCacheTarget::ProjectRoot => true,
     });
     cache_targets.sort_by_key(crate::project::cache::ProjectCacheTarget::key);
@@ -164,7 +190,12 @@ fn post_switch_projection(
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
     project.repository = repository_summary.clone();
     project.counts = counts;
-    Ok(ProjectBranchSwitchResponse { project, repository: repository_summary, nodes, counts })
+    Ok(ProjectBranchSwitchResponse {
+        project,
+        repository: repository_summary,
+        nodes,
+        counts,
+    })
 }
 
 fn previous_branch_scene_ids(
@@ -176,19 +207,26 @@ fn previous_branch_scene_ids(
         scene_ids.extend(previous_manifest.scenes().iter().map(|scene| scene.id));
     }
     let scene_cache_root = crate::project::storage::ProjectStorageLayout::new(project_root)
-        .cache_dir().join("scenes");
+        .cache_dir()
+        .join("scenes");
     let entries = match fs::read_dir(&scene_cache_root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(scene_ids),
         Err(error) => {
             return Err(error).with_context(|| {
-                format!("read previous-branch Scene cache directory {}", scene_cache_root.display())
+                format!(
+                    "read previous-branch Scene cache directory {}",
+                    scene_cache_root.display()
+                )
             });
         }
     };
     for entry in entries {
         let entry = entry.with_context(|| {
-            format!("read previous-branch Scene cache entry {}", scene_cache_root.display())
+            format!(
+                "read previous-branch Scene cache entry {}",
+                scene_cache_root.display()
+            )
         })?;
         if !entry.file_type()?.is_dir() {
             continue;
@@ -214,8 +252,8 @@ fn invalidate_previous_branch_cache(
                 "previous-branch Scene cache discovery failed during error recovery for {}: {error:#}",
                 project_root.display()
             );
-            if let Err(cleanup_error) = crate::project::cache::SceneCacheStore::new(project_root)
-                .remove_all_derived_cache()
+            if let Err(cleanup_error) =
+                crate::project::cache::SceneCacheStore::new(project_root).remove_all_derived_cache()
             {
                 log::error!(
                     "conservative previous-branch cache removal also failed for {}: {cleanup_error:#}",
@@ -228,7 +266,9 @@ fn invalidate_previous_branch_cache(
     for scene_id in scene_ids {
         if !service.cache_warm.remove_target_descriptors(
             project_root,
-            &crate::project::cache::ProjectCacheTarget::Scene { id: scene_id.to_string() },
+            &crate::project::cache::ProjectCacheTarget::Scene {
+                id: scene_id.to_string(),
+            },
         ) {
             log::error!(
                 "previous-branch Scene cache removal failed during error recovery for {} ({scene_id})",
@@ -245,17 +285,22 @@ fn invalidate_previous_branch_cache(
             project_root.display()
         );
     }
-    let index = crate::project::storage::ProjectStorageLayout::new(project_root).project_cache_index_path();
+    let index =
+        crate::project::storage::ProjectStorageLayout::new(project_root).project_cache_index_path();
     match fs::remove_file(index) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => log::warn!("failed to remove stale Project cache lookup after branch error: {error}"),
+        Err(error) => {
+            log::warn!("failed to remove stale Project cache lookup after branch error: {error}")
+        }
     }
 }
 
 fn branch_project_invalid(project_id: ProjectId, project_root: &Path) -> ProjectWriteError {
     match super::repository_summary(project_id, project_root) {
-        Ok(repository) => ProjectWriteError::BranchProjectInvalid { repository: Box::new(repository) },
+        Ok(repository) => ProjectWriteError::BranchProjectInvalid {
+            repository: Box::new(repository),
+        },
         Err(_) => ProjectWriteError::BranchProjectTruthUnavailable,
     }
 }

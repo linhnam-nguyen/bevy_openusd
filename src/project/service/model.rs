@@ -175,11 +175,15 @@ fn publish_model_inner(
         )?;
     }
     let mut cache_targets = vec![
-        crate::project::cache::ProjectCacheTarget::Model { id: published.id.to_string() },
+        crate::project::cache::ProjectCacheTarget::Model {
+            id: published.id.to_string(),
+        },
         crate::project::cache::ProjectCacheTarget::ProjectRoot,
     ];
     if let Some(parent_scene_id) = parent_scene_id {
-        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene { id: parent_scene_id.to_string() });
+        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene {
+            id: parent_scene_id.to_string(),
+        });
     }
     let _ = service
         .cache_warm

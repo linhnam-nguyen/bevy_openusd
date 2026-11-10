@@ -51,8 +51,16 @@ fn syncing_linked_child_refreshes_an_active_project_root() {
         )
         .unwrap();
     let cache = crate::project::cache::SceneCacheStore::new(&project_root);
-    let root_generation_after_placement = cache.load_descriptor(root_scene_id).unwrap().unwrap().generation;
-    let child_generation_before_sync = cache.load_descriptor(linked.scene_id).unwrap().unwrap().generation;
+    let root_generation_after_placement = cache
+        .load_descriptor(root_scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
+    let child_generation_before_sync = cache
+        .load_descriptor(linked.scene_id)
+        .unwrap()
+        .unwrap()
+        .generation;
     let root_path = crate::project::scene::authoring::scene_path(&project_root, root_scene_id);
     let mut live_root = usd_bevy::LiveStage::new(
         openusd::usd::Stage::open(root_path.to_string_lossy().as_ref()).unwrap(),
@@ -83,8 +91,22 @@ fn syncing_linked_child_refreshes_an_active_project_root() {
     service
         .sync_linked_scene(project.id, linked.scene_id, "sync-operation".to_owned(), 2)
         .unwrap();
-    assert_eq!(cache.load_descriptor(root_scene_id).unwrap().unwrap().generation, root_generation_after_placement);
-    assert!(cache.load_descriptor(linked.scene_id).unwrap().unwrap().generation > child_generation_before_sync);
+    assert_eq!(
+        cache
+            .load_descriptor(root_scene_id)
+            .unwrap()
+            .unwrap()
+            .generation,
+        root_generation_after_placement
+    );
+    assert!(
+        cache
+            .load_descriptor(linked.scene_id)
+            .unwrap()
+            .unwrap()
+            .generation
+            > child_generation_before_sync
+    );
 
     assert_eq!(
         stage_mutations
@@ -135,8 +157,8 @@ fn syncing_linked_scene_cleans_overflowing_cache_before_success() {
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
     )
     .unwrap();
-    let mut service = ProjectApplicationService::open(directory.path().join("workspace.json"))
-        .unwrap();
+    let mut service =
+        ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
     let project = service.create_project(&parent, "Overflow Sync").unwrap();
     let project_root = parent.join("Overflow Sync");
     let inspection = inspect_composition(&source).unwrap();
@@ -176,7 +198,9 @@ fn syncing_linked_scene_cleans_overflowing_cache_before_success() {
         .unwrap();
     assert_eq!(response.scene_id, linked.scene_id);
     assert!(cache.load_descriptor(linked.scene_id).unwrap().is_none());
-    assert!(!ProjectStorageLayout::new(&project_root)
-        .scene_cache_dir(linked.scene_id)
-        .exists());
+    assert!(
+        !ProjectStorageLayout::new(&project_root)
+            .scene_cache_dir(linked.scene_id)
+            .exists()
+    );
 }

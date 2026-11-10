@@ -1,5 +1,9 @@
 use super::*;
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "requires Mac-only external USD development assets"
+)]
 #[test]
 fn c1_inventory_freezes_the_three_canonical_fixture_records() {
     let run_directory = artifacts::clean_run_directory("c1-inventory").expect("clean C1 run");
@@ -34,6 +38,10 @@ fn c1_inventory_freezes_the_three_canonical_fixture_records() {
         .expect("write deterministic M2 asset dictionary");
 }
 
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "requires Mac-only external USD development assets"
+)]
 #[test]
 fn c1_frozen_fixture_paths_are_not_derived_from_display_names() {
     artifacts::clean_run_directory("c1-paths").expect("clean C1 run");

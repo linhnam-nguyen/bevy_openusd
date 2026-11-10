@@ -232,8 +232,14 @@ mod tests {
         queue.apply(&mut world);
         assert_eq!(projection.entry_count(), 66);
         assert_eq!(projection.active_entity_count(), 2);
-        assert_eq!(projection.payload_occurrences.get(&key).map(Vec::len), Some(2));
-        assert_eq!(projection.asset_occurrences.get(&handle.id()).map(Vec::len), Some(2));
+        assert_eq!(
+            projection.payload_occurrences.get(&key).map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            projection.asset_occurrences.get(&handle.id()).map(Vec::len),
+            Some(2)
+        );
         let mut query = world.query::<(&Mesh3d, &SceneResidencyOccurrence)>();
         assert_eq!(query.iter(&world).count(), 2);
         assert!(
@@ -251,7 +257,10 @@ mod tests {
         queue.apply(&mut world);
         assert_eq!(projection.active_entity_count(), 0);
         assert_eq!(projection.entry_count(), 66);
-        assert_eq!(projection.payload_occurrences.get(&key).map(Vec::len), Some(2));
+        assert_eq!(
+            projection.payload_occurrences.get(&key).map(Vec::len),
+            Some(2)
+        );
         assert!(!projection.asset_occurrences.contains_key(&handle.id()));
         assert_eq!(
             world
@@ -268,7 +277,12 @@ mod tests {
         let mut occurrence = payload(scene, SceneMemberId::new_v4());
         occurrence.transform = ScenePlacementTransform::from_trs(
             [10.0, 2.0, 0.0],
-            [std::f64::consts::FRAC_1_SQRT_2, 0.0, 0.0, std::f64::consts::FRAC_1_SQRT_2],
+            [
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+                0.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+            ],
             [2.0, 1.0, 1.0],
         );
         let mut projection = SceneResidencyProjection::default();

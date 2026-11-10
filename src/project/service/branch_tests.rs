@@ -72,9 +72,7 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
         Some("feature")
     );
 
-    repository_truth::assert_managed_runtime_is_ignored_but_project_metadata_is_dirty(
-        &repository,
-    );
+    repository_truth::assert_managed_runtime_is_ignored_but_project_metadata_is_dirty(&repository);
 
     fs::write(repository.join("branch.txt"), b"local edit").unwrap();
     assert!(matches!(
@@ -89,7 +87,6 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
     );
 }
 
-
 #[test]
 fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     use crate::project::blob_store::BlobStore;
@@ -99,13 +96,23 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     fs::create_dir_all(&repository).unwrap();
     run_git(&repository, &["init", "-b", "main"]);
     run_git(&repository, &["config", "user.name", "USDHub Test"]);
-    run_git(&repository, &["config", "user.email", "test@usdhub.invalid"]);
+    run_git(
+        &repository,
+        &["config", "user.email", "test@usdhub.invalid"],
+    );
     let project_id = ProjectId::new_v4();
     let extra_scene = usd_project::SceneId::new_v4();
     let mut manifest = crate::project::scene::root::ensure_protected_root_scene_atomic(
         &repository,
-        &ProjectManifestV1::new(project_id, "Branch Cache", ProjectRoot::Empty, Vec::new(), Vec::new()),
-    ).unwrap();
+        &ProjectManifestV1::new(
+            project_id,
+            "Branch Cache",
+            ProjectRoot::Empty,
+            Vec::new(),
+            Vec::new(),
+        ),
+    )
+    .unwrap();
     manifest.scenes.push(SceneManifestEntry {
         id: extra_scene,
         storage_key: StorageKey::new("extra").unwrap(),
@@ -113,11 +120,15 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     });
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
     crate::project::storage::install_managed_ignore(&repository).unwrap();
-    let extra_scene_path = crate::project::scene::authoring::author_scene_atomic(&repository, extra_scene).unwrap();
+    let extra_scene_path =
+        crate::project::scene::authoring::author_scene_atomic(&repository, extra_scene).unwrap();
     run_git(&repository, &["add", "."]);
     run_git(&repository, &["commit", "-m", "main with extra scene"]);
     run_git(&repository, &["checkout", "-b", "reduced"]);
-    let mut reduced = ManifestStore::read_validated(&repository).unwrap().raw().clone();
+    let mut reduced = ManifestStore::read_validated(&repository)
+        .unwrap()
+        .raw()
+        .clone();
     reduced.scenes.retain(|scene| scene.id != extra_scene);
     ManifestStore::write_manifest_atomic(&repository, &reduced).unwrap();
     fs::remove_file(extra_scene_path).unwrap();
@@ -133,10 +144,22 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     };
     let root_generation = store.advance_generation(root_scene, config).unwrap();
     let generation = store.advance_generation(extra_scene, config).unwrap();
-    let mut descriptor = crate::project::cache_contract::SceneCacheDescriptorV3::invalidated(extra_scene, generation, config);
+    let mut descriptor = crate::project::cache_contract::SceneCacheDescriptorV3::invalidated(
+        extra_scene,
+        generation,
+        config,
+    );
     descriptor.state = crate::project::cache_contract::SceneCacheState::Partial;
-    crate::project::cache_warm_runtime::build_and_publish_scene_cache_generation(&repository, &descriptor).unwrap();
-    store.object_store(extra_scene).unwrap().put(b"old-branch-only").unwrap();
+    crate::project::cache_warm_runtime::build_and_publish_scene_cache_generation(
+        &repository,
+        &descriptor,
+    )
+    .unwrap();
+    store
+        .object_store(extra_scene)
+        .unwrap()
+        .put(b"old-branch-only")
+        .unwrap();
 
     let registry_path = directory.path().join("workspace.json");
     let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();
@@ -145,9 +168,23 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     service.switch_branch(project_id, "reduced").unwrap();
 
     assert!(store.load_descriptor(extra_scene).unwrap().is_none());
-    assert_eq!(store.load_descriptor(root_scene).unwrap().unwrap().generation, root_generation);
-    assert!(!crate::project::storage::ProjectStorageLayout::new(&repository).scene_cache_objects_dir(extra_scene).exists());
-    let lookup = fs::read(crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path()).unwrap();
+    assert_eq!(
+        store
+            .load_descriptor(root_scene)
+            .unwrap()
+            .unwrap()
+            .generation,
+        root_generation
+    );
+    assert!(
+        !crate::project::storage::ProjectStorageLayout::new(&repository)
+            .scene_cache_objects_dir(extra_scene)
+            .exists()
+    );
+    let lookup = fs::read(
+        crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path(),
+    )
+    .unwrap();
     assert!(!String::from_utf8_lossy(&lookup).contains(&extra_scene.to_string()));
 }
 
@@ -160,6 +197,11 @@ fn branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data(
     let mut service = ProjectApplicationService::open(&registry_path).unwrap();
     let project = service.create_project(&parent, "Branch Coherence").unwrap();
     let project_root = parent.join("Branch Coherence");
+    let initial_branch = usd_git::Repository::open(&project_root)
+        .unwrap()
+        .current_branch()
+        .unwrap()
+        .expect("created Project has an unborn symbolic default branch");
     let scene = service
         .create_scene(
             project.id,
@@ -188,7 +230,7 @@ fn branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data(
         .unwrap()
         .id()
         .to_string();
-    run_git(&project_root, &["checkout", "main"]);
+    run_git(&project_root, &["checkout", initial_branch.as_str()]);
 
     let branch_b = service
         .switch_branch(project.id, "revised")
@@ -213,9 +255,12 @@ fn branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data(
     );
 
     let branch_a = service
-        .switch_branch(project.id, "main")
+        .switch_branch(project.id, &initial_branch)
         .expect("branch A switches cleanly");
-    assert_eq!(branch_a.repository.active_branch.as_deref(), Some("main"));
+    assert_eq!(
+        branch_a.repository.active_branch.as_deref(),
+        Some(initial_branch.as_str())
+    );
     assert_ne!(
         branch_a.repository.head.as_ref().unwrap().id,
         branch_b.repository.head.as_ref().unwrap().id

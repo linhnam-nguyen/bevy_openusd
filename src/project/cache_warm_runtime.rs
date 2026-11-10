@@ -37,8 +37,10 @@ pub(crate) fn build_and_publish_scene_cache_generation(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
 ) -> Result<SceneCacheIndex> {
-    Ok(build_and_publish_scene_cache_generation_inner(project_root, descriptor, false)?
-        .expect("unmanaged Scene cache generation must publish"))
+    Ok(
+        build_and_publish_scene_cache_generation_inner(project_root, descriptor, false)?
+            .expect("unmanaged Scene cache generation must publish"),
+    )
 }
 pub(crate) fn build_and_publish_managed_scene_cache_generation(
     project_root: &Path,
@@ -94,7 +96,8 @@ fn build_and_publish_scene_cache_generation_inner(
         descriptor.source_content_hash = caller_source_content_hash;
     }
     descriptor.prim_count = index.entries.len() as u64;
-    descriptor.cacheable_count = index.entries.iter().filter(|entry| entry.cacheable).count() as u64;
+    descriptor.cacheable_count =
+        index.entries.iter().filter(|entry| entry.cacheable).count() as u64;
     descriptor.estimated_cpu_bytes = payload_bytes;
     descriptor.estimated_gpu_bytes = payload_bytes;
     if let Some(expected) = descriptor.source_content_hash {
@@ -109,8 +112,8 @@ fn build_and_publish_scene_cache_generation_inner(
     #[cfg(test)]
     tests::run_build_publish_hook(project_root);
     if managed {
-        let expected_descriptor = expected_descriptor
-            .expect("managed Scene cache publication captured its CAS snapshot");
+        let expected_descriptor =
+            expected_descriptor.expect("managed Scene cache publication captured its CAS snapshot");
         if store
             .publish_generation_if_current(&expected_descriptor, &descriptor, &index, &spatial)?
             .is_none()
@@ -170,8 +173,8 @@ pub(crate) fn publish_current_project_cache_lookup(project_root: &Path) -> Resul
 pub(crate) fn load_published_project_cache_lookup(
     project_root: &Path,
 ) -> Result<Option<ProjectCacheLookup>> {
-    let path = crate::project::storage::ProjectStorageLayout::new(project_root)
-        .project_cache_index_path();
+    let path =
+        crate::project::storage::ProjectStorageLayout::new(project_root).project_cache_index_path();
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),

@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use bevy::asset::Assets;
 use bevy::app::App;
+use bevy::asset::Assets;
 use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
@@ -18,8 +18,8 @@ use super::blob_store::{BlobStore, FilesystemBlobStore, prepare_mesh_payload};
 use super::cache::SceneCacheStore;
 use super::cache_contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheBlobRef, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex,
-    SceneSpatialEntry, SceneSpatialIndex,
+    SceneCacheBlobRef, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex, SceneSpatialEntry,
+    SceneSpatialIndex,
 };
 use super::cache_scene_payload::prepare_animation_payload;
 use super::runtime_payload::{PreparedRuntimePayloads, prepare_runtime_payloads_for_paths};
@@ -293,7 +293,10 @@ pub(crate) fn assign_parent_indexes(entries: &mut [SceneCacheEntry]) -> Result<(
         let SceneCacheEntryKind::OwnedPrim { prim_path } = &entry.kind else {
             continue;
         };
-        let parent_path = prim_path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or_default();
+        let parent_path = prim_path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or_default();
         entry.parent = path_indexes.get(parent_path).copied();
     }
     Ok(())
@@ -307,10 +310,12 @@ pub(crate) fn build_spatial_index(index: &SceneCacheIndex) -> SceneSpatialIndex 
         entries: index
             .entries
             .iter()
-            .filter_map(|entry| entry.bounds.map(|bounds| SceneSpatialEntry {
-                address: entry.address.clone(),
-                bounds,
-            }))
+            .filter_map(|entry| {
+                entry.bounds.map(|bounds| SceneSpatialEntry {
+                    address: entry.address.clone(),
+                    bounds,
+                })
+            })
             .collect(),
     }
 }
@@ -336,22 +341,24 @@ pub(crate) fn persist_owned_meshes_parallel(
         let mut handles = Vec::new();
         for chunk in meshes.chunks(chunk_size) {
             let store = store.clone();
-            handles.push(scope.spawn(move || -> Result<Vec<(String, SceneCacheBlobRef)>> {
-                let mut persisted = Vec::with_capacity(chunk.len());
-                for (path, mesh) in chunk {
-                    let prepared = prepare_mesh_payload(mesh)?;
-                    let stored = store.put(&prepared.bytes)?;
-                    ensure!(stored == prepared.blob_id, "Scene geometry digest mismatch");
-                    persisted.push((
-                        path.clone(),
-                        SceneCacheBlobRef {
-                            blob_id: stored,
-                            byte_size: prepared.bytes.len() as u64,
-                        },
-                    ));
-                }
-                Ok(persisted)
-            }));
+            handles.push(
+                scope.spawn(move || -> Result<Vec<(String, SceneCacheBlobRef)>> {
+                    let mut persisted = Vec::with_capacity(chunk.len());
+                    for (path, mesh) in chunk {
+                        let prepared = prepare_mesh_payload(mesh)?;
+                        let stored = store.put(&prepared.bytes)?;
+                        ensure!(stored == prepared.blob_id, "Scene geometry digest mismatch");
+                        persisted.push((
+                            path.clone(),
+                            SceneCacheBlobRef {
+                                blob_id: stored,
+                                byte_size: prepared.bytes.len() as u64,
+                            },
+                        ));
+                    }
+                    Ok(persisted)
+                }),
+            );
         }
         handles
             .into_iter()

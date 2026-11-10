@@ -14,14 +14,12 @@ use super::super::repair_persistence::{
     TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
 };
 use super::super::repair_phase::RepairPhase;
-use super::super::{
-    PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadKey,
-};
+use super::super::{PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadKey};
+use super::repair_handoff::{enqueue_lookup_repair, retry_cached_load};
 use super::{
     TARGETED_REPAIR_QUEUE_CAPACITY, TargetedRepairQueue, TargetedRepairRequest,
     drain_targeted_repair_persistence_completions,
 };
-use super::repair_handoff::{enqueue_lookup_repair, retry_cached_load};
 
 fn job(scene: SceneId, value: u8, generation: u64) -> LoadJob<ScenePayloadKey> {
     LoadJob {
@@ -223,7 +221,9 @@ fn lookup_only_pressure_preserves_phase_for_cached_retry() {
         target.cpu_bytes,
         target.gpu_bytes,
     ));
-    let target = authority.begin_next_load().expect("lookup retry starts Loading");
+    let target = authority
+        .begin_next_load()
+        .expect("lookup retry starts Loading");
     assert!(authority.wait_for_repair(&target));
     let mut repairs = TargetedRepairQueue::default();
     for value in 0..TARGETED_REPAIR_QUEUE_CAPACITY as u8 {
@@ -237,10 +237,14 @@ fn lookup_only_pressure_preserves_phase_for_cached_retry() {
         "/SceneRoot/Owned".to_owned(),
         expected.clone(),
     );
-    let retry = authority.begin_next_load().expect("phase-preserving loader retry");
+    let retry = authority
+        .begin_next_load()
+        .expect("phase-preserving loader retry");
     repairs.clear();
     super::enqueue_missing_payload_repair(None, &mut authority, &mut repairs, retry);
-    let request = repairs.take_front().expect("lookup phase re-enters repair queue");
+    let request = repairs
+        .take_front()
+        .expect("lookup phase re-enters repair queue");
     assert!(request.lookup_only);
     assert!(request.extraction.as_ref().is_some_and(|repair| {
         repair.payloads.is_empty() && repair.expected_descriptor == expected
@@ -270,7 +274,9 @@ fn cache_ready_pressure_never_restarts_scene_payload_repair() {
         target.cpu_bytes,
         target.gpu_bytes,
     ));
-    let target = authority.begin_next_load().expect("cache-ready retry starts Loading");
+    let target = authority
+        .begin_next_load()
+        .expect("cache-ready retry starts Loading");
     assert!(authority.wait_for_repair(&target));
     let mut repairs = TargetedRepairQueue::default();
     retry_cached_load(
@@ -281,12 +287,19 @@ fn cache_ready_pressure_never_restarts_scene_payload_repair() {
         "/SceneRoot/Owned".to_owned(),
         expected.clone(),
     );
-    let retry = authority.begin_next_load().expect("cache-ready loader retry");
+    let retry = authority
+        .begin_next_load()
+        .expect("cache-ready loader retry");
     super::enqueue_missing_payload_repair(None, &mut authority, &mut repairs, retry);
-    let request = repairs.take_front().expect("cache-ready phase re-enters repair queue");
+    let request = repairs
+        .take_front()
+        .expect("cache-ready phase re-enters repair queue");
     assert!(request.lookup_only);
     assert!(request.extraction.as_ref().is_some_and(|repair| {
         repair.payloads.is_empty() && repair.expected_descriptor == expected
     }));
-    assert!(matches!(request.phase, RepairPhase::NeedProjectLookup { .. }));
+    assert!(matches!(
+        request.phase,
+        RepairPhase::NeedProjectLookup { .. }
+    ));
 }

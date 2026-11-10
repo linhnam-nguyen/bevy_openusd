@@ -55,10 +55,7 @@ pub(crate) async fn apply(connection: &mut turso::Connection) -> Result<()> {
     }
     if !entity_columns.iter().any(|column| column == "bim_enabled") {
         connection
-            .execute(
-                "ALTER TABLE entities ADD COLUMN bim_enabled INTEGER",
-                (),
-            )
+            .execute("ALTER TABLE entities ADD COLUMN bim_enabled INTEGER", ())
             .await
             .context("adding durable semantic BIM flag")?;
     }
@@ -98,8 +95,9 @@ async fn backfill_bim_enabled(connection: &mut turso::Connection) -> Result<()> 
             let payload = row
                 .get::<String>(1)
                 .context("decoding durable semantic snapshot JSON for BIM backfill")?;
-            let snapshot: SemanticSnapshot = serde_json::from_str(&payload)
-                .with_context(|| format!("decoding semantic snapshot {snapshot_id} for BIM backfill"))?;
+            let snapshot: SemanticSnapshot = serde_json::from_str(&payload).with_context(|| {
+                format!("decoding semantic snapshot {snapshot_id} for BIM backfill")
+            })?;
             ensure!(
                 snapshot.snapshot_id.0 == snapshot_id,
                 "durable semantic snapshot payload id does not match its row"
@@ -134,8 +132,7 @@ async fn backfill_bim_enabled(connection: &mut turso::Connection) -> Result<()> 
         keys
     };
     ensure!(
-        stored_keys.len() == truth.len()
-            && stored_keys.iter().all(|key| truth.contains_key(key)),
+        stored_keys.len() == truth.len() && stored_keys.iter().all(|key| truth.contains_key(key)),
         "durable semantic entity rows do not match snapshot payloads for BIM backfill"
     );
 

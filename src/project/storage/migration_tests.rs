@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, path::Path, sync::Mutex};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use anyhow::Result;
 use openusd::{sdf, sdf::Value, usd::Stage};
@@ -21,6 +26,44 @@ struct LegacyFixture {
     model_id: ModelId,
     scene_member_id: usd_project::SceneMemberId,
     model_member_id: usd_project::SceneMemberId,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum ProjectTreeEntry {
+    Directory,
+    File(Vec<u8>),
+    Symlink(PathBuf),
+    Other,
+}
+
+fn snapshot_project_tree(root: &Path) -> Result<BTreeMap<PathBuf, ProjectTreeEntry>> {
+    fn visit(
+        root: &Path,
+        directory: &Path,
+        entries: &mut BTreeMap<PathBuf, ProjectTreeEntry>,
+    ) -> Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root)?.to_owned();
+            let file_type = fs::symlink_metadata(&path)?.file_type();
+            if file_type.is_dir() {
+                entries.insert(relative, ProjectTreeEntry::Directory);
+                visit(root, &path, entries)?;
+            } else if file_type.is_file() {
+                entries.insert(relative, ProjectTreeEntry::File(fs::read(&path)?));
+            } else if file_type.is_symlink() {
+                entries.insert(relative, ProjectTreeEntry::Symlink(fs::read_link(&path)?));
+            } else {
+                entries.insert(relative, ProjectTreeEntry::Other);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = BTreeMap::new();
+    visit(root, root, &mut entries)?;
+    Ok(entries)
 }
 
 fn legacy_fixture() -> LegacyFixture {
@@ -243,6 +286,7 @@ fn rewrite_placeholder_reference(path: &Path, model_id: ModelId) {
         .unwrap();
 }
 
+#[cfg(not(windows))]
 #[test]
 fn migrates_legacy_project_to_storage_v2_and_is_idempotent() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -299,6 +343,7 @@ fn migrates_legacy_project_to_storage_v2_and_is_idempotent() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 #[test]
 fn migration_failure_after_ordinary_scene_restores_legacy_tree() {
     let _guard = MIGRATION_TEST_LOCK
@@ -315,6 +360,7 @@ fn migration_failure_after_ordinary_scene_restores_legacy_tree() {
     assert!(!layout.canonical_scenes_dir().join("Lv1.usda").exists());
 }
 
+#[cfg(not(windows))]
 #[test]
 fn migration_failure_before_manifest_restores_legacy_tree() {
     let _guard = MIGRATION_TEST_LOCK
@@ -335,6 +381,7 @@ fn migration_failure_before_manifest_restores_legacy_tree() {
     assert!(layout.legacy_model_wrapper_path(fixture.model_id).is_file());
 }
 
+#[cfg(not(windows))]
 #[test]
 fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
     let _guard = MIGRATION_TEST_LOCK
@@ -366,6 +413,49 @@ fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
             .canonical_root_scene_path(&StorageKey::new("Pro2")?)
             .is_file()
     );
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_legacy_migration_is_rejected_without_changing_project_state() -> Result<()> {
+    let _guard = MIGRATION_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let fixture = legacy_fixture();
+    let root = fixture.directory.path();
+    let before = snapshot_project_tree(root)?;
+
+    let error = match ManifestStore::read_validated(root) {
+        Err(error) => error,
+        Ok(_) => panic!("Windows legacy migration must fail closed"),
+    };
+    assert!(
+        format!("{error:#}").contains("unsupported on Windows"),
+        "expected explicit Windows unsupported result, got: {error:#}"
+    );
+    assert_eq!(snapshot_project_tree(root)?, before);
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_canonical_project_open_without_pending_recovery_remains_available() -> Result<()> {
+    let fixture = legacy_fixture();
+    let root = fixture.directory.path();
+    let layout = ProjectStorageLayout::new(root);
+    let migrated_manifest = fixture.manifest.clone().migrate_legacy()?.canonicalized();
+    fs::write(
+        layout.canonical_manifest_path(),
+        serde_json::to_vec_pretty(&migrated_manifest)?,
+    )?;
+    let before = snapshot_project_tree(root)?;
+
+    let opened = ManifestStore::read_validated(root)?;
+
+    assert_eq!(opened.raw(), &migrated_manifest);
+    assert!(!layout.metadata_dir().join(".transactions").exists());
+    assert_eq!(snapshot_project_tree(root)?, before);
     Ok(())
 }
 

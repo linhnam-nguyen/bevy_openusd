@@ -28,7 +28,7 @@ fn create_project_keeps_head_unborn_and_registers_last() {
     assert_eq!(summary.name, "Created Project");
     assert_eq!(
         repository.current_branch().unwrap().as_deref(),
-        Some("main")
+        Some(super::super::configured_initial_branch().as_str())
     );
     assert!(repository.head().unwrap().is_none());
     assert!(project_root.join(".git").is_dir());

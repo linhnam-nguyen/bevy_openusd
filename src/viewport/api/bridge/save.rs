@@ -9,10 +9,8 @@ use viewport_protocol::EditorOperation;
 use super::helpers::{emit_editor_completed, reject};
 use super::state::EditorHistories;
 use crate::project::{
-    cache::ProjectCacheTarget,
-    cache_hydration::ActiveProjectCacheContext,
-    cache_warmer::ProjectCacheWarmQueue,
-    catalog::manifest_store::ManifestStore,
+    cache::ProjectCacheTarget, cache_hydration::ActiveProjectCacheContext,
+    cache_warmer::ProjectCacheWarmQueue, catalog::manifest_store::ManifestStore,
     storage::ProjectStorageLayout,
 };
 use crate::viewport::api::ViewportEventOutbox;
@@ -59,7 +57,11 @@ pub(super) fn save_current_stage(
         return;
     };
     let Some(path) = path else {
-        reject(outbox, request_id, "current stage has no local save path".to_owned());
+        reject(
+            outbox,
+            request_id,
+            "current stage has no local save path".to_owned(),
+        );
         return;
     };
     let filename = path.to_string_lossy();
@@ -91,14 +93,12 @@ fn persist(
         reject(outbox, request_id, error.to_string());
         return;
     }
-    if let Err(error) =
-        invalidate_owned_scene_after_save(
-            Path::new(filename),
-            active_project_cache,
-            scene_cache_owner,
-            cache_warm,
-        )
-    {
+    if let Err(error) = invalidate_owned_scene_after_save(
+        Path::new(filename),
+        active_project_cache,
+        scene_cache_owner,
+        cache_warm,
+    ) {
         reject(outbox, request_id, error.to_string());
         return;
     }

@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 
 use super::super::state::{EditorHistories, RuntimeMutationCoordinator};
-use crate::project::{cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue};
+use crate::project::{
+    cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue,
+};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;

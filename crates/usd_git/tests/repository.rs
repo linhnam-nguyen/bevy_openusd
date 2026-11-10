@@ -4,6 +4,7 @@ use std::{
     process::{Command, Output},
 };
 
+use gix::bstr::ByteSlice;
 use tempfile::TempDir;
 use usd_git::{CommitRequest, Error, GitRepository, Repository, RevisionSpec};
 
@@ -165,18 +166,27 @@ fn reports_an_unborn_empty_repository_as_clean() {
 
 #[test]
 fn initializes_an_empty_worktree_without_a_commit() {
+    let configured_default_branch = gix::config::File::from_globals()
+        .expect("read global Git configuration")
+        .string("init.defaultBranch")
+        .unwrap_or_else(|| gix::init::DEFAULT_BRANCH_NAME.into());
+    let expected_default_branch = String::from_utf8_lossy(&configured_default_branch).into_owned();
+
     let directory = tempfile::tempdir().expect("create Project directory");
     let repository = Repository::init(directory.path()).expect("initialize repository");
 
     assert!(directory.path().join(".git").is_dir());
     assert!(repository.head().expect("read initialized HEAD").is_none());
-    assert_eq!(
-        repository
-            .current_branch()
-            .expect("read initialized branch")
-            .as_deref(),
-        Some("main")
+    let branch = repository
+        .current_branch()
+        .expect("read initialized branch")
+        .expect("initialized HEAD is a symbolic branch");
+    let full_branch_name = format!("refs/heads/{branch}");
+    assert!(
+        gix::validate::reference::branch_name(full_branch_name.as_bytes().as_bstr()).is_ok(),
+        "initialized branch name is invalid: {branch:?}"
     );
+    assert_eq!(branch, expected_default_branch);
     assert!(
         repository
             .branches()

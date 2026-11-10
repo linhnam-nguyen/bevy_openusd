@@ -75,7 +75,10 @@ ON properties(snapshot_id, name, value_real);
 pub(super) async fn migrate(connection: &mut turso::Connection) -> anyhow::Result<()> {
     let current_version = {
         let mut rows = connection
-            .query("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", ())
+            .query(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                (),
+            )
             .await?;
         match rows.next().await? {
             Some(row) => row.get::<i64>(0)?,
@@ -107,10 +110,7 @@ pub(super) async fn migrate(connection: &mut turso::Connection) -> anyhow::Resul
     let has_bim_column = entity_columns.iter().any(|column| column == "bim_enabled");
     if !has_bim_column {
         connection
-            .execute(
-                "ALTER TABLE entities ADD COLUMN bim_enabled INTEGER",
-                (),
-            )
+            .execute("ALTER TABLE entities ADD COLUMN bim_enabled INTEGER", ())
             .await?;
     }
     if current_version < SCHEMA_VERSION || !has_bim_column {
@@ -193,7 +193,10 @@ mod tests {
                 .await
                 .expect("invalidated entity count reads")
                 .expect("invalidated entity count exists");
-            assert_eq!(row.get::<i64>(0).expect("invalidated entity count decodes"), 0);
+            assert_eq!(
+                row.get::<i64>(0).expect("invalidated entity count decodes"),
+                0
+            );
 
             connection
                 .execute(
@@ -232,7 +235,10 @@ mod tests {
                 .await
                 .expect("working schema version reads")
                 .expect("working schema version exists");
-            assert_eq!(row.get::<i64>(0).expect("working schema version decodes"), SCHEMA_VERSION);
+            assert_eq!(
+                row.get::<i64>(0).expect("working schema version decodes"),
+                SCHEMA_VERSION
+            );
         });
     }
 }

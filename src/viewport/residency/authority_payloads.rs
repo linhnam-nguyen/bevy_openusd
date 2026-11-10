@@ -27,10 +27,8 @@ impl ResidencyAuthority {
 
     pub(super) fn enqueue_missing_load(&mut self, key: ScenePayloadKey) -> bool {
         let required = self.load_mask(&key);
-        let Some((generation, satisfied, queued, in_flight, cpu_bytes, gpu_bytes)) = self
-            .records
-            .get(&key)
-            .map(|record| {
+        let Some((generation, satisfied, queued, in_flight, cpu_bytes, gpu_bytes)) =
+            self.records.get(&key).map(|record| {
                 (
                     record.generation,
                     record.satisfied_mask,

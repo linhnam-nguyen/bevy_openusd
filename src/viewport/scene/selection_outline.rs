@@ -103,9 +103,9 @@ pub(in crate::viewport) fn sync_selection_outlines(
 ) {
     let presentation = settings.selection();
     let boundary = (presentation.boundary_enabled, presentation.boundary_color);
-    let coarse = policy.as_deref().is_some_and(|policy| {
-        policy.uses_coarse(projection.renderables().len())
-    });
+    let coarse = policy
+        .as_deref()
+        .is_some_and(|policy| policy.uses_coarse(projection.renderables().len()));
     let projection_generation = Some(projection.generation());
     let key = OutlineWorkKey {
         selection_revision: selection.revision(),

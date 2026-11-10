@@ -350,16 +350,11 @@ fn synchronize_path(
 }
 
 fn is_excluded(relative: &Path) -> bool {
-    let text = relative.to_string_lossy();
-    text == ".git"
-        || text == ".usdhub/cache"
-        || text.starts_with(".usdhub/cache/")
-        || text == ".usdhub/recovery"
-        || text.starts_with(".usdhub/recovery/")
-        || text == ".usdhub/links"
-        || text.starts_with(".usdhub/links/")
-        || text == ".usdhub/.transactions"
-        || text.starts_with(".usdhub/.transactions/")
+    relative == Path::new(".git")
+        || relative.starts_with(Path::new(".usdhub/cache"))
+        || relative.starts_with(Path::new(".usdhub/recovery"))
+        || relative.starts_with(Path::new(".usdhub/links"))
+        || relative.starts_with(Path::new(".usdhub/.transactions"))
 }
 
 fn remove_path(path: &Path) -> Result<(), ProjectWriteError> {

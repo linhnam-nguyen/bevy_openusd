@@ -3,10 +3,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::{
-        Arc, Condvar, Mutex, mpsc,
-        atomic::AtomicU64,
-    },
+    sync::{Arc, Condvar, Mutex, atomic::AtomicU64, mpsc},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -58,7 +55,10 @@ struct LatestWarmInner {
 
 impl LatestWarmState {
     pub(super) fn new() -> Self {
-        Self { inner: Mutex::new(LatestWarmInner::default()), idle: Condvar::new() }
+        Self {
+            inner: Mutex::new(LatestWarmInner::default()),
+            idle: Condvar::new(),
+        }
     }
 
     pub(super) fn record(
@@ -67,12 +67,17 @@ impl LatestWarmState {
         target: super::WarmTarget,
         sender: &mpsc::SyncSender<super::WarmJob>,
     ) -> bool {
-        let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("Project cache warm state is not poisoned");
         loop {
             inner.failures.remove(&key);
             let known = inner.latest.contains_key(&key) || inner.scheduled.contains(&key);
             if !known && inner.latest.len() >= WARM_LATEST_CAPACITY {
-                if target.scene_generation.is_none() { return false; }
+                if target.scene_generation.is_none() {
+                    return false;
+                }
                 let represented = inner.dirty_projects.contains(&key.0)
                     || inner.dirty_projects.len() < WARM_DIRTY_PROJECT_CAPACITY;
                 if represented {
@@ -80,11 +85,16 @@ impl LatestWarmState {
                     self.idle.notify_all();
                     return true;
                 }
-                inner = self.idle.wait(inner).expect("Project cache warm state is not poisoned");
+                inner = self
+                    .idle
+                    .wait(inner)
+                    .expect("Project cache warm state is not poisoned");
                 continue;
             }
             inner.latest.insert(key.clone(), target);
-            if inner.scheduled.contains(&key) { return true; }
+            if inner.scheduled.contains(&key) {
+                return true;
+            }
             inner.scheduled.insert(key.clone());
             break;
         }
@@ -92,11 +102,18 @@ impl LatestWarmState {
         match sender.try_send(super::WarmJob { key: key.clone() }) {
             Ok(()) => true,
             Err(mpsc::TrySendError::Full(_)) => {
-                self.inner.lock().expect("Project cache warm state is not poisoned").scheduled.remove(&key);
+                self.inner
+                    .lock()
+                    .expect("Project cache warm state is not poisoned")
+                    .scheduled
+                    .remove(&key);
                 true
             }
             Err(mpsc::TrySendError::Disconnected(_)) => {
-                let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+                let mut inner = self
+                    .inner
+                    .lock()
+                    .expect("Project cache warm state is not poisoned");
                 inner.scheduled.remove(&key);
                 inner.latest.remove(&key);
                 inner.dirty_projects.remove(&key.0);
@@ -106,13 +123,24 @@ impl LatestWarmState {
     }
 
     pub(super) fn take_latest(&self, key: &WarmKey) -> Option<super::WarmTarget> {
-        let target = self.inner.lock().expect("Project cache warm state is not poisoned").latest.remove(key);
-        if target.is_some() { self.idle.notify_all(); }
+        let target = self
+            .inner
+            .lock()
+            .expect("Project cache warm state is not poisoned")
+            .latest
+            .remove(key);
+        if target.is_some() {
+            self.idle.notify_all();
+        }
         target
     }
 
     pub(super) fn cancel(&self, key: &WarmKey) {
-        self.inner.lock().expect("Project cache warm state is not poisoned").latest.remove(key);
+        self.inner
+            .lock()
+            .expect("Project cache warm state is not poisoned")
+            .latest
+            .remove(key);
         self.idle.notify_all();
     }
 
@@ -121,9 +149,15 @@ impl LatestWarmState {
         key: &WarmKey,
         sender: Option<&mpsc::SyncSender<super::WarmJob>>,
     ) {
-        self.inner.lock().expect("Project cache warm state is not poisoned").scheduled.remove(key);
+        self.inner
+            .lock()
+            .expect("Project cache warm state is not poisoned")
+            .scheduled
+            .remove(key);
         self.idle.notify_all();
-        if let Some(sender) = sender { self.retry_unscheduled(sender); }
+        if let Some(sender) = sender {
+            self.retry_unscheduled(sender);
+        }
     }
 
     pub(super) fn record_failure(&self, key: &WarmKey, error: String) {
@@ -148,20 +182,37 @@ impl LatestWarmState {
     fn retry_unscheduled(&self, sender: &mpsc::SyncSender<super::WarmJob>) {
         loop {
             let next = {
-                let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
-                let next = inner.latest.keys().filter(|key| !inner.scheduled.contains(*key)).min().cloned();
-                if let Some(key) = &next { inner.scheduled.insert(key.clone()); }
+                let mut inner = self
+                    .inner
+                    .lock()
+                    .expect("Project cache warm state is not poisoned");
+                let next = inner
+                    .latest
+                    .keys()
+                    .filter(|key| !inner.scheduled.contains(*key))
+                    .min()
+                    .cloned();
+                if let Some(key) = &next {
+                    inner.scheduled.insert(key.clone());
+                }
                 next
             };
             if let Some(key) = next {
                 match sender.try_send(super::WarmJob { key: key.clone() }) {
                     Ok(()) => continue,
                     Err(mpsc::TrySendError::Full(_)) => {
-                        self.inner.lock().expect("Project cache warm state is not poisoned").scheduled.remove(&key);
+                        self.inner
+                            .lock()
+                            .expect("Project cache warm state is not poisoned")
+                            .scheduled
+                            .remove(&key);
                         return;
                     }
                     Err(mpsc::TrySendError::Disconnected(_)) => {
-                        let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+                        let mut inner = self
+                            .inner
+                            .lock()
+                            .expect("Project cache warm state is not poisoned");
                         inner.latest.clear();
                         inner.scheduled.clear();
                         inner.dirty_projects.clear();
@@ -171,27 +222,42 @@ impl LatestWarmState {
             }
 
             let project_root = {
-                let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
-                if inner.latest.len() >= WARM_LATEST_CAPACITY { return; }
+                let mut inner = self
+                    .inner
+                    .lock()
+                    .expect("Project cache warm state is not poisoned");
+                if inner.latest.len() >= WARM_LATEST_CAPACITY {
+                    return;
+                }
                 let next = inner.dirty_projects.iter().next().cloned();
-                if let Some(root) = &next { inner.dirty_projects.remove(root); }
+                if let Some(root) = &next {
+                    inner.dirty_projects.remove(root);
+                }
                 next
             };
-            let Some(project_root) = project_root else { return; };
+            let Some(project_root) = project_root else {
+                return;
+            };
             let recovered = recover_building_scene_targets(&project_root);
-            let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+            let mut inner = self
+                .inner
+                .lock()
+                .expect("Project cache warm state is not poisoned");
             let mut overflow = false;
             for target in recovered {
                 let key = (project_root.clone(), target.target.key());
-                if inner.latest.contains_key(&key) || inner.scheduled.contains(&key) { continue; }
+                if inner.latest.contains_key(&key) || inner.scheduled.contains(&key) {
+                    continue;
+                }
                 if inner.latest.len() >= WARM_LATEST_CAPACITY {
                     overflow = true;
                     break;
                 }
                 inner.latest.insert(key, target);
             }
-            if overflow && (inner.dirty_projects.contains(&project_root)
-                || inner.dirty_projects.len() < WARM_DIRTY_PROJECT_CAPACITY)
+            if overflow
+                && (inner.dirty_projects.contains(&project_root)
+                    || inner.dirty_projects.len() < WARM_DIRTY_PROJECT_CAPACITY)
             {
                 inner.dirty_projects.insert(project_root);
             }
@@ -200,7 +266,10 @@ impl LatestWarmState {
 
     fn wait_for_project_idle(&self, project_root: &Path, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
-        let mut inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("Project cache warm state is not poisoned");
         loop {
             let busy = inner.latest.keys().any(|(root, _)| root == project_root)
                 || inner.scheduled.iter().any(|(root, _)| root == project_root)
@@ -209,8 +278,13 @@ impl LatestWarmState {
                 return !inner.failures.keys().any(|(root, _)| root == project_root);
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() { return false; }
-            let (next, wait) = self.idle.wait_timeout(inner, remaining).expect("Project cache warm state is not poisoned");
+            if remaining.is_zero() {
+                return false;
+            }
+            let (next, wait) = self
+                .idle
+                .wait_timeout(inner, remaining)
+                .expect("Project cache warm state is not poisoned");
             inner = next;
             if wait.timed_out() {
                 return !inner.latest.keys().any(|(root, _)| root == project_root)
@@ -223,7 +297,10 @@ impl LatestWarmState {
 
     #[cfg(test)]
     pub(super) fn retained_counts(&self) -> (usize, usize) {
-        let inner = self.inner.lock().expect("Project cache warm state is not poisoned");
+        let inner = self
+            .inner
+            .lock()
+            .expect("Project cache warm state is not poisoned");
         (inner.latest.len(), inner.dirty_projects.len())
     }
 }
@@ -236,10 +313,16 @@ fn recover_building_scene_targets(project_root: &Path) -> Vec<super::WarmTarget>
     let store = super::SceneCacheStore::new(project_root);
     let mut targets = Vec::new();
     for scene in manifest.scenes() {
-        let Ok(Some(descriptor)) = store.load_descriptor(scene.id) else { continue; };
-        if descriptor.state != super::SceneCacheState::Building { continue; }
+        let Ok(Some(descriptor)) = store.load_descriptor(scene.id) else {
+            continue;
+        };
+        if descriptor.state != super::SceneCacheState::Building {
+            continue;
+        }
         targets.push(super::WarmTarget {
-            target: super::ProjectCacheTarget::Scene { id: scene.id.to_string() },
+            target: super::ProjectCacheTarget::Scene {
+                id: scene.id.to_string(),
+            },
             scene_generation: Some(descriptor.generation),
             build_generation: 0,
         });
@@ -272,9 +355,21 @@ impl Default for ProjectCacheWarmQueue {
 
 impl Drop for ProjectCacheWarmQueue {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.state) != 1 { return; }
-        self.state.sender.lock().expect("Project cache warm sender is not poisoned").take();
-        if let Some(worker) = self.state.worker.lock().expect("Project cache warm worker handle is not poisoned").take() {
+        if Arc::strong_count(&self.state) != 1 {
+            return;
+        }
+        self.state
+            .sender
+            .lock()
+            .expect("Project cache warm sender is not poisoned")
+            .take();
+        if let Some(worker) = self
+            .state
+            .worker
+            .lock()
+            .expect("Project cache warm worker handle is not poisoned")
+            .take()
+        {
             drop(worker);
         }
     }
@@ -282,18 +377,32 @@ impl Drop for ProjectCacheWarmQueue {
 
 impl ProjectCacheWarmQueue {
     pub(crate) fn shutdown_without_waiting(&self) {
-        self.state.sender.lock().expect("Project cache warm sender is not poisoned").take();
-        if let Some(worker) = self.state.worker.lock().expect("Project cache warm worker handle is not poisoned").take() {
+        self.state
+            .sender
+            .lock()
+            .expect("Project cache warm sender is not poisoned")
+            .take();
+        if let Some(worker) = self
+            .state
+            .worker
+            .lock()
+            .expect("Project cache warm worker handle is not poisoned")
+            .take()
+        {
             drop(worker);
         }
     }
 
     pub(super) fn cancel_target(&self, project_root: &Path, target: &super::ProjectCacheTarget) {
-        self.state.latest.cancel(&(project_root.to_path_buf(), target.key()));
+        self.state
+            .latest
+            .cancel(&(project_root.to_path_buf(), target.key()));
     }
 
     pub(crate) fn wait_for_project_idle(&self, project_root: &Path, timeout: Duration) -> bool {
-        self.state.latest.wait_for_project_idle(project_root, timeout)
+        self.state
+            .latest
+            .wait_for_project_idle(project_root, timeout)
     }
 
     pub(crate) fn last_warm_failure(&self, project_root: &Path) -> Option<String> {
@@ -316,7 +425,10 @@ impl ProjectCacheWarmQueue {
         ) {
             Ok(identity) => identity,
             Err(error) => {
-                log::warn!("Project cache activation identity could not be established for {}: {error:#}", project_root.display());
+                log::warn!(
+                    "Project cache activation identity could not be established for {}: {error:#}",
+                    project_root.display()
+                );
                 return ProjectCachePreparation::FallbackRequired;
             }
         };
@@ -337,7 +449,10 @@ impl ProjectCacheWarmQueue {
             },
             Ok(None) => ProjectCachePreparation::FallbackRequired,
             Err(error) => {
-                log::warn!("Project cache activation descriptor is unavailable for {}: {error:#}", identity.target.key());
+                log::warn!(
+                    "Project cache activation descriptor is unavailable for {}: {error:#}",
+                    identity.target.key()
+                );
                 ProjectCachePreparation::FallbackRequired
             }
         }
@@ -362,9 +477,13 @@ pub(crate) fn wait_for(
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(descriptor) = store.load(&identity)? {
-            if descriptor.state != super::ProjectCacheState::Building { return Ok(Some(descriptor)); }
+            if descriptor.state != super::ProjectCacheState::Building {
+                return Ok(Some(descriptor));
+            }
         }
-        if Instant::now() >= deadline { return Ok(None); }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
         std::thread::sleep(CACHE_PREPARATION_POLL);
     }
 }
@@ -380,10 +499,17 @@ fn worker_loop(
                 let message = format!("{error:#}");
                 latest.record_failure(&job.key, message.clone());
                 super::mark_warm_failure_terminal(&job.key.0, &target);
-                log::warn!("Project cache warm failed for {} ({}): {message}", job.key.0.display(), target.target.key());
+                log::warn!(
+                    "Project cache warm failed for {} ({}): {message}",
+                    job.key.0.display(),
+                    target.target.key()
+                );
             }
         }
-        let sender = sender.lock().expect("Project cache warm sender is not poisoned").clone();
+        let sender = sender
+            .lock()
+            .expect("Project cache warm sender is not poisoned")
+            .clone();
         latest.finish_and_retry(&job.key, sender.as_ref());
     }
 }

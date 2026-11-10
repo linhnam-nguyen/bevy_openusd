@@ -128,7 +128,9 @@ fn create_scene_cleans_overflowed_parent_scene_cache_before_success() {
     fs::create_dir(&parent).unwrap();
     let mut service =
         ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();
-    let project = service.create_project(&parent, "Overflow Scene Project").unwrap();
+    let project = service
+        .create_project(&parent, "Overflow Scene Project")
+        .unwrap();
     let project_root = parent.join("Overflow Scene Project");
     let protected_root = match project.root {
         usd_project::ProjectRoot::Scene(scene_id) => scene_id,
@@ -155,7 +157,12 @@ fn create_scene_cleans_overflowed_parent_scene_cache_before_success() {
         .unwrap();
 
     assert_eq!(created.project.root, project.root);
-    assert!(scene_cache.load_descriptor(protected_root).unwrap().is_none());
+    assert!(
+        scene_cache
+            .load_descriptor(protected_root)
+            .unwrap()
+            .is_none()
+    );
     assert!(
         !ProjectStorageLayout::new(&project_root)
             .scene_cache_dir(protected_root)

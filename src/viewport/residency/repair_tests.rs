@@ -1,3 +1,4 @@
+use super::super::repair_phase::RepairPhase;
 use super::*;
 use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
 use crate::project::cache_contract::{
@@ -13,7 +14,6 @@ use bevy::prelude::{Res, ResMut, World};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 use viewport_protocol::RuntimeProfile;
-use super::super::repair_phase::RepairPhase;
 
 fn job(scene_id: SceneId, value: u8, generation: u64) -> LoadJob<ScenePayloadKey> {
     LoadJob {

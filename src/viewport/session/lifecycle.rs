@@ -26,9 +26,9 @@ pub(in crate::viewport) use lifecycle_invalidation::{
     PendingActivationPresentation, rehydrate_activation_presentation,
 };
 pub(crate) use project_activation::{
-    activate_open_stage_with_cache_context_for_generation, clear_active_stage_for_generation,
-    discard_scene_cache_bootstrap, install_scene_cache_bootstrap_before_stage_open,
-    poll_scene_cache_revalidation, StageInstallMode,
+    StageInstallMode, activate_open_stage_with_cache_context_for_generation,
+    clear_active_stage_for_generation, discard_scene_cache_bootstrap,
+    install_scene_cache_bootstrap_before_stage_open, poll_scene_cache_revalidation,
 };
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";
@@ -271,8 +271,8 @@ pub(super) fn clear_live_stage_projection(world: &mut World) {
 
 fn clear_projected_stage(world: &mut World) {
     clear_live_stage_projection(world);
-        world.remove_resource::<super::SceneCachePresentation>();
-        world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
+    world.remove_resource::<super::SceneCachePresentation>();
+    world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
     world.remove_resource::<super::SceneDerivedMetadata>();
     crate::viewport::residency::retire_scene_cache_resources(world);
 }
@@ -310,14 +310,21 @@ mod tests {
         assert_eq!(requested.name, expected_name.as_ref());
         assert_eq!(world.resource::<StageHandle>().path, expected);
         assert_eq!(world.resource::<StageInfo>().path, expected_string);
+        let expected_canonical =
+            std::fs::canonicalize(expected).expect("canonicalize expected opened stage path");
+        let layer_identifiers = world
+            .get_non_send::<LiveStage>()
+            .unwrap()
+            .stage
+            .layer_identifiers();
         assert!(
-            world
-                .get_non_send::<LiveStage>()
-                .unwrap()
-                .stage
-                .layer_identifiers()
+            layer_identifiers
                 .iter()
-                .any(|identifier| identifier == &expected_string)
+                .filter_map(|identifier| {
+                    std::fs::canonicalize(std::path::Path::new(identifier)).ok()
+                })
+                .any(|identifier| identifier == expected_canonical),
+            "opened layer identifiers {layer_identifiers:?} do not resolve to {expected_canonical:?}"
         );
     }
 

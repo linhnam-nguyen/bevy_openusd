@@ -321,11 +321,14 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         StageInstallMode::ContinueCacheFirst,
     );
     let reply = match result {
-        Ok(()) if world
-            .resource_mut::<ProjectActivationAuthorityRuntime>()
-            .0
-            .commit(&pending.request.session_id.0, &command) =>
-        ProjectActivationReply::activated(&command),
+        Ok(())
+            if world
+                .resource_mut::<ProjectActivationAuthorityRuntime>()
+                .0
+                .commit(&pending.request.session_id.0, &command) =>
+        {
+            ProjectActivationReply::activated(&command)
+        }
         Ok(()) => {
             if world
                 .get_resource::<crate::viewport::session::StageInfo>()

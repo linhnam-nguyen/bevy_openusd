@@ -41,8 +41,8 @@ pub(crate) use authority::{
     DEFAULT_UPLOAD_BYTES_PER_FRAME, PayloadResidencyState, ResidencyAuthority, ResidencyBudgets,
     ResidencyReason, ScenePayloadKey,
 };
-pub(crate) use catalog::{PayloadLoadMask, ScenePayloadCatalog, ScenePayloadDescriptor};
 pub(crate) use camera::{CameraAdmission, CameraSample, SectionBoxClipPlanes};
+pub(crate) use catalog::{PayloadLoadMask, ScenePayloadCatalog, ScenePayloadDescriptor};
 
 pub(crate) struct ResidencyPlugin;
 
@@ -164,10 +164,9 @@ fn dispatch_cached_residency_loads(
     worker: Res<CachedResidencyWorker>,
     mut authority: ResMut<ResidencyAuthority>,
 ) {
-    let Some(project_root) = active_cache_project_root(
-        scene_owner.as_deref(),
-        legacy_cache.as_deref(),
-    ) else {
+    let Some(project_root) =
+        active_cache_project_root(scene_owner.as_deref(), legacy_cache.as_deref())
+    else {
         return;
     };
     if !worker.is_available() {
@@ -176,15 +175,12 @@ fn dispatch_cached_residency_loads(
     authority.retry_pending_loads();
     while let Some(job) = authority.begin_next_load() {
         let mask = authority.load_mask(&job.key);
-        let descriptors = catalog
-            .as_deref()
-            .map_or_else(Vec::new, |catalog| catalog.descriptors_for(job.key).to_vec());
-        if let Err(job) = worker.dispatch_with_payloads(
-            project_root.clone(),
-            job,
-            mask,
-            descriptors,
-        ) {
+        let descriptors = catalog.as_deref().map_or_else(Vec::new, |catalog| {
+            catalog.descriptors_for(job.key).to_vec()
+        });
+        if let Err(job) =
+            worker.dispatch_with_payloads(project_root.clone(), job, mask, descriptors)
+        {
             let _ = authority.defer_load(job);
             break;
         }
@@ -257,11 +253,11 @@ pub(crate) fn retire_scene_cache_resources(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::asset::RenderAssetUsages;
-    use bevy::mesh::PrimitiveTopology;
     use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget};
     use crate::project::cache_hydration::ActiveProjectCacheContext;
     use crate::viewport::session::SceneCacheOwnershipContext;
+    use bevy::asset::RenderAssetUsages;
+    use bevy::mesh::PrimitiveTopology;
     use usd_model::HashDigest;
     use usd_project::SceneId;
 

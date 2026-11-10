@@ -1,4 +1,7 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use bevy::prelude::World;
 use tempfile::tempdir;
@@ -6,8 +9,8 @@ use usd_model::HashDigest;
 
 use crate::project::cache::SceneCacheStore;
 use crate::project::cache_contract::{
-    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
+    SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
 use crate::project::storage::ProjectStorageLayout;
 use crate::viewport::session::SceneDerivedMetadata;
@@ -136,8 +139,14 @@ fn descriptor_appearing_after_uncached_activation_reconciles_same_session() {
         panic!("descriptor appearance must request same-session reconciliation");
     };
     super::reconcile_retryable_cache(&mut world, &refreshed);
-    assert_eq!(world.resource::<SceneDerivedMetadata>().session_id, Some(23));
-    assert_eq!(world.resource::<SceneDerivedMetadata>().cache_generation, Some(1));
+    assert_eq!(
+        world.resource::<SceneDerivedMetadata>().session_id,
+        Some(23)
+    );
+    assert_eq!(
+        world.resource::<SceneDerivedMetadata>().cache_generation,
+        Some(1)
+    );
     assert!(!world.resource::<SceneDerivedMetadata>().prim_count_ready);
 
     super::publish_projected_count(&mut world, 23, 6);
@@ -190,10 +199,12 @@ fn ordinary_non_project_activation_has_no_cache_write() {
         publish_scene_cache_count(&mut world, &freshness, 3),
         CachePublication::NotApplicable
     ));
-    assert!(world
-        .resource::<SceneDerivedMetadata>()
-        .cache_project_root
-        .is_none());
+    assert!(
+        world
+            .resource::<SceneDerivedMetadata>()
+            .cache_project_root
+            .is_none()
+    );
 }
 
 fn exercise_malformed_cache_read_failure(index_artifact: bool) -> anyhow::Result<()> {
@@ -237,17 +248,24 @@ fn exercise_malformed_cache_read_failure(index_artifact: bool) -> anyhow::Result
         let metadata = world.resource::<SceneDerivedMetadata>();
         assert!(!metadata.prim_count_pending);
         assert!(!metadata.prim_count_ready);
-        assert_eq!(metadata.prim_count_terminal, attempt == super::MAX_PRIM_COUNT_ATTEMPTS);
-        assert!(metadata
-            .prim_count_error
-            .as_deref()
-            .is_some_and(|error| error.contains("cache artifact read failed")));
+        assert_eq!(
+            metadata.prim_count_terminal,
+            attempt == super::MAX_PRIM_COUNT_ATTEMPTS
+        );
+        assert!(
+            metadata
+                .prim_count_error
+                .as_deref()
+                .is_some_and(|error| error.contains("cache artifact read failed"))
+        );
         assert_eq!(metadata.cache_descriptor.as_ref(), Some(&expected));
         assert_eq!(metadata.cache_generation, Some(expected.generation));
         assert_eq!(store.load_descriptor(scene_id)?.as_ref(), Some(&expected));
     }
 
-    world.resource_mut::<SceneDerivedMetadata>().bind_session(24);
+    world
+        .resource_mut::<SceneDerivedMetadata>()
+        .bind_session(24);
     let metadata = world.resource::<SceneDerivedMetadata>();
     assert_eq!(metadata.session_id, Some(24));
     assert!(!metadata.prim_count_pending);
@@ -259,8 +277,17 @@ fn exercise_malformed_cache_read_failure(index_artifact: bool) -> anyhow::Result
         super::publish_scene_cache_count(&mut world, &prior_session, 101),
         CachePublication::Rejected
     ));
-    assert_eq!(world.resource::<SceneDerivedMetadata>().session_id, Some(24));
-    assert_eq!(world.resource::<SceneDerivedMetadata>().cache_descriptor.as_ref(), Some(&expected));
+    assert_eq!(
+        world.resource::<SceneDerivedMetadata>().session_id,
+        Some(24)
+    );
+    assert_eq!(
+        world
+            .resource::<SceneDerivedMetadata>()
+            .cache_descriptor
+            .as_ref(),
+        Some(&expected)
+    );
     assert_eq!(store.load_descriptor(scene_id)?.as_ref(), Some(&expected));
     Ok(())
 }
