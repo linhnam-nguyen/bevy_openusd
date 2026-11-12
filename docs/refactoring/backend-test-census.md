@@ -4758,3 +4758,106 @@ The ledger maps all 1,237 baseline tests to their access tiers and relocation me
 | 379 | `tests/rapier_bridge.rs` | `usdview` | `already_external` | 1 | `N/A (external Cargo target)` | `N/A (integration binary)` | `tests/rapier_bridge.rs` | `REGISTERED_INTEGRATION_TARGET (Cargo integration test target in `tests/rapier_bridge.rs`)` | N/A (already external test file) |
 | 380 | `tests/subtree_resync_profile.rs` | `usdview` | `already_external` | 1 | `N/A (external Cargo target)` | `N/A (integration binary)` | `tests/subtree_resync_profile.rs` | `REGISTERED_INTEGRATION_TARGET (Cargo integration test target in `tests/subtree_resync_profile.rs`)` | N/A (already external test file) |
 
+
+## BO-M1-C4 Baseline Compile, Test Discovery, and Execution-Status Matrix
+
+Checkpoint BO-M1-C4 establishes the formal baseline compile, test discovery, and execution-status matrix across all packages in the `bevy_openusd` workspace, as required by `refactoring_plan_revised.md` prior to any physical test movement in BO-M2 through BO-M8. Pure documentation of baseline execution status; no source movement (`NO_SOURCE_MOVEMENT`).
+
+### 11.1 Baseline Build & Format Matrix
+
+The final result, exit code, measured duration, timestamps, and source fingerprint for the validated repository snapshot are authoritative in the matching Protocol v8 Compile receipt at `AgentsComm/communication/agents/compile.log`.
+
+This source document intentionally does **not** duplicate post-validation receipt timing or fingerprint values. `backend-test-census.md` participates in the Git working-tree diff used by the validation source fingerprint; copying final receipt-owned values back into this file after validation would mutate the validated snapshot and create a circular evidence-update loop.
+
+| Check Kind | Stage | Command | Target / Scope | Required Environment / Settings | Authoritative Result Evidence |
+|---|---|---|---|---|---|
+| `FORMAT_CHECK` | Formatting Check | `cargo fmt --all -- --check` | Workspace (all crates) | Rust 2024 / configured rustfmt toolchain | Matching `AgentsComm/communication/agents/compile.log` receipt |
+| `WORKSPACE_BUILD` | Full Workspace Compilation | `cargo build --workspace --all-targets --locked` | 12-package workspace, all registered build targets | Windows MSVC host with process-scoped `CARGO_BUILD_JOBS=1` and required GStreamer SDK environment | Matching `AgentsComm/communication/agents/compile.log` receipt |
+| `PROTOCOL_VERIFICATION` | Protocol v8 Compile Validation | `Validation.py --layer compile` | Current BO-M1-C4 iteration | Protocol v8 validation identity and current working-tree source fingerprint | Validation-state header and final result in matching `AgentsComm/communication/agents/compile.log` receipt |
+
+**Evidence invariant:** the repository matrix records the checks and their evidence locator; the immutable/frozen Compile receipt records the actual final result for the exact validated source snapshot. A Reviewer report must bind `reviewed_source_fingerprint_sha256` to that matching receipt, not to a value copied into this mutable source document.
+
+### 11.2 Baseline Test Enumeration Matrix
+
+Enumeration executed via `cargo test --workspace -- --list` on host `CDS-LNN` (`x86_64-pc-windows-msvc`, default features, process-scoped `CARGO_BUILD_JOBS=1`):
+
+| Scope / Dimension | Count | Description / Notes |
+|---|---:|---|
+| Total Cargo Test Harnesses | 47 | 35 unit/integration harnesses + 12 doctest sections across 12 packages |
+| Total Discovered Unit/Integration Listing Rows | 1,953 | Total enumerated test rows across all 35 unit/integration test binaries |
+| Distinct Discovered Active Unit/Integration Names | 1,172 | Unique qualified test function identities discovered by Cargo on Windows |
+| Duplicate Lib/Bin Harness Occurrences | 781 | Identical test functions compiled in both `usdview` lib (`src/lib.rs`) and main binary (`src/main.rs`) |
+| Doctest Entries Discovered | 2 | `usd_macro` (1 doctest: `crates/usd_macro/src/lib.rs:14`), `usdview` (1 doctest: `src/project/service/stage_activation.rs:32`) |
+| Platform / Feature Excluded Static Identities | 64 | 45 dormant root test identities (37 unregistered files), 8 Solari-gated, 1 Unix-only symlink test, 10 Windows fail-closed migration/recovery |
+| Total Reconciled Static Workspace Tests | 1,237 | 1,172 Windows active + 64 excluded + 1 doctest probe contract (100% census reconciliation) |
+| Formal Runtime Test Suite Execution Status | `NOT_RUN` | Formal runtime execution of the complete workspace test suite was not performed as part of this BO-M1-C4 implementation evidence. It remains a separate Local Agent execution gate outside Reviewer execution authority; no discovered, compiled, ignored, excluded, or unexecuted test is claimed as runtime PASS. |
+
+### 11.3 Package & Crate Execution Matrix
+
+| Package | Path | Type | Auto-Discovery | Unit/Int Harnesses | Unit/Int Rows | Distinct Active Tests | Doctests | Compile Status | Test Discovery Status | Formal Execution Status |
+|---|---|---|---|---:|---:|---:|---:|---|---|---|
+| `usdview` | `src/`, `tests/` | Root Application / Lib | Manual (`autotests=false`) | 13 (1 lib, 2 bin [`live_editor`, `usdview`], 10 integration) | 1,582 | 801 | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_macro` | `crates/usd_macro` | Proc Macro | Auto-discovered | 1 (lib) | 0 | 0 | 1 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_rapier` | `crates/usd_rapier` | Member Crate | Auto-discovered | 1 (lib) | 0 | 0 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_bevy` | `crates/usd_bevy` | Member Crate | Auto-discovered | 1 (lib) | 140 | 140 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_model` | `crates/usd_model` | Member Crate | Auto-discovered | 1 (lib) | 12 | 12 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_semantic` | `crates/usd_semantic` | Member Crate | Auto-discovered | 2 (1 lib + 1 integration) | 21 | 21 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_diff` | `crates/usd_diff` | Member Crate | Auto-discovered | 2 (1 lib + 1 integration) | 7 | 7 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_git` | `crates/usd_git` | Member Crate | Auto-discovered | 4 (1 lib + 3 integration) | 16 | 16 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `usd_project` | `crates/usd_project` | Member Crate | Auto-discovered | 1 (lib) | 23 | 23 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `project_protocol` | `crates/project_protocol` | Protocol Crate | Auto-discovered | 1 (lib) | 21 | 21 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `viewport_protocol` | `crates/viewport_protocol` | Protocol Crate | Auto-discovered | 7 (1 lib + 6 integration) | 73 | 73 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| `viewport_streaming` | `crates/viewport_streaming` | Streaming / Media Crate | Auto-discovered | 1 (lib) | 58 | 58 | 0 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN (separate Local Agent gate)` |
+| **Total Workspace** | — | **12 Packages** | — | **35 Unit/Int (47 with doctests)** | **1,953** | **1,172** | **2** | **`PASS (with warnings)`** | **`DISCOVERY_PASS`** | **`NOT_RUN (separate Local Agent gate)`** |
+
+### 11.4 Integration Target Execution Matrix
+
+All 21 integration test targets across the workspace enumerated from `cargo test --workspace -- --list`:
+
+| Package | Target Name | Physical Path | Registration / Discovery Type | Discovered Tests | Compile Status | Discovery Status | Formal Execution Status | Scope / Purpose |
+|---|---|---|---|---:|---|---|---|---|
+| `usdview` | `cache_profile` | `tests/cache_profile.rs` | Explicit `[[test]]` in root `Cargo.toml` | 5 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance & memory profiling of cache descriptors |
+| `usdview` | `git_materialization` | `tests/git_materialization.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Acceptance verification of Git tree materialization |
+| `usdview` | `live_projection` | `tests/live_projection.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Acceptance verification of live stage projection |
+| `usdview` | `m10_persistent_soak` | `tests/m10_persistent_soak.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance & soak testing of persistent session |
+| `usdview` | `m8_instancing_correctness` | `tests/m8_instancing_correctness.rs` | Explicit `[[test]]` in root `Cargo.toml` | 7 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Acceptance verification of instancing correctness |
+| `usdview` | `m8_instancing_freeze` | `tests/m8_instancing_freeze.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance & freeze verification of point instancers |
+| `usdview` | `m8_instancing_profile` | `tests/m8_instancing_profile.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance profiling of instancing scaling |
+| `usdview` | `progressive_load_profile` | `tests/progressive_load_profile.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance profiling of progressive stage loading |
+| `usdview` | `rapier_bridge` | `tests/rapier_bridge.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Contract & integration bridge with Rapier physics |
+| `usdview` | `subtree_resync_profile` | `tests/subtree_resync_profile.rs` | Explicit `[[test]]` in root `Cargo.toml` | 1 | `PASS (with warnings)` | `DISCOVERY_PASS` | `NOT_RUN` | Performance profiling of USD subtree resynchronization |
+| `usd_diff` | `diff_matrix` | `crates/usd_diff/tests/diff_matrix.rs` | Auto-discovered member test | 7 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract & property tests for USD diff matrix |
+| `usd_git` | `branch_switch` | `crates/usd_git/tests/branch_switch.rs` | Auto-discovered member test | 5 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Integration tests for Git branch switching semantics |
+| `usd_git` | `repository` | `crates/usd_git/tests/repository.rs` | Auto-discovered member test | 10 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Integration tests for Git repository worktree lifecycle |
+| `usd_git` | `tracked_paths` | `crates/usd_git/tests/tracked_paths.rs` | Auto-discovered member test | 1 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Integration tests for tracked path git detection |
+| `usd_semantic` | `identity` | `crates/usd_semantic/tests/identity.rs` | Auto-discovered member test | 3 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for semantic entity identity |
+| `viewport_protocol` | `bim` | `crates/viewport_protocol/tests/bim.rs` | Auto-discovered member test | 4 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for BIM properties and classification |
+| `viewport_protocol` | `compatibility` | `crates/viewport_protocol/tests/compatibility.rs` | Auto-discovered member test | 11 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for wire compatibility across versions |
+| `viewport_protocol` | `hierarchy` | `crates/viewport_protocol/tests/hierarchy.rs` | Auto-discovered member test | 5 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for scene hierarchy visibility |
+| `viewport_protocol` | `renderer_configuration` | `crates/viewport_protocol/tests/renderer_configuration.rs` | Auto-discovered member test | 7 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for renderer configuration parameters |
+| `viewport_protocol` | `session_wire` | `crates/viewport_protocol/tests/session_wire.rs` | Auto-discovered member test | 15 (9 handshake, 6 runtime) | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for WebRTC session wire protocol |
+| `viewport_protocol` | `viewer_settings` | `crates/viewport_protocol/tests/viewer_settings.rs` | Auto-discovered member test | 17 | `PASS` | `DISCOVERY_PASS` | `NOT_RUN` | Contract tests for viewer settings & selection delta |
+
+### 11.5 Execution Constraints, Environment Configuration, and Formal Status Qualification
+
+1. **Toolchain & Target:**
+   - Active compiler: `rustc 1.99.0 (b940084d7 2026-09-28)` on target `x86_64-pc-windows-msvc`.
+   - Toolchain binary root: `C:\Users\PC_CDS-16\.cargo\bin`.
+2. **GStreamer MSVC SDK:**
+   - Required for `viewport_streaming` linking and execution.
+   - Root: `C:\Users\PC_CDS-16\AppData\Local\Programs\gstreamer\1.0\msvc_x86_64\bin`.
+   - PKG_CONFIG: `C:\Users\PC_CDS-16\AppData\Local\Programs\gstreamer\1.0\msvc_x86_64\bin\pkg-config.exe`.
+3. **Serial Compilation Constraint on Windows:**
+   - On Windows MSVC, parallel Cargo target compilation (`CARGO_BUILD_JOBS > 1`) induces OS memory allocation failures (error 1455) and rustc internal compiler errors (ICE) when linking large Bevy/OpenUSD static targets concurrently.
+   - Requirement: Scope `CARGO_BUILD_JOBS=1` to all compilation and test discovery/execution commands on this host.
+4. **Platform-Gated & Inactive Test Exclusions (64 Total):**
+   - 10 Windows fail-closed migration/recovery tests (directory sync Access Denied handling in `src/project/service/tests.rs`).
+   - 8 Solari feature tests (require `--features solari`, Vulkan ray tracing in `src/viewport/scene/solari*`).
+   - 1 Unix-only symlink test (`#[cfg(unix)]` gated in `src/project/service/tests.rs:test_symlink_traversal_protection`).
+   - 45 Dormant root test identities in 37 files unregistered in `Cargo.toml` (identified in §8 / §10.8).
+5. **Formal Runtime Test Suite Disposition (`NOT_RUN`):**
+   - BO-M1-C4 records baseline compilation, test discovery, and inventory status under `NO_SOURCE_MOVEMENT`.
+   - Formal runtime execution of the complete workspace test suite was not performed in this implementation evidence and remains a separate Local Agent execution gate outside Reviewer execution authority.
+   - `DISCOVERY_PASS` means Cargo successfully discovered the recorded test identities for the stated environment; it does not mean the test bodies executed successfully.
+   - Compile `PASS` means the configured build checks completed successfully; it does not mean the runtime test suite passed.
+   - No discovered, compiled, ignored, excluded, or unexecuted test is claimed as runtime `PASS` without a matching formal execution receipt.
