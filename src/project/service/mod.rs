@@ -141,7 +141,7 @@ mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
 #[cfg(test)]
-#[path = "scene_adoption_error_tests.rs"]
+#[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_error_tests.rs"]
 mod scene_adoption_error_tests;
 pub(crate) mod scene_closure;
 mod scene_lifecycle;
@@ -372,7 +372,7 @@ fn migrate_registered_project_roots(registry: &WorkspaceRegistry) {
 mod repository_summary_tests;
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "../../../tests/unit/project/service/tests.rs"]
 mod tests;
 
 #[cfg(test)]

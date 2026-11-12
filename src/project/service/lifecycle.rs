@@ -274,13 +274,13 @@ impl ProjectApplicationService {
 }
 
 #[cfg(test)]
-#[path = "lifecycle_tests.rs"]
+#[path = "../../../tests/unit/project/service/lifecycle/lifecycle_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "lifecycle_import_tests.rs"]
+#[path = "../../../tests/unit/project/service/lifecycle/lifecycle_import_tests.rs"]
 mod import_tests;
 
 #[cfg(test)]
-#[path = "lifecycle_m15_tests.rs"]
+#[path = "../../../tests/unit/project/service/lifecycle/lifecycle_m15_tests.rs"]
 mod m15_tests;

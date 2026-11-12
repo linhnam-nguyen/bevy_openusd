@@ -385,5 +385,5 @@ fn open_activation_stage(path: &Path) -> Result<Stage, String> {
 }
 
 #[cfg(test)]
-#[path = "stage_activation_authority_tests.rs"]
+#[path = "../../../tests/unit/project/service/stage_activation/stage_activation_authority_tests.rs"]
 mod authority_tests;

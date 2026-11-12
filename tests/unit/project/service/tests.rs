@@ -355,5 +355,5 @@ fn publication_admission_is_shared_per_project_and_not_globally_serialized() {
     worker.join().unwrap();
 }
 
-#[path = "stage_activation_tests.rs"]
+#[path = "stage_activation/stage_activation_tests.rs"]
 mod stage_activation;
