@@ -396,5 +396,5 @@ pub(crate) use crate::project::scene::linked_sync::{
 };
 
 #[cfg(test)]
-#[path = "adoption_tests.rs"]
+#[path = "../../../tests/unit/project/scene/adoption_tests.rs"]
 mod adoption_tests;

@@ -44,4 +44,5 @@ impl SemanticStore for TursoSemanticStore {
 }
 
 #[cfg(test)]
+#[path = "../../../../tests/unit/project/semantic_store/turso/tests/mod.rs"]
 mod tests;

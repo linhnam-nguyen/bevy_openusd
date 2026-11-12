@@ -1,6 +1,6 @@
 use super::super::TursoSemanticStore;
 use super::runtime;
-use crate::project::semantic_store::SCHEMA_VERSION;
+use crate::project::semantic_store::test_support::SCHEMA_VERSION;
 
 #[test]
 fn schema_migration_creates_durable_snapshot_tables() {

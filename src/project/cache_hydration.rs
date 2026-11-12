@@ -355,8 +355,8 @@ fn alpha_mode(mode: RuntimeAlphaMode) -> AlphaMode {
 }
 
 #[cfg(test)]
-#[path = "cache_benchmark_tests.rs"]
+#[path = "../../tests/unit/project/cache_benchmark_tests.rs"]
 mod benchmark_tests;
 #[cfg(test)]
-#[path = "cache_hydration_tests.rs"]
+#[path = "../../tests/unit/project/cache_hydration_tests.rs"]
 mod tests;

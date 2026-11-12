@@ -29,4 +29,5 @@ pub(crate) use provisioning::{
 };
 
 #[cfg(test)]
+#[path = "../../../../tests/unit/project/semantic_store/sync/tests/mod.rs"]
 mod tests;

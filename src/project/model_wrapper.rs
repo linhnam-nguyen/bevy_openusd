@@ -395,5 +395,5 @@ fn ensure_current_manifest(project_root: &Path, expected: &ProjectManifestV1) ->
 }
 
 #[cfg(test)]
-#[path = "model_wrapper_tests.rs"]
+#[path = "../../tests/unit/project/model_wrapper_tests.rs"]
 mod tests;

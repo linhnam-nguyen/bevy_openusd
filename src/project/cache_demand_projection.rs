@@ -266,5 +266,5 @@ fn verify_source_identity(
 }
 
 #[cfg(test)]
-#[path = "cache_demand_projection_tests.rs"]
+#[path = "../../tests/unit/project/cache_demand_projection_tests.rs"]
 mod tests;

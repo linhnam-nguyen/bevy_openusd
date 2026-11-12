@@ -5,9 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(test)]
-use std::cell::Cell;
-
 use project_protocol::{
     ProjectRenameResponse, ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTarget,
 };
@@ -16,26 +13,6 @@ use uuid::Uuid;
 
 use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
-
-#[cfg(test)]
-thread_local! {
-    static FAIL_AFTER_PLACEMENT: Cell<Option<usize>> = const { Cell::new(None) };
-}
-
-#[cfg(test)]
-fn set_test_failure_after_placement(index: usize) {
-    FAIL_AFTER_PLACEMENT.with(|failure| failure.set(Some(index)));
-}
-
-#[cfg(test)]
-fn clear_test_failure_after_placement() {
-    FAIL_AFTER_PLACEMENT.with(|failure| failure.set(None));
-}
-
-#[cfg(test)]
-fn should_fail_after_placement(index: usize) -> bool {
-    FAIL_AFTER_PLACEMENT.with(|failure| failure.get() == Some(index))
-}
 
 pub(super) fn rename(
     service: &mut ProjectApplicationService,
@@ -279,7 +256,7 @@ fn update_placements(
             if matches {
                 #[cfg(test)]
                 {
-                    if should_fail_after_placement(rewritten) {
+                    if test_support::should_fail_after_placement(rewritten) {
                         return Err(filesystem_error());
                     }
                 }
@@ -347,5 +324,9 @@ fn filesystem_error() -> ProjectWriteError {
 }
 
 #[cfg(test)]
-#[path = "rename_tests.rs"]
+#[path = "../../../tests/unit/project/service/rename_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/project/service/rename_tests.rs"]
 mod tests;

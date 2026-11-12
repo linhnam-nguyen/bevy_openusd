@@ -221,19 +221,6 @@ impl ProjectStageMutationQueue {
         }
         Ok(applied)
     }
-
-    #[cfg(test)]
-    fn pending_len_for_project(&self, project_root: &Path) -> usize {
-        read_pending(&outbox_path(project_root)).unwrap().len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn fail_before_batch_index(&self, index: usize) {
-        *self
-            .test_fail_before_index
-            .lock()
-            .expect("Project stage mutation queue test hook is not poisoned") = Some(index);
-    }
 }
 
 impl ProjectStageMutation {
@@ -354,5 +341,9 @@ fn apply_mutation(
 }
 
 #[cfg(test)]
-#[path = "stage_mutation_tests.rs"]
+#[path = "../../../tests/unit/project/service/stage_mutation_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/project/service/stage_mutation_tests.rs"]
 mod tests;

@@ -7,6 +7,7 @@ use usd_project::{
     ProjectRoot, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform,
 };
 
+use super::test_support::{clear_test_failure_after_placement, set_test_failure_after_placement};
 use super::*;
 use crate::project::{
     catalog::manifest_store::ManifestStore,

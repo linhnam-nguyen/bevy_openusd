@@ -356,7 +356,7 @@ fn migrate_registered_project_roots(registry: &WorkspaceRegistry) {
 }
 
 #[cfg(test)]
-#[path = "repository_summary_tests.rs"]
+#[path = "../../../tests/unit/project/service/repository_summary_tests.rs"]
 mod repository_summary_tests;
 
 #[cfg(test)]
@@ -364,8 +364,9 @@ mod repository_summary_tests;
 mod tests;
 
 #[cfg(test)]
-#[path = "m19_tests.rs"]
+#[path = "../../../tests/unit/project/service/m19_tests.rs"]
 mod m19_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/or8_m2/mod.rs"]
 mod or8_m2;

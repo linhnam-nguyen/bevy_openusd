@@ -362,13 +362,13 @@ fn collect_target_directory(
 }
 
 #[cfg(test)]
-#[path = "source_closure_tests.rs"]
+#[path = "../../tests/unit/project/source_closure_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "source_closure_pattern_tests.rs"]
+#[path = "../../tests/unit/project/source_closure_pattern_tests.rs"]
 mod pattern_tests;
 
 #[cfg(test)]
-#[path = "source_closure_optional_tests.rs"]
+#[path = "../../tests/unit/project/source_closure_optional_tests.rs"]
 mod optional_tests;

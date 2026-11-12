@@ -8,8 +8,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(test)]
-use anyhow::Result;
 use viewport_protocol::RuntimeProfile;
 
 #[path = "cache_warmer_enqueue.rs"]
@@ -294,15 +292,6 @@ impl LatestWarmState {
             }
         }
     }
-
-    #[cfg(test)]
-    pub(super) fn retained_counts(&self) -> (usize, usize) {
-        let inner = self
-            .inner
-            .lock()
-            .expect("Project cache warm state is not poisoned");
-        (inner.latest.len(), inner.dirty_projects.len())
-    }
 }
 
 fn recover_building_scene_targets(project_root: &Path) -> Vec<super::WarmTarget> {
@@ -459,35 +448,6 @@ impl ProjectCacheWarmQueue {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn wait_for(
-    _queue: &ProjectCacheWarmQueue,
-    project_root: &Path,
-    target: &super::ProjectCacheTarget,
-) -> Result<Option<super::ProjectCacheDescriptor>> {
-    let identity = super::ProjectCacheIdentity::for_project(
-        project_root,
-        target.clone(),
-        RuntimeProfile::NativeMedium,
-        super::super::cache_compatibility::project_runtime_cache_config_hash(
-            usd_semantic::SemanticConfig::default().hash(),
-        ),
-    )?;
-    let store = super::ProjectCacheStore::new(project_root);
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if let Some(descriptor) = store.load(&identity)? {
-            if descriptor.state != super::ProjectCacheState::Building {
-                return Ok(Some(descriptor));
-            }
-        }
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-        std::thread::sleep(CACHE_PREPARATION_POLL);
-    }
-}
-
 fn worker_loop(
     receiver: mpsc::Receiver<super::WarmJob>,
     sender: Arc<Mutex<Option<mpsc::SyncSender<super::WarmJob>>>>,
@@ -513,3 +473,10 @@ fn worker_loop(
         latest.finish_and_retry(&job.key, sender.as_ref());
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/project/cache_warmer_queue_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+pub(super) use test_support::wait_for;

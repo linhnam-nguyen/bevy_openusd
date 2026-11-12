@@ -376,5 +376,5 @@ fn summarize_error(error: &anyhow::Error) -> String {
 }
 
 #[cfg(test)]
-#[path = "inspection_tests.rs"]
+#[path = "../../../tests/unit/project/scene/inspection_tests.rs"]
 mod inspection_tests;

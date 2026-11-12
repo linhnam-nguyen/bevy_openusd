@@ -149,5 +149,5 @@ fn spatial_index(index: &SceneCacheIndex) -> SceneSpatialIndex {
 }
 
 #[cfg(test)]
-#[path = "cache_scene_prim_count_tests.rs"]
+#[path = "../../tests/unit/project/cache_scene_prim_count_tests.rs"]
 mod tests;

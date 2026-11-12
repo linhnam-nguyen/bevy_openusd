@@ -309,28 +309,9 @@ fn ensure_destination_absent(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-pub(super) mod failure_injection {
-    use std::sync::atomic::{AtomicU8, Ordering};
-
-    use anyhow::{Result, bail};
-
-    static FAILURE_POINT: AtomicU8 = AtomicU8::new(0);
-
-    pub(super) fn set(point: u8) {
-        FAILURE_POINT.store(point, Ordering::SeqCst);
-    }
-
-    pub(super) fn maybe(point: u8) -> Result<()> {
-        if FAILURE_POINT
-            .compare_exchange(point, 0, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            bail!("injected Project migration failure at point {point}");
-        }
-        Ok(())
-    }
-}
+#[path = "../../../tests/unit/project/storage/migration_failure_injection_tests.rs"]
+mod failure_injection;
 
 #[cfg(test)]
-#[path = "migration_tests.rs"]
+#[path = "../../../tests/unit/project/storage/migration_tests.rs"]
 mod tests;

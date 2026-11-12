@@ -193,5 +193,5 @@ pub(super) fn sync_parent_best_effort(parent: Option<&Path>) {
     let _ = directory.sync_all();
 }
 #[cfg(test)]
-#[path = "authoring_tests.rs"]
+#[path = "../../../tests/unit/project/scene/authoring_tests.rs"]
 mod tests;

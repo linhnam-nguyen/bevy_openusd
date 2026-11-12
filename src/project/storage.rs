@@ -10,7 +10,7 @@ mod layout;
 mod migration;
 
 #[cfg(test)]
-#[path = "storage/portability_tests.rs"]
+#[path = "../../tests/unit/project/storage/portability_tests.rs"]
 mod portability_tests;
 
 pub(crate) use ignore::{

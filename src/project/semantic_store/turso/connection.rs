@@ -37,9 +37,8 @@ impl TursoSemanticStore {
     pub(crate) async fn open_memory() -> Result<Self> {
         Self::open(":memory:").await
     }
-
-    #[cfg(test)]
-    pub(super) fn connection(&self) -> &turso::Connection {
-        &self.connection
-    }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/project/semantic_store/turso/connection_test_support.rs"]
+mod test_support;

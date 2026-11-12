@@ -54,30 +54,6 @@ impl ProjectRuntimeAuthorityQueue {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_timeout(timeout: Duration) -> Self {
-        Self {
-            timeout,
-            request_ttl: timeout,
-            ..Self::default()
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_timeout_and_registry_path(
-        timeout: Duration,
-        registry_path: impl Into<PathBuf>,
-    ) -> Self {
-        Self {
-            file_lock: Arc::new(Mutex::new(())),
-            registry_cache: Arc::new(Mutex::new(RegistryCache::default())),
-            last_cleanup: Arc::new(Mutex::new(None)),
-            timeout,
-            request_ttl: timeout.saturating_add(Duration::from_millis(250)),
-            workspace_registry_path: Some(registry_path.into()),
-        }
-    }
-
     fn runtime_root(&self, project_root: &Path) -> PathBuf {
         storage::runtime_root(self, project_root)
     }
@@ -92,15 +68,6 @@ impl ProjectRuntimeAuthorityQueue {
 
     pub(crate) fn registered_project_roots(&self) -> std::collections::HashMap<ProjectId, PathBuf> {
         storage::registered_project_roots(self)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn registry_resolution_count(&self) -> usize {
-        self.registry_cache
-            .lock()
-            .expect("Project runtime registry cache is not poisoned")
-            .resolution_count
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn is_cancelled(&self, project_root: &Path, request_id: &str) -> bool {
@@ -133,29 +100,6 @@ impl ProjectRuntimeAuthorityQueue {
 
     pub(crate) fn clear_request_state(&self, project_root: &Path, request_id: &str) {
         storage::clear_request_state(self, project_root, request_id);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn prepare_request_claim(
-        &self,
-        project_root: &Path,
-        request_id: &str,
-    ) -> Result<(), ProjectWriteError> {
-        self.create_waiting_claim(project_root, request_id)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn cancel_request_for_test(
-        &self,
-        project_root: &Path,
-        request_id: &str,
-    ) -> Result<bool, ProjectWriteError> {
-        self.cancel_waiting_request(project_root, request_id)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn cleanup_for_test(&self, project_root: &Path) {
-        storage::cleanup_for_test(self, project_root);
     }
 
     pub(crate) fn publish_response(
@@ -398,3 +342,7 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/project/service/runtime_authority_queue_test_support.rs"]
+mod test_support;

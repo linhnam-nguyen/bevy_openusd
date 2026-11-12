@@ -185,18 +185,15 @@ fn path_is_present(path: &Path) -> bool {
 }
 
 #[cfg(test)]
-fn maybe_fail_after_ordinary_scene() -> Result<()> {
-    super::failure_injection::maybe(1)
-}
+#[path = "../../../tests/unit/project/storage/migration_publish_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+use test_support::*;
 
 #[cfg(not(test))]
 fn maybe_fail_after_ordinary_scene() -> Result<()> {
     Ok(())
-}
-
-#[cfg(test)]
-fn maybe_fail_before_manifest() -> Result<()> {
-    super::failure_injection::maybe(2)
 }
 
 #[cfg(not(test))]
@@ -204,19 +201,9 @@ fn maybe_fail_before_manifest() -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-fn maybe_fail_after_model_directory() -> Result<()> {
-    super::failure_injection::maybe(4)
-}
-
 #[cfg(not(test))]
 fn maybe_fail_after_model_directory() -> Result<()> {
     Ok(())
-}
-
-#[cfg(test)]
-fn maybe_fail_after_manifest() -> Result<()> {
-    super::failure_injection::maybe(3)
 }
 
 #[cfg(not(test))]

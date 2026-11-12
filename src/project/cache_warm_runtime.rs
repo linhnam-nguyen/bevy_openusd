@@ -127,7 +127,7 @@ fn build_and_publish_scene_cache_generation_inner(
     Ok(Some(index))
 }
 #[cfg(test)]
-#[path = "cache_warm_runtime_tests.rs"]
+#[path = "../../tests/unit/project/cache_warm_runtime_tests.rs"]
 mod tests;
 pub(crate) fn publish_project_cache_lookup(
     project_root: &Path,

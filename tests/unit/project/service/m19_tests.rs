@@ -142,6 +142,7 @@ fn phase2_freeze_matrix_covers_native_and_adopted_imports_and_missing_locations(
     service
         .import_project(&native_path, &native_inspection)
         .expect("re-import native Project");
+    assert!(service.wait_for_cache_idle(&native_path));
 
     fs::rename(&native_path, &native_path.with_file_name("Native-moved")).unwrap();
     let missing = service.execute(ProjectReadCommand::new(ProjectReadRequest::ListProjects));

@@ -70,21 +70,19 @@ pub(super) fn submit_batch_locked_with_failure(
 }
 
 #[cfg(test)]
-fn take_test_failure(queue: &ProjectStageMutationQueue) -> Option<usize> {
-    queue
-        .test_fail_before_index
-        .lock()
-        .expect("Project stage mutation queue test hook is not poisoned")
-        .take()
-}
-
-#[cfg(not(test))]
-fn take_test_failure(_queue: &ProjectStageMutationQueue) -> Option<usize> {
-    None
-}
+#[path = "../../../tests/unit/project/service/stage_mutation_outbox_test_support.rs"]
+mod test_support;
 
 pub(super) fn take_failure(queue: &ProjectStageMutationQueue) -> Option<usize> {
-    take_test_failure(queue)
+    #[cfg(test)]
+    {
+        test_support::take_test_failure(queue)
+    }
+    #[cfg(not(test))]
+    {
+        let _ = queue;
+        None
+    }
 }
 
 pub(super) fn read_pending(

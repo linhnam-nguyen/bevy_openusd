@@ -277,6 +277,8 @@ pub(super) fn publish_response(
 }
 
 #[cfg(test)]
-pub(super) fn cleanup_for_test(queue: &ProjectRuntimeAuthorityQueue, project_root: &Path) {
-    cleanup_stale_artifacts(&runtime_root(queue, project_root), Duration::ZERO);
-}
+#[path = "../../../tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+pub(super) use test_support::cleanup_for_test;

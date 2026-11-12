@@ -21,14 +21,13 @@ use crate::project::{
     scene::authoring::scene_path,
 };
 
+#[cfg(test)]
+#[path = "../../tests/unit/project/cache_warmer_preparation_tests.rs"]
+mod preparation;
 #[path = "cache_warmer_queue.rs"]
 mod queue;
 #[path = "cache_warmer_recovery.rs"]
 mod recovery;
-#[cfg(test)]
-mod preparation {
-    pub(super) use super::queue::wait_for;
-}
 pub(crate) use queue::ProjectCachePreparation;
 pub use queue::ProjectCacheWarmQueue;
 pub(crate) use recovery::enqueue_project_targets_fail_closed;
@@ -394,21 +393,21 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
 }
 
 #[cfg(test)]
-#[path = "cache_warmer_c7_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_c7_tests.rs"]
 mod c7_tests;
 #[cfg(test)]
-#[path = "cache_warmer_closure_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_closure_tests.rs"]
 mod closure_tests;
 #[cfg(test)]
-#[path = "cache_warmer_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "cache_warmer_c1_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_c1_tests.rs"]
 mod c1_tests;
 #[cfg(test)]
-#[path = "cache_warmer_lifecycle_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(test)]
-#[path = "cache_warmer_recovery_tests.rs"]
+#[path = "../../tests/unit/project/cache_warmer_recovery_tests.rs"]
 mod recovery_tests;
