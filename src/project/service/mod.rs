@@ -113,14 +113,15 @@ mod commit_runtime;
 mod commit_tests;
 mod deletion;
 #[cfg(test)]
-#[path = "deletion_tests.rs"]
+#[path = "../../../tests/unit/project/service/deletion/deletion_tests.rs"]
 mod deletion_tests;
 mod error;
 mod export;
 #[cfg(test)]
-#[path = "export_portability_tests.rs"]
+#[path = "../../../tests/unit/project/service/export/export_portability_tests.rs"]
 mod export_portability_tests;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/export/export_tests.rs"]
 mod export_tests;
 mod inspection;
 mod lifecycle;
