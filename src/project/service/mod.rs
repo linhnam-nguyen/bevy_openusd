@@ -28,23 +28,11 @@ use self::error::project_read_error_code;
 use self::runtime_authority::NoopProjectRuntimeAuthority;
 
 #[cfg(test)]
-fn configured_initial_branch() -> String {
-    let directory = tempfile::tempdir().expect("create temporary directory for Git config");
-    let output = std::process::Command::new("git")
-        .args(["config", "--default", "main", "init.defaultBranch"])
-        .current_dir(directory.path())
-        .output()
-        .expect("read configured Git default branch");
-    assert!(
-        output.status.success(),
-        "read configured Git default branch: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout)
-        .expect("Git default branch is UTF-8")
-        .trim()
-        .to_owned()
-}
+#[path = "../../../testing/project_support/mod.rs"]
+mod project_support;
+
+#[cfg(test)]
+use self::project_support::configured_initial_branch;
 
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {

@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use project_protocol::{ProjectReadCommand, ProjectReadRequest, ProjectReadResponse};
 use tempfile::tempdir;
@@ -7,6 +7,7 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot};
 use super::{
     ManifestStore, ProjectApplicationService, ProjectImportProgressStore,
     ProjectPublicationCoordinator, ProjectStageMutationQueue, WorkspaceRegistry,
+    project_support::run_git,
 };
 
 #[test]
@@ -132,18 +133,4 @@ fn repository_summary_preserves_an_unborn_symbolic_branch() {
     assert!(repository.branches.is_empty());
     assert!(repository.head.is_none());
     assert!(repository.latest_commit.is_none());
-}
-
-fn run_git(directory: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .expect("run git command");
-    assert!(
-        output.status.success(),
-        "git command failed: {}\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

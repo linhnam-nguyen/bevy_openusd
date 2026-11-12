@@ -215,6 +215,7 @@ mod tests {
     use usd_project::SceneMemberTarget;
 
     use super::*;
+    use crate::project::service::project_support::service_with_project;
 
     fn model_source(directory: &std::path::Path) -> std::path::PathBuf {
         let source = directory.join("asset.usda");
@@ -224,17 +225,6 @@ mod tests {
         )
         .unwrap();
         source
-    }
-
-    fn service_with_project(
-        directory: &std::path::Path,
-    ) -> (ProjectApplicationService, usd_project::ProjectSummary) {
-        let parent = directory.join("projects");
-        fs::create_dir(&parent).unwrap();
-        let mut service =
-            ProjectApplicationService::open(directory.join("workspace.json")).unwrap();
-        let project = service.create_project(&parent, "Project").unwrap();
-        (service, project)
     }
 
     #[test]

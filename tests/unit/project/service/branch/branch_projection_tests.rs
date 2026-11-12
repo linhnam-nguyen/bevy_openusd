@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 use project_protocol::ProjectWriteError;
 use tempfile::tempdir;
@@ -6,6 +6,7 @@ use usd_git::GitRepository;
 use usd_project::{ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
+use crate::project::service::project_support::run_git;
 
 #[test]
 fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() {
@@ -323,18 +324,4 @@ fn invalid_target_scene_projection_reports_repository_truth_after_checkout() {
     service
         .switch_branch(project_id, "main")
         .expect("valid branch remains an explicit recovery path");
-}
-
-fn run_git(directory: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .expect("run git command");
-    assert!(
-        output.status.success(),
-        "git command failed: {}\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

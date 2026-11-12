@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 use openusd::usd::Stage;
 use project_protocol::{ProjectWriteError, ProjectWriteErrorCode};
@@ -9,6 +9,7 @@ use usd_project::{
 };
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
+use crate::project::service::project_support::run_git;
 
 #[path = "branch_repository_truth_tests.rs"]
 mod repository_truth;
@@ -408,20 +409,6 @@ fn service_branch_switch_reports_typed_invalid_and_missing_branch_failures() {
             code: ProjectWriteErrorCode::BranchNotFound
         })
     ));
-}
-
-fn run_git(directory: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .expect("run git command");
-    assert!(
-        output.status.success(),
-        "git command failed: {}\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 fn write_legacy_scene_layer(repository: &Path, scene_id: usd_project::SceneId) {
