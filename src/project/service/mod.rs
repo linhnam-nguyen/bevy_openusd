@@ -101,8 +101,10 @@ impl Default for ProjectPublicationCoordinator {
 
 mod branch;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/branch/branch_projection_tests.rs"]
 mod branch_projection_tests;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/branch/branch_tests.rs"]
 mod branch_tests;
 mod commit;
 mod commit_runtime;
