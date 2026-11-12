@@ -109,6 +109,7 @@ mod branch_tests;
 mod commit;
 mod commit_runtime;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/commit/commit_tests.rs"]
 mod commit_tests;
 mod deletion;
 #[cfg(test)]
