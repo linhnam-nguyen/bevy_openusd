@@ -133,8 +133,10 @@ mod read;
 mod rename;
 mod runtime_authority;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_owner_review5_tests.rs"]
 mod runtime_authority_owner_review5_tests;
 #[cfg(test)]
+#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_tests.rs"]
 mod runtime_authority_tests;
 mod scene;
 mod scene_adoption;
