@@ -145,19 +145,6 @@ impl ProjectStageActivationRuntime {
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
         }
     }
-
-    #[cfg(test)]
-    fn wait_for_prepared(&self) -> Result<PreparedProjectActivation, std::sync::mpsc::RecvError> {
-        // Correctness is synchronized on the worker result itself. The old
-        // one-second wall-clock deadline was test-only and could fail under
-        // full-suite CPU/filesystem contention even though production uses the
-        // non-blocking `take_prepared` path and the worker remained live.
-        self.preparation
-            .receiver
-            .lock()
-            .expect("Project activation preparation receiver is not poisoned")
-            .recv()
-    }
 }
 
 fn resolve_project_activation(
@@ -236,88 +223,8 @@ pub(super) fn install(app: &mut App) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::viewport::api::RenderServerInterface;
-    use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
-    use usd_project::{ProjectId, ProjectRoot, SceneId};
-    use viewport_protocol::SessionId;
-    use viewport_streaming::ProjectActivationResult as RoutedProjectActivationResult;
-
-    #[test]
-    fn activation_reply_preserves_project_root_generation_and_has_no_path() {
-        let project_id = ProjectId::new_v4();
-        let command = ProjectActivationCommand::new(
-            "activation-b",
-            7,
-            project_id,
-            ProjectStageTarget::ProjectRoot(ProjectRoot::Scene(SceneId::new_v4())),
-        );
-        let reply = ProjectActivationReply::activated(&command);
-        let encoded = serde_json::to_string(&reply).unwrap();
-
-        assert!(encoded.contains("activation-b"));
-        assert!(encoded.contains(&project_id.to_string()));
-        assert!(!encoded.contains("/Users/"));
-    }
-
-    #[test]
-    fn activation_requests_are_routed_to_the_requesting_session() {
-        let interface = RenderServerInterface::default();
-        let project_id = ProjectId::new_v4();
-        let command = ProjectActivationCommand::new(
-            "activation-a",
-            1,
-            project_id,
-            ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
-        );
-        interface
-            .submit_project_activation(ProjectActivationRequest {
-                session_id: SessionId::new("session-a"),
-                command: command.clone(),
-            })
-            .unwrap();
-        let request = interface.pop_project_activation().unwrap();
-        interface
-            .publish_project_activation_result(RoutedProjectActivationResult {
-                session_id: request.session_id.clone(),
-                reply: ProjectActivationReply::activated(&request.command),
-            })
-            .unwrap();
-
-        let result = interface
-            .take_project_activation_result(&SessionId::new("session-a"))
-            .unwrap();
-        assert_eq!(result.session_id, SessionId::new("session-a"));
-        assert_eq!(result.reply.request_id, command.request_id);
-    }
-
-    #[test]
-    fn preparation_worker_preserves_request_identity_when_registry_is_unavailable() {
-        let runtime = ProjectStageActivationRuntime::with_registry_path(None);
-        let command = ProjectActivationCommand::new(
-            "activation-preparation-failure",
-            4,
-            ProjectId::new_v4(),
-            ProjectStageTarget::ProjectRoot(ProjectRoot::Empty),
-        );
-        let request = ProjectActivationRequest {
-            session_id: SessionId::new("session-preparation"),
-            command: command.clone(),
-        };
-
-        assert!(runtime.submit(request.clone()).is_none());
-        let prepared = runtime
-            .wait_for_prepared()
-            .expect("preparation worker should return a result");
-        assert_eq!(prepared.request.session_id, request.session_id);
-        assert_eq!(prepared.request.command, command);
-        assert_eq!(
-            prepared.target,
-            Err("Project activation registry is unavailable".to_owned())
-        );
-    }
-}
+#[path = "../../../tests/unit/viewport/app/project_activation_inline_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_activation_cache_tests.rs"]
@@ -335,13 +242,7 @@ pub(crate) use flow::continue_deferred_stage_activation_for_test;
 pub(crate) use production_tests::ProductionActivationWorld;
 
 #[cfg(test)]
-pub(crate) fn observe_project_activation_for_test(
-    world: &mut bevy::prelude::World,
-    session_id: &str,
-    command: &project_protocol::ProjectActivationCommand,
-) -> bool {
-    world
-        .resource_mut::<ProjectActivationAuthorityRuntime>()
-        .0
-        .observe_request(session_id, command)
-}
+#[path = "../../../tests/unit/viewport/app/project_activation_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(crate) use test_support::observe_project_activation_for_test;

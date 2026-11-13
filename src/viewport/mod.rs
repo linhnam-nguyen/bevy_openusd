@@ -7,6 +7,10 @@
 mod app;
 
 #[cfg(test)]
+#[path = "../../testing/viewport_support/mod.rs"]
+mod viewport_support;
+
+#[cfg(test)]
 pub(crate) use app::{
     ProductionActivationWorld, apply_prepared_activation_for_test,
     observe_project_activation_for_test,

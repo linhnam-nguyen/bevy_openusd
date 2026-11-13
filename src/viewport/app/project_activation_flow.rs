@@ -125,18 +125,6 @@ fn apply_prepared_activation(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn apply_prepared_activation_for_test(
-    world: &mut World,
-    request: &ProjectActivationRequest,
-    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
-) -> Option<ProjectActivationReply> {
-    match apply_prepared_activation(world, request, target) {
-        ActivationProgress::Reply(reply) => Some(reply),
-        ActivationProgress::Deferred => None,
-    }
-}
-
 fn commit_empty_activation(
     world: &mut World,
     request: &ProjectActivationRequest,
@@ -349,13 +337,16 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
     publish_activation_result(&interface, pending.request, reply);
 }
 
-#[cfg(test)]
-pub(crate) fn continue_deferred_stage_activation_for_test(world: &mut World) {
-    continue_deferred_stage_activation(world);
-}
-
 fn stale_completion_reply(
     command: &project_protocol::ProjectActivationCommand,
 ) -> ProjectActivationReply {
     ProjectActivationReply::failed(command, "stale Project activation completion was ignored")
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/app/project_activation_flow_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(crate) use test_support::apply_prepared_activation_for_test;
+#[cfg(test)]
+pub(crate) use test_support::continue_deferred_stage_activation_for_test;

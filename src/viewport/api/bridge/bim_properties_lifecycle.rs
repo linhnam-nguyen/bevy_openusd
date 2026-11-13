@@ -32,11 +32,6 @@ impl PendingBimProperties {
             self.request_id = None;
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn has_request(&self) -> bool {
-        self.request_id.is_some()
-    }
 }
 
 pub(super) fn replay_pending_bim_properties(
@@ -71,3 +66,7 @@ pub(super) fn replay_pending_bim_properties(
         &mut outbox,
     );
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/viewport/api/bridge/bim_properties_lifecycle_test_support.rs"]
+mod test_support;

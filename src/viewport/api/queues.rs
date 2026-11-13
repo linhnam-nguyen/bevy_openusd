@@ -147,11 +147,6 @@ impl ViewportTreeCommandInbox {
             self.pending_focus = None;
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn pending_focus_count(&self) -> usize {
-        usize::from(self.pending_focus.is_some())
-    }
 }
 
 /// Events emitted after the native viewport applies a command.
@@ -185,3 +180,7 @@ impl ViewportEventOutbox {
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/api/queues_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/api/queues_test_support.rs"]
+mod test_support;

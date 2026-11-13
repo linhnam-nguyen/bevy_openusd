@@ -142,45 +142,6 @@ impl SelectedRenderableProjection {
             }
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn is_pending(&self) -> bool {
-        !self.pending_targets.is_empty()
-            || !self.pending_removals.is_empty()
-            || !self.pending_bounds.is_empty()
-            || self.pending_topology.is_some()
-            || !self.topology_queue.is_empty()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_hierarchy_depth(&self) -> usize {
-        self.pending_targets
-            .iter()
-            .map(|work| work.stack.len())
-            .sum()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_topology_count(&self) -> usize {
-        self.topology_queue.len() + usize::from(self.pending_topology.is_some())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn last_cursor_work(&self) -> usize {
-        self.last_cursor_work
-    }
-
-    #[cfg(test)]
-    pub(crate) fn last_topology_work(&self) -> usize {
-        self.last_topology_work
-    }
-
-    #[cfg(test)]
-    pub(crate) fn target_order_len(&self, target: &SceneAnchor) -> usize {
-        self.target_renderable_order
-            .get(target)
-            .map_or(0, EntityOrder::len)
-    }
 }
 
 /// Registers lifecycle observers that admit topology deltas into the bounded
@@ -383,3 +344,7 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
     projection.last_scene_revision = Some(scene_revision);
     projection.bounds_requested = Some(bounds_requested);
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/scene/selection_projection_test_support.rs"]
+mod test_support;

@@ -144,31 +144,6 @@ impl CachedResidencyWorker {
         self.available.load(Ordering::Acquire)
     }
 
-    #[cfg(test)]
-    pub(crate) fn unavailable_for_test() -> Self {
-        Self {
-            requests: None,
-            completions: None,
-            thread: None,
-            available: AtomicBool::new(false),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_completion_for_test(completion: LoadCompletion) -> Self {
-        let (completion_tx, completion_rx) = mpsc::sync_channel(WORKER_QUEUE_CAPACITY);
-        completion_tx
-            .send(completion)
-            .expect("test completion queue accepts one completion");
-        drop(completion_tx);
-        Self {
-            requests: None,
-            completions: Some(Mutex::new(completion_rx)),
-            thread: None,
-            available: AtomicBool::new(false),
-        }
-    }
-
     pub(crate) fn dispatch(
         &self,
         project_root: PathBuf,
@@ -352,3 +327,7 @@ fn load_cached_mesh(
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/worker_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/residency/worker_test_support.rs"]
+mod test_support;

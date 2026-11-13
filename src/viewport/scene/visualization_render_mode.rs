@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::RenderMode;
 
+use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
 use super::super::selection_color::SelectionBaseMaterial;
 use super::DisplayToggles;
 
@@ -38,12 +39,10 @@ impl Default for RenderModeProjectionState {
 }
 
 #[cfg(test)]
-#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(super) struct RenderModeProjectionStats {
-    full_transition_scans: u32,
-    incremental_scans: u32,
-    restore_scans: u32,
-}
+#[path = "../../../tests/unit/viewport/scene/visualization_render_mode_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(super) use test_support::RenderModeProjectionStats;
 
 pub(super) fn init_uniform_render_material(
     mut commands: Commands,
@@ -63,6 +62,55 @@ pub(super) fn init_uniform_render_material(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply_render_mode(
+    toggles: Res<DisplayToggles>,
+    uniform: Option<Res<UniformRenderMaterial>>,
+    projection: ResMut<RenderModeProjectionState>,
+    commands: Commands,
+    prims: ParamSet<(
+        Query<
+            (
+                Entity,
+                &mut MeshMaterial3d<StandardMaterial>,
+                Option<&mut OriginalRenderMaterial>,
+                Option<&mut SelectionBaseMaterial>,
+            ),
+            With<UsdPrimRef>,
+        >,
+        Query<
+            (
+                Entity,
+                &mut MeshMaterial3d<StandardMaterial>,
+                Option<&mut OriginalRenderMaterial>,
+                Option<&mut SelectionBaseMaterial>,
+            ),
+            (
+                With<UsdPrimRef>,
+                Or<(Added<UsdPrimRef>, Changed<MeshMaterial3d<StandardMaterial>>)>,
+            ),
+        >,
+        Query<
+            (
+                Entity,
+                &mut MeshMaterial3d<StandardMaterial>,
+                &OriginalRenderMaterial,
+                Option<&mut SelectionBaseMaterial>,
+            ),
+            With<OriginalRenderMaterial>,
+        >,
+    )>,
+) {
+    apply_render_mode_core(
+        toggles,
+        uniform,
+        projection,
+        commands,
+        prims,
+        &mut DirectProjectionWork,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_render_mode_core(
     toggles: Res<DisplayToggles>,
     uniform: Option<Res<UniformRenderMaterial>>,
     mut projection: ResMut<RenderModeProjectionState>,
@@ -99,7 +147,7 @@ pub(super) fn apply_render_mode(
             With<OriginalRenderMaterial>,
         >,
     )>,
-    #[cfg(test)] mut stats: Option<ResMut<RenderModeProjectionStats>>,
+    work: &mut impl ProjectionWork,
 ) {
     let desired = toggles.renderer.render_mode;
     let mode_changed = projection.last_mode != desired;
@@ -111,52 +159,52 @@ pub(super) fn apply_render_mode(
             };
             projection.last_mode = desired;
             let mut prims = prims.p0();
-            for (entity, mut material, original, selection_base) in &mut prims {
-                #[cfg(test)]
-                if let Some(stats) = stats.as_mut() {
-                    stats.full_transition_scans += 1;
-                }
-                if material.0 == uniform.0 {
-                    continue;
-                }
+            work.execute(
+                ProjectionBatch::MaterialTransition,
+                &mut prims,
+                |(entity, mut material, original, selection_base)| {
+                    if material.0 == uniform.0 {
+                        return;
+                    }
 
-                if let Some(mut selection_base) = selection_base {
-                    if original.is_none() {
+                    if let Some(mut selection_base) = selection_base {
+                        if original.is_none() {
+                            commands
+                                .entity(entity)
+                                .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                        }
+                        selection_base.0 = uniform.0.clone();
+                        return;
+                    }
+
+                    if let Some(mut original) = original {
+                        original.0 = material.0.clone();
+                    } else {
                         commands
                             .entity(entity)
-                            .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                            .insert(OriginalRenderMaterial(material.0.clone()));
                     }
-                    selection_base.0 = uniform.0.clone();
-                    continue;
-                }
-
-                if let Some(mut original) = original {
-                    original.0 = material.0.clone();
-                } else {
-                    commands
-                        .entity(entity)
-                        .insert(OriginalRenderMaterial(material.0.clone()));
-                }
-                material.0 = uniform.0.clone();
-            }
+                    material.0 = uniform.0.clone();
+                },
+            );
         } else {
             projection.last_mode = desired;
             let mut prims = prims.p2();
             // Ray Traced is rejected by the B2 protocol validator and remains
             // a B3 capability. If an internal caller places it in this state,
             // restore the authored material without claiming ray tracing.
-            for (entity, mut material, original, selection_base) in &mut prims {
-                #[cfg(test)]
-                if let Some(stats) = stats.as_mut() {
-                    stats.restore_scans += 1;
-                }
-                if let Some(mut selection_base) = selection_base {
-                    selection_base.0 = original.0.clone();
-                } else {
-                    material.0 = original.0.clone();
-                }
-                commands.entity(entity).remove::<OriginalRenderMaterial>();
-            }
+            work.execute(
+                ProjectionBatch::MaterialRestore,
+                &mut prims,
+                |(entity, mut material, original, selection_base)| {
+                    if let Some(mut selection_base) = selection_base {
+                        selection_base.0 = original.0.clone();
+                    } else {
+                        material.0 = original.0.clone();
+                    }
+                    commands.entity(entity).remove::<OriginalRenderMaterial>();
+                },
+            );
         }
         return;
     }
@@ -166,39 +214,39 @@ pub(super) fn apply_render_mode(
             return;
         };
         let mut prims = prims.p1();
-        for (entity, mut material, original, selection_base) in &mut prims {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.incremental_scans += 1;
-            }
-            if material.0 == uniform.0 {
-                if let Some(mut selection_base) = selection_base {
-                    selection_base.0 = uniform.0.clone();
+        work.execute(
+            ProjectionBatch::MaterialIncremental,
+            &mut prims,
+            |(entity, mut material, original, selection_base)| {
+                if material.0 == uniform.0 {
+                    if let Some(mut selection_base) = selection_base {
+                        selection_base.0 = uniform.0.clone();
+                    }
+                    return;
                 }
-                continue;
-            }
 
-            if let Some(mut selection_base) = selection_base {
-                if original.is_none() {
+                if let Some(mut selection_base) = selection_base {
+                    if original.is_none() {
+                        commands
+                            .entity(entity)
+                            .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                    }
+                    selection_base.0 = uniform.0.clone();
+                    return;
+                }
+
+                if let Some(mut original) = original {
+                    // Preserve a material route update that arrived while the
+                    // uniform mode was active.
+                    original.0 = material.0.clone();
+                } else {
                     commands
                         .entity(entity)
-                        .insert(OriginalRenderMaterial(selection_base.0.clone()));
+                        .insert(OriginalRenderMaterial(material.0.clone()));
                 }
-                selection_base.0 = uniform.0.clone();
-                continue;
-            }
-
-            if let Some(mut original) = original {
-                // Preserve a material route update that arrived while the
-                // uniform mode was active.
-                original.0 = material.0.clone();
-            } else {
-                commands
-                    .entity(entity)
-                    .insert(OriginalRenderMaterial(material.0.clone()));
-            }
-            material.0 = uniform.0.clone();
-        }
+                material.0 = uniform.0.clone();
+            },
+        );
     }
 }
 

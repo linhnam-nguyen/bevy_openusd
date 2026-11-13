@@ -90,26 +90,6 @@ pub(crate) fn activate_stage_with_cache_context_for_generation(
     )
 }
 
-#[cfg(test)]
-fn activate_stage_with_cache_context_for_test<F>(
-    world: &mut World,
-    path: std::path::PathBuf,
-    cache_context: Option<ActiveProjectCacheContext>,
-    before_open: F,
-) -> Result<(), String>
-where
-    F: FnOnce(),
-{
-    activate_stage_with_cache_context_inner(
-        world,
-        path,
-        cache_context,
-        0,
-        StagePresentationContext::default(),
-        before_open,
-    )
-}
-
 fn activate_stage_with_cache_context_inner<F>(
     world: &mut World,
     path: std::path::PathBuf,
@@ -284,3 +264,9 @@ mod cache_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/session/lifecycle_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/session/lifecycle_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+use test_support::activate_stage_with_cache_context_for_test;

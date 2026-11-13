@@ -5,6 +5,7 @@ mod classification_color_plan;
 mod diff;
 mod entity_order;
 mod ghost;
+mod projection_work;
 mod section_box;
 mod section_box_clipping;
 mod section_box_gizmo;

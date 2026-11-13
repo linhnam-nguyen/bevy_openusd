@@ -49,13 +49,12 @@ impl CachePresentationGate {
         }
         false
     }
-
-    #[cfg(test)]
-    pub(crate) fn rendered(&self) -> bool {
-        self.rendered_generation == Some(self.generation)
-    }
 }
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/session/cache_presentation_gate_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/session/cache_presentation_gate_test_support.rs"]
+mod test_support;

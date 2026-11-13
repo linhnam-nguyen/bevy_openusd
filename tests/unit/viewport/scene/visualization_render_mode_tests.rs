@@ -16,7 +16,7 @@ fn test_app() -> (
         .insert_resource(RenderModeProjectionState::default())
         .insert_resource(RenderModeProjectionStats::default())
         .insert_resource(UniformRenderMaterial(Handle::default()))
-        .add_systems(Update, apply_render_mode);
+        .add_systems(Update, test_support::apply_render_mode_counted);
 
     let authored = app
         .world_mut()

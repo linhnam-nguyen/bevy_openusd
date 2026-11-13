@@ -179,5 +179,5 @@ pub fn benchmark_stepper_system(world: &mut World) {
 }
 
 #[cfg(test)]
-#[path = "runner_tests.rs"]
+#[path = "../../../../tests/unit/viewport/diagnostics/performance/runner_tests.rs"]
 mod tests;

@@ -159,29 +159,6 @@ impl ResidencyAuthority {
         None
     }
 
-    #[cfg(test)]
-    pub(crate) fn complete_cpu(
-        &mut self,
-        key: ScenePayloadKey,
-        generation: u64,
-        cpu_bytes: u64,
-        gpu_bytes: u64,
-    ) -> bool {
-        let mask = self.in_flight_mask(&key);
-        self.complete_cpu_payload(
-            key,
-            generation,
-            cpu_bytes,
-            gpu_bytes,
-            if mask.is_empty() {
-                PayloadLoadMask::GEOMETRY
-            } else {
-                mask
-            },
-            Some(test_mesh()),
-        )
-    }
-
     pub(crate) fn defer_load(&mut self, job: LoadJob<ScenePayloadKey>) -> bool {
         if !self.generation_is_current(job.key.scene_id, job.generation) {
             return false;
@@ -295,13 +272,11 @@ pub(super) fn resident_mesh_footprint(mesh: &Mesh) -> (u64, u64) {
 }
 
 #[cfg(test)]
-fn test_mesh() -> Mesh {
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-}
-
-#[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/authority_loading_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/residency/authority_loading_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+use test_support::test_mesh;

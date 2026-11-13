@@ -44,14 +44,7 @@ def Xform "World"
         .expect("stage opens");
     let live = LiveStage::new(stage);
 
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins)
-        .add_plugins(bevy::asset::AssetPlugin::default())
-        .init_asset::<Mesh>()
-        .init_asset::<bevy::image::Image>()
-        .init_asset::<StandardMaterial>()
-        .add_plugins(usd_bevy::UsdPlugin)
-        .add_plugins(usd_bevy::LiveStagePlugin);
+    let mut app = crate::viewport::viewport_support::semantic_test_app();
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });

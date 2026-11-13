@@ -47,7 +47,10 @@ fn mesh_asset_event_dirties_indexed_consumer() {
     .init_resource::<SolariProjectionStats>()
     .init_resource::<RenderProjectionDirtySet>()
     .init_resource::<MeshProjectionConsumers>()
-    .add_systems(Update, sync_solari_usd_projection);
+    .add_systems(
+        Update,
+        projection::test_support::sync_solari_usd_projection_counted,
+    );
     app.world_mut()
         .resource_mut::<MeshProjectionConsumers>()
         .track(entity, mesh.id());

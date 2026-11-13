@@ -57,20 +57,12 @@ impl SemanticSyncState {
         self.revision = None;
         self.activation_generation = activation_generation;
     }
-
-    #[cfg(test)]
-    pub(crate) fn from_test_snapshot(snapshot: SemanticSnapshot) -> Self {
-        Self {
-            config: SemanticConfig::default(),
-            bim_index: Some(Arc::new(BimReadIndex::build(&snapshot))),
-            snapshot: Some(Arc::new(snapshot)),
-            session_id: None,
-            revision: None,
-            activation_generation: 0,
-        }
-    }
 }
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/semantic/state_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/semantic/state_test_support.rs"]
+mod test_support;

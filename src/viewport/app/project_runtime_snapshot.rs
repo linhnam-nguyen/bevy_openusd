@@ -24,27 +24,6 @@ pub(crate) fn runtime_snapshot_response(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn runtime_snapshot_response_with_claim_hook(
-    world: &mut bevy::prelude::World,
-    request_id: &str,
-    project_id: ProjectId,
-    active_scene_id: SceneId,
-    queue: &ProjectRuntimeAuthorityQueue,
-    project_root: &Path,
-    before_claim: &dyn Fn(),
-) -> ProjectRuntimeResponse {
-    runtime_snapshot_response_inner(
-        world,
-        request_id,
-        project_id,
-        active_scene_id,
-        queue,
-        project_root,
-        Some(before_claim),
-    )
-}
-
 fn runtime_snapshot_response_inner(
     world: &mut bevy::prelude::World,
     request_id: &str,
@@ -124,3 +103,9 @@ fn runtime_snapshot_response_inner(
         root_layer: root_layer.into_bytes(),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/app/project_runtime_snapshot_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(crate) use test_support::runtime_snapshot_response_with_claim_hook;

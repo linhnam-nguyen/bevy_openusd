@@ -351,5 +351,5 @@ fn failed_cadence(requested_fps: u32) -> RendererMatrixCadenceReport {
 }
 
 #[cfg(test)]
-#[path = "matrix_tests.rs"]
+#[path = "../../../../tests/unit/viewport/diagnostics/performance/matrix_tests.rs"]
 mod tests;

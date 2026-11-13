@@ -145,19 +145,6 @@ impl SceneResidencyProjection {
         self.payload_occurrences.clear();
         self.asset_occurrences.clear();
     }
-
-    #[cfg(test)]
-    fn entry_count(&self) -> usize {
-        self.entries.len()
-    }
-
-    #[cfg(test)]
-    fn active_entity_count(&self) -> usize {
-        self.entries
-            .values()
-            .filter(|entry| entry.entity.is_some())
-            .count()
-    }
 }
 
 fn transform_for_cache(transform: &ScenePlacementTransform) -> Transform {
@@ -168,3 +155,7 @@ fn transform_for_cache(transform: &ScenePlacementTransform) -> Transform {
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/projection_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/residency/projection_test_support.rs"]
+mod test_support;

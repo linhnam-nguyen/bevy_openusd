@@ -5,6 +5,7 @@
 
 use bevy::prelude::*;
 
+use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
 use super::{DisplayToggles, OriginalShadowEnabled};
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -21,10 +22,10 @@ impl Default for ShadowProjectionState {
 }
 
 #[cfg(test)]
-#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ShadowProjectionStats {
-    full_light_visits: u32,
-}
+#[path = "../../../tests/unit/viewport/scene/visualization_shadows_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(super) use test_support::ShadowProjectionStats;
 
 pub(super) fn capture_original_shadow_settings(
     toggles: Res<DisplayToggles>,
@@ -64,40 +65,53 @@ pub(super) fn capture_original_shadow_settings(
 
 pub(super) fn apply_shadow_toggle(
     toggles: Res<DisplayToggles>,
+    projection: ResMut<ShadowProjectionState>,
+    lights: ParamSet<(
+        Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
+        Query<(&mut PointLight, &OriginalShadowEnabled)>,
+        Query<(&mut SpotLight, &OriginalShadowEnabled)>,
+    )>,
+) {
+    apply_shadow_toggle_core(toggles, projection, lights, &mut DirectProjectionWork);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_shadow_toggle_core(
+    toggles: Res<DisplayToggles>,
     mut projection: ResMut<ShadowProjectionState>,
     mut lights: ParamSet<(
         Query<(&mut DirectionalLight, &OriginalShadowEnabled)>,
         Query<(&mut PointLight, &OriginalShadowEnabled)>,
         Query<(&mut SpotLight, &OriginalShadowEnabled)>,
     )>,
-    #[cfg(test)] mut stats: Option<ResMut<ShadowProjectionStats>>,
+    work: &mut impl ProjectionWork,
 ) {
     let desired = toggles.renderer.shadows;
     let toggle_changed = projection.applied_shadows != desired;
     projection.applied_shadows = desired;
 
     if toggle_changed {
-        for (mut light, authored) in &mut lights.p0() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.full_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
-        for (mut light, authored) in &mut lights.p1() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.full_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
-        for (mut light, authored) in &mut lights.p2() {
-            #[cfg(test)]
-            if let Some(stats) = stats.as_mut() {
-                stats.full_light_visits += 1;
-            }
-            set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
-        }
+        work.execute(
+            ProjectionBatch::ShadowTransition,
+            &mut lights.p0(),
+            |(mut light, authored)| {
+                set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+            },
+        );
+        work.execute(
+            ProjectionBatch::ShadowTransition,
+            &mut lights.p1(),
+            |(mut light, authored)| {
+                set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+            },
+        );
+        work.execute(
+            ProjectionBatch::ShadowTransition,
+            &mut lights.p2(),
+            |(mut light, authored)| {
+                set_shadow_enabled(&mut light.shadow_maps_enabled, desired && authored.0);
+            },
+        );
     }
 }
 

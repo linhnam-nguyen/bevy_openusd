@@ -144,14 +144,6 @@ impl BimReadIndex {
         cache.push((recipe.clone(), Arc::clone(&index)));
         index
     }
-
-    #[cfg(test)]
-    pub(super) fn classification_cache_len(&self) -> usize {
-        self.classification_cache
-            .lock()
-            .expect("BIM classification cache mutex is not poisoned")
-            .len()
-    }
 }
 
 fn build_field_catalogue(snapshot: &SemanticSnapshot) -> BimClassificationFieldCatalogue {
@@ -274,3 +266,7 @@ fn classification_descriptor(
         .map_or(BimPropertyScope::Other, |descriptor| descriptor.scope);
     BimClassificationFieldDescriptor::new(key, label, scope)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/index_test_support.rs"]
+mod test_support;

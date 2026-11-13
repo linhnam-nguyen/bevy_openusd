@@ -21,16 +21,6 @@ pub(in crate::viewport) struct ClassificationColorPlan {
 }
 
 impl ClassificationColorPlan {
-    #[cfg(test)]
-    pub(in crate::viewport) fn replace(
-        &mut self,
-        generation: u64,
-        entries: Vec<ClassificationColorEntry>,
-    ) {
-        self.replace_entries(entries);
-        self.generation = generation;
-    }
-
     pub(in crate::viewport) fn accept_intent(
         &mut self,
         intent: ClassificationColorIntent,
@@ -146,3 +136,7 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/scene/classification_color_plan_inline_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/scene/classification_color_plan_test_support.rs"]
+mod test_support;

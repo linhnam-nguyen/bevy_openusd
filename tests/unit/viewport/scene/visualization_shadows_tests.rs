@@ -22,7 +22,11 @@ fn shadows_disable_globally_and_restore_each_authored_setting() {
         .insert_resource(ShadowProjectionStats::default())
         .add_systems(
             Update,
-            (capture_original_shadow_settings, apply_shadow_toggle).chain(),
+            (
+                capture_original_shadow_settings,
+                test_support::apply_shadow_toggle_counted,
+            )
+                .chain(),
         );
 
     app.update();

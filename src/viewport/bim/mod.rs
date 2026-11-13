@@ -272,13 +272,6 @@ impl<'snapshot> BimReadService<'snapshot> {
         search::execute(self, query)
     }
 
-    #[cfg(test)]
-    pub(crate) fn classification_build_count(&self) -> u64 {
-        self.classification_cache
-            .as_ref()
-            .map_or(0, |cache| cache.build_count)
-    }
-
     pub(super) fn entity_for_anchor(
         &self,
         anchor: &SceneAnchor,
@@ -329,3 +322,7 @@ impl<'snapshot> BimReadService<'snapshot> {
         SceneAnchor::active_session(entity.prim_path.clone())
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/mod_test_support.rs"]
+mod test_support;

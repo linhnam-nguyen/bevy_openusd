@@ -38,11 +38,6 @@ impl ViewerSettingsState {
         self.0.selection.gizmo_size_level = level;
     }
 
-    #[cfg(test)]
-    pub(in crate::viewport) fn environment_mut(&mut self) -> &mut ViewerEnvironmentSettings {
-        &mut self.0.environment
-    }
-
     pub(in crate::viewport) fn set_ray_traced_supported(&mut self, supported: bool) {
         if self.0.capabilities.ray_traced_supported != supported {
             self.0.capabilities.ray_traced_supported = supported;
@@ -78,3 +73,7 @@ impl ViewerSettingsState {
         self.0.sampling.provider = provider;
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/viewport/api/bridge/settings_test_support.rs"]
+mod test_support;

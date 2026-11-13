@@ -150,7 +150,10 @@ fn shaded_idle_does_not_repeat_full_projection_scan() {
     .init_resource::<SolariProjectionDiagnostics>()
     .init_resource::<SolariProjectionState>()
     .init_resource::<SolariProjectionStats>()
-    .add_systems(Update, sync_solari_usd_projection);
+    .add_systems(
+        Update,
+        projection::test_support::sync_solari_usd_projection_counted,
+    );
 
     app.update();
     assert_eq!(
@@ -205,7 +208,10 @@ fn stable_ray_traced_does_not_repeat_full_projection_scan() {
     .init_resource::<SolariProjectionDiagnostics>()
     .init_resource::<SolariProjectionState>()
     .init_resource::<SolariProjectionStats>()
-    .add_systems(Update, sync_solari_usd_projection);
+    .add_systems(
+        Update,
+        projection::test_support::sync_solari_usd_projection_counted,
+    );
 
     app.update();
     assert!(
@@ -254,7 +260,10 @@ fn explicit_dirty_entity_is_processed_incrementally() {
     .init_resource::<SolariProjectionStats>()
     .init_resource::<RenderProjectionDirtySet>()
     .init_resource::<MeshProjectionConsumers>()
-    .add_systems(Update, sync_solari_usd_projection);
+    .add_systems(
+        Update,
+        projection::test_support::sync_solari_usd_projection_counted,
+    );
 
     app.update();
     let replacement = app
@@ -310,7 +319,10 @@ fn unchanged_large_scene_processes_zero_projection_entities_on_idle() {
     .init_resource::<SolariProjectionStats>()
     .init_resource::<RenderProjectionDirtySet>()
     .init_resource::<MeshProjectionConsumers>()
-    .add_systems(Update, sync_solari_usd_projection);
+    .add_systems(
+        Update,
+        projection::test_support::sync_solari_usd_projection_counted,
+    );
 
     app.update();
 

@@ -52,17 +52,6 @@ pub(crate) struct SelectionResidencyState {
     last_batch_work: usize,
 }
 
-#[cfg(test)]
-impl SelectionResidencyState {
-    fn pending_len(&self) -> usize {
-        self.pending.len()
-    }
-
-    fn last_batch_work(&self) -> usize {
-        self.last_batch_work
-    }
-}
-
 pub(crate) fn sync_selected_residency(
     presentation: Option<Res<SceneCachePresentation>>,
     runtime_lookup: Option<Res<ProjectCacheLookup>>,
@@ -120,36 +109,6 @@ pub(crate) fn release_selected_residency(world: &mut World) {
     }
     state.clear();
     world.insert_resource(state);
-}
-
-#[cfg(test)]
-fn build_lookup(
-    presentation: &SceneCachePresentation,
-    context: Option<&ActiveProjectCacheContext>,
-) -> Option<ProjectCacheLookup> {
-    let mut entries = presentation.entries.clone();
-    entries.sort_by(|left, right| left.address.cmp(&right.address));
-    let active = SceneCacheIndex {
-        schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION,
-        scene_id: presentation.scene_id,
-        generation: presentation.generation,
-        entries,
-    };
-    let mut indexes = vec![active];
-    if let Some(context) = context
-        && let Ok(manifest) = ManifestStore::read_validated(&context.project_root)
-    {
-        let store = SceneCacheStore::new(&context.project_root);
-        for scene in manifest.scenes() {
-            if scene.id == presentation.scene_id {
-                continue;
-            }
-            if let Ok(Some(index)) = store.load_index(scene.id) {
-                indexes.push(index);
-            }
-        }
-    }
-    ProjectCacheLookup::from_scene_indexes(&indexes).ok()
 }
 
 fn selected_payload(
@@ -375,3 +334,9 @@ impl SelectionResidencyState {
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/selection_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/residency/selection_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+use test_support::build_lookup;

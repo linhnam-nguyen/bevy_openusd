@@ -17,6 +17,8 @@ use bevy::prelude::*;
 use usd_bevy::{MeshProjectionConsumers, RenderProjectionDirtySet, UsdPrimRef};
 
 #[cfg(feature = "solari")]
+use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
+#[cfg(feature = "solari")]
 use super::SolariCapability;
 #[cfg(feature = "solari")]
 use crate::viewport::scene::visualization::DisplayToggles;
@@ -54,25 +56,61 @@ struct SolariProjectionEntry {
 }
 
 #[cfg(test)]
-#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SolariProjectionStats {
-    pub(crate) full_scans: u32,
-    pub(crate) incremental_entities: u32,
-}
-
-#[cfg(test)]
-impl SolariProjectionState {
-    pub(crate) fn initialized_for_test() -> Self {
-        Self {
-            initialized: true,
-            device_supported: true,
-            ..Default::default()
-        }
-    }
-}
+pub(crate) use test_support::SolariProjectionStats;
 
 #[cfg(feature = "solari")]
 pub(super) fn sync_solari_usd_projection(
+    capability: ResMut<SolariCapability>,
+    toggles: Res<DisplayToggles>,
+    meshes: Option<Res<Assets<Mesh>>>,
+    state: ResMut<SolariProjectionState>,
+    diagnostics: ResMut<SolariProjectionDiagnostics>,
+    commands: Commands,
+    projection_query: Query<
+        (
+            Entity,
+            &Mesh3d,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&bevy::solari::prelude::RaytracingMesh3d>,
+        ),
+        With<UsdPrimRef>,
+    >,
+    marked_entities: Query<
+        Entity,
+        (
+            With<UsdPrimRef>,
+            With<bevy::solari::prelude::RaytracingMesh3d>,
+        ),
+    >,
+    removed_prims: RemovedComponents<UsdPrimRef>,
+    removed_meshes: RemovedComponents<Mesh3d>,
+    removed_materials: RemovedComponents<MeshMaterial3d<StandardMaterial>>,
+    mesh_asset_events: Option<MessageReader<AssetEvent<Mesh>>>,
+    dirty_set: Option<ResMut<RenderProjectionDirtySet>>,
+    mesh_consumers: Option<Res<MeshProjectionConsumers>>,
+) {
+    sync_solari_usd_projection_core(
+        capability,
+        toggles,
+        meshes,
+        state,
+        diagnostics,
+        commands,
+        projection_query,
+        marked_entities,
+        removed_prims,
+        removed_meshes,
+        removed_materials,
+        mesh_asset_events,
+        dirty_set,
+        mesh_consumers,
+        &mut DirectProjectionWork,
+    );
+}
+
+#[cfg(feature = "solari")]
+#[allow(clippy::too_many_arguments)]
+fn sync_solari_usd_projection_core(
     mut capability: ResMut<SolariCapability>,
     toggles: Res<DisplayToggles>,
     meshes: Option<Res<Assets<Mesh>>>,
@@ -101,7 +139,7 @@ pub(super) fn sync_solari_usd_projection(
     mut mesh_asset_events: Option<MessageReader<AssetEvent<Mesh>>>,
     mut dirty_set: Option<ResMut<RenderProjectionDirtySet>>,
     mesh_consumers: Option<Res<MeshProjectionConsumers>>,
-    #[cfg(test)] mut stats: Option<ResMut<SolariProjectionStats>>,
+    work: &mut impl ProjectionWork,
 ) {
     let Some(meshes) = meshes else {
         return;
@@ -153,17 +191,17 @@ pub(super) fn sync_solari_usd_projection(
 
     let full_scan = !state.initialized || (requested_ray_traced && !state.requested_ray_traced);
     if full_scan {
-        full_projection_scan(
-            &meshes,
-            requested_ray_traced,
-            &mut capability,
-            &mut state,
-            &mut diagnostics,
-            &mut commands,
-            &mut projection_query,
-            #[cfg(test)]
-            stats.as_deref_mut(),
-        );
+        work.execute(ProjectionBatch::SolariFullScan, [()], |_| {
+            full_projection_scan(
+                &meshes,
+                requested_ray_traced,
+                &mut capability,
+                &mut state,
+                &mut diagnostics,
+                &mut commands,
+                &mut projection_query,
+            );
+        });
         return;
     }
 
@@ -186,8 +224,13 @@ pub(super) fn sync_solari_usd_projection(
             affected.insert(entity);
         }
     }
-    for entity in dirty_entities {
-        if let Ok((entity, mesh, material, marker)) = projection_query.get(entity) {
+    let query = &projection_query;
+    work.execute(
+        ProjectionBatch::SolariIncremental,
+        dirty_entities
+            .into_iter()
+            .filter_map(move |entity| query.get(entity).ok()),
+        |(entity, mesh, material, marker)| {
             update_entry(
                 entity,
                 mesh,
@@ -199,12 +242,8 @@ pub(super) fn sync_solari_usd_projection(
                 &mut commands,
             );
             affected.insert(entity);
-            #[cfg(test)]
-            if let Some(stats) = stats.as_deref_mut() {
-                stats.incremental_entities += 1;
-            }
-        }
-    }
+        },
+    );
 
     set_scene_eligibility(&mut capability, &diagnostics);
     let enabled = requested_ray_traced && capability.supported();
@@ -254,7 +293,6 @@ fn full_projection_scan(
         ),
         With<UsdPrimRef>,
     >,
-    #[cfg(test)] stats: Option<&mut SolariProjectionStats>,
 ) {
     state.entries.clear();
     *diagnostics = SolariProjectionDiagnostics::default();
@@ -288,10 +326,6 @@ fn full_projection_scan(
     state.device_supported = true;
     state.requested_ray_traced = requested_ray_traced;
     state.enabled = enabled;
-    #[cfg(test)]
-    if let Some(stats) = stats {
-        stats.full_scans += 1;
-    }
 }
 
 #[cfg(feature = "solari")]
@@ -342,3 +376,7 @@ fn remove_entry(
             .remove::<bevy::solari::prelude::RaytracingMesh3d>();
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/scene/solari_projection_test_support.rs"]
+pub(super) mod test_support;
