@@ -290,5 +290,5 @@ pub struct ModelManifestEntry {
 }
 
 #[cfg(test)]
-#[path = "manifest_tests.rs"]
+#[path = "../tests/contracts/manifest_tests.rs"]
 mod tests;
