@@ -303,5 +303,5 @@ fn active_scene_id_for_stage(stage_path: &Path, project_root: &Path) -> Option<S
 }
 
 #[cfg(test)]
-#[path = "project_stage_tests.rs"]
+#[path = "../../../tests/unit/viewport/app/project_stage_tests.rs"]
 mod tests;

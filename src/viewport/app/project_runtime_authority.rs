@@ -11,7 +11,7 @@ use super::{
 use crate::project::service::{ProjectRuntimeRequest, ProjectRuntimeResponse};
 
 #[cfg(test)]
-#[path = "project_runtime_authority_owner_review5_tests.rs"]
+#[path = "../../../tests/unit/viewport/app/project_runtime_authority_owner_review5_tests.rs"]
 mod owner_review5_tests;
 
 /// Answer host-side Commit/Export requests from the exact LiveStage owner.

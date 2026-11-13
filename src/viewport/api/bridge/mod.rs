@@ -31,6 +31,7 @@ mod state;
 mod tree;
 
 #[cfg(test)]
+#[path = "../../../../tests/unit/viewport/api/bridge/tests/mod.rs"]
 mod tests;
 
 pub(crate) use convert::editor_value_to_usd;
