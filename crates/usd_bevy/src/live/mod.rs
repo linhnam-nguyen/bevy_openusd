@@ -128,4 +128,5 @@ impl Plugin for LiveStagePlugin {
 }
 
 #[cfg(test)]
+#[path = "../../tests/unit/live/mod.rs"]
 mod tests;
