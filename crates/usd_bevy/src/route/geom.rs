@@ -355,9 +355,9 @@ pub struct UsdKind {
 pub struct UsdDisplayName(pub String);
 
 #[cfg(test)]
-#[path = "geom_tests.rs"]
+#[path = "../../tests/unit/route/geom_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "hierarchy_tests.rs"]
+#[path = "../../tests/unit/route/hierarchy_tests.rs"]
 mod hierarchy_tests;

@@ -56,8 +56,11 @@ pub(crate) fn record_descriptor_read(world: &mut bevy::ecs::world::World) {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/unit/route/material/fallback_tests.rs"]
 mod fallback_tests;
 #[cfg(test)]
+#[path = "../../../tests/unit/route/material/package_isolation_tests.rs"]
 mod package_isolation_tests;
 #[cfg(test)]
+#[path = "../../../tests/unit/route/material/tests.rs"]
 mod tests;

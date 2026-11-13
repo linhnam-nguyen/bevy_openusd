@@ -17,4 +17,5 @@ pub use ops::{
 };
 
 #[cfg(test)]
+#[path = "../../tests/unit/authoring/tests.rs"]
 mod tests;

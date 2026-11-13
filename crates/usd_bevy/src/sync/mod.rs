@@ -274,4 +274,5 @@ pub fn author_component_from_world(
 }
 
 #[cfg(test)]
+#[path = "../../tests/unit/sync/tests.rs"]
 mod tests;

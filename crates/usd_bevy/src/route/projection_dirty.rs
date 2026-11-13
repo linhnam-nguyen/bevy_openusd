@@ -23,11 +23,6 @@ impl RenderProjectionDirtySet {
     pub fn take(&mut self) -> Vec<Entity> {
         self.entities.drain().collect()
     }
-
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.entities.len()
-    }
 }
 
 /// Reverse index from projected mesh assets to the USD entities consuming them.
@@ -69,13 +64,12 @@ impl MeshProjectionConsumers {
             .map(|entities| entities.iter().copied().collect())
             .unwrap_or_default()
     }
-
-    #[cfg(test)]
-    pub(crate) fn consumer_count(&self, mesh: AssetId<Mesh>) -> usize {
-        self.by_mesh.get(&mesh).map_or(0, HashSet::len)
-    }
 }
 
 #[cfg(test)]
-#[path = "projection_dirty_tests.rs"]
+#[path = "../../tests/unit/route/projection_dirty_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/route/projection_dirty_support.rs"]
+mod test_support;

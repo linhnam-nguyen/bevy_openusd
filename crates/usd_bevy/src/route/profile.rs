@@ -367,5 +367,5 @@ fn subdivision_index(value: GeometrySubdivisionClass) -> usize {
 }
 
 #[cfg(test)]
-#[path = "profile_tests.rs"]
+#[path = "../../tests/unit/route/profile_tests.rs"]
 mod tests;

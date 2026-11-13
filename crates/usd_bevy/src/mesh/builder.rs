@@ -347,5 +347,5 @@ fn build_indexed(
 }
 
 #[cfg(test)]
-#[path = "builder_tests.rs"]
+#[path = "../../tests/unit/mesh/builder_tests.rs"]
 mod tests;

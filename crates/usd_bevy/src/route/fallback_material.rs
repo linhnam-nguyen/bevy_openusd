@@ -99,5 +99,5 @@ pub(crate) fn fallback_material(world: &mut World) -> Handle<StandardMaterial> {
 }
 
 #[cfg(test)]
-#[path = "fallback_material_tests.rs"]
+#[path = "../../tests/unit/route/fallback_material_tests.rs"]
 mod tests;

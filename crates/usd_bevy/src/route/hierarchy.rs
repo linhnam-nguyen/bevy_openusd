@@ -41,12 +41,9 @@ pub(crate) struct HierarchyMetadataIndex {
 #[derive(bevy::ecs::resource::Resource, Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct HierarchyMetadataRevision(pub(crate) u64);
 
-impl HierarchyMetadataIndex {
-    #[cfg(test)]
-    pub(super) fn display_name(&self, path: &str) -> Option<&str> {
-        self.display_names.get(path).map(String::as_str)
-    }
-}
+#[cfg(test)]
+#[path = "../../tests/unit/route/hierarchy_support.rs"]
+mod test_support;
 
 pub(super) fn prepare_metadata_index(stage: &openusd::usd::Stage, world: &mut World) {
     let stage_address = std::ptr::from_ref(stage) as usize;
