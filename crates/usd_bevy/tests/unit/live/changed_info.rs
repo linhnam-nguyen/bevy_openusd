@@ -8,17 +8,10 @@ use crate::snippet::UsdSnippet;
 
 #[test]
 fn test_bare_prim_changed_info_repatches_transform() {
-    let usda = r#"#usda 1.0
-def Xform "World"
-{
-    def Xform "A"
-    {
-        double3 xformOp:translate = (0, 0, 0)
-        uniform token[] xformOpOrder = ["xformOp:translate"]
-    }
-}
-
-"#;
+    let usda = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/changed_info_1.usda"
+    ));
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);
 
@@ -72,15 +65,10 @@ def Xform "World"
 
 #[test]
 fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> anyhow::Result<()> {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-(defaultPrim = "World")
-def Xform "World"
-{
-    def Xform "Source" {}
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/changed_info_2.usda"
+    )))
     .open_stage()?;
     stage.prim("/World/Source").set_metadata(
         "ui:displayName",
@@ -120,16 +108,10 @@ def Xform "World"
 
 #[test]
 fn compact_change_plan_deduplicates_paths_and_properties() {
-    let usda = r#"#usda 1.0
-def Xform "World"
-{
-    def Xform "A"
-    {
-        double3 xformOp:translate = (0, 0, 0)
-        uniform token[] xformOpOrder = ["xformOp:translate"]
-    }
-}
-"#;
+    let usda = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/changed_info_3.usda"
+    ));
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);
     let mut app = App::new();

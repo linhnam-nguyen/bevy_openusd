@@ -61,60 +61,10 @@ fn add_triangle_mesh(stage: &Stage, path: &str) -> Result<()> {
 }
 
 pub(super) fn nested_consumers_stage() -> Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "InnerPrototype"
-{
-    def Mesh "Leaf"
-    {
-        int[] faceVertexCounts = [3]
-        int[] faceVertexIndices = [0, 1, 2]
-        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-    }
-}
-
-def Xform "OtherPrototype"
-{
-    def Mesh "OtherLeaf"
-    {
-        int[] faceVertexCounts = [3]
-        int[] faceVertexIndices = [0, 1, 2]
-        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-    }
-}
-
-def Xform "OuterPrototype"
-{
-    def Xform "Nested" (
-        instanceable = true
-        references = </InnerPrototype>
-    )
-    {
-    }
-}
-
-def Xform "Outer_A" (
-    instanceable = true
-    references = </OuterPrototype>
-)
-{
-}
-
-def Xform "Outer_B" (
-    instanceable = true
-    references = </OuterPrototype>
-)
-{
-}
-
-def Xform "Other_C" (
-    instanceable = true
-    references = </OtherPrototype>
-)
-{
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/native_instance_review_1.usda"
+    )))
     .open_stage()
     .expect("nested native instance fixture opens")
 }

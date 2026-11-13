@@ -42,23 +42,10 @@ struct M5C4Artifact {
 }
 
 fn mesh_stage() -> openusd::usd::Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "World"
-{
-    def Mesh "Triangle"
-    {
-        int[] faceVertexCounts = [3]
-        int[] faceVertexIndices = [0, 1, 2]
-        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-        color3f[] primvars:displayColor = [(1, 0, 0), (0, 1, 0), (0, 0, 1)] (
-            interpolation = "vertex"
-        )
-        float3[] extent = [(0, 0, 0), (1, 1, 0)]
-    }
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/mesh_patch_1.usda"
+    )))
     .open_stage()
     .expect("live mesh patch stage opens")
 }

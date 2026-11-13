@@ -8,20 +8,10 @@ use crate::snippet::UsdSnippet;
 
 #[test]
 fn exact_path_projection_materializes_only_requested_namespace() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "A"
-{
-    def Xform "Leaf"
-    {
-    }
-}
-def Xform "B"
-{
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/targeted_1.usda"
+    )))
     .open_stage()
     .expect("targeted stage opens");
     let live = LiveStage::new(stage);
@@ -50,23 +40,10 @@ def Xform "B"
 
 #[test]
 fn targeted_extraction_reads_only_requested_meshes() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-
-def Mesh "A"
-{
-    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-    int[] faceVertexCounts = [3]
-    int[] faceVertexIndices = [0, 1, 2]
-}
-def Mesh "B"
-{
-    point3f[] points = [(0, 0, 0), (2, 0, 0), (0, 2, 0)]
-    int[] faceVertexCounts = [3]
-    int[] faceVertexIndices = [0, 1, 2]
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/targeted_2.usda"
+    )))
     .open_stage()
     .expect("targeted mesh stage opens");
 

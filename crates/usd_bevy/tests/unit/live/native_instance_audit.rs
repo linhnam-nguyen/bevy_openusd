@@ -20,26 +20,10 @@ use crate::snippet::UsdSnippet;
 const REVIT_ASSET: &str = "../../../external_assets/Omniverse/V2/Projet1.usdc";
 
 fn generated_instance_stage(instance_count: usize) -> Result<Stage> {
-    let mut usda = String::from(
-        r##"#usda 1.0
-(
-    defaultPrim = "World"
-)
-
-def Xform "World"
-{
-    def Xform "Prototype"
-    {
-        def Mesh "Leaf"
-        {
-            int[] faceVertexCounts = [3]
-            int[] faceVertexIndices = [0, 1, 2]
-            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-        }
-    }
-
-"##,
-    );
+    let mut usda = String::from(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/native_instance_audit_1.usda"
+    )));
     for index in 0..instance_count {
         writeln!(
             usda,

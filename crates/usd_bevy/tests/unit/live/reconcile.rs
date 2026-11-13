@@ -48,29 +48,10 @@ fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
 
 #[test]
 fn reconcile_deep_overlap_minimizes_roots_and_scopes_work() {
-    let stage = crate::snippet::UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "World"
-{
-    def Xform "A"
-    {
-        def Xform "Child"
-        {
-            def Xform "Leaf"
-            {
-            }
-        }
-    }
-    def Xform "B"
-    {
-    }
-    def Xform "C"
-    {
-    }
-}
-"#,
-    )
+    let stage = crate::snippet::UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/reconcile_1.usda"
+    )))
     .open_stage()
     .expect("deep overlap stage opens");
 

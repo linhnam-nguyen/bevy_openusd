@@ -1,0 +1,20 @@
+#usda 1.0
+
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Xform "Child"
+        {
+            def Xform "Leaf"
+            {
+            }
+        }
+    }
+    def Xform "B"
+    {
+    }
+    def Xform "C"
+    {
+    }
+}

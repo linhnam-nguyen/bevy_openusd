@@ -74,35 +74,10 @@ fn stage_time_uses_prebound_animation_without_structural_work() {
 
 #[test]
 fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
-    let usda = r#"#usda 1.0
-(
-    startTimeCode = 0
-    endTimeCode = 10
-)
-
-def Xform "World"
-{
-    def Xform "AnimOutside"
-    {
-        double3 xformOp:translate.timeSamples = {
-            0: (0, 0, 0),
-            10: (10, 0, 0),
-        }
-        uniform token[] xformOpOrder = ["xformOp:translate"]
-    }
-    def Xform "A"
-    {
-        def Xform "AnimInsideOld"
-        {
-            double3 xformOp:translate.timeSamples = {
-                0: (0, 0, 0),
-                10: (0, 5, 0),
-            }
-            uniform token[] xformOpOrder = ["xformOp:translate"]
-        }
-    }
-}
-"#;
+    let usda = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/animation_1.usda"
+    ));
 
     let stage = crate::snippet::UsdSnippet::new(usda)
         .open_stage()
@@ -136,23 +111,10 @@ def Xform "World"
 
 #[test]
 fn test_reconcile_subtrees_adds_animated_prim_under_affected_subtree() {
-    let usda = r#"#usda 1.0
-(
-    startTimeCode = 1
-    endTimeCode = 10
-)
-def Xform "World"
-{
-    def Xform "A"
-    {
-        def Xform "StaticA" {}
-    }
-    def Xform "B"
-    {
-        def Xform "StaticB" {}
-    }
-}
-"#;
+    let usda = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/animation_2.usda"
+    ));
     let stage = crate::snippet::UsdSnippet::new(usda)
         .open_stage()
         .expect("stage opens");

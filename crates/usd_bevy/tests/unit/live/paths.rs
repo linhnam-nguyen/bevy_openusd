@@ -179,26 +179,10 @@ fn test_collect_stage_subtree_paths_synthetic_wide() {
 
 #[test]
 fn test_collect_stage_subtree_paths_deep_overlap() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "World"
-{
-    def Xform "A"
-    {
-        def Xform "Child"
-        {
-            def Xform "Leaf"
-            {
-            }
-        }
-    }
-    def Xform "B"
-    {
-    }
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/paths_1.usda"
+    )))
     .open_stage()
     .expect("deep overlap stage opens");
 
@@ -225,23 +209,10 @@ def Xform "World"
 
 #[test]
 fn test_collect_stage_subtree_paths_respects_projection_predicate() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "World"
-{
-    def Xform "Visible"
-    {
-    }
-    class "_AbstractBase"
-    {
-        def Xform "UnderAbstract"
-        {
-        }
-    }
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/paths_2.usda"
+    )))
     .open_stage()
     .expect("stage opens");
 

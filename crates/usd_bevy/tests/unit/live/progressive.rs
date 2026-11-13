@@ -10,26 +10,10 @@ use crate::prim_ref::UsdPrimRef;
 use crate::snippet::UsdSnippet;
 
 fn hierarchy_stage() -> openusd::usd::Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "Z"
-{
-    def Xform "Child"
-    {
-    }
-}
-def Xform "A"
-{
-    def Xform "Leaf"
-    {
-    }
-}
-def Xform "B"
-{
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_1.usda"
+    )))
     .open_stage()
     .expect("hierarchy stage opens")
 }
@@ -224,16 +208,10 @@ fn cancellation_discards_partial_generation_and_restarts() {
 
 #[test]
 fn reload_midway_cancels_old_session_and_never_mixes_paths() {
-    let replacement = UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "Reloaded"
-{
-    def Xform "Child"
-    {
-    }
-}
-"#,
-    )
+    let replacement = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_2.usda"
+    )))
     .open_stage()
     .expect("replacement stage opens");
     let mut app = App::new();
@@ -316,13 +294,10 @@ fn readiness_is_additive_and_progress_is_monotonic() {
 
 #[test]
 fn cache_aware_gate_rebuilds_when_a_resident_mesh_asset_is_evicted() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-def Cube "Cube"
-{
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_3.usda"
+    )))
     .open_stage()
     .expect("cube stage opens");
     let mut app = App::new();

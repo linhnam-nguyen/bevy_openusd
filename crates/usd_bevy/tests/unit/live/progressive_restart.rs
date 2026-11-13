@@ -6,19 +6,10 @@ use crate::live::{
 use crate::snippet::UsdSnippet;
 
 fn hierarchy_stage() -> openusd::usd::Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "A"
-{
-    def Xform "Child"
-    {
-    }
-}
-def Xform "B"
-{
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_restart_1.usda"
+    )))
     .open_stage()
     .expect("hierarchy stage opens")
 }

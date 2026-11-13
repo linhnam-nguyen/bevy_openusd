@@ -1,0 +1,17 @@
+#usda 1.0
+
+def Xform "Z"
+{
+    def Xform "Child"
+    {
+    }
+}
+def Xform "A"
+{
+    def Xform "Leaf"
+    {
+    }
+}
+def Xform "B"
+{
+}

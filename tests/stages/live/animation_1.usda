@@ -1,0 +1,28 @@
+#usda 1.0
+(
+    startTimeCode = 0
+    endTimeCode = 10
+)
+
+def Xform "World"
+{
+    def Xform "AnimOutside"
+    {
+        double3 xformOp:translate.timeSamples = {
+            0: (0, 0, 0),
+            10: (10, 0, 0),
+        }
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def Xform "A"
+    {
+        def Xform "AnimInsideOld"
+        {
+            double3 xformOp:translate.timeSamples = {
+                0: (0, 0, 0),
+                10: (0, 5, 0),
+            }
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+}

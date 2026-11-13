@@ -2,26 +2,10 @@ use crate::live::{ProjectionPlan, ProjectionPlanBuilder, collect_stage_subtree_p
 use crate::snippet::UsdSnippet;
 
 fn hierarchy_stage() -> openusd::usd::Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "Z"
-{
-    def Xform "Child"
-    {
-    }
-}
-def Xform "A"
-{
-    def Xform "Leaf"
-    {
-    }
-}
-def Xform "B"
-{
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_plan_1.usda"
+    )))
     .open_stage()
     .expect("hierarchy stage opens")
 }
@@ -65,18 +49,10 @@ fn projection_plan_matches_the_canonical_traversal_predicate() {
 
 #[test]
 fn projection_plan_keeps_unloaded_payload_prim_as_placeholder_work() {
-    let stage = UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "World"
-{
-    def "PayloadPrim" (
-        payload = @./sub.usda@</Sub>
-    )
-    {
-    }
-}
-"#,
-    )
+    let stage = UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/progressive_plan_2.usda"
+    )))
     .open_stage()
     .expect("payload stage opens");
     stage.unload(openusd::sdf::path("/World/PayloadPrim").expect("payload prim path"));

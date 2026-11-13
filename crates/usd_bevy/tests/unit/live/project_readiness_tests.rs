@@ -4,16 +4,10 @@ use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 
 fn geometry_stage() -> openusd::usd::Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-def Xform "World"
-{
-def Cube "Cube"
-{
-}
-}
-"#,
-    )
+    UsdSnippet::new(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/project_readiness_tests_1.usda"
+    )))
     .open_stage()
     .expect("geometry stage opens")
 }

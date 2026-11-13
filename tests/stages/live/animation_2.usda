@@ -1,0 +1,16 @@
+#usda 1.0
+(
+    startTimeCode = 1
+    endTimeCode = 10
+)
+def Xform "World"
+{
+    def Xform "A"
+    {
+        def Xform "StaticA" {}
+    }
+    def Xform "B"
+    {
+        def Xform "StaticB" {}
+    }
+}

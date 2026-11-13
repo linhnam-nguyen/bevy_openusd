@@ -5,16 +5,10 @@ use crate::snippet::UsdSnippet;
 
 #[test]
 fn test_live_stage_load_and_unload_payload_api_preserves_projection() {
-    let usda = r#"#usda 1.0
-def Xform "World"
-{
-    def "PayloadPrim" (
-        payload = @./sub.usda@</Sub>
-    )
-    {
-    }
-}
-"#;
+    let usda = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/stages/live/payload_1.usda"
+    ));
     let stage = UsdSnippet::new(usda)
         .open_stage()
         .expect("payload stage opens");
