@@ -373,5 +373,5 @@ impl SelectionResidencyState {
 }
 
 #[cfg(test)]
-#[path = "selection_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/selection_tests.rs"]
 mod tests;

@@ -297,5 +297,5 @@ pub(crate) fn resolve_selected_instance(
 }
 
 #[cfg(test)]
-#[path = "selection_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/selection_tests.rs"]
 mod tests;

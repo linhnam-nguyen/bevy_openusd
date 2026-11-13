@@ -21,7 +21,7 @@ use super::visualization::{OriginalRenderMaterial, UniformRenderMaterial};
 mod support;
 
 #[cfg(test)]
-#[path = "section_box_clipping_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/section_box_clipping_tests.rs"]
 mod tests;
 
 #[path = "section_box_clipping_sync.rs"]

@@ -258,5 +258,5 @@ fn sync_shadow_cascade_distance(
 }
 
 #[cfg(test)]
-#[path = "visualization_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/visualization_tests.rs"]
 mod tests;

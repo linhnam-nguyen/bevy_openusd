@@ -121,15 +121,5 @@ fn proxy_edges(bounds: ProjectedWorldBounds) -> [(Vec3, Vec3); 12] {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn coarse_proxy_has_one_wire_box() {
-        let edges = proxy_edges(ProjectedWorldBounds {
-            min: Vec3::ZERO,
-            max: Vec3::ONE,
-        });
-        assert_eq!(edges.len(), 12);
-    }
-}
+#[path = "../../../tests/unit/viewport/scene/selection_presentation_proxy_inline_tests.rs"]
+mod tests;

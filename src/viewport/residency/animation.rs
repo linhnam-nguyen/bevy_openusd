@@ -178,5 +178,5 @@ impl AnimationResidencyState {
 }
 
 #[cfg(test)]
-#[path = "animation_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/animation_tests.rs"]
 mod tests;

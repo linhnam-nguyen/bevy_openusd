@@ -350,5 +350,5 @@ fn parse_codec(value: &str) -> Result<CodecId, String> {
 }
 
 #[cfg(test)]
-#[path = "transport_tests.rs"]
+#[path = "../../../tests/unit/viewport/transport/transport_tests.rs"]
 mod tests;

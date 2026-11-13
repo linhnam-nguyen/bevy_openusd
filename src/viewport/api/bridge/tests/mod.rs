@@ -14,7 +14,9 @@ mod m8_semantic_consistency_test;
 mod mutations_test;
 mod renderer_commands_test;
 mod save_stage_test;
+#[path = "../../../../../tests/unit/viewport/api/bridge/tests/selection_boundedness_test.rs"]
 mod selection_boundedness_test;
+#[path = "../../../../../tests/unit/viewport/api/bridge/tests/selection_commands_test.rs"]
 mod selection_commands_test;
 mod selection_performance_test;
 mod selection_profile_test;

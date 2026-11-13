@@ -102,5 +102,5 @@ pub(crate) fn resize_section_box_face(
 }
 
 #[cfg(test)]
-#[path = "section_box_face_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/section_box_face_tests.rs"]
 mod tests;

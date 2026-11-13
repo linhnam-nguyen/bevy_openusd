@@ -147,5 +147,5 @@ pub(crate) fn sync_ground_grid_to_scene(
 }
 
 #[cfg(test)]
-#[path = "visualization_environment_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/visualization_environment_tests.rs"]
 mod tests;

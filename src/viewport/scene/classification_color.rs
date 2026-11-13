@@ -187,5 +187,5 @@ fn shared_material(
 }
 
 #[cfg(test)]
-#[path = "classification_color_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/classification_color_tests.rs"]
 mod tests;

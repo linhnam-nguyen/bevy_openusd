@@ -4,7 +4,7 @@ mod locator;
 mod value;
 
 #[cfg(test)]
-#[path = "authoring_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/authoring_tests.rs"]
 mod tests;
 
 pub(crate) use locator::{BimAuthoringError, BimAuthoringLocator, resolve_bim_authoring_locator};

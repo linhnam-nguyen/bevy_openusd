@@ -285,4 +285,5 @@ fn despawn_all_ghosts(
 }
 
 #[cfg(test)]
+#[path = "../../../../tests/unit/viewport/scene/ghost/tests.rs"]
 mod tests;

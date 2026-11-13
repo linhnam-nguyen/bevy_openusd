@@ -30,4 +30,5 @@ pub(crate) fn configure(app: &mut App) {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/animation/tests.rs"]
 mod tests;

@@ -304,17 +304,17 @@ pub(crate) fn process_targeted_residency_repairs(
 }
 
 #[cfg(test)]
-#[path = "repair_integration_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/repair_integration_tests.rs"]
 mod integration_tests;
 #[cfg(test)]
-#[path = "repair_persistence_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/repair_persistence_tests.rs"]
 mod persistence_tests;
 #[cfg(test)]
-#[path = "repair_pressure_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/repair_pressure_tests.rs"]
 mod pressure_tests;
 #[cfg(test)]
-#[path = "repair_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/repair_tests.rs"]
 mod tests;
 #[cfg(test)]
-#[path = "repair_waiting_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/repair_waiting_tests.rs"]
 mod waiting_tests;

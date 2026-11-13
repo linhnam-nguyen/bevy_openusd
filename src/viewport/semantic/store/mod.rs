@@ -42,4 +42,5 @@ impl SemanticDatabase {
 }
 
 #[cfg(test)]
+#[path = "../../../../tests/unit/viewport/semantic/store/tests/mod.rs"]
 mod tests;

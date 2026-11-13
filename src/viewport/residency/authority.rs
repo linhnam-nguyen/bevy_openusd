@@ -347,8 +347,8 @@ impl ResidencyAuthority {
 }
 
 #[cfg(test)]
-#[path = "authority_payload_satisfaction_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/authority_payload_satisfaction_tests.rs"]
 mod payload_satisfaction_tests;
 #[cfg(test)]
-#[path = "authority_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/authority_tests.rs"]
 mod tests;

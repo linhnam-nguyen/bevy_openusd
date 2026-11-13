@@ -185,9 +185,9 @@ impl SceneAnchorIndex {
 
 const SCENE_INDEX_ADMISSION_BUDGET: usize = 256;
 #[cfg(test)]
-#[path = "scene_index_tests.rs"]
+#[path = "../../../tests/unit/viewport/api/scene_index_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "scene_index_lifecycle_tests.rs"]
+#[path = "../../../tests/unit/viewport/api/scene_index_lifecycle_tests.rs"]
 mod lifecycle_tests;

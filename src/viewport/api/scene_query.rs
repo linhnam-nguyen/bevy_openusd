@@ -165,5 +165,5 @@ impl Drop for SceneQueryService {
 }
 
 #[cfg(test)]
-#[path = "scene_query_tests.rs"]
+#[path = "../../../tests/unit/viewport/api/scene_query_tests.rs"]
 mod tests;

@@ -117,5 +117,5 @@ fn ancestors(path: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "editor_boundary_tests.rs"]
+#[path = "../../../../tests/unit/viewport/api/bridge/editor_boundary_tests.rs"]
 mod tests;

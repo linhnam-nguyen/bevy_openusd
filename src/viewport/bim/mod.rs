@@ -14,27 +14,35 @@ mod properties;
 mod search;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/test_fixtures.rs"]
 pub(crate) mod test_fixtures;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/classification_tests.rs"]
 mod classification_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/classification_contract_tests.rs"]
 mod classification_contract_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/classification_real_fixture_tests.rs"]
 mod classification_real_fixture_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/performance/viewport/bim/m8_performance_tests.rs"]
 mod m8_performance_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/m8_failure_tests.rs"]
 mod m8_failure_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/index_tests.rs"]
 mod index_tests;
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/bim/tests.rs"]
 mod tests;
 
 use std::error::Error;

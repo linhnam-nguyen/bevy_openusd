@@ -213,5 +213,5 @@ pub(super) fn apply_wireframe_toggle(
 }
 
 #[cfg(test)]
-#[path = "visualization_render_mode_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/visualization_render_mode_tests.rs"]
 mod tests;

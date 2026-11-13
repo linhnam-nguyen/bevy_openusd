@@ -352,5 +352,5 @@ fn persist_runtime_blob(
 }
 
 #[cfg(test)]
-#[path = "delivery_worker_tests.rs"]
+#[path = "../../../../tests/unit/viewport/semantic/sync/delivery_worker_tests.rs"]
 mod tests;

@@ -87,5 +87,5 @@ fn publish_sampling_capabilities(
 }
 
 #[cfg(test)]
-#[path = "coordinator_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/sampling/coordinator_tests.rs"]
 mod tests;

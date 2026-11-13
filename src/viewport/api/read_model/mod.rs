@@ -397,4 +397,5 @@ impl ViewportReadModelState {
     }
 }
 #[cfg(test)]
+#[path = "../../../../tests/unit/viewport/api/read_model/tests.rs"]
 mod tests;

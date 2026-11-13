@@ -365,5 +365,5 @@ impl SectionBoxClipPlanes {
 }
 
 #[cfg(test)]
-#[path = "section_box_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/section_box_tests.rs"]
 mod tests;

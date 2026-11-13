@@ -35,4 +35,5 @@ pub(crate) use types::{SemanticIncrementalUpdate, SemanticResponse};
 pub(crate) use worker::{SemanticSubmitError, SemanticWorkingStore};
 
 #[cfg(test)]
+#[path = "../../../tests/unit/viewport/semantic/tests/mod.rs"]
 mod tests;

@@ -303,5 +303,5 @@ fn test_mesh() -> Mesh {
 }
 
 #[cfg(test)]
-#[path = "authority_loading_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/authority_loading_tests.rs"]
 mod tests;

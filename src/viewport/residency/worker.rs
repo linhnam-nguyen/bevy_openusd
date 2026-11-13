@@ -350,5 +350,5 @@ fn load_cached_mesh(
 }
 
 #[cfg(test)]
-#[path = "worker_tests.rs"]
+#[path = "../../../tests/unit/viewport/residency/worker_tests.rs"]
 mod tests;

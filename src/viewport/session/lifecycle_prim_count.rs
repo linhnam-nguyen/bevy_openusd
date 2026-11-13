@@ -362,5 +362,5 @@ impl SceneDerivedMetadataFreshness for SceneDerivedMetadata {
 }
 
 #[cfg(test)]
-#[path = "lifecycle_prim_count_tests.rs"]
+#[path = "../../../tests/unit/viewport/session/lifecycle_prim_count_tests.rs"]
 mod tests;

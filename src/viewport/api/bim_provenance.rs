@@ -346,5 +346,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "bim_provenance_tests.rs"]
+#[path = "../../../tests/unit/viewport/api/bim_provenance_tests.rs"]
 mod tests;

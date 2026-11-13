@@ -123,5 +123,5 @@ fn apply_camera_activation(
 fn apply_camera_activation() {}
 
 #[cfg(test)]
-#[path = "dlss_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/sampling/dlss_tests.rs"]
 mod tests;

@@ -108,5 +108,5 @@ fn set_shadow_enabled(current: &mut bool, desired: bool) {
 }
 
 #[cfg(test)]
-#[path = "visualization_shadows_tests.rs"]
+#[path = "../../../tests/unit/viewport/scene/visualization_shadows_tests.rs"]
 mod tests;
