@@ -36,7 +36,6 @@ pub use projection::{
     extract_render_payloads_for_paths, project_paths, project_stage,
 };
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
-pub(crate) use reconcile::ReconcileStats;
 pub use reconcile::{apply_change_batch, apply_changes};
 pub use stage::{AuthoredSuppressionGuard, LiveStage};
 
@@ -72,6 +71,12 @@ pub enum LiveStageSet {
 
 impl Plugin for LiveStagePlugin {
     fn build(&self, app: &mut App) {
+        Self::build_with::<reconcile::WorldReconcileExecutor>(app);
+    }
+}
+
+impl LiveStagePlugin {
+    fn build_with<E: reconcile::ReconcileExecutor + Default + 'static>(app: &mut App) {
         app.init_resource::<PathStore>()
             .init_resource::<PrimEntities>()
             .init_resource::<ProjectionBudget>()
@@ -79,7 +84,6 @@ impl Plugin for LiveStagePlugin {
             .init_resource::<ProjectOpenReadinessState>()
             .init_resource::<SemanticEntityIndex>()
             .init_resource::<PendingStageChanges>()
-            .init_resource::<ReconcileStats>()
             .init_resource::<StageTime>()
             .init_resource::<AnimatedPrims>()
             .init_resource::<PerformanceCounters>()
@@ -110,7 +114,7 @@ impl Plugin for LiveStagePlugin {
             )
             .add_systems(
                 Update,
-                reproject_from_batch_system.in_set(LiveStageSet::Reconcile),
+                reproject_from_batch_system::<E>.in_set(LiveStageSet::Reconcile),
             )
             .add_systems(
                 Update,

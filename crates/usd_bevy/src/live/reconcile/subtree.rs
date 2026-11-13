@@ -11,8 +11,8 @@ use super::super::path::{PathStore, is_descendant_or_self, parent_path};
 use super::super::performance::PerformanceCounters;
 use super::super::projection::{collect_stage_subtree_paths, registry_of};
 use super::super::stage::LiveStage;
-use super::ReconcileStats;
 use super::full::reconcile_full;
+use super::{ReconcileExecutor, SubtreeWork};
 use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 use crate::route::remove_mesh_projection_consumer;
@@ -24,6 +24,7 @@ pub(super) fn reconcile_subtrees(
     map: &mut PrimEntities,
     roots: &[String],
     revision: LiveRevision,
+    executor: &mut impl ReconcileExecutor,
 ) {
     let stage = &live.stage;
     let registry = registry_of(world);
@@ -39,7 +40,7 @@ pub(super) fn reconcile_subtrees(
             live_revision = revision.0,
             "[subtree-reconcile] stage root '/' missing from PrimEntities; falling back to full reconcile"
         );
-        reconcile_full(world, live, map);
+        reconcile_full(world, live, map, executor);
         return;
     };
 
@@ -73,7 +74,7 @@ pub(super) fn reconcile_subtrees(
                     live_revision = revision.0,
                     "[subtree-reconcile] collection failed for root '{root}': {error:#}; falling back to full reconcile"
                 );
-                reconcile_full(world, live, map);
+                reconcile_full(world, live, map, executor);
                 return;
             }
         }
@@ -111,7 +112,7 @@ pub(super) fn reconcile_subtrees(
                 live_revision = revision.0,
                 "[subtree-reconcile] parent '{parent_str}' for new prim '{path}' is missing; falling back to full reconcile"
             );
-            reconcile_full(world, live, map);
+            reconcile_full(world, live, map, executor);
             return;
         }
     }
@@ -134,7 +135,43 @@ pub(super) fn reconcile_subtrees(
         removed
     };
 
-    let despawned_count = removed.len();
+    if !executor.execute_subtree(
+        world,
+        live,
+        map,
+        SubtreeWork {
+            registry: &registry,
+            roots,
+            revision,
+            root_entity,
+            old_entities: &old_entities,
+            current_paths: &current_paths,
+            added: &added,
+            removed,
+        },
+    ) {
+        reconcile_full(world, live, map, executor);
+    }
+}
+
+pub(super) fn execute_subtree_work(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    work: SubtreeWork<'_>,
+    executor: &mut impl ReconcileExecutor,
+) -> bool {
+    let SubtreeWork {
+        registry,
+        roots,
+        revision,
+        root_entity,
+        old_entities,
+        current_paths,
+        added,
+        removed,
+    } = work;
+    let stage = &live.stage;
     for (path_id, entity) in removed {
         let Some(path) = world
             .resource::<PathStore>()
@@ -174,8 +211,7 @@ pub(super) fn reconcile_subtrees(
     }
 
     // 3. Spawn new prims (current_paths - old_paths), shallowest first
-    let mut spawned_count = 0usize;
-    for path in &added {
+    for path in added {
         let Ok(p) = openusd::sdf::path(path) else {
             continue;
         };
@@ -194,8 +230,7 @@ pub(super) fn reconcile_subtrees(
                 live_revision = revision.0,
                 "[subtree-reconcile] parent '{parent_str}' missing during spawn for '{path}'; falling back to full reconcile"
             );
-            reconcile_full(world, live, map);
-            return;
+            return false;
         };
         let mut e = world.spawn(UsdPrimRef { path: path.clone() });
         e.insert(ChildOf(parent));
@@ -203,13 +238,11 @@ pub(super) fn reconcile_subtrees(
         world.resource_scope(|_world, mut paths: Mut<PathStore>| {
             map.insert(&mut paths, path, entity);
         });
-        registry.project_prim(stage, &p, world, entity);
-        spawned_count += 1;
+        executor.project_prim(registry, stage, &p, world, entity);
     }
 
     // 4. Repatch existing prims (current_paths ∩ old_paths)
-    let mut patched_count = 0usize;
-    for path in &current_paths {
+    for path in current_paths {
         let entity = {
             let paths = world.resource::<PathStore>();
             paths
@@ -219,8 +252,7 @@ pub(super) fn reconcile_subtrees(
         if let Some(entity) = entity
             && let Ok(p) = openusd::sdf::path(path)
         {
-            registry.patch_prim(stage, &p, world, entity, &[]);
-            patched_count += 1;
+            executor.patch_prim(registry, stage, &p, world, entity, &[]);
         }
     }
 
@@ -231,7 +263,7 @@ pub(super) fn reconcile_subtrees(
                 .iter()
                 .any(|root| is_descendant_or_self(root, anim_path))
         });
-        for path in &current_paths {
+        for path in current_paths {
             if let Ok(p) = openusd::sdf::path(path)
                 && prim_is_animated(stage, &p)
             {
@@ -246,17 +278,11 @@ pub(super) fn reconcile_subtrees(
     world.resource_scope(
         |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
             let mut paths = world.resource_mut::<PathStore>();
-            for path in &current_paths {
+            for path in current_paths {
                 dependencies.refresh_path(&mut paths, stage, path);
             }
         },
     );
 
-    world.insert_resource(ReconcileStats {
-        roots: roots.len(),
-        visited_stage_prims: current_paths.len(),
-        patched_entities: patched_count,
-        spawned_entities: spawned_count,
-        despawned_entities: despawned_count,
-    });
+    true
 }

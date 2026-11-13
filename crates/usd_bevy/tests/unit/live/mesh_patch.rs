@@ -5,9 +5,11 @@ use openusd::sdf::Value;
 use serde::Serialize;
 use std::time::Instant;
 
+use crate::live::reconcile::test_support::{
+    CountingLiveStagePlugin, ReconcileStats, apply_counted_change_batch,
+};
 use crate::live::{
-    LiveRevision, LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats, StageChange,
-    StageChangeBatch, apply_change_batch,
+    LiveRevision, LiveStage, PathStore, PrimEntities, StageChange, StageChangeBatch,
 };
 use crate::{GeometryProfile, UsdPlugin, UsdSnippet};
 
@@ -53,7 +55,7 @@ fn mesh_stage() -> openusd::usd::Stage {
 fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(UsdPlugin);
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.init_resource::<Assets<Mesh>>();
     app.init_resource::<Assets<StandardMaterial>>();
     app.world_mut().resource_mut::<GeometryProfile>().enabled = true;
@@ -137,7 +139,7 @@ fn apply_batch(app: &mut App, batch: StageChangeBatch) {
         .world_mut()
         .remove_resource::<PrimEntities>()
         .expect("prim map exists");
-    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    apply_counted_change_batch(app.world_mut(), &live, &mut map, &batch);
     app.world_mut().insert_resource(map);
     app.world_mut().insert_non_send(live);
 }
@@ -316,6 +318,16 @@ fn m5_c4_live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion() {
         "subtree removal is reconciled"
     );
     samples.push(remove_sample);
+
+    let latest = *app.world().resource::<ReconcileStats>();
+    apply_batch(
+        &mut app,
+        StageChangeBatch {
+            revision: LiveRevision(102),
+            changes: Vec::new(),
+        },
+    );
+    assert_eq!(*app.world().resource::<ReconcileStats>(), latest);
 
     let final_totals = mesh_totals(&app);
     let artifact = M5C4Artifact {

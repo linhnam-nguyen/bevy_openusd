@@ -10,13 +10,18 @@ use super::super::path::{PathStore, parent_path};
 use super::super::performance::PerformanceCounters;
 use super::super::projection::{registry_of, stage_up_axis, traverse_predicate};
 use super::super::stage::LiveStage;
-use super::ReconcileStats;
+use super::{FullWork, ReconcileExecutor};
 use crate::prim_ref::{SemanticEntityIndex, UsdPrimRef};
 use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 use crate::route::remove_mesh_projection_consumer;
 
 /// Reconcile the projected entities against the stage's current prims (full stage).
-pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
+pub(super) fn reconcile_full(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    executor: &mut impl ReconcileExecutor,
+) {
     let stage = &live.stage;
     let registry = registry_of(world);
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
@@ -39,7 +44,41 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
             .map(|(p, e)| (p.to_string(), e))
             .collect()
     };
-    let despawned_count = stale.len();
+    executor.execute_full(
+        world,
+        live,
+        map,
+        FullWork {
+            registry: &registry,
+            current: &current,
+            stale,
+        },
+    );
+    world.init_resource::<NativeInstanceDependencyIndex>();
+    let rebuild = world.resource_scope(
+        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+            let mut paths = world.resource_mut::<PathStore>();
+            dependencies.rebuild(&mut paths, stage)
+        },
+    );
+    if let Err(error) = rebuild {
+        bevy::log::warn!("[reconcile_full] native instance dependency rebuild failed: {error:#}");
+    }
+}
+
+pub(super) fn execute_full_work(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    work: FullWork<'_>,
+    executor: &mut impl ReconcileExecutor,
+) {
+    let FullWork {
+        registry,
+        current,
+        stale,
+    } = work;
+    let stage = &live.stage;
     for (path, entity) in stale {
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
             semantic_idx.remove_entity(entity);
@@ -93,8 +132,6 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
     let mut ordered: Vec<&String> = current.iter().collect();
     ordered.sort_by_key(|p| p.matches('/').count());
     let mut animated: HashSet<String> = HashSet::new();
-    let mut patched_count = 0usize;
-    let mut spawned_count = 0usize;
     for path in ordered {
         let Ok(p) = openusd::sdf::path(path) else {
             continue;
@@ -107,8 +144,7 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
             map.entity(&paths, path)
         };
         if let Some(entity) = existing {
-            registry.patch_prim(stage, &p, world, entity, &[]);
-            patched_count += 1;
+            executor.patch_prim(registry, stage, &p, world, entity, &[]);
         } else {
             let parent = {
                 let paths = world.resource::<PathStore>();
@@ -122,27 +158,9 @@ pub(super) fn reconcile_full(world: &mut World, live: &LiveStage, map: &mut Prim
             world.resource_scope(|_world, mut paths: Mut<PathStore>| {
                 map.insert(&mut paths, path, entity);
             });
-            registry.project_prim(stage, &p, world, entity);
-            spawned_count += 1;
+            executor.project_prim(registry, stage, &p, world, entity);
         }
     }
     world.insert_resource(AnimatedPrims(animated));
     native_animation::rebuild(world, live, map);
-    world.insert_resource(ReconcileStats {
-        roots: 1,
-        visited_stage_prims: current.len(),
-        patched_entities: patched_count,
-        spawned_entities: spawned_count,
-        despawned_entities: despawned_count,
-    });
-    world.init_resource::<NativeInstanceDependencyIndex>();
-    let rebuild = world.resource_scope(
-        |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
-            let mut paths = world.resource_mut::<PathStore>();
-            dependencies.rebuild(&mut paths, stage)
-        },
-    );
-    if let Err(error) = rebuild {
-        bevy::log::warn!("[reconcile_full] native instance dependency rebuild failed: {error:#}");
-    }
 }

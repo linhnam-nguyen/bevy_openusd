@@ -1,7 +1,7 @@
-use crate::live::reconcile::ReconcileStats;
+use crate::live::reconcile::test_support::{ReconcileStats, apply_counted_change_batch};
 use crate::live::{
     LiveRevision, NativeInstanceDependencyIndex, PathStore, ProjectionPlan, StageChange,
-    StageChangeBatch, apply_change_batch,
+    StageChangeBatch,
 };
 use crate::{LiveStage, LiveStagePlugin, PrimEntities, UsdPlugin, UsdPurpose};
 use anyhow::Result;
@@ -283,7 +283,7 @@ fn shared_prototype_change_patches_only_scene_consumers() {
             changed_info: vec!["/World/WindowPrototype/Frame.points".to_string()],
         }],
     };
-    apply_change_batch(app.world_mut(), &live, &mut map, &batch);
+    apply_counted_change_batch(app.world_mut(), &live, &mut map, &batch);
     app.world_mut().insert_resource(map);
     app.world_mut().insert_non_send(live);
 

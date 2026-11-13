@@ -2,7 +2,8 @@ use bevy::ecs::hierarchy::ChildOf;
 use bevy::prelude::*;
 use openusd::usd::Stage;
 
-use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats};
+use crate::live::reconcile::test_support::{CountingLiveStagePlugin, ReconcileStats};
+use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities};
 use crate::snippet::UsdSnippet;
 
 #[test]
@@ -49,6 +50,7 @@ fn test_reconcile_subtrees_missing_external_parent_triggers_full_fallback() {
     // Verify /World/A/B is child of /World/A, NOT child of stage root "/"
     let b_child_of = app.world().get::<ChildOf>(b_entity).expect("has ChildOf");
     assert_eq!(b_child_of.parent(), a_entity);
+    assert!(!app.world().contains_resource::<ReconcileStats>());
 }
 
 #[test]
@@ -83,6 +85,7 @@ fn test_reconcile_subtrees_missing_stage_root_triggers_full_fallback() {
     let paths = app.world().resource::<PathStore>();
     assert!(prim_entities.entity(paths, "/").is_some());
     assert!(prim_entities.entity(paths, "/World/NewPrim").is_some());
+    assert!(!app.world().contains_resource::<ReconcileStats>());
 }
 
 #[test]
@@ -96,7 +99,7 @@ fn test_reconcile_full_resync_root_path_reconciles_entire_stage() {
     stage.define_prim("/World/B").unwrap();
 
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
 
@@ -133,7 +136,7 @@ fn test_reconcile_invalid_raw_resync_root_chooses_full_reconcile() {
         .open_stage()
         .expect("synthetic wide stage opens");
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
 
     // Initial frame: 35 entities projected

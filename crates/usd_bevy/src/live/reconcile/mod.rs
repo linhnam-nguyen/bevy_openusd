@@ -11,22 +11,98 @@ use super::path::{PathId, PathStore, prim_of, property_of, validate_prim_path};
 use super::performance::PerformanceCounters;
 use super::projection::registry_of;
 use super::stage::LiveStage;
+use crate::route::SchemaRegistry;
 use crate::route::instancer_dependency::PointInstancerDependencyIndex;
 use crate::route::material::cleanup_retired_materials;
 use full::reconcile_full;
 use subtree::reconcile_subtrees;
 
-/// Internal work counters for the most recent reconcile pass.
-///
-/// Test and profiling suites use this to verify work reduction during subtree
-/// resync without relying on noisy timing assertions.
-#[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ReconcileStats {
-    pub(crate) roots: usize,
-    pub(crate) visited_stage_prims: usize,
-    pub(crate) patched_entities: usize,
-    pub(crate) spawned_entities: usize,
-    pub(crate) despawned_entities: usize,
+/// Execute the prepared reconciliation work through the real world operations.
+pub(super) trait ReconcileExecutor: Sized {
+    fn execute_full(
+        &mut self,
+        world: &mut World,
+        live: &LiveStage,
+        map: &mut PrimEntities,
+        work: FullWork<'_>,
+    ) {
+        full::execute_full_work(world, live, map, work, self);
+    }
+
+    fn execute_subtree(
+        &mut self,
+        world: &mut World,
+        live: &LiveStage,
+        map: &mut PrimEntities,
+        work: SubtreeWork<'_>,
+    ) -> bool {
+        subtree::execute_subtree_work(world, live, map, work, self)
+    }
+
+    fn execute_sparse(
+        &mut self,
+        world: &mut World,
+        live: &LiveStage,
+        map: &PrimEntities,
+        work: SparseWork<'_, '_>,
+    ) {
+        execute_sparse_work(world, live, map, work, self);
+    }
+
+    fn patch_prim(
+        &mut self,
+        registry: &SchemaRegistry,
+        stage: &openusd::usd::Stage,
+        path: &openusd::sdf::Path,
+        world: &mut World,
+        entity: Entity,
+        properties: &[&str],
+    ) {
+        registry.patch_prim(stage, path, world, entity, properties);
+    }
+
+    fn project_prim(
+        &mut self,
+        registry: &SchemaRegistry,
+        stage: &openusd::usd::Stage,
+        path: &openusd::sdf::Path,
+        world: &mut World,
+        entity: Entity,
+    ) {
+        registry.project_prim(stage, path, world, entity);
+    }
+}
+
+#[derive(Default)]
+pub(super) struct WorldReconcileExecutor;
+impl ReconcileExecutor for WorldReconcileExecutor {}
+
+/// Actual full-stage work, prepared without additional traversal.
+pub(super) struct FullWork<'a> {
+    registry: &'a SchemaRegistry,
+    current: &'a HashSet<String>,
+    stale: Vec<(String, Entity)>,
+}
+
+/// Prepared subtree work after parent preflight. Execution may request the
+/// existing full-stage fallback if a parent disappears during mutation.
+pub(super) struct SubtreeWork<'a> {
+    registry: &'a SchemaRegistry,
+    roots: &'a [String],
+    revision: super::change::LiveRevision,
+    root_entity: Entity,
+    old_entities: &'a HashMap<PathId, Entity>,
+    current_paths: &'a HashSet<String>,
+    added: &'a [String],
+    removed: Vec<(PathId, Entity)>,
+}
+
+/// Prepared sparse property work and deduplicated dependency fanout.
+pub(super) struct SparseWork<'r, 'a> {
+    registry: &'r SchemaRegistry,
+    changed: Vec<PrimChange<'a>>,
+    dependent_instancers: HashSet<PathId>,
+    native_dependents: ChangePlan<'a>,
 }
 
 /// Compact, batch-local representation of sparse changed-info work.
@@ -129,11 +205,12 @@ pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities
 
 /// Sparse property patch applied per owning prim. Each prim's registered route
 /// runs with `changed` pointing to only the properties modified in the batch.
-pub(super) fn apply_sparse_changed_info<'a, I>(
+fn apply_sparse_changed_info<'a, I>(
     world: &mut World,
     live: &LiveStage,
     map: &mut PrimEntities,
     changed_info: I,
+    executor: &mut impl ReconcileExecutor,
 ) where
     I: IntoIterator<Item = &'a String>,
 {
@@ -188,8 +265,33 @@ pub(super) fn apply_sparse_changed_info<'a, I>(
         counters.reconcile_distinct_prims(plan.changed.len() as u64);
     }
 
-    let mut patched_count = 0;
-    for change in plan.changed {
+    executor.execute_sparse(
+        world,
+        live,
+        map,
+        SparseWork {
+            registry: &registry,
+            changed: plan.changed,
+            dependent_instancers,
+            native_dependents,
+        },
+    );
+}
+
+fn execute_sparse_work(
+    world: &mut World,
+    live: &LiveStage,
+    map: &PrimEntities,
+    work: SparseWork<'_, '_>,
+    executor: &mut impl ReconcileExecutor,
+) {
+    let SparseWork {
+        registry,
+        changed,
+        dependent_instancers,
+        native_dependents,
+    } = work;
+    for change in changed {
         let Some(path) = world
             .resource::<PathStore>()
             .path(change.path)
@@ -200,18 +302,31 @@ pub(super) fn apply_sparse_changed_info<'a, I>(
         let Some(entity) = map.entity_id(change.path) else {
             continue;
         };
-        registry.patch_prim(&live.stage, &path, world, entity, &change.properties);
-        patched_count += 1;
+        executor.patch_prim(
+            registry,
+            &live.stage,
+            &path,
+            world,
+            entity,
+            &change.properties,
+        );
     }
-    patched_count +=
-        apply_prototype_dependents(world, &live.stage, map, &registry, dependent_instancers);
-    patched_count +=
-        apply_native_instance_dependents(world, &live.stage, map, &registry, native_dependents);
-    world.insert_resource(ReconcileStats {
-        visited_stage_prims: patched_count,
-        patched_entities: patched_count,
-        ..Default::default()
-    });
+    apply_prototype_dependents(
+        world,
+        &live.stage,
+        map,
+        registry,
+        dependent_instancers,
+        executor,
+    );
+    apply_native_instance_dependents(
+        world,
+        &live.stage,
+        map,
+        registry,
+        native_dependents,
+        executor,
+    );
 }
 
 fn apply_prototype_dependents(
@@ -220,8 +335,8 @@ fn apply_prototype_dependents(
     map: &PrimEntities,
     registry: &crate::route::SchemaRegistry,
     instancers: HashSet<PathId>,
-) -> usize {
-    let mut patched = 0;
+    executor: &mut impl ReconcileExecutor,
+) {
     for instancer in instancers {
         let Some(entity) = map.entity_id(instancer) else {
             continue;
@@ -233,10 +348,15 @@ fn apply_prototype_dependents(
         else {
             continue;
         };
-        registry.patch_prim(stage, &path, world, entity, &["prototype_dependency"]);
-        patched += 1;
+        executor.patch_prim(
+            registry,
+            stage,
+            &path,
+            world,
+            entity,
+            &["prototype_dependency"],
+        );
     }
-    patched
 }
 
 fn apply_native_instance_dependents(
@@ -245,8 +365,8 @@ fn apply_native_instance_dependents(
     map: &PrimEntities,
     registry: &crate::route::SchemaRegistry,
     dependents: ChangePlan<'_>,
-) -> usize {
-    let mut patched = 0;
+    executor: &mut impl ReconcileExecutor,
+) {
     for change in dependents.changed {
         let Some(entity) = map.entity_id(change.path) else {
             continue;
@@ -258,10 +378,8 @@ fn apply_native_instance_dependents(
         else {
             continue;
         };
-        registry.patch_prim(stage, &path, world, entity, &change.properties);
-        patched += 1;
+        executor.patch_prim(registry, stage, &path, world, entity, &change.properties);
     }
-    patched
 }
 
 /// Reproject one already-drained batch without touching the live-stage queue.
@@ -270,6 +388,16 @@ pub fn apply_change_batch(
     live: &LiveStage,
     map: &mut PrimEntities,
     batch: &StageChangeBatch,
+) {
+    apply_change_batch_with_executor(world, live, map, batch, &mut WorldReconcileExecutor);
+}
+
+pub(super) fn apply_change_batch_with_executor(
+    world: &mut World,
+    live: &LiveStage,
+    map: &mut PrimEntities,
+    batch: &StageChangeBatch,
+    executor: &mut impl ReconcileExecutor,
 ) {
     if batch.is_empty() {
         return;
@@ -297,7 +425,7 @@ pub fn apply_change_batch(
         }
 
         if unnormalizable {
-            reconcile_full(world, live, map);
+            reconcile_full(world, live, map, executor);
         } else {
             let roots = batch.resync_roots();
             if roots.contains(&"/".to_string()) || roots.is_empty() {
@@ -308,13 +436,13 @@ pub fn apply_change_batch(
                     live_revision = batch.revision.0,
                     "[subtree-reconcile] stage root '/' or empty roots in batch; falling back to full reconcile"
                 );
-                reconcile_full(world, live, map);
+                reconcile_full(world, live, map, executor);
             } else {
-                reconcile_subtrees(world, live, map, &roots, batch.revision);
+                reconcile_subtrees(world, live, map, &roots, batch.revision, executor);
             }
         }
         let unshaded = batch.unshaded_changed_info();
-        apply_sparse_changed_info(world, live, map, &unshaded);
+        apply_sparse_changed_info(world, live, map, &unshaded, executor);
         let resync_roots = batch.resync_roots();
         if !resync_roots.is_empty() {
             let instancer_dependencies = world
@@ -350,13 +478,21 @@ pub fn apply_change_batch(
                 }
             }
             let registry = registry_of(world);
-            apply_prototype_dependents(world, &live.stage, map, &registry, instancer_dependencies);
+            apply_prototype_dependents(
+                world,
+                &live.stage,
+                map,
+                &registry,
+                instancer_dependencies,
+                executor,
+            );
             apply_native_instance_dependents(
                 world,
                 &live.stage,
                 map,
                 &registry,
                 native_dependencies,
+                executor,
             );
         }
         cleanup_retired_materials(world);
@@ -371,6 +507,11 @@ pub fn apply_change_batch(
             .changes
             .iter()
             .flat_map(|change| change.changed_info.iter()),
+        executor,
     );
     cleanup_retired_materials(world);
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/live/reconcile_support.rs"]
+pub(super) mod test_support;

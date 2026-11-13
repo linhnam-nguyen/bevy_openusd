@@ -4,7 +4,7 @@ use super::change::PendingStageChanges;
 use super::index::PrimEntities;
 use super::path::PathStore;
 use super::projection::registry_of;
-use super::reconcile::apply_change_batch;
+use super::reconcile::{ReconcileExecutor, apply_change_batch_with_executor};
 use super::stage::LiveStage;
 
 /// The [`DisplayPurposes`] the projected entities were last filtered against,
@@ -54,7 +54,7 @@ pub(super) fn drain_stage_changes_system(world: &mut World) {
 }
 
 /// Reproject the batch published by [`drain_stage_changes_system`].
-pub(super) fn reproject_from_batch_system(world: &mut World) {
+pub(super) fn reproject_from_batch_system<E: ReconcileExecutor + Default>(world: &mut World) {
     let batch = world.resource::<PendingStageChanges>().batch.clone();
     let Some(batch) = batch else {
         return;
@@ -63,7 +63,7 @@ pub(super) fn reproject_from_batch_system(world: &mut World) {
         return;
     };
     let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
-    apply_change_batch(world, &live, &mut map, &batch);
+    apply_change_batch_with_executor(world, &live, &mut map, &batch, &mut E::default());
     world.insert_resource(map);
     world.insert_non_send(live);
 }

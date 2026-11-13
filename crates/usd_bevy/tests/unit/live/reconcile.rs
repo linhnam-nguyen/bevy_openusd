@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use openusd::usd::Stage;
 
-use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities, ReconcileStats};
+use crate::live::reconcile::test_support::{CountingLiveStagePlugin, ReconcileStats};
+use crate::live::{LiveStage, PathStore, PrimEntities};
 
 #[test]
 fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
@@ -21,7 +22,7 @@ fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
         .open_stage()
         .expect("synthetic wide stage opens");
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
 
     // Initial frame performs initial project_stage
@@ -56,7 +57,7 @@ fn reconcile_deep_overlap_minimizes_roots_and_scopes_work() {
     .expect("deep overlap stage opens");
 
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
 
@@ -82,7 +83,7 @@ fn reconcile_real_materials_fixture_scopes_to_materials_subtree() {
     let stage = Stage::open(path.to_str().expect("valid path")).expect("materials fixture opens");
 
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
 
@@ -116,7 +117,7 @@ fn reconcile_subtree_spawns_and_despawns_while_preserving_sibling_entity_ids() {
     stage.define_prim("/World/B").unwrap();
 
     let mut app = App::new();
-    app.add_plugins(LiveStagePlugin);
+    app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
     app.update();
 
