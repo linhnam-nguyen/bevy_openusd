@@ -1,5 +1,5 @@
-use super::*;
-use crate::{
+use viewport_protocol::*;
+use viewport_protocol::{
     AuthorizedRuntimeManifest, RuntimeBlobReference, RuntimePayloadKind, RuntimeProfile,
     SessionEvent,
 };

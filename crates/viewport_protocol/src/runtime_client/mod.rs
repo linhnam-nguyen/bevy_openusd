@@ -10,6 +10,3 @@ mod types;
 
 pub use assembler::RuntimeDeliveryAssembler;
 pub use types::{HydratedRuntimeDelivery, RuntimeDeliveryClientError, RuntimeDeliveryUpdate};
-
-#[cfg(test)]
-mod tests;
