@@ -12,9 +12,9 @@ members = [
     "crates/project_protocol",
     "crates/viewport_protocol",
     "crates/viewport_streaming",
-    "testing/usd_support",
-    "testing/project_support",
-    "testing/viewport_support",
+    "tests/support/usd",
+    "tests/support/project",
+    "tests/support/viewport",
 ]
 exclude = ["xtra"]
 
@@ -44,9 +44,9 @@ usd_project = { path = "crates/usd_project" }
 project_protocol = { path = "crates/project_protocol" }
 viewport_protocol = { path = "crates/viewport_protocol" }
 viewport_streaming = { path = "crates/viewport_streaming" }
-usd_support = { path = "testing/usd_support" }
-project_support = { path = "testing/project_support" }
-viewport_support = { path = "testing/viewport_support" }
+usd_support = { path = "tests/support/usd" }
+project_support = { path = "tests/support/project" }
+viewport_support = { path = "tests/support/viewport" }
 turso = { version = "0.7.1", default-features = false, features = ["sync"] }
 
 proc-macro2 = "1"

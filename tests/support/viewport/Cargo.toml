@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
-description = "Shared Bevy Viewport test support: test App builders, entity query helpers, and harness runners"
+description = "Shared Bevy Viewport test support: proven app builders and entity queries"
+
+[lib]
+path = "lib.rs"
 
 [dependencies]
 bevy = { workspace = true, features = [
@@ -25,4 +28,3 @@ bevy = { workspace = true, features = [
 ] }
 usd_bevy = { workspace = true }
 openusd = { workspace = true }
-usd_support = { workspace = true }

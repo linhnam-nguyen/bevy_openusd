@@ -6,8 +6,9 @@ license = "MIT"
 publish = false
 description = "Shared Project & Git test support: temporary repositories, Git CLI harnesses, and branch utilities"
 
+[lib]
+path = "lib.rs"
+
 [dependencies]
-usd_project = { workspace = true }
 usd_support = { workspace = true }
 tempfile = { workspace = true }
-anyhow = { workspace = true }

@@ -55,4 +55,3 @@ image = { workspace = true, features = ["png"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 usd_support = { workspace = true }
-viewport_support = { workspace = true }

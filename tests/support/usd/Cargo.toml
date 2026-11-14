@@ -6,6 +6,9 @@ license = "MIT"
 publish = false
 description = "Shared OpenUSD test support: fixtures, temporary USDA generation, and stage builders"
 
+[lib]
+path = "lib.rs"
+
 [dependencies]
 openusd = { workspace = true }
 tempfile = { workspace = true }

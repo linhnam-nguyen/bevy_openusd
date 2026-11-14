@@ -25,6 +25,10 @@ def Xform "Root"
     project_stage(&mut world, &live, &mut map);
 
     let paths = world.resource::<PathStore>();
+    assert_eq!(
+        viewport_support::sorted_paths(&map, paths),
+        vec!["/", "/Root", "/Root/Child"]
+    );
     let root = map.entity(paths, "/Root").expect("Root is projected");
     let child = map
         .entity(paths, "/Root/Child")

@@ -65,9 +65,7 @@ def Xform "World"
     assert!(matches!(resp_1, SemanticResponse::SnapshotLoaded { .. }));
 
     // Capture /World/B state
-    let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let paths = app.world().resource::<usd_bevy::PathStore>();
-    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
+    let b_bevy_before = viewport_support::projected_entity(&app, "/World/B/MeshB");
     let sync_state_1 = app.world().resource::<SemanticSyncState>();
     let b_sem_before = sync_state_1
         .snapshot
@@ -166,9 +164,7 @@ def Xform "World"
     let resp_1 = response(app.world().resource::<SemanticWorkingStore>());
     assert!(matches!(resp_1, SemanticResponse::SnapshotLoaded { .. }));
 
-    let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let paths = app.world().resource::<usd_bevy::PathStore>();
-    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
+    let b_bevy_before = viewport_support::projected_entity(&app, "/World/B/MeshB");
 
     // Rename /World/A/OldName to /World/A/NewName
     {
@@ -258,9 +254,7 @@ def Xform "World"
     let resp_1 = response(app.world().resource::<SemanticWorkingStore>());
     assert!(matches!(resp_1, SemanticResponse::SnapshotLoaded { .. }));
 
-    let prim_entities = app.world().resource::<usd_bevy::PrimEntities>();
-    let paths = app.world().resource::<usd_bevy::PathStore>();
-    let b_bevy_before = prim_entities.entity(paths, "/World/B/MeshB").unwrap();
+    let b_bevy_before = viewport_support::projected_entity(&app, "/World/B/MeshB");
 
     // Reparent /World/A/Child to /World/C/Child
     {
