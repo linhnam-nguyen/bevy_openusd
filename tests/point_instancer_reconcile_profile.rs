@@ -105,7 +105,7 @@ fn main_metrics(world: &mut World) -> (usize, usize, usize, usize, usize, usize,
 }
 
 #[test]
-fn records_m8_c6_instancing_freeze() {
+fn records_point_instancer_reconcile_profile() {
     if cfg!(debug_assertions) {
         eprintln!("M8-C6+ release artifact capture skipped in a debug test build");
         return;

@@ -23,7 +23,7 @@ use usd_bevy::{
     ProjectionReadiness, UsdPlugin, author_transform,
 };
 
-#[path = "m10_persistent_soak_support.rs"]
+#[path = "persistent_runtime_soak_support.rs"]
 mod support;
 
 use support::{BoundSummary, CycleSample, PersistentSoakArtifact};
@@ -276,7 +276,7 @@ fn bound(
 }
 
 #[test]
-fn records_m10_c4_persistent_runtime_soak() {
+fn records_persistent_runtime_soak() {
     if cfg!(debug_assertions) {
         eprintln!("M10-C4 persistent release soak skipped in a debug test build");
         return;
@@ -300,7 +300,7 @@ fn records_m10_c4_persistent_runtime_soak() {
     let fixtures = [
         "materials_network.usda",
         "instanceable.usda",
-        "m8_point_instancer.usda",
+        "point_instancer_prototypes.usda",
         "assets/external/Kitchen_set.usdz",
     ];
     let mut app = build_app();
@@ -314,7 +314,7 @@ fn records_m10_c4_persistent_runtime_soak() {
             apply_material_network_edits(&mut app, cycle);
         } else if fixture.ends_with("instanceable.usda") {
             apply_instanceable_edit(&mut app, cycle);
-        } else if fixture.ends_with("m8_point_instancer.usda") {
+        } else if fixture.ends_with("point_instancer_prototypes.usda") {
             apply_point_instancer_edit(&mut app, cycle);
         }
         let (resize_generation, width, height) =

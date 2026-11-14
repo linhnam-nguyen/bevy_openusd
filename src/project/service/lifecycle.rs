@@ -282,5 +282,5 @@ mod tests;
 mod import_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/lifecycle/lifecycle_m15_tests.rs"]
-mod m15_tests;
+#[path = "../../../tests/unit/project/service/lifecycle/lifecycle_scene_placement_tests.rs"]
+mod scene_placement_tests;

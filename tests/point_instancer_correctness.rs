@@ -16,7 +16,7 @@ use usd_bevy::{
     UsdPlugin,
 };
 
-const FIXTURE: &str = "m8_point_instancer.usda";
+const FIXTURE: &str = "point_instancer_prototypes.usda";
 const INSTANCER: &str = "/World/Instances";
 const CUBE_MESH: &str = "/World/Prototypes/CubeProto/Mesh";
 

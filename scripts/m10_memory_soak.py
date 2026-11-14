@@ -70,7 +70,7 @@ def main() -> int:
         "test",
         "--release",
         "--test",
-        "m10_persistent_soak",
+        "persistent_runtime_soak",
         "--",
         "--nocapture",
         "--test-threads=1",

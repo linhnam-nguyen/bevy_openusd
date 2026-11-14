@@ -191,5 +191,5 @@ fn protected_root_storage_key(
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/scene/root_c7_tests.rs"]
-mod c7_tests;
+#[path = "../../../tests/unit/project/scene/root_migration_tests.rs"]
+mod migration_tests;

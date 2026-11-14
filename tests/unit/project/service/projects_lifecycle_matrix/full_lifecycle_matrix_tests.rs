@@ -5,7 +5,7 @@ use super::*;
     ignore = "requires Mac-only external USD development assets"
 )]
 #[test]
-fn c8_runs_the_full_projects_lifecycle_matrix_for_all_sixteen_seeds() {
+fn runs_the_full_projects_lifecycle_matrix_for_all_sixteen_seeds() {
     let mut selections = Vec::new();
     for seed in rng::M2_SEEDS {
         matrix::clean_previous_attempts(seed).unwrap_or_else(|error| {

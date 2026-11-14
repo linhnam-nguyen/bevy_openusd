@@ -10,11 +10,11 @@ use crate::viewport::api::bridge::state::EditorHistories;
 use crate::viewport::semantic::SemanticDiffState;
 use crate::viewport::session::StageHandle;
 
-use super::m3_integration_support::*;
+use super::semantic_edit_integration_support::*;
 use super::support::runtime_semantic_test_app;
 
 #[test]
-fn m3_edit_semantic_diff_undo_redo_save_replace_and_batch_converge() -> Result<()> {
+fn semantic_edit_diff_undo_redo_save_replace_and_batch_converge() -> Result<()> {
     let project_root = tempfile::tempdir()?;
     let save_path = project_root.path().join("m3-saved.usda");
     let mut app = runtime_semantic_test_app(project_root.path().to_path_buf());

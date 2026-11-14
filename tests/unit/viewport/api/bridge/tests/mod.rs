@@ -9,18 +9,12 @@ mod bim_properties_lifecycle_test;
 mod bim_properties_test;
 #[path = "commands_test.rs"]
 mod commands_test;
+#[path = "edit_rejection_tests.rs"]
+mod edit_rejection_tests;
 #[path = "hierarchy_search_test.rs"]
 mod hierarchy_search_test;
 #[path = "hierarchy_visibility_test.rs"]
 mod hierarchy_visibility_test;
-#[path = "m3_integration_support.rs"]
-mod m3_integration_support;
-#[path = "m3_integration_test.rs"]
-mod m3_integration_test;
-#[path = "m8_failure_test.rs"]
-mod m8_failure_test;
-#[path = "m8_semantic_consistency_test.rs"]
-mod m8_semantic_consistency_test;
 #[path = "mutations_test.rs"]
 mod mutations_test;
 #[path = "renderer_commands_test.rs"]
@@ -35,6 +29,12 @@ mod selection_commands_test;
 mod selection_performance_test;
 #[path = "selection_profile_test.rs"]
 mod selection_profile_test;
+#[path = "semantic_edit_integration_support.rs"]
+mod semantic_edit_integration_support;
+#[path = "semantic_edit_integration_tests.rs"]
+mod semantic_edit_integration_tests;
+#[path = "semantic_search_consistency_tests.rs"]
+mod semantic_search_consistency_tests;
 #[path = "support.rs"]
 mod support;
 #[path = "viewer_settings_acceptance_test.rs"]

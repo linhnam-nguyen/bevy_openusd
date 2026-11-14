@@ -30,12 +30,12 @@ mod classification_contract_tests;
 mod classification_real_fixture_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/performance/viewport/bim/m8_performance_tests.rs"]
-mod m8_performance_tests;
+#[path = "../../../tests/performance/viewport/bim/bim_read_performance_tests.rs"]
+mod read_performance_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/m8_failure_tests.rs"]
-mod m8_failure_tests;
+#[path = "../../../tests/unit/viewport/bim/color_plan_stale_state_tests.rs"]
+mod color_plan_stale_state_tests;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/bim/index_tests.rs"]

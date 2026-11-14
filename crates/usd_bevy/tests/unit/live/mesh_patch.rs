@@ -216,7 +216,7 @@ fn add_subtree_mesh(app: &mut App) {
 }
 
 #[test]
-fn m5_c4_live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion() {
+fn live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion() {
     let mut app = build_app();
     let initial_handle = mesh_handle(&app);
     let initial = mesh_totals(&app);

@@ -250,7 +250,7 @@ fn profiles_embedded_texture_usdz_fixture() {
 }
 
 #[test]
-fn records_m6_shared_material_benchmark_artifact() {
+fn records_shared_material_benchmark_artifact() {
     let build_profile = if cfg!(debug_assertions) {
         "debug"
     } else {

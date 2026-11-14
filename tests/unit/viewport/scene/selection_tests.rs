@@ -117,7 +117,7 @@ fn pending_selection_delta_coalesces_until_projection_consumes_it() {
     assert!(selection.pending_delta().removed.is_empty());
 }
 
-const FIXTURE: &str = "m8_point_instancer.usda";
+const FIXTURE: &str = "point_instancer_prototypes.usda";
 const INSTANCER: &str = "/World/Instances";
 
 #[derive(Resource, Default)]

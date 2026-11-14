@@ -5,7 +5,7 @@ use super::*;
     ignore = "requires Mac-only external USD development assets"
 )]
 #[test]
-fn c1_inventory_freezes_the_three_canonical_fixture_records() {
+fn inventory_freezes_the_three_canonical_fixture_records() {
     let run_directory = artifacts::clean_run_directory("c1-inventory").expect("clean C1 run");
     let (bevy_assets, external_assets) = assets::default_roots();
     let dictionary = assets::inventory(&bevy_assets, &external_assets).expect("inventory assets");
@@ -43,7 +43,7 @@ fn c1_inventory_freezes_the_three_canonical_fixture_records() {
     ignore = "requires Mac-only external USD development assets"
 )]
 #[test]
-fn c1_frozen_fixture_paths_are_not_derived_from_display_names() {
+fn frozen_fixture_paths_are_not_derived_from_display_names() {
     artifacts::clean_run_directory("c1-paths").expect("clean C1 run");
     let (bevy_assets, external_assets) = assets::default_roots();
     let dictionary = assets::inventory(&bevy_assets, &external_assets).expect("inventory assets");
@@ -67,7 +67,7 @@ fn c1_frozen_fixture_paths_are_not_derived_from_display_names() {
 }
 
 #[test]
-fn c1_smoke_uses_only_the_first_four_frozen_seeds() {
+fn smoke_uses_only_the_first_four_frozen_seeds() {
     artifacts::clean_run_directory("c1-seeds").expect("clean C1 run");
     assert_eq!(
         &rng::M2_SEEDS[..4],

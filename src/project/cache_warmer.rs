@@ -393,18 +393,18 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/cache_warmer_c7_tests.rs"]
-mod c7_tests;
-#[cfg(test)]
 #[path = "../../tests/unit/project/cache_warmer_closure_tests.rs"]
 mod closure_tests;
+#[cfg(test)]
+#[path = "../../tests/unit/project/cache_warmer_legacy_migration_tests.rs"]
+mod legacy_migration_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/project/cache_warmer_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/cache_warmer_c1_tests.rs"]
-mod c1_tests;
+#[path = "../../tests/unit/project/cache_warmer_generation_tests.rs"]
+mod generation_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/project/cache_warmer_lifecycle_tests.rs"]
 mod lifecycle_tests;

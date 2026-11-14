@@ -95,7 +95,7 @@ fn benchmark_app() -> App {
 }
 
 #[test]
-fn records_m7_progressive_load_benchmark_artifact() {
+fn records_progressive_load_benchmark_artifact() {
     if cfg!(debug_assertions) {
         eprintln!("M7-C6 release artifact capture skipped in a debug test build");
         return;

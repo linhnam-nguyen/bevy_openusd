@@ -111,16 +111,16 @@ name = "progressive_load_profile"
 path = "tests/progressive_load_profile.rs"
 
 [[test]]
-name = "m8_instancing_profile"
-path = "tests/m8_instancing_profile.rs"
+name = "point_instancer_profile"
+path = "tests/point_instancer_profile.rs"
 
 [[test]]
-name = "m8_instancing_correctness"
-path = "tests/m8_instancing_correctness.rs"
+name = "point_instancer_correctness"
+path = "tests/point_instancer_correctness.rs"
 
 [[test]]
-name = "m8_instancing_freeze"
-path = "tests/m8_instancing_freeze.rs"
+name = "point_instancer_reconcile_profile"
+path = "tests/point_instancer_reconcile_profile.rs"
 
 [[test]]
 name = "git_materialization"
@@ -131,8 +131,8 @@ name = "subtree_resync_profile"
 path = "tests/subtree_resync_profile.rs"
 
 [[test]]
-name = "m10_persistent_soak"
-path = "tests/m10_persistent_soak.rs"
+name = "persistent_runtime_soak"
+path = "tests/persistent_runtime_soak.rs"
 
 [[example]]
 name = "pack_usdz"

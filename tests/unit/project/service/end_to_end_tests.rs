@@ -11,7 +11,7 @@ use usd_project::{ProjectContentNode, ProjectRoot};
 use super::{ProjectApplicationService, ProjectModelPreparationQueue, configured_initial_branch};
 
 #[test]
-fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
+fn end_to_end_create_import_composition_and_recovery() {
     let directory = tempdir().unwrap();
     let projects = directory.path().join("projects");
     fs::create_dir(&projects).unwrap();
@@ -114,7 +114,7 @@ fn phase2_freeze_matrix_covers_create_import_composition_and_recovery() {
 }
 
 #[test]
-fn phase2_freeze_matrix_covers_native_and_adopted_imports_and_missing_locations() {
+fn end_to_end_native_and_adopted_imports_and_missing_locations() {
     let directory = tempdir().unwrap();
     let mut service = ProjectApplicationService::open(directory.path().join("workspace.json"))
         .expect("open Project service");

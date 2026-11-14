@@ -11,7 +11,7 @@ use crate::project::service::ProjectApplicationService;
 use super::*;
 
 #[test]
-fn c2_freezes_proj_t_hierarchy_and_scoped_identity_lookup() {
+fn freezes_proj_t_hierarchy_and_scoped_identity_lookup() {
     let directory = tempdir().unwrap();
     let mut service =
         ProjectApplicationService::open(directory.path().join("workspace.json")).unwrap();

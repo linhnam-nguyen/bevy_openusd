@@ -24,18 +24,18 @@ mod rng;
 mod source_equivalence;
 
 #[cfg(test)]
-mod c1_tests;
+mod asset_inventory_tests;
 #[cfg(test)]
-mod c2_tests;
+mod cloned_registration_tests;
 #[cfg(test)]
-mod c3_tests;
+mod full_lifecycle_matrix_tests;
 #[cfg(test)]
-mod c4_tests;
+mod hierarchy_lookup_tests;
 #[cfg(test)]
-mod c5_tests;
+mod import_link_composition_tests;
 #[cfg(test)]
-mod c6_tests;
+mod scene_activation_tests;
 #[cfg(test)]
-mod c7_tests;
+mod scene_export_roundtrip_tests;
 #[cfg(test)]
-mod c8_tests;
+mod scene_label_identity_tests;

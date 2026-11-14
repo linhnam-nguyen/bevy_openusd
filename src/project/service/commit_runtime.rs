@@ -1,8 +1,8 @@
 //! Runtime-owned Project commit staging and derived semantic persistence.
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/commit/commit_runtime_owner_review5_tests.rs"]
-mod owner_review5_tests;
+#[path = "../../../tests/unit/project/service/commit/commit_runtime_lease_tests.rs"]
+mod lease_tests;
 
 use std::{
     fs,

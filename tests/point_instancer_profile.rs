@@ -73,7 +73,7 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
 }
 
 #[test]
-fn records_m8_c1_point_instancer_baseline() {
+fn records_point_instancer_baseline() {
     if cfg!(debug_assertions) {
         eprintln!("M8-C1 release artifact capture skipped in a debug test build");
         return;

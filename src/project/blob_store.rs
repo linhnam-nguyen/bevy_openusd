@@ -310,8 +310,8 @@ pub(crate) fn get_mesh(store: &impl BlobStore, id: &BlobId) -> Result<Option<Mes
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/blob_store_c8_tests.rs"]
-mod c8_tests;
+#[path = "../../tests/unit/project/blob_store_repair_tests.rs"]
+mod repair_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/project/blob_store_tests.rs"]
 mod tests;

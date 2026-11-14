@@ -19,7 +19,7 @@ use crate::viewport::semantic::SemanticDiffState;
 use crate::viewport::semantic::SemanticSyncState;
 use crate::viewport::session::StageInfo;
 
-use super::m3_integration_support::*;
+use super::semantic_edit_integration_support::*;
 use super::support::runtime_semantic_test_app;
 
 #[test]

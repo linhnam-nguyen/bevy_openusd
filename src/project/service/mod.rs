@@ -121,8 +121,8 @@ mod read;
 mod rename;
 mod runtime_authority;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_owner_review5_tests.rs"]
-mod runtime_authority_owner_review5_tests;
+#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_queue_tests.rs"]
+mod runtime_authority_queue_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_tests.rs"]
 mod runtime_authority_tests;
@@ -364,9 +364,9 @@ mod repository_summary_tests;
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/m19_tests.rs"]
-mod m19_tests;
+#[path = "../../../tests/unit/project/service/end_to_end_tests.rs"]
+mod end_to_end_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/or8_m2/mod.rs"]
-mod or8_m2;
+#[path = "../../../tests/unit/project/service/projects_lifecycle_matrix/mod.rs"]
+mod projects_lifecycle_matrix;

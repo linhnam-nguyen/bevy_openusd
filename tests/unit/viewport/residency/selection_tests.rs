@@ -251,7 +251,7 @@ fn single_target_fixture(
 }
 #[test]
 #[rustfmt::skip]
-fn production_selection_follows_distinct_child_members_through_c7_repair() -> anyhow::Result<()> {
+fn production_selection_follows_distinct_child_members_through_repair() -> anyhow::Result<()> {
     let d = tempdir()?; let parent = SceneId::new_v4(); let child = SceneId::new_v4(); let first_member = SceneMemberId::new_v4(); let second_member = SceneMemberId::new_v4();
     write_manifest(d.path(), parent, child)?; let live = child_live_stage()?; let payload = usd_bevy::extract_render_payloads_for_paths(&live.stage, &["/SceneRoot/Leaf"])?.into_iter().next().expect("child payload"); let child_hash = mesh_hash(&payload.mesh);
     publish_index(d.path(), SceneCacheIndex { schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION, scene_id: child, generation: 7, entries: vec![owned_entry(child, "/SceneRoot/Leaf", child_hash, None)] });

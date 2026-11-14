@@ -11,7 +11,7 @@ use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
 
 #[test]
-fn test_m25_o11_milestone_acceptance_unaffected_sibling_pipeline_invariance() -> Result<()> {
+fn unaffected_sibling_pipeline_preserves_resync_invariance() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let usda = String::from(
         r#"#usda 1.0

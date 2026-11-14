@@ -217,7 +217,7 @@ where
 }
 
 #[test]
-fn profiles_m25_o10_empirical_benchmark_suite() {
+fn profiles_subtree_resync_empirical_suite() {
     const ITERATIONS: usize = 30;
 
     let res_wide = benchmark_fixture(
