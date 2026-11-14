@@ -4,7 +4,7 @@ use crate::snippet::UsdSnippet;
 fn hierarchy_stage() -> openusd::usd::Stage {
     UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_plan_1.usda"
+        "/tests/fixtures/live/progressive_plan_1.usda"
     )))
     .open_stage()
     .expect("hierarchy stage opens")
@@ -51,7 +51,7 @@ fn projection_plan_matches_the_canonical_traversal_predicate() {
 fn projection_plan_keeps_unloaded_payload_prim_as_placeholder_work() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_plan_2.usda"
+        "/tests/fixtures/live/progressive_plan_2.usda"
     )))
     .open_stage()
     .expect("payload stage opens");

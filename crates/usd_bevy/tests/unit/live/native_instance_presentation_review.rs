@@ -8,10 +8,7 @@ use crate::UsdPlugin;
 use crate::live::{LiveStage, LiveStagePlugin, PathStore, PrimEntities};
 
 fn characterization_stage() -> Stage {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages/native_instance_characterization.usda");
-    Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("native instance fixture opens")
+    usd_support::open_fixture_stage("native_instance_characterization.usda")
 }
 
 fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {

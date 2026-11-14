@@ -2,8 +2,6 @@ use super::*;
 use bevy::asset::Assets;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
-use openusd::usd::Stage;
-use std::path::PathBuf;
 use usd_bevy::{LiveStage, LiveStagePlugin, PointInstancerSelection, UsdPlugin};
 
 #[test]
@@ -119,7 +117,7 @@ fn pending_selection_delta_coalesces_until_projection_consumes_it() {
     assert!(selection.pending_delta().removed.is_empty());
 }
 
-const FIXTURE: &str = "tests/stages/m8_point_instancer.usda";
+const FIXTURE: &str = "m8_point_instancer.usda";
 const INSTANCER: &str = "/World/Instances";
 
 #[derive(Resource, Default)]
@@ -144,9 +142,7 @@ fn instance_entity(world: &mut World, logical_id: i64) -> Entity {
 
 #[test]
 fn selected_instance_bridge_captures_identity_before_reconcile() {
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE);
-    let stage =
-        Stage::open(fixture.to_str().expect("fixture path is valid")).expect("fixture opens");
+    let stage = usd_support::open_fixture_stage(FIXTURE);
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)

@@ -9,8 +9,7 @@ use super::BimReadService;
 #[ignore = "requires the supplied external NVIDIA/Revit Connector export"]
 fn real_nvidia_fixture_projects_element_only_leaf_when_family_is_unvalidated() -> anyhow::Result<()>
 {
-    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../external_assets/Omniverse/V2/Projet1.usdc");
+    let fixture = usd_support::resolve_external_asset_path("Omniverse/V2/Projet1.usdc");
     let stage = Stage::open(fixture.to_str().expect("fixture path is valid UTF-8"))?;
     let config = SemanticConfig::for_nvidia_revit_connector();
     let snapshot = SemanticExtractor::new(config).extract(

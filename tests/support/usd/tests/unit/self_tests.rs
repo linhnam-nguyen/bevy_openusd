@@ -78,12 +78,52 @@ fn test_resolve_fixture_path() {
         .parent()
         .and_then(Path::parent)
         .unwrap()
-        .join("stages/empty.usda");
+        .join("fixtures/usd/empty.usda");
     assert_eq!(resolved, expected);
+    assert_eq!(crate::usd_fixtures_dir(), expected.parent().unwrap());
+    assert_eq!(
+        crate::resolve_fixture_path_unchecked("missing-unchecked.usda"),
+        crate::usd_fixtures_dir().join("missing-unchecked.usda")
+    );
     assert!(resolved.is_file());
     assert!(std::panic::catch_unwind(|| resolve_fixture_path("../Cargo.toml")).is_err());
+    assert!(std::panic::catch_unwind(|| resolve_fixture_path("")).is_err());
     assert!(
         std::panic::catch_unwind(|| resolve_fixture_path("__missing_bo_m6_fixture__.usda"))
             .is_err()
+    );
+}
+
+#[test]
+fn test_resolve_asset_and_external_paths() {
+    let asset = crate::resolve_asset_path("two_xforms.usda");
+    assert!(asset.is_file());
+    assert!(asset.ends_with(Path::new("assets/two_xforms.usda")));
+    assert!(std::panic::catch_unwind(|| crate::resolve_asset_path("../Cargo.toml")).is_err());
+    assert!(
+        std::panic::catch_unwind(|| crate::resolve_external_asset_path("../secret.usdc")).is_err()
+    );
+    let external = crate::resolve_external_asset_path("Omniverse/V2/Projet1.usdc");
+    assert!(external.ends_with(Path::new("external_assets/Omniverse/V2/Projet1.usdc")));
+}
+
+#[test]
+fn test_resolve_crate_fixture_path() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .unwrap()
+        .join("crates")
+        .join("usd_semantic");
+    let local_fixture =
+        crate::resolve_crate_fixture_path(manifest_dir.to_str().unwrap(), "identity_moved.usda");
+    assert!(local_fixture.is_file());
+    assert!(
+        std::panic::catch_unwind(|| crate::resolve_crate_fixture_path(
+            manifest_dir.to_str().unwrap(),
+            "../Cargo.toml"
+        ))
+        .is_err()
     );
 }

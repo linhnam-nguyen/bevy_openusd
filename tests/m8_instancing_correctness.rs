@@ -1,7 +1,6 @@
 //! M8-C2/C5 PointInstancer asset-reuse and logical-identity coverage.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use bevy::asset::{AssetId, Assets};
 use bevy::mesh::{Mesh, Mesh3d};
@@ -17,7 +16,7 @@ use usd_bevy::{
     UsdPlugin,
 };
 
-const FIXTURE: &str = "tests/stages/m8_point_instancer.usda";
+const FIXTURE: &str = "m8_point_instancer.usda";
 const INSTANCER: &str = "/World/Instances";
 const CUBE_MESH: &str = "/World/Prototypes/CubeProto/Mesh";
 
@@ -31,8 +30,7 @@ struct InstanceSnapshot {
 }
 
 fn open_fixture() -> (Stage, Path) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE);
-    let stage = Stage::open(path.to_str().expect("fixture path is valid")).expect("fixture opens");
+    let stage = usd_support::open_fixture_stage(FIXTURE);
     let instancer = Path::new(INSTANCER).expect("instancer path is valid");
     (stage, instancer)
 }

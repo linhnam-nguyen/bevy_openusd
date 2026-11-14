@@ -79,7 +79,7 @@ fn records_m8_c1_point_instancer_baseline() {
         return;
     }
     let fixture = "assets/external/PointInstancedMedCity.usdz";
-    let stage_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture);
+    let stage_path = usd_support::resolve_asset_path("external/PointInstancedMedCity.usdz");
     let stage = Stage::open(stage_path.to_str().expect("fixture path is valid"))
         .expect("PointInstancedMedCity opens");
     let instancer_path = Path::new("/MediterraneanHills/Buildings").expect("valid instancer path");

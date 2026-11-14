@@ -59,9 +59,7 @@ fn reconcile_deep_overlap_minimizes_roots_and_scopes_work() {
 
 #[test]
 fn reconcile_real_materials_fixture_scopes_to_materials_subtree() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages/materials.usda");
-    let stage = Stage::open(path.to_str().expect("valid path")).expect("materials fixture opens");
+    let stage = usd_support::open_fixture_stage("materials.usda");
 
     let mut app = App::new();
     app.add_plugins(CountingLiveStagePlugin);

@@ -75,8 +75,7 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
 
 #[test]
 fn active_stage_archive_ownership_is_composition_scoped() {
-    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/hummingbird.usdz");
+    let source = usd_support::resolve_asset_path("external/hummingbird.usdz");
     let stage = Stage::open(source.to_str().expect("fixture path is valid"))
         .expect("Hummingbird stage opens");
     let archives = super::archive_paths_for_stage(&stage, &source).expect("archive closure");
@@ -85,8 +84,7 @@ fn active_stage_archive_ownership_is_composition_scoped() {
 
 #[test]
 fn hummingbird_materials_use_authored_conversion_and_embedded_textures() {
-    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/hummingbird.usdz");
+    let source = usd_support::resolve_asset_path("external/hummingbird.usdz");
     let stage = openusd::usd::Stage::open(source.to_str().expect("fixture path is valid"))
         .expect("Hummingbird stage opens");
     let archives = super::archive_paths_for_stage(&stage, &source).expect("archive closure");

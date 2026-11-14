@@ -14,7 +14,9 @@ use super::fixtures::{response, snapshot};
 #[test]
 fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()> {
     let project = tempfile::tempdir()?;
-    let live = usd_bevy::LiveStage::new(Stage::open("tests/stages/custom_attrs_extensive.usda")?);
+    let live = usd_bevy::LiveStage::new(usd_support::open_fixture_stage(
+        "custom_attrs_extensive.usda",
+    ));
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(usd_bevy::LiveStagePlugin);
@@ -142,7 +144,7 @@ fn changed_info_delta_updates_only_the_affected_semantic_entity() -> Result<()> 
 
 #[test]
 fn changed_info_extraction_replaces_only_the_affected_prim() -> Result<()> {
-    let stage = Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+    let stage = usd_support::open_fixture_stage("custom_attrs_extensive.usda");
     let extractor = SemanticExtractor::new(SemanticConfig::default());
     let before = extractor.extract(
         &stage,

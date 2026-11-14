@@ -189,10 +189,7 @@ fn projection_only_children_churn_does_not_rebuild_the_scene_index() {
 }
 
 fn native_instance_scene_index_app() -> App {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/native_instance_characterization.usda");
-    let stage = openusd::usd::Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("native instance fixture opens");
+    let stage = usd_support::open_fixture_stage("native_instance_characterization.usda");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)

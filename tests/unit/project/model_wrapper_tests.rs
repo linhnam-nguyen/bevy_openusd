@@ -175,8 +175,7 @@ fn multi_root_source_without_default_prim_can_be_wrapped_as_one_model() -> Resul
 #[test]
 fn packaged_instance_source_can_be_wrapped_as_one_model() -> Result<()> {
     let project = tempdir()?;
-    let original = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/external/PointInstancedMedCity.usdz");
+    let original = usd_support::resolve_asset_path("external/PointInstancedMedCity.usdz");
     let base = ProjectManifestV1::new(
         ProjectId::new_v4(),
         "Packaged Model Project",

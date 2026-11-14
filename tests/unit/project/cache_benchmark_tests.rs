@@ -19,8 +19,7 @@ fn digest(value: u8) -> HashDigest {
 #[test]
 fn headless_cache_benchmark_proves_cold_persistent_and_hot_paths() -> Result<()> {
     let project = tempdir()?;
-    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/mesh_correctness.usda");
+    let source = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let identity = ProjectCacheIdentity {
         target: ProjectCacheTarget::ProjectRoot,
         target_content_hash: digest(8),

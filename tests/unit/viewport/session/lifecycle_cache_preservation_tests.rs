@@ -29,8 +29,7 @@ fn canonical_stage_install_preserves_cache_presentation_lookup_and_resident_mesh
         .expect("load cache-preservation activation")
         .expect("cache-preservation activation exists");
 
-    let stage_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/mesh_correctness.usda");
+    let stage_path = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let stage = Stage::open(stage_path.to_string_lossy().as_ref()).expect("open canonical stage");
     let mut world = World::new();
     world.insert_resource(PrimEntities::default());

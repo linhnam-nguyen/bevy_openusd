@@ -10,7 +10,7 @@ use crate::snippet::UsdSnippet;
 fn test_bare_prim_changed_info_repatches_transform() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/changed_info_1.usda"
+        "/tests/fixtures/live/changed_info_1.usda"
     ));
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);
@@ -67,7 +67,7 @@ fn test_bare_prim_changed_info_repatches_transform() {
 fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> anyhow::Result<()> {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/changed_info_2.usda"
+        "/tests/fixtures/live/changed_info_2.usda"
     )))
     .open_stage()?;
     stage.prim("/World/Source").set_metadata(
@@ -110,7 +110,7 @@ fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> an
 fn compact_change_plan_deduplicates_paths_and_properties() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/changed_info_3.usda"
+        "/tests/fixtures/live/changed_info_3.usda"
     ));
     let stage = UsdSnippet::new(usda).open_stage().expect("stage opens");
     let live = LiveStage::new(stage);

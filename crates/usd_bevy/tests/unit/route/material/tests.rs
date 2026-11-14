@@ -1,5 +1,5 @@
 use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use bevy::image::Image;
 use bevy::pbr::StandardMaterial;
@@ -89,8 +89,9 @@ fn repository_texture_decode_is_cached() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
     world.insert_resource(UsdTextureCache::default());
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png");
+    let path = usd_support::resolve_asset_path(
+        "external/franka/panda/DetailedProps/Materials/Textures/normal.png",
+    );
     let path = path.to_string_lossy().into_owned();
 
     let first = resolve_texture(&mut world, &path, false).expect("repository texture loads");
@@ -117,8 +118,7 @@ fn repository_texture_decode_is_cached() {
 fn repository_usdz_texture_scan_is_cached() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
-    let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/usdz_sample.usdz")
+    let archive = usd_support::resolve_asset_path("external/usdz_sample.usdz")
         .canonicalize()
         .expect("repository USDZ fixture exists");
     world.insert_resource(UsdTextureCache {
@@ -157,8 +157,7 @@ fn repository_usdz_texture_scan_is_cached() {
 fn repository_usdz_archive_index_is_reused_across_variants() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
-    let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/usdz_sample.usdz")
+    let archive = usd_support::resolve_asset_path("external/usdz_sample.usdz")
         .canonicalize()
         .expect("repository USDZ fixture exists");
     world.insert_resource(UsdTextureCache {
@@ -226,10 +225,11 @@ fn texture_cache_separates_color_space_variants() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
     world.insert_resource(UsdTextureCache::default());
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png")
-        .to_string_lossy()
-        .into_owned();
+    let path = usd_support::resolve_asset_path(
+        "external/franka/panda/DetailedProps/Materials/Textures/normal.png",
+    )
+    .to_string_lossy()
+    .into_owned();
 
     let data_handle =
         resolve_texture(&mut world, &path, false).expect("data texture variant loads");
@@ -274,13 +274,16 @@ fn changed_texture_path_gets_a_distinct_decode() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
     world.insert_resource(UsdTextureCache::default());
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures");
-    let first_path = root.join("normal.png").to_string_lossy().into_owned();
-    let changed_path = root
-        .join("Logo_Textures_Albedo.png")
-        .to_string_lossy()
-        .into_owned();
+    let first_path = usd_support::resolve_asset_path(
+        "external/franka/panda/DetailedProps/Materials/Textures/normal.png",
+    )
+    .to_string_lossy()
+    .into_owned();
+    let changed_path = usd_support::resolve_asset_path(
+        "external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png",
+    )
+    .to_string_lossy()
+    .into_owned();
 
     let first = resolve_texture(&mut world, &first_path, false).expect("first texture loads");
     let changed = resolve_texture(&mut world, &changed_path, false).expect("changed texture loads");
@@ -301,10 +304,11 @@ fn reused_texture_lookup_does_not_decode_again() {
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
     world.insert_resource(UsdTextureCache::default());
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/external/franka/panda/DetailedProps/Materials/Textures/normal.png")
-        .to_string_lossy()
-        .into_owned();
+    let path = usd_support::resolve_asset_path(
+        "external/franka/panda/DetailedProps/Materials/Textures/normal.png",
+    )
+    .to_string_lossy()
+    .into_owned();
 
     let first = resolve_texture(&mut world, &path, false).expect("texture loads");
     world.resource_mut::<UsdTextureCache>().reset_stats();

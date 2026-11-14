@@ -213,8 +213,7 @@ fn measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged() 
 #[test]
 #[ignore = "requires the supplied external NVIDIA/Revit Connector export"]
 fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
-    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../external_assets/Omniverse/V2/Projet1.usdc");
+    let fixture = usd_support::resolve_external_asset_path("Omniverse/V2/Projet1.usdc");
     let fixture = fixture
         .to_str()
         .expect("real Revit fixture path should be valid UTF-8");

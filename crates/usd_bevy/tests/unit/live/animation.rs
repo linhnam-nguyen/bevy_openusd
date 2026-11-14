@@ -6,8 +6,7 @@ use crate::prim_ref::UsdPrimRef;
 use crate::{StageTime, UsdPlugin};
 
 fn animated_app() -> App {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/anim_test_simple.usda");
+    let path = usd_support::resolve_asset_path("anim_test_simple.usda");
     let stage =
         Stage::open(path.to_str().expect("fixture path is valid")).expect("animated fixture opens");
     let mut app = App::new();
@@ -76,7 +75,7 @@ fn stage_time_uses_prebound_animation_without_structural_work() {
 fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/animation_1.usda"
+        "/tests/fixtures/live/animation_1.usda"
     ));
 
     let stage = crate::snippet::UsdSnippet::new(usda)
@@ -113,7 +112,7 @@ fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
 fn test_reconcile_subtrees_adds_animated_prim_under_affected_subtree() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/animation_2.usda"
+        "/tests/fixtures/live/animation_2.usda"
     ));
     let stage = crate::snippet::UsdSnippet::new(usda)
         .open_stage()

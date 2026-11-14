@@ -1,7 +1,7 @@
 use super::{BenchmarkScenarioId, ScenarioProbeDefinition};
 
 const HUMMINGBIRD: &str = "assets/external/hummingbird.usdz";
-const EMPTY: &str = "tests/stages/empty.usda";
+const EMPTY: &str = "tests/fixtures/usd/empty.usda";
 
 pub(super) fn for_scenario(id: BenchmarkScenarioId) -> ScenarioProbeDefinition {
     let (title, fixture, grid) = match id {

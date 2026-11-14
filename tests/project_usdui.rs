@@ -15,7 +15,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -61,7 +61,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
 
 #[test]
 fn schema_reader_decodes_display_name() {
-    let stage = openusd::usd::Stage::open("tests/stages/usdui.usda").expect("stage should open");
+    let stage = usd_support::open_fixture_stage("usdui.usda");
     let dn = usd_schema::ui::read_display_name(
         &stage,
         &openusd::sdf::Path::new("/World/robot_v3_baseLink_geom_0").expect("valid path"),

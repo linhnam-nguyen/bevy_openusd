@@ -167,7 +167,7 @@ fn test_collect_stage_subtree_paths_synthetic_wide() {
 fn test_collect_stage_subtree_paths_deep_overlap() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/paths_1.usda"
+        "/tests/fixtures/live/paths_1.usda"
     )))
     .open_stage()
     .expect("deep overlap stage opens");
@@ -197,7 +197,7 @@ fn test_collect_stage_subtree_paths_deep_overlap() {
 fn test_collect_stage_subtree_paths_respects_projection_predicate() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/paths_2.usda"
+        "/tests/fixtures/live/paths_2.usda"
     )))
     .open_stage()
     .expect("stage opens");

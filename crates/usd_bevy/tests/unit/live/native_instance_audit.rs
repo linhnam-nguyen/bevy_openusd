@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -17,12 +16,10 @@ use crate::live::{
 };
 use crate::snippet::UsdSnippet;
 
-const REVIT_ASSET: &str = "../../../external_assets/Omniverse/V2/Projet1.usdc";
-
 fn generated_instance_stage(instance_count: usize) -> Result<Stage> {
     let mut usda = String::from(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/native_instance_audit_1.usda"
+        "/tests/fixtures/live/native_instance_audit_1.usda"
     )));
     for index in 0..instance_count {
         writeln!(
@@ -94,7 +91,7 @@ fn generated_thousand_native_instances_keep_projection_allocation_bounded() -> R
 #[test]
 #[ignore = "requires the local external Omniverse Revit asset"]
 fn projet1_usdc_windows_project_to_scene_proxy_meshes() -> Result<()> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REVIT_ASSET);
+    let path = usd_support::resolve_external_asset_path("Omniverse/V2/Projet1.usdc");
     let stage = Stage::open(path.to_str().expect("Revit asset path is valid"))?;
     let mut window_roots = Vec::new();
     stage.traverse(PrimPredicate::DEFAULT_PROXIES, |path| {

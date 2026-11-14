@@ -26,7 +26,7 @@ SCENARIOS = {
     "S4": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Grid Visibility Toggle", "topology": "native"},
     "S5": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Ground Origin Change", "topology": "native"},
     "S6": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Grid Style Color Change", "topology": "native"},
-    "S7": {"fixture": "tests/stages/empty.usda", "desc": "Native Visually Empty LiveStage Retained", "topology": "native"},
+    "S7": {"fixture": "tests/fixtures/usd/empty.usda", "desc": "Native Visually Empty LiveStage Retained", "topology": "native"},
     "S8": {"fixture": None, "desc": "Native No LiveStage", "topology": "native"},
     "S9": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Recovery Idle", "topology": "native"},
     "S10": {"fixture": "assets/external/hummingbird.usdz", "desc": "Native Authoritative USD Change", "topology": "native"},
@@ -37,7 +37,7 @@ SCENARIOS = {
     "S13": {"fixture": "assets/external/hummingbird.usdz", "desc": "WebRTC Remote Grid Visibility Command", "topology": "webrtc", "client_required": True},
     "S14": {"fixture": "assets/external/hummingbird.usdz", "desc": "WebRTC Remote Ground Origin Command", "topology": "webrtc", "client_required": True},
     "S15": {"fixture": "assets/external/hummingbird.usdz", "desc": "WebRTC Remote Orbit/Pan Input", "topology": "webrtc", "client_required": True},
-    "S16": {"fixture": "tests/stages/empty.usda", "desc": "WebRTC Remote Visually Empty Stage", "topology": "webrtc", "client_required": True},
+    "S16": {"fixture": "tests/fixtures/usd/empty.usda", "desc": "WebRTC Remote Visually Empty Stage", "topology": "webrtc", "client_required": True},
     "S17": {"fixture": "assets/external/hummingbird.usdz", "desc": "WebRTC Remote Authoritative USD Edit", "topology": "webrtc", "client_required": True},
     "S18": {"fixture": "assets/external/hummingbird.usdz", "desc": "WebRTC Remote Command After Long Idle", "topology": "webrtc", "client_required": True},
 

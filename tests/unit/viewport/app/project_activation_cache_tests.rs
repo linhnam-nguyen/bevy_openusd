@@ -1,6 +1,5 @@
 use std::{
     fs,
-    path::Path,
     time::{Duration, Instant},
 };
 
@@ -95,7 +94,7 @@ fn activation_does_not_wait_for_inflight_cache_warm() {
 
 #[test]
 fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/external/hummingbird.usdz");
+    let source = usd_support::resolve_asset_path("external/hummingbird.usdz");
     assert!(source.is_file(), "real Hummingbird fixture is present");
 
     let directory = tempdir().expect("temporary Hummingbird Project");

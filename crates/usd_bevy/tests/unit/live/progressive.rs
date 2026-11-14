@@ -12,20 +12,14 @@ use crate::snippet::UsdSnippet;
 fn hierarchy_stage() -> openusd::usd::Stage {
     UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_1.usda"
+        "/tests/fixtures/live/progressive_1.usda"
     )))
     .open_stage()
     .expect("hierarchy stage opens")
 }
 
 fn animated_stage() -> Stage {
-    Stage::open(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/stages/animated_translate.usda")
-            .to_str()
-            .expect("animated fixture path is valid"),
-    )
-    .expect("animated stage opens")
+    usd_support::open_fixture_stage("animated_translate.usda")
 }
 
 fn sorted_paths(map: &PrimEntities, paths: &PathStore) -> Vec<String> {
@@ -210,7 +204,7 @@ fn cancellation_discards_partial_generation_and_restarts() {
 fn reload_midway_cancels_old_session_and_never_mixes_paths() {
     let replacement = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_2.usda"
+        "/tests/fixtures/live/progressive_2.usda"
     )))
     .open_stage()
     .expect("replacement stage opens");
@@ -296,7 +290,7 @@ fn readiness_is_additive_and_progress_is_monotonic() {
 fn cache_aware_gate_rebuilds_when_a_resident_mesh_asset_is_evicted() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_3.usda"
+        "/tests/fixtures/live/progressive_3.usda"
     )))
     .open_stage()
     .expect("cube stage opens");

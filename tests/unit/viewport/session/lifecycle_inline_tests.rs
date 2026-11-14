@@ -3,9 +3,7 @@ use project_protocol::{ProjectActivationCommand, ProjectActivationReply, Project
 use usd_project::{ProjectId, ProjectRoot};
 
 fn fixture_path(file_name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages")
-        .join(file_name)
+    usd_support::resolve_fixture_path_unchecked(file_name)
 }
 
 fn activation_world() -> World {

@@ -35,8 +35,12 @@ fn root_path(relative: &str) -> PathBuf {
 }
 
 fn open_fixture(relative: &str) -> Stage {
-    let path = root_path(relative);
-    Stage::open(path.to_str().expect("fixture path is valid")).expect("soak fixture opens")
+    if let Some(asset) = relative.strip_prefix("assets/") {
+        let path = usd_support::resolve_asset_path(asset);
+        Stage::open(path.to_str().expect("asset path is valid")).expect("soak asset opens")
+    } else {
+        usd_support::open_fixture_stage(relative)
+    }
 }
 
 fn build_app() -> App {
@@ -294,9 +298,9 @@ fn records_m10_c4_persistent_runtime_soak() {
         "resize generations",
     ];
     let fixtures = [
-        "tests/stages/materials_network.usda",
-        "tests/stages/instanceable.usda",
-        "tests/stages/m8_point_instancer.usda",
+        "materials_network.usda",
+        "instanceable.usda",
+        "m8_point_instancer.usda",
         "assets/external/Kitchen_set.usdz",
     ];
     let mut app = build_app();

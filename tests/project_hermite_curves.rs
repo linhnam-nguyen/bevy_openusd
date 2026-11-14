@@ -17,7 +17,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -65,7 +65,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
 fn hermite_sampler_matches_cv_endpoints() {
     use usd_schema::geom::read_hermite_curves;
     let stage =
-        openusd::usd::Stage::open("tests/stages/hermite_curves.usda").expect("stage should open");
+        usd_support::open_fixture_stage("hermite_curves.usda");
     let h = read_hermite_curves(
         &stage,
         &openusd::sdf::Path::new("/World/Bend").expect("valid path"),

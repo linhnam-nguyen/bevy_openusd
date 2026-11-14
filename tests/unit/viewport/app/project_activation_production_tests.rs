@@ -287,8 +287,7 @@ impl ProductionActivationWorld {
 #[test]
 fn production_activation_keeps_live_semantic_bim_and_provider_state_coherent() {
     let directory = tempdir().expect("activation fixture directory");
-    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/production_activation_bim.usda");
+    let source = usd_support::resolve_fixture_path("production_activation_bim.usda");
     let mut paths = Vec::new();
     for generation in 1..=3 {
         let path = directory.path().join(format!("stage-{generation}.usda"));

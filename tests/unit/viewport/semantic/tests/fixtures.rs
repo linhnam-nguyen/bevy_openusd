@@ -1,12 +1,11 @@
 use anyhow::Result;
-use openusd::usd::Stage;
 use usd_model::{SemanticSnapshot, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::super::{SemanticResponse, SemanticWorkingStore};
 
 pub(super) fn snapshot() -> Result<SemanticSnapshot> {
-    let stage = Stage::open("tests/stages/custom_attrs_extensive.usda")?;
+    let stage = usd_support::open_fixture_stage("custom_attrs_extensive.usda");
     SemanticExtractor::new(SemanticConfig::default()).extract(
         &stage,
         SnapshotSource::Working {

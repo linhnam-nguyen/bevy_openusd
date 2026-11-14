@@ -98,9 +98,9 @@ fn a_new_live_stage_session_triggers_a_full_semantic_load() -> Result<()> {
     world.insert_resource(SemanticWorkingStore::default());
     world.insert_resource(usd_bevy::PendingStageChanges::default());
     world.insert_resource(SemanticSyncState::default());
-    world.insert_non_send(LiveStage::new(Stage::open(
-        "tests/stages/custom_attrs_extensive.usda",
-    )?));
+    world.insert_non_send(LiveStage::new(usd_support::open_fixture_stage(
+        "custom_attrs_extensive.usda",
+    )));
 
     synchronize_live_stage(&mut world);
     assert!(matches!(
@@ -109,9 +109,9 @@ fn a_new_live_stage_session_triggers_a_full_semantic_load() -> Result<()> {
     ));
 
     world.remove_non_send::<LiveStage>();
-    world.insert_non_send(LiveStage::new(Stage::open(
-        "tests/stages/custom_attrs_extensive.usda",
-    )?));
+    world.insert_non_send(LiveStage::new(usd_support::open_fixture_stage(
+        "custom_attrs_extensive.usda",
+    )));
     synchronize_live_stage(&mut world);
     assert!(matches!(
         response(world.resource::<SemanticWorkingStore>()),

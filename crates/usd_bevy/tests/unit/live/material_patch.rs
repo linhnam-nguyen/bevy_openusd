@@ -5,7 +5,6 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
 use openusd::sdf::Value;
-use openusd::usd::Stage;
 
 use crate::ProjectionSeed;
 use crate::UsdPlugin;
@@ -30,11 +29,7 @@ fn build_app() -> App {
 }
 
 fn build_app_for(fixture: &str) -> App {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages")
-        .join(fixture);
-    let stage = Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("materials fixture opens");
+    let stage = usd_support::open_fixture_stage(fixture);
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
@@ -48,11 +43,7 @@ fn build_app_for(fixture: &str) -> App {
 
 #[test]
 fn persistent_material_seed_is_consumed_before_usd_decode() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages")
-        .join("materials.usda");
-    let stage = Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("materials fixture opens");
+    let stage = usd_support::open_fixture_stage("materials.usda");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)

@@ -17,7 +17,7 @@ use usd_bevy::route::cache::ProjectionCache;
 use usd_bevy::route::instancer::UsdInstance;
 use usd_bevy::{LiveStage, LiveStagePlugin, PointInstancerStats, UsdPlugin};
 
-const FIXTURE: &str = "assets/external/PointInstancedMedCity.usdz";
+const FIXTURE: &str = "external/PointInstancedMedCity.usdz";
 const INSTANCER: &str = "/MediterraneanHills/Buildings";
 
 #[derive(Debug, Serialize)]
@@ -110,7 +110,7 @@ fn records_m8_c6_instancing_freeze() {
         eprintln!("M8-C6+ release artifact capture skipped in a debug test build");
         return;
     }
-    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE);
+    let fixture_path = usd_support::resolve_asset_path(FIXTURE);
     let stage = Stage::open(fixture_path.to_str().expect("fixture path is valid"))
         .expect("PointInstancedMedCity opens");
     let instancer_path = Path::new(INSTANCER).expect("instancer path is valid");
@@ -183,7 +183,7 @@ fn records_m8_c6_instancing_freeze() {
         checkpoint: "M8-C6+",
         git_sha: git_sha(),
         build_profile: "release",
-        fixture: FIXTURE,
+        fixture: "assets/external/PointInstancedMedCity.usdz",
         logical_instance_count,
         visible_instance_count: visible,
         ecs_entity_count,

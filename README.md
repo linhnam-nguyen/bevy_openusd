@@ -125,7 +125,8 @@ bevy_openusd/
 │   └── usd_rapier/       pure OpenUSD physics → Rapier builders
 ├── examples/            standalone tools + probe scripts
 ├── tests/
-│   └── stages/          curated .usda fixtures for integration tests
+│   └── fixtures/
+│       └── usd/         curated .usda fixtures for integration tests
 ├── assets/              hand-authored .usda demos
 │   └── external/        bundled USDZ archives (Kitchen_set, HumanFemale, …)
 ├── docs/                screenshots + design notes

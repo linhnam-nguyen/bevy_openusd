@@ -8825,6 +8825,7 @@ dependencies = [
  "blake3",
  "openusd",
  "usd_model",
+ "usd_support",
 ]
 
 [[package]]

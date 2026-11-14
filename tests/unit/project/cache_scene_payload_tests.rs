@@ -2,8 +2,7 @@ use super::*;
 
 #[test]
 fn scene_animation_payload_covers_bound_skeleton_data() -> Result<()> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/stages/skel.usda");
-    let stage = Stage::open(path)?;
+    let stage = usd_support::open_fixture_stage("skel.usda");
     let bytes = prepare_animation_payload(&stage, "/World/Rig/Arm")?
         .expect("bound mesh has a Scene animation payload");
     let payload: SceneAnimationBlob = serde_json::from_slice(&bytes)?;

@@ -20,7 +20,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -69,7 +69,7 @@ fn reads_double_sided_orientation_and_extent() {
     // 1. Reader side — verify ReadMesh fields round-trip via openusd
     //    directly (no Bevy involvement).
     let stage =
-        openusd::usd::Stage::open("tests/stages/mesh_correctness.usda").expect("fixture parses");
+        usd_support::open_fixture_stage("mesh_correctness.usda");
     use openusd::sdf::Path;
     use usd_schema::geom::{Orientation, read_mesh};
 

@@ -9,7 +9,7 @@ use usd_schema::geom::{Interpolation, read_mesh};
 #[test]
 fn reads_all_five_primvar_interpolations() {
     let stage =
-        openusd::usd::Stage::open("tests/stages/primvar_interp.usda").expect("fixture parses");
+        usd_support::open_fixture_stage("primvar_interp.usda");
 
     // Check each authored mode round-trips through ReadMesh.
     let cases = [
@@ -53,7 +53,7 @@ fn loader_materialises_all_five_into_bevy_mesh_colors() {
     // Run the same USDA through `mesh_from_usd` (no Bevy asset
     // infrastructure needed — pure function).
     let stage =
-        openusd::usd::Stage::open("tests/stages/primvar_interp.usda").expect("fixture parses");
+        usd_support::open_fixture_stage("primvar_interp.usda");
 
     // Constant: same colour on every vertex.
     {

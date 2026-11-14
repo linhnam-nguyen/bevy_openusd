@@ -11,3 +11,6 @@ anyhow = { workspace = true }
 blake3 = { workspace = true }
 openusd = { workspace = true }
 usd_model = { workspace = true }
+
+[dev-dependencies]
+usd_support = { workspace = true }

@@ -14,7 +14,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()

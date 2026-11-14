@@ -46,7 +46,7 @@ struct M5C4Artifact {
 fn mesh_stage() -> openusd::usd::Stage {
     UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/mesh_patch_1.usda"
+        "/tests/fixtures/live/mesh_patch_1.usda"
     )))
     .open_stage()
     .expect("live mesh patch stage opens")

@@ -16,7 +16,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -64,7 +64,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
 fn corners_match_clamped_cvs() {
     use usd_schema::geom::read_nurbs_patch;
     let stage =
-        openusd::usd::Stage::open("tests/stages/nurbs_patch.usda").expect("stage should open");
+        usd_support::open_fixture_stage("nurbs_patch.usda");
     let p = read_nurbs_patch(
         &stage,
         &openusd::sdf::Path::new("/World/Arch").expect("valid path"),

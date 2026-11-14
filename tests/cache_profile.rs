@@ -72,7 +72,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<Mesh>()
@@ -83,10 +83,7 @@ fn build_test_app() -> App {
 }
 
 fn build_live_material_app() -> App {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/stages/materials_network.usda");
-    let stage = Stage::open(path.to_str().expect("materials fixture path is valid"))
-        .expect("materials fixture opens");
+    let stage = usd_support::open_fixture_stage("materials_network.usda");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
@@ -118,7 +115,7 @@ fn apply_live_material_edit(app: &mut App) -> f64 {
 #[test]
 fn profiles_repeated_mesh_fixture() {
     let mut app = build_test_app();
-    let stage = Stage::open("tests/stages/instanceable.usda").expect("fixture stage opens");
+    let stage = usd_support::open_fixture_stage("instanceable.usda");
     let live = LiveStage::new(stage);
     let mut map = PrimEntities::default();
     project_stage(app.world_mut(), &live, &mut map);
@@ -145,7 +142,12 @@ fn profiles_repeated_mesh_fixture() {
 #[test]
 fn profiles_larger_kitchen_usdz_fixture() {
     let mut app = build_test_app();
-    let stage = Stage::open("assets/external/Kitchen_set.usdz").expect("Kitchen_set opens");
+    let stage = Stage::open(
+        usd_support::resolve_asset_path("external/Kitchen_set.usdz")
+            .to_str()
+            .expect("Kitchen_set path is valid UTF-8"),
+    )
+    .expect("Kitchen_set opens");
     let live = LiveStage::new(stage);
     let mut map = PrimEntities::default();
     project_stage(app.world_mut(), &live, &mut map);
@@ -170,7 +172,7 @@ fn profiles_larger_kitchen_usdz_fixture() {
 #[test]
 fn profiles_shared_material_binding_fixture() {
     let mut app = build_test_app();
-    let stage = Stage::open("tests/stages/materials.usda").expect("materials fixture opens");
+    let stage = usd_support::open_fixture_stage("materials.usda");
     let live = LiveStage::new(stage);
     let mut map = PrimEntities::default();
     project_stage(app.world_mut(), &live, &mut map);
@@ -194,8 +196,8 @@ fn profiles_shared_material_binding_fixture() {
 #[test]
 fn profiles_embedded_texture_usdz_fixture() {
     let mut app = build_test_app();
-    let archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/external/usdz_sample.usdz")
+    let archive_path = usd_support::resolve_asset_path("external/usdz_sample.usdz");
+    let archive = archive_path
         .canonicalize()
         .expect("USDZ texture fixture exists");
     app.world_mut()
@@ -203,7 +205,12 @@ fn profiles_embedded_texture_usdz_fixture() {
         .archive_paths
         .push(archive);
 
-    let stage = Stage::open("assets/external/usdz_sample.usdz").expect("USDZ sample opens");
+    let stage = Stage::open(
+        archive_path
+            .to_str()
+            .expect("USDZ sample path is valid UTF-8"),
+    )
+    .expect("USDZ sample opens");
     let live = LiveStage::new(stage);
     let mut map = PrimEntities::default();
     project_stage(app.world_mut(), &live, &mut map);
@@ -284,8 +291,12 @@ fn records_m6_shared_material_benchmark_artifact() {
             .prim(openusd::sdf::path("/World/SharedShaders/RedAlbedo").unwrap())
             .attribute("inputs:file")
             .set(openusd::sdf::Value::AssetPath(
-                "assets/external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png"
-                    .into(),
+                usd_support::resolve_asset_path(
+                    "external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png",
+                )
+                .to_string_lossy()
+                .into_owned()
+                .into(),
             ))
             .expect("texture edit authors");
     }
@@ -317,7 +328,7 @@ fn records_m6_shared_material_benchmark_artifact() {
         checkpoint: "M6-C5++",
         git_sha,
         build_profile,
-        fixture: "tests/stages/materials_network.usda",
+        fixture: "tests/fixtures/usd/materials_network.usda",
         unique_bindings,
         shared_material_consumers: 2,
         material_assets_before_edit,

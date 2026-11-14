@@ -105,8 +105,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     let scene_path = crate::project::scene::authoring::scene_path(project.path(), scene_id);
     fs::create_dir_all(scene_path.parent().expect("Scene directory"))
         .expect("create Scene directory");
-    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/mesh_correctness.usda");
+    let source = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let project_source = project.path().join("source-a.usda");
     fs::copy(&source, &project_source).expect("copy source into Project");
     let spatial = crate::project::spatial::inspect_source(&source).expect("inspect source A");
@@ -216,8 +215,7 @@ fn poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_s
     .join()
     .expect_err("poison fixture thread must fail");
 
-    let stage_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/mesh_correctness.usda");
+    let stage_path = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let stage = Stage::open(stage_path.to_string_lossy().as_ref()).expect("open canonical stage");
     let mut world = World::new();
     world.insert_non_send(LiveStage::new(stage));
@@ -289,8 +287,7 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
         .expect("publish Scene cache descriptor");
 
     let result = Arc::new(Mutex::new(Some(Ok(actual_hash))));
-    let stage_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages/mesh_correctness.usda");
+    let stage_path = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let stage = Stage::open(stage_path.to_string_lossy().as_ref()).expect("open canonical stage");
     let mut world = World::new();
     world.insert_non_send(LiveStage::new(stage));

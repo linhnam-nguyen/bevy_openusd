@@ -18,7 +18,7 @@ INITIAL_FIXTURES = {
     "small": "assets/external/teapot.usdz",
     "representative": "assets/external/Kitchen_set.usdz",
     "dense": "assets/external/PointInstancedMedCity.usdz",
-    "repeated_geometry": "tests/stages/instanceable.usda",
+    "repeated_geometry": "tests/fixtures/usd/instanceable.usda",
 }
 
 

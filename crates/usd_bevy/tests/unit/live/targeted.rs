@@ -10,7 +10,7 @@ use crate::snippet::UsdSnippet;
 fn exact_path_projection_materializes_only_requested_namespace() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/targeted_1.usda"
+        "/tests/fixtures/live/targeted_1.usda"
     )))
     .open_stage()
     .expect("targeted stage opens");
@@ -42,7 +42,7 @@ fn exact_path_projection_materializes_only_requested_namespace() {
 fn targeted_extraction_reads_only_requested_meshes() {
     let stage = UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/targeted_2.usda"
+        "/tests/fixtures/live/targeted_2.usda"
     )))
     .open_stage()
     .expect("targeted mesh stage opens");

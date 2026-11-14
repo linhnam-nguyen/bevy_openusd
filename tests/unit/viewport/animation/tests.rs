@@ -7,15 +7,11 @@ use usd_bevy::{LiveStage, LiveStagePlugin, ProjectionBudget, ProjectionReadiness
 use super::{UsdStageTime, systems::tick_stage_time};
 
 fn asset_path(name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/external")
-        .join(name)
+    usd_support::resolve_asset_path(&format!("external/{name}"))
 }
 
 fn stage_path(name: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/stages")
-        .join(name)
+    usd_support::resolve_fixture_path(name)
 }
 
 fn playback_app() -> App {

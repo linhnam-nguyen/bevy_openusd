@@ -7,7 +7,7 @@ use usd_schema::anim::{InterpMode, eval_scalar_track, read_animated_prim};
 #[test]
 fn held_interpolation_snaps_to_lower_sample() {
     let stage =
-        openusd::usd::Stage::open("tests/stages/animated_held.usda").expect("fixture parses");
+        usd_support::open_fixture_stage("animated_held.usda");
 
     let linear = read_animated_prim(&stage, &Path::new("/World/LinearSpinner").unwrap())
         .expect("read ok")

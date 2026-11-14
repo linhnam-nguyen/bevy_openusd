@@ -1,7 +1,9 @@
 # Identity fixtures
 
-These are deterministic contract fixtures, not exports captured from Revit or
-Omniverse. They record the candidate property names used by the resolver test:
+`identity_moved.usda` is a crate-local deterministic contract fixture paired with
+the shared `tests/fixtures/usd/identity_original.usda` fixture, not an export
+captured from Revit or Omniverse. Together they record the candidate property
+names used by the resolver test:
 `source:revitUniqueId`, `source:ifcGuid`, `source:applicationGuid`, and
 `source:assetIdentifier`.
 

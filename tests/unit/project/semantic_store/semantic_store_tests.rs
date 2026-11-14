@@ -31,7 +31,7 @@ fn materialized_git_revision_regenerates_a_snapshot() {
     );
     fs::write(
         repository_dir.path().join("model.usda"),
-        include_bytes!("../../../../crates/usd_semantic/tests/fixtures/identity_original.usda"),
+        usd_support::MODEL_USDA,
     )
     .expect("USD fixture should write");
     git(repository_dir.path(), &["add", "model.usda"]);

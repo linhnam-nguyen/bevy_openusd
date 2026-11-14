@@ -15,7 +15,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -62,7 +62,7 @@ fn spawn_scene_root(app: &mut App, handle: &Handle<UsdAsset>) {
 #[test]
 fn schema_readers_decode_authored_attrs() {
     let stage =
-        openusd::usd::Stage::open("tests/stages/media_proc.usda").expect("stage should open");
+        usd_support::open_fixture_stage("media_proc.usda");
 
     let bell = usd_schema::media::read_spatial_audio(
         &stage,

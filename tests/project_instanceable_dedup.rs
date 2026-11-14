@@ -2,7 +2,7 @@
 //! list for prototype-matching instance sites, producing the right
 //! subtree without re-walking the USD stage.
 //!
-//! Uses the existing `tests/stages/instanceable.usda` fixture (two
+//! Uses the existing `tests/fixtures/usd/instanceable.usda` fixture (two
 //! `instanceable = true` Xforms with identical Cube subtrees + a
 //! non-instanceable Sphere control).
 
@@ -17,7 +17,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()

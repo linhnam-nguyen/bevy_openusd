@@ -59,7 +59,7 @@ fn add_triangle_mesh(stage: &Stage, path: &str) -> Result<()> {
 pub(super) fn nested_consumers_stage() -> Stage {
     UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/native_instance_review_1.usda"
+        "/tests/fixtures/live/native_instance_review_1.usda"
     )))
     .open_stage()
     .expect("nested native instance fixture opens")

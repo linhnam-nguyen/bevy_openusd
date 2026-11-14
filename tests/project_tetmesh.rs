@@ -15,7 +15,7 @@ fn build_test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(bevy::asset::AssetPlugin {
-            file_path: "tests/stages".into(),
+            file_path: usd_support::usd_fixtures_asset_root(),
             ..Default::default()
         })
         .init_asset::<ScenePatch>()
@@ -71,7 +71,7 @@ fn triangle_count(mesh: &Mesh) -> usize {
 #[test]
 fn boundary_face_count_matches_topology() {
     use usd_schema::geom::read_tetmesh;
-    let stage = openusd::usd::Stage::open("tests/stages/tetmesh.usda").expect("stage should open");
+    let stage = usd_support::open_fixture_stage("tetmesh.usda");
 
     // A single tet has exactly 4 boundary faces.
     let single = read_tetmesh(

@@ -8,7 +8,7 @@ use crate::snippet::UsdSnippet;
 fn hierarchy_stage() -> openusd::usd::Stage {
     UsdSnippet::new(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/progressive_restart_1.usda"
+        "/tests/fixtures/live/progressive_restart_1.usda"
     )))
     .open_stage()
     .expect("hierarchy stage opens")

@@ -9,11 +9,7 @@ use crate::route::material::{
 use crate::{LiveStage, LiveStagePlugin, ProjectionSeed, UsdPlugin};
 
 fn build_app_for(fixture: &str) -> App {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages")
-        .join(fixture);
-    let stage = openusd::usd::Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("material fixture opens");
+    let stage = usd_support::open_fixture_stage(fixture);
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)

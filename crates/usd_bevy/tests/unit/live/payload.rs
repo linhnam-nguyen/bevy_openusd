@@ -7,7 +7,7 @@ use crate::snippet::UsdSnippet;
 fn test_live_stage_load_and_unload_payload_api_preserves_projection() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/payload_1.usda"
+        "/tests/fixtures/live/payload_1.usda"
     ));
     let stage = UsdSnippet::new(usda)
         .open_stage()

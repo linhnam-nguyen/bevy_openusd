@@ -102,7 +102,7 @@ fn records_m7_progressive_load_benchmark_artifact() {
     }
     let fixture = "assets/external/Kitchen_set.usdz";
     let open_started = Instant::now();
-    let stage_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture);
+    let stage_path = usd_support::resolve_asset_path("external/Kitchen_set.usdz");
     let stage = Stage::open(stage_path.to_str().expect("Kitchen path is valid"))
         .expect("Kitchen_set opens");
     let stage_open_ms = open_started.elapsed().as_secs_f64() * 1000.0;

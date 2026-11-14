@@ -3,14 +3,19 @@ use openusd::usd::Stage;
 use usd_model::{EntityKey, IdentitySource, SnapshotSource};
 use usd_semantic::{IdentityConfig, SemanticConfig, SemanticExtractor};
 
-const ORIGINAL: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/identity_original.usda"
-);
-const MOVED: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/identity_moved.usda"
-);
+fn original_fixture() -> String {
+    usd_support::resolve_fixture_path("identity_original.usda")
+        .to_str()
+        .expect("shared fixture path should be valid UTF-8")
+        .to_owned()
+}
+
+fn moved_fixture() -> String {
+    usd_support::resolve_crate_fixture_path(env!("CARGO_MANIFEST_DIR"), "identity_moved.usda")
+        .to_str()
+        .expect("crate fixture path should be valid UTF-8")
+        .to_owned()
+}
 
 fn config() -> SemanticConfig {
     SemanticConfig {
@@ -39,8 +44,8 @@ fn extract(path: &str) -> Result<usd_model::SemanticSnapshot> {
 
 #[test]
 fn source_identity_survives_a_prim_path_move() -> Result<()> {
-    let original = extract(ORIGINAL)?;
-    let moved = extract(MOVED)?;
+    let original = extract(&original_fixture())?;
+    let moved = extract(&moved_fixture())?;
     let key = EntityKey::from("revit:revit-wall-001-opaque");
 
     let original_entity = original.entities.get(&key).expect("original wall key");
@@ -61,7 +66,7 @@ fn source_identity_survives_a_prim_path_move() -> Result<()> {
 
 #[test]
 fn identity_priority_prefers_revit_over_other_configured_ids() -> Result<()> {
-    let snapshot = extract(ORIGINAL)?;
+    let snapshot = extract(&original_fixture())?;
     assert!(
         snapshot
             .entities
@@ -77,7 +82,7 @@ fn identity_priority_prefers_revit_over_other_configured_ids() -> Result<()> {
 
 #[test]
 fn path_fallback_remains_the_default_when_no_candidates_are_configured() -> Result<()> {
-    let stage = Stage::open(ORIGINAL)?;
+    let stage = Stage::open(&original_fixture())?;
     let snapshot = SemanticExtractor::new(SemanticConfig::default()).extract(
         &stage,
         SnapshotSource::Working {
