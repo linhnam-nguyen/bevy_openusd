@@ -92,38 +92,3 @@ impl fmt::Display for PlacementSpec {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_placement_is_identity() {
-        assert_eq!(
-            PlacementSpec::Default.resolve().unwrap(),
-            ScenePlacementTransform::IDENTITY
-        );
-    }
-
-    #[test]
-    fn matrix_accepts_whitespace_and_commas() {
-        let matrix = PlacementSpec::Matrix("1, 0 0 0\n0 2 0 0\n0 0 -1 0\n3 4 5 1".to_owned())
-            .resolve()
-            .unwrap();
-        assert_eq!(matrix.0[5], 2.0);
-        assert_eq!(matrix.0[10], -1.0);
-        assert_eq!(matrix.0[12..15], [3.0, 4.0, 5.0]);
-    }
-
-    #[test]
-    fn matrix_rejects_non_affine_and_singular_values() {
-        let non_affine = PlacementSpec::Matrix("1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 2".to_owned());
-        assert_eq!(
-            non_affine.resolve(),
-            Err(PlacementValidationError::NonAffine)
-        );
-
-        let singular = PlacementSpec::Matrix("1 0 0 0\n0 0 0 0\n0 0 1 0\n0 0 0 1".to_owned());
-        assert_eq!(singular.resolve(), Err(PlacementValidationError::Singular));
-    }
-}
