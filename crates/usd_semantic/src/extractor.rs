@@ -348,5 +348,5 @@ fn digest(bytes: &[u8]) -> HashDigest {
 }
 
 #[cfg(test)]
-#[path = "extractor_tests.rs"]
+#[path = "../tests/contracts/extractor_tests.rs"]
 mod tests;

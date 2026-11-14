@@ -69,6 +69,10 @@ fn moved_project_reopens_after_source_and_local_state_removal() -> anyhow::Resul
         ProjectStorageLayout::new(&project_a).canonical_root_scene_path(&root_scene.storage_key);
     let report = dependency_containment_report(&project_a, &root_a)?;
     assert!(report.unresolved.is_empty());
+    assert!(
+        service.wait_for_cache_idle(&project_a),
+        "Project cache warming did not become idle before copy"
+    );
     drop(service);
 
     copy_tree(&project_a, &path_b.join("Portable"))?;
