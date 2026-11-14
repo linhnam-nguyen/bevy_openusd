@@ -1,9 +1,9 @@
-use crate::application::interface::RenderServerInterface;
-use crate::application::types::RenderServerPortError;
 use viewport_protocol::{
     InputCommand, PointerMotion, ViewportCommand, ViewportCommandEnvelope, ViewportEvent,
     ViewportEventEnvelope, ViewportMetrics, ViewportReadModel,
 };
+use viewport_streaming::RenderServerInterface;
+use viewport_streaming::RenderServerPortError;
 
 #[test]
 fn stream_generation_remains_monotonic_across_webview_reconnects() {

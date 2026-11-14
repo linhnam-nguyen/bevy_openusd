@@ -329,5 +329,5 @@ fn queue_error(
 }
 
 #[cfg(test)]
-#[path = "bim_properties_packing_tests.rs"]
+#[path = "../../tests/unit/bim_properties_packing.rs"]
 mod packing_tests;

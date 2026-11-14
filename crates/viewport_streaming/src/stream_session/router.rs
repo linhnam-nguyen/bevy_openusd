@@ -395,5 +395,5 @@ fn apply_configuration(
 }
 
 #[cfg(test)]
-#[path = "router_tests.rs"]
+#[path = "../../tests/unit/router.rs"]
 mod tests;

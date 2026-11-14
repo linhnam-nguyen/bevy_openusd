@@ -20,4 +20,5 @@ pub use constants::{
 pub(crate) use session::ApplicationSession;
 
 #[cfg(test)]
+#[path = "../../tests/unit/data_channel/mod.rs"]
 mod tests;

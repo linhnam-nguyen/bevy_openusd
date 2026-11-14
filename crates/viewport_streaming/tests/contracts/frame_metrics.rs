@@ -1,6 +1,6 @@
-use super::*;
 use std::thread;
 use std::time::Duration;
+use viewport_streaming::FrameTransportMetrics;
 
 #[test]
 fn traces_are_monotonic_and_timestamped_from_one_clock() {

@@ -11,4 +11,5 @@ pub use caps::{CodecCapabilities, EncoderCandidate, EncoderTier, VideoCodec};
 pub use pipeline::EncodePipeline;
 
 #[cfg(test)]
+#[path = "../../tests/unit/encode.rs"]
 mod tests;

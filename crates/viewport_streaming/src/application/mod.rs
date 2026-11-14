@@ -13,4 +13,5 @@ pub use types::{RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestK
 pub(crate) use types::MAX_PENDING_MESSAGES;
 
 #[cfg(test)]
+#[path = "../../tests/unit/application/mod.rs"]
 mod tests;

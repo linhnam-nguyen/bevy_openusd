@@ -13,4 +13,5 @@ pub(crate) use pump::FramePump;
 pub use session::StreamingSession;
 
 #[cfg(test)]
+#[path = "../../tests/unit/stream_session.rs"]
 mod tests;

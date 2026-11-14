@@ -44,22 +44,6 @@ pub(crate) struct ApplicationSession {
 }
 
 impl ApplicationSession {
-    #[cfg(test)]
-    pub(crate) fn new(
-        session_id: SessionId,
-        initial_snapshot: ViewportReadModel,
-        interface: RenderServerInterface,
-    ) -> Self {
-        Self::new_with_capabilities(
-            session_id,
-            initial_snapshot,
-            interface,
-            ServerCapabilities::default(),
-            AuthorizationPolicy::default(),
-            SessionAdmission::default(),
-        )
-    }
-
     pub(crate) fn new_with_capabilities(
         session_id: SessionId,
         initial_snapshot: ViewportReadModel,
