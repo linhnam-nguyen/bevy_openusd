@@ -138,21 +138,7 @@ fn test_stage_change_batch_resync_roots_and_unshaded_changed_info() {
 
 #[test]
 fn test_collect_stage_subtree_paths_synthetic_wide() {
-    let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
-    for group in ["A", "B", "C"] {
-        usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
-        for i in 0..10 {
-            usda.push_str(&format!(
-                "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
-            ));
-        }
-        usda.push_str("    }\n");
-    }
-    usda.push_str("}\n");
-
-    let stage = UsdSnippet::new(&usda)
-        .open_stage()
-        .expect("synthetic wide stage opens");
+    let stage = usd_support::make_synthetic_wide_stage();
 
     // Subtree /World/B has 1 root + 10 children = 11 prims
     let b_paths = collect_stage_subtree_paths(&stage, "/World/B").expect("collect /World/B");

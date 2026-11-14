@@ -42,7 +42,7 @@ def Xform "World"
     for _ in 0..20 {
         let stage = usd_bevy::UsdSnippet::new(&usda).open_stage().unwrap();
         let live = LiveStage::new(stage);
-        let mut app = crate::viewport::viewport_support::semantic_test_app();
+        let mut app = viewport_support::semantic_test_app();
         app.insert_resource(crate::project::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });
@@ -79,7 +79,7 @@ def Xform "World"
     for _ in 0..20 {
         let stage = usd_bevy::UsdSnippet::new(&usda).open_stage().unwrap();
         let live = LiveStage::new(stage);
-        let mut app = crate::viewport::viewport_support::semantic_test_app();
+        let mut app = viewport_support::semantic_test_app();
         app.insert_resource(crate::project::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });

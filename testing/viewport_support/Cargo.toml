@@ -1,0 +1,28 @@
+[package]
+name = "viewport_support"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Shared Bevy Viewport test support: test App builders, entity query helpers, and harness runners"
+
+[dependencies]
+bevy = { workspace = true, features = [
+    "std",
+    "async_executor",
+    "multi_threaded",
+    "bevy_asset",
+    "bevy_log",
+    "bevy_window",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_light",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_scene",
+    "bevy_gizmos",
+] }
+usd_bevy = { workspace = true }
+openusd = { workspace = true }
+usd_support = { workspace = true }

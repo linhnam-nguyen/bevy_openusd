@@ -243,14 +243,7 @@ fn logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target() {
 }
 
 fn live_app(stage: Stage) -> App {
-    let mut app = App::new();
-    app.add_plugins(UsdPlugin)
-        .add_plugins(LiveStagePlugin)
-        .init_resource::<Assets<Mesh>>()
-        .init_resource::<Assets<StandardMaterial>>();
-    app.world_mut().insert_non_send(LiveStage::new(stage));
-    app.update();
-    app
+    viewport_support::live_test_app(stage)
 }
 
 fn mesh_handle_for_logical(world: &mut World, logical_id: i64) -> AssetId<Mesh> {

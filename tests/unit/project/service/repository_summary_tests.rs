@@ -7,8 +7,8 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot};
 use super::{
     ManifestStore, ProjectApplicationService, ProjectImportProgressStore,
     ProjectPublicationCoordinator, ProjectStageMutationQueue, WorkspaceRegistry,
-    project_support::run_git,
 };
+use project_support::run_git;
 
 #[test]
 fn repository_summary_projects_git_state_without_backend_handles() {

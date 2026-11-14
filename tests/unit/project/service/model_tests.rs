@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use usd_project::SceneMemberTarget;
 
 use super::*;
-use crate::project::service::project_support::service_with_project;
+use crate::project::service::test_support::service_with_project;
 
 fn model_source(directory: &std::path::Path) -> std::path::PathBuf {
     let source = directory.join("asset.usda");

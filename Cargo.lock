@@ -6704,6 +6704,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "project_support"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "usd_project",
+ "usd_support",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8749,6 +8759,8 @@ dependencies = [
  "usd_macro",
  "usd_model",
  "usd_rapier",
+ "usd_support",
+ "viewport_support",
  "zip",
 ]
 
@@ -8764,7 +8776,9 @@ name = "usd_git"
 version = "0.0.1"
 dependencies = [
  "gix",
+ "project_support",
  "tempfile",
+ "usd_support",
 ]
 
 [[package]]
@@ -8817,6 +8831,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "usd_support"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "openusd",
+ "tempfile",
+]
+
+[[package]]
 name = "usdview"
 version = "0.0.1"
 dependencies = [
@@ -8831,6 +8854,7 @@ dependencies = [
  "log",
  "openusd",
  "project_protocol",
+ "project_support",
  "rapier3d-f64",
  "regex",
  "reqwest",
@@ -8849,9 +8873,11 @@ dependencies = [
  "usd_project",
  "usd_rapier",
  "usd_semantic",
+ "usd_support",
  "uuid",
  "viewport_protocol",
  "viewport_streaming",
+ "viewport_support",
  "zip",
 ]
 
@@ -8970,6 +8996,16 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "viewport_protocol",
+]
+
+[[package]]
+name = "viewport_support"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "openusd",
+ "usd_bevy",
+ "usd_support",
 ]
 
 [[package]]

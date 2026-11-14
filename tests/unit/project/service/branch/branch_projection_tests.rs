@@ -6,7 +6,7 @@ use usd_git::GitRepository;
 use usd_project::{ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
-use crate::project::service::project_support::run_git;
+use project_support::run_git;
 
 #[test]
 fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() {

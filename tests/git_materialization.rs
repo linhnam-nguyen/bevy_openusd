@@ -1,10 +1,7 @@
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::fs;
 
 use openusd::usd::Stage;
+use project_support::run_git;
 use tempfile::TempDir;
 use usd_git::{GitRepository, Repository, RevisionSpec};
 
@@ -34,11 +31,11 @@ fn historical_materialization_opens_through_openusd() {
 
 fn create_repository() -> TempDir {
     let directory = tempfile::tempdir().expect("create temporary directory");
-    run_git(directory.path(), ["init", "-b", "main"]);
-    run_git(directory.path(), ["config", "user.name", "USDHub Test"]);
+    run_git(directory.path(), &["init", "-b", "main"]);
+    run_git(directory.path(), &["config", "user.name", "USDHub Test"]);
     run_git(
         directory.path(),
-        ["config", "user.email", "test@usdhub.invalid"],
+        &["config", "user.email", "test@usdhub.invalid"],
     );
 
     fs::create_dir_all(directory.path().join("layers")).unwrap();
@@ -52,22 +49,7 @@ fn create_repository() -> TempDir {
         b"#usda 1.0\nover \"World\" {\n    def Xform \"HistoricalChild\" {}\n}\n",
     )
     .unwrap();
-    run_git(directory.path(), ["add", "."]);
-    run_git(directory.path(), ["commit", "-m", "historical USD stage"]);
+    run_git(directory.path(), &["add", "."]);
+    run_git(directory.path(), &["commit", "-m", "historical USD stage"]);
     directory
-}
-
-fn run_git<const N: usize>(directory: &Path, args: [&str; N]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .expect("run git command");
-    assert!(
-        output.status.success(),
-        "git command failed: {}\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
 }

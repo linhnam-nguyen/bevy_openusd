@@ -9,7 +9,7 @@ use usd_project::{
 };
 
 use super::{ManifestStore, ProjectApplicationService, WorkspaceRegistry};
-use crate::project::service::project_support::run_git;
+use project_support::run_git;
 
 #[path = "branch_repository_truth_tests.rs"]
 mod repository_truth;

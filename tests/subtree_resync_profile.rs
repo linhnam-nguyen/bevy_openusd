@@ -12,6 +12,7 @@ use openusd::usd::Stage;
 use usd_bevy::{LiveStage, LiveStagePlugin, UsdPlugin, UsdSnippet, collect_stage_subtree_paths};
 use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
+use usd_support::{make_deep_overlap_stage, make_synthetic_wide_stage};
 
 fn build_test_app() -> App {
     let mut app = App::new();
@@ -26,52 +27,6 @@ fn build_test_app() -> App {
         .add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin);
     app
-}
-
-fn make_synthetic_wide_stage() -> Stage {
-    let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
-    for group in ["A", "B", "C"] {
-        usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
-        for i in 0..10 {
-            usda.push_str(&format!(
-                "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
-            ));
-        }
-        usda.push_str("    }\n");
-    }
-    usda.push_str("}\n");
-
-    UsdSnippet::new(&usda)
-        .open_stage()
-        .expect("synthetic wide stage opens")
-}
-
-fn make_deep_overlap_stage() -> Stage {
-    UsdSnippet::new(
-        r#"#usda 1.0
-
-def Xform "World"
-{
-    def Xform "A"
-    {
-        def Xform "Child"
-        {
-            def Xform "Leaf"
-            {
-            }
-        }
-    }
-    def Xform "B"
-    {
-    }
-    def Xform "C"
-    {
-    }
-}
-"#,
-    )
-    .open_stage()
-    .expect("deep overlap stage opens")
 }
 
 fn mean_and_median(mut durations: Vec<Duration>) -> (Duration, Duration) {

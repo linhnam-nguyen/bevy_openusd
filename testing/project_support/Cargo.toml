@@ -1,0 +1,13 @@
+[package]
+name = "project_support"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Shared Project & Git test support: temporary repositories, Git CLI harnesses, and branch utilities"
+
+[dependencies]
+usd_project = { workspace = true }
+usd_support = { workspace = true }
+tempfile = { workspace = true }
+anyhow = { workspace = true }

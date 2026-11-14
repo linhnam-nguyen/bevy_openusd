@@ -24,7 +24,7 @@ def Xform "World"
     )
     .open_stage()?;
     let live = LiveStage::new(stage);
-    let mut app = crate::viewport::viewport_support::semantic_test_app();
+    let mut app = viewport_support::semantic_test_app();
     app.insert_resource(usd_bevy::ProjectionBudget::work_items(1));
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: project.path().to_path_buf(),

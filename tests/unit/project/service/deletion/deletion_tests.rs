@@ -7,7 +7,7 @@ use tempfile::tempdir;
 use usd_project::{SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform};
 
 use super::{ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageMutationQueue};
-use crate::project::service::project_support::service_with_project;
+use crate::project::service::test_support::service_with_project;
 
 fn add_scene_placement(
     project_root: &std::path::Path,

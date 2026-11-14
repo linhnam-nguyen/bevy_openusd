@@ -1,19 +1,13 @@
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+use std::fs;
 
 use gix::bstr::ByteSlice;
-use tempfile::TempDir;
+use project_support::{create_layered_test_repository, run_git};
 use usd_git::{CommitRequest, Error, GitRepository, Repository, RevisionSpec};
-
-const MODEL_USDA: &[u8] =
-    include_bytes!("../../usd_semantic/tests/fixtures/identity_original.usda");
+use usd_support::MODEL_USDA;
 
 #[test]
 fn resolves_history_metadata_and_materializes_the_complete_tree() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
 
     let head = repository
@@ -54,14 +48,14 @@ fn resolves_history_metadata_and_materializes_the_complete_tree() {
 
 #[test]
 fn resolves_and_materializes_a_historical_parent() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     fs::write(
         repository_dir.path().join("model.usda"),
         b"#usda 1.0\n(def \"stage\") {}\n",
     )
     .unwrap();
-    run_git(repository_dir.path(), ["add", "."]);
-    run_git(repository_dir.path(), ["commit", "-m", "second USD stage"]);
+    run_git(repository_dir.path(), &["add", "."]);
+    run_git(repository_dir.path(), &["commit", "-m", "second USD stage"]);
 
     let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
     let historical = repository
@@ -84,17 +78,17 @@ fn resolves_and_materializes_a_historical_parent() {
 
 #[test]
 fn lists_local_branches_and_walks_bounded_history() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     fs::write(
         repository_dir.path().join("model.usda"),
         b"#usda 1.0\n(def \"stage-v2\") {}\n",
     )
     .unwrap();
-    run_git(repository_dir.path(), ["add", "."]);
-    run_git(repository_dir.path(), ["commit", "-m", "second USD stage"]);
+    run_git(repository_dir.path(), &["add", "."]);
+    run_git(repository_dir.path(), &["commit", "-m", "second USD stage"]);
     run_git(
         repository_dir.path(),
-        ["branch", "feature/history", "HEAD~1"],
+        &["branch", "feature/history", "HEAD~1"],
     );
 
     let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
@@ -128,7 +122,7 @@ fn lists_local_branches_and_walks_bounded_history() {
 
 #[test]
 fn reports_clean_and_dirty_tracked_worktree_state() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     let repository = Repository::open(repository_dir.path()).expect("open temporary repository");
 
     assert!(!repository.is_dirty().expect("read clean status"));
@@ -144,7 +138,7 @@ fn reports_clean_and_dirty_tracked_worktree_state() {
 #[test]
 fn reports_an_unborn_empty_repository_as_clean() {
     let directory = tempfile::tempdir().expect("create temporary directory");
-    run_git(directory.path(), ["init", "-b", "main"]);
+    run_git(directory.path(), &["init", "-b", "main"]);
     let repository = Repository::open(directory.path()).expect("open unborn repository");
 
     assert!(repository.head().expect("read unborn HEAD").is_none());
@@ -209,7 +203,7 @@ fn initializes_an_empty_worktree_without_a_commit() {
 
 #[test]
 fn exact_open_does_not_discover_an_ancestor_repository() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     let child = repository_dir.path().join("nested");
     fs::create_dir(&child).expect("create non-repository child");
 
@@ -218,36 +212,39 @@ fn exact_open_does_not_discover_an_ancestor_repository() {
 
 #[test]
 fn walks_both_parents_of_a_merge_commit() {
-    let repository_dir = create_repository();
-    run_git(repository_dir.path(), ["branch", "feature/merge"]);
-    run_git(repository_dir.path(), ["checkout", "feature/merge"]);
+    let repository_dir = create_layered_test_repository();
+    run_git(repository_dir.path(), &["branch", "feature/merge"]);
+    run_git(repository_dir.path(), &["checkout", "feature/merge"]);
     fs::write(
         repository_dir.path().join("feature.usda"),
         b"#usda 1.0\n(def \"feature\") {}\n",
     )
     .unwrap();
-    run_git(repository_dir.path(), ["add", "feature.usda"]);
-    run_git(repository_dir.path(), ["commit", "-m", "feature USD stage"]);
+    run_git(repository_dir.path(), &["add", "feature.usda"]);
+    run_git(
+        repository_dir.path(),
+        &["commit", "-m", "feature USD stage"],
+    );
     let feature_tip =
-        String::from_utf8_lossy(&run_git(repository_dir.path(), ["rev-parse", "HEAD"]).stdout)
+        String::from_utf8_lossy(&run_git(repository_dir.path(), &["rev-parse", "HEAD"]).stdout)
             .trim()
             .to_owned();
 
-    run_git(repository_dir.path(), ["checkout", "main"]);
+    run_git(repository_dir.path(), &["checkout", "main"]);
     fs::write(
         repository_dir.path().join("main.usda"),
         b"#usda 1.0\n(def \"main\") {}\n",
     )
     .unwrap();
-    run_git(repository_dir.path(), ["add", "main.usda"]);
-    run_git(repository_dir.path(), ["commit", "-m", "main USD stage"]);
+    run_git(repository_dir.path(), &["add", "main.usda"]);
+    run_git(repository_dir.path(), &["commit", "-m", "main USD stage"]);
     let main_tip =
-        String::from_utf8_lossy(&run_git(repository_dir.path(), ["rev-parse", "HEAD"]).stdout)
+        String::from_utf8_lossy(&run_git(repository_dir.path(), &["rev-parse", "HEAD"]).stdout)
             .trim()
             .to_owned();
     run_git(
         repository_dir.path(),
-        [
+        &[
             "merge",
             "--no-ff",
             "feature/merge",
@@ -286,7 +283,7 @@ fn walks_both_parents_of_a_merge_commit() {
 
 #[test]
 fn commit_creation_updates_head_from_source_tree() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     let source_dir = tempfile::tempdir().expect("create commit source directory");
     fs::create_dir_all(source_dir.path().join("layers")).unwrap();
     fs::write(
@@ -335,7 +332,7 @@ fn commit_creation_updates_head_from_source_tree() {
 
 #[test]
 fn rejected_commit_leaves_head_unchanged() {
-    let repository_dir = create_repository();
+    let repository_dir = create_layered_test_repository();
     let mut repository =
         Repository::open(repository_dir.path()).expect("open temporary repository");
     let before = repository.head().unwrap().unwrap();
@@ -346,40 +343,4 @@ fn rejected_commit_leaves_head_unchanged() {
 
     let after = repository.head().unwrap().unwrap();
     assert_eq!(before, after, "failed commit must not move HEAD");
-}
-
-fn create_repository() -> TempDir {
-    let directory = tempfile::tempdir().expect("create temporary directory");
-    run_git(directory.path(), ["init", "-b", "main"]);
-    run_git(directory.path(), ["config", "user.name", "USDHub Test"]);
-    run_git(
-        directory.path(),
-        ["config", "user.email", "test@usdhub.invalid"],
-    );
-
-    fs::create_dir_all(directory.path().join("layers")).unwrap();
-    fs::write(directory.path().join("model.usda"), MODEL_USDA).unwrap();
-    fs::write(
-        directory.path().join("layers/referenced.usda"),
-        b"#usda 1.0\n",
-    )
-    .unwrap();
-    run_git(directory.path(), ["add", "."]);
-    run_git(directory.path(), ["commit", "-m", "initial USD stage"]);
-    directory
-}
-
-fn run_git<const N: usize>(directory: &Path, args: [&str; N]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .expect("run git command");
-    assert!(
-        output.status.success(),
-        "git command failed: {}\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
 }

@@ -15,11 +15,7 @@ use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
 use openusd::{gf::Vec3f, sdf::Value};
 
 fn fixture_stage(fixture: &str) -> Stage {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages")
-        .join(fixture);
-    Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("native instance fixture opens")
+    usd_support::open_fixture_stage(fixture)
 }
 
 fn characterization_stage() -> Stage {

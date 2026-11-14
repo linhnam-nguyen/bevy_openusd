@@ -14,11 +14,7 @@ use crate::live::{
 use crate::{UsdPlugin, UsdSnippet, author_transform};
 
 fn fixture_stage(fixture: &str) -> Stage {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/stages")
-        .join(fixture);
-    Stage::open(path.to_str().expect("fixture path is valid"))
-        .expect("native instance fixture opens")
+    usd_support::open_fixture_stage(fixture)
 }
 
 pub(super) fn projected_app(stage: Stage) -> App {

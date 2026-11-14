@@ -6,21 +6,7 @@ use crate::live::{LiveStage, PathStore, PrimEntities};
 
 #[test]
 fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
-    let mut usda = String::from("#usda 1.0\n\ndef Xform \"World\"\n{\n");
-    for group in ["A", "B", "C"] {
-        usda.push_str(&format!("    def Xform \"{group}\"\n    {{\n"));
-        for i in 0..10 {
-            usda.push_str(&format!(
-                "        def Xform \"{group}{i}\"\n        {{\n        }}\n"
-            ));
-        }
-        usda.push_str("    }\n");
-    }
-    usda.push_str("}\n");
-
-    let stage = crate::snippet::UsdSnippet::new(&usda)
-        .open_stage()
-        .expect("synthetic wide stage opens");
+    let stage = usd_support::make_synthetic_wide_stage();
     let mut app = App::new();
     app.add_plugins(CountingLiveStagePlugin);
     app.world_mut().insert_non_send(LiveStage::new(stage));
@@ -49,12 +35,7 @@ fn reconcile_synthetic_wide_scopes_to_resynced_subtree() {
 
 #[test]
 fn reconcile_deep_overlap_minimizes_roots_and_scopes_work() {
-    let stage = crate::snippet::UsdSnippet::new(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/stages/live/reconcile_1.usda"
-    )))
-    .open_stage()
-    .expect("deep overlap stage opens");
+    let stage = usd_support::make_deep_overlap_stage();
 
     let mut app = App::new();
     app.add_plugins(CountingLiveStagePlugin);

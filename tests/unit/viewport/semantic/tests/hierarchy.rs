@@ -50,7 +50,7 @@ def Xform "World"
         .expect("stage opens");
     let live = LiveStage::new(stage);
 
-    let mut app = crate::viewport::viewport_support::semantic_test_app();
+    let mut app = viewport_support::semantic_test_app();
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
@@ -152,7 +152,7 @@ def Xform "World"
         .expect("stage opens");
     let live = LiveStage::new(stage);
 
-    let mut app = crate::viewport::viewport_support::semantic_test_app();
+    let mut app = viewport_support::semantic_test_app();
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
@@ -244,7 +244,7 @@ def Xform "World"
         .expect("stage opens");
     let live = LiveStage::new(stage);
 
-    let mut app = crate::viewport::viewport_support::semantic_test_app();
+    let mut app = viewport_support::semantic_test_app();
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });

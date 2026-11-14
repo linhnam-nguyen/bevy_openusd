@@ -28,11 +28,11 @@ use self::error::project_read_error_code;
 use self::runtime_authority::NoopProjectRuntimeAuthority;
 
 #[cfg(test)]
-#[path = "../../../testing/project_support/mod.rs"]
-mod project_support;
+#[path = "../../../tests/unit/project/service/test_support.rs"]
+mod test_support;
 
 #[cfg(test)]
-use self::project_support::configured_initial_branch;
+use project_support::configured_initial_branch;
 
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {

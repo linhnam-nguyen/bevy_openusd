@@ -1,0 +1,12 @@
+[package]
+name = "usd_support"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Shared OpenUSD test support: fixtures, temporary USDA generation, and stage builders"
+
+[dependencies]
+openusd = { workspace = true }
+tempfile = { workspace = true }
+anyhow = { workspace = true }

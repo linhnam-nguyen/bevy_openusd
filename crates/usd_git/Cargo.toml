@@ -11,3 +11,5 @@ gix = { version = "0.87", features = ["revision", "status", "worktree-mutation"]
 
 [dev-dependencies]
 tempfile = "3"
+project_support = { workspace = true }
+usd_support = { workspace = true }
