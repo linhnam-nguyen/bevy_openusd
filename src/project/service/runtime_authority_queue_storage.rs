@@ -7,9 +7,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-#[cfg(test)]
-use std::sync::atomic::Ordering;
-
 use super::super::registry;
 use super::{
     ProjectRuntimeAuthorityQueue, ProjectRuntimeEnvelope, ProjectRuntimeResponse, runtime_error,
@@ -37,8 +34,6 @@ pub(super) struct RegistryCache {
     pub(super) path: Option<PathBuf>,
     pub(super) stamp: Option<RegistryStamp>,
     pub(super) roots: HashMap<ProjectId, PathBuf>,
-    #[cfg(test)]
-    pub(super) resolution_count: std::sync::atomic::AtomicUsize,
 }
 
 pub(super) fn registry_stamp(path: &Path) -> RegistryStamp {
@@ -161,8 +156,6 @@ pub(super) fn registered_project_roots(
         .registry_cache
         .lock()
         .expect("Project runtime registry cache is not poisoned");
-    #[cfg(test)]
-    cache.resolution_count.fetch_add(1, Ordering::Relaxed);
     if cache.path.as_deref() == Some(path.as_path()) && cache.stamp.as_ref() == Some(&stamp) {
         return cache.roots.clone();
     }
@@ -278,7 +271,4 @@ pub(super) fn publish_response(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"]
-mod test_support;
-
-#[cfg(test)]
-pub(super) use test_support::cleanup_for_test;
+pub(super) mod test_support;

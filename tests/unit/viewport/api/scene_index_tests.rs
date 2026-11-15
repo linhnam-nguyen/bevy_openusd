@@ -1,5 +1,6 @@
 use super::*;
 use crate::viewport::api::HierarchyPageIndex;
+use crate::viewport::api::hierarchy::CurrentHierarchyProjection;
 use crate::viewport::session::Spawned;
 use bevy::asset::Assets;
 use bevy::ecs::hierarchy::ChildOf;
@@ -8,7 +9,7 @@ use bevy::pbr::StandardMaterial;
 use usd_bevy::{LiveStage, LiveStagePlugin, LiveStageSet, UsdPlugin};
 use viewport_protocol::{
     HierarchyNodeId, HierarchyNodeKind, HierarchyNodeReadModel, HierarchyReadModel,
-    HierarchySource, HierarchyVisibilityState, ViewportEvent,
+    HierarchySource, HierarchyVisibilityState, MAX_SCENE_PAGE_SIZE, ViewportEvent,
 };
 
 #[path = "scene_index_incremental_tests.rs"]

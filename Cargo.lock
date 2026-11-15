@@ -6708,7 +6708,6 @@ name = "project_support"
 version = "0.1.0"
 dependencies = [
  "tempfile",
- "usd_support",
 ]
 
 [[package]]

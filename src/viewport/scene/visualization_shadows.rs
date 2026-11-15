@@ -23,9 +23,7 @@ impl Default for ShadowProjectionState {
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/scene/visualization_shadows_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(super) use test_support::ShadowProjectionStats;
+pub(super) mod test_support;
 
 pub(super) fn capture_original_shadow_settings(
     toggles: Res<DisplayToggles>,

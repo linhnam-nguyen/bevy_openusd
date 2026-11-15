@@ -214,11 +214,12 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
         "#usda 1.0\n(\n defaultPrim = \"Assembly\"\n)\ndef Xform \"Assembly\" (kind = \"assembly\") {}\n",
     )
     .unwrap();
-    let stage_mutations = ProjectStageMutationQueue::default();
+    let (stage_mutations, failure_trigger) =
+        crate::project::service::stage_mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_project_state(
         directory.path().join("workspace.json"),
         Default::default(),
-        stage_mutations.clone(),
+        stage_mutations,
     )
     .unwrap();
     let summary = service.create_project(&parent, "Project").unwrap();
@@ -256,7 +257,7 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
         crate::project::link::LinkedSourceStatus::OutOfSync
     );
 
-    stage_mutations.fail_before_batch_index(0);
+    failure_trigger.fail_before_batch_index(0);
     assert!(
         service
             .sync_linked_scene(summary.id, linked.scene_id, "failed-sync".to_owned(), 2)

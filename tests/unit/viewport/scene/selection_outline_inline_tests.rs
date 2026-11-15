@@ -1,4 +1,6 @@
 use super::*;
+use bevy_mod_outline::OutlineVolume;
+use viewport_protocol::SelectionPresentationSettings;
 
 #[test]
 fn selection_outline_color_preserves_rgb_channels() {

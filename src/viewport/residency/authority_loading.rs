@@ -1,10 +1,5 @@
 use bevy::mesh::Mesh;
 
-#[cfg(test)]
-use bevy::asset::RenderAssetUsages;
-#[cfg(test)]
-use bevy::mesh::PrimitiveTopology;
-
 use super::super::loader::LoadJob;
 use super::super::repair_phase::RepairPhase;
 use super::{PayloadLoadMask, PayloadResidencyState, ResidencyAuthority, ScenePayloadKey};
@@ -278,5 +273,3 @@ mod tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/authority_loading_test_support.rs"]
 mod test_support;
-#[cfg(test)]
-use test_support::test_mesh;

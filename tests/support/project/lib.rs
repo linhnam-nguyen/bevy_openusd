@@ -6,6 +6,9 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
+// Read the same shared fixture directly; no normal support-to-support dependency.
+const MODEL_USDA: &[u8] = include_bytes!("../../fixtures/usd/identity_original.usda");
+
 /// Query the configured Git default initial branch, falling back to "main".
 pub fn configured_initial_branch() -> String {
     let directory = tempfile::tempdir().expect("create temporary directory for Git config");
@@ -58,7 +61,7 @@ pub fn create_layered_test_repository() -> TempDir {
     let directory = init_test_repository();
 
     fs::create_dir_all(directory.path().join("layers")).unwrap();
-    fs::write(directory.path().join("model.usda"), usd_support::MODEL_USDA).unwrap();
+    fs::write(directory.path().join("model.usda"), MODEL_USDA).unwrap();
     fs::write(
         directory.path().join("layers/referenced.usda"),
         b"#usda 1.0\n",

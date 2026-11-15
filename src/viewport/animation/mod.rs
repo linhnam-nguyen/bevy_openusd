@@ -11,9 +11,6 @@ use crate::viewport::api::ViewportBridgeSet;
 
 pub(crate) use state::UsdStageTime;
 
-#[cfg(test)]
-pub(crate) use systems::tick_stage_time;
-
 pub(crate) fn configure(app: &mut App) {
     app.add_systems(
         Update,
@@ -31,4 +28,4 @@ pub(crate) fn configure(app: &mut App) {
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/animation/tests.rs"]
-mod tests;
+pub(in crate::viewport) mod tests;

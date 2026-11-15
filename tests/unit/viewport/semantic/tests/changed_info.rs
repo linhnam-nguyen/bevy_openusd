@@ -5,9 +5,10 @@ use usd_bevy::{LiveRevision, StageChange, StageChangeBatch};
 use usd_model::{CanonicalValue, EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
+use super::super::sync::changed_info_update;
 use super::super::{
     SemanticFilter, SemanticIncrementalUpdate, SemanticQuery, SemanticResponse, SemanticSyncState,
-    SemanticWorkingStore, SubtreeUpdateError, changed_info_update, synchronize_live_stage,
+    SemanticWorkingStore, SubtreeUpdateError, synchronize_live_stage,
 };
 use super::fixtures::{response, snapshot};
 

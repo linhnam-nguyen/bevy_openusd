@@ -14,11 +14,56 @@ use uuid::Uuid;
 use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
 
+trait PlacementWriter {
+    fn update_member_display_name_atomic(
+        &mut self,
+        scene_path: &Path,
+        scene_id: usd_project::SceneId,
+        member_id: usd_project::SceneMemberId,
+        display_name: &str,
+    ) -> anyhow::Result<()>;
+}
+
+struct FilesystemPlacementWriter;
+
+impl PlacementWriter for FilesystemPlacementWriter {
+    fn update_member_display_name_atomic(
+        &mut self,
+        scene_path: &Path,
+        scene_id: usd_project::SceneId,
+        member_id: usd_project::SceneMemberId,
+        display_name: &str,
+    ) -> anyhow::Result<()> {
+        crate::project::scene::authoring::update_member_display_name_atomic(
+            scene_path,
+            scene_id,
+            member_id,
+            display_name,
+        )
+    }
+}
+
 pub(super) fn rename(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
     requested_name: &str,
+) -> Result<ProjectRenameResponse, ProjectWriteError> {
+    rename_with_writer(
+        service,
+        project_id,
+        target,
+        requested_name,
+        &mut FilesystemPlacementWriter,
+    )
+}
+
+fn rename_with_writer<W: PlacementWriter>(
+    service: &mut ProjectApplicationService,
+    project_id: usd_project::ProjectId,
+    target: ProjectWriteTarget,
+    requested_name: &str,
+    writer: &mut W,
 ) -> Result<ProjectRenameResponse, ProjectWriteError> {
     let name = requested_name.trim();
     if name.is_empty() {
@@ -178,7 +223,7 @@ pub(super) fn rename(
                     name,
                 )
                 .map_err(|_| filesystem_error())?;
-                update_placements(project_root, &validated, &target, name)?;
+                update_placements(project_root, &validated, &target, name, writer)?;
             }
             ProjectWriteTarget::Model(model_id) => {
                 crate::project::scene::authoring::update_display_name_atomic(
@@ -187,7 +232,7 @@ pub(super) fn rename(
                     name,
                 )
                 .map_err(|_| filesystem_error())?;
-                update_placements(project_root, &validated, &target, name)?;
+                update_placements(project_root, &validated, &target, name, writer)?;
             }
         }
 
@@ -231,14 +276,13 @@ pub(super) fn rename(
     Ok(ProjectRenameResponse { project, target })
 }
 
-fn update_placements(
+fn update_placements<W: PlacementWriter>(
     project_root: &std::path::Path,
     manifest: &usd_project::ValidatedProjectManifest,
     target: &ProjectWriteTarget,
     name: &str,
+    writer: &mut W,
 ) -> Result<(), ProjectWriteError> {
-    #[cfg(test)]
-    let mut rewritten = 0;
     for scene in manifest.scenes() {
         let scene_path = crate::project::scene::authoring::scene_path(project_root, scene.id);
         let members = crate::project::scene::authoring::read_scene_members(&scene_path, scene.id)
@@ -254,23 +298,9 @@ fn update_placements(
                 _ => false,
             };
             if matches {
-                #[cfg(test)]
-                {
-                    if test_support::should_fail_after_placement(rewritten) {
-                        return Err(filesystem_error());
-                    }
-                }
-                crate::project::scene::authoring::update_member_display_name_atomic(
-                    &scene_path,
-                    scene.id,
-                    member.id,
-                    name,
-                )
-                .map_err(|_| filesystem_error())?;
-                #[cfg(test)]
-                {
-                    rewritten += 1;
-                }
+                writer
+                    .update_member_display_name_atomic(&scene_path, scene.id, member.id, name)
+                    .map_err(|_| filesystem_error())?;
             }
         }
     }

@@ -8,13 +8,6 @@ use viewport_protocol::SceneAnchor;
 use crate::project::cache_contract::{
     CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
 };
-#[cfg(test)]
-use crate::project::{
-    cache::SceneCacheStore,
-    cache_contract::{SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheIndex},
-    cache_hydration::ActiveProjectCacheContext,
-    catalog::manifest_store::ManifestStore,
-};
 use crate::viewport::{
     api::SceneAnchorIndex, scene::SelectedTargets, session::SceneCachePresentation,
 };
@@ -338,5 +331,3 @@ mod tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/residency/selection_test_support.rs"]
 mod test_support;
-#[cfg(test)]
-use test_support::build_lookup;

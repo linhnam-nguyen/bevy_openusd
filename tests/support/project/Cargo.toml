@@ -10,5 +10,4 @@ description = "Shared Project & Git test support: temporary repositories, Git CL
 path = "lib.rs"
 
 [dependencies]
-usd_support = { workspace = true }
 tempfile = { workspace = true }

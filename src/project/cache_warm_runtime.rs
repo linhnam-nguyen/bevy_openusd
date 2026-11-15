@@ -33,25 +33,51 @@ pub(super) fn build_runtime_cache(
     super::cache_preparation::build_runtime_cache(project_root, path, identity)
 }
 
+trait GenerationPublishObserver {
+    fn before_publish(&self, project_root: &Path);
+}
+
+struct NoopPublishObserver;
+
+impl GenerationPublishObserver for NoopPublishObserver {
+    #[inline(always)]
+    fn before_publish(&self, _project_root: &Path) {}
+}
+
 pub(crate) fn build_and_publish_scene_cache_generation(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
 ) -> Result<SceneCacheIndex> {
-    Ok(
-        build_and_publish_scene_cache_generation_inner(project_root, descriptor, false)?
-            .expect("unmanaged Scene cache generation must publish"),
-    )
+    Ok(build_and_publish_scene_cache_generation_inner(
+        project_root,
+        descriptor,
+        false,
+        &NoopPublishObserver,
+    )?
+    .expect("unmanaged Scene cache generation must publish"))
 }
 pub(crate) fn build_and_publish_managed_scene_cache_generation(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
 ) -> Result<Option<SceneCacheIndex>> {
-    build_and_publish_scene_cache_generation_inner(project_root, descriptor, true)
+    build_and_publish_managed_scene_cache_generation_with_observer(
+        project_root,
+        descriptor,
+        &NoopPublishObserver,
+    )
 }
-fn build_and_publish_scene_cache_generation_inner(
+fn build_and_publish_managed_scene_cache_generation_with_observer<O: GenerationPublishObserver>(
+    project_root: &Path,
+    descriptor: &SceneCacheDescriptorV3,
+    observer: &O,
+) -> Result<Option<SceneCacheIndex>> {
+    build_and_publish_scene_cache_generation_inner(project_root, descriptor, true, observer)
+}
+fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
     managed: bool,
+    observer: &O,
 ) -> Result<Option<SceneCacheIndex>> {
     let store = SceneCacheStore::new(project_root);
     let caller_source_content_hash = descriptor.source_content_hash;
@@ -109,8 +135,7 @@ fn build_and_publish_scene_cache_generation_inner(
             "Scene source changed during cache build"
         );
     }
-    #[cfg(test)]
-    tests::run_build_publish_hook(project_root);
+    observer.before_publish(project_root);
     if managed {
         let expected_descriptor =
             expected_descriptor.expect("managed Scene cache publication captured its CAS snapshot");

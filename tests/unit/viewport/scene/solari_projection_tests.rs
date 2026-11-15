@@ -1,4 +1,6 @@
 #[cfg(feature = "solari")]
+use super::projection::test_support::SolariProjectionStats;
+#[cfg(feature = "solari")]
 use super::*;
 #[cfg(feature = "solari")]
 use crate::viewport::scene::visualization::DisplayToggles;

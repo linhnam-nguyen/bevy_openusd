@@ -55,9 +55,6 @@ struct SolariProjectionEntry {
     raytracing_marker: bool,
 }
 
-#[cfg(test)]
-pub(crate) use test_support::SolariProjectionStats;
-
 #[cfg(feature = "solari")]
 pub(super) fn sync_solari_usd_projection(
     capability: ResMut<SolariCapability>,

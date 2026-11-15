@@ -22,7 +22,9 @@ pub(crate) use layout::{
     RECOVERY_DIRECTORY, authored_relative_asset_path, authored_relative_project_asset_path,
 };
 pub(crate) use migration::{
-    ensure_legacy_migration_supported, migrate_legacy_project, recover_interrupted_migration,
+    MigrationPublishCheckpoint, MigrationPublishObserver, NoopMigrationPublishObserver,
+    ensure_legacy_migration_supported, migrate_legacy_project_with_observer,
+    recover_interrupted_migration,
 };
 
 const SCENE_CACHE_DIRECTORY: &str = "scenes";

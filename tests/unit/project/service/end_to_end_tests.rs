@@ -4,11 +4,12 @@ use project_protocol::{
     ProjectListItem, ProjectReadCommand, ProjectReadRequest, ProjectReadResponse,
     ProjectStageTarget, ProjectWriteTarget,
 };
+use project_support::configured_initial_branch;
 use tempfile::tempdir;
 use usd_git::GitRepository;
 use usd_project::{ProjectContentNode, ProjectRoot};
 
-use super::{ProjectApplicationService, ProjectModelPreparationQueue, configured_initial_branch};
+use super::{ProjectApplicationService, ProjectModelPreparationQueue};
 
 #[test]
 fn end_to_end_create_import_composition_and_recovery() {

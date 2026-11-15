@@ -6,7 +6,7 @@ use std::{
 
 use super::{
     CACHE_DIRECTORY, OUTBOX_DIRECTORY, PROJECT_METADATA_DIRECTORY, ProjectStageMutation,
-    ProjectStageMutationQueue, ProjectWriteError, STAGE_MUTATION_CAPACITY,
+    ProjectWriteError, STAGE_MUTATION_CAPACITY,
 };
 
 pub(super) fn outbox_path(project_root: &Path) -> PathBuf {
@@ -16,11 +16,21 @@ pub(super) fn outbox_path(project_root: &Path) -> PathBuf {
         .join(OUTBOX_DIRECTORY)
 }
 
-pub(super) fn submit_batch_locked_with_failure(
+pub(super) fn submit_batch_locked(
     project_root: &Path,
     mutations: &[ProjectStageMutation],
-    fail_before_index: Option<usize>,
 ) -> Result<(), ProjectWriteError> {
+    submit_batch_locked_with(project_root, mutations, |_| Ok(()))
+}
+
+pub(super) fn submit_batch_locked_with<F>(
+    project_root: &Path,
+    mutations: &[ProjectStageMutation],
+    mut before_item: F,
+) -> Result<(), ProjectWriteError>
+where
+    F: FnMut(usize) -> Result<(), ProjectWriteError>,
+{
     if mutations.is_empty() {
         return Ok(());
     }
@@ -35,9 +45,7 @@ pub(super) fn submit_batch_locked_with_failure(
     let mut final_paths = Vec::with_capacity(mutations.len());
     let result = (|| {
         for (index, mutation) in mutations.iter().enumerate() {
-            if fail_before_index == Some(index) {
-                return Err(filesystem_error());
-            }
+            before_item(index)?;
             let id = uuid::Uuid::new_v4();
             let temporary = path.join(format!(".{id}.tmp"));
             let final_path = path.join(format!("{id}.json"));
@@ -67,22 +75,6 @@ pub(super) fn submit_batch_locked_with_failure(
         }
     }
     result
-}
-
-#[cfg(test)]
-#[path = "../../../tests/unit/project/service/stage_mutation_outbox_test_support.rs"]
-mod test_support;
-
-pub(super) fn take_failure(queue: &ProjectStageMutationQueue) -> Option<usize> {
-    #[cfg(test)]
-    {
-        test_support::take_test_failure(queue)
-    }
-    #[cfg(not(test))]
-    {
-        let _ = queue;
-        None
-    }
 }
 
 pub(super) fn read_pending(

@@ -32,11 +32,9 @@ mod tree;
 
 #[cfg(test)]
 #[path = "../../../../tests/unit/viewport/api/bridge/tests/mod.rs"]
-mod tests;
+pub(super) mod tests;
 
 pub(crate) use convert::editor_value_to_usd;
 pub(crate) use plugin::ViewportBridgePlugin;
-#[cfg(test)]
-pub(in crate::viewport) use scene_query::refresh_active_hierarchy_projection;
 pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;

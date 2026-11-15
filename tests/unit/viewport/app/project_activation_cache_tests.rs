@@ -10,6 +10,7 @@ use usd_project::{
 };
 use viewport_protocol::SessionId;
 
+use super::production_tests::ProductionActivationWorld;
 use super::*;
 use crate::project::cache::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,

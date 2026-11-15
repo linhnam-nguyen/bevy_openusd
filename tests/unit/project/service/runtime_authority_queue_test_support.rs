@@ -32,12 +32,12 @@ impl ProjectRuntimeAuthorityQueue {
         }
     }
 
-    pub(crate) fn registry_resolution_count(&self) -> usize {
-        self.registry_cache
+    pub(crate) fn has_resolved_registry(&self) -> bool {
+        let cache = self
+            .registry_cache
             .lock()
-            .expect("Project runtime registry cache is not poisoned")
-            .resolution_count
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .expect("Project runtime registry cache is not poisoned");
+        cache.path.is_some() || cache.stamp.is_some() || !cache.roots.is_empty()
     }
 
     pub(crate) fn prepare_request_claim(
@@ -57,6 +57,6 @@ impl ProjectRuntimeAuthorityQueue {
     }
 
     pub(crate) fn cleanup_for_test(&self, project_root: &Path) {
-        storage::cleanup_for_test(self, project_root);
+        storage::test_support::cleanup_for_test(self, project_root);
     }
 }

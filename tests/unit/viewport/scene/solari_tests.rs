@@ -1,3 +1,5 @@
+#[cfg(feature = "solari")]
+use super::proof::SolariProofMesh;
 use super::*;
 #[cfg(feature = "solari")]
 use crate::viewport::scene::visualization::DisplayToggles;

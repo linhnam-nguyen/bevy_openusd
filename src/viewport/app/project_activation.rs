@@ -232,17 +232,8 @@ mod cache_tests;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_activation_production_tests.rs"]
-mod production_tests;
-
-#[cfg(test)]
-pub(crate) use flow::apply_prepared_activation_for_test;
-#[cfg(test)]
-pub(crate) use flow::continue_deferred_stage_activation_for_test;
-#[cfg(test)]
-pub(crate) use production_tests::ProductionActivationWorld;
+pub(super) mod production_tests;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_activation_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(crate) use test_support::observe_project_activation_for_test;
+pub(super) mod test_support;

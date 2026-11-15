@@ -20,8 +20,6 @@ mod scene;
 mod sync;
 
 #[cfg(test)]
-pub(crate) use project_activation::{
-    ProductionActivationWorld, apply_prepared_activation_for_test,
-    observe_project_activation_for_test,
-};
+#[path = "../../../tests/unit/viewport/app/test_harness.rs"]
+pub(in crate::viewport) mod test_harness;
 pub(crate) use runner::run;

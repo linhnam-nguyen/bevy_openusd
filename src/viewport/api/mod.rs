@@ -17,8 +17,6 @@ mod session_registry;
 
 pub(crate) use bim_provenance::BimProvenanceService;
 pub(crate) use bridge::editor_value_to_usd;
-#[cfg(test)]
-pub(in crate::viewport) use bridge::refresh_active_hierarchy_projection;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
@@ -33,6 +31,8 @@ pub(crate) use queues::{
 };
 pub(crate) use read_model::ViewportReadModelState;
 pub(crate) use scene_index::SceneAnchorIndex;
-#[cfg(test)]
-pub(in crate::viewport) use scene_index::refresh_scene_anchor_index;
 pub(crate) use session_registry::SessionRegistry;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/api/test_harness.rs"]
+pub(in crate::viewport) mod test_harness;

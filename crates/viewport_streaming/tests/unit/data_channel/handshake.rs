@@ -3,9 +3,8 @@ use viewport_protocol::{
     SessionId, ViewportReadModel,
 };
 
-use crate::application::{
-    MAX_PENDING_MESSAGES, RenderServerInterface, SemanticSyncRequest, SemanticSyncRequestKind,
-};
+use crate::application::tests::MAX_PENDING_MESSAGES;
+use crate::application::{RenderServerInterface, SemanticSyncRequest, SemanticSyncRequestKind};
 use crate::data_channel::channel_set::ChannelOptions;
 use crate::data_channel::constants::{CONTROL_CHANNEL_PROTOCOL, INPUT_CHANNEL_PROTOCOL};
 use crate::data_channel::session::{ApplicationSession, remember_request_id};

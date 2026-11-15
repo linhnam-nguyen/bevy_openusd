@@ -1,3 +1,4 @@
+use super::test_support::RenderModeProjectionStats;
 use super::*;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use usd_bevy::UsdPrimRef;

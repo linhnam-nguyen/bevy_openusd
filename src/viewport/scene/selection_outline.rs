@@ -7,11 +7,7 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-#[cfg(test)]
-use bevy_mod_outline::OutlineVolume;
 use viewport_protocol::ColorRgb8;
-#[cfg(test)]
-use viewport_protocol::SelectionPresentationSettings;
 
 #[path = "selection_outline_apply.rs"]
 mod apply;

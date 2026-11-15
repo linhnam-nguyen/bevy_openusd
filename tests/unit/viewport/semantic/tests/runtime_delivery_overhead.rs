@@ -3,10 +3,10 @@ use bevy::prelude::*;
 use usd_bevy::LiveStage;
 
 use super::super::{
-    RenderServerInterface, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
-    synchronize_live_stage,
+    SemanticResponse, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
 };
 use super::fixtures::response;
+use crate::viewport::api::RenderServerInterface;
 
 #[test]
 fn profiles_server_delivery_isolated_overhead() -> Result<()> {

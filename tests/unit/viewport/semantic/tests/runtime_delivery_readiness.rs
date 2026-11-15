@@ -3,11 +3,12 @@ use bevy::prelude::*;
 use usd_bevy::{LiveStage, ProjectionReadiness};
 
 use super::super::{
-    RenderServerInterface, RuntimeDeliveryRuntime, SemanticSyncState, SemanticWorkingStore,
+    RuntimeDeliveryRuntime, SemanticSyncState, SemanticWorkingStore,
     drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
+use crate::viewport::api::RenderServerInterface;
 
 #[test]
 fn runtime_delivery_waits_for_projection_ready() -> Result<()> {

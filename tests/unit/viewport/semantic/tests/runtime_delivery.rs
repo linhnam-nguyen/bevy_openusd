@@ -4,12 +4,12 @@ use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
 use super::super::{
-    RenderServerInterface, RuntimeDeliveryRuntime, SemanticResponse, SemanticSyncState,
-    SemanticWorkingStore, drain_runtime_delivery_results, flush_pending_runtime_delivery,
-    synchronize_live_stage,
+    RuntimeDeliveryRuntime, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
+    drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
+use crate::viewport::api::RenderServerInterface;
 
 #[test]
 fn test_regression_subtree_delta_runtime_delivery_manifest_and_blob_reuse() -> Result<()> {

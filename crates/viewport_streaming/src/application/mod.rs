@@ -10,8 +10,5 @@ pub use types::{ProjectActivationRequest, ProjectActivationResult};
 pub use types::{RenderServerPortError, SemanticSyncRequest, SemanticSyncRequestKind};
 
 #[cfg(test)]
-pub(crate) use types::MAX_PENDING_MESSAGES;
-
-#[cfg(test)]
 #[path = "../../tests/unit/application/mod.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -3,7 +3,8 @@ use usd_semantic::{
     NvidiaRevitConfig, NvidiaRevitMeasurementMapping, SemanticConfig, SemanticExtractor,
 };
 
-use super::super::{SCHEMA_VERSION, SemanticDatabase};
+use super::super::SemanticDatabase;
+use super::super::schema::SCHEMA_VERSION;
 
 #[test]
 fn schema_migration_creates_version_one_tables() {

@@ -9,11 +9,6 @@ use std::ops::Range;
 use bevy::prelude::*;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
-#[cfg(test)]
-use viewport_protocol::MAX_SCENE_PAGE_SIZE;
-
-#[cfg(test)]
-use super::hierarchy::CurrentHierarchyProjection;
 use super::scene_occurrence_index::SceneOccurrenceIndex;
 
 #[path = "scene_index_dense.rs"]

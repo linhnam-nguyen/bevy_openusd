@@ -25,6 +25,18 @@ impl ManifestStore {
     }
 
     pub(crate) fn read_validated(project_root: &Path) -> Result<ValidatedProjectManifest> {
+        Self::read_validated_with_observer(
+            project_root,
+            &crate::project::storage::NoopMigrationPublishObserver,
+        )
+    }
+
+    pub(crate) fn read_validated_with_observer<
+        O: crate::project::storage::MigrationPublishObserver,
+    >(
+        project_root: &Path,
+        observer: &O,
+    ) -> Result<ValidatedProjectManifest> {
         let layout = ProjectStorageLayout::new(project_root);
         let canonical_manifest_present = layout.canonical_manifest_present();
         let path = layout.readable_manifest_path();
@@ -54,8 +66,12 @@ impl ManifestStore {
                 .context("migrate legacy Project storage")?;
             crate::project::storage::recover_interrupted_migration(project_root, Some(&migrated))
                 .context("recover interrupted Project storage migration")?;
-            crate::project::storage::migrate_legacy_project(project_root, &migrated)
-                .context("migrate legacy Project storage")?;
+            crate::project::storage::migrate_legacy_project_with_observer(
+                project_root,
+                &migrated,
+                observer,
+            )
+            .context("migrate legacy Project storage")?;
             return Self::read_validated(project_root);
         }
         migrated

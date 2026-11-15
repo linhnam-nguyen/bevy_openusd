@@ -40,9 +40,7 @@ impl Default for RenderModeProjectionState {
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/scene/visualization_render_mode_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(super) use test_support::RenderModeProjectionStats;
+pub(super) mod test_support;
 
 pub(super) fn init_uniform_render_material(
     mut commands: Commands,

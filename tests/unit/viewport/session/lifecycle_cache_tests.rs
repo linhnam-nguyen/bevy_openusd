@@ -14,10 +14,11 @@ use usd_bevy::{LiveStage, PrimEntities, ProjectionSeed};
 use usd_model::HashDigest;
 use viewport_protocol::{PrimNodeReadModel, RuntimeProfile, SceneAnchor};
 
+use super::test_support::activate_stage_with_cache_context_for_test;
 use super::{
     Spawned, StageInfo, StageInstallMode, activate_open_stage_with_cache_context_for_generation,
-    activate_stage_with_cache_context, activate_stage_with_cache_context_for_test,
-    install_scene_cache_bootstrap_before_stage_open, poll_scene_cache_revalidation,
+    activate_stage_with_cache_context, install_scene_cache_bootstrap_before_stage_open,
+    poll_scene_cache_revalidation,
 };
 use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::cache_contract::{

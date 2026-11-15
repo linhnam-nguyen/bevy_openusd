@@ -76,7 +76,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
     let manifest_before = read_manifest_bytes(&project_root)?;
     let tree_before = read_tree(&service, fixture.project.id)?;
     let expected_latest_scene = eligible[eligible.len() - 1];
-    let mut production = crate::viewport::ProductionActivationWorld::new();
+    let mut production = crate::viewport::test_harness::ProductionActivationWorld::new();
     production.replace_selection(viewport_protocol::SceneAnchor::active_session("/SceneRoot"));
     let mut stale_completion = None;
     let mut latest_target = None;

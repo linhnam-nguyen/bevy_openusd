@@ -19,12 +19,8 @@ use usd_bevy::LiveStageSet;
 use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::api::ViewportBridgeSet;
 
-#[cfg(all(test, feature = "solari"))]
-pub(crate) use projection::SolariProjectionStats;
 use projection::sync_solari_usd_projection;
 pub(crate) use projection::{SolariProjectionDiagnostics, SolariProjectionState};
-#[cfg(all(test, feature = "solari"))]
-pub(crate) use proof::SolariProofMesh;
 #[cfg(feature = "solari")]
 use proof::spawn_solari_proof_scene;
 use proof::{

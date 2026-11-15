@@ -295,6 +295,12 @@ fn injected_batch_failure_leaves_no_partial_stage_mutations() {
         },
     ];
 
-    assert!(submit_batch_locked_with_failure(&project_root, &mutations, Some(1)).is_err());
+    let (queue, failure_trigger) = test_support::queue_with_failure_trigger();
+    failure_trigger.fail_before_batch_index(1);
+    assert!(
+        queue
+            .submit_batch_for_project(&project_root, &mutations)
+            .is_err()
+    );
     assert_eq!(outbox_path(&project_root).read_dir().unwrap().count(), 0);
 }

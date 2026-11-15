@@ -170,7 +170,7 @@ fn direct_revit_and_adopted_scene_bim_are_equivalent_after_activation() {
     assert_bim_views_are_equivalent(&direct, &adopted_snapshot, &direct_labels);
 
     let first_element_path = first_bim_entity_path(&adopted_snapshot);
-    let mut production = crate::viewport::ProductionActivationWorld::new();
+    let mut production = crate::viewport::test_harness::ProductionActivationWorld::new();
     production.replace_selection(SceneAnchor::active_session(first_element_path));
     let command = ProjectActivationCommand::new(
         "or8-m2-source-equivalence-activation",

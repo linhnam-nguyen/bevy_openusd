@@ -10,9 +10,6 @@ use anyhow::{Context, Result};
 
 use schema::{SCHEMA_SQL, migrate};
 
-#[cfg(test)]
-pub(crate) use schema::SCHEMA_VERSION;
-
 pub(crate) struct SemanticDatabase {
     _database: turso::Database,
     connection: turso::Connection,

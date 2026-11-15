@@ -106,6 +106,4 @@ fn runtime_snapshot_response_inner(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_runtime_snapshot_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(crate) use test_support::runtime_snapshot_response_with_claim_hook;
+pub(super) mod test_support;

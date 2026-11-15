@@ -18,8 +18,18 @@ fn interrupted_model_publication_preserves_the_legacy_wrapper() -> Result<()> {
         .join("migration-model-interrupted");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::super::failure_injection::set(4);
-    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::super::failure_injection::at(
+        super::super::publish::MigrationPublishCheckpoint::AfterModelDirectory,
+    );
+    assert!(
+        super::super::publish::publish_plan_with_observer(
+            root,
+            &migrated_manifest,
+            &plan,
+            &observer,
+        )
+        .is_err()
+    );
     assert!(!layout.canonical_manifest_path().exists());
     assert!(transaction_directory.is_dir());
 
@@ -46,8 +56,18 @@ fn failed_rollback_preserves_transaction_for_a_later_attempt() -> Result<()> {
         .join("migration-rollback-failure");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::super::failure_injection::set(4);
-    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::super::failure_injection::at(
+        super::super::publish::MigrationPublishCheckpoint::AfterModelDirectory,
+    );
+    assert!(
+        super::super::publish::publish_plan_with_observer(
+            root,
+            &migrated_manifest,
+            &plan,
+            &observer,
+        )
+        .is_err()
+    );
 
     let legacy_model_wrapper = layout.legacy_model_wrapper_path(fixture.model_id);
     let legacy_model_dir = legacy_model_wrapper.parent().unwrap();
@@ -83,8 +103,18 @@ fn committed_manifest_wins_over_a_stale_legacy_manifest_after_restart() -> Resul
         .join("migration-committed");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::super::failure_injection::set(3);
-    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::super::failure_injection::at(
+        super::super::publish::MigrationPublishCheckpoint::AfterManifest,
+    );
+    assert!(
+        super::super::publish::publish_plan_with_observer(
+            root,
+            &migrated_manifest,
+            &plan,
+            &observer,
+        )
+        .is_err()
+    );
     assert!(layout.canonical_manifest_path().is_file());
     assert!(layout.legacy_manifest_path().is_file());
 
@@ -119,8 +149,18 @@ fn invalid_canonical_manifest_preserves_recovery_transaction() -> Result<()> {
         .join("migration-invalid-canonical");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::super::failure_injection::set(1);
-    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::super::failure_injection::at(
+        super::super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+    );
+    assert!(
+        super::super::publish::publish_plan_with_observer(
+            root,
+            &migrated_manifest,
+            &plan,
+            &observer,
+        )
+        .is_err()
+    );
     fs::write(layout.canonical_manifest_path(), b"not json")?;
 
     assert!(super::super::recover_interrupted_migration(root, Some(&migrated_manifest)).is_err());
@@ -149,8 +189,18 @@ fn missing_canonical_target_preserves_recovery_transaction() -> Result<()> {
         .join("migration-missing-canonical-target");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::super::failure_injection::set(3);
-    assert!(super::super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::super::failure_injection::at(
+        super::super::publish::MigrationPublishCheckpoint::AfterManifest,
+    );
+    assert!(
+        super::super::publish::publish_plan_with_observer(
+            root,
+            &migrated_manifest,
+            &plan,
+            &observer,
+        )
+        .is_err()
+    );
     assert!(layout.canonical_manifest_path().is_file());
 
     fs::remove_file(&plan.scenes[0].final_path)?;

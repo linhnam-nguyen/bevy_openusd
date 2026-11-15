@@ -7,10 +7,8 @@
 mod app;
 
 #[cfg(test)]
-pub(crate) use app::{
-    ProductionActivationWorld, apply_prepared_activation_for_test,
-    observe_project_activation_for_test,
-};
+#[path = "../../tests/unit/viewport/test_harness.rs"]
+pub(crate) mod test_harness;
 
 pub(crate) mod animation;
 pub(crate) mod api;

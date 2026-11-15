@@ -24,10 +24,12 @@ use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
+use crate::viewport::api::test_harness::{
+    refresh_active_hierarchy_projection, refresh_scene_anchor_index,
+};
 use crate::viewport::api::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
-    RenderServerInterface, SceneAnchorIndex, refresh_active_hierarchy_projection,
-    refresh_scene_anchor_index,
+    RenderServerInterface, SceneAnchorIndex,
 };
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
@@ -107,17 +109,18 @@ impl ProductionActivationWorld {
             );
         app.add_systems(
             Update,
-            crate::viewport::animation::tick_stage_time.after(usd_bevy::LiveStageSet::Presentation),
+            crate::viewport::animation::tests::tick_stage_time
+                .after(usd_bevy::LiveStageSet::Presentation),
         );
         app.add_systems(
             Update,
-            crate::viewport::app::project_activation::continue_deferred_stage_activation_for_test,
+            super::flow::test_support::continue_deferred_stage_activation_for_test,
         );
         Self { app }
     }
 
     pub(crate) fn admit(&mut self, session_id: &str, command: &ProjectActivationCommand) -> bool {
-        crate::viewport::observe_project_activation_for_test(
+        super::test_support::observe_project_activation_for_test(
             self.app.world_mut(),
             session_id,
             command,
@@ -134,7 +137,11 @@ impl ProductionActivationWorld {
             session_id: viewport_protocol::SessionId::new(session_id),
             command: command.clone(),
         };
-        crate::viewport::apply_prepared_activation_for_test(self.app.world_mut(), &request, target)
+        super::flow::test_support::apply_prepared_activation_for_test(
+            self.app.world_mut(),
+            &request,
+            target,
+        )
     }
 
     pub(crate) fn update(&mut self) {

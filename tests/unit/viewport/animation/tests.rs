@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{LiveStage, LiveStagePlugin, ProjectionBudget, ProjectionReadiness, UsdPlugin};
 
-use super::{UsdStageTime, systems::tick_stage_time};
+use super::UsdStageTime;
+pub(in crate::viewport) use super::systems::tick_stage_time;
 
 fn asset_path(name: &str) -> std::path::PathBuf {
     usd_support::resolve_asset_path(&format!("external/{name}"))

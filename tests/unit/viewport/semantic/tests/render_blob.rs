@@ -4,9 +4,11 @@ use usd_bevy::{LiveRevision, LiveStage, StageChange, StageChangeBatch};
 use usd_model::{EntityKey, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
+use super::super::sync::{
+    SemanticSyncAction, attach_render_blobs_to_action, resync_subtree_update,
+};
 use super::super::{
-    SemanticResponse, SemanticSyncAction, SemanticSyncState, SemanticWorkingStore,
-    attach_render_blobs_to_action, resync_subtree_update, synchronize_live_stage,
+    SemanticResponse, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
 };
 use super::fixtures::response;
 

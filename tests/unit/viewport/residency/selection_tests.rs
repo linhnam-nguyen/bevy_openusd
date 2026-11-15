@@ -1,3 +1,4 @@
+use super::test_support::build_lookup;
 use super::*;
 use crate::project::{
     blob_store::prepare_mesh_payload,
@@ -8,6 +9,7 @@ use crate::project::{
         SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex,
         SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
     },
+    cache_hydration::ActiveProjectCacheContext,
     catalog::manifest_store::ManifestStore,
 };
 use crate::viewport::residency::{

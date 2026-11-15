@@ -1,3 +1,4 @@
+use super::test_support::ShadowProjectionStats;
 use super::*;
 
 #[test]

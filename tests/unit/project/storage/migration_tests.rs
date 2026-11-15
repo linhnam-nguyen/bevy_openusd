@@ -351,8 +351,10 @@ fn migration_failure_after_ordinary_scene_restores_legacy_tree() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = legacy_fixture();
     let root = fixture.directory.path();
-    super::failure_injection::set(1);
-    assert!(ManifestStore::read_validated(root).is_err());
+    let observer = super::failure_injection::at(
+        super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+    );
+    assert!(ManifestStore::read_validated_with_observer(root, &observer).is_err());
     let layout = ProjectStorageLayout::new(root);
     assert!(layout.legacy_manifest_path().is_file());
     assert!(!layout.canonical_manifest_path().exists());
@@ -368,8 +370,9 @@ fn migration_failure_before_manifest_restores_legacy_tree() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = legacy_fixture();
     let root = fixture.directory.path();
-    super::failure_injection::set(2);
-    assert!(ManifestStore::read_validated(root).is_err());
+    let observer =
+        super::failure_injection::at(super::publish::MigrationPublishCheckpoint::BeforeManifest);
+    assert!(ManifestStore::read_validated_with_observer(root, &observer).is_err());
     let layout = ProjectStorageLayout::new(root);
     assert!(layout.legacy_manifest_path().is_file());
     assert!(!layout.canonical_manifest_path().exists());
@@ -397,8 +400,13 @@ fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
         .join("migration-interrupted");
     let plan = super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
     super::publish::write_journal(root, &migrated_manifest, &plan)?;
-    super::failure_injection::set(1);
-    assert!(super::publish::publish_plan(root, &migrated_manifest, &plan).is_err());
+    let observer = super::failure_injection::at(
+        super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+    );
+    assert!(
+        super::publish::publish_plan_with_observer(root, &migrated_manifest, &plan, &observer)
+            .is_err()
+    );
     assert!(!layout.canonical_manifest_path().exists());
     assert!(transaction_directory.is_dir());
 

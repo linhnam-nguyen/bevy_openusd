@@ -7,12 +7,11 @@ use usd_project::{
     ProjectRoot, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform,
 };
 
-use super::test_support::{clear_test_failure_after_placement, set_test_failure_after_placement};
-use super::*;
+use super::test_support::rename_failing_after_placement;
 use crate::project::{
     catalog::manifest_store::ManifestStore,
     scene::authoring::{read_scene_members, scene_path},
-    service::{ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageMutationQueue},
+    service::{ProjectApplicationService, ProjectModelPreparationQueue},
 };
 
 #[test]
@@ -103,10 +102,11 @@ fn failed_rename_restores_all_canonical_files_and_stage_outbox() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
-    let queue = ProjectStageMutationQueue::default();
+    let (queue, failure_trigger) =
+        crate::project::service::stage_mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
         directory.path().join("workspace.json"),
-        queue.clone(),
+        queue,
     )
     .unwrap();
     let project = service.create_project(&parent, "Project").unwrap();
@@ -123,7 +123,7 @@ fn failed_rename_restores_all_canonical_files_and_stage_outbox() {
     let scene_before = fs::read(&scene_path).unwrap();
     let manifest_before = fs::read(&manifest_path).unwrap();
     let pending_before = stage_outbox_count(&project_root);
-    queue.fail_before_batch_index(0);
+    failure_trigger.fail_before_batch_index(0);
 
     assert!(
         service
@@ -386,13 +386,13 @@ fn model_rename_failure_on_second_placement_restores_everything() {
         .map(fs::read)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    set_test_failure_after_placement(1);
-    let result = service.rename(
+    let result = rename_failing_after_placement(
+        &mut service,
         project.id,
         ProjectWriteTarget::Model(published.model_id),
         "Chair Renamed",
+        1,
     );
-    clear_test_failure_after_placement();
     assert!(result.is_err());
     for (path, expected) in paths.iter().zip(before) {
         assert_eq!(fs::read(path).unwrap(), expected);

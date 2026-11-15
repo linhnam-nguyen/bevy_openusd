@@ -60,6 +60,18 @@ pub(crate) fn migrate_legacy_project(
     project_root: &Path,
     manifest: &ProjectManifestV1,
 ) -> Result<()> {
+    migrate_legacy_project_with_observer(
+        project_root,
+        manifest,
+        &publish::NoopMigrationPublishObserver,
+    )
+}
+
+pub(crate) fn migrate_legacy_project_with_observer<O: publish::MigrationPublishObserver>(
+    project_root: &Path,
+    manifest: &ProjectManifestV1,
+    observer: &O,
+) -> Result<()> {
     ensure_legacy_migration_supported()?;
     let layout = ProjectStorageLayout::new(project_root);
     let migrated_manifest = manifest
@@ -102,7 +114,8 @@ pub(crate) fn migrate_legacy_project(
         let _ = fs::remove_dir_all(&transaction_directory);
         return Err(error);
     }
-    let result = publish::publish_plan(project_root, &migrated_manifest, &plan);
+    let result =
+        publish::publish_plan_with_observer(project_root, &migrated_manifest, &plan, observer);
     if let Err(error) = result {
         if let Err(rollback_error) = publish::rollback_plan(&plan) {
             return Err(error.context(format!(
@@ -144,6 +157,9 @@ pub(crate) fn ensure_legacy_migration_supported() -> Result<()> {
     Ok(())
 }
 
+pub(crate) use publish::{
+    MigrationPublishCheckpoint, MigrationPublishObserver, NoopMigrationPublishObserver,
+};
 pub(crate) use recovery::recover_interrupted_migration;
 
 fn build_plan(

@@ -1,5 +1,7 @@
 //! Test-only helpers attached to the owning production module.
 use super::*;
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::PrimitiveTopology;
 
 impl ResidencyAuthority {
     pub(crate) fn complete_cpu(

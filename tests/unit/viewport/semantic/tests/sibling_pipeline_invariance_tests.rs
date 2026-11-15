@@ -4,11 +4,12 @@ use usd_bevy::LiveStage;
 use usd_model::EntityKey;
 
 use super::super::{
-    RenderServerInterface, SemanticResponse, SemanticSyncState, SemanticWorkingStore,
-    drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
+    SemanticResponse, SemanticSyncState, SemanticWorkingStore, drain_runtime_delivery_results,
+    flush_pending_runtime_delivery, synchronize_live_stage,
 };
 use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
+use crate::viewport::api::RenderServerInterface;
 
 #[test]
 fn unaffected_sibling_pipeline_preserves_resync_invariance() -> Result<()> {

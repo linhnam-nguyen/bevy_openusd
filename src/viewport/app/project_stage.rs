@@ -21,8 +21,6 @@ mod project_runtime_authority;
 #[path = "project_runtime_snapshot.rs"]
 mod project_runtime_snapshot;
 pub(super) use project_runtime_snapshot::runtime_snapshot_response;
-#[cfg(test)]
-pub(super) use project_runtime_snapshot::runtime_snapshot_response_with_claim_hook;
 
 /// The render-server process owns this queue resource. Project runtime
 /// authority requests are read from the shared workspace inbox.

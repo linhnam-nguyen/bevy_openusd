@@ -19,9 +19,7 @@ use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
 mod outbox;
 #[path = "stage_rename.rs"]
 mod stage_rename;
-use outbox::{
-    busy_error, filesystem_error, outbox_path, read_pending, submit_batch_locked_with_failure,
-};
+use outbox::{busy_error, filesystem_error, outbox_path, read_pending, submit_batch_locked};
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///
@@ -76,15 +74,43 @@ const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const CACHE_DIRECTORY: &str = "cache";
 const OUTBOX_DIRECTORY: &str = "project-stage-mutations";
 
+trait OutboxSubmitter: Send + Sync {
+    fn submit_batch(
+        &self,
+        project_root: &Path,
+        mutations: &[ProjectStageMutation],
+    ) -> Result<(), ProjectWriteError>;
+}
+
+struct FilesystemOutboxSubmitter;
+
+impl OutboxSubmitter for FilesystemOutboxSubmitter {
+    fn submit_batch(
+        &self,
+        project_root: &Path,
+        mutations: &[ProjectStageMutation],
+    ) -> Result<(), ProjectWriteError> {
+        submit_batch_locked(project_root, mutations)
+    }
+}
+
 /// Durable host-to-render-server Project stage handoff.
 ///
 /// The mutex only protects concurrent access by one host process. The file is
 /// the process boundary and is read by the active-stage owner in the viewer.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ProjectStageMutationQueue {
     file_lock: Arc<Mutex<()>>,
-    #[cfg(test)]
-    test_fail_before_index: Arc<Mutex<Option<usize>>>,
+    submitter: Arc<dyn OutboxSubmitter>,
+}
+
+impl Default for ProjectStageMutationQueue {
+    fn default() -> Self {
+        Self {
+            file_lock: Arc::new(Mutex::new(())),
+            submitter: Arc::new(FilesystemOutboxSubmitter),
+        }
+    }
 }
 
 impl ProjectStageMutationQueue {
@@ -122,11 +148,8 @@ impl ProjectStageMutationQueue {
             .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
-        submit_batch_locked_with_failure(
-            project_root,
-            std::slice::from_ref(&mutation),
-            outbox::take_failure(self),
-        )
+        self.submitter
+            .submit_batch(project_root, std::slice::from_ref(&mutation))
     }
 
     /// Publish a typed mutation batch atomically into the private Project
@@ -141,7 +164,7 @@ impl ProjectStageMutationQueue {
             .file_lock
             .lock()
             .expect("Project stage mutation queue is not poisoned");
-        submit_batch_locked_with_failure(project_root, mutations, outbox::take_failure(self))
+        self.submitter.submit_batch(project_root, mutations)
     }
 
     /// Consume mutations for the active Scene on the actual LiveStage owner
@@ -342,7 +365,7 @@ fn apply_mutation(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/stage_mutation_test_support.rs"]
-mod test_support;
+pub(super) mod test_support;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/stage_mutation_tests.rs"]

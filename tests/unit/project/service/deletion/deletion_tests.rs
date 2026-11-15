@@ -6,7 +6,7 @@ use project_protocol::{
 use tempfile::tempdir;
 use usd_project::{SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform};
 
-use super::{ProjectApplicationService, ProjectModelPreparationQueue, ProjectStageMutationQueue};
+use super::{ProjectApplicationService, ProjectModelPreparationQueue};
 use crate::project::service::test_support::service_with_project;
 
 fn add_scene_placement(
@@ -265,10 +265,11 @@ fn failed_delete_restores_manifest_files_and_stage_outbox() {
     let directory = tempfile::tempdir().unwrap();
     let parent_directory = directory.path().join("projects");
     fs::create_dir(&parent_directory).unwrap();
-    let queue = ProjectStageMutationQueue::default();
+    let (queue, failure_trigger) =
+        crate::project::service::stage_mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
         directory.path().join("workspace.json"),
-        queue.clone(),
+        queue,
     )
     .unwrap();
     let project = service
@@ -296,7 +297,7 @@ fn failed_delete_restores_manifest_files_and_stage_outbox() {
     let child_before = fs::read(&child_path).unwrap();
     let manifest_before = fs::read(&manifest_path).unwrap();
     let pending_before = stage_outbox_count(&project_root);
-    queue.fail_before_batch_index(1);
+    failure_trigger.fail_before_batch_index(1);
 
     assert!(
         service

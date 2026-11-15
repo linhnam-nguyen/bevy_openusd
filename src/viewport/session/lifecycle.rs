@@ -268,5 +268,3 @@ mod tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/session/lifecycle_test_support.rs"]
 mod test_support;
-#[cfg(test)]
-use test_support::activate_stage_with_cache_context_for_test;

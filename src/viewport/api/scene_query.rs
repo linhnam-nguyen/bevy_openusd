@@ -14,9 +14,6 @@ use viewport_protocol::{
     HierarchySearchMatch as ProtocolHierarchySearchMatch, HierarchySource,
 };
 
-#[cfg(test)]
-use viewport_protocol::{HierarchyNodeId, SceneAnchor};
-
 #[path = "scene_query_generic.rs"]
 mod generic;
 #[path = "scene_query_hierarchy.rs"]
@@ -29,9 +26,6 @@ mod projection;
 pub(crate) use hierarchy::{HierarchySearchMatch, search_hierarchy};
 pub(crate) use hierarchy::{sibling_page, substring_name_matches};
 pub(crate) use paging::LatestMailbox;
-
-#[cfg(test)]
-pub(crate) use generic::search_hierarchy_generic;
 
 #[derive(Debug)]
 struct HierarchySearchJob {

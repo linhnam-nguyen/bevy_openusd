@@ -476,7 +476,4 @@ fn worker_loop(
 
 #[cfg(test)]
 #[path = "../../tests/unit/project/cache_warmer_queue_test_support.rs"]
-mod test_support;
-
-#[cfg(test)]
-pub(super) use test_support::wait_for;
+pub(super) mod test_support;

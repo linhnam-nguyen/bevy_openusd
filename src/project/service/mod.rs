@@ -31,9 +31,6 @@ use self::runtime_authority::NoopProjectRuntimeAuthority;
 #[path = "../../../tests/unit/project/service/test_support.rs"]
 mod test_support;
 
-#[cfg(test)]
-use project_support::configured_initial_branch;
-
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
     registry: WorkspaceRegistry,

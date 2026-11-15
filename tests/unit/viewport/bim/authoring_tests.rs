@@ -3,6 +3,7 @@ use openusd::usd::Stage;
 use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
 use viewport_protocol::SceneAnchor;
 
+use super::locator::{BimEditability, BimNonEditableReason};
 use super::*;
 
 fn stage_with_attribute(type_name: &str, custom: bool) -> Stage {

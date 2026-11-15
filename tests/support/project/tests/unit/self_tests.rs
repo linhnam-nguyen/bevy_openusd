@@ -39,5 +39,8 @@ fn test_create_layered_test_repository() {
     assert!(repo.path().join("model.usda").is_file());
     assert!(repo.path().join("layers/referenced.usda").is_file());
     let content = fs::read(repo.path().join("model.usda")).unwrap();
-    assert_eq!(content, usd_support::MODEL_USDA);
+    assert_eq!(
+        content,
+        include_bytes!("../../../../fixtures/usd/identity_original.usda").as_slice()
+    );
 }

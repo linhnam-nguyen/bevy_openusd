@@ -1,6 +1,8 @@
+use super::generic::search_hierarchy_generic;
 use super::*;
 
 use crate::viewport::api::hierarchy::CurrentHierarchyProjection;
+use viewport_protocol::{HierarchyNodeId, SceneAnchor};
 
 fn node(
     path: &str,

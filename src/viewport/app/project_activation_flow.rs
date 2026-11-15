@@ -345,8 +345,4 @@ fn stale_completion_reply(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_activation_flow_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(crate) use test_support::apply_prepared_activation_for_test;
-#[cfg(test)]
-pub(crate) use test_support::continue_deferred_stage_activation_for_test;
+pub(super) mod test_support;

@@ -134,6 +134,10 @@ path = "tests/subtree_resync_profile.rs"
 name = "persistent_runtime_soak"
 path = "tests/persistent_runtime_soak.rs"
 
+[[test]]
+name = "test_architecture"
+path = "tests/test_architecture.rs"
+
 [[example]]
 name = "pack_usdz"
 path = "examples/pack_usdz.rs"

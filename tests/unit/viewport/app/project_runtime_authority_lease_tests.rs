@@ -91,9 +91,8 @@ fn empty_inbox_skips_registry_resolution_for_any_project_count() {
 
         consume_project_runtime_authority(&mut world);
 
-        assert_eq!(
-            queue.registry_resolution_count(),
-            0,
+        assert!(
+            !queue.has_resolved_registry(),
             "empty inbox should not resolve a {project_count}-Project registry"
         );
     }
@@ -230,7 +229,7 @@ fn timeout_between_export_and_lease_claim_cannot_publish_ready() {
         );
     };
 
-    let response = super::super::runtime_snapshot_response_with_claim_hook(
+    let response = super::super::project_runtime_snapshot::test_support::runtime_snapshot_response_with_claim_hook(
         &mut world,
         "race-request",
         project_id,

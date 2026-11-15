@@ -12,10 +12,32 @@ use crate::project::{
     storage::{IgnoreChange, install_managed_ignore},
 };
 
-pub(super) fn publish_plan(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPublishCheckpoint {
+    AfterOrdinaryScene,
+    BeforeManifest,
+    AfterModelDirectory,
+    AfterManifest,
+}
+
+pub(crate) trait MigrationPublishObserver {
+    fn on_checkpoint(&self, checkpoint: MigrationPublishCheckpoint) -> Result<()>;
+}
+
+pub(crate) struct NoopMigrationPublishObserver;
+
+impl MigrationPublishObserver for NoopMigrationPublishObserver {
+    #[inline(always)]
+    fn on_checkpoint(&self, _checkpoint: MigrationPublishCheckpoint) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub(super) fn publish_plan_with_observer<O: MigrationPublishObserver>(
     project_root: &std::path::Path,
     manifest: &ProjectManifestV1,
     plan: &MigrationPlan,
+    observer: &O,
 ) -> Result<()> {
     journal::set_phase(
         project_root,
@@ -49,7 +71,7 @@ pub(super) fn publish_plan(
         fs::rename(&scene.staged_path, &scene.final_path)
             .with_context(|| format!("publish migrated Scene {}", scene.final_path.display()))?;
         if is_ordinary_scene(manifest, scene.id) {
-            maybe_fail_after_ordinary_scene()?
+            observer.on_checkpoint(MigrationPublishCheckpoint::AfterOrdinaryScene)?;
         }
     }
     for model in &plan.models {
@@ -64,7 +86,7 @@ pub(super) fn publish_plan(
         fs::create_dir_all(model.final_dir.parent().expect("Model has a parent"))?;
         fs::rename(&model.backup_dir, &model.final_dir)
             .with_context(|| format!("publish migrated Model {}", model.final_dir.display()))?;
-        maybe_fail_after_model_directory()?;
+        observer.on_checkpoint(MigrationPublishCheckpoint::AfterModelDirectory)?;
         let legacy_wrapper = model.final_dir.join("model.usda");
         fs::rename(&legacy_wrapper, model.final_dir.join(LEGACY_MODEL_MARKER))
             .context("stage legacy Model wrapper")?;
@@ -73,13 +95,13 @@ pub(super) fn publish_plan(
     }
     super::durability::sync_and_validate_canonical_targets(project_root, plan)
         .context("durably sync migrated canonical Project assets")?;
-    maybe_fail_before_manifest()?;
+    observer.on_checkpoint(MigrationPublishCheckpoint::BeforeManifest)?;
     let ignore = install_managed_ignore(project_root).context("update Project managed ignore")?;
     if let Err(error) = ManifestStore::write_manifest_atomic(project_root, manifest) {
         restore_ignore(project_root, ignore);
         return Err(error.context("publish migrated Project manifest"));
     }
-    maybe_fail_after_manifest()?;
+    observer.on_checkpoint(MigrationPublishCheckpoint::AfterManifest)?;
     Ok(())
 }
 
@@ -182,31 +204,4 @@ pub(super) fn write_journal(
 
 fn path_is_present(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
-}
-
-#[cfg(test)]
-#[path = "../../../tests/unit/project/storage/migration_publish_test_support.rs"]
-mod test_support;
-
-#[cfg(test)]
-use test_support::*;
-
-#[cfg(not(test))]
-fn maybe_fail_after_ordinary_scene() -> Result<()> {
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn maybe_fail_before_manifest() -> Result<()> {
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn maybe_fail_after_model_directory() -> Result<()> {
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn maybe_fail_after_manifest() -> Result<()> {
-    Ok(())
 }

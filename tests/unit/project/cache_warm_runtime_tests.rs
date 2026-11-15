@@ -1,7 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use image::RgbaImage;
@@ -14,27 +14,29 @@ use usd_project::{
 };
 
 use super::{
-    SceneCacheDescriptorV3, SceneCacheStore, build_and_publish_managed_scene_cache_generation,
+    GenerationPublishObserver, SceneCacheDescriptorV3, SceneCacheStore,
+    build_and_publish_managed_scene_cache_generation,
+    build_and_publish_managed_scene_cache_generation_with_observer,
 };
 use crate::project::blob_store::BlobStore;
 use crate::project::cache::{ProjectCacheTarget, target_content_hash};
 use crate::project::cache_contract::SceneCacheState;
 
-struct BuildPublishHook {
-    project_root: PathBuf,
-    callback: Arc<dyn Fn() + Send + Sync + 'static>,
+struct BarrierPublishObserver {
+    built_tx: mpsc::Sender<()>,
+    release_rx: Arc<Mutex<mpsc::Receiver<()>>>,
 }
 
-static BUILD_PUBLISH_HOOK: OnceLock<Mutex<Option<BuildPublishHook>>> = OnceLock::new();
-
-pub(super) fn run_build_publish_hook(project_root: &Path) {
-    let hook = BUILD_PUBLISH_HOOK.get().and_then(|hooks| {
-        let hooks = hooks.lock().ok()?;
-        let hook = hooks.as_ref()?;
-        (hook.project_root == project_root).then(|| Arc::clone(&hook.callback))
-    });
-    if let Some(hook) = hook {
-        hook();
+impl GenerationPublishObserver for BarrierPublishObserver {
+    fn before_publish(&self, _project_root: &Path) {
+        self.built_tx
+            .send(())
+            .expect("CAS test worker reached publish barrier");
+        self.release_rx
+            .lock()
+            .expect("CAS test release lock is not poisoned")
+            .recv()
+            .expect("CAS test publish barrier released");
     }
 }
 
@@ -68,27 +70,19 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
 
     let (built_tx, built_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
-    let release_rx = Arc::new(Mutex::new(release_rx));
-    let hook_release = Arc::clone(&release_rx);
-    let hooks = BUILD_PUBLISH_HOOK.get_or_init(|| Mutex::new(None));
-    *hooks.lock().expect("CAS test hook lock is not poisoned") = Some(BuildPublishHook {
-        project_root: directory.path().to_path_buf(),
-        callback: Arc::new(move || {
-            built_tx
-                .send(())
-                .expect("CAS test worker reached publish barrier");
-            hook_release
-                .lock()
-                .expect("CAS test release lock is not poisoned")
-                .recv()
-                .expect("CAS test publish barrier released");
-        }),
-    });
+    let observer = BarrierPublishObserver {
+        built_tx,
+        release_rx: Arc::new(Mutex::new(release_rx)),
+    };
 
     let root = directory.path().to_path_buf();
     let worker_descriptor = descriptor.clone();
     let worker = std::thread::spawn(move || {
-        build_and_publish_managed_scene_cache_generation(&root, &worker_descriptor)
+        build_and_publish_managed_scene_cache_generation_with_observer(
+            &root,
+            &worker_descriptor,
+            &observer,
+        )
     });
 
     built_rx
@@ -102,7 +96,6 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
     let result = worker
         .join()
         .expect("runtime publisher thread did not panic")?;
-    *hooks.lock().expect("CAS test hook lock is not poisoned") = None;
 
     assert!(result.is_none(), "stale runtime build must lose the CAS");
     assert_eq!(
