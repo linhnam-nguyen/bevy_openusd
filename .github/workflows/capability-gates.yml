@@ -1,0 +1,200 @@
+name: capability-gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: Capability-specific gate to execute
+        required: true
+        type: choice
+        options:
+          - windows-os-gate
+          - macos-external-assets-gate
+          - dlss-gpu-gate
+          - external-revit-and-profile-ignored-gate
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: bevy_openusd
+
+jobs:
+  # Windows-only identities are obtained from the C1 baseline, including
+  # every owning Cargo test target. This is a manual, provisioned runner gate.
+  # Owner must provision/authorize this runner label with GStreamer MSVC x64
+  # development SDK, MSVC toolchain and PKG_CONFIG before dispatch.
+  windows-os-gate:
+    name: windows-os-gate
+    if: github.event.inputs.gate == 'windows-os-gate'
+    runs-on: [self-hosted, windows, x64, gstreamer-msvc]
+    env:
+      CARGO_BUILD_JOBS: "1"
+    steps:
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Require provisioned GStreamer MSVC SDK
+        shell: pwsh
+        run: |
+          if (-not $env:PKG_CONFIG -or -not (Test-Path -PathType Leaf $env:PKG_CONFIG)) {
+            throw "Provisioned Windows runner requires PKG_CONFIG pointing to GStreamer pkg-config.exe."
+          }
+          & $env:PKG_CONFIG --exists gstreamer-1.0 gstreamer-base-1.0 gstreamer-app-1.0 gstreamer-video-1.0 gstreamer-webrtc-1.0 gstreamer-sdp-1.0 glib-2.0 gobject-2.0
+          if ($LASTEXITCODE -ne 0) { throw "GStreamer development modules unavailable." }
+          & $env:PKG_CONFIG --modversion gstreamer-1.0
+          if ($LASTEXITCODE -ne 0) { throw "GStreamer version probe failed." }
+
+      - name: Windows enumeration parity and exact Windows-only execution
+        run: python -B scripts/check_test_enumeration_parity.py --root . --platform windows --execute-windows --json
+
+  # macOS external-asset and Apple platform gate.
+  # Platform prerequisites: macOS runner, GStreamer + pkg-config via Homebrew, and
+  # optional external asset fixtures mounted on runner when running asset-backed ignored tests.
+  macos-external-assets-gate:
+    name: macos-external-assets-gate
+    if: github.event.inputs.gate == 'macos-external-assets-gate'
+    runs-on: macos-15
+    steps:
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GStreamer on macOS
+        run: brew install pkg-config gstreamer
+
+      - name: macOS enumeration parity check
+        run: python -B scripts/check_test_enumeration_parity.py --root . --platform macos --json
+
+      - name: cargo test workspace on macOS
+        run: cargo test --workspace --locked
+
+  # DLSS GPU feature gate (`--features dlss` / `dlss_wgpu`).
+  # Hardware and SDK prerequisites: self-hosted Linux/Windows GPU runner with NVIDIA RTX GPU,
+  # current NVIDIA driver, Vulkan/DX12 loader, and NGX/DLSS SDK configured for `dlss_wgpu`.
+  dlss-gpu-gate:
+    name: dlss-gpu-gate
+    if: github.event.inputs.gate == 'dlss-gpu-gate'
+    runs-on: [self-hosted, nvidia-rtx, gpu]
+    steps:
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: cargo check dlss feature
+        run: cargo check --workspace --all-targets --features dlss --locked
+
+      - name: Run DLSS feature tests on RTX GPU runner
+        run: cargo test -p usdview --lib --features dlss --locked viewport::rendering::sampling::dlss
+
+  # External Revit/fixture and heavy profiling `#[ignore]` gate.
+  # Runner prerequisites: self-hosted Linux runner with external Revit/USD sample corpus mounted
+  # (`NEMETON_REVIT_CORPUS_DIR`) and sufficient wall-clock budget for profile/soak targets.
+  external-revit-and-profile-ignored-gate:
+    name: external-revit-and-profile-ignored-gate
+    if: github.event.inputs.gate == 'external-revit-and-profile-ignored-gate'
+    runs-on: [self-hosted, linux, revit-corpus]
+    steps:
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: Run external-fixture and profile ignored tests
+        run: |
+          cargo test --locked -p usd_bevy --lib -- --ignored
+          cargo test --locked -p usd_semantic --lib -- --ignored
+          cargo test --locked -p usdview --lib classification_real_fixture -- --ignored
+          cargo test --locked -p usdview --lib profile_i1_7_ -- --ignored

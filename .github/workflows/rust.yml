@@ -2,35 +2,76 @@ name: rust
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+      - develop/refactoring
   pull_request:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+      - develop/refactoring
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 concurrency:
   group: rust-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    working-directory: bevy_openusd
+
 jobs:
   build-test:
     name: build + test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Python >= 3.11
+        run: python3 --version
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Install Bevy Linux runtime deps
+      - name: Install Bevy and GStreamer Linux runtime deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            pkg-config \
             libasound2-dev \
             libudev-dev \
             libwayland-dev \
@@ -38,13 +79,115 @@ jobs:
             libx11-dev \
             libxcursor-dev \
             libxi-dev \
-            libxrandr-dev
+            libxrandr-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav \
+            gstreamer1.0-nice
+
+      - name: Test architecture guard
+        run: python3 -B scripts/check_test_architecture.py --root . --json
+
+      - name: Test architecture guard unit self-tests
+        run: python3 -B -m unittest scripts/test_check_test_architecture.py -v
+
+      - name: Parity and CI workflow self-tests
+        run: python3 -B -m unittest scripts/test_test_enumeration_parity.py scripts/test_ci_workflow.py -v
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
-      - name: cargo build
-        run: cargo build --workspace --all-targets
+      - name: cargo check workspace
+        run: cargo check --workspace --all-targets --locked
 
-      - name: cargo test
-        run: cargo test --workspace
+      - name: cargo build workspace
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Test enumeration parity check
+        run: python3 -B scripts/check_test_enumeration_parity.py --root . --json
+
+      - name: cargo test workspace
+        run: cargo test --workspace --locked
+
+      - name: Contract and architecture explicit targets
+        run: |
+          cargo test --locked --test test_architecture
+          cargo test --locked -p project_support -p usd_support -p viewport_support
+          cargo test --locked -p project_protocol --test contracts
+          cargo test --locked -p viewport_protocol --test bim --test compatibility --test hierarchy --test relocated_contracts --test renderer_configuration --test session_wire --test viewer_settings
+          cargo test --locked -p viewport_streaming --test relocated_contracts
+          cargo test --locked -p usd_semantic --test identity
+          cargo test --locked -p usd_diff --test diff_matrix
+          cargo test --locked -p usd_git --test branch_switch --test repository --test tracked_paths
+          cargo test --locked --test live_projection --test rapier_bridge --test git_materialization --test point_instancer_correctness
+
+  solari-feature-gate:
+    name: solari feature gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout bevy_openusd
+        uses: actions/checkout@v4
+        with:
+          path: bevy_openusd
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_frost
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_frost
+          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
+          path: bevy_frost
+          persist-credentials: false
+
+      - name: Checkout sibling bevy_glacial
+        uses: actions/checkout@v4
+        with:
+          repository: linhnam-nguyen/bevy_glacial
+          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
+          path: bevy_glacial
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bevy and GStreamer Linux runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav \
+            gstreamer1.0-nice
+
+      - name: cargo check solari feature
+        run: cargo check --workspace --all-targets --features solari --locked
+
+      - name: Test enumeration parity check (solari)
+        run: python3 -B scripts/check_test_enumeration_parity.py --root . --include-solari --json
+
+      - name: Run CPU-safe solari unit tests
+        run: cargo test -p usdview --lib --features solari --locked viewport::scene::solari

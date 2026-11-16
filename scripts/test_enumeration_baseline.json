@@ -1,0 +1,4844 @@
+{
+  "schema_version": 1,
+  "baseline_checkpoint": "BO-M9-C1",
+  "baseline_commit": "59ccddbea7be85a34a8e8f1d4d131c91c7ade858",
+  "command": "cargo test --workspace --all-targets --locked -- --list",
+  "summary": {
+    "common_total_entries": 1958,
+    "common_unique_identities": 1181,
+    "windows_only_total_entries": 8,
+    "windows_only_unique_identities": 4,
+    "unix_only_total_entries": 22,
+    "unix_only_unique_identities": 11,
+    "solari_feature_total_entries": 16,
+    "solari_feature_unique_identities": 8,
+    "windows_default_total_entries": 1966,
+    "windows_default_unique_identities": 1185,
+    "unix_default_total_entries": 1980,
+    "unix_default_unique_identities": 1192
+  },
+  "common_tests": [
+    {
+      "name": "a_version_two_command_envelope_is_rejected_by_the_current_contract",
+      "count": 1
+    },
+    {
+      "name": "activation::tests::activation_command_and_reply_round_trip_without_a_path",
+      "count": 1
+    },
+    {
+      "name": "activation::tests::activation_command_decodes_old_v2_payload_then_rejects_it",
+      "count": 1
+    },
+    {
+      "name": "activation::tests::activation_reply_rejects_a_different_stage_target",
+      "count": 1
+    },
+    {
+      "name": "activation::tests::activation_reply_requires_request_project_root_and_generation_match",
+      "count": 1
+    },
+    {
+      "name": "additions_and_removals_remain_separate_identity_changes",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::closed_session_rejects_subsequent_normal_requests_at_application_queue",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::semantic_sync_control_close_remains_and_purges_normal_work_on_subsequent_auth_change",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::semantic_sync_control_latest_authorization_changed_wins",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::semantic_sync_control_method_rejects_non_control_operations",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::semantic_sync_control_precedence_and_purging",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::semantic_sync_control_request_accepted_when_normal_queue_is_full",
+      "count": 1
+    },
+    {
+      "name": "application::tests::sync::update_authorization_allows_later_normal_requests_at_application_queue",
+      "count": 1
+    },
+    {
+      "name": "application_commands::an_event_can_be_put_back_after_a_failed_transport_send",
+      "count": 1
+    },
+    {
+      "name": "application_commands::event_history_is_cleared_when_a_session_takes_a_snapshot",
+      "count": 1
+    },
+    {
+      "name": "application_commands::pointer_motion_keeps_only_the_newest_valid_packet",
+      "count": 1
+    },
+    {
+      "name": "application_commands::reliable_input_state_is_preserved_in_order",
+      "count": 1
+    },
+    {
+      "name": "application_commands::snapshot_display_name_is_reduced_to_a_basename",
+      "count": 1
+    },
+    {
+      "name": "application_commands::stream_generation_remains_monotonic_across_webview_reconnects",
+      "count": 1
+    },
+    {
+      "name": "application_commands::viewport_command_queue_rejects_invalid_correlation_metadata",
+      "count": 1
+    },
+    {
+      "name": "application_sync::authorization_policy_is_validated_and_replaceable",
+      "count": 1
+    },
+    {
+      "name": "application_sync::runtime_delivery_registry_rejects_invalid_ids_and_keeps_valid_payloads",
+      "count": 1
+    },
+    {
+      "name": "application_sync::semantic_sync_requests_preserve_server_context_and_reject_invalid_context",
+      "count": 1
+    },
+    {
+      "name": "application_sync::semantic_sync_status_is_replaced_per_session_and_can_be_cleared",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::atomic_attribute_edit_undoes_and_redoes_as_one_group",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::define_and_remove",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::edit_history_undo_redo",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::persistence_export_and_reopen",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::rename_and_reparent",
+      "count": 1
+    },
+    {
+      "name": "authoring::tests::set_attribute_roundtrips",
+      "count": 1
+    },
+    {
+      "name": "authoritative_viewer_settings_read_model_round_trips_capabilities_and_section_state",
+      "count": 1
+    },
+    {
+      "name": "authorization::tests::default_policy_is_restrictive_and_valid",
+      "count": 1
+    },
+    {
+      "name": "authorization::tests::invalid_policy_rejects_self_render_without_download",
+      "count": 1
+    },
+    {
+      "name": "authorization::tests::native_policy_requires_download_and_self_render",
+      "count": 1
+    },
+    {
+      "name": "branch_switch_rejects_invalid_missing_and_dirty_requests",
+      "count": 1
+    },
+    {
+      "name": "canonical_test_architecture_guard_self_tests_pass",
+      "count": 1
+    },
+    {
+      "name": "change::tests::change_flags_combine_independent_dimensions",
+      "count": 1
+    },
+    {
+      "name": "change::tests::presence_states_are_exhaustive_values",
+      "count": 1
+    },
+    {
+      "name": "classification_color_plan_validates_backend_owned_intent",
+      "count": 1
+    },
+    {
+      "name": "classification_recipe_and_search_queries_validate_as_typed_contracts",
+      "count": 1
+    },
+    {
+      "name": "commit_creation_updates_head_from_source_tree",
+      "count": 1
+    },
+    {
+      "name": "composition::tests::accepts_diamond_dag",
+      "count": 1
+    },
+    {
+      "name": "composition::tests::accepts_repeated_placement_without_back_edge",
+      "count": 1
+    },
+    {
+      "name": "composition::tests::rejects_deep_ancestor_cycle",
+      "count": 1
+    },
+    {
+      "name": "composition::tests::rejects_direct_two_node_cycle",
+      "count": 1
+    },
+    {
+      "name": "composition::tests::rejects_self_cycle",
+      "count": 1
+    },
+    {
+      "name": "config::tests::nvidia_revit_runtime_adapter_uses_observed_element_id_property",
+      "count": 1
+    },
+    {
+      "name": "current_builders_insert_a_body_and_attached_collider",
+      "count": 1
+    },
+    {
+      "name": "current_live_projection_builds_a_prim_entity_map",
+      "count": 1
+    },
+    {
+      "name": "data_channel::bim_properties::packing_tests::large_bim_property_response_packs_at_scale_without_prefix_rebuilds",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::bim_classification::oversized_bim_classification_catalogue_is_paged_and_reconstructs_exactly",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::bim_properties::individually_oversized_bim_property_becomes_explicit_delivery_error",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::bim_properties::oversized_bim_property_results_are_paged_without_loss_or_duplication",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::large_snapshots_are_chunked_into_bounded_ordered_events",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::oversized_hierarchy_child_pages_are_split_without_changing_page_identity",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::oversized_runtime_manifests_are_split_without_leaking_unbounded_events",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::oversized_scene_child_pages_are_split_without_changing_page_identity",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::oversized_snapshot_metadata_is_compacted_to_a_bounded_snapshot",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::runtime_blob_chunks_are_bounded_and_keep_ordered_sequences",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::chunks::terminally_oversized_prim_is_omitted_from_bounded_snapshot_chunks",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::auth_downgrade_updates_session_authorization_and_blocks_further_sync",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::authorization_refresh_produces_control_event_with_newest_policy",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::control_channel_is_ordered_and_reliable_by_default",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::disconnect_produces_internal_close_and_handles_queue_saturation",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::input_channel_is_unordered_and_drop_eligible",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::recent_request_ids_are_deduplicated",
+      "count": 1
+    },
+    {
+      "name": "data_channel::tests::handshake::repeat_disconnect_is_idempotent_and_safe",
+      "count": 1
+    },
+    {
+      "name": "delivery::tests::authorization_omits_disallowed_optional_payloads",
+      "count": 1
+    },
+    {
+      "name": "delivery::tests::authorization_rejects_a_missing_required_hierarchy_blob",
+      "count": 1
+    },
+    {
+      "name": "delivery::tests::manifest_rejects_duplicate_blob_references",
+      "count": 1
+    },
+    {
+      "name": "detects_tracked_paths_below_a_git_relative_prefix",
+      "count": 1
+    },
+    {
+      "name": "diff_matrix_classifies_core_actions",
+      "count": 1
+    },
+    {
+      "name": "encode::av1_pipeline_can_negotiate_rtp_caps",
+      "count": 1
+    },
+    {
+      "name": "encode::av1_pipeline_creation_skips_h26x_config_interval",
+      "count": 1
+    },
+    {
+      "name": "encode::test_pipeline_creation",
+      "count": 1
+    },
+    {
+      "name": "encode::tests::raw_caps_preserve_the_end_to_end_configuration_matrix",
+      "count": 1
+    },
+    {
+      "name": "encode::tests::rgba_byte_count_matches_active_caps_shape",
+      "count": 1
+    },
+    {
+      "name": "encode::tests::sync_frame_request_is_codec_neutral_and_includes_supported_headers",
+      "count": 1
+    },
+    {
+      "name": "environment_settings_round_trip_with_explicit_wire_values",
+      "count": 1
+    },
+    {
+      "name": "exact_open_does_not_discover_an_ancestor_repository",
+      "count": 1
+    },
+    {
+      "name": "explicit_bim_catalogue_request_round_trips_through_json",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::absent_display_name_does_not_fall_back_to_prim_basename",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::authored_attribute_display_name_is_extracted_and_changes_hashes",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::changing_a_custom_property_changes_entity_and_metadata_hashes",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::configured_revit_measurement_is_normalized_during_snapshot_extraction",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::extraction_is_deterministic_and_contains_mesh_signatures",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged",
+      "count": 1
+    },
+    {
+      "name": "extractor::tests::real_nvidia_revit_export_properties_reach_semantic_snapshot",
+      "count": 1
+    },
+    {
+      "name": "frame_metrics::capture_queue_and_generation_drops_are_reported_separately",
+      "count": 1
+    },
+    {
+      "name": "frame_metrics::reset_preserves_sequence_but_clears_measurement_counters",
+      "count": 1
+    },
+    {
+      "name": "frame_metrics::snapshot_reports_measured_fps_and_stage_semantics",
+      "count": 1
+    },
+    {
+      "name": "frame_metrics::traces_are_monotonic_and_timestamped_from_one_clock",
+      "count": 1
+    },
+    {
+      "name": "generic_hierarchy_can_carry_explicit_virtual_kind_and_selection_policy",
+      "count": 1
+    },
+    {
+      "name": "generic_hierarchy_commands_validate_provider_ids_and_bounds",
+      "count": 1
+    },
+    {
+      "name": "generic_hierarchy_keeps_virtual_and_scene_identity_distinct",
+      "count": 1
+    },
+    {
+      "name": "generic_hierarchy_read_model_round_trips_provider_and_revision",
+      "count": 1
+    },
+    {
+      "name": "ground_grid_origin_command_round_trips_through_json",
+      "count": 1
+    },
+    {
+      "name": "handshake::application_handshake_uses_the_versioned_command_and_event_envelopes",
+      "count": 1
+    },
+    {
+      "name": "handshake::authorization_policy_round_trips_separately_from_capabilities",
+      "count": 1
+    },
+    {
+      "name": "handshake::constructors_reserve_deterministic_request_session_and_sequence_metadata",
+      "count": 1
+    },
+    {
+      "name": "handshake::every_client_command_family_round_trips_through_a_client_envelope",
+      "count": 1
+    },
+    {
+      "name": "handshake::every_server_event_family_round_trips_through_a_server_envelope",
+      "count": 1
+    },
+    {
+      "name": "handshake::handshake_and_capabilities_round_trip",
+      "count": 1
+    },
+    {
+      "name": "handshake::input_types_are_independently_serializable",
+      "count": 1
+    },
+    {
+      "name": "handshake::validation_rejects_unbounded_input_motion",
+      "count": 1
+    },
+    {
+      "name": "handshake::validation_rejects_versions_and_numeric_boundaries",
+      "count": 1
+    },
+    {
+      "name": "hash::tests::hex_parser_accepts_uppercase",
+      "count": 1
+    },
+    {
+      "name": "hash::tests::hex_parser_reports_invalid_input",
+      "count": 1
+    },
+    {
+      "name": "hash::tests::hex_round_trip_preserves_all_bytes",
+      "count": 1
+    },
+    {
+      "name": "hierarchy_search_result_preserves_typed_visibility_on_wire",
+      "count": 1
+    },
+    {
+      "name": "hierarchy_visibility_intent_and_authoritative_event_round_trip",
+      "count": 1
+    },
+    {
+      "name": "historical_materialization_opens_through_openusd",
+      "count": 1
+    },
+    {
+      "name": "identity::tests::entity_key_is_value_based",
+      "count": 1
+    },
+    {
+      "name": "identity::tests::identity_sources_are_distinct_values",
+      "count": 1
+    },
+    {
+      "name": "identity_priority_prefers_revit_over_other_configured_ids",
+      "count": 1
+    },
+    {
+      "name": "ignored_cache_and_recovery_changes_keep_branch_switch_eligible",
+      "count": 1
+    },
+    {
+      "name": "initializes_an_empty_worktree_without_a_commit",
+      "count": 1
+    },
+    {
+      "name": "lists_local_branches_and_walks_bounded_history",
+      "count": 1
+    },
+    {
+      "name": "live::native_instance_dependency::tests::ordinary_lookup_preserves_descendant_prototype_dependencies",
+      "count": 1
+    },
+    {
+      "name": "live::performance::tests::disabled_counters_are_no_op",
+      "count": 1
+    },
+    {
+      "name": "live::performance::tests::reset_preserves_enabled_state",
+      "count": 1
+    },
+    {
+      "name": "live::project_readiness::tests::a_replaced_session_ignores_old_projection_completion",
+      "count": 1
+    },
+    {
+      "name": "live::project_readiness::tests::an_older_projection_generation_cannot_regress_current_session",
+      "count": 1
+    },
+    {
+      "name": "live::project_readiness::tests::live_stage_plugin_observes_readiness_without_a_second_projection_scheduler",
+      "count": 1
+    },
+    {
+      "name": "live::project_readiness::tests::readiness_advances_through_existing_renderer_milestones",
+      "count": 1
+    },
+    {
+      "name": "live::tests::animation::stage_time_uses_prebound_animation_without_structural_work",
+      "count": 1
+    },
+    {
+      "name": "live::tests::animation::test_reconcile_subtrees_adds_animated_prim_under_affected_subtree",
+      "count": 1
+    },
+    {
+      "name": "live::tests::animation::test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree",
+      "count": 1
+    },
+    {
+      "name": "live::tests::changed_info::compact_change_plan_deduplicates_paths_and_properties",
+      "count": 1
+    },
+    {
+      "name": "live::tests::changed_info::same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision",
+      "count": 1
+    },
+    {
+      "name": "live::tests::changed_info::test_bare_prim_changed_info_repatches_transform",
+      "count": 1
+    },
+    {
+      "name": "live::tests::fallback::test_reconcile_full_resync_root_path_reconciles_entire_stage",
+      "count": 1
+    },
+    {
+      "name": "live::tests::fallback::test_reconcile_invalid_raw_resync_root_chooses_full_reconcile",
+      "count": 1
+    },
+    {
+      "name": "live::tests::fallback::test_reconcile_subtrees_missing_external_parent_triggers_full_fallback",
+      "count": 1
+    },
+    {
+      "name": "live::tests::fallback::test_reconcile_subtrees_missing_stage_root_triggers_full_fallback",
+      "count": 1
+    },
+    {
+      "name": "live::tests::indexes::compact_path_store_shares_canonical_ancestors",
+      "count": 1
+    },
+    {
+      "name": "live::tests::indexes::prim_entities_subtree_uses_compact_topology_and_cleans_edges",
+      "count": 1
+    },
+    {
+      "name": "live::tests::indexes::test_reconcile_subtrees_maintains_semantic_entity_index",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::binding_removal_uses_shared_fallback_and_stops_old_material_fanout",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::external_shader_and_texture_edits_follow_real_network_dependencies",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::persistent_material_seed_is_consumed_before_usd_decode",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::repeated_material_edits_keep_standard_material_assets_bounded",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::shader_input_patch_reaches_only_its_material_consumers",
+      "count": 1
+    },
+    {
+      "name": "live::tests::material_patch::shared_material_edit_cleans_retired_asset_once_after_fanout",
+      "count": 1
+    },
+    {
+      "name": "live::tests::mesh_patch::live_patch_matrix_keeps_unrelated_edits_out_of_mesh_conversion",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::native_instance_exposes_shared_prototype_and_proxy_meshes",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::native_instance_proxy_meshes_share_render_handles",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::native_instance_proxy_preserves_presentation_semantics",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::native_instance_reference_target_maps_proxy_to_source_path",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::nested_native_instances_project_scene_paths_and_shared_leaf_meshes",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::projection_plan_includes_scene_scoped_instance_proxies",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance::shared_prototype_change_patches_only_scene_consumers",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_ancestor_review::native_instance_prototype_ancestor_change_patches_only_descendant_consumers",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_audit::generated_thousand_native_instances_keep_projection_allocation_bounded",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_audit::projet1_usdc_windows_project_to_scene_proxy_meshes",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_presentation_review::native_instance_global_transforms_include_distinct_instance_roots",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_review::native_instance_removal_cleans_proxy_entities_and_dependency_records",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_review::native_instance_structural_resync_projects_and_removes_all_proxy_consumers",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_review::native_instance_transform_edit_preserves_shared_mesh_and_other_instance_transform",
+      "count": 1
+    },
+    {
+      "name": "live::tests::native_instance_review::nested_prototype_resync_reconciles_nested_consumers_and_excludes_unrelated_instances",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_collect_stage_subtree_paths_deep_overlap",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_collect_stage_subtree_paths_respects_projection_predicate",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_collect_stage_subtree_paths_synthetic_wide",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_is_descendant_or_self",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_minimize_resync_roots",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_normalize_prim_path",
+      "count": 1
+    },
+    {
+      "name": "live::tests::paths::test_stage_change_batch_resync_roots_and_unshaded_changed_info",
+      "count": 1
+    },
+    {
+      "name": "live::tests::payload::test_live_stage_load_and_unload_payload_api_preserves_projection",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::cache_aware_gate_rebuilds_when_a_resident_mesh_asset_is_evicted",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::cancellation_discards_partial_generation_and_restarts",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::explicit_time_budget_can_yield_without_consuming_work",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::readiness_is_additive_and_progress_is_monotonic",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::ready_queue_short_circuits_without_rebuilding_the_plan",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::reload_midway_cancels_old_session_and_never_mixes_paths",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::unlimited_progressive_queue_matches_direct_projection",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive::work_budget_projects_one_entry_per_update_and_reaches_final_equality",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_plan::incremental_builder_yields_parent_before_child_work",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_plan::projection_plan_is_deterministic_and_parent_before_child",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_plan::projection_plan_keeps_unloaded_payload_prim_as_placeholder_work",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_plan::projection_plan_matches_the_canonical_traversal_predicate",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_plan::subtree_plan_preserves_root_and_parent_relation",
+      "count": 1
+    },
+    {
+      "name": "live::tests::progressive_restart::same_session_stage_change_restarts_before_stale_projection_continues",
+      "count": 1
+    },
+    {
+      "name": "live::tests::reconcile::reconcile_deep_overlap_minimizes_roots_and_scopes_work",
+      "count": 1
+    },
+    {
+      "name": "live::tests::reconcile::reconcile_real_materials_fixture_scopes_to_materials_subtree",
+      "count": 1
+    },
+    {
+      "name": "live::tests::reconcile::reconcile_subtree_spawns_and_despawns_while_preserving_sibling_entity_ids",
+      "count": 1
+    },
+    {
+      "name": "live::tests::reconcile::reconcile_synthetic_wide_scopes_to_resynced_subtree",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::authoring_generation_is_synchronous_and_freeze_is_exclusive",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::committed_authoring_keeps_one_self_authored_suppression",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::failed_authoring_drops_self_authored_suppression",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::non_empty_drains_advance_revision_once_and_are_not_replayed",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::pending_batch_is_readable_without_consuming_it",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::plugin_publishes_one_batch_for_later_consumers",
+      "count": 1
+    },
+    {
+      "name": "live::tests::stage::project_style_stage_authoring_feeds_one_shared_batch",
+      "count": 1
+    },
+    {
+      "name": "live::tests::targeted::exact_path_projection_materializes_only_requested_namespace",
+      "count": 1
+    },
+    {
+      "name": "live::tests::targeted::targeted_extraction_reads_only_requested_meshes",
+      "count": 1
+    },
+    {
+      "name": "live_prototype_ancestor_resync_reprojects_registered_instancer_dependency",
+      "count": 1
+    },
+    {
+      "name": "live_prototype_edit_reprojects_only_registered_instancer_dependency",
+      "count": 1
+    },
+    {
+      "name": "live_transform_patch_preserves_logical_selection_and_entity",
+      "count": 1
+    },
+    {
+      "name": "logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target",
+      "count": 1
+    },
+    {
+      "name": "manifest::tests::canonical_json_is_independent_of_insertion_order",
+      "count": 1
+    },
+    {
+      "name": "manifest::tests::legacy_manifest_migration_derives_names_without_changing_identity",
+      "count": 1
+    },
+    {
+      "name": "manifest::tests::schema_version_must_be_exactly_current",
+      "count": 1
+    },
+    {
+      "name": "manifest::tests::unsafe_storage_keys_are_rejected",
+      "count": 1
+    },
+    {
+      "name": "measurement::tests::legacy_property_json_defaults_measurement_to_none",
+      "count": 1
+    },
+    {
+      "name": "measurement::tests::metadata_round_trips_without_losing_source_unit",
+      "count": 1
+    },
+    {
+      "name": "measurement::tests::unknown_source_unit_is_distinct_from_a_known_unit",
+      "count": 1
+    },
+    {
+      "name": "mesh::builder::tests::expanded_missing_authored_normals_keep_source_provenance",
+      "count": 1
+    },
+    {
+      "name": "mesh::builder::tests::indexed_primvar_count_uses_source_indices_not_interpolation",
+      "count": 1
+    },
+    {
+      "name": "mesh::builder::tests::profiled_conversion_reports_source_and_output_counts",
+      "count": 1
+    },
+    {
+      "name": "metadata_details_can_be_disabled_without_changing_flags",
+      "count": 1
+    },
+    {
+      "name": "metadata_details_include_measurement_changes",
+      "count": 1
+    },
+    {
+      "name": "nonfinite_camera_orientation_is_not_constructible_for_public_projection",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::classification_mapping_keeps_generic_usd_fields_separate",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::identity_mapping_accepts_only_explicit_family_name_source",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::identity_mapping_does_not_promote_category_to_family_name",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::mapping_normalizes_numeric_value_and_attaches_metadata",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::missing_or_unknown_units_preserve_the_typed_value_without_guessing",
+      "count": 1
+    },
+    {
+      "name": "nvidia::tests::property_descriptor_precedence_authored_display_name_over_suffix",
+      "count": 1
+    },
+    {
+      "name": "path_fallback_remains_the_default_when_no_candidates_are_configured",
+      "count": 1
+    },
+    {
+      "name": "placement::tests::default_placement_is_identity",
+      "count": 1
+    },
+    {
+      "name": "placement::tests::matrix_accepts_whitespace_and_commas",
+      "count": 1
+    },
+    {
+      "name": "placement::tests::matrix_rejects_non_affine_and_singular_values",
+      "count": 1
+    },
+    {
+      "name": "point_instancer_marker_count_matches_visible_logical_rows",
+      "count": 1
+    },
+    {
+      "name": "previous_protocol_version_is_rejected_after_hierarchy_wire_bump",
+      "count": 1
+    },
+    {
+      "name": "prim_ref::tests::semantic_index_replaces_both_sides_of_a_mapping",
+      "count": 1
+    },
+    {
+      "name": "profiles_embedded_texture_usdz_fixture",
+      "count": 1
+    },
+    {
+      "name": "profiles_larger_kitchen_usdz_fixture",
+      "count": 1
+    },
+    {
+      "name": "profiles_repeated_mesh_fixture",
+      "count": 1
+    },
+    {
+      "name": "profiles_shared_material_binding_fixture",
+      "count": 1
+    },
+    {
+      "name": "profiles_subtree_resync_empirical_suite",
+      "count": 1
+    },
+    {
+      "name": "project::blob_store::repair_tests::putting_the_original_payload_repairs_a_corrupt_object",
+      "count": 2
+    },
+    {
+      "name": "project::blob_store::tests::corrupt_blob_is_detected",
+      "count": 2
+    },
+    {
+      "name": "project::blob_store::tests::filesystem_store_is_content_addressed_and_idempotent",
+      "count": 2
+    },
+    {
+      "name": "project::blob_store::tests::invalid_blob_id_cannot_escape_store_root",
+      "count": 2
+    },
+    {
+      "name": "project::blob_store::tests::mesh_blob_round_trips",
+      "count": 2
+    },
+    {
+      "name": "project::cache::descriptor::tests::corrupt_descriptor_is_rejected_without_source_fallback_data",
+      "count": 2
+    },
+    {
+      "name": "project::cache::descriptor::tests::descriptor_round_trip_is_atomic_and_target_specific",
+      "count": 2
+    },
+    {
+      "name": "project::cache::descriptor::tests::descriptors_reuse_when_target_content_is_unchanged",
+      "count": 2
+    },
+    {
+      "name": "project::cache::descriptor::tests::removing_a_target_drops_descriptors_but_keeps_the_object_store",
+      "count": 2
+    },
+    {
+      "name": "project::cache::descriptor::tests::stale_descriptor_schema_is_rejected_and_config_identity_is_a_miss",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::index_read_failure_does_not_mutate_current_scene_cache",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::prim_count_publication_rejects_stale_scene_generation",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::prim_count_publication_reopens_partial_scene_without_inspection",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::same_generation_updates_merge_under_scene_lock",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::spatial_read_failure_does_not_mutate_current_scene_cache",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_prim_count::tests::uncached_project_scene_owner_gets_reusable_prim_count_metadata",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_store::tests::concurrent_distinct_payload_cas_loser_preserves_winner_for_retry",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_store::tests::managed_generation_cas_rejects_same_generation_descriptor_mutation",
+      "count": 2
+    },
+    {
+      "name": "project::cache::scene_store::tests::partial_scene_activation_reads_descriptor_and_index_before_stage_open",
+      "count": 2
+    },
+    {
+      "name": "project::cache::tests::clean_head_uses_commit_oid",
+      "count": 2
+    },
+    {
+      "name": "project::cache::tests::disposable_cache_and_recovery_do_not_change_working_fingerprint",
+      "count": 2
+    },
+    {
+      "name": "project::cache::tests::unborn_repository_uses_working_tree_fingerprint",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::legacy_global_cache_is_a_scene_v3_miss",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::project_cache_lookup_rejects_duplicate_scene_generations",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::runtime_contract_changes_identity",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::scene_descriptor_index_or_spatial_mismatch_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::scene_owned_builder_prunes_child_and_publishes_payload_spatial_deterministically",
+      "count": 2
+    },
+    {
+      "name": "project::cache_compatibility::tests::scene_v3_storage_isolates_scene_ids_and_identical_blob_hashes",
+      "count": 2
+    },
+    {
+      "name": "project::cache_contract::cache_lookup::tests::replacing_one_scene_keeps_direct_nested_routes_and_unrelated_rows",
+      "count": 2
+    },
+    {
+      "name": "project::cache_demand_projection::tests::current_cache_ready_miss_escalates_to_targeted_scene_repair",
+      "count": 2
+    },
+    {
+      "name": "project::cache_demand_projection::tests::payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows",
+      "count": 2
+    },
+    {
+      "name": "project::cache_demand_projection::tests::requested_paths_are_canonical_and_deduplicated_before_cache_lookup",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::benchmark_tests::headless_cache_benchmark_proves_cold_persistent_and_hot_paths",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::tests::corrupt_cache_is_rejected_before_seeds_are_published",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::tests::missing_ready_descriptor_is_a_normal_cache_miss",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::tests::persistent_cache_hydration_diagnostic_records_repeated_runs",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::tests::pre_provenance_cache_misses_and_current_cache_rehydrates",
+      "count": 2
+    },
+    {
+      "name": "project::cache_hydration::tests::ready_cache_hydrates_mesh_material_texture_and_seed_maps",
+      "count": 2
+    },
+    {
+      "name": "project::cache_scene_payload::tests::scene_animation_payload_covers_bound_skeleton_data",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warm_runtime::tests::managed_runtime_publisher_preserves_pre_capture_same_generation_evolution",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warm_runtime::tests::managed_runtime_publisher_rejects_intervening_same_generation_update",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warm_runtime::tests::scene_owned_builder_persists_material_and_texture_blob_references",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::activation_preparation_returns_fallback_when_runtime_warm_fails",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::imported_scene_dependency_closure_changes_only_composed_targets",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::scene_deletion_removes_v3_cache_and_rebuilds_project_lookup",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::scene_deletion_serializes_with_scene_owned_persistence_guard",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::stale_managed_scene_generation_cannot_publish",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::stale_scene_generation_is_rejected_before_strong_identity_or_stage_open",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::closure_tests::target_cache_identity_changes_when_authoritative_display_name_changes",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::generation_tests::cross_project_overflow_applies_bounded_backpressure_without_orphaning_generation",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::generation_tests::latest_scene_work_supersedes_and_saturation_retries_without_orphaning",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::generation_tests::unrelated_scene_edits_keep_a_sibling_cache_identity_reusable",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::generation_tests::wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::lifecycle_tests::scene_lifecycle_lock_registry_retires_released_keys_without_dropping_live_holders",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::queue::enqueue::tests::managed_mutation_establishes_all_scene_boundaries_before_admitting_warm_work",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::recovery_tests::corrupt_descriptor_uses_scene_cleanup_fallback",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::recovery_tests::early_scene_recovery_failure_does_not_short_circuit_later_scene_invalidation",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::recovery_tests::generation_overflow_uses_scene_cleanup_fallback",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::recovery_tests::managed_mutation_generation_overflow_removes_old_scene_cache_before_return",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::affected_targets_preserve_scene_and_model_owned_boundaries",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::duplicate_warm_requests_are_coalesced",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::empty_project_is_warmed_without_a_stage_open_failure",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::failed_scene_warm_reports_error_and_terminalizes_current_generation",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::fresh_project_import_warms_root_scene_and_model_to_ready",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::scene_owned_identity_does_not_import_child_model_payload",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::scene_owned_identity_excludes_child_payload_and_presentation_names",
+      "count": 2
+    },
+    {
+      "name": "project::cache_warmer::tests::target_content_identity_changes_with_target_content",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::catalogue::tests::catalogue_source_has_no_stage_open_or_adapter_scan_path",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::catalogue::tests::lists_many_manifests_without_failing_for_one_missing_repository",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::catalogue::tests::malformed_manifest_is_unavailable_without_removing_registry_entry",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::catalogue::tests::output_is_sorted_by_product_name_then_project_id",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::catalogue::tests::registry_project_id_remains_authoritative_for_a_mismatched_manifest",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::manifest_store::tests::invalid_manifest_does_not_replace_existing_file",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::manifest_store::tests::reading_a_manifest_persists_deterministic_display_names",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::manifest_store::tests::writes_canonical_manifest_to_same_metadata_directory",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::workspace_registry::tests::duplicate_project_ids_are_rejected_on_load",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::workspace_registry::tests::project_summary_serialization_does_not_include_machine_local_locator",
+      "count": 2
+    },
+    {
+      "name": "project::catalog::workspace_registry::tests::register_update_remove_and_restart_preserve_one_entry_per_project",
+      "count": 2
+    },
+    {
+      "name": "project::commit::tests::commit_failure_keeps_runtime_dirty_and_head_unchanged",
+      "count": 2
+    },
+    {
+      "name": "project::commit::tests::semantic_cache_failure_does_not_invalidate_git_commit",
+      "count": 2
+    },
+    {
+      "name": "project::commit::tests::stale_live_revision_is_rejected_before_git_changes",
+      "count": 2
+    },
+    {
+      "name": "project::commit::tests::successful_commit_updates_base_and_persists_semantics",
+      "count": 2
+    },
+    {
+      "name": "project::ghost_cache::tests::attach_render_blobs_for_entities_scans_only_affected_entities_and_handles",
+      "count": 2
+    },
+    {
+      "name": "project::ghost_cache::tests::profiles_render_blob_baseline_scans_all_meshes_and_entities",
+      "count": 2
+    },
+    {
+      "name": "project::ghost_cache::tests::projected_triangle_gets_a_persistent_blob_reference",
+      "count": 2
+    },
+    {
+      "name": "project::ghost_cache::tests::runtime_payloads_persist_materials_and_distinguish_texture_color_spaces",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::binding_status_does_not_open_the_scene_wrapper",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::invalid_binding_evidence_does_not_mark_legacy_wrapper",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::legacy_linked_wrapper_is_marked_before_binding_is_removed",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::missing_binding_is_unavailable_only_for_linked_scene_wrappers",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::status_detects_dependency_closure_change",
+      "count": 2
+    },
+    {
+      "name": "project::link::tests::status_distinguishes_sync_change_and_source_removal",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::prepare_allocates_distinct_opaque_model_identities",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::registry_exposes_only_current_backend_capability",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::registry_has_no_unimplemented_external_importer",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::scene_like_source_can_be_prepared_as_one_opaque_model",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::stale_inspection_is_rejected_before_preparation",
+      "count": 2
+    },
+    {
+      "name": "project::model_import::tests::usd_importer_reports_model_like_sources",
+      "count": 2
+    },
+    {
+      "name": "project::model_wrapper::tests::composed_model_source_remains_one_opaque_product_model",
+      "count": 2
+    },
+    {
+      "name": "project::model_wrapper::tests::multi_root_source_without_default_prim_can_be_wrapped_as_one_model",
+      "count": 2
+    },
+    {
+      "name": "project::model_wrapper::tests::packaged_instance_source_can_be_wrapped_as_one_model",
+      "count": 2
+    },
+    {
+      "name": "project::model_wrapper::tests::repeated_scene_placements_share_model_id_but_not_member_id",
+      "count": 2
+    },
+    {
+      "name": "project::model_wrapper::tests::stable_wrapper_survives_original_source_rename",
+      "count": 2
+    },
+    {
+      "name": "project::prim_count::tests::freshness_token_includes_scene_cache_and_runtime_identity",
+      "count": 2
+    },
+    {
+      "name": "project::recovery::tests::checkpoint_round_trips_working_stage_and_metadata",
+      "count": 2
+    },
+    {
+      "name": "project::recovery::tests::corrupt_or_partial_checkpoint_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "project::recovery_worker::tests::recovery_queue_is_bounded_and_keeps_latest_pending_revision",
+      "count": 2
+    },
+    {
+      "name": "project::recovery_worker::tests::recovery_result_backpressure_keeps_worker_result_sendable",
+      "count": 2
+    },
+    {
+      "name": "project::runtime_delivery::tests::bundle_reuses_mesh_bytes_and_excludes_semantic_properties",
+      "count": 2
+    },
+    {
+      "name": "project::runtime_delivery::tests::empty_snapshot_still_has_a_hierarchy_payload",
+      "count": 2
+    },
+    {
+      "name": "project::runtime_delivery::tests::hierarchy_payload_preserves_semantic_display_name_without_using_raw_path",
+      "count": 2
+    },
+    {
+      "name": "project::runtime_delivery::tests::missing_mesh_payload_stops_publication",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::cycle_revalidation_leaves_manifest_unchanged",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::dependency_failure_leaves_old_manifest_byte_for_byte_valid",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::empty_project_candidate_can_become_root",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::multi_root_source_without_default_prim_is_preserved_as_scene",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::nested_adoption_publishes_one_distinct_parent_placement",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::repeated_placement_keeps_one_target_identity_and_distinct_members",
+      "count": 2
+    },
+    {
+      "name": "project::scene::adoption::adoption_tests::source_disappearance_leaves_manifest_and_scene_catalogue_unchanged",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::asymmetric_trs_placement_preserves_row_vector_rotation_and_scale",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::authored_scene_reopens_with_default_prim_and_registry_identity",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::legacy_scene_placement_without_transform_defaults_to_identity",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::non_identity_scene_placement_round_trips_through_usd",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::repeated_targets_keep_distinct_member_ids_after_reopen",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::schema_v2_authors_direct_members_and_relative_project_references",
+      "count": 2
+    },
+    {
+      "name": "project::scene::authoring::tests::self_scene_placement_is_rejected_before_publication",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::assembly_and_component_use_different_product_signals",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::missing_default_prim_uses_explicit_root_reference_strategy",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::missing_reference_is_reported_as_missing_dependency",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::multiple_roots_without_default_prim_are_scene_adoptable",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::native_usdhub_scene_is_classified_without_dependencies",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::plain_valid_usd_remains_ambiguous",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::reference_and_payload_are_detected_without_loading_payloads",
+      "count": 2
+    },
+    {
+      "name": "project::scene::inspection::inspection_tests::selected_variant_is_reported_as_composition_metadata",
+      "count": 2
+    },
+    {
+      "name": "project::scene::root::migration_tests::migrated_legacy_model_composes_content_and_is_idempotent",
+      "count": 2
+    },
+    {
+      "name": "project::scene::root::migration_tests::migrated_legacy_scene_composes_content_and_is_idempotent",
+      "count": 2
+    },
+    {
+      "name": "project::scene::root::tests::creates_and_marks_a_protected_root_scene",
+      "count": 2
+    },
+    {
+      "name": "project::scene::root::tests::migrates_legacy_model_root_without_changing_model_identity",
+      "count": 2
+    },
+    {
+      "name": "project::scene::root::tests::migrates_legacy_scene_root_without_reinterpreting_its_identity",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::authorization::coordinator_requires_self_render_before_provisioning",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::authorization::coordinator_revoke_failure_emits_failed_status_with_detail",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::authorization::coordinator_tracks_provisioning_and_revokes_once_on_policy_change",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::close::runtime_drop_closes_mailbox_and_wakes_blocked_worker",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::close::runtime_mailbox_close_unblocks_worker_and_returns_none",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::close::runtime_mailbox_closed_session_rejects_subsequent_normal_commands",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::close::runtime_mailbox_worker_exit_marks_mailbox_closed_and_rejects_submits",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::control_lane::runtime_mailbox_control_precedence_and_purges_same_session",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::control_lane::runtime_mailbox_enforces_capacity_and_prioritizes_controls",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::control_lane::runtime_mailbox_update_authorization_allows_later_normal_commands",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::lifecycle::coordinator_reprovisions_fresh_lease_after_stale_or_closed",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::projection::client_projection_store_round_trips_one_verified_projection",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::projection::projection_filters_properties_and_unauthorized_mesh_ids",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::projection::projection_hash_is_stable_for_the_same_authorized_view",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::projection::projection_keeps_explicitly_allowed_values_and_blob_ids",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::projection::projection_requires_self_render_and_download_authorization",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::provisioning::client_sync_config_rejects_missing_transport_credentials",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::provisioning::cloud_provider_deletes_database_when_token_issuance_fails",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::provisioning::cloud_provider_provisions_scoped_database_and_revokes_once",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::provisioning::platform_api_config_keeps_secret_out_of_debug_and_normalizes_base_url",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::sync::tests::provisioning::platform_api_response_models_decode_documented_shapes",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::tests::materialized_git_revision_regenerates_a_snapshot",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::query::put_get_entity_and_query_round_trip",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::schema::legacy_bim_rows_are_backfilled_transactionally_and_idempotently",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::schema::schema_migration_creates_durable_snapshot_tables",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::snapshot::cache_miss_regeneration_is_persisted",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::snapshot::cached_commits_can_be_diffed_without_bevy",
+      "count": 2
+    },
+    {
+      "name": "project::semantic_store::turso::tests::snapshot::committed_snapshot_is_immutable_and_git_aliases_are_stable",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_projection_tests::branch_switch_succeeds_with_unavailable_worker_and_bounded_warm_pressure",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_projection_tests::invalid_target_branch_reports_repository_truth_after_checkout",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_projection_tests::invalid_target_scene_projection_reports_repository_truth_after_checkout",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_projection_tests::successful_branch_recovery_removes_unknown_previous_scene_cache_membership",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_tests::branch_a_b_a_replaces_names_and_revision_truth_without_leaking_old_tree_data",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_tests::branch_switch_removes_old_only_scene_v3_state_and_lookup_membership",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_tests::service_branch_switch_reports_typed_invalid_and_missing_branch_failures",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_tests::service_switches_a_clean_registered_repository_and_rejects_dirty_work",
+      "count": 2
+    },
+    {
+      "name": "project::service::branch_tests::switching_to_a_legacy_scene_branch_migrates_and_composes_content",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_runtime::lease_tests::failed_finish_on_commit_path_aborts_runtime_lease",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::commit_rejects_empty_message_without_changing_repository",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::excluded_project_metadata_descendants_match_path_components",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::project_commit_advances_only_scene_owned_paths_changed_by_the_commit",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::project_commit_publishes_revision_and_clears_authoritative_worktree",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::scene_commit_targets_scene_scope_and_returns_new_revision",
+      "count": 2
+    },
+    {
+      "name": "project::service::commit_tests::scene_commit_uses_fixed_point_ancestors_and_preserves_unrelated_dirty_manifest",
+      "count": 2
+    },
+    {
+      "name": "project::service::deletion_tests::deleting_linked_scene_removes_its_canonical_snapshot",
+      "count": 2
+    },
+    {
+      "name": "project::service::deletion_tests::deleting_model_removes_all_placements_but_not_external_source",
+      "count": 2
+    },
+    {
+      "name": "project::service::deletion_tests::deleting_scene_preserves_descendant_shared_by_another_parent",
+      "count": 2
+    },
+    {
+      "name": "project::service::deletion_tests::deleting_scene_removes_unique_descendant_closure",
+      "count": 2
+    },
+    {
+      "name": "project::service::deletion_tests::failed_delete_restores_manifest_files_and_stage_outbox",
+      "count": 2
+    },
+    {
+      "name": "project::service::end_to_end_tests::end_to_end_create_import_composition_and_recovery",
+      "count": 2
+    },
+    {
+      "name": "project::service::end_to_end_tests::end_to_end_native_and_adopted_imports_and_missing_locations",
+      "count": 2
+    },
+    {
+      "name": "project::service::export_portability_tests::localized_non_root_scene_export_rewrites_project_relative_closure",
+      "count": 2
+    },
+    {
+      "name": "project::service::export_tests::exported_scene_round_trips_through_inspection_and_default_or_matrix_import",
+      "count": 2
+    },
+    {
+      "name": "project::service::export_tests::live_stage_export_uses_the_exact_current_revision",
+      "count": 2
+    },
+    {
+      "name": "project::service::export_tests::scene_export_contains_the_selected_scene_dependency_closure",
+      "count": 2
+    },
+    {
+      "name": "project::service::export_tests::scene_export_rejects_non_usdz_destination_without_creating_a_file",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::import_tests::opening_the_workspace_migrates_a_legacy_empty_project_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::import_tests::tracked_derived_state_changes_invalidate_an_old_import_inspection",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::scene_placement_tests::create_scene_adds_one_identity_preserving_child_placement",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::scene_placement_tests::create_scene_cleans_overflowed_parent_scene_cache_before_success",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::scene_placement_tests::create_scene_places_under_the_protected_project_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::scene_placement_tests::create_scene_rejects_model_root_and_invalid_names_without_mutation",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::adoption_failure_restores_a_pre_existing_gitignore_byte_for_byte",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::broad_ignore_is_compatible_with_canonical_project_metadata",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::confirmed_adoption_adds_metadata_without_rewriting_git_history",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::create_project_keeps_head_unborn_and_registers_last",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::create_project_rejects_unsafe_names_without_touching_parent",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::delete_project_rejects_manifest_identity_mismatch_without_touching_folder",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::delete_project_removes_registered_repository_and_survives_restart",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::delete_project_restores_folder_when_registry_persistence_fails",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::import_inspection_is_read_only_and_classifies_adoptable_git",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::inspection_warns_when_derived_local_state_is_tracked",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::native_project_with_deleted_local_state_remains_importable",
+      "count": 2
+    },
+    {
+      "name": "project::service::lifecycle::tests::remove_project_unregisters_without_touching_the_repository",
+      "count": 2
+    },
+    {
+      "name": "project::service::model::tests::project_level_model_import_places_under_the_protected_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::model::tests::project_level_model_imports_share_the_protected_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::model::tests::scene_target_model_import_adds_one_model_placement",
+      "count": 2
+    },
+    {
+      "name": "project::service::model_preparation::tests::abandoned_prepared_models_are_evicted_after_the_bounded_retention_window",
+      "count": 2
+    },
+    {
+      "name": "project::service::model_preparation::tests::bounded_worker_prepares_owned_model_metadata_without_exposing_source_path",
+      "count": 2
+    },
+    {
+      "name": "project::service::progress::tests::latest_phase_is_coalesced_per_operation_generation",
+      "count": 2
+    },
+    {
+      "name": "project::service::progress::tests::old_generations_are_bounded_out_of_the_status_store",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::asset_inspection::tests::filename_does_not_authorize_point_instancer_fixture",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::asset_inventory_tests::frozen_fixture_paths_are_not_derived_from_display_names",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::asset_inventory_tests::inventory_freezes_the_three_canonical_fixture_records",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::asset_inventory_tests::smoke_uses_only_the_first_four_frozen_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::cloned_registration_tests::smoke_scopes_cloned_project_registration_for_four_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::fixture::tests::canonical_fixture_has_two_distinct_scoped_sc1_1_identities",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::full_lifecycle_matrix_tests::runs_the_full_projects_lifecycle_matrix_for_all_sixteen_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::hierarchy_lookup_tests::freezes_proj_t_hierarchy_and_scoped_identity_lookup",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::import_link_composition_tests::smoke_exercises_seeded_import_link_composition_for_four_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::rng::tests::corpus_is_exactly_sixteen_sequential_seed_values",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::rng::tests::stream_is_reproducible_without_thread_rng",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::scene_activation_tests::smoke_verifies_three_scoped_scene_activations_for_four_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::scene_export_roundtrip_tests::smoke_round_trips_exported_scenes_for_four_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::scene_label_identity_tests::smoke_proves_scene_label_reuse_and_identity_for_four_seeds",
+      "count": 2
+    },
+    {
+      "name": "project::service::projects_lifecycle_matrix::source_equivalence::direct_revit_and_adopted_scene_bim_are_equivalent_after_activation",
+      "count": 2
+    },
+    {
+      "name": "project::service::rename::tests::failed_rename_restores_all_canonical_files_and_stage_outbox",
+      "count": 2
+    },
+    {
+      "name": "project::service::rename::tests::model_rename_failure_on_second_placement_restores_everything",
+      "count": 2
+    },
+    {
+      "name": "project::service::rename::tests::model_rename_updates_every_self_describing_placement_without_aliases",
+      "count": 2
+    },
+    {
+      "name": "project::service::rename::tests::project_rename_updates_the_protected_root_manifest_name",
+      "count": 2
+    },
+    {
+      "name": "project::service::rename::tests::scene_rename_updates_the_manifest_and_every_placement_mirror",
+      "count": 2
+    },
+    {
+      "name": "project::service::repository_summary_tests::repository_summary_preserves_an_unborn_symbolic_branch",
+      "count": 2
+    },
+    {
+      "name": "project::service::repository_summary_tests::repository_summary_projects_git_state_without_backend_handles",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority::registry::tests::registered_roots_are_loaded_from_the_shared_workspace_registry",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_queue_tests::delayed_renderer_rejects_a_consumed_request_after_host_timeout",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_queue_tests::idle_consumer_uses_one_shared_inbox_for_all_registered_projects",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_queue_tests::registry_snapshot_refreshes_only_after_registry_metadata_changes",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_queue_tests::stale_runtime_artifacts_are_removed_from_all_queue_directories",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_queue_tests::waiting_claim_and_cancellation_have_one_atomic_winner",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_tests::export_parent_includes_dirty_active_descendant_snapshot",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_tests::public_commit_uses_live_snapshot_and_persists_semantic_cache",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_tests::public_export_uses_the_active_live_snapshot",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_tests::runtime_timeout_is_busy_instead_of_disk_fallback",
+      "count": 2
+    },
+    {
+      "name": "project::service::runtime_authority_tests::scene_commit_includes_dirty_active_ancestor_snapshot",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::errors::tests::adoption_phases_map_to_path_free_protocol_codes",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::sync_tests::syncing_linked_child_refreshes_an_active_project_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::sync_tests::syncing_linked_scene_cleans_overflowing_cache_before_success",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::adoption_publishes_backend_owned_terminal_progress",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::failed_link_sync_preserves_last_good_snapshot_and_binding",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::linked_scene_keeps_snapshot_when_external_source_disappears",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::nested_adoption_adds_one_identity_preserving_parent_placement",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::project_level_adoption_places_scene_under_the_protected_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption::tests::syncing_linked_scene_replaces_closure_without_changing_scene_identity",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption_error_tests::adoption_accepts_valid_source_with_advisory_classification",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption_error_tests::adoption_rejects_a_changed_source_with_a_distinct_typed_error",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_adoption_error_tests::adoption_reports_source_inspection_failures_with_a_typed_error",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_inspection::tests::worker_returns_owned_inspection_for_a_valid_usd_source",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_lifecycle::tests::protected_root_scene_cannot_be_deleted",
+      "count": 2
+    },
+    {
+      "name": "project::service::scene_lifecycle::tests::referenced_scene_deletion_removes_all_incoming_placements",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_activation::authority_tests::stage_send_probe_keeps_activation_on_safe_two_phase_boundary",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_activation::authority_tests::stale_completion_cannot_replace_latest_active_identity",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_activation::stage_archive::tests::empty_project_has_no_import_packages",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::canonical_project_mutations_reach_live_stage_as_real_references",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::deleting_an_inactive_scene_is_consumed_without_mutating_the_active_stage",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::inactive_project_outbox_remains_isolated",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::inactive_scene_outbox_remains_pending_until_that_scene_is_active",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::injected_batch_failure_leaves_no_partial_stage_mutations",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::root_transition_never_patches_the_active_scene",
+      "count": 2
+    },
+    {
+      "name": "project::service::stage_mutation::tests::stage_handoff_outbox_is_under_the_approved_cache_root",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::list_projects_returns_owned_summaries_from_the_registry",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::new_project_root_has_a_stage_activation_target",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::publication_admission_is_shared_per_project_and_not_globally_serialized",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::stage_activation::stage_activation_resolves_a_registered_model_to_its_canonical_wrapper",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::stage_activation_resolves_project_and_standalone_scene_targets_without_flattening",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::stage_activation_resolves_the_registered_project_root_to_a_canonical_stage",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::tree_projection_keeps_authored_model_placement_identity",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::unavailable_project_keeps_registry_identity_and_reports_missing_repository",
+      "count": 2
+    },
+    {
+      "name": "project::service::tests::unknown_project_id_returns_typed_not_found_without_a_path",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::optional_tests::missing_renderer_assets_are_optional_but_the_localized_stage_stays_valid",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::pattern_tests::templated_value_clips_localize_the_expanded_layer_set",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::canonical_project_dependency_report_rejects_external_resolution",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::clean_import_ignores_a_large_unrelated_neighbor_set",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::discovery_tracks_only_transitive_layers_and_assets",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::discovery_uses_configured_resolver_search_paths_for_external_layers",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::existing_destination_is_a_collision",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::external_dependency_is_localized_without_copying_its_neighbor_directory",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::fingerprint_ignores_unrelated_neighbors_but_tracks_dependencies",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::materialization_keeps_one_configured_resolver_through_localization_and_validation",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::materialization_rewrites_exact_closure_and_survives_source_removal",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::nested_package_identifier_is_localized_as_an_atomic_archive",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::udim_assets_localize_every_matching_tile_without_copying_neighbors",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::unresolved_required_dependency_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::usd_z_package_is_preserved_as_one_exact_closure",
+      "count": 2
+    },
+    {
+      "name": "project::spatial::tests::asymmetric_fixture_preserves_axis_lengths_after_z_up_centimeter_normalization",
+      "count": 2
+    },
+    {
+      "name": "project::spatial::tests::canonical_stage_is_explicit_and_native_source_needs_no_second_correction",
+      "count": 2
+    },
+    {
+      "name": "project::spatial::tests::normalization_matrix_covers_axis_and_metric_combinations",
+      "count": 2
+    },
+    {
+      "name": "project::spatial::tests::z_up_conversion_maps_asymmetric_basis_to_y_up",
+      "count": 2
+    },
+    {
+      "name": "project::stage_metadata::tests::wrapper_preserves_authored_playback_domain",
+      "count": 2
+    },
+    {
+      "name": "project::storage::ignore::tests::broad_usdhub_rule_is_a_conflict",
+      "count": 2
+    },
+    {
+      "name": "project::storage::ignore::tests::managed_ignore_is_idempotent_and_preserves_unrelated_bytes",
+      "count": 2
+    },
+    {
+      "name": "project::storage::ignore::tests::managed_ignore_replaces_only_its_own_block",
+      "count": 2
+    },
+    {
+      "name": "project::storage::layout::fallback_tests::canonical_manifest_blocks_legacy_asset_fallbacks",
+      "count": 2
+    },
+    {
+      "name": "project::storage::layout::tests::authored_project_asset_paths_are_relative_and_contained",
+      "count": 2
+    },
+    {
+      "name": "project::storage::layout::tests::legacy_manifest_accessor_remains_separate_from_storage_v2",
+      "count": 2
+    },
+    {
+      "name": "project::storage::layout::tests::local_state_roots_are_bootstrapped_without_object_or_session_children",
+      "count": 2
+    },
+    {
+      "name": "project::storage::layout::tests::storage_v2_paths_are_keyed_by_stable_storage_identity",
+      "count": 2
+    },
+    {
+      "name": "project::storage::portability_tests::moved_project_reopens_after_source_and_local_state_removal",
+      "count": 2
+    },
+    {
+      "name": "project::storage::portability_tests::pro2_storage_and_composition_acceptance",
+      "count": 2
+    },
+    {
+      "name": "property_group_identity_and_selection_revision_round_trip",
+      "count": 1
+    },
+    {
+      "name": "protocol_rejects_unbounded_bim_inputs",
+      "count": 1
+    },
+    {
+      "name": "protocol_v11_hierarchy_visibility_and_bim_catalogue_are_explicit",
+      "count": 1
+    },
+    {
+      "name": "provenance_command_and_read_model_are_typed_and_bounded",
+      "count": 1
+    },
+    {
+      "name": "ray_traced_is_protocol_valid_and_runtime_capability_gated",
+      "count": 1
+    },
+    {
+      "name": "read_model::tests::optional_issue_provider_does_not_fabricate_zero_counts",
+      "count": 1
+    },
+    {
+      "name": "read_model::tests::optional_people_provider_does_not_fabricate_zero_count",
+      "count": 1
+    },
+    {
+      "name": "read_model::tests::repeated_placements_keep_distinct_member_identity",
+      "count": 1
+    },
+    {
+      "name": "read_model::tests::summary_round_trips_without_adapter_handles",
+      "count": 1
+    },
+    {
+      "name": "records_persistent_runtime_soak",
+      "count": 1
+    },
+    {
+      "name": "records_point_instancer_baseline",
+      "count": 1
+    },
+    {
+      "name": "records_point_instancer_reconcile_profile",
+      "count": 1
+    },
+    {
+      "name": "records_progressive_load_benchmark_artifact",
+      "count": 1
+    },
+    {
+      "name": "records_shared_material_benchmark_artifact",
+      "count": 1
+    },
+    {
+      "name": "recreation_candidates_include_confidence_reasons_and_preserve_details",
+      "count": 1
+    },
+    {
+      "name": "rejected_commit_leaves_head_unchanged",
+      "count": 1
+    },
+    {
+      "name": "renderer_configuration_defaults_are_explicit",
+      "count": 1
+    },
+    {
+      "name": "renderer_configuration_rejects_out_of_range_fps",
+      "count": 1
+    },
+    {
+      "name": "renderer_configuration_round_trips_with_an_uncapped_fps",
+      "count": 1
+    },
+    {
+      "name": "reports_an_unborn_empty_repository_as_clean",
+      "count": 1
+    },
+    {
+      "name": "reports_clean_and_dirty_tracked_worktree_state",
+      "count": 1
+    },
+    {
+      "name": "reports_non_ignored_untracked_worktree_state",
+      "count": 1
+    },
+    {
+      "name": "reprojection_reuses_assets_and_changed_prototype_gets_new_mesh",
+      "count": 1
+    },
+    {
+      "name": "resolves_and_materializes_a_historical_parent",
+      "count": 1
+    },
+    {
+      "name": "resolves_history_metadata_and_materializes_the_complete_tree",
+      "count": 1
+    },
+    {
+      "name": "rgb_channels_reject_values_outside_u8_wire_range",
+      "count": 1
+    },
+    {
+      "name": "route::cache::tests::stale_handle_is_rebuilt_and_counted",
+      "count": 1
+    },
+    {
+      "name": "route::cache::tests::stats_distinguish_projection_hit_and_miss",
+      "count": 1
+    },
+    {
+      "name": "route::fallback_material::tests::changed_fallback_color_updates_shared_asset_without_idle_work",
+      "count": 1
+    },
+    {
+      "name": "route::fallback_material::tests::fallback_color_updates_one_shared_material_without_allocating_another",
+      "count": 1
+    },
+    {
+      "name": "route::geom::hierarchy_tests::hierarchy_metadata_composed_reference_descendant_uses_composed_path",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::fallback_material_is_shared_across_meshes",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::hierarchy_metadata_legacy_opinions_are_indexed_once_per_stage",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::hierarchy_metadata_route_projects_display_name_and_explicit_source_role",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::mesh_patch_ignores_non_geometry_changes",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::mesh_patch_rebuilds_for_geometry_and_unknown_changes",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::mesh_patch_rebuilds_geometry_owned_mesh",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::mesh_patch_updates_extent_without_replacing_mesh",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::persistent_mesh_seed_is_consumed_by_the_normal_route",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::repeated_source_content_reuses_mesh_before_conversion",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::source_cache_is_bounded_for_deforming_geometry_versions",
+      "count": 1
+    },
+    {
+      "name": "route::geom::tests::source_mesh_key_changes_for_rendered_content_but_not_extent",
+      "count": 1
+    },
+    {
+      "name": "route::instancer_dependency::tests::dependencies_resolve_through_compact_ids",
+      "count": 1
+    },
+    {
+      "name": "route::material::fallback_tests::fallback_material_is_marked_disposable_and_not_in_material_cache",
+      "count": 1
+    },
+    {
+      "name": "route::material::package_isolation_tests::active_stage_archive_ownership_is_composition_scoped",
+      "count": 1
+    },
+    {
+      "name": "route::material::package_isolation_tests::hummingbird_materials_use_authored_conversion_and_embedded_textures",
+      "count": 1
+    },
+    {
+      "name": "route::material::package_isolation_tests::package_texture_identity_survives_a_b_a_activation_sequence",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::archive_index_invalidates_when_archive_changes",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::archive_lookup_does_not_discover_unregistered_repository_archives",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::changed_texture_path_gets_a_distinct_decode",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::material_binding_cache_reuses_and_invalidates_descriptors",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::repository_texture_decode_is_cached",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::repository_usdz_archive_index_is_reused_across_variants",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::repository_usdz_texture_scan_is_cached",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::reused_texture_lookup_does_not_decode_again",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::stale_texture_handle_is_not_returned",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::stats_distinguish_texture_hit_and_failed_miss",
+      "count": 1
+    },
+    {
+      "name": "route::material::tests::texture_cache_separates_color_space_variants",
+      "count": 1
+    },
+    {
+      "name": "route::profile::tests::aggregates_all_samples_and_keeps_bounded_expensive_records",
+      "count": 1
+    },
+    {
+      "name": "route::profile::tests::characterizes_topology_and_primvar_categories_without_allocating_labels",
+      "count": 1
+    },
+    {
+      "name": "route::profile::tests::top_records_use_stable_redaction_safe_identity_and_reason_bits",
+      "count": 1
+    },
+    {
+      "name": "route::projection_dirty::tests::dirty_set_deduplicates_entities_until_consumed",
+      "count": 1
+    },
+    {
+      "name": "route::projection_dirty::tests::mesh_consumer_index_tracks_replacements_and_removals",
+      "count": 1
+    },
+    {
+      "name": "runtime::client_wire_command_cannot_encode_authorization_changed",
+      "count": 1
+    },
+    {
+      "name": "runtime::editor_commands_and_events_round_trip_with_frontend_values",
+      "count": 1
+    },
+    {
+      "name": "runtime::lazy_scene_queries_round_trip_with_request_correlation",
+      "count": 1
+    },
+    {
+      "name": "runtime::runtime_delivery_events_round_trip_with_blob_metadata_and_chunks",
+      "count": 1
+    },
+    {
+      "name": "runtime::runtime_mutation_batch_round_trips_and_validates",
+      "count": 1
+    },
+    {
+      "name": "runtime::semantic_sync_status_wire_event_with_approved_reason_codes_never_contains_credentials_or_urls",
+      "count": 1
+    },
+    {
+      "name": "runtime_client::tests::applies_session_events_and_replaces_old_revision",
+      "count": 1
+    },
+    {
+      "name": "runtime_client::tests::assembles_out_of_order_manifest_and_blob_chunks",
+      "count": 1
+    },
+    {
+      "name": "runtime_client::tests::rejects_unauthorized_or_wrong_sized_blob",
+      "count": 1
+    },
+    {
+      "name": "sampling_intent_and_provider_are_separate_wire_values",
+      "count": 1
+    },
+    {
+      "name": "selection_commands_validate_membership_and_anchor_identity",
+      "count": 1
+    },
+    {
+      "name": "selection_delta_commands_are_capped_at_the_authoritative_limit",
+      "count": 1
+    },
+    {
+      "name": "selection_delta_event_round_trips_through_the_v11_wire_shape",
+      "count": 1
+    },
+    {
+      "name": "selection_presentation_command_rejects_an_invalid_gizmo_level",
+      "count": 1
+    },
+    {
+      "name": "selection_presentation_settings_default_missing_gizmo_level_to_current_size",
+      "count": 1
+    },
+    {
+      "name": "selection_presentation_settings_reject_gizmo_levels_outside_the_integer_range",
+      "count": 1
+    },
+    {
+      "name": "selection_presentation_settings_round_trip_without_renderer_types",
+      "count": 1
+    },
+    {
+      "name": "selection_read_model_accepts_single_target_compatibility_input",
+      "count": 1
+    },
+    {
+      "name": "selection_read_model_applies_a_validated_delta_atomically",
+      "count": 1
+    },
+    {
+      "name": "selection_read_model_rejects_duplicates_and_non_member_primary",
+      "count": 1
+    },
+    {
+      "name": "selection_read_model_rejects_more_than_the_wire_cardinality_limit",
+      "count": 1
+    },
+    {
+      "name": "selection_read_model_supports_empty_single_and_many_targets",
+      "count": 1
+    },
+    {
+      "name": "semantic::tests::bim_eligibility_requires_normalized_identity_evidence",
+      "count": 1
+    },
+    {
+      "name": "semantic::tests::whitespace_only_normalized_identity_is_not_eligibility_evidence",
+      "count": 1
+    },
+    {
+      "name": "semantic_sync::tests::semantic_sync_phases_serialize_to_snake_case",
+      "count": 1
+    },
+    {
+      "name": "semantic_sync::tests::semantic_sync_status_constructors_and_serialization_match_protocol",
+      "count": 1
+    },
+    {
+      "name": "session::tests::one_controller_and_multiple_observers_are_admitted",
+      "count": 1
+    },
+    {
+      "name": "session::tests::second_controller_is_rejected_without_replacing_the_first",
+      "count": 1
+    },
+    {
+      "name": "session::tests::unregistering_controller_allows_a_new_controller",
+      "count": 1
+    },
+    {
+      "name": "shared_prototypes_preserve_logical_order_and_invisible_ids",
+      "count": 1
+    },
+    {
+      "name": "snippet::tests::macro_escapes_braces_and_interpolates_multiple",
+      "count": 1
+    },
+    {
+      "name": "snippet::tests::macro_static_only",
+      "count": 1
+    },
+    {
+      "name": "snippet::tests::macro_string_interpolation_inside_quotes",
+      "count": 1
+    },
+    {
+      "name": "snippet::tests::malformed_snippet_fails_to_parse",
+      "count": 1
+    },
+    {
+      "name": "snippet::tests::valid_snippet_parses_and_opens",
+      "count": 1
+    },
+    {
+      "name": "source_identity_survives_a_prim_path_move",
+      "count": 1
+    },
+    {
+      "name": "standard_views_use_the_complete_snake_case_wire_vocabulary",
+      "count": 1
+    },
+    {
+      "name": "stream::tests::normalized_dimensions_are_even_and_within_pixel_budget",
+      "count": 1
+    },
+    {
+      "name": "stream::tests::server_normalization_clamps_dimensions_and_fps",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::disconnected_encoder_queue_is_observable_without_waiting",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::generation_change_rejects_the_old_video_request",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::production_router_bounds_slow_encoder_and_preserves_control_lane",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::production_router_drops_stale_generation_and_reconnects_cleanly",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::reconnect_gets_a_fresh_bounded_queue",
+      "count": 1
+    },
+    {
+      "name": "stream_session::router::tests::saturated_encoder_queue_is_non_blocking",
+      "count": 1
+    },
+    {
+      "name": "stream_session::tests::remote_answer_with_media_fingerprints_is_accepted",
+      "count": 1
+    },
+    {
+      "name": "stream_session::tests::remote_answer_with_wrong_media_count_is_rejected_before_webrtcbin",
+      "count": 1
+    },
+    {
+      "name": "stream_session::tests::session_fingerprint_is_copied_to_each_media_section",
+      "count": 1
+    },
+    {
+      "name": "switches_existing_local_branch_without_stashing_or_discarding_work",
+      "count": 1
+    },
+    {
+      "name": "switching_to_the_current_branch_is_a_noop",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::array_fields_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::author_component_roundtrips_through_usd",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::author_errors_are_graceful",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::color_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::data_enum_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::nested_struct_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::newtype_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::no_type_registry_is_graceful",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::option_and_wide_int_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "sync::tests::scalar_enum_quat_roundtrip",
+      "count": 1
+    },
+    {
+      "name": "tests::command_and_reply_round_trip_as_shared_json",
+      "count": 1
+    },
+    {
+      "name": "tests::create_scene_command_round_trips_typed_target_and_result",
+      "count": 1
+    },
+    {
+      "name": "tests::empty_external_source_kinds_are_rejected",
+      "count": 1
+    },
+    {
+      "name": "tests::import_progress_query_round_trips_opaque_operation_identity",
+      "count": 1
+    },
+    {
+      "name": "tests::import_progress_round_trips_the_latest_operation_phase",
+      "count": 1
+    },
+    {
+      "name": "tests::invalid_protocol_version_is_typed_and_does_not_need_a_path",
+      "count": 1
+    },
+    {
+      "name": "tests::lifecycle_commands_round_trip_without_filesystem_paths",
+      "count": 1
+    },
+    {
+      "name": "tests::local_selection_wire_contract_does_not_contain_a_filesystem_path",
+      "count": 1
+    },
+    {
+      "name": "tests::malformed_and_nil_ids_are_rejected",
+      "count": 1
+    },
+    {
+      "name": "tests::model_preparation_command_round_trips_operation_and_generation",
+      "count": 1
+    },
+    {
+      "name": "tests::previous_model_preparation_protocol_version_is_rejected_after_json_deserialization",
+      "count": 1
+    },
+    {
+      "name": "tests::previous_scene_inspection_protocol_version_is_rejected_after_json_deserialization",
+      "count": 1
+    },
+    {
+      "name": "tests::previous_write_protocol_version_is_rejected_after_json_deserialization",
+      "count": 1
+    },
+    {
+      "name": "tests::project_root_preserves_typed_identity",
+      "count": 1
+    },
+    {
+      "name": "tests::scene_adoption_command_round_trips_typed_target_and_preview_identity",
+      "count": 1
+    },
+    {
+      "name": "tests::scene_inspection_command_round_trips_operation_and_generation",
+      "count": 1
+    },
+    {
+      "name": "tests::test_configured_initial_branch",
+      "count": 1
+    },
+    {
+      "name": "tests::test_create_layered_test_repository",
+      "count": 1
+    },
+    {
+      "name": "tests::test_create_test_repository",
+      "count": 1
+    },
+    {
+      "name": "tests::test_deep_overlap_stage_structure",
+      "count": 1
+    },
+    {
+      "name": "tests::test_model_usda_fixture_validity",
+      "count": 1
+    },
+    {
+      "name": "tests::test_resolve_asset_and_external_paths",
+      "count": 1
+    },
+    {
+      "name": "tests::test_resolve_crate_fixture_path",
+      "count": 1
+    },
+    {
+      "name": "tests::test_resolve_fixture_path",
+      "count": 1
+    },
+    {
+      "name": "tests::test_semantic_test_app_initialization",
+      "count": 1
+    },
+    {
+      "name": "tests::test_sorted_paths",
+      "count": 1
+    },
+    {
+      "name": "tests::test_synthetic_wide_stage_structure",
+      "count": 1
+    },
+    {
+      "name": "tests::uuid_ids_round_trip_through_serde",
+      "count": 1
+    },
+    {
+      "name": "tests::write_command_round_trip_keeps_selection_and_fingerprint_opaque",
+      "count": 1
+    },
+    {
+      "name": "tiny_float_noise_does_not_change_geometry_classification",
+      "count": 1
+    },
+    {
+      "name": "typed_renderer_command_preserves_request_correlation",
+      "count": 1
+    },
+    {
+      "name": "uniform_color_is_valid_for_b2_renderer_presentation",
+      "count": 1
+    },
+    {
+      "name": "units::tests::conversions_cover_scale_and_temperature_offsets",
+      "count": 1
+    },
+    {
+      "name": "units::tests::invalid_conversion_is_explicit",
+      "count": 1
+    },
+    {
+      "name": "units::tests::metadata_uses_the_registry_canonical_unit",
+      "count": 1
+    },
+    {
+      "name": "units::tests::registry_looks_up_each_supported_quantity",
+      "count": 1
+    },
+    {
+      "name": "unrelated_one_sided_entities_do_not_create_a_candidate",
+      "count": 1
+    },
+    {
+      "name": "unsupported_render_mode_is_an_explicit_decode_error",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::every_project_root_variant_round_trips",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::identity_categories_are_checked_by_the_type_system",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::manifest_validation_builds_indexed_lookup_and_allows_empty_root",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::manifest_validation_rejects_duplicate_ids_and_storage_keys",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::manifest_validation_rejects_missing_root_and_empty_name",
+      "count": 1
+    },
+    {
+      "name": "validation::tests::source_kind_validation_preserves_non_empty_metadata",
+      "count": 1
+    },
+    {
+      "name": "viewer_settings_commands_are_typed_and_do_not_expose_provider_or_geometry_internals",
+      "count": 1
+    },
+    {
+      "name": "viewport::animation::tests::hummingbird_replacement_resets_and_restarts_real_playback",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bim_provenance::tests::returns_the_most_recent_commit_that_changed_the_property",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bim_provenance::tests::root_commit_addition_is_a_property_change",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bim_provenance::tests::worker_cancels_a_started_job_when_its_generation_is_superseded",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bim_provenance::tests::worker_resolves_the_older_property_change_from_real_git_history",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::commands::camera::tests::standard_view_mapping_uses_canonical_camera_offsets",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::commands::camera::tests::standard_view_rig_matches_each_canonical_camera_basis",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::editor_boundary::tests::model_member_root_remains_editable_but_its_source_does_not",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::editor_boundary::tests::model_source_mutations_are_rejected_by_identity",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::editor_boundary::tests::runtime_batches_are_validated_before_model_source_authoring",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::state::tests::save_state_is_separate_from_undo_history",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::batch_targets_must_match_the_authoritative_selection",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::multi_selection_edit_is_atomic_and_has_one_undo_step",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::replacement_batch_stale_member_rejects_without_stage_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::replacement_batch_uses_preview_targets_without_selection_binding",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::stale_member_rejects_the_whole_batch_without_stage_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_edit_test::tests::stale_selection_revision_rejects_the_whole_batch_without_stage_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_properties_lifecycle_test::tests::pre_readiness_property_request_replays_for_the_matching_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_properties_lifecycle_test::tests::progressive_bim_request_replays_when_anchor_is_unprojected",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::bim_properties_test::tests::request_returns_authoritative_single_selection_rows",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::commands_update_runtime_state_and_publish_correlated_events",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::editor_commands_author_the_live_stage_and_publish_correlation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::explicit_catalogue_request_replays_the_current_catalogue_with_correlation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::grid_origin_command_updates_presentation_state_and_event",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::snapshot_contains_only_logical_viewport_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::commands_test::tests::standard_view_switches_mounted_camera_to_arcball_without_losing_rig_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::edit_rejection_tests::tests::invalid_unit_edit_is_rejected_without_mutating_live_stage",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::edit_rejection_tests::tests::save_rejection_preserves_dirty_state_and_has_no_completion",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_search_test::tests::bim_search_routes_through_the_semantic_worker",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_search_test::tests::classification_provider_switch_builds_a_virtual_projection",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_search_test::tests::classification_provider_switch_round_trips_to_prim_repeatedly",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_search_test::tests::hierarchy_search_routes_through_the_projected_snapshot",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_search_test::tests::stale_search_result_is_dropped_after_project_activation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::hierarchy_visibility_test::bim_group_visibility_updates_all_scene_occurrences_and_publishes_authoritative_event",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::mutations_test::tests::runtime_attribute_batch_reaches_bevy_and_semantic_worker",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::mutations_test::tests::runtime_mutation_batch_uses_one_writer_and_preserves_revision_guard",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::pending_stream_fps_survives_a_same_frame_renderer_command",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::ray_traced_renderer_configuration_rejects_without_supported_solari",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::renderer_command_reaches_the_real_webrtc_gateway_boundary",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::renderer_configuration_applies_and_preserves_command_correlation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::renderer_configuration_keeps_edges_independent_from_render_mode",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::renderer_fps_event_is_published_only_after_cadence_application",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::repeated_renderer_configuration_is_idempotent",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::renderer_commands_test::tests::uniform_color_renderer_configuration_is_accepted_for_b2",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::save_stage_test::tests::canonical_project_scene_save_advances_generation_without_legacy_cache_context",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::save_stage_test::tests::canonical_project_scene_save_advances_only_owning_scene_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::save_stage_test::tests::canonical_save_succeeds_and_advances_generation_when_warm_worker_is_unavailable",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::save_stage_test::tests::save_stage_as_invalidates_only_when_destination_is_canonical_project_scene",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::save_stage_test::tests::save_stage_uses_current_stage_path_and_round_trips",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_boundedness_test::automatic_coarse_proxy_appears_while_logical_selection_finishes_exactly",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_boundedness_test::deep_topology_re_admission_budgets_every_ancestor_hop",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_boundedness_test::fifty_thousand_deep_chain_budgets_enter_and_unwind_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_boundedness_test::presentation_supersession::superseded_outline_restarts_after_swap_remove_and_updates_every_live_entity",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_boundedness_test::repeated_reparent_churn_does_not_grow_target_order_history",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_commands_test::batched_selection_deltas_apply_once_and_preserve_primary_invariants",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_commands_test::replace_and_clear_publish_reconstructable_transaction_deltas",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_commands_test::select_target_supports_zero_one_and_many_authoritative_targets",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_commands_test::snapshot_reduces_complete_selection_for_reconnect",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_commands_test::unprojected_replace_is_accepted_and_add_remove_preserve_primary_invariants",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_performance_test::heavy_focus_is_canceled_by_light_selection_and_control_lane_progresses",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_performance_test::heavy_selection_releases_renderables_and_bounds_are_opt_in",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::color_reconciliation_test::interrupted_selection_color_reconciles_a_to_b_and_restores_base_materials",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::color_reconciliation_test::repeated_superseding_selection_color_work_leaves_only_the_final_range_owned",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::color_reconciliation_test::reverting_to_the_last_completed_selection_reconciles_partial_color_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::profile_i1_7_1_large_multi_selection_baseline",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_cache_test::interrupted_outline_work_reconciles_entities_applied_before_selection_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_cache_test::profile_i1_7_4_projection_only",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_cache_test::profile_i1_7_4_settled_incremental_projection_delta",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_cache_test::section_box_projection_keeps_one_aggregate_and_one_fit_per_selection_delta",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_cache_test::selection_projection_reuses_unchanged_targets_and_deltas_only_touch_the_change",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::selection_profile_test::projection_profile_test::profile_i1_7_1_projection_scalability_correction",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::semantic_edit_integration_tests::semantic_edit_diff_undo_redo_save_replace_and_batch_converge",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::semantic_search_consistency_tests::live_edit_converges_into_bim_classification_search_and_diff",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::semantic_search_consistency_tests::stale_bim_search_result_is_dropped_after_project_activation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_acceptance_test::invalid_renderer_configuration_is_rejected_before_state_mutation",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_acceptance_test::supported_capabilities_authorize_ray_traced_and_dlss_sampling",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_acceptance_test::supported_viewer_settings_round_trip_through_bridge_and_snapshot",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_acceptance_test::unsupported_capabilities_reject_without_mutating_authoritative_settings",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::environment_command_applies_all_environment_fields_for_b2_2",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::identical_environment_command_does_not_mark_settings_changed",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::sampling_command_disables_the_current_provider",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::sampling_command_rejects_when_dlss_is_unavailable_and_fsr_is_pending",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::sampling_command_selects_dlss_and_publishes_authoritative_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::section_box_command_updates_authoritative_settings",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::selection_boundary_command_applies_renderer_owned_settings",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::unsupported_sampling_command_rejects_without_mutating_applied_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_commands_test::unsupported_sampling_request_preserves_last_valid_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::bridge::tests::viewer_settings_gizmo_size_test::selection_gizmo_size_command_updates_authoritative_settings",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::queues::tests::external_requests_preserve_their_correlation_id",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::queues::tests::focus_queue_keeps_latest_value_behind_control_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::queues::tests::local_requests_are_ordered_and_identifiable",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::queues::tests::published_events_are_available_to_the_local_reducer_and_transport",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::queues::tests::stale_focus_is_removed_when_selection_revision_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::read_model::tests::paged_tree_search_and_visibility_reduce_without_ecs_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::read_model::tests::snapshot_and_incremental_events_produce_the_authoritative_projection",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::lifecycle_tests::project_and_direct_scene_activation_keep_root_authority_through_refresh",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::reconcile::tests::dense_member_removal_repairs_the_swapped_position",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::classification_visibility_reports_mixed_state_and_restores_groups",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::dense_scene_index_pages_and_reveal_metadata_are_bounded",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::generic_projection_keeps_snapshot_acquisition_constant_time",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::hierarchy_snapshot_reuses_cached_projection",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::incremental_tests::initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_capacity",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::incremental_tests::progressive_unique_prim_additions_use_incremental_index_ingestion",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::incremental_tests::ten_thousand_prim_additions_are_admitted_with_a_hard_per_update_cap",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::incremental_tests::ten_thousand_prim_full_reconciliation_capture_is_hard_capped",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::native_instance_selection_resolves_real_projected_scene_proxy_paths_only",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::prim_name_projection_uses_only_the_final_path_segment",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::projection_only_children_churn_does_not_rebuild_the_scene_index",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::semantic_path_resolution_preserves_runtime_reveal_pages",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::semantic_path_visibility_targets_all_native_occurrences",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_index::tests::shared_provider_projection_installs_arc_and_matching_page_index",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::generic_search_preserves_mixed_visibility_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::generic_search_preserves_provider_ids_and_virtual_reveal_pages",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::latest_mailbox_replaces_pending_values_without_backlog",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_is_decoupled_from_prim_paths_for_synthetic_projections",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_matches_name_fragments_without_numeric_prefix_or_ancestor_false_positives",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_matches_projected_names_only_and_preserves_context",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_paginates_boundary_aware_projected_names_without_path_matching",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_returns_ancestor_pages_for_reveal",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::scene_query::tests::search_worker_preserves_activation_generation_with_immutable_input",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::session_registry::tests::only_one_controller_can_be_registered",
+      "count": 2
+    },
+    {
+      "name": "viewport::api::session_registry::tests::unregistering_an_observer_does_not_release_the_controller",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::accepted_stream_fps_survives_a_same_frame_local_request",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::cadence_transitions_30_to_60_to_120_only_after_application",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::effective_state_is_not_published_until_pending_request_is_applied",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::fps_only_stream_update_does_not_own_dimensions",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::local_fps_has_explicit_priority_but_does_not_discard_stream_fps",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::stale_stream_generation_cannot_replace_a_newer_request",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::cadence::tests::startup_publishes_initial_requested_and_effective_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::headless::tests::headless_egui_is_passive_without_removing_shared_input",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::offscreen_resize::tests::fps_only_stream_update_preserves_offscreen_dimensions",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::offscreen_resize::tests::rgba_byte_count_is_width_times_height_times_four",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::cache_tests::activation_does_not_wait_for_inflight_cache_warm",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::cache_tests::real_project_hummingbird_activation_reaches_geometry_ready_and_playback",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::production_tests::cache_first_tests::scene_cache_presentation_is_published_before_blocking_stage_open",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::production_tests::cache_first_tests::stale_cache_first_continuation_rolls_back_without_replacing_newer_authority",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::production_tests::production_activation_keeps_live_semantic_bim_and_provider_state_coherent",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::queue::tests::blocked_preparation_accepts_newest_request_without_waiting_for_old_one",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::queue::tests::latest_request_replaces_blocked_preparation",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::queue::tests::superseded_request_is_not_current",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::tests::activation_reply_preserves_project_root_generation_and_has_no_path",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::tests::activation_requests_are_routed_to_the_requesting_session",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_activation::tests::preparation_worker_preserves_request_identity_when_registry_is_unavailable",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::lease_tests::active_runtime_stage_returns_ready_and_freezes_authoring",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::lease_tests::empty_inbox_skips_registry_resolution_for_any_project_count",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::lease_tests::healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::lease_tests::timed_out_consumed_request_never_freezes_or_creates_a_lease",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::lease_tests::timeout_between_export_and_lease_claim_cannot_publish_ready",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::tests::expired_runtime_lease_unfreezes_live_stage",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::tests::no_active_stage_answers_registered_requests_as_inactive",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::project_runtime_authority::tests::runtime_lease_rejects_a_synchronous_authoring_generation_change",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::tests::active_scene_identity_requires_the_canonical_scene_locator",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::project_stage::tests::project_root_is_derived_only_for_a_project_scene_path",
+      "count": 2
+    },
+    {
+      "name": "viewport::app::sync::tests::convert_semantic_sync_request_converts_all_operations_and_controls",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::derived_semantic_property_is_explicitly_non_editable",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::measured_edit_converts_input_to_the_authored_source_unit",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::measured_edit_rejects_unknown_or_wrong_quantity_units",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::missing_attribute_is_rejected_without_guessing_a_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::non_custom_and_unsupported_attributes_are_not_editable",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::authoring::tests::resolves_editable_custom_attribute_by_stable_key",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_color::tests::active_level_changes_group_color_identity",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_color::tests::auto_changes_only_when_the_explicit_generation_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_color::tests::profile_uses_defined_level_and_value_mapping_for_unpaged_entities",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_contract_tests::field_catalogue_is_model_wide_bim_only_and_revision_scoped",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_contract_tests::mixed_projection_keeps_non_bim_out_of_hierarchy_search_and_colors",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_real_fixture_tests::real_nvidia_fixture_projects_element_only_leaf_when_family_is_unvalidated",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_color_entries_are_deterministic_across_snapshot_map_order",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_groups_by_arbitrary_property_and_reuses_projected_leaf_name",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_is_virtual_paged_and_cached",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_leaf_name_follows_all_normalized_identity_fallbacks",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_projection_reuses_the_cached_read_model_arc",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_unknown_parent_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::classification_uses_normalized_leaf_names_and_generic_projection",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::classification_tests::large_fixture_reports_bounded_read_work_and_zero_idle_rebuilds",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::color_plan_stale_state_tests::color_plan_clears_stale_entries_when_semantic_input_is_unavailable",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::diff::tests::added_or_deleted_property_marks_existing_entity_modified",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::diff::tests::equal_metadata_hash_skips_detail_changes_and_multi_selection_is_disabled",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::diff::tests::missing_working_entity_is_deleted_by_baseline_path",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::diff::tests::uses_entity_key_and_marks_modified_property",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::field_catalogue::tests::identical_catalogue_revision_is_published_only_once",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::index_tests::one_snapshot_index_is_reused_by_services_and_property_postings",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::index_tests::snapshot_index_keeps_deterministic_bim_entity_order",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::read_model::tests::proposed_editor_value_preserves_json_scalar_shape",
+      "count": 1
+    },
+    {
+      "name": "viewport::bim::read_performance_tests::large_bim_fixture_records_cold_idle_query_intersection_and_color_costs",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::empty_selection_preserves_authoritative_revision",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::property_read_classifies_observed_instance_namespace_without_guessing_values",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::property_read_prefers_authored_display_name_over_stripped_suffix",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::property_read_projects_intersection_and_authoritative_units",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::search_pages_are_deterministic_with_a_bounded_window",
+      "count": 2
+    },
+    {
+      "name": "viewport::bim::tests::search_supports_all_variants_and_compiles_one_bounded_regex",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::navigation::tests::empty_scene_uses_finite_ordered_clipping_fallbacks",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::navigation::tests::large_scene_gets_a_far_plane_beyond_the_legacy_limit",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::navigation::tests::tiny_scene_gets_a_near_plane_below_the_legacy_floor",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::tests::orientation_publisher_drops_nonfinite_camera_rotations",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::tests::orientation_publisher_emits_initial_orientation_once_and_then_stays_idle",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::tests::pole_rig_uses_a_stable_up_axis",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::zoom_tests::repeated_extreme_scroll_stays_finite",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::zoom_tests::zoom_has_no_legacy_user_scale_limits",
+      "count": 2
+    },
+    {
+      "name": "viewport::camera::zoom_tests::zoom_ratio_is_scale_independent",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::aggregate::tests::aggregation_median_and_p95_calculation",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::aggregate::tests::empty_sample_behavior_returns_zeroes_without_panic",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::collector::tests::cache_snapshot_empty_world",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::collector::tests::phase_metrics_conversion_and_fallback",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::counters::tests::query_latency_percentiles_are_derived_from_completed_samples",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::counters::tests::reset_preserves_configuration_flags",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::decision::tests::ground_grid_decision_tolerance_invariants",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::decision::tests::semantic_decision_truth_table_invariants",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::matrix::tests::cadence_samples_are_the_required_authority_targets",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::matrix::tests::matrix_contains_all_sixteen_renderer_configurations",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::runner::tests::benchmark_run_state_transitions",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::sample::tests::benchmark_identity_records_git_and_glacial_sha",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::sample::tests::render_configuration_defaults_and_round_trip",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::scenario::tests::all_24_scenarios_are_categorized_and_code_stable",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::scenario::tests::scenario_probe_serialization_round_trip",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::scenario::tests::steady_state_expectation_detects_mismatch",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::scenario_driver::tests::s2_driver_disables_grid_on_startup",
+      "count": 2
+    },
+    {
+      "name": "viewport::diagnostics::performance::scenario_driver::tests::s4_driver_toggles_grid_visibility",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::headless_gizmo::tests::pointer_button_transitions_cover_press_release_and_middle_mapping",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::headless_gizmo::tests::remote_css_pointer_is_clamped_to_offscreen_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::headless_gizmo::tests::remote_css_pointer_maps_to_non_two_x_offscreen_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::headless_gizmo::tests::remote_css_pointer_maps_to_two_x_offscreen_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::navigation::tests::new_stream_generation_rejects_old_pointer_mapping",
+      "count": 2
+    },
+    {
+      "name": "viewport::input::navigation::tests::remote_motion_uses_authoritative_viewport_cursor_without_publishing_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::dlss::tests::default_capability_is_fail_closed",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::dlss::tests::runtime_support_requires_an_opted_in_build",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::disabled_sampling_always_selects_none",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::dlss_is_preferred_when_both_providers_are_available",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::dlss_is_selected_when_it_is_the_only_available_provider",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::dlss_loss_with_fsr_pending_selects_none_and_publishes_unsupported_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::fsr_is_selected_when_dlss_is_unavailable",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::no_provider_returns_an_explicit_unsupported_result",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::pending_fsr_state_is_reconciled_to_dlss_when_available",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::pending_fsr_state_is_reconciled_to_none",
+      "count": 2
+    },
+    {
+      "name": "viewport::rendering::sampling::tests::provider_choice_is_deterministic",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::active_window_expansion_supplements_a_resident_non_animation_payload",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::animation_window_is_bounded_and_rotates_fairly",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::hydration_error_or_source_fallback_is_fail_closed",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::rebuild_requires_cacheable_owned_prim_animation_rows",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::rebuild_requires_matching_scene_animation_payload_identity",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::animation::tests::stale_animation_generation_is_rejected_without_a_reason",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::authority_loading::tests::oversized_ready_payload_starts_without_starving_smaller_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::authority_loading::tests::ready_upload_order_stays_deduplicated_through_demand_churn",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::authority_runtime::tests::capacity_deferred_ready_payload_rotates_to_smaller_progress",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::authority_runtime::tests::cpu_capacity_skips_blocked_head_and_preserves_queue_order",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::authority_runtime::tests::upload_requeue_restores_physical_membership_after_budget_consumed",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::payload_satisfaction_tests::animation_already_loading_reconciles_without_duplicate_supplement",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::payload_satisfaction_tests::animation_demand_queues_supplement_without_replacing_resident_mesh",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::payload_satisfaction_tests::demand_expansion_while_geometry_loads_follows_up_with_animation",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::payload_satisfaction_tests::stale_supplemental_completion_is_rejected_after_generation_replacement",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::active_camera_payloads_defer_until_cpu_and_gpu_capacity_is_released",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::cache_presentation_retirement_blocks_old_camera_and_completion_publication",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::camera_and_selection_share_one_load_but_keep_two_reasons",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::camera_near_cached_payload_acquires_and_releases_renderer_ownership",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::decoded_mesh_footprint_replaces_encoded_estimate_before_accounting",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::generation_mismatch_rejects_stale_completion_and_budget_pressure_evicts_warm",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::installing_a_new_generation_retires_old_state_and_readmits_same_hash",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::oversized_single_payload_is_skipped_without_budget_overflow",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::stationary_camera_refills_active_demand_after_loader_saturation",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::authority::tests::terminal_cache_failure_is_suppressed_until_new_scene_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::camera::tests::projection_viewport_and_section_box_changes_trigger_requery",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::camera::tests::small_camera_jitter_does_not_rebuild_residency",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::camera::tests::translation_and_rotation_thresholds_trigger_requery",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::catalog::tests::catalog_rejects_invalid_scene_blob_references",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::catalog::tests::reason_masks_are_minimal_and_animation_is_additive",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::loader::tests::cancellation_reenqueue_stays_bounded_and_moves_key_to_current_tail",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::loader::tests::cancellation_removes_pending_job_without_reordering_other_jobs",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::loader::tests::queue_is_bounded_and_coalesces_latest_metadata",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::lru::tests::replacing_an_entry_refreshes_its_recency",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::lru::tests::weighted_lru_evicts_oldest_unpinned_entry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::projection::tests::projection_uses_resolved_scene_space_transform",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::projection::tests::shared_mesh_handle_projects_each_occurrence_and_retirement_removes_all",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::integration_tests::queue_tests::waiting_key_rotates_while_ready_key_reaches_real_persistence",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::integration_tests::real_repair_pipeline_reaches_gpu_residency",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::persistence_tests::published_descriptor_is_carried_into_pure_lookup_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::cache_ready_pressure_never_restarts_scene_payload_repair",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::cas_lost_under_dual_pressure_rejects_without_stranding_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::lookup_only_pressure_preserves_phase_for_cached_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::missing_scene_payload_under_dual_pressure_requeues_targeted_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::stale_dual_pressure_completion_does_not_resurrect_old_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::pressure_tests::waiting_under_dual_pressure_rejects_without_stranding_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::cached_worker_none_is_queued_without_inline_targeted_fill",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::camera_near_repair_retries_same_key_into_cpu_ready",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::full_repair_queue_defers_the_loading_job_without_losing_camera_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::repair_burst_is_bounded_and_coalesces_duplicate_keys",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::stale_generation_is_dropped_before_repair_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::tests::worker_retry_keeps_upload_throttle_owned_by_residency_authority",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::waiting_tests::persistence_completion_redispatches_cached_worker_without_loading_leak",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::waiting_tests::repair_queue_is_bounded_and_coalesces_same_key",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::waiting_tests::repair_waiting_releases_loading_capacity_and_reenters_bounded_admission",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::waiting_tests::retirement_drops_in_flight_repair_completion_and_queued_work",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::repair::waiting_tests::transient_activation_wait_preserves_camera_repair_until_cached_retry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::selection::tests::backpressured_selection_is_attempted_once_then_deferred",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::selection::tests::deselection_and_reset_release_only_selected_reason",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::selection::tests::production_selection_follows_distinct_child_members_through_repair",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::selection::tests::selection_queue_and_stale_work_remain_bounded",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::spatial::tests::non_finite_bounds_are_normalized_to_a_safe_origin_box",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::spatial::tests::rtree_returns_only_intersecting_camera_candidates",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::spatial::tests::scene_payloads_compose_ancestor_transform_for_camera_space",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::tests::default_budget_matches_bevy_upload_throttle",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::tests::lifecycle_retirement_rejects_stale_residency_completion",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::tests::scene_v3_owner_root_precedes_legacy_project_cache_root",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::viewpoint::tests::mounted_viewpoint_resolves_only_owned_cache_geometry",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::viewpoint::tests::stale_viewpoint_generation_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::viewpoint::tests::viewpoint_reason_coexists_and_releases_on_switch",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::worker::tests::disconnected_worker_becomes_unavailable_instead_of_requeueing_forever",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::worker::tests::loaded_payloads_are_installed_only_for_the_current_scene_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::worker::tests::unavailable_worker_defers_without_publishing_completion",
+      "count": 2
+    },
+    {
+      "name": "viewport::residency::worker::tests::worker_completion_keeps_generation_tagged_and_bounded",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color::tests::color_plan_rebinds_shared_material_and_disable_restores_authored_route",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color::tests::color_plan_updates_selection_base_without_overwriting_selection_material",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color::tests::large_classification_plan_uses_indexed_occurrence_visits",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color::tests::path_only_classification_entries_rebind_all_instance_occurrences",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color_plan::tests::backend_builds_color_plan_from_bim_recipe_without_contextual_provider",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color_plan::tests::backend_builds_complete_unpaged_plan_once_and_stays_idle",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::classification_color_plan::tests::intent_generation_is_monotonic_and_unchanged_intent_is_idle",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::diff::tests::overlay_plan_maps_presence_and_path_changes",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::diff::tests::unchanged_entities_have_no_overlay_plan",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::entity_order::tests::remove_readd_churn_never_grows_history",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::entity_order::tests::swap_remove_repairs_the_moved_index",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::extent::tests::add_and_remove_recompute_over_all_current_prims",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::extent::tests::local_extent_uses_world_transform_for_root_or_z_up_scene",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::extent::tests::reload_replaces_previous_stage_bounds",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::extent::tests::removing_last_prim_returns_empty_extent",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::extent::tests::transformed_prim_recompute_keeps_unchanged_global_bounds",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::ghost::tests::historical_ghost_is_hydrated_reused_and_removed_with_the_diff",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::section_box_face::tests::every_face_contracts_and_extends_without_moving_other_faces",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::section_box_face::tests::minimum_thickness_clamps_crossing_and_uses_effective_delta",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::section_box_face::tests::repeated_incremental_drag_and_reverse_restore_the_original_pose",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::section_box_face::tests::rotated_face_drag_uses_local_normal_for_all_axis_pairs",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::aggregate_bounds_contain_every_selected_renderable",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::direct_selection_changes_advance_bounds_generation_without_disabling_section_box",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::disabling_resets_user_adjustment_and_reenable_refits",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::empty_geometry_resets_derived_state_without_authored_geometry",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::fit_produces_one_box_transform_and_six_planes",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::material_only_component_change_does_not_reconcile_section_box",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::oriented_transform_produces_six_inside_facing_planes",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::selection_change_refits_user_adjusted_pose",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::unrelated_changes_do_not_require_section_box_reconciliation",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::user_adjusted_pose_survives_reference_bounds_update",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box::tests::user_manipulation_preserves_bounds_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::clip_uniform_uses_one_shared_box_space_transform",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::composition_preserves_uniform_and_selection_routes",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::composition_restores_authored_route_after_shaded_selection_release",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::extension_keeps_the_standard_material_as_the_base_route",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::stale_uniform_route_is_reconciled_before_shaded_clip_removal",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::successful_clip_clears_recovered_missing_material_diagnostic",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_clipping::tests::successful_clip_clears_recovered_unsupported_diagnostic",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_gizmo::tests::face_adjusted_box_preserves_dimensions_through_translation_and_rotation",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_gizmo::tests::face_drag_promotes_autofit_to_user_adjusted_and_preserves_drag_baseline",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_gizmo::tests::visible_state_spawns_exactly_one_aggregate_gizmo_target",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_visualization::tests::aggregate_visualization_has_exactly_one_box",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::section_box_visualization::tests::visualization_follows_the_interactive_box_transform",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection::tests::large_selection_transactions_advance_the_authority_once_each",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection::tests::logical_selection_is_canonical_and_primary_remains_a_member",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection::tests::logical_selection_rejects_duplicates_before_state_mutation",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection::tests::pending_selection_delta_coalesces_until_projection_consumes_it",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection::tests::selected_instance_bridge_captures_identity_before_reconcile",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_color::tests::default_selection_color_override_is_disabled_but_has_documented_color",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_color::tests::selection_color_has_priority_over_hover_color",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_color::tests::selection_color_preserves_rgb_channels",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_hover::tests::hover_pick_stats_start_without_raycasts",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_hover::tests::idle_pick_state_requires_no_new_input_or_camera_revision",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_hover::tests::remote_css_pointer_maps_non_two_x_camera_viewport",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_hover::tests::remote_css_pointer_maps_to_actual_camera_viewport",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_outline::tests::default_selection_boundary_uses_the_documented_width",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_outline::tests::selection_outline_color_preserves_rgb_channels",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::selection_presentation_proxy::tests::coarse_proxy_has_one_wire_box",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::tests::solari_capability_requires_compile_device_and_scene_support",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::tests::stable_capability_publication_does_not_dirty_viewer_settings",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::tests::supported_capability_is_published_as_renderer_neutral_viewer_state",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::environment::tests::background_projection_updates_clear_color_only",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::environment::tests::fallback_surface_projection_updates_fallback_state_without_authored_materials",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::environment::tests::grid_projection_applies_color_visibility_and_world_origin_without_spawning",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::environment::tests::scene_origin_tracks_loaded_geometry_when_selected",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::render_mode::tests::render_mode_scans_only_on_transitions_and_new_uniform_meshes",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::render_mode::tests::uniform_color_rebinds_and_shaded_restores_each_authored_material",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::render_mode::tests::uniform_color_tracks_material_route_changes_before_restoring",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::shadows::tests::shadows_disable_globally_and_restore_each_authored_setting",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::edge_mesh_deduplicates_shared_triangle_edges_and_rejects_points",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::edge_overlay_is_independent_from_wireframe_for_all_four_combinations",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::full_renderer_configuration_matrix_preserves_each_independent_option",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::gizmo_size_level_uses_log_scale_for_both_gizmo_paths",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::grid_visibility_reads_the_authoritative_renderer_configuration",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::visualization::tests::render_mode_round_trip_updates_bevy_wireframe_without_touching_edges",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::mailbox::tests::state_saturation_replaces_pending_deltas_with_latest_snapshot",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::state::tests::activation_reset_invalidates_snapshot_and_records_generation",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::schema::tests::pre_bim_working_rows_are_invalidated_once_for_reingestion",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::delta::semantic_database_subtree_delta_updates_only_affected_rows_and_leaves_unaffected_untouched",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::query::display_name_filter_is_case_insensitive_path_exclusive_and_paginated",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::query::test_query_after_subtree_delta_with_property_filters",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::snapshot::measured_properties_are_written_to_working_store_columns",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::snapshot::profiles_semantic_database_replace_snapshot_baseline",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::snapshot::schema_migration_creates_version_one_tables",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::store::tests::stable_key::test_stable_key_path_move_after_delta",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::sync::delivery_worker::tests::complete_delivery_publishes_a_ready_descriptor_for_the_active_identity",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::sync::delivery_worker::tests::delivery_queue_is_bounded_and_keeps_latest_pending_revision",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::sync::delivery_worker::tests::delivery_result_backpressure_preserves_latest_completion",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::changed_info_delta_updates_only_the_affected_semantic_entity",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::changed_info_extraction_replaces_only_the_affected_prim",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::sync_telemetry_separates_changed_info_from_subtree_extraction",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::test_changed_info_captures_old_identities_and_computes_removed_paths",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::test_changed_info_propagates_extraction_errors",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::changed_info::test_changed_info_rejects_entity_key_collisions",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::diff::test_regression_diff_after_subtree_resync_reflects_affected_only",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::fallback::test_fallback_unnormalizable_root_triggers_full_snapshot_replace",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::fallback::test_regression_d2_direct_current_current_collision_error",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::fallback::test_regression_d_collision_triggers_full_snapshot_fallback",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::fallback::test_regression_f_root_resync_triggers_full_snapshot_load",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::hierarchy::test_regression_multiple_disjoint_roots_reconcile_and_semantic_invariance",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::hierarchy::test_regression_prim_rename_preserves_sibling_and_migrates_entity",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::hierarchy::test_regression_prim_reparent_updates_hierarchy_and_preserves_sibling",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::lifecycle::a_new_live_stage_session_triggers_a_full_semantic_load",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::lifecycle::manual_baseline_recomputes_for_working_changes_and_resets_on_reload",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::lifecycle::resync_full_replace_removes_entities_from_the_working_store",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::payload::test_regression_payload_load_and_unload_lifecycle",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::render_blob::test_fallback_missing_prim_entities_triggers_full_attach",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::render_blob::test_fallback_partial_prim_entities_index_corruption_triggers_full_attach",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::render_blob::test_regression_resync_subtree_render_blob_enrichment_scoped_to_affected_entities",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::runtime_delivery::test_regression_local_native_mode_boundary_skips_delivery",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::runtime_delivery::test_regression_subtree_delta_runtime_delivery_manifest_and_blob_reuse",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::runtime_delivery_overhead::profiles_server_delivery_isolated_overhead",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::runtime_delivery_readiness::runtime_delivery_waits_for_projection_ready",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::sibling_pipeline_invariance_tests::unaffected_sibling_pipeline_preserves_resync_invariance",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::subtree_delta::test_regression_a_resync_subtree_34_prims_delta_applied",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::subtree_delta::test_regression_b_remove_and_add_under_resync_root",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::subtree_delta::test_regression_c_resync_subtree_with_unshaded_changed_info",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::subtree_delta::test_regression_e_unaffected_entity_and_hash_byte_identical",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::worker::benchmark_query_boundary_is_bounded_without_changing_normal_submission",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::worker::distinct_field_keys_are_selected_without_geometry_access",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::worker::full_snapshot_bulk_load_supports_type_and_property_queries",
+      "count": 2
+    },
+    {
+      "name": "viewport::semantic::tests::worker::schema_query_supports_grouping_and_pagination",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::project_activation::scene_presentation::tests::child_flags_are_computed_in_one_parent_index_pass",
+      "count": 2
+    },
+    {
+      "name": "viewport::session::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::frame_capture::tests::compacts_padded_rows_without_changing_the_frame_bytes",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::frame_capture::tests::correlation_overflow_is_bounded_and_fails_closed",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::frame_capture::tests::keeps_aligned_rgba_readback_unchanged",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::frame_capture::tests::render_identity_survives_asynchronous_readback_completion",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::frame_capture::tests::strips_gpu_row_padding_from_rgba_readback",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::benchmark_flags_are_parsed_correctly",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::codec_selection_is_parsed_without_becoming_an_asset_path",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::default_launch_preserves_the_optional_asset_argument",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::legacy_stdio_flags_are_rejected",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::mesh_profile_benchmark_flag_enables_profile_mode",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::renderer_matrix_benchmark_flag_selects_the_release_matrix_runner",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::stream_configuration_flags_select_the_requested_matrix_case",
+      "count": 2
+    },
+    {
+      "name": "viewport::transport::tests::transport_and_asset_can_be_supplied_in_either_order",
+      "count": 2
+    },
+    {
+      "name": "viewport_command_fixture_uses_the_current_json_shape",
+      "count": 1
+    },
+    {
+      "name": "viewport_event_fixture_uses_the_current_json_shape",
+      "count": 1
+    },
+    {
+      "name": "walks_both_parents_of_a_merge_commit",
+      "count": 1
+    },
+    {
+      "name": "workspace_satisfies_canonical_test_architecture_guard",
+      "count": 1
+    }
+  ],
+  "windows_only_tests": [
+    {
+      "name": "project::cache_warmer::legacy_migration_tests::windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::pending_recovery_is_rejected_without_changing_journal_or_backup_state",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::windows_canonical_project_open_without_pending_recovery_remains_available",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::windows_legacy_migration_is_rejected_without_changing_project_state",
+      "count": 2
+    }
+  ],
+  "unix_only_tests": [
+    {
+      "name": "project::cache_warmer::legacy_migration_tests::migrated_project_root_cache_contains_legacy_composed_content",
+      "count": 2
+    },
+    {
+      "name": "project::source_closure::tests::symlinked_source_is_rejected",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::interrupted_migration_is_recovered_before_restart",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::migrates_legacy_project_to_storage_v2_and_is_idempotent",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::migration_failure_after_ordinary_scene_restores_legacy_tree",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::migration_failure_before_manifest_restores_legacy_tree",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::committed_manifest_wins_over_a_stale_legacy_manifest_after_restart",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::failed_rollback_preserves_transaction_for_a_later_attempt",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::interrupted_model_publication_preserves_the_legacy_wrapper",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::invalid_canonical_manifest_preserves_recovery_transaction",
+      "count": 2
+    },
+    {
+      "name": "project::storage::migration::tests::recovery_tests::missing_canonical_target_preserves_recovery_transaction",
+      "count": 2
+    }
+  ],
+  "solari_feature_tests": [
+    {
+      "name": "viewport::scene::solari::projection_asset_tests::mesh_asset_event_dirties_indexed_consumer",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::explicit_dirty_entity_is_processed_incrementally",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::shaded_idle_does_not_repeat_full_projection_scan",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::stable_ray_traced_does_not_repeat_full_projection_scan",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::supported_usd_meshes_get_raytracing_markers_without_material_mutation",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::unchanged_large_scene_processes_zero_projection_entities_on_idle",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::projection_tests::unsupported_usd_projection_is_diagnosed_and_never_marked_for_raytracing",
+      "count": 2
+    },
+    {
+      "name": "viewport::scene::solari::tests::camera_and_proof_mesh_follow_ray_traced_mode_and_restore_shaded",
+      "count": 2
+    }
+  ]
+}
