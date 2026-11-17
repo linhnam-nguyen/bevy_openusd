@@ -8,13 +8,13 @@ use bevy::prelude::Entity;
 /// tombstones. Removing and later re-adding an entity produces exactly one live
 /// entry, so memory stays O(current membership).
 #[derive(Clone, Debug, Default)]
-pub(super) struct EntityOrder {
+pub(in crate::viewport) struct EntityOrder {
     entities: Vec<Entity>,
     index_by_entity: HashMap<Entity, usize>,
 }
 
 impl EntityOrder {
-    pub(super) fn insert(&mut self, entity: Entity) -> bool {
+    pub(in crate::viewport) fn insert(&mut self, entity: Entity) -> bool {
         if self.index_by_entity.contains_key(&entity) {
             return false;
         }
@@ -24,7 +24,7 @@ impl EntityOrder {
         true
     }
 
-    pub(super) fn remove(&mut self, entity: Entity) -> bool {
+    pub(in crate::viewport) fn remove(&mut self, entity: Entity) -> bool {
         let Some(index) = self.index_by_entity.remove(&entity) else {
             return false;
         };
@@ -41,24 +41,24 @@ impl EntityOrder {
         true
     }
 
-    pub(super) fn clear(&mut self) {
+    pub(in crate::viewport) fn clear(&mut self) {
         self.entities.clear();
         self.index_by_entity.clear();
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub(in crate::viewport) fn len(&self) -> usize {
         self.entities.len()
     }
 
-    pub(super) fn is_empty(&self) -> bool {
+    pub(in crate::viewport) fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
-    pub(super) fn get(&self, index: usize) -> Option<Entity> {
+    pub(in crate::viewport) fn get(&self, index: usize) -> Option<Entity> {
         self.entities.get(index).copied()
     }
 
-    pub(super) fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
+    pub(in crate::viewport) fn iter(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().copied()
     }
 }

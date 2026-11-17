@@ -51,5 +51,5 @@ fn section_box_edges(transform: Transform) -> [(Vec3, Vec3); 12] {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/section_box_visualization_inline_tests.rs"]
+#[path = "../../../tests/unit/viewport/section_box/visualization_tests.rs"]
 mod tests;

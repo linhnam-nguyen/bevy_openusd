@@ -10,8 +10,8 @@ use usd_bevy::UsdPrimRef;
 use viewport_protocol::RenderMode;
 
 use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
-use super::super::selection::SelectionBaseMaterial;
 use super::DisplayToggles;
+use crate::viewport::selection::SelectionBaseMaterial;
 
 const UNIFORM_COLOR: Color = Color::srgb(0.72, 0.72, 0.72);
 

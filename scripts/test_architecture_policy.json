@@ -1398,70 +1398,70 @@
       "target": "tests/unit/viewport/scene/ghost/tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box/mod.rs",
+      "owner_file": "src/viewport/section_box/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/section_box_tests.rs"
+      "target": "tests/unit/viewport/section_box/tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box/clipping/mod.rs",
+      "owner_file": "src/viewport/section_box/clipping/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/section_box_clipping_tests.rs"
+      "target": "tests/unit/viewport/section_box/clipping_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box/face.rs",
+      "owner_file": "src/viewport/section_box/face.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/section_box_face_tests.rs"
+      "target": "tests/unit/viewport/section_box/face_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box/gizmo.rs",
+      "owner_file": "src/viewport/section_box/gizmo.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/section_box_gizmo_inline_tests.rs"
+      "target": "tests/unit/viewport/section_box/gizmo_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box/visualization.rs",
+      "owner_file": "src/viewport/section_box/visualization.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/section_box_visualization_inline_tests.rs"
+      "target": "tests/unit/viewport/section_box/visualization_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/mod.rs",
+      "owner_file": "src/viewport/selection/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/selection_tests.rs"
+      "target": "tests/unit/viewport/selection/tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/color/mod.rs",
+      "owner_file": "src/viewport/selection/color/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/selection_color_inline_tests.rs"
+      "target": "tests/unit/viewport/selection/color_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/hover.rs",
+      "owner_file": "src/viewport/selection/hover.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/selection_hover_inline_tests.rs"
+      "target": "tests/unit/viewport/selection/hover_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/outline/mod.rs",
+      "owner_file": "src/viewport/selection/outline/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/selection_outline_inline_tests.rs"
+      "target": "tests/unit/viewport/selection/outline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/presentation/proxy.rs",
+      "owner_file": "src/viewport/selection/presentation/proxy.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/selection_presentation_proxy_inline_tests.rs"
+      "target": "tests/unit/viewport/selection/presentation/proxy_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection/projection/mod.rs",
+      "owner_file": "src/viewport/selection/projection/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/scene/selection_projection_test_support.rs"
+      "target": "tests/unit/viewport/selection/projection/test_support.rs"
     },
     {
       "owner_file": "src/viewport/scene/solari/mod.rs",
@@ -1693,10 +1693,10 @@
       "status": "approved"
     },
     {
-      "path": "src/viewport/scene/section_box/clipping/support.rs",
-      "owner": "src/viewport/scene/section_box/clipping/mod.rs",
+      "path": "src/viewport/section_box/clipping/support.rs",
+      "owner": "src/viewport/section_box/clipping/mod.rs",
       "consumers": [
-        "src/viewport/scene/section_box/clipping/sync.rs"
+        "src/viewport/section_box/clipping/sync.rs"
       ],
       "reason": "Production section-box clipping plane/AABB math helpers split from section_box_clipping.rs and used by section_box_clipping_sync.rs.",
       "status": "approved"

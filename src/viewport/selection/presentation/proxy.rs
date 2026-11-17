@@ -121,5 +121,5 @@ fn proxy_edges(bounds: ProjectedWorldBounds) -> [(Vec3, Vec3); 12] {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/scene/selection_presentation_proxy_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/selection/presentation/proxy_tests.rs"]
 mod tests;

@@ -122,5 +122,5 @@ pub(in crate::viewport) fn sync_section_box_gizmo_target(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/section_box_gizmo_inline_tests.rs"]
+#[path = "../../../tests/unit/viewport/section_box/gizmo_tests.rs"]
 mod tests;

@@ -9,8 +9,8 @@ use viewport_protocol::{RenderMode, SceneAnchor};
 use super::super::super::selection::{
     SelectionBaseMaterial, SelectionColorOverride, collect_mesh_descendants,
 };
-use super::super::super::visualization::OriginalRenderMaterial;
 use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::visualization::OriginalRenderMaterial;
 
 use super::{
     SectionClipDiagnostics, SectionClipExtension, SectionClipMaterial, SectionClipUniform,

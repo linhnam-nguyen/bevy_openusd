@@ -17,8 +17,10 @@ use crate::viewport::api::SceneAnchorIndex;
 mod plan;
 pub(in crate::viewport) use plan::{ClassificationColorPlan, refresh_classification_color_plan};
 
-use super::section_box::SectionClipUnderlyingMaterial;
-use super::selection::{SelectionBaseMaterial, collect_mesh_descendants};
+use crate::viewport::section_box::SectionClipUnderlyingMaterial;
+use crate::viewport::selection::{
+    SelectionBaseMaterial, collect_mesh_descendants, color_from_rgb8,
+};
 
 /// Instrumentation for classification color idle-work and restore evidence.
 #[derive(Resource, Debug, Default)]
@@ -179,7 +181,7 @@ fn shared_material(
         return handle.clone();
     }
     let handle = materials.add(StandardMaterial {
-        base_color: super::selection::color_from_rgb8(color),
+        base_color: color_from_rgb8(color),
         perceptual_roughness: 1.0,
         ..default()
     });

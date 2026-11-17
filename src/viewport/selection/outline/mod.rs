@@ -15,12 +15,11 @@ use apply::apply_pending_outline_work;
 pub(in crate::viewport) use tree::collect_mesh_descendants;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::{
+use crate::viewport::scene::EntityOrder;
+use crate::viewport::selection::{
     CoarseSelectionPresentation, SelectedRenderableProjection, SelectedTargets,
     SelectionPresentationPolicy,
 };
-
-use super::super::entity_order::EntityOrder;
 
 const SELECTION_OUTLINE_WIDTH: f32 = 3.0;
 const MAX_PRESENTATION_ENTITIES_PER_UPDATE: usize = 256;
@@ -259,5 +258,5 @@ fn color_from_rgb8(color: ColorRgb8) -> Color {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/scene/selection_outline_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/selection/outline_tests.rs"]
 mod tests;

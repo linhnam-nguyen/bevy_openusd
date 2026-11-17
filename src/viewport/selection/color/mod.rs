@@ -11,11 +11,11 @@ use bevy::prelude::*;
 use viewport_protocol::{ColorRgb8, SceneAnchor};
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::{
+use crate::viewport::scene::EntityOrder;
+use crate::viewport::selection::{
     SelectedRenderableProjection, SelectedTargets, SelectionPresentationPolicy,
 };
 
-use super::super::entity_order::EntityOrder;
 use super::hover::HoveredTarget;
 use super::outline::collect_mesh_descendants;
 
@@ -282,5 +282,5 @@ pub(in crate::viewport) fn color_from_rgb8(color: ColorRgb8) -> Color {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/scene/selection_color_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/selection/color_tests.rs"]
 mod tests;

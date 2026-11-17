@@ -20,6 +20,8 @@ pub(crate) mod physics;
 pub(crate) mod rendering;
 pub(crate) mod residency;
 pub(crate) mod scene;
+pub(in crate::viewport) mod section_box;
+pub(in crate::viewport) mod selection;
 pub(crate) mod semantic;
 pub(crate) mod session;
 pub(crate) mod transport;

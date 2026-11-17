@@ -15,9 +15,8 @@ use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};
-
-use super::super::entity_order::EntityOrder;
+use crate::viewport::scene::EntityOrder;
+use crate::viewport::selection::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};
 
 mod bounds;
 mod membership;
@@ -343,5 +342,5 @@ pub(in crate::viewport) fn sync_selected_renderable_projection(
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/scene/selection_projection_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/selection/projection/test_support.rs"]
 mod test_support;

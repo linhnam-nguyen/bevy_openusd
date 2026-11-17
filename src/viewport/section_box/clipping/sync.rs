@@ -4,7 +4,6 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{Commands, Res, Vec3};
 
 use super::super::super::selection::HoveredTarget;
-use super::super::super::visualization::DisplayToggles;
 use super::super::SectionBoxState;
 use super::support::{
     apply_composed_route, clear_recovered_clip_diagnostics, compose_clipped_route,
@@ -15,6 +14,7 @@ use super::{
     SectionClipUnderlyingMaterial, SectionClipUniform,
 };
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::scene::visualization::DisplayToggles;
 
 #[allow(clippy::type_complexity)]
 pub(in crate::viewport) fn sync_section_box_clipping(

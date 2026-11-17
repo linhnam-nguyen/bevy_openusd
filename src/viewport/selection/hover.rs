@@ -18,7 +18,7 @@ use crate::viewport::input::ViewportNavigationInput;
 /// viewport protocol a second time.
 #[derive(Resource, Debug, Default, Clone)]
 pub(in crate::viewport) struct HoveredTarget {
-    pub(in crate::viewport::scene) anchor: Option<SceneAnchor>,
+    pub(in crate::viewport) anchor: Option<SceneAnchor>,
     last_pointer_position: Option<Vec2>,
     last_viewport_size: Option<Vec2>,
     last_camera_local: Option<Transform>,
@@ -143,5 +143,5 @@ fn anchor_for_hit(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/selection_hover_inline_tests.rs"]
+#[path = "../../../tests/unit/viewport/selection/hover_tests.rs"]
 mod tests;

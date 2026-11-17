@@ -10,10 +10,6 @@ use viewport_protocol::{
 };
 
 use super::HistoricalGhostState;
-use super::selection::{
-    HoverPickStats, HoveredTarget, SelectionColorOverrideState, init_selection_color_material,
-    sync_selection_color_overrides, update_hover_target,
-};
 use super::{
     CoarseSelectionProxyState, SectionBoxState, SelectedRenderableProjection,
     capture_section_box_gizmo_transform, draw_coarse_selection_proxy, draw_section_box,
@@ -24,6 +20,13 @@ use super::{
 use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::camera::ArcballCamera;
+use crate::viewport::section_box::{
+    SectionClipDiagnostics, SectionClipProjectionState, register_embedded_shaders,
+};
+use crate::viewport::selection::{
+    HoverPickStats, HoveredTarget, SelectionColorOverrideState, init_selection_color_material,
+    sync_selection_color_overrides, update_hover_target,
+};
 
 mod edge;
 mod environment;
@@ -45,7 +48,7 @@ pub struct OverlaysPlugin;
 
 impl Plugin for OverlaysPlugin {
     fn build(&self, app: &mut App) {
-        super::section_box::register_embedded_shaders(app);
+        register_embedded_shaders(app);
         register_selection_projection_observers(app);
         app.init_resource::<DisplayToggles>()
             .init_resource::<super::ClassificationColorPlan>()
@@ -62,8 +65,8 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
             .init_resource::<SelectedRenderableProjection>()
-            .init_resource::<super::section_box::SectionClipProjectionState>()
-            .init_resource::<super::section_box::SectionClipDiagnostics>()
+            .init_resource::<SectionClipProjectionState>()
+            .init_resource::<SectionClipDiagnostics>()
             .init_resource::<render_mode::RenderModeProjectionState>()
             .init_resource::<ShadowProjectionState>()
             .add_systems(

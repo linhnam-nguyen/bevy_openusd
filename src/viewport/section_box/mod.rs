@@ -13,7 +13,9 @@ use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
-use crate::viewport::scene::selection::{ProjectedWorldBounds, SelectedRenderableProjection};
+use crate::viewport::selection::{
+    ProjectedWorldBounds, SelectedRenderableProjection, SelectedTargets,
+};
 
 mod bounds;
 pub(in crate::viewport) mod clipping;
@@ -144,7 +146,7 @@ impl SectionBoxState {
 #[allow(clippy::type_complexity)]
 pub(in crate::viewport) fn sync_section_box_state(
     settings: Res<ViewerSettingsState>,
-    selection: Res<super::SelectedTargets>,
+    selection: Res<SelectedTargets>,
     scene_index: Res<SceneAnchorIndex>,
     projection: Option<Res<SelectedRenderableProjection>>,
     mut state: ResMut<SectionBoxState>,
@@ -369,5 +371,5 @@ impl SectionBoxClipPlanes {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/section_box_tests.rs"]
+#[path = "../../../tests/unit/viewport/section_box/tests.rs"]
 mod tests;

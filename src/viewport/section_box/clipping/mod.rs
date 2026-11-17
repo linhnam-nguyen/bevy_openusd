@@ -15,30 +15,27 @@ use super::super::selection::{
     HoverColorMaterial, SelectedRenderableProjection, SelectionBaseMaterial,
     SelectionColorMaterial, SelectionColorOverride,
 };
-use super::super::visualization::{OriginalRenderMaterial, UniformRenderMaterial};
+use crate::viewport::scene::visualization::{OriginalRenderMaterial, UniformRenderMaterial};
 
 mod support;
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/scene/section_box_clipping_tests.rs"]
+#[path = "../../../../tests/unit/viewport/section_box/clipping_tests.rs"]
 mod tests;
 
 mod sync;
 
 pub(in crate::viewport) use sync::sync_section_box_clipping;
 
-const SHADER_ASSET_PATH: &str = "../../../../../assets/shaders/section_box_clipping.wgsl";
+const SHADER_ASSET_PATH: &str = "../../../../assets/shaders/section_box_clipping.wgsl";
 const PREPASS_SHADER_ASSET_PATH: &str =
-    "../../../../../assets/shaders/section_box_clipping_prepass.wgsl";
+    "../../../../assets/shaders/section_box_clipping_prepass.wgsl";
 
 pub(in crate::viewport) fn register_embedded_shaders(app: &mut App) {
+    bevy::asset::embedded_asset!(app, "../../../../assets/shaders/section_box_clipping.wgsl");
     bevy::asset::embedded_asset!(
         app,
-        "../../../../../assets/shaders/section_box_clipping.wgsl"
-    );
-    bevy::asset::embedded_asset!(
-        app,
-        "../../../../../assets/shaders/section_box_clipping_prepass.wgsl"
+        "../../../../assets/shaders/section_box_clipping_prepass.wgsl"
     );
 }
 
