@@ -106,6 +106,19 @@ def _qualified_fixture(root):
         configs[config] = _envelope(config, [_target("app", counts)])
     baseline = root / "qualified.json"
     baseline.write_text(json.dumps(_baseline_doc(configs)), encoding="utf-8")
+    scripts = root / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / parity.IDENTITY_MIGRATIONS_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                "baseline_commit": parity.BASELINE_COMMIT,
+                "entries": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     return legacy_path, baseline, configs
 
 
@@ -183,6 +196,54 @@ class TestEnumerationParityTests(unittest.TestCase):
             self.assertEqual(report["missing"][0]["name"], "alpha::unit")
             self.assertEqual(report["missing"][0]["target"], "app")
             self.assertEqual(report["missing"][0]["observed_count"], 1)
+
+    def test_cli_applies_the_pinned_target_qualified_migration_map(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy_path, baseline_path, _ = _qualified_fixture(root)
+            migration_path = root / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [
+                            {
+                                "old_name": "alpha::unit",
+                                "new_name": "alpha::relocated",
+                                "targets": [
+                                    {"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"}
+                                ],
+                                "configurations": sorted(parity.CONFIGS),
+                                "evidence": ["BOV-C4"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            observed = root / "observed.json"
+            envelope = _envelope(
+                "linux:default",
+                [_target("app", {"alpha::relocated": 2, "beta::contract": 1,
+                                 "unix_only::symlink_case": 2})],
+            )
+            observed.write_text(json.dumps(envelope), encoding="utf-8")
+            args = [
+                "--root", str(root),
+                "--legacy-baseline", str(legacy_path),
+                "--baseline", str(baseline_path),
+                "--platform", "linux",
+                "--list-file", str(observed),
+                "--json",
+            ]
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = parity.main(args)
+            self.assertEqual(code, 0)
+            report = json.loads(out.getvalue())
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["identity_migrations_applied"], 1)
 
     def test_detects_missing_renamed_extra_and_benchmark_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -394,6 +455,231 @@ class TestEnumerationParityTests(unittest.TestCase):
                 with self.assertRaises(parity.BaselineError): parity.execute_windows(configs, legacy, exes)
             with self.assertRaises(parity.BaselineError): parity.execute_windows(configs, legacy, {})
 
+    def test_windows_execution_runs_the_mapped_windows_only_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = parity.load_baseline(_qualified_fixture(root)[0])
+            old_name = "win_only::path_case"
+            new_name = "win_only::relocated_path_case"
+            targets = [
+                {"manifest": "Cargo.toml", "kind": ["bin"], "target": "app"},
+                {"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"},
+            ]
+            counts = {"alpha::unit": 2, "beta::contract": 1, old_name: 1}
+            configs = {
+                "windows:default": _envelope(
+                    "windows:default",
+                    [
+                        _target("app", {"alpha::unit": 2, "beta::contract": 1, old_name: 1}),
+                        {"manifest": "Cargo.toml", "kind": ["bin"], "target": "app",
+                         "listing": _render_list(Counter({"alpha::unit": 2, "beta::contract": 1, old_name: 1}))},
+                    ],
+                )
+            }
+            migrations = [
+                {
+                    "old_name": old_name,
+                    "new_name": new_name,
+                    "targets": (
+                        ("Cargo.toml", ("bin",), "app"),
+                        ("Cargo.toml", ("lib",), "app"),
+                    ),
+                    "configurations": frozenset({"windows:default", "windows:solari"}),
+                    "evidence": ("BOR-C2",),
+                }
+            ]
+            exes = {
+                ("Cargo.toml", ("bin",), "app"): (root / "app-bin", root),
+                ("Cargo.toml", ("lib",), "app"): (root / "app-lib", root),
+            }
+            good = (
+                f"running 1 test\ntest {new_name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+            with mock.patch.object(parity, "checked_run", return_value=good) as run:
+                receipts = parity.execute_windows(
+                    configs,
+                    legacy,
+                    exes,
+                    identity_migrations=migrations,
+                )
+            self.assertEqual(len(receipts), 2)
+            self.assertEqual(
+                {call.args[0][2] for call in run.call_args_list},
+                {new_name},
+            )
+
+            old_name_output = (
+                f"running 1 test\ntest {old_name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+            with mock.patch.object(parity, "checked_run", return_value=old_name_output):
+                with self.assertRaises(parity.BaselineError):
+                    parity.execute_windows(
+                        configs,
+                        legacy,
+                        exes,
+                        identity_migrations=migrations,
+                    )
+
+    def test_checked_in_windows_only_migration_is_selected_and_executed(self):
+        legacy = parity.load_baseline(CHECKED_IN_BASELINE)
+        baseline_path = REPO_ROOT / "scripts" / "test_enumeration_qualified_baseline.json"
+        configs = parity.load_qualified(baseline_path, legacy)
+        migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+        migrations = parity.load_identity_migrations(migrations_path, configs)
+
+        old_name = (
+            "project::cache_warmer::legacy_migration_tests::"
+            "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
+        )
+        new_name = (
+            "project::cache::warming::legacy_migration_tests::"
+            "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
+        )
+        required = parity.windows_required(configs, legacy, identity_migrations=migrations)
+        matching_keys = [key for key in required if key[-1] == new_name]
+        self.assertEqual(len(matching_keys), 2)
+        self.assertNotIn(old_name, [key[-1] for key in required])
+
+        executables = {key[:3]: (Path("cargo-test.exe"), REPO_ROOT) for key in required}
+
+        def successful_exact_run(command, _cwd, *, env):
+            del env
+            name = command[2]
+            return (
+                "running 1 test\n"
+                f"test {name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+
+        with mock.patch.object(parity, "checked_run", side_effect=successful_exact_run) as run:
+            receipts = parity.execute_windows(
+                configs,
+                legacy,
+                executables,
+                identity_migrations=migrations,
+            )
+        executed_names = [call.args[0][2] for call in run.call_args_list]
+        self.assertIn(new_name, executed_names)
+        self.assertNotIn(old_name, executed_names)
+        self.assertTrue(set(matching_keys).issubset(receipts))
+
+        def stale_identity_run(command, _cwd, *, env):
+            del env
+            name = old_name if command[2] == new_name else command[2]
+            return (
+                "running 1 test\n"
+                f"test {name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+
+        with mock.patch.object(parity, "checked_run", side_effect=stale_identity_run):
+            with self.assertRaises(parity.BaselineError):
+                parity.execute_windows(
+                    configs,
+                    legacy,
+                    executables,
+                    identity_migrations=migrations,
+                )
+
+    def test_execute_windows_cli_uses_the_checked_in_windows_only_migration(self):
+        legacy = parity.load_baseline(CHECKED_IN_BASELINE)
+        baseline_path = REPO_ROOT / "scripts" / "test_enumeration_qualified_baseline.json"
+        configs = parity.load_qualified(baseline_path, legacy)
+        migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+        migrations = parity.load_identity_migrations(migrations_path, configs)
+        old_name = (
+            "project::cache_warmer::legacy_migration_tests::"
+            "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
+        )
+        new_name = (
+            "project::cache::warming::legacy_migration_tests::"
+            "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
+        )
+
+        target_ids, original_tests, original_benchmarks = parity.parse_targets(
+            configs["windows:default"]["targets"]
+        )
+        mapped_tests, _ = parity.apply_identity_migrations(
+            original_tests, migrations, "windows:default"
+        )
+        observed_targets = []
+        for manifest, kinds, target in sorted(target_ids):
+            target_id = (manifest, kinds, target)
+            tests = Counter(
+                {key[-1]: count for key, count in mapped_tests.items() if key[:3] == target_id}
+            )
+            benchmarks = [
+                key[-1] for key in original_benchmarks if key[:3] == target_id
+            ]
+            observed_targets.append(
+                {
+                    "manifest": manifest,
+                    "kind": list(kinds),
+                    "target": target,
+                    "listing": _render_list(tests, benchmarks),
+                }
+            )
+
+        required = parity.windows_required(configs, legacy, identity_migrations=migrations)
+        executables = {
+            key[:3]: (Path("cargo-test.exe"), REPO_ROOT) for key in required
+        }
+
+        def live_capture(_root, include_solari):
+            self.assertFalse(include_solari)
+            return observed_targets, executables
+
+        def successful_exact_run(command, _cwd, *, env):
+            del env
+            name = command[2]
+            return (
+                "running 1 test\n"
+                f"test {name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+
+        success_output = io.StringIO()
+        with (
+            mock.patch.object(parity, "capture", side_effect=live_capture),
+            mock.patch.object(parity, "harness_env", return_value={}),
+            mock.patch.object(parity, "checked_run", side_effect=successful_exact_run) as run,
+            contextlib.redirect_stdout(success_output),
+        ):
+            result = parity.main(
+                ["--root", str(REPO_ROOT), "--platform", "windows", "--execute-windows", "--json"]
+            )
+        self.assertEqual(result, 0)
+        receipt = json.loads(success_output.getvalue())
+        self.assertEqual(receipt["status"], "pass")
+        executed_names = [key[-1] for key in receipt["executed_windows_tests"]]
+        self.assertIn(new_name, executed_names)
+        self.assertNotIn(old_name, executed_names)
+        self.assertIn(new_name, [call.args[0][2] for call in run.call_args_list])
+
+        def stale_identity_run(command, _cwd, *, env):
+            del env
+            name = old_name if command[2] == new_name else command[2]
+            return (
+                "running 1 test\n"
+                f"test {name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
+            )
+
+        failure_output = io.StringIO()
+        with (
+            mock.patch.object(parity, "capture", side_effect=live_capture),
+            mock.patch.object(parity, "harness_env", return_value={}),
+            mock.patch.object(parity, "checked_run", side_effect=stale_identity_run),
+            contextlib.redirect_stdout(failure_output),
+        ):
+            result = parity.main(
+                ["--root", str(REPO_ROOT), "--platform", "windows", "--execute-windows", "--json"]
+            )
+        self.assertEqual(result, 2)
+        self.assertIn("Windows test was not demonstrably executed", json.loads(failure_output.getvalue())["error"])
+
     def test_cargo_artifacts_bind_by_metadata_not_executable_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
@@ -472,6 +758,167 @@ class TestEnumerationParityTests(unittest.TestCase):
                 )
             finally:
                 parity._rustc_target_libdir.cache_clear()
+
+    def test_exact_identity_migrations_are_target_and_configuration_scoped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy_path, baseline_path, configs = _qualified_fixture(root)
+            migration_path = root / "migrations.json"
+            migration = {
+                "schema_version": 1,
+                "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                "baseline_commit": parity.BASELINE_COMMIT,
+                "entries": [
+                    {
+                        "old_name": "alpha::unit",
+                        "new_name": "alpha::relocated",
+                        "targets": [
+                            {"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"}
+                        ],
+                        "configurations": sorted(parity.CONFIGS),
+                        "evidence": ["BOV-C4"],
+                    }
+                ],
+            }
+            migration_path.write_text(json.dumps(migration), encoding="utf-8")
+            migrations = parity.load_identity_migrations(migration_path, configs)
+
+            expected = [
+                _target("app", {"alpha::unit": 2, "beta::contract": 1}),
+                _target("another-target", {"alpha::unit": 1}),
+            ]
+            observed = [
+                _target("app", {"alpha::relocated": 2, "beta::contract": 1}),
+                _target("another-target", {"alpha::unit": 1}),
+            ]
+            report = parity.qualified_report(
+                expected,
+                observed,
+                identity_migrations=migrations,
+                configuration="linux:default",
+            )
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["identity_migrations_applied"], 1)
+
+            missing_after_move = parity.qualified_report(
+                expected,
+                [_target("app", {"beta::contract": 1}), expected[1]],
+                identity_migrations=migrations,
+                configuration="linux:default",
+            )
+            self.assertEqual(missing_after_move["missing"][0]["name"], "alpha::relocated")
+            self.assertEqual(missing_after_move["missing"][0]["expected_count"], 2)
+
+            old_identity_retained = parity.qualified_report(
+                expected,
+                [_target("app", {"alpha::relocated": 2, "alpha::unit": 1, "beta::contract": 1}), observed[1]],
+                identity_migrations=migrations,
+                configuration="linux:default",
+            )
+            self.assertEqual(old_identity_retained["unexpected"][0]["name"], "alpha::unit")
+
+    def test_identity_migration_loader_rejects_wrong_presence_and_collisions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy_path, _, configs = _qualified_fixture(root)
+            migration_path = root / "migrations.json"
+            base_entry = {
+                "old_name": "alpha::unit",
+                "new_name": "alpha::relocated",
+                "targets": [
+                    {"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"}
+                ],
+                "configurations": sorted(parity.CONFIGS),
+                "evidence": ["BOV-C4"],
+            }
+
+            wrong_presence = json.loads(json.dumps(base_entry))
+            wrong_presence["configurations"] = ["windows:default"]
+            migration = {
+                "schema_version": 1,
+                "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                "baseline_commit": parity.BASELINE_COMMIT,
+                "entries": [wrong_presence],
+            }
+            migration_path.write_text(json.dumps(migration), encoding="utf-8")
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+            collision = json.loads(json.dumps(base_entry))
+            collision["new_name"] = "beta::contract"
+            migration["entries"] = [collision]
+            migration_path.write_text(json.dumps(migration), encoding="utf-8")
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+            migration["entries"] = [base_entry, json.loads(json.dumps(base_entry))]
+            migration_path.write_text(json.dumps(migration), encoding="utf-8")
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+    def test_solari_identity_migrations_do_not_change_default_expectations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy_path, _, configs = _qualified_fixture(root)
+            migration_path = root / "migrations.json"
+            solari_configs = sorted(config for config in parity.CONFIGS if config.endswith(":solari"))
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [
+                            {
+                                "old_name": "solari::scene_test",
+                                "new_name": "solari::relocated_scene_test",
+                                "targets": [
+                                    {"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"}
+                                ],
+                                "configurations": solari_configs,
+                                "evidence": ["BOV-C4"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            migrations = parity.load_identity_migrations(migration_path, configs)
+            solari_expected = configs["linux:solari"]["targets"]
+            solari_observed = [
+                _target("app", {"alpha::unit": 2, "beta::contract": 1,
+                                 "unix_only::symlink_case": 2,
+                                 "solari::relocated_scene_test": 2})
+            ]
+            solari_report = parity.qualified_report(
+                solari_expected,
+                solari_observed,
+                identity_migrations=migrations,
+                configuration="linux:solari",
+            )
+            self.assertEqual(solari_report["status"], "pass")
+
+            default_report = parity.qualified_report(
+                configs["linux:default"]["targets"],
+                [
+                    _target(
+                        "app",
+                        {
+                            "alpha::unit": 2,
+                            "beta::contract": 1,
+                            "unix_only::symlink_case": 2,
+                            "solari::relocated_scene_test": 1,
+                        },
+                    )
+                ],
+                identity_migrations=migrations,
+                configuration="linux:default",
+            )
+            self.assertEqual(default_report["status"], "fail")
+            self.assertEqual(
+                default_report["unexpected"][0]["name"],
+                "solari::relocated_scene_test",
+            )
 
 
 if __name__ == "__main__":

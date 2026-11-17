@@ -9,8 +9,10 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::RenderMode;
 
-use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
 use super::DisplayToggles;
+use crate::viewport::scene::projection_work::{
+    DirectProjectionWork, ProjectionBatch, ProjectionWork,
+};
 use crate::viewport::selection::SelectionBaseMaterial;
 
 const UNIFORM_COLOR: Color = Color::srgb(0.72, 0.72, 0.72);
@@ -39,7 +41,7 @@ impl Default for RenderModeProjectionState {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/visualization_render_mode_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/presentation/render_mode_test_support.rs"]
 pub(super) mod test_support;
 
 pub(super) fn init_uniform_render_material(
@@ -259,5 +261,5 @@ pub(super) fn apply_wireframe_toggle(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/visualization_render_mode_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/presentation/render_mode_tests.rs"]
 mod tests;

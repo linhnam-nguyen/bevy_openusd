@@ -51,7 +51,7 @@ impl ProjectionWork for CountingSolariWork<'_> {
 
 #[cfg(feature = "solari")]
 #[allow(clippy::too_many_arguments)]
-pub(in crate::viewport::scene::solari) fn sync_solari_usd_projection_counted(
+pub(in crate::viewport::rendering::solari) fn sync_solari_usd_projection_counted(
     capability: ResMut<SolariCapability>,
     toggles: Res<DisplayToggles>,
     meshes: Option<Res<Assets<Mesh>>>,

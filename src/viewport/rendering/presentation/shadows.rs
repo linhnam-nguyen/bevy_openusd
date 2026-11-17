@@ -5,8 +5,10 @@
 
 use bevy::prelude::*;
 
-use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
 use super::{DisplayToggles, OriginalShadowEnabled};
+use crate::viewport::scene::projection_work::{
+    DirectProjectionWork, ProjectionBatch, ProjectionWork,
+};
 
 #[derive(Resource, Debug, Clone, Copy)]
 pub(super) struct ShadowProjectionState {
@@ -22,7 +24,7 @@ impl Default for ShadowProjectionState {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/visualization_shadows_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/presentation/shadows_test_support.rs"]
 pub(super) mod test_support;
 
 pub(super) fn capture_original_shadow_settings(
@@ -120,5 +122,5 @@ fn set_shadow_enabled(current: &mut bool, desired: bool) {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/visualization_shadows_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/presentation/shadows_tests.rs"]
 mod tests;

@@ -1,4 +1,4 @@
-use super::{cadence, headless, offscreen_resize, project, runner_projection, scene, sync};
+use super::{cadence, headless, project, runner_projection, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -8,10 +8,11 @@ use crate::viewport::camera::{
 };
 use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
+use crate::viewport::rendering::offscreen::resize::apply_stream_configuration;
+use crate::viewport::rendering::presentation::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::rendering::sampling::{
     DlssProviderPlugin, SamplingCoordinatorPlugin, configure_dlss,
 };
-use crate::viewport::scene::visualization::{DisplayToggles, OverlaysPlugin};
 use crate::viewport::scene::{
     HideMeshesFlag, SectionClipMaterial, SelectedPrim, SelectedTargets, SelectionOutlineState,
     ShowJointGizmosFlag, SkeletonGizmos, SolariCapabilityPlugin, hide_meshes_on_startup,
@@ -143,7 +144,7 @@ pub(crate) fn run() {
         })
         .add_systems(
             Update,
-            offscreen_resize::apply_stream_configuration.before(ViewportBridgeSet::ApplyCommands),
+            apply_stream_configuration.before(ViewportBridgeSet::ApplyCommands),
         )
         .insert_resource(ViewportNavigationInput::with_viewport_size(
             launch_options.width,

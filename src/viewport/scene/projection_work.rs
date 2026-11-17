@@ -4,7 +4,7 @@
 //! iterator order. Callers retain ownership of the projection operations.
 
 #[derive(Clone, Copy)]
-pub(super) enum ProjectionBatch {
+pub(in crate::viewport) enum ProjectionBatch {
     MaterialTransition,
     MaterialRestore,
     MaterialIncremental,
@@ -15,14 +15,14 @@ pub(super) enum ProjectionBatch {
     SolariIncremental,
 }
 
-pub(super) trait ProjectionWork {
+pub(in crate::viewport) trait ProjectionWork {
     fn execute<I, F>(&mut self, batch: ProjectionBatch, items: I, apply: F)
     where
         I: IntoIterator,
         F: FnMut(I::Item);
 }
 
-pub(super) struct DirectProjectionWork;
+pub(in crate::viewport) struct DirectProjectionWork;
 
 impl ProjectionWork for DirectProjectionWork {
     #[inline]

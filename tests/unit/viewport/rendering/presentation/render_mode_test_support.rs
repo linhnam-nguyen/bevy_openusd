@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewport::scene) struct RenderModeProjectionStats {
+pub(in crate::viewport::rendering::presentation::render_mode) struct RenderModeProjectionStats {
     pub(super) full_transition_scans: u32,
     pub(super) incremental_scans: u32,
     pub(super) restore_scans: u32,

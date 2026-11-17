@@ -10,10 +10,8 @@
 //! Mouse: L+R drag orbit · Middle drag pan · Scroll zoom.
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
-pub(super) mod cache_presentation_render;
 pub(crate) mod cadence;
 pub(crate) mod headless;
-mod offscreen_resize;
 mod project;
 mod runner;
 mod runner_projection;

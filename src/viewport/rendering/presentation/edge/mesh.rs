@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology, VertexAttributeValues};
 
-pub(in crate::viewport::scene::visualization) fn build_edge_mesh(source: &Mesh) -> Option<Mesh> {
+pub(in crate::viewport::rendering::presentation) fn build_edge_mesh(source: &Mesh) -> Option<Mesh> {
     let VertexAttributeValues::Float32x3(positions) = source.attribute(Mesh::ATTRIBUTE_POSITION)?
     else {
         return None;

@@ -1,12 +1,10 @@
-//! Scene-derived state and visual presentation controls.
+//! Scene-derived state and semantic presentation inputs.
 
 mod classification_color;
 mod diff;
 mod entity_order;
 mod ghost;
-mod projection_work;
-mod skeleton;
-mod solari;
+pub(in crate::viewport) mod projection_work;
 
 #[allow(unused_imports)]
 pub(in crate::viewport) use super::section_box::{
@@ -24,6 +22,11 @@ pub(in crate::viewport) use super::selection::{
     sync_selected_renderable_projection, sync_selection_color_overrides, sync_selection_outlines,
 };
 pub(crate) use super::selection::{SelectedPrim, SelectedTargets, sync_selected_instance_identity};
+pub(crate) use crate::viewport::rendering::debug::skeleton::{
+    HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
+    setup_skeleton_gizmos_on_top,
+};
+pub(crate) use crate::viewport::rendering::solari::{SolariCapability, SolariCapabilityPlugin};
 pub(in crate::viewport) use classification_color::{
     ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
     refresh_classification_color_plan, sync_classification_color_overrides,
@@ -31,11 +34,6 @@ pub(in crate::viewport) use classification_color::{
 pub(crate) use diff::draw_semantic_diff;
 pub(in crate::viewport) use entity_order::EntityOrder;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
-pub(crate) use skeleton::{
-    HideMeshesFlag, ShowJointGizmosFlag, SkeletonGizmos, hide_meshes_on_startup,
-    setup_skeleton_gizmos_on_top,
-};
-pub(crate) use solari::{SolariCapability, SolariCapabilityPlugin};
 pub(crate) mod extent;
-pub(crate) mod visualization;
+pub(crate) use crate::viewport::rendering::presentation as visualization;
 pub use extent::SceneExtent;

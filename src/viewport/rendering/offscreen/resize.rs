@@ -4,9 +4,9 @@ use bevy::camera::RenderTarget;
 use bevy::prelude::*;
 use bevy::render::gpu_readback::Readback;
 
-use super::cadence::RendererCadence;
-use super::headless::{OffscreenTarget, new_offscreen_image};
 use crate::viewport::api::RenderServerInterface;
+use crate::viewport::app::cadence::RendererCadence;
+use crate::viewport::app::headless::{OffscreenTarget, new_offscreen_image};
 use crate::viewport::input::ViewportNavigationInput;
 
 pub(crate) fn apply_stream_configuration(
@@ -62,5 +62,5 @@ pub(crate) fn apply_stream_configuration(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/app/offscreen_resize_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/offscreen/resize_tests.rs"]
 mod tests;

@@ -9,23 +9,24 @@ use viewport_protocol::{
     GroundGridOrigin, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, RendererConfiguration,
 };
 
-use super::HistoricalGhostState;
-use super::{
-    CoarseSelectionProxyState, SectionBoxState, SelectedRenderableProjection,
-    capture_section_box_gizmo_transform, draw_coarse_selection_proxy, draw_section_box,
-    register_selection_projection_observers, sync_coarse_selection_proxy,
-    sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
-    sync_selected_renderable_projection,
-};
-use super::{draw_semantic_diff, hydrate_historical_ghosts};
 use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::camera::ArcballCamera;
+use crate::viewport::scene::{
+    ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
+    HistoricalGhostState, SelectionPresentationPolicy, draw_semantic_diff,
+    hydrate_historical_ghosts, refresh_classification_color_plan,
+    sync_classification_color_overrides,
+};
 use crate::viewport::section_box::{
-    SectionClipDiagnostics, SectionClipProjectionState, register_embedded_shaders,
+    SectionBoxState, SectionClipDiagnostics, SectionClipProjectionState,
+    capture_section_box_gizmo_transform, draw_section_box, register_embedded_shaders,
+    sync_section_box_clipping, sync_section_box_gizmo_target, sync_section_box_state,
 };
 use crate::viewport::selection::{
-    HoverPickStats, HoveredTarget, SelectionColorOverrideState, init_selection_color_material,
-    sync_selection_color_overrides, update_hover_target,
+    CoarseSelectionProxyState, HoverPickStats, HoveredTarget, SelectedRenderableProjection,
+    SelectionColorOverrideState, draw_coarse_selection_proxy, init_selection_color_material,
+    register_selection_projection_observers, sync_coarse_selection_proxy,
+    sync_selected_renderable_projection, sync_selection_color_overrides, update_hover_target,
 };
 
 mod edge;
@@ -51,15 +52,15 @@ impl Plugin for OverlaysPlugin {
         register_embedded_shaders(app);
         register_selection_projection_observers(app);
         app.init_resource::<DisplayToggles>()
-            .init_resource::<super::ClassificationColorPlan>()
-            .init_resource::<super::ClassificationColorDiagnostics>()
-            .init_resource::<super::ClassificationColorMaterialCache>()
+            .init_resource::<ClassificationColorPlan>()
+            .init_resource::<ClassificationColorDiagnostics>()
+            .init_resource::<ClassificationColorMaterialCache>()
             .init_resource::<SceneExtent>()
             .init_resource::<HistoricalGhostState>()
             .init_resource::<EdgeOverlayCache>()
             .init_resource::<EdgeOverlayStats>()
             .init_resource::<SelectionColorOverrideState>()
-            .init_resource::<super::SelectionPresentationPolicy>()
+            .init_resource::<SelectionPresentationPolicy>()
             .init_resource::<CoarseSelectionProxyState>()
             .init_resource::<HoveredTarget>()
             .init_resource::<HoverPickStats>()
@@ -109,8 +110,8 @@ impl Plugin for OverlaysPlugin {
                     apply_shadow_toggle,
                     apply_light_intensity_scale,
                     apply_render_mode,
-                    super::refresh_classification_color_plan,
-                    super::sync_classification_color_overrides,
+                    refresh_classification_color_plan,
+                    sync_classification_color_overrides,
                     update_hover_target,
                     sync_selection_color_overrides,
                     sync_section_box_clipping,
@@ -229,8 +230,8 @@ impl Default for DisplayToggles {
     }
 }
 
-pub use super::extent::SceneExtent;
-use super::extent::compute_extent;
+pub use crate::viewport::scene::extent::SceneExtent;
+use crate::viewport::scene::extent::compute_extent;
 
 fn sync_shadow_cascade_distance(
     extent: Res<SceneExtent>,
@@ -255,5 +256,5 @@ fn sync_shadow_cascade_distance(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/visualization_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/presentation/tests.rs"]
 mod tests;

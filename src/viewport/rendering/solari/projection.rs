@@ -17,11 +17,13 @@ use bevy::prelude::*;
 use usd_bevy::{MeshProjectionConsumers, RenderProjectionDirtySet, UsdPrimRef};
 
 #[cfg(feature = "solari")]
-use super::super::projection_work::{DirectProjectionWork, ProjectionBatch, ProjectionWork};
-#[cfg(feature = "solari")]
 use super::SolariCapability;
 #[cfg(feature = "solari")]
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::presentation::DisplayToggles;
+#[cfg(feature = "solari")]
+use crate::viewport::scene::projection_work::{
+    DirectProjectionWork, ProjectionBatch, ProjectionWork,
+};
 
 #[cfg(feature = "solari")]
 use super::support::{
@@ -373,5 +375,5 @@ fn remove_entry(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/solari_projection_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/solari/projection_test_support.rs"]
 pub(super) mod test_support;

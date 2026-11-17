@@ -134,13 +134,13 @@ fn required_wgpu_features() -> WgpuFeatures {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/solari_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/solari/tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/solari_projection_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/solari/projection_tests.rs"]
 mod projection_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/solari_projection_asset_tests.rs"]
+#[path = "../../../../tests/unit/viewport/rendering/solari/projection_asset_tests.rs"]
 mod projection_asset_tests;

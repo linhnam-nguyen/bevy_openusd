@@ -396,7 +396,7 @@ APPROVED_STEPS = {'checkout_bevy_openusd': {'name': 'Checkout bevy_openusd',
                                                  '--include-solari --json'},
  'run_cpu_safe_solari_unit_tests': {'name': 'Run CPU-safe solari unit tests',
                                     'run': 'cargo test -p usdview --lib --features solari --locked '
-                                           'viewport::scene::solari'},
+                                           'viewport::rendering::solari'},
  'require_provisioned_gstreamer_msvc_sdk': {'name': 'Require provisioned GStreamer MSVC SDK',
                                             'shell': 'pwsh',
                                             'run': 'if (-not $env:PKG_CONFIG -or -not (Test-Path -PathType Leaf '

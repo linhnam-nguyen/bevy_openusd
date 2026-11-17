@@ -20,7 +20,7 @@ use crate::project::cache::warming::ProjectCacheWarmQueue;
 use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
 
-use super::super::cache_presentation_render;
+use crate::viewport::rendering::offscreen::cache_presentation;
 mod flow;
 mod queue;
 mod support;
@@ -203,7 +203,7 @@ fn resolve_project_activation_with_cache(
 }
 
 pub(in crate::viewport::app) fn install(app: &mut App) {
-    cache_presentation_render::install(app);
+    cache_presentation::install(app);
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
         .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(

@@ -301,6 +301,10 @@ PINS = {"bevy_frost": "da3110c07ba8d79d6deeba5a68dd536231956fb9",
         "bevy_glacial": "6bef365be227e1461c1f8019e3b8c631c166fd44"}
 CONFIGS = {f"{os_name}:{feature}" for os_name in SUPPORTED_PLATFORMS
            for feature in ("default", "solari")}
+IDENTITY_MIGRATIONS_FILE = "test_enumeration_identity_migrations.json"
+MIGRATION_CHECKPOINTS = frozenset(
+    {"BOR-C2", "BOR-C3", "BOR-C4", "BOR-C5", "BOR-C7", "BOV-C3", "BOV-C4"}
+)
 
 
 def checked_run(cmd, cwd, *, env=None):
@@ -514,11 +518,184 @@ def flatten(tests):
     return counts
 
 
-def qualified_report(expected, observed):
+def _migration_target_key(raw):
+    if not isinstance(raw, dict) or set(raw) != {"manifest", "kind", "target"}:
+        raise BaselineError("invalid identity migration target")
+    manifest, kinds, target = (raw[key] for key in ("manifest", "kind", "target"))
+    if (
+        not isinstance(manifest, str)
+        or manifest.split("/")[-1] != "Cargo.toml"
+        or "\\" in manifest
+        or ":" in manifest
+        or manifest.startswith("/")
+        or any(part in ("", ".", "..") for part in manifest.split("/"))
+        or not isinstance(kinds, list)
+        or not kinds
+        or not all(isinstance(kind, str) and kind for kind in kinds)
+        or kinds != sorted(set(kinds))
+        or not isinstance(target, str)
+        or not target
+    ):
+        raise BaselineError("invalid identity migration target")
+    return (manifest, tuple(kinds), target)
+
+
+def load_identity_migrations(path, configs):
+    """Load exact aliases whose source identities are present in the pinned baseline.
+
+    The configuration list on each alias is checked against the actual six
+    qualified captures. This keeps platform/feature applicability explicit and
+    prevents a stale map from silently being applied to a different inventory.
+    """
+    data = read_json(path)
+    if (
+        not isinstance(data, dict)
+        or data.get("schema_version") != 1
+        or data.get("baseline_checkpoint") != BASELINE_CHECKPOINT
+        or data.get("baseline_commit") != BASELINE_COMMIT
+        or not isinstance(data.get("entries"), list)
+    ):
+        raise BaselineError("identity migration schema/provenance mismatch")
+    if not isinstance(configs, dict) or set(configs) != CONFIGS:
+        raise BaselineError("identity migrations require all six qualified baseline configurations")
+
+    baseline_tests = {}
+    for config in CONFIGS:
+        _, tests, benchmarks = parse_targets(configs[config]["targets"])
+        if benchmarks:
+            raise BaselineError(f"baseline contains benchmarks for {config}")
+        baseline_tests[config] = tests
+
+    migrations = []
+    source_keys = set()
+    destination_keys = set()
+    for index, raw in enumerate(data["entries"]):
+        required = {"old_name", "new_name", "targets", "configurations", "evidence"}
+        if not isinstance(raw, dict) or set(raw) != required:
+            raise BaselineError(f"identity migration entries[{index}] has invalid fields")
+        old_name, new_name = raw["old_name"], raw["new_name"]
+        if (
+            not isinstance(old_name, str)
+            or not old_name.strip()
+            or old_name.endswith(TEST_SUFFIX)
+            or not isinstance(new_name, str)
+            or not new_name.strip()
+            or new_name.endswith(TEST_SUFFIX)
+            or old_name == new_name
+        ):
+            raise BaselineError(f"identity migration entries[{index}] has invalid names")
+
+        raw_targets = raw["targets"]
+        if not isinstance(raw_targets, list) or not raw_targets:
+            raise BaselineError(f"identity migration entries[{index}].targets must be non-empty")
+        targets = tuple(_migration_target_key(target) for target in raw_targets)
+        if len(set(targets)) != len(targets) or list(targets) != sorted(set(targets)):
+            raise BaselineError(f"identity migration entries[{index}].targets must be unique and sorted")
+
+        raw_configs = raw["configurations"]
+        if (
+            not isinstance(raw_configs, list)
+            or not raw_configs
+            or not all(isinstance(config, str) and config in CONFIGS for config in raw_configs)
+            or raw_configs != sorted(set(raw_configs))
+        ):
+            raise BaselineError(f"identity migration entries[{index}].configurations are invalid")
+        configurations = frozenset(raw_configs)
+
+        evidence = raw["evidence"]
+        if (
+            not isinstance(evidence, list)
+            or not evidence
+            or not all(isinstance(item, str) and item in MIGRATION_CHECKPOINTS for item in evidence)
+            or len(evidence) != len(set(evidence))
+        ):
+            raise BaselineError(f"identity migration entries[{index}].evidence is invalid")
+
+        entry_sources = {(manifest, kinds, target, old_name) for manifest, kinds, target in targets}
+        entry_destinations = {(manifest, kinds, target, new_name) for manifest, kinds, target in targets}
+        if source_keys & entry_sources or destination_keys & entry_destinations:
+            raise BaselineError("identity migration source or destination is duplicated")
+        if source_keys & entry_destinations or destination_keys & entry_sources:
+            raise BaselineError("identity migration chains and collisions are not supported")
+
+        actual_configurations = set()
+        for config, tests in baseline_tests.items():
+            present_counts = [tests.get(key, 0) for key in entry_sources]
+            any_present = any(count > 0 for count in present_counts)
+            all_present = all(count > 0 for count in present_counts)
+            if any_present and not all_present:
+                raise BaselineError(
+                    f"identity migration {old_name!r} is present in only some listed targets for {config}"
+                )
+            if all_present:
+                actual_configurations.add(config)
+                for key in entry_destinations:
+                    if tests.get(key, 0):
+                        raise BaselineError(
+                            f"identity migration {new_name!r} collides with a pinned baseline identity"
+                        )
+
+        if actual_configurations != configurations:
+            raise BaselineError(
+                f"identity migration {old_name!r} configuration scope disagrees with baseline: "
+                f"declared={sorted(configurations)}, actual={sorted(actual_configurations)}"
+            )
+        if not actual_configurations:
+            raise BaselineError(f"identity migration source {old_name!r} is absent from the baseline")
+
+        source_keys.update(entry_sources)
+        destination_keys.update(entry_destinations)
+        migrations.append(
+            {
+                "old_name": old_name,
+                "new_name": new_name,
+                "targets": targets,
+                "configurations": configurations,
+                "evidence": tuple(evidence),
+            }
+        )
+
+    if source_keys & destination_keys:
+        raise BaselineError("identity migration chains are not supported")
+    return migrations
+
+
+def apply_identity_migrations(expected_tests, migrations, configuration):
+    if configuration not in CONFIGS:
+        raise BaselineError(f"unsupported identity migration configuration {configuration!r}")
+    transformed = Counter(expected_tests)
+    applied = 0
+    for migration in migrations:
+        old_name = migration["old_name"]
+        new_name = migration["new_name"]
+        applies = configuration in migration["configurations"]
+        source_keys = [(*target, old_name) for target in migration["targets"]]
+        destination_keys = [(*target, new_name) for target in migration["targets"]]
+        present = [transformed.get(key, 0) > 0 for key in source_keys]
+        if any(present) != applies or (applies and not all(present)):
+            raise BaselineError(
+                f"identity migration {old_name!r} does not match expected source presence in {configuration}"
+            )
+        if not applies:
+            continue
+        if any(transformed.get(key, 0) for key in destination_keys):
+            raise BaselineError(f"identity migration {new_name!r} collides in {configuration}")
+        for source, destination in zip(source_keys, destination_keys, strict=True):
+            transformed[destination] = transformed.pop(source)
+            applied += 1
+    return transformed, applied
+
+
+def qualified_report(expected, observed, *, identity_migrations=None, configuration=None):
     et, en, eb = parse_targets(expected)
     ot, on, ob = parse_targets(observed)
     if eb:
         raise BaselineError("baseline contains unexpected benchmarks")
+    migrations_applied = None
+    if identity_migrations is not None:
+        if configuration is None:
+            raise BaselineError("identity migrations require an explicit configuration")
+        en, migrations_applied = apply_identity_migrations(en, identity_migrations, configuration)
     report = compare_enumerations(en, on, ob)
     # Existing report keys preserved; missing/unexpected names now structured.
     for field in ("missing", "unexpected", "unexpected_benchmarks"):
@@ -531,6 +708,8 @@ def qualified_report(expected, observed):
     report["status"] = "fail" if report["violation_count"] else "pass"
     report["expected_unique_names"] = len(flatten(en))
     report["observed_unique_names"] = len(flatten(on))
+    if migrations_applied is not None:
+        report["identity_migrations_applied"] = migrations_applied
     return report
 
 
@@ -601,17 +780,28 @@ def merge_captures(paths, output, legacy):
         handle.write("\n")
 
 
-def windows_required(configs, legacy):
+def windows_required(configs, legacy, *, identity_migrations=None):
     _, tests, _ = parse_targets(configs["windows:default"]["targets"])
-    required_names = legacy["windows_only_tests"]
+    required_names = Counter(legacy["windows_only_tests"])
+    if identity_migrations is not None:
+        tests, _ = apply_identity_migrations(tests, identity_migrations, "windows:default")
+        for migration in identity_migrations:
+            old_name = migration["old_name"]
+            new_name = migration["new_name"]
+            if "windows:default" not in migration["configurations"] or old_name not in required_names:
+                continue
+            count = required_names.pop(old_name)
+            if new_name in required_names:
+                raise BaselineError(f"Windows-only identity migration collides for {new_name!r}")
+            required_names[new_name] = count
     required = Counter({key: n for key, n in tests.items() if key[-1] in required_names})
     if not required or flatten(required) != required_names or any(n != 1 for n in required.values()):
         raise BaselineError("Windows required target/name inventory is incomplete or ambiguous")
     return required
 
 
-def execute_windows(configs, legacy, executables):
-    required = windows_required(configs, legacy)
+def execute_windows(configs, legacy, executables, *, identity_migrations=None):
+    required = windows_required(configs, legacy, identity_migrations=identity_migrations)
     receipts = []
     for key in sorted(required):
         if key[:3] not in executables:
@@ -633,6 +823,7 @@ def main(argv=None):
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--baseline", type=Path, help="schema 2 qualified baseline")
     parser.add_argument("--legacy-baseline", type=Path, help="original schema 1 aggregate cross-check")
+    parser.add_argument("--migrations", type=Path, help="exact identity migration map")
     parser.add_argument("--list-file", type=Path, help="schema 2 capture envelope, not flat stdout")
     parser.add_argument("--platform", choices=("auto", "windows", "linux", "macos"), default="auto")
     parser.add_argument("--include-solari", action="store_true")
@@ -669,18 +860,30 @@ def main(argv=None):
         configs = load_qualified(baseline, legacy)
         if args.execute_windows and (config != "windows:default" or args.list_file):
             raise BaselineError("Windows execution requires live default Windows capture")
+        migrations_path = args.migrations or root / "scripts" / IDENTITY_MIGRATIONS_FILE
+        migrations = load_identity_migrations(migrations_path, configs)
         if args.list_file:
             observed = validate_capture(read_json(args.list_file), config)
             executables = {}
         else:
             observed, executables = capture(root, args.include_solari)
-        report = qualified_report(configs[config]["targets"], observed)
+        report = qualified_report(
+            configs[config]["targets"],
+            observed,
+            identity_migrations=migrations,
+            configuration=config,
+        )
         report.update(baseline_checkpoint=BASELINE_CHECKPOINT, baseline_commit=BASELINE_COMMIT,
                       platform=platform, include_solari=args.include_solari,
                       source="offline qualified capture" if args.list_file else "live Cargo test artifacts",
                       live_capture=not bool(args.list_file))
         if args.execute_windows and report["status"] == "pass":
-            report["executed_windows_tests"] = execute_windows(configs, legacy, executables)
+            report["executed_windows_tests"] = execute_windows(
+                configs,
+                legacy,
+                executables,
+                identity_migrations=migrations,
+            )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["status"] == "pass" else 1
     except (BaselineError, OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:

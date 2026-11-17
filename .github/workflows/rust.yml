@@ -190,4 +190,4 @@ jobs:
         run: python3 -B scripts/check_test_enumeration_parity.py --root . --include-solari --json
 
       - name: Run CPU-safe solari unit tests
-        run: cargo test -p usdview --lib --features solari --locked viewport::scene::solari
+        run: cargo test -p usdview --lib --features solari --locked viewport::rendering::solari
