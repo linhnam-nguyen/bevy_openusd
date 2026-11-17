@@ -3,7 +3,7 @@
 pub(crate) mod blob_store;
 pub(crate) mod cache;
 pub(crate) mod cache_compatibility;
-#[path = "project/cache_target.rs"]
+#[path = "cache_target.rs"]
 pub(crate) mod cache_contract;
 pub(crate) mod cache_demand_projection;
 pub(crate) mod cache_hydration;
