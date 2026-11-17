@@ -6,8 +6,9 @@ use tempfile::tempdir;
 
 use super::ProjectApplicationService;
 use crate::project::{
-    cache::{SceneCacheDescriptorV3, SceneCacheStore},
-    cache_hydration::default_project_cache_config_hash,
+    cache::{
+        SceneCacheDescriptorV3, SceneCacheStore, hydration::default_project_cache_config_hash,
+    },
     catalog::manifest_store::ManifestStore,
     storage::ProjectStorageLayout,
 };

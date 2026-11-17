@@ -46,7 +46,9 @@ def Xform "World"
         app.insert_resource(crate::project::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });
-        app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+        app.insert_resource(
+            crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        );
         app.insert_resource(SemanticWorkingStore::default());
         app.insert_resource(SemanticSyncState::default());
         app.world_mut().insert_non_send(live);
@@ -83,7 +85,9 @@ def Xform "World"
         app.insert_resource(crate::project::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });
-        app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+        app.insert_resource(
+            crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        );
         app.insert_resource(SemanticWorkingStore::default());
         app.insert_resource(SemanticSyncState::default());
         let server_interface = RenderServerInterface::default();

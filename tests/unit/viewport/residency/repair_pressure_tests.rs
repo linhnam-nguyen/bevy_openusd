@@ -5,8 +5,8 @@ use bevy::prelude::{Res, ResMut, World};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::SceneCacheDescriptorV3;
-use crate::project::cache_demand_projection::TargetedPersistenceOutcome;
+use crate::project::cache::contract::SceneCacheDescriptorV3;
+use crate::project::cache::demand::TargetedPersistenceOutcome;
 
 use super::super::authority::DEFAULT_LOADER_CAPACITY;
 use super::super::loader::LoadJob;

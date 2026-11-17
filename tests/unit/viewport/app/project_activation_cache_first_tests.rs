@@ -4,11 +4,11 @@ use usd_bevy::LiveStage;
 
 use super::ProductionActivationWorld;
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
     SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_hydration::default_project_cache_config_hash;
+use crate::project::cache::hydration::default_project_cache_config_hash;
 use crate::project::service::{ProjectStageActivationTarget, ProjectStagePresentationContext};
 use crate::viewport::session::SceneCachePresentation;
 

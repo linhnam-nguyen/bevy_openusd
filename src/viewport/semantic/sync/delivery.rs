@@ -6,11 +6,11 @@ use usd_bevy::{
 };
 use usd_model::SemanticSnapshot;
 
-use crate::project::blob_store::PreparedMeshBlob;
-use crate::project::cache_hydration::ActiveProjectCacheContext;
-use crate::project::ghost_cache::{
+use crate::project::cache::blobs::PreparedMeshBlob;
+use crate::project::cache::historical_geometry::{
     PreparedRenderPayloads, prepare_render_blobs, prepare_render_blobs_for_entities,
 };
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::project::recovery::RecoverySettings;
 use crate::viewport::api::RenderServerInterface;
 
@@ -298,5 +298,5 @@ fn prepare_runtime_payloads_if_server(
     if world.get_resource::<RenderServerInterface>().is_none() {
         return Default::default();
     }
-    crate::project::ghost_cache::prepare_runtime_payloads(world, snapshot)
+    crate::project::cache::historical_geometry::prepare_runtime_payloads(world, snapshot)
 }

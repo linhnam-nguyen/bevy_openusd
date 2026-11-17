@@ -9,8 +9,8 @@ use viewport_protocol::EditorOperation;
 use super::helpers::{emit_editor_completed, reject};
 use super::state::EditorHistories;
 use crate::project::{
-    cache::ProjectCacheTarget, cache_hydration::ActiveProjectCacheContext,
-    cache_warmer::ProjectCacheWarmQueue, catalog::manifest_store::ManifestStore,
+    cache::ProjectCacheTarget, cache::hydration::ActiveProjectCacheContext,
+    cache::warming::ProjectCacheWarmQueue, catalog::manifest_store::ManifestStore,
     storage::ProjectStorageLayout,
 };
 use crate::viewport::api::ViewportEventOutbox;

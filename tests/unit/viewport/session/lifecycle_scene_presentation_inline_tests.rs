@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheAddress, SceneCacheBlobRef,
     SceneCacheEntry, SceneCacheOccurrence,
 };
@@ -56,12 +56,12 @@ fn child_flags_are_computed_in_one_parent_index_pass() {
         1,
         usd_model::HashDigest::from_hex(&"b".repeat(64)).unwrap(),
     );
-    descriptor.state = crate::project::cache_contract::SceneCacheState::Ready;
+    descriptor.state = crate::project::cache::contract::SceneCacheState::Ready;
     descriptor.prim_count = 2;
     descriptor.cacheable_count = 1;
     let activation = SceneCacheActivation {
         descriptor,
-        index: crate::project::cache_contract::SceneCacheIndex {
+        index: crate::project::cache::contract::SceneCacheIndex {
             schema_version: SCENE_CACHE_INDEX_SCHEMA_VERSION,
             scene_id,
             generation: 1,

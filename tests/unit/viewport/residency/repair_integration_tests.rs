@@ -12,15 +12,15 @@ use super::{
     TargetedRepairQueue, TargetedRepairRequest, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
 };
-use crate::project::blob_store::prepare_mesh_payload;
-use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
-use crate::project::cache_contract::{
+use crate::project::cache::blobs::prepare_mesh_payload;
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, TargetedSceneRepair};
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::demand::{TargetedPersistenceOutcome, TargetedSceneRepair};
+use crate::project::cache::hydration::ActiveProjectCacheContext;
+use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
 use crate::project::catalog::manifest_store::ManifestStore;
 use anyhow::Result;
 use bevy::asset::{Assets, RenderAssetUsages};

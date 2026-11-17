@@ -12,11 +12,11 @@ use viewport_protocol::SessionId;
 
 use super::production_tests::ProductionActivationWorld;
 use super::*;
+use crate::project::cache::hydration::default_project_cache_config_hash;
 use crate::project::cache::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
     ProjectCacheTarget,
 };
-use crate::project::cache_hydration::default_project_cache_config_hash;
 use crate::project::catalog::{
     manifest_store::ManifestStore, workspace_registry::WorkspaceRegistry,
 };
@@ -123,7 +123,7 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
     fs::create_dir_all(&package_dir).expect("create Hummingbird import directory");
     let package_path = package_dir.join("hummingbird.usdz");
     fs::copy(&source, &package_path).expect("copy Hummingbird package");
-    let spatial = crate::project::spatial::inspect_source(&package_path)
+    let spatial = crate::project::assets::spatial::inspect_source(&package_path)
         .expect("inspect Hummingbird source metadata");
     fs::create_dir_all(scene_path.parent().expect("Hummingbird scene directory"))
         .expect("create Hummingbird scene directory");

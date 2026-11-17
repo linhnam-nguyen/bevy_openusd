@@ -11,7 +11,7 @@ use usd_model::{
     TransformSignature,
 };
 
-use crate::project::blob_store::BlobStore;
+use crate::project::cache::blobs::BlobStore;
 use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
 use crate::project::runtime_payload::{RuntimeTextureBlob, RuntimeTextureColorSpace};
 

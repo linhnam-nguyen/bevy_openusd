@@ -1,15 +1,17 @@
 use super::test_support::build_lookup;
 use super::*;
 use crate::project::{
-    blob_store::prepare_mesh_payload,
-    cache::{ProjectCacheIdentity, SceneCacheStore},
-    cache_contract::{
-        CachedTransform, ProjectCacheTarget, SCENE_CACHE_INDEX_SCHEMA_VERSION,
-        SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheAddress, SceneCacheBlobRef,
-        SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex,
-        SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
+    cache::{
+        ProjectCacheIdentity, SceneCacheStore,
+        blobs::prepare_mesh_payload,
+        contract::{
+            CachedTransform, ProjectCacheTarget, SCENE_CACHE_INDEX_SCHEMA_VERSION,
+            SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheAddress, SceneCacheBlobRef,
+            SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex,
+            SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
+        },
+        hydration::ActiveProjectCacheContext,
     },
-    cache_hydration::ActiveProjectCacheContext,
     catalog::manifest_store::ManifestStore,
 };
 use crate::viewport::residency::{

@@ -158,7 +158,7 @@ fn scene_wrapper_is_linked(scene_path: &Path) -> Result<bool> {
         .load(InitialLoadSet::LoadNone)
         .open(path.as_ref())
         .context("open Scene wrapper for link status")?;
-    Ok(crate::project::spatial::source_binding_is_linked(
+    Ok(crate::project::assets::spatial::source_binding_is_linked(
         &stage.prim(SCENE_SOURCE_PRIM),
     )?)
 }
@@ -174,11 +174,11 @@ fn migrate_scene_wrapper_marker(scene_path: &Path) -> Result<()> {
         source_prim.is_defined()?,
         "legacy linked Scene wrapper source prim must be defined"
     );
-    if crate::project::spatial::source_binding_marker(&source_prim)?.is_some() {
+    if crate::project::assets::spatial::source_binding_marker(&source_prim)?.is_some() {
         return Ok(());
     }
 
-    crate::project::spatial::author_source_binding_role(&source_prim, true)?;
+    crate::project::assets::spatial::author_source_binding_role(&source_prim, true)?;
     let temporary_path = scene_path.with_file_name(format!(
         ".{}.linked-source-migration-{}.tmp.usda",
         scene_path
@@ -201,7 +201,7 @@ fn migrate_scene_wrapper_marker(scene_path: &Path) -> Result<()> {
 }
 
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {
-    super::source_closure::source_closure_fingerprint(source)
+    super::assets::closure::source_closure_fingerprint(source)
 }
 
 fn canonical_source(source: &Path) -> Result<PathBuf> {

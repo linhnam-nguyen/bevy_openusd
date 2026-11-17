@@ -4,8 +4,8 @@ use tempfile::tempdir;
 use usd_model::{HashDigest, SnapshotId, SnapshotSource};
 
 use super::*;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::project::cache::{ProjectCacheState, ProjectCacheStore, ProjectCacheTarget};
-use crate::project::cache_hydration::ActiveProjectCacheContext;
 use crate::project::catalog::manifest_store::ManifestStore;
 
 fn work(revision: u64) -> DeliveryWork {

@@ -12,7 +12,7 @@ use usd_model::{Bounds3, HashDigest, TransformSignature};
 use viewport_protocol::RuntimeProfile;
 
 use super::*;
-use crate::project::blob_store::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
+use crate::project::cache::blobs::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
 use crate::project::cache::{ProjectCacheDescriptor, ProjectCacheTarget};
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::runtime_delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};

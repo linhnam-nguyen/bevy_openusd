@@ -51,7 +51,9 @@ def Xform "World"
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
-    app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+    app.insert_resource(
+        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+    );
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());
     app.world_mut().insert_non_send(live);
@@ -78,8 +80,9 @@ def Xform "World"
     {
         let mut cache = app
             .world_mut()
-            .resource_mut::<crate::project::ghost_cache::HistoricalGeometryCache>();
-        *cache = crate::project::ghost_cache::HistoricalGeometryCache::default();
+            .resource_mut::<crate::project::cache::historical_geometry::HistoricalGeometryCache>(
+        );
+        *cache = crate::project::cache::historical_geometry::HistoricalGeometryCache::default();
     }
 
     // Resync /World/A (affected prims: /World/A and /World/A/MeshA)
@@ -97,7 +100,7 @@ def Xform "World"
     // Verify HistoricalGeometryCache: only /World/A affected entities and mesh were scanned!
     let cache = *app
         .world()
-        .resource::<crate::project::ghost_cache::HistoricalGeometryCache>();
+        .resource::<crate::project::cache::historical_geometry::HistoricalGeometryCache>();
     assert_eq!(cache.snapshots_seen, 1);
     // Scanned ONLY the affected /World/A entities (2: /World/A and /World/A/MeshA), NOT the whole stage (5 prims)!
     assert_eq!(cache.semantic_entities_scanned, 2);
@@ -172,7 +175,9 @@ def Xform "World"
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
-    app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+    app.insert_resource(
+        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+    );
 
     // Spawn a Mesh directly with UsdPrimRef
     let mut mesh = Mesh::new(
@@ -272,7 +277,9 @@ def Xform "World"
     app.insert_resource(crate::project::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
-    app.insert_resource(crate::project::ghost_cache::HistoricalGeometryCache::default());
+    app.insert_resource(
+        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+    );
 
     // Spawn a Mesh directly with UsdPrimRef
     let mut mesh = Mesh::new(

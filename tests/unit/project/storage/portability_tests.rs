@@ -14,9 +14,9 @@ use tempfile::tempdir;
 use usd_model::SnapshotSource;
 use usd_project::ProjectContentNode;
 
+use super::super::assets::closure::dependency_containment_report;
 use super::super::catalog::manifest_store::ManifestStore;
 use super::super::service::ProjectApplicationService;
-use super::super::source_closure::dependency_containment_report;
 use super::ProjectStorageLayout;
 
 #[test]

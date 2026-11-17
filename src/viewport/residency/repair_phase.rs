@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::project::cache_contract::SceneCacheDescriptorV3;
+use crate::project::cache::contract::SceneCacheDescriptorV3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RepairPhase {

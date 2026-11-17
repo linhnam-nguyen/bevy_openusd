@@ -13,7 +13,7 @@ fn payload_with_hash(
     SceneSpatialPayload {
         address: SceneCacheAddress {
             scene_id,
-            occurrence: crate::project::cache_contract::SceneCacheOccurrence::Member(occurrence),
+            occurrence: crate::project::cache::contract::SceneCacheOccurrence::Member(occurrence),
         },
         payload_key: ScenePayloadKey {
             scene_id,

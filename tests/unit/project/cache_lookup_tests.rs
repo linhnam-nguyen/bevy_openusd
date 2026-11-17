@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache_contract::{CachedTransform, SceneCacheBlobRef, SceneCacheOccurrence};
+use crate::project::cache::contract::{CachedTransform, SceneCacheBlobRef, SceneCacheOccurrence};
 use usd_project::ScenePlacementTransform;
 
 fn owned_entry(scene_id: SceneId, path: &str, byte: u8) -> SceneCacheEntry {
@@ -56,7 +56,7 @@ fn index(scene_id: SceneId, generation: u64, entries: Vec<SceneCacheEntry>) -> S
     let mut entries = entries;
     entries.sort_by(|left, right| left.address.cmp(&right.address));
     SceneCacheIndex {
-        schema_version: super::super::SCENE_CACHE_INDEX_SCHEMA_VERSION,
+        schema_version: super::super::contract::SCENE_CACHE_INDEX_SCHEMA_VERSION,
         scene_id,
         generation,
         entries,

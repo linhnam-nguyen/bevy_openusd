@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     SceneCacheActivation, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheState,
 };
 

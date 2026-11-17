@@ -7,7 +7,7 @@ use usd_model::{
 };
 
 use super::*;
-use crate::project::blob_store::put_mesh;
+use crate::project::cache::blobs::put_mesh;
 
 fn digest() -> HashDigest {
     HashDigest::new([9; HashDigest::BYTE_LEN])

@@ -102,7 +102,7 @@ pub(super) fn commit(
     {
         Ok(changed_paths) => changed_paths,
         Err(error) => {
-            if crate::project::cache_warmer::enqueue_project_targets_fail_closed(
+            if crate::project::cache::warming::enqueue_project_targets_fail_closed(
                 &service.cache_warm,
                 &project_root,
             ) {
@@ -157,7 +157,7 @@ pub(super) fn commit(
             Some(paths) => {
                 let mut targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
                 targets.extend(
-                    crate::project::cache_warmer::cache_targets_for_changed_paths(
+                    crate::project::cache::warming::cache_targets_for_changed_paths(
                         &project_root,
                         &committed_manifest,
                         &paths,

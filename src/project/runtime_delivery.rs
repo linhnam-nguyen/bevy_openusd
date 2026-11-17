@@ -13,7 +13,7 @@ use viewport_protocol::{
     RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind, RuntimeProfile,
 };
 
-use super::blob_store::BlobStore;
+use super::cache::blobs::BlobStore;
 use super::runtime_payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
 
 pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 3;

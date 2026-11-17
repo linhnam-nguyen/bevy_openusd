@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache_contract::{SceneCacheAddress, SceneCacheOccurrence};
+use crate::project::cache::contract::{SceneCacheAddress, SceneCacheOccurrence};
 use crate::viewport::residency::{camera::CameraAdmission, spatial::SceneSpatialPayload};
 use bevy::asset::Assets;
 use bevy::camera::primitives::Frustum;

@@ -27,7 +27,7 @@ pub(crate) fn wait_for(
         project_root,
         target.clone(),
         RuntimeProfile::NativeMedium,
-        super::super::super::cache_compatibility::project_runtime_cache_config_hash(
+        super::super::super::compatibility::project_runtime_cache_config_hash(
             usd_semantic::SemanticConfig::default().hash(),
         ),
     )?;

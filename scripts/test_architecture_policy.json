@@ -282,133 +282,133 @@
       "target": "crates/viewport_streaming/tests/unit/router.rs"
     },
     {
-      "owner_file": "src/project/blob_store.rs",
+      "owner_file": "src/project/cache/blobs.rs",
       "module_path": "",
       "mod_name": "repair_tests",
       "target": "tests/unit/project/blob_store_repair_tests.rs"
     },
     {
-      "owner_file": "src/project/blob_store.rs",
+      "owner_file": "src/project/cache/blobs.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/blob_store_tests.rs"
     },
     {
-      "owner_file": "src/project/cache.rs",
+      "owner_file": "src/project/cache/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_compatibility.rs",
+      "owner_file": "src/project/cache/compatibility.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_compatibility_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_demand_projection.rs",
+      "owner_file": "src/project/cache/demand.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_demand_projection_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_descriptor.rs",
+      "owner_file": "src/project/cache/descriptor.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_descriptor_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_hydration.rs",
+      "owner_file": "src/project/cache/hydration/mod.rs",
       "module_path": "",
       "mod_name": "benchmark_tests",
       "target": "tests/unit/project/cache_benchmark_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_hydration.rs",
+      "owner_file": "src/project/cache/hydration/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_hydration_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_lookup.rs",
+      "owner_file": "src/project/cache/lookup.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_lookup_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_scene_payload.rs",
+      "owner_file": "src/project/cache/scene/payload.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_scene_payload_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_scene_prim_count.rs",
+      "owner_file": "src/project/cache/scene/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_scene_prim_count_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_scene_store.rs",
+      "owner_file": "src/project/cache/scene/store.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_scene_store_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warm_runtime.rs",
+      "owner_file": "src/project/cache/warming/runtime.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_warm_runtime_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "closure_tests",
       "target": "tests/unit/project/cache_warmer_closure_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "generation_tests",
       "target": "tests/unit/project/cache_warmer_generation_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "legacy_migration_tests",
       "target": "tests/unit/project/cache_warmer_legacy_migration_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "lifecycle_tests",
       "target": "tests/unit/project/cache_warmer_lifecycle_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "preparation",
       "target": "tests/unit/project/cache_warmer_preparation_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "recovery_tests",
       "target": "tests/unit/project/cache_warmer_recovery_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer.rs",
+      "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_warmer_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer_enqueue.rs",
+      "owner_file": "src/project/cache/warming/enqueue.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/cache_warmer_enqueue_tests.rs"
     },
     {
-      "owner_file": "src/project/cache_warmer_queue.rs",
+      "owner_file": "src/project/cache/warming/queue.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/project/cache_warmer_queue_test_support.rs"
@@ -438,7 +438,7 @@
       "target": "tests/unit/project/commit/tests.rs"
     },
     {
-      "owner_file": "src/project/ghost_cache/mod.rs",
+      "owner_file": "src/project/cache/historical_geometry/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/ghost_cache/tests.rs"
@@ -756,25 +756,25 @@
       "target": "tests/unit/project/service/stage_mutation_tests.rs"
     },
     {
-      "owner_file": "src/project/source_closure.rs",
+      "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "optional_tests",
       "target": "tests/unit/project/source_closure_optional_tests.rs"
     },
     {
-      "owner_file": "src/project/source_closure.rs",
+      "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "pattern_tests",
       "target": "tests/unit/project/source_closure_pattern_tests.rs"
     },
     {
-      "owner_file": "src/project/source_closure.rs",
+      "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/source_closure_tests.rs"
     },
     {
-      "owner_file": "src/project/spatial.rs",
+      "owner_file": "src/project/assets/spatial.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/spatial_tests.rs"
@@ -786,7 +786,7 @@
       "target": "tests/unit/project/stage_metadata_tests.rs"
     },
     {
-      "owner_file": "src/project/storage.rs",
+      "owner_file": "src/project/storage/mod.rs",
       "module_path": "",
       "mod_name": "portability_tests",
       "target": "tests/unit/project/storage/portability_tests.rs"
@@ -810,13 +810,13 @@
       "target": "tests/unit/project/storage/layout_tests.rs"
     },
     {
-      "owner_file": "src/project/storage/migration.rs",
+      "owner_file": "src/project/storage/migration/mod.rs",
       "module_path": "",
       "mod_name": "failure_injection",
       "target": "tests/unit/project/storage/migration_failure_injection_tests.rs"
     },
     {
-      "owner_file": "src/project/storage/migration.rs",
+      "owner_file": "src/project/storage/migration/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/storage/migration_tests.rs"

@@ -1,6 +1,6 @@
 //! R-tree-backed Scene payload candidates for camera residency.
 
-use crate::project::cache_contract::{CachedTransform, SceneCacheAddress, SceneCacheEntry};
+use crate::project::cache::contract::{CachedTransform, SceneCacheAddress, SceneCacheEntry};
 use bevy::camera::primitives::Aabb;
 use bevy::math::{Mat4, Quat, Vec3};
 use rstar::{AABB, RTree, RTreeObject};

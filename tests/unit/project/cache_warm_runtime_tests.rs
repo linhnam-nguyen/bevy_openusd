@@ -18,9 +18,9 @@ use super::{
     build_and_publish_managed_scene_cache_generation,
     build_and_publish_managed_scene_cache_generation_with_observer,
 };
-use crate::project::blob_store::BlobStore;
+use crate::project::cache::blobs::BlobStore;
+use crate::project::cache::contract::SceneCacheState;
 use crate::project::cache::{ProjectCacheTarget, target_content_hash};
-use crate::project::cache_contract::SceneCacheState;
 
 struct BarrierPublishObserver {
     built_tx: mpsc::Sender<()>,
@@ -253,7 +253,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .find(|entry| {
             matches!(
                 &entry.kind,
-                crate::project::cache_contract::SceneCacheEntryKind::OwnedPrim { prim_path }
+                crate::project::cache::contract::SceneCacheEntryKind::OwnedPrim { prim_path }
                     if prim_path == "/SceneRoot/Renderable"
             )
         })

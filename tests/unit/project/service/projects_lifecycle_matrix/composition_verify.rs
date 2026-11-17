@@ -41,7 +41,7 @@ pub(super) fn verify_scene_placement(
         return Err(format!("generated Scene {scene_id} has no SceneRoot"));
     }
     let linked_marker =
-        crate::project::spatial::source_binding_is_linked(&stage.prim("/SceneRoot/Source"))
+        crate::project::assets::spatial::source_binding_is_linked(&stage.prim("/SceneRoot/Source"))
             .map_err(|error| format!("read Scene link marker: {error}"))?;
     if linked_marker != linked {
         return Err(format!("Scene {scene_id} Import/Link marker mismatch"));

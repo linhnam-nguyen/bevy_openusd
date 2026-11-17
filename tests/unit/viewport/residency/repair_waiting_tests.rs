@@ -7,12 +7,12 @@ use usd_model::HashDigest;
 use usd_project::SceneId;
 
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_demand_projection::{
+use crate::project::cache::demand::{
     OwnedPrimPathResolution, TargetedPersistenceOutcome, owned_prim_path_for_payload,
 };
 

@@ -3,8 +3,8 @@ use super::{
     RequestedAsset, Spawned, StageHandle, StageInfo, StagePresentationContext,
     lifecycle_invalidation,
 };
-use crate::project::cache_contract::{ProjectCacheTarget, SceneCacheActivation};
-use crate::project::cache_hydration::{
+use crate::project::cache::contract::{ProjectCacheTarget, SceneCacheActivation};
+use crate::project::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
 };
 use crate::viewport::api::CurrentHierarchyProjection;
@@ -228,7 +228,7 @@ fn install_scene_cache_revalidation(
         .name(worker_name)
         .spawn(move || {
             let result =
-                crate::project::source_closure::target_content_hash(&worker_root, &hash_target)
+                crate::project::assets::closure::target_content_hash(&worker_root, &hash_target)
                     .map_err(|error| format!("{error:#}"));
             match result_slot.lock() {
                 Ok(mut slot) => *slot = Some(result),
@@ -268,7 +268,7 @@ pub(crate) fn discard_scene_cache_bootstrap(
         return;
     }
     world.remove_resource::<SceneCachePresentation>();
-    world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
+    world.remove_resource::<crate::project::cache::contract::ProjectCacheLookup>();
     if world
         .get_resource::<SceneCacheOwnershipContext>()
         .is_some_and(|owner| owner.scene_id == scene_id)

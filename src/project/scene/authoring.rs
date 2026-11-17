@@ -134,7 +134,7 @@ pub(crate) fn new_scene_stage_with_name_and_protection(
         root.set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;
     }
     stage.set_default_prim(SCENE_ROOT_PRIM)?;
-    crate::project::spatial::author_canonical_stage(&stage)?;
+    crate::project::assets::spatial::author_canonical_stage(&stage)?;
     Ok(stage)
 }
 

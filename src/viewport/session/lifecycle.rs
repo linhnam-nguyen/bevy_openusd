@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use openusd::usd::Stage;
 use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageHandle, StageInfo,
@@ -252,7 +252,7 @@ pub(super) fn clear_live_stage_projection(world: &mut World) {
 fn clear_projected_stage(world: &mut World) {
     clear_live_stage_projection(world);
     world.remove_resource::<super::SceneCachePresentation>();
-    world.remove_resource::<crate::project::cache_contract::ProjectCacheLookup>();
+    world.remove_resource::<crate::project::cache::contract::ProjectCacheLookup>();
     world.remove_resource::<super::SceneDerivedMetadata>();
     crate::viewport::residency::retire_scene_cache_resources(world);
 }

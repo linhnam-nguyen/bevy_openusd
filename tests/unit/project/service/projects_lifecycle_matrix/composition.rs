@@ -201,7 +201,7 @@ pub(super) fn run_seed(seed: u64) -> Result<(), String> {
                 }
                 .map_err(|error| {
                     let closure_error =
-                        crate::project::source_closure::source_closure_fingerprint(&source)
+                        crate::project::assets::closure::source_closure_fingerprint(&source)
                             .err()
                             .map(|detail| detail.to_string());
                     trace.failure(format!(

@@ -45,7 +45,7 @@ pub(super) fn verify_scene_placement(
                 .failure(format!("open composed Scene: {error}"))
         })?;
     let marker =
-        crate::project::spatial::source_binding_is_linked(&stage.prim("/SceneRoot/Source"))
+        crate::project::assets::spatial::source_binding_is_linked(&stage.prim("/SceneRoot/Source"))
             .map_err(|error| {
                 context
                     .trace

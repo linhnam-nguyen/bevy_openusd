@@ -20,14 +20,14 @@ use super::{
     activate_stage_with_cache_context, install_scene_cache_bootstrap_before_stage_open,
     poll_scene_cache_revalidation,
 };
-use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_hydration::{
+use crate::project::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
+use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::viewport::api::CurrentHierarchyProjection;
 use crate::viewport::residency::{
@@ -109,7 +109,8 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     let source = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let project_source = project.path().join("source-a.usda");
     fs::copy(&source, &project_source).expect("copy source into Project");
-    let spatial = crate::project::spatial::inspect_source(&source).expect("inspect source A");
+    let spatial =
+        crate::project::assets::spatial::inspect_source(&source).expect("inspect source A");
     crate::project::scene::adoption_authoring::author_scene_wrapper_to_path(
         &scene_path,
         project.path(),
@@ -128,7 +129,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     let target = ProjectCacheTarget::Scene {
         id: scene_id.to_string(),
     };
-    let queue = crate::project::cache_warmer::ProjectCacheWarmQueue::default();
+    let queue = crate::project::cache::warming::ProjectCacheWarmQueue::default();
     assert!(queue.enqueue(project.path(), target.clone()));
     assert!(queue.wait_for_project_idle(project.path(), CACHE_WARM_TEST_TIMEOUT));
     let scene_store = SceneCacheStore::new(project.path());

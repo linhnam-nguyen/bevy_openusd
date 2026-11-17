@@ -43,7 +43,7 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
     app.insert_resource(SceneCachePresentation {
         scene_id,
         generation: 7,
-        state: crate::project::cache_contract::SceneCacheState::Ready,
+        state: crate::project::cache::contract::SceneCacheState::Ready,
         entries: Vec::new(),
     })
     .insert_resource(Assets::<bevy::image::Image>::default())

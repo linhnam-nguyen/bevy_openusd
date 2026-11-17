@@ -39,9 +39,9 @@ pub(crate) fn author_scene_wrapper_to_path(
         .define_prim(source_path.as_str())?
         .set_type_name("Xform")?;
     author_source_references(&stage, &source_prim, &source_asset_path, source_prims)?;
-    crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
-    crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
-    crate::project::spatial::author_source_binding_role(&source_prim, linked_source)?;
+    crate::project::assets::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::assets::spatial::author_source_hierarchy_role(&source_prim)?;
+    crate::project::assets::spatial::author_source_binding_role(&source_prim, linked_source)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -116,25 +116,26 @@ pub(crate) fn validate_scene_wrapper(
             .custom_data()?
             .and_then(|value| match value {
                 Value::Dictionary(data) => data
-                    .get(crate::project::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
+                    .get(crate::project::assets::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
                     .and_then(Value::as_str)
                     .map(str::to_owned),
                 _ => None,
             })
             .as_deref()
-            == Some(crate::project::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
+            == Some(crate::project::assets::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
         "adopted Scene wrapper source must carry the transparent hierarchy role"
     );
     ensure!(
-        crate::project::spatial::source_binding_is_linked(&stage.prim(source_path.as_str()))?
-            == linked_source,
+        crate::project::assets::spatial::source_binding_is_linked(
+            &stage.prim(source_path.as_str())
+        )? == linked_source,
         "adopted Scene wrapper linked-source provenance does not match the request"
     );
     validate_source_reference_paths(&stage, &source_path)?;
     let source_prim = stage.prim(source_path.as_str());
     ensure!(
-        crate::project::spatial::read_source_normalization(&source_prim)?
-            == crate::project::spatial::source_normalization_transform(spatial),
+        crate::project::assets::spatial::read_source_normalization(&source_prim)?
+            == crate::project::assets::spatial::source_normalization_transform(spatial),
         "adopted Scene wrapper spatial normalization does not match the inspected source"
     );
     Ok(())

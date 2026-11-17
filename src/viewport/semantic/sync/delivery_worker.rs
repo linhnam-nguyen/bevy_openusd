@@ -10,10 +10,10 @@ use usd_bevy::LiveRevision;
 use usd_model::SemanticSnapshot;
 use viewport_protocol::RuntimeProfile;
 
-use crate::project::blob_store::{
+use crate::project::cache::blobs::{
     BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob,
 };
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::project::runtime_delivery::{
     RuntimeDeliveryBundle, build_runtime_delivery_with_payloads,
 };

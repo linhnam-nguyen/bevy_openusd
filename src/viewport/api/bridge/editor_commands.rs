@@ -12,7 +12,7 @@ use super::mutations::apply_runtime_mutations;
 use super::save;
 use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
 use crate::project::{
-    cache_hydration::ActiveProjectCacheContext, cache_warmer::ProjectCacheWarmQueue,
+    cache::hydration::ActiveProjectCacheContext, cache::warming::ProjectCacheWarmQueue,
 };
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SelectedTargets;

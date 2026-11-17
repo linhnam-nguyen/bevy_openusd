@@ -12,11 +12,11 @@ use usd_model::BlobId;
 
 use bevy::prelude::Resource;
 
-use crate::project::blob_store::get_mesh;
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::SceneCacheAddress;
-use crate::project::cache_scene_hydration::SceneAnimationPayloads;
-use crate::project::cache_scene_payload::SceneAnimationBlob;
+use crate::project::cache::blobs::get_mesh;
+use crate::project::cache::contract::SceneCacheAddress;
+use crate::project::cache::scene::hydration::SceneAnimationPayloads;
+use crate::project::cache::scene::payload::SceneAnimationBlob;
 use crate::project::runtime_payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
 
 use super::loader::LoadJob;
@@ -270,7 +270,7 @@ pub(crate) fn install_loaded_scene_payloads(
         let mut material_handles = Vec::with_capacity(completion.payloads.materials.len());
         for (prim_path, material) in &completion.payloads.materials {
             let Ok(material) =
-                crate::project::cache_hydration::standard_material(material, &texture_handles)
+                crate::project::cache::hydration::standard_material(material, &texture_handles)
             else {
                 continue;
             };

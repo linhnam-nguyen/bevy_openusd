@@ -281,7 +281,7 @@ fn target_content_identity_changes_with_target_content() -> Result<()> {
         directory.path(),
         ProjectCacheTarget::ProjectRoot,
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let mut changed_scene = fs::read(&scene_path)?;
     changed_scene.extend_from_slice(b"\n# target content changed\n");
@@ -290,7 +290,7 @@ fn target_content_identity_changes_with_target_content() -> Result<()> {
         directory.path(),
         ProjectCacheTarget::ProjectRoot,
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_ne!(first, second);
     Ok(())
@@ -346,7 +346,7 @@ fn scene_owned_identity_excludes_child_payload_and_presentation_names() -> Resul
                 id: scene_id.to_string(),
             },
             RuntimeProfile::NativeMedium,
-            crate::project::cache_hydration::default_project_cache_config_hash(),
+            crate::project::cache::hydration::default_project_cache_config_hash(),
         )
     };
     let parent_before = identity(parent_scene)?;
@@ -449,7 +449,7 @@ fn scene_owned_identity_does_not_import_child_model_payload() -> Result<()> {
             directory.path(),
             target,
             RuntimeProfile::NativeMedium,
-            crate::project::cache_hydration::default_project_cache_config_hash(),
+            crate::project::cache::hydration::default_project_cache_config_hash(),
         )
     };
     let parent_before = identity(ProjectCacheTarget::Scene {

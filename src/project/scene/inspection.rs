@@ -50,7 +50,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         has_payloads: false,
         has_references: false,
         has_sublayers: stage.layer_stack().len() > 1,
-        spatial: crate::project::spatial::inspect_stage(&stage)
+        spatial: crate::project::assets::spatial::inspect_stage(&stage)
             .context("inspect USD source spatial convention")?,
     };
     if !inspection.spatial.up_axis_was_authored {

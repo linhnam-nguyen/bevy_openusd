@@ -17,12 +17,12 @@ fn interrupted_model_publication_preserves_the_legacy_wrapper() -> Result<()> {
         .join(".transactions")
         .join("migration-model-interrupted");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::super::failure_injection::at(
-        super::super::publish::MigrationPublishCheckpoint::AfterModelDirectory,
+        super::super::publication::MigrationPublishCheckpoint::AfterModelDirectory,
     );
     assert!(
-        super::super::publish::publish_plan_with_observer(
+        super::super::publication::publish_plan_with_observer(
             root,
             &migrated_manifest,
             &plan,
@@ -55,12 +55,12 @@ fn failed_rollback_preserves_transaction_for_a_later_attempt() -> Result<()> {
         .join(".transactions")
         .join("migration-rollback-failure");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::super::failure_injection::at(
-        super::super::publish::MigrationPublishCheckpoint::AfterModelDirectory,
+        super::super::publication::MigrationPublishCheckpoint::AfterModelDirectory,
     );
     assert!(
-        super::super::publish::publish_plan_with_observer(
+        super::super::publication::publish_plan_with_observer(
             root,
             &migrated_manifest,
             &plan,
@@ -102,12 +102,12 @@ fn committed_manifest_wins_over_a_stale_legacy_manifest_after_restart() -> Resul
         .join(".transactions")
         .join("migration-committed");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::super::failure_injection::at(
-        super::super::publish::MigrationPublishCheckpoint::AfterManifest,
+        super::super::publication::MigrationPublishCheckpoint::AfterManifest,
     );
     assert!(
-        super::super::publish::publish_plan_with_observer(
+        super::super::publication::publish_plan_with_observer(
             root,
             &migrated_manifest,
             &plan,
@@ -148,12 +148,12 @@ fn invalid_canonical_manifest_preserves_recovery_transaction() -> Result<()> {
         .join(".transactions")
         .join("migration-invalid-canonical");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::super::failure_injection::at(
-        super::super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+        super::super::publication::MigrationPublishCheckpoint::AfterOrdinaryScene,
     );
     assert!(
-        super::super::publish::publish_plan_with_observer(
+        super::super::publication::publish_plan_with_observer(
             root,
             &migrated_manifest,
             &plan,
@@ -188,12 +188,12 @@ fn missing_canonical_target_preserves_recovery_transaction() -> Result<()> {
         .join(".transactions")
         .join("migration-missing-canonical-target");
     let plan = super::super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::super::failure_injection::at(
-        super::super::publish::MigrationPublishCheckpoint::AfterManifest,
+        super::super::publication::MigrationPublishCheckpoint::AfterManifest,
     );
     assert!(
-        super::super::publish::publish_plan_with_observer(
+        super::super::publication::publish_plan_with_observer(
             root,
             &migrated_manifest,
             &plan,

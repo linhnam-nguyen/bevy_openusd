@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use super::publish::{MigrationPublishCheckpoint, MigrationPublishObserver};
+use super::publication::{MigrationPublishCheckpoint, MigrationPublishObserver};
 
 #[cfg_attr(windows, allow(dead_code))]
 pub(super) struct InjectFailureObserver {

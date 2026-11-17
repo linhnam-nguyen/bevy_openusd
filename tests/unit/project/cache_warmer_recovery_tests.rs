@@ -4,14 +4,12 @@ use anyhow::Result;
 use tempfile::tempdir;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId, StorageKey};
 
-use super::super::{
-    cache_hydration::default_project_cache_config_hash, catalog::manifest_store::ManifestStore,
-    storage::ProjectStorageLayout,
-};
+use super::super::hydration::default_project_cache_config_hash;
 use super::{
     ProjectCacheTarget, ProjectCacheWarmQueue, SceneCacheDescriptorV3, SceneCacheState,
     SceneCacheStore, enqueue_project_targets_fail_closed,
 };
+use crate::project::{catalog::manifest_store::ManifestStore, storage::ProjectStorageLayout};
 
 #[test]
 fn early_scene_recovery_failure_does_not_short_circuit_later_scene_invalidation() -> Result<()> {

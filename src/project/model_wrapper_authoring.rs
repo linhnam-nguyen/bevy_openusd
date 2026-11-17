@@ -57,7 +57,7 @@ pub(super) fn author_model_wrapper(
         .prim(format!("/{MODEL_ROOT_PRIM}").as_str())
         .set_metadata("ui:displayName", Value::String(model_name.to_owned()))?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
-    crate::project::spatial::author_canonical_stage(&stage)?;
+    crate::project::assets::spatial::author_canonical_stage(&stage)?;
     crate::project::stage_metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
     let source_path = crate::project::storage::authored_relative_project_asset_path(
         project_root,
@@ -68,8 +68,8 @@ pub(super) fn author_model_wrapper(
         .define_prim(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
         .set_type_name("Xform")?;
     author_source_references(&stage, &source_prim, &source_path, source_prims)?;
-    crate::project::spatial::author_source_normalization(&source_prim, spatial)?;
-    crate::project::spatial::author_source_hierarchy_role(&source_prim)?;
+    crate::project::assets::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::assets::spatial::author_source_hierarchy_role(&source_prim)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -155,20 +155,20 @@ pub(super) fn validate_model_wrapper(
             .custom_data()?
             .and_then(|value| match value {
                 Value::Dictionary(data) => data
-                    .get(crate::project::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
+                    .get(crate::project::assets::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
                     .and_then(Value::as_str)
                     .map(str::to_owned),
                 _ => None,
             })
             .as_deref()
-            == Some(crate::project::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
+            == Some(crate::project::assets::spatial::USDHUB_TRANSPARENT_SOURCE_ROLE),
         "stable Model wrapper source must carry the transparent hierarchy role"
     );
     validate_source_reference_paths(&stage, &source_path)?;
     let source_prim = stage.prim(source_path.as_str());
     ensure!(
-        crate::project::spatial::read_source_normalization(&source_prim)?
-            == crate::project::spatial::source_normalization_transform(spatial),
+        crate::project::assets::spatial::read_source_normalization(&source_prim)?
+            == crate::project::assets::spatial::source_normalization_transform(spatial),
         "stable Model wrapper spatial normalization does not match the inspected source"
     );
     Ok(())

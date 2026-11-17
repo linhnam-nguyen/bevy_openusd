@@ -10,8 +10,8 @@ use std::{
 };
 
 use super::{adoption_authoring, adoption_support, authoring};
+use crate::project::assets::closure::materialize_source_closure;
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::project::source_closure::materialize_source_closure;
 use crate::project::storage::ProjectStorageLayout;
 use anyhow::{Context, Result, bail, ensure};
 use usd_project::{

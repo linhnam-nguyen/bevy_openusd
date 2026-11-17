@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy::prelude::*;
 use viewport_protocol::SceneAnchor;
 
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
 };
 use crate::viewport::{

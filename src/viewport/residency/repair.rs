@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use bevy::prelude::{NonSend, Res, ResMut};
 
-use crate::project::cache_demand_projection::{
+use crate::project::cache::demand::{
     OwnedPrimPathResolution, TargetedSceneRepair, extract_scene_payloads_for_repair,
     owned_prim_path_for_payload,
 };
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::viewport::session::SceneCacheOwnershipContext;
 
 use super::active_cache_project_root;

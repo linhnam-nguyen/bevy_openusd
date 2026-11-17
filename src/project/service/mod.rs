@@ -17,7 +17,7 @@ use project_protocol::{
 };
 use usd_project::ProjectId;
 
-use crate::project::cache_warmer::ProjectCacheWarmQueue;
+use crate::project::cache::warming::ProjectCacheWarmQueue;
 use crate::project::catalog::{
     catalogue::{list_projects, unavailable_reason},
     manifest_store::ManifestStore,

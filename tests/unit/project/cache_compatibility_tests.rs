@@ -10,18 +10,21 @@ use viewport_protocol::RuntimeProfile;
 
 use super::*;
 use crate::project::{
-    blob_store::{BlobStore, FilesystemBlobStore},
     cache::{
         ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
         ProjectCacheTarget, SceneCacheStore,
+        blobs::{BlobStore, FilesystemBlobStore},
+        contract::{
+            CacheObjectRef, CachedTransform, ProjectCacheLookup,
+            SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION, SCENE_CACHE_INDEX_SCHEMA_VERSION,
+            SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
+            SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneObjectKey,
+            SceneSourceStamp,
+        },
+        warming::runtime::{
+            build_and_publish_scene_cache_generation, publish_project_cache_lookup,
+        },
     },
-    cache_contract::{
-        CacheObjectRef, CachedTransform, ProjectCacheLookup, SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION,
-        SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheAddress, SceneCacheDescriptorV3,
-        SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex, SceneCacheOccurrence,
-        SceneCacheState, SceneObjectKey, SceneSourceStamp,
-    },
-    cache_warm_runtime::{build_and_publish_scene_cache_generation, publish_project_cache_lookup},
     storage::ProjectStorageLayout,
 };
 
@@ -199,7 +202,7 @@ fn scene_owned_builder_prunes_child_and_publishes_payload_spatial_deterministica
 
     let descriptor = scene_descriptor(parent_scene, 12);
     let first = build_and_publish_scene_cache_generation(directory.path(), &descriptor)?;
-    let (second, _) = crate::project::cache_warm_runtime::build_scene_cache_index(
+    let (second, _) = crate::project::cache::warming::runtime::build_scene_cache_index(
         directory.path(),
         parent_scene,
         12,

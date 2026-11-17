@@ -16,7 +16,7 @@ use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{App, Resource, Update};
 use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache_warmer::ProjectCacheWarmQueue;
+use crate::project::cache::warming::ProjectCacheWarmQueue;
 use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
 
@@ -187,11 +187,11 @@ fn resolve_project_activation_with_cache(
         target.cache_identity = identity;
         target.scene_cache = scene_cache;
         match cache_preparation {
-            crate::project::cache_warmer::ProjectCachePreparation::Ready => {}
-            crate::project::cache_warmer::ProjectCachePreparation::Empty => {
+            crate::project::cache::warming::ProjectCachePreparation::Ready => {}
+            crate::project::cache::warming::ProjectCachePreparation::Empty => {
                 bevy::log::debug!("[project-cache] activation target is empty")
             }
-            crate::project::cache_warmer::ProjectCachePreparation::FallbackRequired => {
+            crate::project::cache::warming::ProjectCachePreparation::FallbackRequired => {
                 bevy::log::debug!(
                     "[project-cache] activation cache unavailable; canonical source fallback remains active"
                 )

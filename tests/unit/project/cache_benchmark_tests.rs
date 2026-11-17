@@ -46,7 +46,7 @@ fn headless_cache_benchmark_proves_cold_persistent_and_hot_paths() -> Result<()>
     assert!(cold_material.misses > 0, "cold source material conversions");
 
     let persistent_build_start = Instant::now();
-    let runtime = crate::project::cache_warm_runtime::build_runtime_cache(
+    let runtime = crate::project::cache::warming::runtime::build_runtime_cache(
         project.path(),
         &source,
         &identity,

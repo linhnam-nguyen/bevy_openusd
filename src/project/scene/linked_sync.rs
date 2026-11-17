@@ -14,7 +14,7 @@ use usd_project::{CompositionInspection, ProjectManifestV1, SceneId};
 use uuid::Uuid;
 
 use super::{adoption, adoption_authoring, adoption_support, authoring};
-use crate::project::source_closure::materialize_source_closure;
+use crate::project::assets::closure::materialize_source_closure;
 use crate::project::storage::ProjectStorageLayout;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";

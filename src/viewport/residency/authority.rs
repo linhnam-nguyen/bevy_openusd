@@ -8,7 +8,7 @@ use bevy::prelude::Resource;
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::SceneCacheEntry;
+use crate::project::cache::contract::SceneCacheEntry;
 
 use super::camera::CameraSample;
 use super::catalog::PayloadLoadMask;

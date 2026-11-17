@@ -1,7 +1,7 @@
 use super::{OwnedPrimPathResolution, normalized_requested_paths, owned_prim_path_for_payload};
-use crate::project::blob_store::{BlobStore, prepare_mesh_payload};
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::{
+use crate::project::cache::blobs::{BlobStore, prepare_mesh_payload};
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,

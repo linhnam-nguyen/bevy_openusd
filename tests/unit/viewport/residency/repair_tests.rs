@@ -1,12 +1,12 @@
 use super::super::repair_phase::RepairPhase;
 use super::*;
-use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneSpatialIndex,
 };
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
+use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
 use bevy::asset::Assets;
 use bevy::ecs::system::SystemState;
 use bevy::mesh::Mesh;

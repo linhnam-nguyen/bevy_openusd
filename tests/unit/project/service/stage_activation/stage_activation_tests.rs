@@ -35,7 +35,7 @@ fn stage_activation_resolves_a_registered_model_to_its_canonical_wrapper() {
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
         progress: ProjectImportProgressStore::default(),
-        cache_warm: crate::project::cache_warmer::ProjectCacheWarmQueue::default(),
+        cache_warm: crate::project::cache::warming::ProjectCacheWarmQueue::default(),
     };
 
     let target = service

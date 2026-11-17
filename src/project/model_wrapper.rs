@@ -18,9 +18,9 @@ use uuid::Uuid;
 
 use super::model_import::{ModelImporter, UsdModelImporter};
 use crate::project::{
+    assets::closure::materialize_source_closure,
     catalog::manifest_store::ManifestStore,
     scene::{adoption_authoring, authoring},
-    source_closure::materialize_source_closure,
     storage::ProjectStorageLayout,
 };
 

@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 
 use bevy::prelude::Resource;
 
-use crate::project::cache_demand_projection::{
+use crate::project::cache::demand::{
     TargetedPersistenceOutcome, TargetedSceneRepair, persist_lookup_repair,
     persist_scene_payloads_for_repair,
 };

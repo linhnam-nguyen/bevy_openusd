@@ -21,7 +21,7 @@ use bevy::mesh::Mesh;
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetBytesPerFrame;
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::viewport::scene::SectionBoxState;
 use crate::viewport::session::{SceneCacheOwnershipContext, SceneCachePresentation};
 
@@ -224,7 +224,7 @@ fn release_retired_render_assets(
 }
 
 pub(crate) fn retire_scene_cache_resources(world: &mut World) {
-    world.remove_resource::<crate::project::cache_scene_hydration::SceneAnimationPayloads>();
+    world.remove_resource::<crate::project::cache::scene::hydration::SceneAnimationPayloads>();
     if let Some(mut catalog) = world.get_resource_mut::<ScenePayloadCatalog>() {
         *catalog = ScenePayloadCatalog::default();
     }

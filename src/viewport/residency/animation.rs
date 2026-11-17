@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::SceneCacheEntryKind;
+use crate::project::cache::contract::SceneCacheEntryKind;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::session::SceneCachePresentation;
 

@@ -5,7 +5,7 @@ use std::path::Path;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::SceneCachePresentation;
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
     SceneCacheEntryKind, SceneCacheIndex,
 };
@@ -73,7 +73,7 @@ fn install_project_cache_lookup(
         .remove_resource::<ProjectCacheLookup>()
         .or_else(|| {
             project_root.and_then(|root| {
-                crate::project::cache_warm_runtime::load_published_project_cache_lookup(root)
+                crate::project::cache::warming::runtime::load_published_project_cache_lookup(root)
                     .ok()
                     .flatten()
             })

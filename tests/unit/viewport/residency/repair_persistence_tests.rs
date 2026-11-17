@@ -8,14 +8,14 @@ use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::blob_store::{BlobStore, prepare_mesh_payload};
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::{
+use crate::project::cache::blobs::{BlobStore, prepare_mesh_payload};
+use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, TargetedSceneRepair};
+use crate::project::cache::demand::{TargetedPersistenceOutcome, TargetedSceneRepair};
 use crate::project::catalog::manifest_store::ManifestStore;
 use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
 

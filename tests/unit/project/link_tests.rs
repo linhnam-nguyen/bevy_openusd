@@ -1,6 +1,6 @@
 use super::*;
+use crate::project::assets::spatial::inspect_source;
 use crate::project::scene::adoption_authoring::author_scene_wrapper_to_path;
-use crate::project::spatial::inspect_source;
 use tempfile::tempdir;
 
 #[test]
@@ -190,7 +190,8 @@ fn invalid_binding_evidence_does_not_mark_legacy_wrapper() {
             .open(scene_path.to_string_lossy().as_ref())
             .unwrap();
         assert_eq!(
-            crate::project::spatial::source_binding_marker(&stage.prim(SCENE_SOURCE_PRIM)).unwrap(),
+            crate::project::assets::spatial::source_binding_marker(&stage.prim(SCENE_SOURCE_PRIM))
+                .unwrap(),
             None,
             "invalid {label} binding must not backfill provenance"
         );

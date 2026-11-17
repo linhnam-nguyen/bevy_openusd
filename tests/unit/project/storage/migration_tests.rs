@@ -352,7 +352,7 @@ fn migration_failure_after_ordinary_scene_restores_legacy_tree() {
     let fixture = legacy_fixture();
     let root = fixture.directory.path();
     let observer = super::failure_injection::at(
-        super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+        super::publication::MigrationPublishCheckpoint::AfterOrdinaryScene,
     );
     assert!(ManifestStore::read_validated_with_observer(root, &observer).is_err());
     let layout = ProjectStorageLayout::new(root);
@@ -370,8 +370,9 @@ fn migration_failure_before_manifest_restores_legacy_tree() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let fixture = legacy_fixture();
     let root = fixture.directory.path();
-    let observer =
-        super::failure_injection::at(super::publish::MigrationPublishCheckpoint::BeforeManifest);
+    let observer = super::failure_injection::at(
+        super::publication::MigrationPublishCheckpoint::BeforeManifest,
+    );
     assert!(ManifestStore::read_validated_with_observer(root, &observer).is_err());
     let layout = ProjectStorageLayout::new(root);
     assert!(layout.legacy_manifest_path().is_file());
@@ -399,12 +400,12 @@ fn interrupted_migration_is_recovered_before_restart() -> Result<()> {
         .join(".transactions")
         .join("migration-interrupted");
     let plan = super::build_plan(root, &migrated_manifest, transaction_directory.clone())?;
-    super::publish::write_journal(root, &migrated_manifest, &plan)?;
+    super::publication::write_journal(root, &migrated_manifest, &plan)?;
     let observer = super::failure_injection::at(
-        super::publish::MigrationPublishCheckpoint::AfterOrdinaryScene,
+        super::publication::MigrationPublishCheckpoint::AfterOrdinaryScene,
     );
     assert!(
-        super::publish::publish_plan_with_observer(root, &migrated_manifest, &plan, &observer)
+        super::publication::publish_plan_with_observer(root, &migrated_manifest, &plan, &observer)
             .is_err()
     );
     assert!(!layout.canonical_manifest_path().exists());

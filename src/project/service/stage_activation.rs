@@ -13,9 +13,11 @@ use usd_project::ProjectId;
 
 use super::ProjectApplicationService;
 use crate::project::{
-    cache::{ProjectCacheIdentity, ProjectCacheTarget},
-    cache_contract::SceneCacheActivation,
-    cache_warmer::{ProjectCachePreparation, ProjectCacheWarmQueue},
+    cache::{
+        ProjectCacheIdentity, ProjectCacheTarget,
+        contract::SceneCacheActivation,
+        warming::{ProjectCachePreparation, ProjectCacheWarmQueue},
+    },
     scene::authoring::scene_path,
 };
 
@@ -267,7 +269,7 @@ impl ProjectApplicationService {
             &target.project_root,
             cache_target,
             viewport_protocol::RuntimeProfile::NativeMedium,
-            crate::project::cache_hydration::default_project_cache_config_hash(),
+            crate::project::cache::hydration::default_project_cache_config_hash(),
         ) {
             Ok(identity) => identity,
             Err(error) => {

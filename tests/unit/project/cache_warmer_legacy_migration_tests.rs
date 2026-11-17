@@ -8,7 +8,7 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};
 
 use super::preparation::wait_for;
 use super::*;
-use crate::project::blob_store::{BlobStore, FilesystemBlobStore};
+use crate::project::cache::blobs::{BlobStore, FilesystemBlobStore};
 use crate::project::catalog::manifest_store::ManifestStore;
 
 #[cfg(not(windows))]

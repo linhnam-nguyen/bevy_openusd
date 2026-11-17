@@ -137,7 +137,7 @@ fn post_switch_projection(
     let mut cache_targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
     if let Some(previous_manifest) = previous_manifest {
         cache_targets.extend(
-            crate::project::cache_warmer::cache_targets_for_changed_paths(
+            crate::project::cache::warming::cache_targets_for_changed_paths(
                 project_root,
                 previous_manifest,
                 &changed_paths,
@@ -145,7 +145,7 @@ fn post_switch_projection(
         );
     }
     cache_targets.extend(
-        crate::project::cache_warmer::cache_targets_for_changed_paths(
+        crate::project::cache::warming::cache_targets_for_changed_paths(
             project_root,
             &manifest,
             &changed_paths,

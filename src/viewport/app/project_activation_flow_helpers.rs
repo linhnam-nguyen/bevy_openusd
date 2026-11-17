@@ -4,7 +4,7 @@ use viewport_streaming::{
     ProjectActivationRequest, ProjectActivationResult as RoutedProjectActivationResult,
 };
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 
 pub(super) fn scene_owner_id(
     target: &crate::project::service::ProjectStageActivationTarget,

@@ -1,7 +1,7 @@
 use bevy::prelude::World;
 
 use super::SceneCacheOwnershipContext;
-use crate::project::cache_contract::SceneCacheActivation;
+use crate::project::cache::contract::SceneCacheActivation;
 
 pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
     world: &mut World,

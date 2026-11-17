@@ -42,7 +42,7 @@ fn repository_summary_projects_git_state_without_backend_handles() {
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
         progress: ProjectImportProgressStore::default(),
-        cache_warm: crate::project::cache_warmer::ProjectCacheWarmQueue::default(),
+        cache_warm: crate::project::cache::warming::ProjectCacheWarmQueue::default(),
     };
 
     let read = || {
@@ -120,7 +120,7 @@ fn repository_summary_preserves_an_unborn_symbolic_branch() {
         publication_coordinator: ProjectPublicationCoordinator::default(),
         stage_mutations: ProjectStageMutationQueue::default(),
         progress: ProjectImportProgressStore::default(),
-        cache_warm: crate::project::cache_warmer::ProjectCacheWarmQueue::default(),
+        cache_warm: crate::project::cache::warming::ProjectCacheWarmQueue::default(),
     };
     let reply = service.execute(ProjectReadCommand::new(
         ProjectReadRequest::GetProjectRepositorySummary(project_id),

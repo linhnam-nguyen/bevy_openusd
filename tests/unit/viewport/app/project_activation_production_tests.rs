@@ -20,7 +20,7 @@ use viewport_protocol::{
 };
 use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache_hydration::ActiveProjectCacheContext;
+use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };

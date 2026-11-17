@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use bevy::prelude::{Res, ResMut, Resource};
 
-use crate::project::cache_contract::SceneCacheDescriptorV3;
-use crate::project::cache_demand_projection::{TargetedPersistenceOutcome, TargetedSceneRepair};
+use crate::project::cache::contract::SceneCacheDescriptorV3;
+use crate::project::cache::demand::{TargetedPersistenceOutcome, TargetedSceneRepair};
 
 use super::super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::super::loader::LoadJob;

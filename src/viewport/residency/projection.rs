@@ -10,7 +10,7 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::prelude::{Entity, Resource, Transform, Visibility, World};
 use usd_model::Bounds3;
 
-use crate::project::cache_contract::SceneCacheAddress;
+use crate::project::cache::contract::SceneCacheAddress;
 use usd_project::ScenePlacementTransform;
 
 use super::authority::ScenePayloadKey;

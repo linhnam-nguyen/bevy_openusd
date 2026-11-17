@@ -66,19 +66,19 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let root_v1 = ProjectCacheIdentity::for_project(
         directory.path(),
         root.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let identity_b_v1 = ProjectCacheIdentity::for_project(
         directory.path(),
         target_b.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let wrapper_bytes = fs::read(&wrapper_a)?;
 
@@ -87,13 +87,13 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let root_v2 = ProjectCacheIdentity::for_project(
         directory.path(),
         root.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_ne!(identity_a_v1, identity_a_v2);
     assert_ne!(root_v1, root_v2);
@@ -104,7 +104,7 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(identity_a_v1, identity_a_restored);
 
@@ -113,13 +113,13 @@ fn imported_scene_dependency_closure_changes_only_composed_targets() -> Result<(
         directory.path(),
         target_a.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let root_after_sibling_edit = ProjectCacheIdentity::for_project(
         directory.path(),
         root,
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(identity_a_restored, identity_a_after_sibling_edit);
     assert_ne!(root_v2, root_after_sibling_edit);
@@ -154,7 +154,7 @@ fn target_cache_identity_changes_when_authoritative_display_name_changes() -> Re
         directory.path(),
         target.clone(),
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
 
     let mut renamed = manifest;
@@ -164,7 +164,7 @@ fn target_cache_identity_changes_when_authoritative_display_name_changes() -> Re
         directory.path(),
         target,
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
 
     assert_ne!(
@@ -210,7 +210,7 @@ fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<(
         directory.path(),
         target,
         RuntimeProfile::NativeMedium,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     let descriptor = ProjectCacheStore::new(directory.path())
         .load(&identity)?
@@ -236,7 +236,7 @@ fn stale_scene_generation_is_rejected_before_strong_identity_or_stage_open() -> 
         Vec::new(),
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    let config_hash = crate::project::cache_hydration::default_project_cache_config_hash();
+    let config_hash = crate::project::cache::hydration::default_project_cache_config_hash();
     let store = SceneCacheStore::new(directory.path());
     let stale_generation = store.advance_generation(scene_id, config_hash)?;
     assert_eq!(
@@ -278,7 +278,7 @@ fn stale_managed_scene_generation_cannot_publish() -> Result<()> {
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
     crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
-    let config_hash = crate::project::cache_hydration::default_project_cache_config_hash();
+    let config_hash = crate::project::cache::hydration::default_project_cache_config_hash();
     let store = SceneCacheStore::new(directory.path());
     let generation = store.advance_generation(scene_id, config_hash)?;
     let identity = ProjectCacheIdentity::for_project(
@@ -298,7 +298,7 @@ fn stale_managed_scene_generation_cannot_publish() -> Result<()> {
     );
 
     assert!(
-        crate::project::cache_warm_runtime::build_and_publish_managed_scene_cache_generation(
+        crate::project::cache::warming::runtime::build_and_publish_managed_scene_cache_generation(
             directory.path(),
             &stale,
         )?
@@ -314,7 +314,7 @@ fn stale_managed_scene_generation_cannot_publish() -> Result<()> {
 
 #[test]
 fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
-    use crate::project::blob_store::BlobStore;
+    use crate::project::cache::blobs::BlobStore;
 
     let directory = tempdir()?;
     usd_git::Repository::init(directory.path())?;
@@ -339,7 +339,7 @@ fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
         Vec::new(),
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    let config_hash = crate::project::cache_hydration::default_project_cache_config_hash();
+    let config_hash = crate::project::cache::hydration::default_project_cache_config_hash();
     let store = SceneCacheStore::new(directory.path());
     store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(
         scene_a,
@@ -375,7 +375,7 @@ fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
 }
 #[test]
 fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> {
-    use crate::project::blob_store::BlobStore;
+    use crate::project::cache::blobs::BlobStore;
 
     let directory = tempdir()?;
     usd_git::Repository::init(directory.path())?;
@@ -396,7 +396,7 @@ fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> 
     let store = SceneCacheStore::new(directory.path());
     store.advance_generation(
         scene_id,
-        crate::project::cache_hydration::default_project_cache_config_hash(),
+        crate::project::cache::hydration::default_project_cache_config_hash(),
     )?;
     store.object_store(scene_id)?.put(b"owned-before-delete")?;
 

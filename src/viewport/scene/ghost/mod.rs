@@ -14,8 +14,8 @@ use usd_bevy::UsdPrimRef;
 use usd_model::{BlobId, EntityKey, SnapshotId};
 
 use super::diff::historical_world_matrix;
-use crate::project::blob_store::{FilesystemBlobStore, get_mesh};
-use crate::project::ghost_cache::HistoricalGeometryCache;
+use crate::project::cache::blobs::{FilesystemBlobStore, get_mesh};
+use crate::project::cache::historical_geometry::HistoricalGeometryCache;
 use crate::project::recovery::RecoverySettings;
 use crate::viewport::semantic::SemanticDiffState;
 

@@ -13,7 +13,7 @@ use super::state::{
     EditorHistories, RuntimeMutationCoordinator, SceneSearchRequests, ViewportBridgeSet,
 };
 use super::tree::apply_tree_commands;
-use crate::project::ghost_cache::HistoricalGeometryCache;
+use crate::project::cache::historical_geometry::HistoricalGeometryCache;
 use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::api::{

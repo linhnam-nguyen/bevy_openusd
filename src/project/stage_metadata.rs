@@ -16,7 +16,7 @@ pub(crate) fn copy_source_time_metadata(source: &Path, wrapper: &Stage) -> Resul
         .to_str()
         .context("USD source path must be valid UTF-8")?;
     let resolver = DefaultResolver::with_search_paths([source.parent().unwrap_or(Path::new("."))]);
-    let source = crate::project::source_closure::open_stage_with_resolver(
+    let source = crate::project::assets::closure::open_stage_with_resolver(
         source,
         Arc::new(resolver),
         InitialLoadSet::LoadNone,

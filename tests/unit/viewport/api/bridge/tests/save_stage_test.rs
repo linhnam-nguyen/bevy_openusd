@@ -3,11 +3,11 @@ mod tests {
     use openusd::usd::Stage;
     use viewport_protocol::*;
 
-    use crate::project::cache::{ProjectCacheTarget, SceneCacheStore};
-    use crate::project::cache_hydration::{
+    use crate::project::cache::hydration::{
         ActiveProjectCacheContext, default_project_cache_config_hash,
     };
-    use crate::project::cache_warmer::ProjectCacheWarmQueue;
+    use crate::project::cache::warming::ProjectCacheWarmQueue;
+    use crate::project::cache::{ProjectCacheTarget, SceneCacheStore};
     use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::session::{SceneCacheOwnershipContext, StageHandle};

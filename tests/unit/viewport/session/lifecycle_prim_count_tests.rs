@@ -8,7 +8,7 @@ use tempfile::tempdir;
 use usd_model::HashDigest;
 
 use crate::project::cache::SceneCacheStore;
-use crate::project::cache_contract::{
+use crate::project::cache::contract::{
     SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
     SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };

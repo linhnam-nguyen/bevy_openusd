@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use bevy::prelude::Resource;
 use usd_project::SceneId;
 
-use crate::project::cache_contract::{SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntryKind};
+use crate::project::cache::contract::{SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntryKind};
 use crate::viewport::session::SceneCachePresentation;
 
 use super::{ResidencyReason, ScenePayloadKey};
