@@ -2,7 +2,7 @@ use std::path::Path;
 
 use usd_bevy::{LiveRevision, LiveStage};
 
-use super::{export_error, write_archive_with_root_source};
+use super::export::{export_error, write_archive_with_root_source};
 
 /// Write a Scene package using the exact root layer currently owned by a
 /// LiveStage. Canonical dependency files are still resolved from the Project

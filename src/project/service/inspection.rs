@@ -10,7 +10,9 @@ use usd_project::{ProjectCapabilities, ProjectManifestV1, ProjectSummary};
 use super::repository_summary;
 use crate::project::storage::{ProjectStorageLayout, has_broad_usdhub_ignore, read_gitignore};
 
-pub(super) fn inspect_project(project_root: &Path) -> Result<ProjectInspection, ProjectWriteError> {
+pub(in crate::project) fn inspect_project(
+    project_root: &Path,
+) -> Result<ProjectInspection, ProjectWriteError> {
     let repository = match usd_git::Repository::open(project_root) {
         Ok(repository) => repository,
         Err(_) => {
@@ -165,7 +167,7 @@ fn repository_fingerprint(
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-pub(super) fn project_summary(
+pub(in crate::project) fn project_summary(
     manifest: &ProjectManifestV1,
     project_root: &Path,
 ) -> Result<ProjectSummary, ProjectWriteError> {
@@ -194,7 +196,7 @@ pub(super) fn project_summary(
     })
 }
 
-pub(super) fn project_summary_as(
+pub(in crate::project) fn project_summary_as(
     manifest: &ProjectManifestV1,
     project_root: &Path,
     application_id: usd_project::ProjectId,

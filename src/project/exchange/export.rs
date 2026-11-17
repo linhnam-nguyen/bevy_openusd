@@ -17,12 +17,12 @@ use project_protocol::{
 use usd_project::SceneId;
 use uuid::Uuid;
 
-use super::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard};
-use crate::project::{models::wrapper::model_wrapper_path, storage::ProjectStorageLayout};
-
-#[path = "live_export.rs"]
-mod live_export;
-pub(crate) use live_export::write_live_stage_archive;
+use crate::project::{
+    assets::closure::scene_service::scene_dependency_closure,
+    models::wrapper::model_wrapper_path,
+    service::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard},
+    storage::ProjectStorageLayout,
+};
 
 const SCENES_DIRECTORY: &str = "scenes";
 const MODELS_DIRECTORY: &str = "models";
@@ -33,7 +33,7 @@ struct ExportEntry {
     archive: String,
 }
 
-pub(super) fn export_scene(
+pub(in crate::project) fn export_scene(
     service: &mut ProjectApplicationService,
     request: ProjectExportSceneRequest,
     destination: &Path,
@@ -133,16 +133,15 @@ fn write_archive(
     write_archive_with_root_source(project_root, manifest, root_scene, destination, None)
 }
 
-fn write_archive_with_root_source(
+pub(super) fn write_archive_with_root_source(
     project_root: &Path,
     manifest: &usd_project::ValidatedProjectManifest,
     root_scene: SceneId,
     destination: &Path,
     runtime_override: Option<(&Path, SceneId)>,
 ) -> Result<(), ProjectWriteError> {
-    let (scenes, models) =
-        super::scene_closure::scene_dependency_closure(project_root, manifest.raw(), root_scene)
-            .map_err(|_| export_error())?;
+    let (scenes, models) = scene_dependency_closure(project_root, manifest.raw(), root_scene)
+        .map_err(|_| export_error())?;
     let entries = export_entries(project_root, manifest, &scenes, &models)?;
     let root_source = scene_path(project_root, root_scene);
     if !entries.iter().any(|entry| entry.source == root_source) {
@@ -387,7 +386,7 @@ fn project_error(error: ProjectReadError) -> ProjectWriteError {
     }
 }
 
-fn export_error() -> ProjectWriteError {
+pub(super) fn export_error() -> ProjectWriteError {
     ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::ExportFailed,
     }

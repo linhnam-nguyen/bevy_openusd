@@ -5,14 +5,14 @@ use project_protocol::{
     ProjectWriteErrorCode,
 };
 
-use super::ProjectApplicationService;
+use crate::project::service::ProjectApplicationService;
 
 impl ProjectApplicationService {
     pub fn delete_scene(
         &mut self,
         request: ProjectDeleteSceneRequest,
     ) -> Result<ProjectSceneLifecycleResponse, ProjectWriteError> {
-        super::deletion::delete_scene(self, request)
+        crate::project::lifecycle::deletion::delete_scene(self, request)
     }
 }
 

@@ -4,6 +4,8 @@ pub(crate) mod assets;
 pub(crate) mod cache;
 pub(crate) mod catalog;
 pub(crate) mod commit;
+pub(crate) mod exchange;
+pub(crate) mod lifecycle;
 pub(crate) mod models;
 pub(crate) mod prim_count;
 pub(crate) mod recovery;

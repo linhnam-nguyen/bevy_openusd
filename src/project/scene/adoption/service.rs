@@ -8,13 +8,10 @@ use project_protocol::{
 };
 use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 
-use super::ProjectApplicationService;
+use super::errors::{adoption_error_code, source_revalidation_error_code};
+use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-#[path = "scene_adoption_errors.rs"]
-mod errors;
-use errors::{adoption_error_code, source_revalidation_error_code};
-
-pub(super) fn adopt_scene(
+pub(in crate::project) fn adopt_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -59,7 +56,7 @@ pub(super) fn adopt_scene(
     result
 }
 
-pub(super) fn link_scene(
+pub(in crate::project) fn link_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -99,7 +96,7 @@ pub(super) fn link_scene(
     result
 }
 
-pub(super) fn sync_linked_scene(
+pub(in crate::project) fn sync_linked_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     scene_id: usd_project::SceneId,
@@ -158,7 +155,7 @@ pub(super) fn sync_linked_scene(
                 })?;
             if let Err(error) = service.stage_mutations.submit_for_project(
                 project_root,
-                super::ProjectStageMutation::RefreshSceneDefinition {
+                ProjectStageMutation::RefreshSceneDefinition {
                     project_id,
                     scene_id,
                 },
@@ -171,7 +168,7 @@ pub(super) fn sync_linked_scene(
                 .map_err(|_| ProjectWriteError::Failed {
                     code: ProjectWriteErrorCode::FilesystemFailure,
                 })?;
-            let summary = super::inspection::project_summary(&project.manifest, project_root)?;
+            let summary = inspection::project_summary(&project.manifest, project_root)?;
             let _ = service
                 .cache_warm
                 .enqueue_targets_for_mutation(
@@ -281,7 +278,7 @@ fn adopt_scene_inner(
         .map_err(|error| ProjectWriteError::Failed {
             code: source_revalidation_error_code(&error),
         })?;
-    let graph = super::scene::scene_graph(project_root, &validated).map_err(|_| {
+    let graph = super::super::service::scene_graph(project_root, &validated).map_err(|_| {
         ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::CompositionValidationFailed,
         }
@@ -328,11 +325,11 @@ fn adopt_scene_inner(
         eprintln!("Scene adoption failed ({code:?}): {error:#}");
         ProjectWriteError::Failed { code }
     })?;
-    let project = super::inspection::project_summary(&adopted.manifest, project_root)?;
+    let project = inspection::project_summary(&adopted.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {
         service.stage_mutations.submit_for_project(
             project_root,
-            super::ProjectStageMutation::AdoptScene {
+            ProjectStageMutation::AdoptScene {
                 project_id,
                 scene_id: adopted.scene_id,
                 parent_scene_id: Some(parent_scene_id),
@@ -373,9 +370,9 @@ fn adopt_scene_inner(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_tests.rs"]
+#[path = "../../../../tests/unit/project/service/scene_adoption/scene_adoption_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_sync_tests.rs"]
+#[path = "../../../../tests/unit/project/service/scene_adoption/scene_adoption_sync_tests.rs"]
 mod sync_tests;

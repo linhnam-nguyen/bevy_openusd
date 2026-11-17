@@ -282,7 +282,7 @@ fn live_stage_export_uses_the_exact_current_revision() {
     std::fs::create_dir(&output_directory).unwrap();
     let stale_destination = output_directory.join("stale.usdz");
     assert!(
-        super::export::write_live_stage_archive(
+        crate::project::exchange::live_export::write_live_stage_archive(
             &project_root,
             &manifest,
             scene.scene_id,
@@ -295,7 +295,7 @@ fn live_stage_export_uses_the_exact_current_revision() {
     assert!(!stale_destination.exists());
 
     let destination = output_directory.join("live.usdz");
-    super::export::write_live_stage_archive(
+    crate::project::exchange::live_export::write_live_stage_archive(
         &project_root,
         &manifest,
         scene.scene_id,

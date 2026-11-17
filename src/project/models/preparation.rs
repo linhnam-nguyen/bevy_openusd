@@ -12,9 +12,8 @@ use project_protocol::{
     ProjectWriteErrorCode,
 };
 
-use crate::project::models::import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
-
-use super::ProjectImportProgressStore;
+use super::import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
+use crate::project::exchange::progress::ProjectImportProgressStore;
 
 struct PreparationJob {
     operation_id: String,

@@ -10,7 +10,7 @@ use project_protocol::{
     ProjectWriteErrorCode,
 };
 
-use super::ProjectImportProgressStore;
+use crate::project::exchange::progress::ProjectImportProgressStore;
 
 #[derive(Clone, Debug)]
 struct InspectionJob {

@@ -12,13 +12,10 @@ use project_protocol::{
 use usd_project::{ProjectId, SceneMemberId};
 use uuid::Uuid;
 
-use super::{ProjectApplicationService, ProjectStageMutation};
+use crate::project::service::{ProjectApplicationService, ProjectStageMutation};
 
-#[path = "deletion_graph.rs"]
-mod deletion_graph;
-use deletion_graph::{
-    DeleteTarget, build_plan, changed_parents, is_deleted_target, read_composition,
-};
+mod graph;
+use graph::{DeleteTarget, build_plan, changed_parents, is_deleted_target, read_composition};
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 
@@ -32,7 +29,7 @@ struct ParentBackup {
     backup: PathBuf,
 }
 
-pub(super) fn delete_scene(
+pub(in crate::project) fn delete_scene(
     service: &mut ProjectApplicationService,
     request: ProjectDeleteSceneRequest,
 ) -> Result<ProjectSceneLifecycleResponse, ProjectWriteError> {
@@ -46,7 +43,7 @@ pub(super) fn delete_scene(
     })
 }
 
-pub(super) fn delete_model(
+pub(in crate::project) fn delete_model(
     service: &mut ProjectApplicationService,
     request: ProjectDeleteModelRequest,
 ) -> Result<ProjectModelLifecycleResponse, ProjectWriteError> {

@@ -29,11 +29,11 @@ use self::runtime_authority::NoopProjectRuntimeAuthority;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/test_support.rs"]
-mod test_support;
+pub(super) mod test_support;
 
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
-    registry: WorkspaceRegistry,
+    pub(super) registry: WorkspaceRegistry,
     pub(super) publication_coordinator: ProjectPublicationCoordinator,
     pub(super) stage_mutations: ProjectStageMutationQueue,
     pub(super) progress: ProjectImportProgressStore,
@@ -91,31 +91,23 @@ mod branch_projection_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/branch/branch_tests.rs"]
 mod branch_tests;
-mod commit;
-mod commit_runtime;
+pub(super) mod commit;
+pub(super) mod commit_runtime;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/commit/commit_tests.rs"]
 mod commit_tests;
-mod deletion;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/deletion/deletion_tests.rs"]
 mod deletion_tests;
 mod error;
-mod export;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/export/export_portability_tests.rs"]
 mod export_portability_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/export/export_tests.rs"]
 mod export_tests;
-mod inspection;
-mod lifecycle;
-mod model;
-mod model_preparation;
-mod progress;
-mod project_registration;
+pub(super) mod inspection;
 mod read;
-mod rename;
 mod runtime_authority;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_queue_tests.rs"]
@@ -123,31 +115,26 @@ mod runtime_authority_queue_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_tests.rs"]
 mod runtime_authority_tests;
-mod scene;
-mod scene_adoption;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_error_tests.rs"]
 mod scene_adoption_error_tests;
-pub(crate) mod scene_closure;
-mod scene_lifecycle;
 mod stage_activation;
-mod stage_mutation;
-pub use model_preparation::ProjectModelPreparationQueue;
-pub use progress::ProjectImportProgressStore;
+pub(super) mod stage_mutation;
+use self::read::{project_list_item, project_tree, repository_summary};
+pub use crate::project::exchange::progress::ProjectImportProgressStore;
+pub use crate::project::models::preparation::ProjectModelPreparationQueue;
+pub use crate::project::scene::inspection_queue::ProjectSceneInspectionQueue;
 pub use runtime_authority::{
     ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
 };
 pub(crate) use runtime_authority::{
     ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse, unix_time_ms,
 };
-pub use scene_inspection::ProjectSceneInspectionQueue;
 pub use stage_activation::{
     ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivation,
     ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
 pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
-mod scene_inspection;
-use self::read::{project_list_item, project_tree, repository_summary};
 impl ProjectApplicationService {
     /// Quiesce cache publication before a caller disposes this Project's
     /// derived cache directory. This boundary is intentionally outside the
@@ -296,7 +283,7 @@ impl ProjectApplicationService {
         }
     }
 
-    fn validated_project(
+    pub(super) fn validated_project(
         &self,
         project_id: ProjectId,
     ) -> Result<

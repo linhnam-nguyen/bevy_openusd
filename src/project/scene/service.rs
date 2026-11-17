@@ -7,9 +7,9 @@ use project_protocol::{
 };
 use usd_project::{ProjectRoot, SceneCompositionGraph, SceneMemberTarget};
 
-use super::ProjectApplicationService;
+use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-pub(super) fn create_scene(
+pub(in crate::project) fn create_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -110,11 +110,11 @@ pub(super) fn create_scene(
     .map_err(|_| ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
-    let summary = super::inspection::project_summary(&created.manifest, project_root)?;
+    let summary = inspection::project_summary(&created.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {
         service.stage_mutations.submit_for_project(
             project_root,
-            super::ProjectStageMutation::CreateScene {
+            ProjectStageMutation::CreateScene {
                 project_id,
                 scene_id: created.scene_id,
                 parent_scene_id: Some(parent_scene_id),

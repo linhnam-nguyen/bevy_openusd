@@ -25,7 +25,9 @@ const TRANSACTIONS_DIRECTORY: &str = ".transactions";
 const SCENES_DIRECTORY: &str = "scenes";
 
 pub(crate) mod authoring;
+mod errors;
 mod placement;
+pub(crate) mod service;
 pub(crate) mod support;
 
 pub(crate) use placement::propose_scene_placement;

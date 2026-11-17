@@ -11,8 +11,10 @@ use project_protocol::{
 use usd_project::{ProjectRoot, SceneMemberTarget};
 use uuid::Uuid;
 
-use super::ProjectApplicationService;
-use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::{
+    catalog::manifest_store::ManifestStore,
+    service::{ProjectApplicationService, ProjectStageMutation, inspection},
+};
 
 trait PlacementWriter {
     fn update_member_display_name_atomic(
@@ -246,7 +248,7 @@ fn rename_with_writer<W: PlacementWriter>(
         return Err(error);
     }
 
-    let project = match super::inspection::project_summary(&next_manifest, project_root) {
+    let project = match inspection::project_summary(&next_manifest, project_root) {
         Ok(project) => project,
         Err(error) => {
             restore_file_backups(&backups);
@@ -256,7 +258,7 @@ fn rename_with_writer<W: PlacementWriter>(
     };
     if let Err(error) = service.stage_mutations.submit_for_project(
         project_root,
-        super::ProjectStageMutation::Rename {
+        ProjectStageMutation::Rename {
             project_id,
             target: target.clone(),
             name: name.to_owned(),

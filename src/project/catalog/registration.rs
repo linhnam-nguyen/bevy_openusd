@@ -5,13 +5,13 @@ use project_protocol::{
 };
 use usd_project::{ProjectManifestV1, ProjectRoot, ProjectSummary};
 
-use super::ProjectApplicationService;
+use super::manifest_store::ManifestStore;
 use crate::project::{
-    catalog::manifest_store::ManifestStore,
+    service::{ProjectApplicationService, inspection},
     storage::{IgnoreChange, ProjectStorageLayout, install_managed_ignore},
 };
 
-pub(super) fn create_project(
+pub(in crate::project) fn create_project(
     service: &mut ProjectApplicationService,
     parent: &Path,
     name: &str,
@@ -83,7 +83,7 @@ pub(super) fn create_project(
                 code: ProjectWriteErrorCode::ManifestUnavailable,
             }
         })?;
-        let summary = super::inspection::project_summary(validated.raw(), &project_root)?;
+        let summary = inspection::project_summary(validated.raw(), &project_root)?;
 
         service
             .registry
@@ -109,12 +109,12 @@ pub(super) fn create_project(
     }
 }
 
-pub(super) fn import_project(
+pub(in crate::project) fn import_project(
     service: &mut ProjectApplicationService,
     project_root: &Path,
     expected: &ProjectInspection,
 ) -> Result<ProjectSummary, ProjectWriteError> {
-    let current = super::inspection::inspect_project(project_root)?;
+    let current = inspection::inspect_project(project_root)?;
     if current != *expected {
         return Err(ProjectWriteError::ConcurrentChange);
     }
@@ -170,8 +170,7 @@ pub(super) fn import_project(
                         .then(usd_project::ProjectId::new_v4)
                 })
                 .unwrap_or(manifest.project_id);
-            let summary =
-                super::inspection::project_summary_as(&manifest, project_root, application_id)?;
+            let summary = inspection::project_summary_as(&manifest, project_root, application_id)?;
             let _ = service.cache_warm.enqueue_project_targets(project_root);
             service
                 .registry
@@ -246,7 +245,7 @@ fn adopt_git_project(
             ManifestStore::read_validated(project_root).map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::ManifestUnavailable,
             })?;
-        let summary = super::inspection::project_summary(validated.raw(), project_root)?;
+        let summary = inspection::project_summary(validated.raw(), project_root)?;
         service
             .registry
             .register(project_id, project_root, None)

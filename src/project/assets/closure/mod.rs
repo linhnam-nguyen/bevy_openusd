@@ -14,6 +14,7 @@ use crate::project::cache::contract::ProjectCacheTarget;
 mod discovery;
 mod io;
 mod localization;
+pub(crate) mod scene_service;
 
 pub(crate) use discovery::{LocalizedDependencyReport, discover, open_stage_with_resolver};
 pub(crate) use localization::{

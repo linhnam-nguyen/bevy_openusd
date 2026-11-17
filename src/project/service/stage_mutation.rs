@@ -293,7 +293,7 @@ impl ProjectStageMutation {
                     return false;
                 };
                 active_scene_id.is_some_and(|active| {
-                    crate::project::service::scene_closure::scene_dependency_closure(
+                    crate::project::assets::closure::scene_service::scene_dependency_closure(
                         project_root,
                         manifest.raw(),
                         active,
@@ -365,7 +365,7 @@ fn apply_mutation(
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/stage_mutation_test_support.rs"]
-pub(super) mod test_support;
+pub(in crate::project) mod test_support;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/stage_mutation_tests.rs"]

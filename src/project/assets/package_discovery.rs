@@ -35,7 +35,7 @@ pub(crate) fn for_target(
     }
 
     for scene_id in scene_ids {
-        let (scenes, models) = crate::project::service::scene_closure::scene_dependency_closure(
+        let (scenes, models) = super::closure::scene_service::scene_dependency_closure(
             project_root,
             manifest,
             scene_id,

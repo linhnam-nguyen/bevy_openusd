@@ -42,5 +42,5 @@ pub(super) fn adoption_error_code(error: &anyhow::Error) -> ProjectWriteErrorCod
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/scene_adoption_errors_tests.rs"]
+#[path = "../../../../tests/unit/project/service/scene_adoption_errors_tests.rs"]
 mod tests;

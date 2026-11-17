@@ -16,7 +16,7 @@ use super::commit_runtime::{
 
 const MANIFEST_RELATIVE_PATH: &str = "project.json";
 
-pub(super) fn commit(
+pub(in crate::project) fn commit(
     service: &mut ProjectApplicationService,
     request: ProjectCommitRequest,
 ) -> Result<ProjectCommitResponse, ProjectWriteError> {
@@ -218,9 +218,12 @@ fn synchronize_scene_scope(
     manifest: &usd_project::ValidatedProjectManifest,
     root_scene: SceneId,
 ) -> Result<(), ProjectWriteError> {
-    let (scenes, models) =
-        super::scene_closure::scene_commit_closure(project_root, manifest.raw(), root_scene)
-            .map_err(|_| commit_error())?;
+    let (scenes, models) = crate::project::assets::closure::scene_service::scene_commit_closure(
+        project_root,
+        manifest.raw(),
+        root_scene,
+    )
+    .map_err(|_| commit_error())?;
 
     synchronize_manifest_scope(staging, manifest, &scenes, &models)?;
     for scene_id in scenes {

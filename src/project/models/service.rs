@@ -8,12 +8,11 @@ use project_protocol::{
 };
 use usd_project::ProjectRoot;
 
-use super::{ProjectApplicationService, ProjectModelPreparationQueue};
-use crate::project::models::wrapper::{
-    ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic,
-};
+use super::preparation::ProjectModelPreparationQueue;
+use super::wrapper::{ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic};
+use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-pub(super) fn publish_model(
+pub(in crate::project) fn publish_model(
     service: &mut ProjectApplicationService,
     preparation: &ProjectModelPreparationQueue,
     project_id: usd_project::ProjectId,
@@ -162,11 +161,11 @@ fn publish_model_inner(
     .map_err(|_| ProjectWriteError::Failed {
         code: ProjectWriteErrorCode::FilesystemFailure,
     })?;
-    let project = super::inspection::project_summary(&published.manifest, project_root)?;
+    let project = inspection::project_summary(&published.manifest, project_root)?;
     if let Some(parent_scene_id) = parent_scene_id {
         service.stage_mutations.submit_for_project(
             project_root,
-            super::ProjectStageMutation::PublishModel {
+            ProjectStageMutation::PublishModel {
                 project_id,
                 model_id: published.id,
                 parent_scene_id: Some(parent_scene_id),

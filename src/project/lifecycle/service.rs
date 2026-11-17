@@ -10,15 +10,17 @@ use project_protocol::{
 use usd_project::ProjectSummary;
 use uuid::Uuid;
 
-use super::ProjectApplicationService;
-use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::{
+    catalog::manifest_store::ManifestStore, models::preparation::ProjectModelPreparationQueue,
+    service::ProjectApplicationService,
+};
 
 impl ProjectApplicationService {
     pub fn commit(
         &mut self,
         request: ProjectCommitRequest,
     ) -> Result<ProjectCommitResponse, ProjectWriteError> {
-        super::commit::commit(self, request)
+        crate::project::service::commit::commit(self, request)
     }
 
     pub fn export_scene(
@@ -26,14 +28,14 @@ impl ProjectApplicationService {
         request: ProjectExportSceneRequest,
         destination: &Path,
     ) -> Result<ProjectSceneExportResponse, ProjectWriteError> {
-        super::export::export_scene(self, request, destination)
+        crate::project::exchange::export::export_scene(self, request, destination)
     }
 
     pub fn inspect_project(
         &self,
         project_root: &Path,
     ) -> Result<ProjectInspection, ProjectWriteError> {
-        super::inspection::inspect_project(project_root)
+        crate::project::service::inspection::inspect_project(project_root)
     }
 
     pub fn create_project(
@@ -41,7 +43,7 @@ impl ProjectApplicationService {
         parent: &Path,
         name: &str,
     ) -> Result<ProjectSummary, ProjectWriteError> {
-        super::project_registration::create_project(self, parent, name)
+        crate::project::catalog::registration::create_project(self, parent, name)
     }
 
     pub fn import_project(
@@ -49,7 +51,7 @@ impl ProjectApplicationService {
         project_root: &Path,
         expected: &ProjectInspection,
     ) -> Result<ProjectSummary, ProjectWriteError> {
-        super::project_registration::import_project(self, project_root, expected)
+        crate::project::catalog::registration::import_project(self, project_root, expected)
     }
 
     pub fn create_scene(
@@ -58,7 +60,7 @@ impl ProjectApplicationService {
         target: project_protocol::ProjectWriteTarget,
         name: &str,
     ) -> Result<project_protocol::ProjectSceneWriteResponse, ProjectWriteError> {
-        super::scene::create_scene(self, project_id, target, name)
+        crate::project::scene::service::create_scene(self, project_id, target, name)
     }
 
     pub fn rename(
@@ -136,7 +138,7 @@ impl ProjectApplicationService {
         generation: u64,
         placement: project_protocol::PlacementSpec,
     ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
-        super::scene_adoption::adopt_scene(
+        crate::project::scene::adoption::service::adopt_scene(
             self,
             project_id,
             target,
@@ -160,7 +162,7 @@ impl ProjectApplicationService {
         generation: u64,
         placement: project_protocol::PlacementSpec,
     ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
-        super::scene_adoption::link_scene(
+        crate::project::scene::adoption::service::link_scene(
             self,
             project_id,
             target,
@@ -180,7 +182,7 @@ impl ProjectApplicationService {
         operation_id: String,
         generation: u64,
     ) -> Result<project_protocol::ProjectSceneAdoptionResponse, ProjectWriteError> {
-        super::scene_adoption::sync_linked_scene(
+        crate::project::scene::adoption::service::sync_linked_scene(
             self,
             project_id,
             scene_id,
@@ -191,7 +193,7 @@ impl ProjectApplicationService {
 
     pub fn publish_model(
         &mut self,
-        preparation: &super::ProjectModelPreparationQueue,
+        preparation: &ProjectModelPreparationQueue,
         project_id: usd_project::ProjectId,
         target: project_protocol::ProjectWriteTarget,
         source: &std::path::Path,
@@ -199,7 +201,7 @@ impl ProjectApplicationService {
         generation: u64,
         placement: project_protocol::PlacementSpec,
     ) -> Result<project_protocol::ProjectModelWriteResponse, ProjectWriteError> {
-        super::model::publish_model(
+        crate::project::models::service::publish_model(
             self,
             preparation,
             project_id,

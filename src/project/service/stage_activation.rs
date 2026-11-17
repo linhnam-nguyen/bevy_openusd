@@ -37,9 +37,6 @@ pub(crate) enum StageSendProbeOutcome {
 /// ```
 pub(crate) const OPENUSD_STAGE_SEND_PROBE: StageSendProbeOutcome = StageSendProbeOutcome::NotSend;
 
-#[path = "stage_archive.rs"]
-mod stage_archive;
-
 /// Manifest-backed semantic labels for one resolved Project stage. This
 /// neutral value crosses the library/binary boundary; the viewport converts
 /// it into a Bevy resource at successful activation time.
@@ -187,15 +184,19 @@ impl ProjectApplicationService {
         }
 
         let archive_started = Instant::now();
-        let archive_paths =
-            stage_archive::for_target(&project_root, manifest.raw(), &target, &path)
-                .unwrap_or_else(|error| {
-                    log::warn!(
-                        "Project activation archive discovery failed for {}: {error:#}",
-                        path.display()
-                    );
-                    Vec::new()
-                });
+        let archive_paths = crate::project::assets::package_discovery::for_target(
+            &project_root,
+            manifest.raw(),
+            &target,
+            &path,
+        )
+        .unwrap_or_else(|error| {
+            log::warn!(
+                "Project activation archive discovery failed for {}: {error:#}",
+                path.display()
+            );
+            Vec::new()
+        });
         log::debug!(
             "[project-loading] archive_discovery_ms={:.3} packages={} target={}",
             archive_started.elapsed().as_secs_f64() * 1_000.0,

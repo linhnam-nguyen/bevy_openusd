@@ -82,7 +82,7 @@ impl LeaseHeartbeat {
 
 /// Keep a runtime lease alive until the Project commit either succeeds or
 /// unwinds. The render owner can therefore release its lease on failure.
-pub(super) struct RuntimeLeaseGuard {
+pub(in crate::project) struct RuntimeLeaseGuard {
     authority: Arc<dyn ProjectRuntimeAuthority>,
     project_root: PathBuf,
     project_id: ProjectId,
@@ -91,7 +91,7 @@ pub(super) struct RuntimeLeaseGuard {
 }
 
 impl RuntimeLeaseGuard {
-    pub(super) fn new(
+    pub(in crate::project) fn new(
         authority: Arc<dyn ProjectRuntimeAuthority>,
         project_root: PathBuf,
         project_id: ProjectId,
@@ -146,11 +146,15 @@ pub(super) fn overlay_runtime_snapshot(
     let allowed = match target {
         ProjectCommitTarget::Project => manifest.scenes().iter().map(|scene| scene.id).collect(),
         ProjectCommitTarget::Scene(scene_id) => {
-            super::scene_closure::scene_commit_closure(project_root, manifest.raw(), *scene_id)
-                .map_err(|_| ProjectWriteError::Failed {
-                    code: ProjectWriteErrorCode::ConcurrentChange,
-                })?
-                .0
+            crate::project::assets::closure::scene_service::scene_commit_closure(
+                project_root,
+                manifest.raw(),
+                *scene_id,
+            )
+            .map_err(|_| ProjectWriteError::Failed {
+                code: ProjectWriteErrorCode::ConcurrentChange,
+            })?
+            .0
         }
     };
     if !allowed.contains(&snapshot.scene_id) {

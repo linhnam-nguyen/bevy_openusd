@@ -552,19 +552,19 @@
       "target": "tests/unit/project/service/commit/commit_runtime_lease_tests.rs"
     },
     {
-      "owner_file": "src/project/service/lifecycle.rs",
+      "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "import_tests",
       "target": "tests/unit/project/service/lifecycle/lifecycle_import_tests.rs"
     },
     {
-      "owner_file": "src/project/service/lifecycle.rs",
+      "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "scene_placement_tests",
       "target": "tests/unit/project/service/lifecycle/lifecycle_scene_placement_tests.rs"
     },
     {
-      "owner_file": "src/project/service/lifecycle.rs",
+      "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/lifecycle/lifecycle_tests.rs"
@@ -654,31 +654,31 @@
       "target": "tests/unit/project/service/tests.rs"
     },
     {
-      "owner_file": "src/project/service/model.rs",
+      "owner_file": "src/project/models/service.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/model_tests.rs"
     },
     {
-      "owner_file": "src/project/service/model_preparation.rs",
+      "owner_file": "src/project/models/preparation.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/model_preparation_tests.rs"
     },
     {
-      "owner_file": "src/project/service/progress.rs",
+      "owner_file": "src/project/exchange/progress.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/progress_tests.rs"
     },
     {
-      "owner_file": "src/project/service/rename.rs",
+      "owner_file": "src/project/lifecycle/rename.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/project/service/rename_test_support.rs"
     },
     {
-      "owner_file": "src/project/service/rename.rs",
+      "owner_file": "src/project/lifecycle/rename.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/rename_tests.rs"
@@ -702,31 +702,31 @@
       "target": "tests/unit/project/service/runtime_authority_registry_tests.rs"
     },
     {
-      "owner_file": "src/project/service/scene_adoption.rs",
+      "owner_file": "src/project/scene/adoption/service.rs",
       "module_path": "",
       "mod_name": "sync_tests",
       "target": "tests/unit/project/service/scene_adoption/scene_adoption_sync_tests.rs"
     },
     {
-      "owner_file": "src/project/service/scene_adoption.rs",
+      "owner_file": "src/project/scene/adoption/service.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/scene_adoption/scene_adoption_tests.rs"
     },
     {
-      "owner_file": "src/project/service/scene_adoption_errors.rs",
+      "owner_file": "src/project/scene/adoption/errors.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/scene_adoption_errors_tests.rs"
     },
     {
-      "owner_file": "src/project/service/scene_inspection.rs",
+      "owner_file": "src/project/scene/inspection_queue.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/scene_inspection_tests.rs"
     },
     {
-      "owner_file": "src/project/service/scene_lifecycle.rs",
+      "owner_file": "src/project/scene/lifecycle.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/scene_lifecycle_tests.rs"
@@ -738,7 +738,7 @@
       "target": "tests/unit/project/service/stage_activation/stage_activation_authority_tests.rs"
     },
     {
-      "owner_file": "src/project/service/stage_archive.rs",
+      "owner_file": "src/project/assets/package_discovery.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/stage_archive_tests.rs"
@@ -1657,7 +1657,7 @@
         "src/project/scene/adoption/mod.rs",
         "src/project/scene/adoption/placement.rs",
         "src/project/scene/members/linked_sync.rs",
-        "src/project/service/scene_adoption.rs"
+        "src/project/scene/adoption/service.rs"
       ],
       "reason": "Production scene adoption validation, rollback, and placement helpers shared across project adoption workflows.",
       "status": "approved"

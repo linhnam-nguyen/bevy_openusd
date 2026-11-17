@@ -220,7 +220,7 @@ fn runtime_scene_is_allowed(
     match target {
         ProjectCommitTarget::Project => manifest.scene(active_scene_id).is_some(),
         ProjectCommitTarget::Scene(scene_id) => {
-            crate::project::service::scene_closure::scene_commit_closure(
+            crate::project::assets::closure::scene_service::scene_commit_closure(
                 project_root,
                 manifest.raw(),
                 *scene_id,
@@ -236,7 +236,7 @@ fn runtime_scene_is_in_export_closure(
     root_scene: SceneId,
     active_scene_id: SceneId,
 ) -> bool {
-    crate::project::service::scene_closure::scene_dependency_closure(
+    crate::project::assets::closure::scene_service::scene_dependency_closure(
         project_root,
         manifest.raw(),
         root_scene,

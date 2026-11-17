@@ -6,10 +6,10 @@ use std::{
 use super::outbox;
 use super::*;
 
-pub(in crate::project::service) struct OutboxFailureTrigger(Arc<Mutex<Option<usize>>>);
+pub(in crate::project) struct OutboxFailureTrigger(Arc<Mutex<Option<usize>>>);
 
 impl OutboxFailureTrigger {
-    pub(in crate::project::service) fn fail_before_batch_index(&self, index: usize) {
+    pub(in crate::project) fn fail_before_batch_index(&self, index: usize) {
         *self.0.lock().expect("stage mutation test fail index lock") = Some(index);
     }
 }
@@ -36,7 +36,7 @@ impl OutboxSubmitter for FailingOutboxSubmitter {
     }
 }
 
-pub(in crate::project::service) fn queue_with_failure_trigger()
+pub(in crate::project) fn queue_with_failure_trigger()
 -> (ProjectStageMutationQueue, OutboxFailureTrigger) {
     let slot = Arc::new(Mutex::new(None));
     let queue = ProjectStageMutationQueue {
