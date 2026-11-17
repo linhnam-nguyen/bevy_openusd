@@ -96,47 +96,47 @@ path = "src/main.rs"
 
 [[test]]
 name = "live_projection"
-path = "tests/live_projection.rs"
+path = "tests/integration/projection/live_projection.rs"
 
 [[test]]
 name = "rapier_bridge"
-path = "tests/rapier_bridge.rs"
+path = "tests/integration/physics/rapier_bridge.rs"
 
 [[test]]
 name = "cache_profile"
-path = "tests/cache_profile.rs"
+path = "tests/performance/cache/cache_profile.rs"
 
 [[test]]
 name = "progressive_load_profile"
-path = "tests/progressive_load_profile.rs"
+path = "tests/performance/projection/progressive_load_profile.rs"
 
 [[test]]
 name = "point_instancer_profile"
-path = "tests/point_instancer_profile.rs"
+path = "tests/performance/projection/point_instancer_profile.rs"
 
 [[test]]
 name = "point_instancer_correctness"
-path = "tests/point_instancer_correctness.rs"
+path = "tests/integration/projection/point_instancer_correctness.rs"
 
 [[test]]
 name = "point_instancer_reconcile_profile"
-path = "tests/point_instancer_reconcile_profile.rs"
+path = "tests/performance/projection/point_instancer_reconcile_profile.rs"
 
 [[test]]
 name = "git_materialization"
-path = "tests/git_materialization.rs"
+path = "tests/integration/versioning/git_materialization.rs"
 
 [[test]]
 name = "subtree_resync_profile"
-path = "tests/subtree_resync_profile.rs"
+path = "tests/performance/projection/subtree_resync_profile.rs"
 
 [[test]]
 name = "persistent_runtime_soak"
-path = "tests/persistent_runtime_soak.rs"
+path = "tests/performance/soak/persistent_runtime_soak.rs"
 
 [[test]]
 name = "test_architecture"
-path = "tests/test_architecture.rs"
+path = "tests/contracts/architecture/test_architecture.rs"
 
 [[example]]
 name = "pack_usdz"

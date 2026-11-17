@@ -23,7 +23,7 @@ use usd_bevy::{
     ProjectionReadiness, UsdPlugin, author_transform,
 };
 
-#[path = "persistent_runtime_soak_support.rs"]
+#[path = "support.rs"]
 mod support;
 
 use support::{BoundSummary, CycleSample, PersistentSoakArtifact};
