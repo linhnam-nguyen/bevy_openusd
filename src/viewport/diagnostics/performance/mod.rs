@@ -2,23 +2,35 @@
 
 #![allow(unused_imports)]
 
+#[path = "metrics/aggregate.rs"]
 pub mod aggregate;
+#[path = "metrics/collector.rs"]
 pub mod collector;
+#[path = "metrics/counters.rs"]
 pub mod counters;
 pub mod decision;
 pub mod matrix;
+#[path = "matrix/probe.rs"]
 mod matrix_probe;
+#[path = "matrix/report.rs"]
 mod matrix_report;
 mod render_profile;
 pub mod runner;
+#[path = "runner/finalize.rs"]
 mod runner_finalize;
+#[path = "runner/plugin.rs"]
 mod runner_plugin;
+#[path = "metrics/sample.rs"]
 pub mod sample;
 pub mod scenario;
+#[path = "scenario/definitions.rs"]
 mod scenario_definitions;
+#[path = "scenario/driver.rs"]
 pub mod scenario_driver;
+#[path = "scenario/setup.rs"]
 mod scenario_driver_setup;
 
+pub mod metrics;
 pub use aggregate::{
     CacheSnapshot, FrameTimingAggregate, IncidentGridSummary, IncidentSemanticSummary,
     IsolationReportSummary, PerformanceReport, PhaseMetrics, RendererCadenceSummary,

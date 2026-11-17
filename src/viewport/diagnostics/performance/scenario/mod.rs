@@ -197,5 +197,5 @@ impl ScenarioProbeDefinition {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/scenario_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/scenario/tests.rs"]
 mod tests;

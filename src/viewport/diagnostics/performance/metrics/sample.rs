@@ -112,5 +112,5 @@ pub struct FrameSample {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/sample_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/metrics/sample_tests.rs"]
 mod tests;

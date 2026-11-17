@@ -319,5 +319,5 @@ impl Plugin for ScenarioDriverPlugin {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/scenario_driver_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/scenario/driver_tests.rs"]
 mod tests;

@@ -275,5 +275,5 @@ pub fn aggregate_frames(samples: &[FrameSample], warmup_count: usize) -> FrameTi
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/aggregate_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/metrics/aggregate_tests.rs"]
 mod tests;

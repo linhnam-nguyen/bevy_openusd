@@ -366,5 +366,5 @@ pub fn collect_renderer_counters_system(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/counters_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/metrics/counters_tests.rs"]
 mod tests;

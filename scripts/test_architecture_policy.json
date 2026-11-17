@@ -1122,58 +1122,58 @@
       "target": "tests/unit/viewport/camera/navigation_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/aggregate.rs",
+      "owner_file": "src/viewport/diagnostics/performance/metrics/aggregate.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/aggregate_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/metrics/aggregate_tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/collector.rs",
+      "owner_file": "src/viewport/diagnostics/performance/metrics/collector.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/collector_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/metrics/collector_tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/counters.rs",
+      "owner_file": "src/viewport/diagnostics/performance/metrics/counters.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/counters_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/metrics/counters_tests.rs"
     },
     {
       "owner_file": "src/viewport/diagnostics/performance/decision.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/decision_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/decision_tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/matrix.rs",
+      "owner_file": "src/viewport/diagnostics/performance/matrix/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/matrix_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/matrix/tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/runner.rs",
+      "owner_file": "src/viewport/diagnostics/performance/runner/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/runner_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/runner/tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/sample.rs",
+      "owner_file": "src/viewport/diagnostics/performance/metrics/sample.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/sample_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/metrics/sample_tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/scenario.rs",
+      "owner_file": "src/viewport/diagnostics/performance/scenario/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/scenario_inline_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/scenario/tests.rs"
     },
     {
-      "owner_file": "src/viewport/diagnostics/performance/scenario_driver.rs",
+      "owner_file": "src/viewport/diagnostics/performance/scenario/driver.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/diagnostics/performance/scenario_driver_tests.rs"
+      "target": "tests/unit/viewport/diagnostics/performance/scenario/driver_tests.rs"
     },
     {
       "owner_file": "src/viewport/input/headless_gizmo.rs",
@@ -1683,11 +1683,11 @@
       "status": "approved"
     },
     {
-      "path": "src/viewport/diagnostics/performance/sample.rs",
+      "path": "src/viewport/diagnostics/performance/metrics/sample.rs",
       "owner": "src/viewport/diagnostics/performance/mod.rs",
       "consumers": [
-        "src/viewport/diagnostics/performance/aggregate.rs",
-        "src/viewport/diagnostics/performance/runner.rs"
+        "src/viewport/diagnostics/performance/metrics/aggregate.rs",
+        "src/viewport/diagnostics/performance/runner/mod.rs"
       ],
       "reason": "Production frame-timing sample model used by viewport diagnostics runners and aggregators.",
       "status": "approved"

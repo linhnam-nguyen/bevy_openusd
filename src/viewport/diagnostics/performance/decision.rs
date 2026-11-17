@@ -91,5 +91,5 @@ impl GroundGridDecisionHelper {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/decision_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/diagnostics/performance/decision_tests.rs"]
 mod tests;

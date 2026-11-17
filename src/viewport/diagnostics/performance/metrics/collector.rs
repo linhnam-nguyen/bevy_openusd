@@ -78,5 +78,5 @@ pub fn collect_cache_snapshot_from_world(world: &World) -> CacheSnapshot {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/diagnostics/performance/collector_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/diagnostics/performance/metrics/collector_tests.rs"]
 mod tests;
