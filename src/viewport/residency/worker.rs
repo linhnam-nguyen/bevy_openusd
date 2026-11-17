@@ -17,7 +17,7 @@ use crate::project::cache::blobs::get_mesh;
 use crate::project::cache::contract::SceneCacheAddress;
 use crate::project::cache::scene::hydration::SceneAnimationPayloads;
 use crate::project::cache::scene::payload::SceneAnimationBlob;
-use crate::project::runtime_payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
+use crate::project::runtime::payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
 
 use super::loader::LoadJob;
 use super::{PayloadLoadMask, ScenePayloadDescriptor, ScenePayloadKey};
@@ -246,10 +246,10 @@ pub(crate) fn install_loaded_scene_payloads(
             .iter()
             .map(|(id, texture)| {
                 let format = match texture.color_space {
-                    crate::project::runtime_payload::RuntimeTextureColorSpace::Srgb => {
+                    crate::project::runtime::payload::RuntimeTextureColorSpace::Srgb => {
                         bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb
                     }
-                    crate::project::runtime_payload::RuntimeTextureColorSpace::Linear => {
+                    crate::project::runtime::payload::RuntimeTextureColorSpace::Linear => {
                         bevy::render::render_resource::TextureFormat::Rgba8Unorm
                     }
                 };

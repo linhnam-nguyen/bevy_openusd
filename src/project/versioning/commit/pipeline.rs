@@ -6,8 +6,8 @@ use usd_git::{CommitRequest, GitRepository, Repository};
 use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::super::semantic_store::SemanticStore;
 use super::state::{CommitOutcome, CommitState, validate_relative_stage_path};
+use crate::project::semantic_store::SemanticStore;
 
 /// Commit the current live stage as one canonical Git revision.
 ///

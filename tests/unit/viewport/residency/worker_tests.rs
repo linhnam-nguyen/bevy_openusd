@@ -4,7 +4,7 @@ use bevy::prelude::{App, Update};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::runtime_payload::{RuntimeAlphaMode, RuntimeMaterialTextures};
+use crate::project::runtime::payload::{RuntimeAlphaMode, RuntimeMaterialTextures};
 use crate::viewport::session::SceneCachePresentation;
 use usd_bevy::ProjectionSeed;
 
@@ -22,7 +22,7 @@ fn job(generation: u64) -> LoadJob<ScenePayloadKey> {
 
 fn material() -> RuntimeMaterialBlob {
     RuntimeMaterialBlob {
-        version: crate::project::runtime_payload::RUNTIME_MATERIAL_VERSION,
+        version: crate::project::runtime::payload::RUNTIME_MATERIAL_VERSION,
         base_color: [1.0; 4],
         emissive: [0.0; 4],
         perceptual_roughness: 1.0,

@@ -14,8 +14,8 @@ use super::state::{
 };
 use super::tree::apply_tree_commands;
 use crate::project::cache::historical_geometry::HistoricalGeometryCache;
-use crate::project::recovery::{RecoveryCheckpointWork, RecoverySettings};
-use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
+use crate::project::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
+use crate::project::stages::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::viewport::api::{
     ActiveHierarchyProvider, BimClassificationRecipeState, BimProvenanceService,
     CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,

@@ -11,11 +11,9 @@ use project_protocol::{ProjectCommitTarget, ProjectWriteError, ProjectWriteError
 use usd_bevy::LiveRevision;
 use usd_project::{ProjectId, SceneId};
 
-#[path = "runtime_authority_protocol.rs"]
 mod protocol;
-#[path = "runtime_authority_queue.rs"]
 mod queue;
-#[path = "runtime_authority_registry.rs"]
+mod queue_storage;
 mod registry;
 pub(crate) use protocol::{ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse};
 pub use queue::ProjectRuntimeAuthorityQueue;

@@ -2,7 +2,7 @@ use crate::project::cache::SceneCacheStore;
 use crate::project::cache::blobs::BlobStore;
 use crate::project::cache::contract::SceneCacheBlobRef;
 use crate::project::cache::scene::payload::{SCENE_ANIMATION_VERSION, SceneAnimationBlob};
-use crate::project::runtime_payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
+use crate::project::runtime::payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
 
 use super::{LoadedScenePayloads, PayloadLoadMask, ScenePayloadDescriptor};
 

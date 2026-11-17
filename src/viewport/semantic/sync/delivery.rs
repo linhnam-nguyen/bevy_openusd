@@ -11,7 +11,7 @@ use crate::project::cache::historical_geometry::{
     PreparedRenderPayloads, prepare_render_blobs, prepare_render_blobs_for_entities,
 };
 use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::project::recovery::RecoverySettings;
+use crate::project::stages::recovery::RecoverySettings;
 use crate::viewport::api::RenderServerInterface;
 
 use super::super::state::SemanticSyncState;
@@ -26,7 +26,7 @@ pub(in crate::viewport::semantic) fn queue_runtime_delivery(
     live_revision: LiveRevision,
     snapshot: &Arc<SemanticSnapshot>,
     prepared_blobs: Vec<PreparedMeshBlob>,
-    prepared_runtime_payloads: crate::project::runtime_payload::PreparedRuntimePayloads,
+    prepared_runtime_payloads: crate::project::runtime::payload::PreparedRuntimePayloads,
 ) {
     if world.get_resource::<RenderServerInterface>().is_none() {
         return;
@@ -191,7 +191,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
         match result.bundle {
             Ok(bundle) => {
                 let (manifest, blobs) =
-                    crate::project::runtime_delivery::into_delivery_parts(bundle);
+                    crate::project::runtime::delivery::into_delivery_parts(bundle);
                 if let Err(error) = interface.publish_runtime_delivery(manifest, blobs) {
                     interface.clear_runtime_delivery();
                     bevy::log::warn!("[runtime-delivery] bundle publication rejected: {error:?}");
@@ -294,7 +294,7 @@ pub(in crate::viewport::semantic) fn attach_render_blobs_to_action(
 fn prepare_runtime_payloads_if_server(
     world: &mut World,
     snapshot: &SemanticSnapshot,
-) -> crate::project::runtime_payload::PreparedRuntimePayloads {
+) -> crate::project::runtime::payload::PreparedRuntimePayloads {
     if world.get_resource::<RenderServerInterface>().is_none() {
         return Default::default();
     }

@@ -46,7 +46,7 @@ def Xform "World"
     let live = LiveStage::new(stage);
 
     let mut app = viewport_support::semantic_test_app();
-    app.insert_resource(crate::project::recovery::RecoverySettings {
+    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
@@ -191,7 +191,7 @@ def Xform "World"
     let hierarchy_bytes = shared_interface
         .runtime_blob(&manifest_2.hierarchy.blob_id)
         .expect("hierarchy blob exists");
-    let hierarchy: crate::project::runtime_delivery::RuntimeHierarchyBlob =
+    let hierarchy: crate::project::runtime::delivery::RuntimeHierarchyBlob =
         serde_json::from_slice(&hierarchy_bytes).expect("deserialize hierarchy blob");
 
     let hierarchy_paths: Vec<&str> = hierarchy

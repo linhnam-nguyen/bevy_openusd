@@ -9,9 +9,8 @@ use usd_project::{ProjectId, SceneId};
 use crate::{
     project::{
         catalog::manifest_store::ManifestStore,
-        service::{
-            ProjectRuntimeAuthorityQueue, ProjectRuntimeResponse, ProjectStageMutationQueue,
-        },
+        runtime::authority::ProjectRuntimeResponse,
+        service::{ProjectRuntimeAuthorityQueue, ProjectStageMutationQueue},
     },
     viewport::session::StageHandle,
 };
@@ -142,8 +141,8 @@ fn runtime_renew_response(
             else {
                 return runtime_failed(request_id, project_protocol::ProjectWriteErrorCode::Busy);
             };
-            active_lease.expires_at_ms =
-                crate::project::service::unix_time_ms().saturating_add(RUNTIME_LEASE_GRACE_MS);
+            active_lease.expires_at_ms = crate::project::runtime::authority::unix_time_ms()
+                .saturating_add(RUNTIME_LEASE_GRACE_MS);
             ProjectRuntimeResponse::Renewed {
                 request_id: request_id.to_owned(),
             }
@@ -194,7 +193,7 @@ pub(super) fn expire_runtime_lease(world: &mut World) {
         .resource::<ProjectRuntimeAuthorityRuntime>()
         .active_lease
         .as_ref()
-        .filter(|lease| lease.expires_at_ms <= crate::project::service::unix_time_ms())
+        .filter(|lease| lease.expires_at_ms <= crate::project::runtime::authority::unix_time_ms())
         .map(|lease| (lease.project_id, lease.lease_id.clone()));
     if let Some((project_id, lease_id)) = expired {
         clear_runtime_lease(world, project_id, &lease_id);

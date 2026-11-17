@@ -18,10 +18,9 @@ use usd_project::SceneId;
 use uuid::Uuid;
 
 use crate::project::{
-    assets::closure::scene_service::scene_dependency_closure,
-    models::wrapper::model_wrapper_path,
-    service::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard},
-    storage::ProjectStorageLayout,
+    assets::closure::scene_service::scene_dependency_closure, models::wrapper::model_wrapper_path,
+    service::ProjectApplicationService, storage::ProjectStorageLayout,
+    versioning::commit::runtime::RuntimeLeaseGuard,
 };
 
 const SCENES_DIRECTORY: &str = "scenes";

@@ -11,7 +11,7 @@ use project_protocol::{
 };
 use usd_project::ProjectId;
 
-use super::ProjectApplicationService;
+use crate::project::service::ProjectApplicationService;
 use crate::project::{
     cache::{
         ProjectCacheIdentity, ProjectCacheTarget,

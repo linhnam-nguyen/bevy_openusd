@@ -8,7 +8,7 @@ use super::{
     ProjectRuntimeAuthorityRuntime, active_scene_id_for_stage, project_root_for_stage,
     runtime_scene_is_allowed, runtime_scene_is_in_export_closure,
 };
-use crate::project::service::{ProjectRuntimeRequest, ProjectRuntimeResponse};
+use crate::project::runtime::authority::{ProjectRuntimeRequest, ProjectRuntimeResponse};
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/project_runtime_authority_lease_tests.rs"]
@@ -37,7 +37,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
     });
     let active_root = active.as_ref().map(|(root, ..)| root);
     for envelope in requests {
-        let expired = envelope.is_expired(crate::project::service::unix_time_ms());
+        let expired = envelope.is_expired(crate::project::runtime::authority::unix_time_ms());
         let request = envelope.into_request();
         let request_id = request.request_id().to_owned();
         let registered_project_id = request.project_id();

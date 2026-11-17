@@ -35,7 +35,7 @@ pub(super) fn project_list_item(item: ProjectCatalogueItem) -> ProjectListItem {
     }
 }
 
-pub(super) fn project_tree(
+pub(in crate::project) fn project_tree(
     project_root: &Path,
     manifest: &usd_project::ValidatedProjectManifest,
 ) -> Result<(Vec<ProjectContentNode>, usd_project::ProjectContentCounts), ProjectReadError> {
@@ -119,7 +119,7 @@ pub(super) fn project_tree(
     Ok((nodes, counts))
 }
 
-pub(super) fn repository_summary(
+pub(in crate::project) fn repository_summary(
     project_id: ProjectId,
     project_root: &Path,
 ) -> Result<RepositorySummary, ProjectReadError> {

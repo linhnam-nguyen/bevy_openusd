@@ -1,7 +1,7 @@
 //! Runtime-owned Project commit staging and derived semantic persistence.
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/commit/commit_runtime_lease_tests.rs"]
+#[path = "../../../../tests/unit/project/service/commit/commit_runtime_lease_tests.rs"]
 mod lease_tests;
 
 use std::{
@@ -22,7 +22,7 @@ use usd_model::SnapshotSource;
 use usd_project::{ProjectId, ProjectRoot, SceneId};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-use super::{ProjectRuntimeAuthority, ProjectRuntimeSnapshot};
+use crate::project::runtime::authority::{ProjectRuntimeAuthority, ProjectRuntimeSnapshot};
 use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
 
 const SEMANTIC_CACHE_RELATIVE_PATH: &str = ".usdhub/cache/semantic-snapshots.db";

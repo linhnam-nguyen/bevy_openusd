@@ -16,7 +16,7 @@ use usd_model::{BlobId, EntityKey, SnapshotId};
 use super::diff::historical_world_matrix;
 use crate::project::cache::blobs::{FilesystemBlobStore, get_mesh};
 use crate::project::cache::historical_geometry::HistoricalGeometryCache;
-use crate::project::recovery::RecoverySettings;
+use crate::project::stages::recovery::RecoverySettings;
 use crate::viewport::semantic::SemanticDiffState;
 
 const OBJECTS_DIRECTORY: &str = ".usdhub/cache/objects";

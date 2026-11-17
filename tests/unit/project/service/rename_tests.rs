@@ -103,7 +103,7 @@ fn failed_rename_restores_all_canonical_files_and_stage_outbox() {
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
     let (queue, failure_trigger) =
-        crate::project::service::stage_mutation::test_support::queue_with_failure_trigger();
+        crate::project::stages::mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
         directory.path().join("workspace.json"),
         queue,

@@ -2,7 +2,8 @@ use std::{fs, sync::Arc, thread, time::Duration};
 
 use project_protocol::{ProjectCommitTarget, ProjectWriteError, ProjectWriteErrorCode};
 
-use super::{ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, unix_time_ms};
+use super::{ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue};
+use crate::project::runtime::authority::unix_time_ms;
 
 #[test]
 fn delayed_renderer_rejects_a_consumed_request_after_host_timeout() {

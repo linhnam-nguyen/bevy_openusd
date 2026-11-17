@@ -16,9 +16,9 @@ use usd_model::SemanticSnapshot;
 use super::blobs::{
     FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob, prepare_mesh_payload, put_mesh,
 };
-use crate::project::recovery::RecoverySettings;
-use crate::project::runtime_payload::PreparedRuntimePayloads;
-pub(crate) use crate::project::runtime_payload::prepare_runtime_payloads;
+use crate::project::runtime::payload::PreparedRuntimePayloads;
+pub(crate) use crate::project::runtime::payload::prepare_runtime_payloads;
+use crate::project::stages::recovery::RecoverySettings;
 
 /// Runtime counters for historical geometry capture.
 ///

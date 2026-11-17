@@ -1,5 +1,6 @@
 use std::{path::Path, time::Duration};
 
+use super::super::queue::ProjectRuntimeAuthorityQueue;
 use super::*;
 
 pub(crate) fn cleanup_for_test(queue: &ProjectRuntimeAuthorityQueue, project_root: &Path) {

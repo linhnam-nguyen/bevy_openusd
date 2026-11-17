@@ -9,9 +9,9 @@ use project_protocol::{
 use usd_git::{CommitRequest, GitRepository, Repository};
 use usd_project::{ProjectManifestV1, SceneId};
 
-use super::ProjectApplicationService;
-use super::commit_runtime::{
-    RuntimeLeaseGuard, overlay_runtime_snapshot, persist_semantic_snapshot,
+use super::runtime::{RuntimeLeaseGuard, overlay_runtime_snapshot, persist_semantic_snapshot};
+use crate::project::service::{
+    ProjectApplicationService, inspection, project_tree, repository_summary,
 };
 
 const MANIFEST_RELATIVE_PATH: &str = "project.json";
@@ -139,16 +139,16 @@ pub(in crate::project) fn commit(
             }
         }
     }
-    let committed_manifest = super::ManifestStore::read_validated(&project_root).map_err(|_| {
-        ProjectWriteError::Failed {
-            code: ProjectWriteErrorCode::ManifestUnavailable,
-        }
-    })?;
+    let committed_manifest =
+        crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
+            .map_err(|_| ProjectWriteError::Failed {
+                code: ProjectWriteErrorCode::ManifestUnavailable,
+            })?;
     let (_nodes, counts) =
-        super::project_tree(&project_root, &committed_manifest).map_err(|_| commit_error())?;
+        project_tree(&project_root, &committed_manifest).map_err(|_| commit_error())?;
     let repository_summary =
-        super::repository_summary(project_id, &project_root).map_err(|_| repository_error())?;
-    let mut project = super::inspection::project_summary(committed_manifest.raw(), &project_root)
+        repository_summary(project_id, &project_root).map_err(|_| repository_error())?;
+    let mut project = inspection::project_summary(committed_manifest.raw(), &project_root)
         .map_err(|_| commit_error())?;
     project.counts = counts;
     project.repository = repository_summary.clone();

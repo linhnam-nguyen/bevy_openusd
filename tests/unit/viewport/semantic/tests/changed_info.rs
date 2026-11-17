@@ -21,7 +21,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(usd_bevy::LiveStagePlugin);
-    app.insert_resource(crate::project::recovery::RecoverySettings {
+    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
         project_root: project.path().to_path_buf(),
     });
     app.insert_resource(crate::viewport::diagnostics::performance::RendererCounters::default());

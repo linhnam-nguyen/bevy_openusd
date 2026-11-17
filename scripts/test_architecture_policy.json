@@ -432,7 +432,7 @@
       "target": "tests/unit/project/catalog/workspace_registry_tests.rs"
     },
     {
-      "owner_file": "src/project/commit/mod.rs",
+      "owner_file": "src/project/versioning/commit/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/commit/tests.rs"
@@ -462,25 +462,25 @@
       "target": "tests/unit/project/model_wrapper_tests.rs"
     },
     {
-      "owner_file": "src/project/prim_count.rs",
+      "owner_file": "src/project/stages/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/prim_count_tests.rs"
     },
     {
-      "owner_file": "src/project/recovery.rs",
+      "owner_file": "src/project/stages/recovery/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/recovery_tests.rs"
     },
     {
-      "owner_file": "src/project/recovery_worker.rs",
+      "owner_file": "src/project/stages/recovery/worker.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/recovery_worker_tests.rs"
     },
     {
-      "owner_file": "src/project/runtime_delivery.rs",
+      "owner_file": "src/project/runtime/delivery.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/runtime_delivery_tests.rs"
@@ -546,7 +546,7 @@
       "target": "tests/unit/project/semantic_store/turso/tests/mod.rs"
     },
     {
-      "owner_file": "src/project/service/commit_runtime.rs",
+      "owner_file": "src/project/versioning/commit/runtime.rs",
       "module_path": "",
       "mod_name": "lease_tests",
       "target": "tests/unit/project/service/commit/commit_runtime_lease_tests.rs"
@@ -684,19 +684,19 @@
       "target": "tests/unit/project/service/rename_tests.rs"
     },
     {
-      "owner_file": "src/project/service/runtime_authority_queue.rs",
+      "owner_file": "src/project/runtime/authority/queue.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/project/service/runtime_authority_queue_test_support.rs"
     },
     {
-      "owner_file": "src/project/service/runtime_authority_queue_storage.rs",
+      "owner_file": "src/project/runtime/authority/queue_storage.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"
     },
     {
-      "owner_file": "src/project/service/runtime_authority_registry.rs",
+      "owner_file": "src/project/runtime/authority/registry.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/runtime_authority_registry_tests.rs"
@@ -732,7 +732,7 @@
       "target": "tests/unit/project/service/scene_lifecycle_tests.rs"
     },
     {
-      "owner_file": "src/project/service/stage_activation.rs",
+      "owner_file": "src/project/stages/activation.rs",
       "module_path": "",
       "mod_name": "authority_tests",
       "target": "tests/unit/project/service/stage_activation/stage_activation_authority_tests.rs"
@@ -744,13 +744,13 @@
       "target": "tests/unit/project/service/stage_archive_tests.rs"
     },
     {
-      "owner_file": "src/project/service/stage_mutation.rs",
+      "owner_file": "src/project/stages/mutation/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/project/service/stage_mutation_test_support.rs"
     },
     {
-      "owner_file": "src/project/service/stage_mutation.rs",
+      "owner_file": "src/project/stages/mutation/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/service/stage_mutation_tests.rs"
@@ -780,7 +780,7 @@
       "target": "tests/unit/project/spatial_tests.rs"
     },
     {
-      "owner_file": "src/project/stage_metadata.rs",
+      "owner_file": "src/project/stages/metadata.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/stage_metadata_tests.rs"

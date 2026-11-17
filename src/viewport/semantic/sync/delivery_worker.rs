@@ -14,10 +14,10 @@ use crate::project::cache::blobs::{
     BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob,
 };
 use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::project::runtime_delivery::{
+use crate::project::runtime::delivery::{
     RuntimeDeliveryBundle, build_runtime_delivery_with_payloads,
 };
-use crate::project::runtime_payload::{PreparedRuntimeBlob, PreparedRuntimePayloads};
+use crate::project::runtime::payload::{PreparedRuntimeBlob, PreparedRuntimePayloads};
 
 pub(crate) const DELIVERY_QUEUE_CAPACITY: usize = 4;
 pub(crate) const DELIVERY_RESULT_CAPACITY: usize = 4;

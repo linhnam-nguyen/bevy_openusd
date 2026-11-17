@@ -31,5 +31,5 @@ pub(crate) fn copy_source_time_metadata(source: &Path, wrapper: &Stage) -> Resul
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/stage_metadata_tests.rs"]
+#[path = "../../../tests/unit/project/stage_metadata_tests.rs"]
 mod tests;

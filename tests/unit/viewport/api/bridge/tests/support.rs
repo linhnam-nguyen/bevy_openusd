@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use crate::project::recovery::RecoverySettings;
-use crate::project::recovery_worker::{RecoveryRuntime, drain_recovery_results};
+use crate::project::stages::recovery::RecoverySettings;
+use crate::project::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::plugin::checkpoint_recovery;

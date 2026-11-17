@@ -5,8 +5,10 @@ use project_protocol::{ProjectBranchSwitchResponse, ProjectWriteError, ProjectWr
 use usd_git::GitRepository;
 use usd_project::ProjectId;
 
-use super::ProjectApplicationService;
 use crate::project::catalog::manifest_store::ManifestStore;
+use crate::project::service::{
+    ProjectApplicationService, inspection, project_tree, repository_summary,
+};
 
 impl ProjectApplicationService {
     /// Switch one registered Project to an existing local branch and return
@@ -182,11 +184,11 @@ fn post_switch_projection(
         }
     }
 
-    let (nodes, counts) = super::project_tree(project_root, &manifest)
+    let (nodes, counts) = project_tree(project_root, &manifest)
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
-    let repository_summary = super::repository_summary(project_id, project_root)
+    let repository_summary = repository_summary(project_id, project_root)
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
-    let mut project = super::inspection::project_summary(manifest.raw(), project_root)
+    let mut project = inspection::project_summary(manifest.raw(), project_root)
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
     project.repository = repository_summary.clone();
     project.counts = counts;
@@ -297,7 +299,7 @@ fn invalidate_previous_branch_cache(
 }
 
 fn branch_project_invalid(project_id: ProjectId, project_root: &Path) -> ProjectWriteError {
-    match super::repository_summary(project_id, project_root) {
+    match repository_summary(project_id, project_root) {
         Ok(repository) => ProjectWriteError::BranchProjectInvalid {
             repository: Box::new(repository),
         },

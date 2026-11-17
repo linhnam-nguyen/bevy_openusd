@@ -7,10 +7,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use super::super::registry;
-use super::{
-    ProjectRuntimeAuthorityQueue, ProjectRuntimeEnvelope, ProjectRuntimeResponse, runtime_error,
-};
+use super::queue::ProjectRuntimeAuthorityQueue;
+use super::registry;
+use super::{ProjectRuntimeEnvelope, ProjectRuntimeResponse, runtime_error};
 use usd_project::ProjectId;
 use uuid::Uuid;
 
@@ -270,5 +269,5 @@ pub(super) fn publish_response(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"]
+#[path = "../../../../tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"]
 pub(super) mod test_support;

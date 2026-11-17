@@ -22,10 +22,10 @@ pub(crate) fn project_runtime_cache_config_hash(semantic_config_hash: HashDigest
     hasher.update(b"usdhub-project-runtime-cache-config");
     hasher.update(&PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION.to_le_bytes());
     hasher.update(&RUNTIME_PROJECTION_VERSION.to_le_bytes());
-    hasher.update(&crate::project::runtime_delivery::RUNTIME_HIERARCHY_VERSION.to_le_bytes());
-    hasher.update(&crate::project::runtime_delivery::RUNTIME_MESH_VERSION.to_le_bytes());
-    hasher.update(&crate::project::runtime_payload::RUNTIME_MATERIAL_VERSION.to_le_bytes());
-    hasher.update(&crate::project::runtime_payload::RUNTIME_TEXTURE_VERSION.to_le_bytes());
+    hasher.update(&crate::project::runtime::delivery::RUNTIME_HIERARCHY_VERSION.to_le_bytes());
+    hasher.update(&crate::project::runtime::delivery::RUNTIME_MESH_VERSION.to_le_bytes());
+    hasher.update(&crate::project::runtime::payload::RUNTIME_MATERIAL_VERSION.to_le_bytes());
+    hasher.update(&crate::project::runtime::payload::RUNTIME_TEXTURE_VERSION.to_le_bytes());
     hasher.update(semantic_config_bytes(semantic_config_hash).as_slice());
     HashDigest::new(*hasher.finalize().as_bytes())
 }

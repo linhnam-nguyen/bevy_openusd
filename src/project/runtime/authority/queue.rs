@@ -16,21 +16,21 @@ use super::{
     ProjectRuntimeSnapshot, runtime_error, unix_time_ms,
 };
 
-#[path = "runtime_authority_queue_storage.rs"]
-mod storage;
-use storage::{REQUESTS_DIRECTORY, RESPONSES_DIRECTORY, RegistryCache};
+use super::queue_storage::{
+    self as storage, REQUESTS_DIRECTORY, RESPONSES_DIRECTORY, RegistryCache,
+};
 
 const RESPONSE_TIMEOUT: Duration = Duration::from_millis(750);
 const CLAIM_RESPONSE_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct ProjectRuntimeAuthorityQueue {
-    file_lock: Arc<Mutex<()>>,
-    registry_cache: Arc<Mutex<RegistryCache>>,
-    last_cleanup: Arc<Mutex<Option<Instant>>>,
+    pub(super) file_lock: Arc<Mutex<()>>,
+    pub(super) registry_cache: Arc<Mutex<RegistryCache>>,
+    pub(super) last_cleanup: Arc<Mutex<Option<Instant>>>,
     timeout: Duration,
     request_ttl: Duration,
-    workspace_registry_path: Option<PathBuf>,
+    pub(super) workspace_registry_path: Option<PathBuf>,
 }
 
 impl Default for ProjectRuntimeAuthorityQueue {
@@ -344,5 +344,5 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/runtime_authority_queue_test_support.rs"]
+#[path = "../../../../tests/unit/project/service/runtime_authority_queue_test_support.rs"]
 mod test_support;

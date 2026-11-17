@@ -1,6 +1,6 @@
 use project_protocol::ProjectWriteTarget;
 
-use super::filesystem_error;
+use super::mutation::filesystem_error;
 
 pub(super) fn apply_rename_to_live_stage(
     live: &usd_bevy::LiveStage,

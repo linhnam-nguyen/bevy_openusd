@@ -263,7 +263,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let material_bytes = store
         .get(&material_ref.blob_id)?
         .expect("material blob persisted");
-    let material: crate::project::runtime_payload::RuntimeMaterialBlob =
+    let material: crate::project::runtime::payload::RuntimeMaterialBlob =
         serde_json::from_slice(&material_bytes)?;
     material.validate()?;
     let texture_id = material
@@ -274,7 +274,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let texture_bytes = store
         .get(&usd_model::BlobId(texture_id.clone()))?
         .expect("texture blob persisted");
-    let texture: crate::project::runtime_payload::RuntimeTextureBlob =
+    let texture: crate::project::runtime::payload::RuntimeTextureBlob =
         serde_json::from_slice(&texture_bytes)?;
     texture.validate()?;
     assert_eq!(texture.rgba8, vec![48, 96, 192, 255]);

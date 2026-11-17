@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use usd_bevy::UsdPrimRef;
 use usd_model::BlobId;
 
-#[path = "runtime_payload_codec.rs"]
 mod codec;
 use codec::{collect_material_textures, runtime_alpha_mode};
 

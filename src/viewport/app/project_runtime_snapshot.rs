@@ -3,7 +3,8 @@ use std::path::Path;
 use project_protocol::ProjectWriteErrorCode;
 use usd_project::{ProjectId, SceneId};
 
-use crate::project::service::{ProjectRuntimeAuthorityQueue, ProjectRuntimeResponse};
+use crate::project::runtime::authority::ProjectRuntimeResponse;
+use crate::project::service::ProjectRuntimeAuthorityQueue;
 
 pub(crate) fn runtime_snapshot_response(
     world: &mut bevy::prelude::World,
@@ -91,7 +92,7 @@ fn runtime_snapshot_response_inner(
         lease_id: lease_id.clone(),
         session_id,
         live_revision,
-        expires_at_ms: crate::project::service::unix_time_ms()
+        expires_at_ms: crate::project::runtime::authority::unix_time_ms()
             .saturating_add(super::RUNTIME_LEASE_GRACE_MS),
     });
     ProjectRuntimeResponse::Ready {

@@ -22,8 +22,8 @@ use viewport_protocol::{RuntimeBlobReference, RuntimeManifest, RuntimePayloadKin
 
 use super::blobs::{BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, get_mesh};
 use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore};
-use crate::project::runtime_delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
-use crate::project::runtime_payload::{
+use crate::project::runtime::delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
+use crate::project::runtime::payload::{
     RuntimeAlphaMode, RuntimeMaterialBlob, RuntimeTextureBlob, RuntimeTextureColorSpace,
 };
 mod context;
@@ -111,7 +111,7 @@ pub(crate) fn hydrate_project_cache(
             &store,
             reference,
             RuntimePayloadKind::Material,
-            crate::project::runtime_payload::RUNTIME_MATERIAL_VERSION,
+            crate::project::runtime::payload::RUNTIME_MATERIAL_VERSION,
         )?;
         let material: RuntimeMaterialBlob = serde_json::from_slice(&bytes)
             .with_context(|| format!("decode cached runtime material {material_id}"))?;
@@ -127,7 +127,7 @@ pub(crate) fn hydrate_project_cache(
                 &store,
                 reference,
                 RuntimePayloadKind::Texture,
-                crate::project::runtime_payload::RUNTIME_TEXTURE_VERSION,
+                crate::project::runtime::payload::RUNTIME_TEXTURE_VERSION,
             )?;
             let texture: RuntimeTextureBlob = serde_json::from_slice(&bytes)
                 .with_context(|| format!("decode cached runtime texture {texture_id}"))?;

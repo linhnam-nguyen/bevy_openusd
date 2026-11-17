@@ -107,5 +107,5 @@ fn count_stage_prims(path: &std::path::Path) -> Result<usize> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/prim_count_tests.rs"]
+#[path = "../../../tests/unit/project/prim_count_tests.rs"]
 mod tests;

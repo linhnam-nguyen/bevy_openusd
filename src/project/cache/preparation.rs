@@ -11,8 +11,8 @@ use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 use super::ProjectCacheIdentity;
 use super::blobs::{BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob};
 use super::historical_geometry::prepare_render_blobs;
-use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
-use crate::project::runtime_payload::PreparedRuntimeBlob;
+use crate::project::runtime::delivery::build_runtime_delivery_with_payloads;
+use crate::project::runtime::payload::PreparedRuntimeBlob;
 
 pub(super) fn build_runtime_cache(
     project_root: &Path,
@@ -43,7 +43,7 @@ pub(super) fn build_runtime_cache(
         usd_bevy::project_stage(world, &live, &mut prim_entities);
         let prepared_meshes = prepare_render_blobs(world, &mut snapshot);
         let prepared_runtime_payloads =
-            crate::project::runtime_payload::prepare_runtime_payloads_for_stage(
+            crate::project::runtime::payload::prepare_runtime_payloads_for_stage(
                 world,
                 &live.stage,
                 &snapshot,

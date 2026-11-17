@@ -3,7 +3,7 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::project::recovery::RecoveryStore;
+    use crate::project::stages::recovery::RecoveryStore;
     use crate::viewport::animation::UsdStageTime;
     use crate::viewport::api::bridge::ViewerSettingsState;
     use crate::viewport::api::bridge::commands::apply_viewport_commands;

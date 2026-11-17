@@ -22,7 +22,7 @@ use super::super::contract::{
     SceneSpatialIndex,
 };
 use super::payload::prepare_animation_payload;
-use crate::project::runtime_payload::{
+use crate::project::runtime::payload::{
     PreparedRuntimePayloads, prepare_runtime_payloads_for_paths,
 };
 

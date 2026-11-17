@@ -6,7 +6,7 @@ use std::time::Instant;
 use bevy::prelude::Resource;
 use usd_bevy::LiveStage;
 
-use super::recovery::{RecoveryCheckpointWork, RecoveryMetadata, RecoveryStore};
+use super::{RecoveryCheckpointWork, RecoveryMetadata, RecoveryStore};
 
 const RECOVERY_QUEUE_CAPACITY: usize = 4;
 const RECOVERY_RESULT_CAPACITY: usize = 4;
@@ -242,5 +242,5 @@ pub(crate) fn drain_recovery_results(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/recovery_worker_tests.rs"]
+#[path = "../../../../tests/unit/project/recovery_worker_tests.rs"]
 mod tests;

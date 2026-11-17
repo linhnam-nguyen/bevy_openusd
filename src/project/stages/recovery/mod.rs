@@ -17,7 +17,9 @@ use openusd::usd::{PrimPredicate, Stage};
 use serde::{Deserialize, Serialize};
 use usd_bevy::LiveStage;
 
-use super::storage::ProjectStorageLayout;
+use crate::project::storage::ProjectStorageLayout;
+
+pub(crate) mod worker;
 
 pub(crate) const RECOVERY_FORMAT_VERSION: u32 = 1;
 const WORKING_STAGE_FILE: &str = "working.usda";
@@ -312,5 +314,5 @@ fn unix_time_ms() -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/recovery_tests.rs"]
+#[path = "../../../../tests/unit/project/recovery_tests.rs"]
 mod tests;

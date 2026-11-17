@@ -20,7 +20,7 @@ impl ProjectApplicationService {
         &mut self,
         request: ProjectCommitRequest,
     ) -> Result<ProjectCommitResponse, ProjectWriteError> {
-        crate::project::service::commit::commit(self, request)
+        crate::project::versioning::commit::service::commit(self, request)
     }
 
     pub fn export_scene(

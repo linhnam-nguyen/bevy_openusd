@@ -14,7 +14,7 @@ use project_protocol::{
 use usd_bevy::LiveRevision;
 use usd_project::{ProjectId, SceneId};
 
-use super::super::{
+use crate::project::service::{
     ProjectApplicationService, ProjectPublicationCoordinator, ProjectRuntimeAuthority,
     ProjectRuntimeSnapshot,
 };

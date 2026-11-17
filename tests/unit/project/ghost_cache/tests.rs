@@ -12,8 +12,8 @@ use usd_model::{
 };
 
 use crate::project::cache::blobs::BlobStore;
-use crate::project::runtime_delivery::build_runtime_delivery_with_payloads;
-use crate::project::runtime_payload::{RuntimeTextureBlob, RuntimeTextureColorSpace};
+use crate::project::runtime::delivery::build_runtime_delivery_with_payloads;
+use crate::project::runtime::payload::{RuntimeTextureBlob, RuntimeTextureColorSpace};
 
 use super::*;
 
@@ -367,7 +367,7 @@ fn runtime_payloads_persist_materials_and_distinguish_texture_color_spaces() -> 
         .iter()
         .find(|(id, _)| id == &bundle.manifest.hierarchy.blob_id)
         .map(|(_, bytes)| {
-            serde_json::from_slice::<crate::project::runtime_delivery::RuntimeHierarchyBlob>(bytes)
+            serde_json::from_slice::<crate::project::runtime::delivery::RuntimeHierarchyBlob>(bytes)
         })
         .transpose()?
         .expect("hierarchy blob is present");

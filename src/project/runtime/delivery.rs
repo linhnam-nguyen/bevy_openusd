@@ -13,8 +13,8 @@ use viewport_protocol::{
     RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind, RuntimeProfile,
 };
 
-use super::cache::blobs::BlobStore;
-use super::runtime_payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
+use super::payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
+use crate::project::cache::blobs::BlobStore;
 
 pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 3;
 pub(crate) const RUNTIME_MESH_VERSION: u16 = 1;
@@ -216,5 +216,5 @@ pub(crate) fn into_delivery_parts(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/runtime_delivery_tests.rs"]
+#[path = "../../../tests/unit/project/runtime_delivery_tests.rs"]
 mod tests;

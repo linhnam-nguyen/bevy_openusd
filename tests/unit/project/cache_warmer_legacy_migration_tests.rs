@@ -96,7 +96,7 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
     let hierarchy_bytes = store
         .get(&BlobId(runtime.hierarchy.blob_id.clone()))?
         .context("warmed hierarchy blob")?;
-    let hierarchy: crate::project::runtime_delivery::RuntimeHierarchyBlob =
+    let hierarchy: crate::project::runtime::delivery::RuntimeHierarchyBlob =
         serde_json::from_slice(&hierarchy_bytes)?;
     assert!(
         hierarchy

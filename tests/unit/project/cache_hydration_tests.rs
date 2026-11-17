@@ -15,8 +15,8 @@ use super::*;
 use crate::project::cache::blobs::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
 use crate::project::cache::{ProjectCacheDescriptor, ProjectCacheTarget};
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::project::runtime_delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};
-use crate::project::runtime_payload::{
+use crate::project::runtime::delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};
+use crate::project::runtime::payload::{
     RUNTIME_MATERIAL_VERSION, RUNTIME_TEXTURE_VERSION, RuntimeMaterialTextures,
 };
 

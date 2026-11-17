@@ -7,7 +7,7 @@ use bevy::prelude::World;
 use crate::project::cache::contract::{SceneCacheActivation, SceneCacheDescriptorV3};
 use crate::project::cache::hydration::default_project_cache_config_hash;
 use crate::project::cache::{PrimCountPublication, SceneCacheStore, publish_prim_count_if_current};
-use crate::project::prim_count::{PrimCountFreshness, PrimCountWorker, SubmitStatus};
+use crate::project::stages::prim_count::{PrimCountFreshness, PrimCountWorker, SubmitStatus};
 
 use super::super::{SceneDerivedMetadata, StageHandle, StageInfo};
 

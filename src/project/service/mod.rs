@@ -25,7 +25,7 @@ use crate::project::catalog::{
 };
 
 use self::error::project_read_error_code;
-use self::runtime_authority::NoopProjectRuntimeAuthority;
+use crate::project::runtime::authority::NoopProjectRuntimeAuthority;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/test_support.rs"]
@@ -84,15 +84,12 @@ impl Default for ProjectPublicationCoordinator {
     }
 }
 
-mod branch;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/branch/branch_projection_tests.rs"]
 mod branch_projection_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/branch/branch_tests.rs"]
 mod branch_tests;
-pub(super) mod commit;
-pub(super) mod commit_runtime;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/commit/commit_tests.rs"]
 mod commit_tests;
@@ -108,7 +105,6 @@ mod export_portability_tests;
 mod export_tests;
 pub(super) mod inspection;
 mod read;
-mod runtime_authority;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_queue_tests.rs"]
 mod runtime_authority_queue_tests;
@@ -118,23 +114,19 @@ mod runtime_authority_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_error_tests.rs"]
 mod scene_adoption_error_tests;
-mod stage_activation;
-pub(super) mod stage_mutation;
-use self::read::{project_list_item, project_tree, repository_summary};
+use self::read::project_list_item;
+pub(super) use self::read::{project_tree, repository_summary};
 pub use crate::project::exchange::progress::ProjectImportProgressStore;
 pub use crate::project::models::preparation::ProjectModelPreparationQueue;
-pub use crate::project::scene::inspection_queue::ProjectSceneInspectionQueue;
-pub use runtime_authority::{
+pub use crate::project::runtime::authority::{
     ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
 };
-pub(crate) use runtime_authority::{
-    ProjectRuntimeEnvelope, ProjectRuntimeRequest, ProjectRuntimeResponse, unix_time_ms,
-};
-pub use stage_activation::{
+pub use crate::project::scene::inspection_queue::ProjectSceneInspectionQueue;
+pub use crate::project::stages::activation::{
     ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivation,
     ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
-pub use stage_mutation::{ProjectStageMutation, ProjectStageMutationQueue};
+pub use crate::project::stages::mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 impl ProjectApplicationService {
     /// Quiesce cache publication before a caller disposes this Project's
     /// derived cache directory. This boundary is intentionally outside the

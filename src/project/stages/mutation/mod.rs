@@ -15,11 +15,9 @@ use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use serde::{Deserialize, Serialize};
 use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
 
-#[path = "stage_mutation_outbox.rs"]
 mod outbox;
-#[path = "stage_rename.rs"]
-mod stage_rename;
-use outbox::{busy_error, filesystem_error, outbox_path, read_pending, submit_batch_locked};
+pub(super) use outbox::filesystem_error;
+use outbox::{busy_error, outbox_path, read_pending, submit_batch_locked};
 
 /// A typed Project mutation waiting for the active-stage owner.
 ///
@@ -331,7 +329,7 @@ fn apply_mutation(
         return Ok(());
     }
     if let ProjectStageMutation::Rename { target, name, .. } = mutation {
-        stage_rename::apply_rename_to_live_stage(live, target, name)?;
+        super::rename::apply_rename_to_live_stage(live, target, name)?;
         return Ok(());
     }
     if let ProjectStageMutation::RefreshSceneDefinition { scene_id, .. } = mutation {
@@ -364,9 +362,9 @@ fn apply_mutation(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/stage_mutation_test_support.rs"]
+#[path = "../../../../tests/unit/project/service/stage_mutation_test_support.rs"]
 pub(in crate::project) mod test_support;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/stage_mutation_tests.rs"]
+#[path = "../../../../tests/unit/project/service/stage_mutation_tests.rs"]
 mod tests;

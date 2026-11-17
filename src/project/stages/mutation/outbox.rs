@@ -113,7 +113,7 @@ pub(super) fn busy_error() -> ProjectWriteError {
     }
 }
 
-pub(super) fn filesystem_error() -> ProjectWriteError {
+pub(in crate::project::stages) fn filesystem_error() -> ProjectWriteError {
     ProjectWriteError::Failed {
         code: project_protocol::ProjectWriteErrorCode::FilesystemFailure,
     }
