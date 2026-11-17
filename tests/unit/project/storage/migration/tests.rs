@@ -468,5 +468,5 @@ fn windows_canonical_project_open_without_pending_recovery_remains_available() -
     Ok(())
 }
 
-#[path = "migration_recovery_tests.rs"]
+#[path = "recovery_tests.rs"]
 mod recovery_tests;

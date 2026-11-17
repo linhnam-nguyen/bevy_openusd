@@ -124,5 +124,5 @@ impl ProjectCacheWarmQueue {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_enqueue_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/enqueue_tests.rs"]
 mod tests;

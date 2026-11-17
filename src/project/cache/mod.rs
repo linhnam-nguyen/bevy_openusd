@@ -165,5 +165,5 @@ fn is_disposable_path(relative: &Path) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/cache_tests.rs"]
+#[path = "../../../tests/unit/project/cache/tests.rs"]
 mod tests;

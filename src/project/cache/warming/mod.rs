@@ -22,7 +22,7 @@ use crate::project::{
 };
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_preparation_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/preparation_tests.rs"]
 mod preparation;
 mod queue;
 mod recovery;
@@ -389,21 +389,21 @@ fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_closure_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/closure_tests.rs"]
 mod closure_tests;
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_legacy_migration_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/legacy_migration_tests.rs"]
 mod legacy_migration_tests;
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_generation_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/generation_tests.rs"]
 mod generation_tests;
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_lifecycle_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_recovery_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/recovery_tests.rs"]
 mod recovery_tests;

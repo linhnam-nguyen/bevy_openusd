@@ -216,5 +216,5 @@ pub(crate) fn into_delivery_parts(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/runtime_delivery_tests.rs"]
+#[path = "../../../tests/unit/project/runtime/delivery_tests.rs"]
 mod tests;

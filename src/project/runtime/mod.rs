@@ -1,4 +1,4 @@
-//! Runtime authority and payload delivery.
+//! Communication with the runtime stage owner, authority queue, and payload delivery.
 
 pub(crate) mod authority;
 pub(crate) mod delivery;

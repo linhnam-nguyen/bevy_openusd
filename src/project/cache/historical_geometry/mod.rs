@@ -363,5 +363,5 @@ fn collect_mesh_handles(world: &mut World) -> Option<HashMap<String, bevy::asset
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/ghost_cache/tests.rs"]
+#[path = "../../../../tests/unit/project/cache/historical_geometry/tests.rs"]
 mod tests;

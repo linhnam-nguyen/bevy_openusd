@@ -242,5 +242,5 @@ pub(crate) fn drain_recovery_results(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/recovery_worker_tests.rs"]
+#[path = "../../../../tests/unit/project/stages/recovery/worker_tests.rs"]
 mod tests;

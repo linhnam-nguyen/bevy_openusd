@@ -201,5 +201,5 @@ fn worker_loop(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/model_preparation_tests.rs"]
+#[path = "../../../tests/unit/project/models/preparation_tests.rs"]
 mod tests;

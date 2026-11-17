@@ -1,3 +1,5 @@
+//! Managed scene composition, membership, lifecycle, and adoption.
+
 pub(crate) mod adoption;
 pub(crate) mod authoring;
 pub(crate) mod create;

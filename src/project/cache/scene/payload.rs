@@ -119,5 +119,5 @@ pub(crate) fn prepare_animation_payload(stage: &Stage, mesh_path: &str) -> Resul
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_scene_payload_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/scene/payload_tests.rs"]
 mod tests;

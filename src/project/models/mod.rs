@@ -1,3 +1,5 @@
+//! Imported project models, wrappers, preparation, and source links.
+
 pub(crate) mod import;
 pub(crate) mod link;
 pub(crate) mod preparation;

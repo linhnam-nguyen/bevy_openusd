@@ -216,5 +216,5 @@ fn canonical_source(source: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/link_tests.rs"]
+#[path = "../../../tests/unit/project/models/link_tests.rs"]
 mod tests;

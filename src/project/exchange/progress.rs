@@ -52,5 +52,5 @@ impl ProjectImportProgressStore {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/progress_tests.rs"]
+#[path = "../../../tests/unit/project/exchange/progress_tests.rs"]
 mod tests;

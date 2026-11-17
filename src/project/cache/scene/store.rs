@@ -346,5 +346,5 @@ fn remove_file_if_present(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_scene_store_tests.rs"]
+#[path = "../../../../tests/unit/project/cache/scene/store_tests.rs"]
 mod tests;

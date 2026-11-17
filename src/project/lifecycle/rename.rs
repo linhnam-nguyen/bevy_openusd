@@ -356,9 +356,9 @@ fn filesystem_error() -> ProjectWriteError {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/rename_test_support.rs"]
+#[path = "../../../tests/unit/project/lifecycle/rename_test_support.rs"]
 mod test_support;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/rename_tests.rs"]
+#[path = "../../../tests/unit/project/lifecycle/rename_tests.rs"]
 mod tests;

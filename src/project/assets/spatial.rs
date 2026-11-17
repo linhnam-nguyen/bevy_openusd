@@ -202,5 +202,5 @@ fn parse_up_axis(value: Value) -> Result<StageUpAxis> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/spatial_tests.rs"]
+#[path = "../../../tests/unit/project/assets/spatial_tests.rs"]
 mod tests;

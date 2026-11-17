@@ -1,6 +1,6 @@
-//! Read-only Project application facade.
+//! Public Project API and application boundary.
 //!
-//! This is the only backend entry point needed by the M13 native host. It
+//! This is the only backend entry point needed by the native host. It
 //! resolves a stable ProjectId through the private workspace registry and
 //! returns owned, Git-neutral protocol DTOs.
 
@@ -85,34 +85,34 @@ impl Default for ProjectPublicationCoordinator {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/branch/branch_projection_tests.rs"]
+#[path = "../../../tests/unit/project/versioning/branch_projection_tests.rs"]
 mod branch_projection_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/branch/branch_tests.rs"]
+#[path = "../../../tests/unit/project/versioning/branch_tests.rs"]
 mod branch_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/commit/commit_tests.rs"]
+#[path = "../../../tests/unit/project/versioning/commit/service_tests.rs"]
 mod commit_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/deletion/deletion_tests.rs"]
+#[path = "../../../tests/unit/project/lifecycle/deletion/deletion_tests.rs"]
 mod deletion_tests;
 mod error;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/export/export_portability_tests.rs"]
+#[path = "../../../tests/unit/project/exchange/export_portability_tests.rs"]
 mod export_portability_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/export/export_tests.rs"]
+#[path = "../../../tests/unit/project/exchange/export_tests.rs"]
 mod export_tests;
 pub(super) mod inspection;
 mod read;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_queue_tests.rs"]
+#[path = "../../../tests/unit/project/runtime/authority/queue_tests.rs"]
 mod runtime_authority_queue_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/runtime_authority/runtime_authority_tests.rs"]
+#[path = "../../../tests/unit/project/runtime/authority/tests.rs"]
 mod runtime_authority_tests;
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/scene_adoption/scene_adoption_error_tests.rs"]
+#[path = "../../../tests/unit/project/scene/adoption/service_error_tests.rs"]
 mod scene_adoption_error_tests;
 use self::read::project_list_item;
 pub(super) use self::read::{project_tree, repository_summary};

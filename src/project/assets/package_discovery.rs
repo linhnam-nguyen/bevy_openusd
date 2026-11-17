@@ -99,5 +99,5 @@ fn canonical_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/stage_archive_tests.rs"]
+#[path = "../../../tests/unit/project/assets/package_discovery_tests.rs"]
 mod tests;

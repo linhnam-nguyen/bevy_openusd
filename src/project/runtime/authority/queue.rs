@@ -344,5 +344,5 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/runtime_authority_queue_test_support.rs"]
+#[path = "../../../../tests/unit/project/runtime/authority/queue_test_support.rs"]
 mod test_support;

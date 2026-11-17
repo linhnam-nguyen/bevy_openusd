@@ -370,9 +370,9 @@ fn adopt_scene_inner(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/scene_adoption/scene_adoption_tests.rs"]
+#[path = "../../../../tests/unit/project/scene/adoption/service_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/scene_adoption/scene_adoption_sync_tests.rs"]
+#[path = "../../../../tests/unit/project/scene/adoption/sync_tests.rs"]
 mod sync_tests;

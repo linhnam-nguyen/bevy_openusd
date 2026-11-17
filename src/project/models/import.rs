@@ -128,5 +128,5 @@ fn ensure_model_importable(inspection: &CompositionInspection) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/model_import_tests.rs"]
+#[path = "../../../tests/unit/project/models/import_tests.rs"]
 mod tests;

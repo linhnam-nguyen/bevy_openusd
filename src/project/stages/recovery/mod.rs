@@ -314,5 +314,5 @@ fn unix_time_ms() -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/recovery_tests.rs"]
+#[path = "../../../../tests/unit/project/stages/recovery/tests.rs"]
 mod tests;

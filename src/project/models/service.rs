@@ -206,5 +206,5 @@ fn publish_model_inner(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/model_tests.rs"]
+#[path = "../../../tests/unit/project/models/service_tests.rs"]
 mod tests;

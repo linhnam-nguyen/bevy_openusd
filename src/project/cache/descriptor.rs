@@ -199,5 +199,5 @@ impl ProjectCacheStore {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/cache_descriptor_tests.rs"]
+#[path = "../../../tests/unit/project/cache/descriptor_tests.rs"]
 mod tests;

@@ -320,9 +320,9 @@ fn ensure_destination_absent(path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/storage/migration_failure_injection_tests.rs"]
+#[path = "../../../../tests/unit/project/storage/migration/failure_injection_tests.rs"]
 mod failure_injection;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/storage/migration_tests.rs"]
+#[path = "../../../../tests/unit/project/storage/migration/tests.rs"]
 mod tests;

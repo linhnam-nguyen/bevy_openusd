@@ -17,5 +17,5 @@ impl ProjectApplicationService {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/service/scene_lifecycle_tests.rs"]
+#[path = "../../../tests/unit/project/scene/lifecycle_tests.rs"]
 mod tests;

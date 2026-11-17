@@ -475,5 +475,5 @@ fn worker_loop(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/cache_warmer_queue_test_support.rs"]
+#[path = "../../../../tests/unit/project/cache/warming/queue_test_support.rs"]
 pub(super) mod test_support;

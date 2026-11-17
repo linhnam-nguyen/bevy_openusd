@@ -1,4 +1,4 @@
-//! Durable semantic snapshots and queries.
+//! Persistent BIM semantic snapshots, queries, Turso storage, and synchronization.
 
 mod migration;
 mod schema;

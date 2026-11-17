@@ -362,9 +362,9 @@ fn apply_mutation(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/stage_mutation_test_support.rs"]
+#[path = "../../../../tests/unit/project/stages/mutation/test_support.rs"]
 pub(in crate::project) mod test_support;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/stage_mutation_tests.rs"]
+#[path = "../../../../tests/unit/project/stages/mutation/tests.rs"]
 mod tests;

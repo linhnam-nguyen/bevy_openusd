@@ -1,4 +1,4 @@
-//! Live stage activation, editing, metadata, inspection, and recovery.
+//! Live stage activation, editing, metadata, inspection, recovery, and archival.
 
 pub(crate) mod activation;
 pub(crate) mod metadata;

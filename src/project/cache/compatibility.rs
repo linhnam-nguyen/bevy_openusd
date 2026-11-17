@@ -35,5 +35,5 @@ fn semantic_config_bytes(hash: HashDigest) -> Vec<u8> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/cache_compatibility_tests.rs"]
+#[path = "../../../tests/unit/project/cache/compatibility_tests.rs"]
 mod tests;

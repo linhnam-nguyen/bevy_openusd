@@ -1,3 +1,5 @@
+//! Project filesystem layout, ignore rules, legacy migration, and durability.
+
 use std::path::PathBuf;
 
 use usd_project::SceneId;

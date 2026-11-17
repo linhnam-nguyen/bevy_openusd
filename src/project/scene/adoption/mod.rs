@@ -386,5 +386,5 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
 pub(crate) use super::members::linked_sync::{LinkedSceneSyncRequest, sync_linked_scene_atomic};
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/scene/adoption_tests.rs"]
+#[path = "../../../../tests/unit/project/scene/adoption/tests.rs"]
 mod adoption_tests;

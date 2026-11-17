@@ -215,5 +215,5 @@ fn cache_object_ref(entry: &SceneCacheEntry) -> CacheObjectRef {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/project/cache_lookup_tests.rs"]
+#[path = "../../../tests/unit/project/cache/lookup_tests.rs"]
 mod tests;

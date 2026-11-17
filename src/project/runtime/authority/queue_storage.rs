@@ -269,5 +269,5 @@ pub(super) fn publish_response(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"]
+#[path = "../../../../tests/unit/project/runtime/authority/queue_storage_test_support.rs"]
 pub(super) mod test_support;

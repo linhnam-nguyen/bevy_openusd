@@ -285,133 +285,133 @@
       "owner_file": "src/project/cache/blobs.rs",
       "module_path": "",
       "mod_name": "repair_tests",
-      "target": "tests/unit/project/blob_store_repair_tests.rs"
+      "target": "tests/unit/project/cache/blobs_repair_tests.rs"
     },
     {
       "owner_file": "src/project/cache/blobs.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/blob_store_tests.rs"
+      "target": "tests/unit/project/cache/blobs_tests.rs"
     },
     {
       "owner_file": "src/project/cache/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_tests.rs"
+      "target": "tests/unit/project/cache/tests.rs"
     },
     {
       "owner_file": "src/project/cache/compatibility.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_compatibility_tests.rs"
+      "target": "tests/unit/project/cache/compatibility_tests.rs"
     },
     {
       "owner_file": "src/project/cache/demand.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_demand_projection_tests.rs"
+      "target": "tests/unit/project/cache/demand_tests.rs"
     },
     {
       "owner_file": "src/project/cache/descriptor.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_descriptor_tests.rs"
+      "target": "tests/unit/project/cache/descriptor_tests.rs"
     },
     {
       "owner_file": "src/project/cache/hydration/mod.rs",
       "module_path": "",
       "mod_name": "benchmark_tests",
-      "target": "tests/unit/project/cache_benchmark_tests.rs"
+      "target": "tests/unit/project/cache/hydration/benchmark_tests.rs"
     },
     {
       "owner_file": "src/project/cache/hydration/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_hydration_tests.rs"
+      "target": "tests/unit/project/cache/hydration/tests.rs"
     },
     {
       "owner_file": "src/project/cache/lookup.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_lookup_tests.rs"
+      "target": "tests/unit/project/cache/lookup_tests.rs"
     },
     {
       "owner_file": "src/project/cache/scene/payload.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_scene_payload_tests.rs"
+      "target": "tests/unit/project/cache/scene/payload_tests.rs"
     },
     {
       "owner_file": "src/project/cache/scene/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_scene_prim_count_tests.rs"
+      "target": "tests/unit/project/cache/scene/prim_count_tests.rs"
     },
     {
       "owner_file": "src/project/cache/scene/store.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_scene_store_tests.rs"
+      "target": "tests/unit/project/cache/scene/store_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/runtime.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_warm_runtime_tests.rs"
+      "target": "tests/unit/project/cache/warming/runtime_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "closure_tests",
-      "target": "tests/unit/project/cache_warmer_closure_tests.rs"
+      "target": "tests/unit/project/cache/warming/closure_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "generation_tests",
-      "target": "tests/unit/project/cache_warmer_generation_tests.rs"
+      "target": "tests/unit/project/cache/warming/generation_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "legacy_migration_tests",
-      "target": "tests/unit/project/cache_warmer_legacy_migration_tests.rs"
+      "target": "tests/unit/project/cache/warming/legacy_migration_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "lifecycle_tests",
-      "target": "tests/unit/project/cache_warmer_lifecycle_tests.rs"
+      "target": "tests/unit/project/cache/warming/lifecycle_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "preparation",
-      "target": "tests/unit/project/cache_warmer_preparation_tests.rs"
+      "target": "tests/unit/project/cache/warming/preparation_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "recovery_tests",
-      "target": "tests/unit/project/cache_warmer_recovery_tests.rs"
+      "target": "tests/unit/project/cache/warming/recovery_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_warmer_tests.rs"
+      "target": "tests/unit/project/cache/warming/tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/enqueue.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/cache_warmer_enqueue_tests.rs"
+      "target": "tests/unit/project/cache/warming/enqueue_tests.rs"
     },
     {
       "owner_file": "src/project/cache/warming/queue.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/project/cache_warmer_queue_test_support.rs"
+      "target": "tests/unit/project/cache/warming/queue_test_support.rs"
     },
     {
       "owner_file": "src/project/catalog/catalogue.rs",
@@ -435,61 +435,61 @@
       "owner_file": "src/project/versioning/commit/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/commit/tests.rs"
+      "target": "tests/unit/project/versioning/commit/tests.rs"
     },
     {
       "owner_file": "src/project/cache/historical_geometry/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/ghost_cache/tests.rs"
+      "target": "tests/unit/project/cache/historical_geometry/tests.rs"
     },
     {
       "owner_file": "src/project/models/link.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/link_tests.rs"
+      "target": "tests/unit/project/models/link_tests.rs"
     },
     {
       "owner_file": "src/project/models/import.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/model_import_tests.rs"
+      "target": "tests/unit/project/models/import_tests.rs"
     },
     {
       "owner_file": "src/project/models/wrapper/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/model_wrapper_tests.rs"
+      "target": "tests/unit/project/models/wrapper/tests.rs"
     },
     {
       "owner_file": "src/project/stages/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/prim_count_tests.rs"
+      "target": "tests/unit/project/stages/prim_count_tests.rs"
     },
     {
       "owner_file": "src/project/stages/recovery/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/recovery_tests.rs"
+      "target": "tests/unit/project/stages/recovery/tests.rs"
     },
     {
       "owner_file": "src/project/stages/recovery/worker.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/recovery_worker_tests.rs"
+      "target": "tests/unit/project/stages/recovery/worker_tests.rs"
     },
     {
       "owner_file": "src/project/runtime/delivery.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/runtime_delivery_tests.rs"
+      "target": "tests/unit/project/runtime/delivery_tests.rs"
     },
     {
       "owner_file": "src/project/scene/adoption/mod.rs",
       "module_path": "",
       "mod_name": "adoption_tests",
-      "target": "tests/unit/project/scene/adoption_tests.rs"
+      "target": "tests/unit/project/scene/adoption/tests.rs"
     },
     {
       "owner_file": "src/project/scene/authoring.rs",
@@ -549,49 +549,49 @@
       "owner_file": "src/project/versioning/commit/runtime.rs",
       "module_path": "",
       "mod_name": "lease_tests",
-      "target": "tests/unit/project/service/commit/commit_runtime_lease_tests.rs"
+      "target": "tests/unit/project/versioning/commit/runtime_lease_tests.rs"
     },
     {
       "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "import_tests",
-      "target": "tests/unit/project/service/lifecycle/lifecycle_import_tests.rs"
+      "target": "tests/unit/project/lifecycle/import_tests.rs"
     },
     {
       "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "scene_placement_tests",
-      "target": "tests/unit/project/service/lifecycle/lifecycle_scene_placement_tests.rs"
+      "target": "tests/unit/project/lifecycle/scene_placement_tests.rs"
     },
     {
       "owner_file": "src/project/lifecycle/service.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/lifecycle/lifecycle_tests.rs"
+      "target": "tests/unit/project/lifecycle/service_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "branch_projection_tests",
-      "target": "tests/unit/project/service/branch/branch_projection_tests.rs"
+      "target": "tests/unit/project/versioning/branch_projection_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "branch_tests",
-      "target": "tests/unit/project/service/branch/branch_tests.rs"
+      "target": "tests/unit/project/versioning/branch_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "commit_tests",
-      "target": "tests/unit/project/service/commit/commit_tests.rs"
+      "target": "tests/unit/project/versioning/commit/service_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "deletion_tests",
-      "target": "tests/unit/project/service/deletion/deletion_tests.rs"
+      "target": "tests/unit/project/lifecycle/deletion/deletion_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
@@ -603,13 +603,13 @@
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "export_portability_tests",
-      "target": "tests/unit/project/service/export/export_portability_tests.rs"
+      "target": "tests/unit/project/exchange/export_portability_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "export_tests",
-      "target": "tests/unit/project/service/export/export_tests.rs"
+      "target": "tests/unit/project/exchange/export_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
@@ -627,19 +627,19 @@
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "runtime_authority_queue_tests",
-      "target": "tests/unit/project/service/runtime_authority/runtime_authority_queue_tests.rs"
+      "target": "tests/unit/project/runtime/authority/queue_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "runtime_authority_tests",
-      "target": "tests/unit/project/service/runtime_authority/runtime_authority_tests.rs"
+      "target": "tests/unit/project/runtime/authority/tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
       "module_path": "",
       "mod_name": "scene_adoption_error_tests",
-      "target": "tests/unit/project/service/scene_adoption/scene_adoption_error_tests.rs"
+      "target": "tests/unit/project/scene/adoption/service_error_tests.rs"
     },
     {
       "owner_file": "src/project/service/mod.rs",
@@ -657,133 +657,133 @@
       "owner_file": "src/project/models/service.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/model_tests.rs"
+      "target": "tests/unit/project/models/service_tests.rs"
     },
     {
       "owner_file": "src/project/models/preparation.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/model_preparation_tests.rs"
+      "target": "tests/unit/project/models/preparation_tests.rs"
     },
     {
       "owner_file": "src/project/exchange/progress.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/progress_tests.rs"
+      "target": "tests/unit/project/exchange/progress_tests.rs"
     },
     {
       "owner_file": "src/project/lifecycle/rename.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/project/service/rename_test_support.rs"
+      "target": "tests/unit/project/lifecycle/rename_test_support.rs"
     },
     {
       "owner_file": "src/project/lifecycle/rename.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/rename_tests.rs"
+      "target": "tests/unit/project/lifecycle/rename_tests.rs"
     },
     {
       "owner_file": "src/project/runtime/authority/queue.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/project/service/runtime_authority_queue_test_support.rs"
+      "target": "tests/unit/project/runtime/authority/queue_test_support.rs"
     },
     {
       "owner_file": "src/project/runtime/authority/queue_storage.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/project/service/runtime_authority_queue_storage_test_support.rs"
+      "target": "tests/unit/project/runtime/authority/queue_storage_test_support.rs"
     },
     {
       "owner_file": "src/project/runtime/authority/registry.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/runtime_authority_registry_tests.rs"
+      "target": "tests/unit/project/runtime/authority/registry_tests.rs"
     },
     {
       "owner_file": "src/project/scene/adoption/service.rs",
       "module_path": "",
       "mod_name": "sync_tests",
-      "target": "tests/unit/project/service/scene_adoption/scene_adoption_sync_tests.rs"
+      "target": "tests/unit/project/scene/adoption/sync_tests.rs"
     },
     {
       "owner_file": "src/project/scene/adoption/service.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/scene_adoption/scene_adoption_tests.rs"
+      "target": "tests/unit/project/scene/adoption/service_tests.rs"
     },
     {
       "owner_file": "src/project/scene/adoption/errors.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/scene_adoption_errors_tests.rs"
+      "target": "tests/unit/project/scene/adoption/errors_tests.rs"
     },
     {
       "owner_file": "src/project/scene/inspection_queue.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/scene_inspection_tests.rs"
+      "target": "tests/unit/project/scene/inspection_queue_tests.rs"
     },
     {
       "owner_file": "src/project/scene/lifecycle.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/scene_lifecycle_tests.rs"
+      "target": "tests/unit/project/scene/lifecycle_tests.rs"
     },
     {
       "owner_file": "src/project/stages/activation.rs",
       "module_path": "",
       "mod_name": "authority_tests",
-      "target": "tests/unit/project/service/stage_activation/stage_activation_authority_tests.rs"
+      "target": "tests/unit/project/stages/activation_authority_tests.rs"
     },
     {
       "owner_file": "src/project/assets/package_discovery.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/stage_archive_tests.rs"
+      "target": "tests/unit/project/assets/package_discovery_tests.rs"
     },
     {
       "owner_file": "src/project/stages/mutation/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/project/service/stage_mutation_test_support.rs"
+      "target": "tests/unit/project/stages/mutation/test_support.rs"
     },
     {
       "owner_file": "src/project/stages/mutation/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/service/stage_mutation_tests.rs"
+      "target": "tests/unit/project/stages/mutation/tests.rs"
     },
     {
       "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "optional_tests",
-      "target": "tests/unit/project/source_closure_optional_tests.rs"
+      "target": "tests/unit/project/assets/closure/optional_tests.rs"
     },
     {
       "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "pattern_tests",
-      "target": "tests/unit/project/source_closure_pattern_tests.rs"
+      "target": "tests/unit/project/assets/closure/pattern_tests.rs"
     },
     {
       "owner_file": "src/project/assets/closure/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/source_closure_tests.rs"
+      "target": "tests/unit/project/assets/closure/tests.rs"
     },
     {
       "owner_file": "src/project/assets/spatial.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/spatial_tests.rs"
+      "target": "tests/unit/project/assets/spatial_tests.rs"
     },
     {
       "owner_file": "src/project/stages/metadata.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/stage_metadata_tests.rs"
+      "target": "tests/unit/project/stages/metadata_tests.rs"
     },
     {
       "owner_file": "src/project/storage/mod.rs",
@@ -813,13 +813,13 @@
       "owner_file": "src/project/storage/migration/mod.rs",
       "module_path": "",
       "mod_name": "failure_injection",
-      "target": "tests/unit/project/storage/migration_failure_injection_tests.rs"
+      "target": "tests/unit/project/storage/migration/failure_injection_tests.rs"
     },
     {
       "owner_file": "src/project/storage/migration/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/project/storage/migration_tests.rs"
+      "target": "tests/unit/project/storage/migration/tests.rs"
     },
     {
       "owner_file": "src/viewport/animation/mod.rs",

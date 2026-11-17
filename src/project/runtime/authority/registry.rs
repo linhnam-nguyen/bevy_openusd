@@ -41,5 +41,5 @@ pub(crate) fn unix_time_ms() -> u128 {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/project/service/runtime_authority_registry_tests.rs"]
+#[path = "../../../../tests/unit/project/runtime/authority/registry_tests.rs"]
 mod tests;
