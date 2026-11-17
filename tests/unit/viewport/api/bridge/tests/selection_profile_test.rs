@@ -11,7 +11,7 @@ use viewport_protocol::{
 use super::super::ViewerSettingsState;
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::scene_index::refresh_scene_anchor_index;
+use crate::viewport::api::index::refresh_scene_anchor_index;
 use crate::viewport::api::{CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox};
 use crate::viewport::scene::HoveredTarget;
 use crate::viewport::scene::{

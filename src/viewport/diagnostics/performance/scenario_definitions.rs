@@ -1,4 +1,4 @@
-use super::{BenchmarkScenarioId, ScenarioProbeDefinition};
+use super::scenario::{BenchmarkScenarioId, ScenarioProbeDefinition};
 
 const HUMMINGBIRD: &str = "assets/external/hummingbird.usdz";
 const EMPTY: &str = "tests/fixtures/usd/empty.usda";

@@ -16,11 +16,11 @@ use crate::project::{
 };
 use crate::viewport::residency::{
     PayloadResidencyState, ResidencyAuthority,
+    repair::persistence::TargetedRepairPersistenceWorker,
     repair::{
         TargetedRepairQueue, drain_cached_residency_completions,
         drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
     },
-    repair_persistence::TargetedRepairPersistenceWorker,
     worker::CachedResidencyWorker,
 };
 use bevy::{asset::Assets, mesh::Mesh, prelude::*};

@@ -8,8 +8,6 @@ mod loader;
 mod lru;
 mod projection;
 mod repair;
-mod repair_persistence;
-mod repair_phase;
 mod selection;
 mod spatial;
 mod viewpoint;
@@ -29,10 +27,9 @@ use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;
 pub(crate) use projection::SceneResidencyProjection;
 use repair::{
-    TargetedRepairQueue, drain_cached_residency_completions,
+    TargetedRepairPersistenceWorker, TargetedRepairQueue, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
 };
-use repair_persistence::TargetedRepairPersistenceWorker;
 use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
 use viewpoint::{ActiveViewpointResidencyState, sync_active_viewpoint_residency};
 use worker::{CachedResidencyWorker, LoadedScenePayloadQueue, install_loaded_scene_payloads};

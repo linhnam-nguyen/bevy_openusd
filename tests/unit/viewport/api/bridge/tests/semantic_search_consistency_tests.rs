@@ -6,11 +6,11 @@ use viewport_protocol::{
     ClassificationRecipe, ViewportCommand, ViewportEvent,
 };
 
-use crate::viewport::api::bridge::scene_query::{
+use crate::viewport::api::bridge::query::{
     dispatch_scene_query_commands, publish_scene_query_results, refresh_active_hierarchy_projection,
 };
 use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
-use crate::viewport::api::scene_query::SceneQueryService;
+use crate::viewport::api::query::SceneQueryService;
 use crate::viewport::api::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
     ViewportCommandInbox, ViewportEventOutbox,

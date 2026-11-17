@@ -21,7 +21,7 @@ use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 use viewport_protocol::{BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus, SceneAnchor};
 
-use super::scene_query::LatestMailbox;
+use super::query::LatestMailbox;
 
 const MAX_PROVENANCE_HISTORY: usize = 64;
 

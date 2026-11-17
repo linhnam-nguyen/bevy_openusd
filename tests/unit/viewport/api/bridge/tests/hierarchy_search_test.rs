@@ -6,11 +6,11 @@ mod tests {
     use usd_model::{HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
     use viewport_protocol::*;
 
-    use crate::viewport::api::bridge::scene_query::{
+    use crate::viewport::api::bridge::query::{
         dispatch_scene_query_commands, publish_scene_query_results,
     };
     use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
-    use crate::viewport::api::scene_query::SceneQueryService;
+    use crate::viewport::api::query::SceneQueryService;
     use crate::viewport::api::{
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
         ViewportCommandInbox, ViewportEventOutbox,

@@ -1,1 +1,1 @@
-pub(crate) use super::project_activation::production_tests::ProductionActivationWorld;
+pub(crate) use super::project::activation::production_tests::ProductionActivationWorld;

@@ -5,7 +5,7 @@ use viewport_protocol::*;
 use super::support::command_test_app;
 use crate::viewport::api::ViewportReadModelState;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::scene_index::refresh_scene_anchor_index;
+use crate::viewport::api::index::refresh_scene_anchor_index;
 use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::session::Spawned;

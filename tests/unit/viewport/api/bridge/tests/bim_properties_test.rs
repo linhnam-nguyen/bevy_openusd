@@ -3,9 +3,9 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::viewport::api::bridge::scene_query::dispatch_scene_query_commands;
+    use crate::viewport::api::bridge::query::dispatch_scene_query_commands;
     use crate::viewport::api::bridge::state::SceneSearchRequests;
-    use crate::viewport::api::scene_query::SceneQueryService;
+    use crate::viewport::api::query::SceneQueryService;
     use crate::viewport::api::{
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
         ViewportCommandInbox, ViewportEventOutbox,

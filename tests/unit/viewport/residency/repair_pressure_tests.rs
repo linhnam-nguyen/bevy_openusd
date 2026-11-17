@@ -10,12 +10,10 @@ use crate::project::cache::demand::TargetedPersistenceOutcome;
 
 use super::super::authority::DEFAULT_LOADER_CAPACITY;
 use super::super::loader::LoadJob;
-use super::super::repair_persistence::{
-    TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
-};
-use super::super::repair_phase::RepairPhase;
 use super::super::{PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadKey};
-use super::repair_handoff::{enqueue_lookup_repair, retry_cached_load};
+use super::handoff::{enqueue_lookup_repair, retry_cached_load};
+use super::persistence::{TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker};
+use super::phase::RepairPhase;
 use super::{
     TARGETED_REPAIR_QUEUE_CAPACITY, TargetedRepairQueue, TargetedRepairRequest,
     drain_targeted_repair_persistence_completions,

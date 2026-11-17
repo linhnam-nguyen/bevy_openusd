@@ -3,13 +3,11 @@
 use std::path::PathBuf;
 
 use super::counters::RendererCounters;
+use super::runner_finalize as finalize;
 use super::sample::FrameSample;
 use super::scenario::BenchmarkScenarioId;
 use crate::viewport::transport::FrameTransportResource;
 use bevy::prelude::*;
-
-#[path = "runner_finalize.rs"]
-mod finalize;
 
 /// Launch options configuring automated benchmark execution.
 #[derive(Resource, Debug, Clone)]

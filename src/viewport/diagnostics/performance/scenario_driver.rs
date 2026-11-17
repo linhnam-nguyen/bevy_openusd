@@ -15,8 +15,7 @@ use viewport_protocol::{
     PointerMotion, SessionId, ViewportCommand, ViewportCommandEnvelope,
 };
 
-#[path = "scenario_driver_setup.rs"]
-mod setup;
+use super::scenario_driver_setup as setup;
 pub use setup::setup_scenario_driver_system;
 pub(in crate::viewport) use setup::setup_section_box_smoke_system;
 

@@ -15,7 +15,7 @@ fn runtime_lease_rejects_a_synchronous_authoring_generation_change() {
     let mut world = World::new();
     world.insert_resource(ProjectRuntimeAuthorityRuntime {
         queue: crate::project::service::ProjectRuntimeAuthorityQueue::default(),
-        active_lease: Some(super::super::ActiveProjectRuntimeLease {
+        active_lease: Some(super::super::stage::ActiveProjectRuntimeLease {
             project_id,
             lease_id: "lease".to_owned(),
             session_id,
@@ -33,7 +33,7 @@ fn runtime_lease_rejects_a_synchronous_authoring_generation_change() {
     assert!(live.authoring_generation().0 > 0);
 
     assert!(matches!(
-        super::super::runtime_revision_response(&world, "request", project_id, "lease", 0),
+        super::super::stage::runtime_revision_response(&world, "request", project_id, "lease", 0),
         ProjectRuntimeResponse::Failed {
             code: project_protocol::ProjectWriteErrorCode::ConcurrentChange,
             ..
@@ -102,7 +102,7 @@ fn expired_runtime_lease_unfreezes_live_stage() {
     let mut world = World::new();
     world.insert_resource(ProjectRuntimeAuthorityRuntime {
         queue: crate::project::service::ProjectRuntimeAuthorityQueue::default(),
-        active_lease: Some(super::super::ActiveProjectRuntimeLease {
+        active_lease: Some(super::super::stage::ActiveProjectRuntimeLease {
             project_id,
             lease_id: "expired".to_owned(),
             session_id,
@@ -116,7 +116,7 @@ fn expired_runtime_lease_unfreezes_live_stage() {
         .expect("live stage")
         .try_freeze_authoring();
 
-    super::super::expire_runtime_lease(&mut world);
+    super::super::stage::expire_runtime_lease(&mut world);
 
     assert!(
         !world

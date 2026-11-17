@@ -1,13 +1,11 @@
 use super::super::loader::LoadJob;
-use super::super::repair_persistence::{
-    TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
-};
-use super::super::repair_phase::RepairPhase;
 use super::super::worker::CachedResidencyWorker;
 use super::super::{
     PayloadResidencyState, ResidencyAuthority, ResidencyReason, ScenePayloadCatalog,
     ScenePayloadKey,
 };
+use super::persistence::{TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker};
+use super::phase::RepairPhase;
 use super::{
     TargetedRepairQueue, TargetedRepairRequest, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,

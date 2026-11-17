@@ -11,10 +11,13 @@ mod matrix_probe;
 mod matrix_report;
 mod render_profile;
 pub mod runner;
+mod runner_finalize;
 mod runner_plugin;
 pub mod sample;
 pub mod scenario;
+mod scenario_definitions;
 pub mod scenario_driver;
+mod scenario_driver_setup;
 
 pub use aggregate::{
     CacheSnapshot, FrameTimingAggregate, IncidentGridSummary, IncidentSemanticSummary,

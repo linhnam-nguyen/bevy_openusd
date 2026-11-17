@@ -3,7 +3,7 @@ use std::{fs, sync::Arc, thread, time::Duration};
 use bevy::prelude::World;
 use project_protocol::ProjectCommitTarget;
 
-use super::super::{
+use super::super::stage::{
     ActiveProjectRuntimeLease, ProjectRuntimeAuthorityRuntime, runtime_renew_response,
     runtime_snapshot_response,
 };
@@ -229,15 +229,16 @@ fn timeout_between_export_and_lease_claim_cannot_publish_ready() {
         );
     };
 
-    let response = super::super::project_runtime_snapshot::test_support::runtime_snapshot_response_with_claim_hook(
-        &mut world,
-        "race-request",
-        project_id,
-        scene_id,
-        &queue,
-        directory.path(),
-        &cancel_after_export,
-    );
+    let response =
+        super::super::runtime_snapshot::test_support::runtime_snapshot_response_with_claim_hook(
+            &mut world,
+            "race-request",
+            project_id,
+            scene_id,
+            &queue,
+            directory.path(),
+            &cancel_after_export,
+        );
 
     assert!(matches!(
         response,

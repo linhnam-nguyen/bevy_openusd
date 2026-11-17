@@ -257,7 +257,7 @@ fn decoded_mesh_footprint_replaces_encoded_estimate_before_accounting() {
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0, 0.0, 0.0]; 3]);
     mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
-    let (decoded_cpu, decoded_gpu) = super::authority_loading::resident_mesh_footprint(&mesh);
+    let (decoded_cpu, decoded_gpu) = super::loading::resident_mesh_footprint(&mesh);
     assert!(decoded_cpu > encoded_bytes);
     assert!(decoded_gpu > encoded_bytes);
     let mut authority = ResidencyAuthority::with_budgets(ResidencyBudgets {

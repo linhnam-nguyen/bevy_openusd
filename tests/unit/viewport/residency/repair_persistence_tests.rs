@@ -21,11 +21,11 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry,
 
 use super::super::ScenePayloadKey;
 use super::super::loader::LoadJob;
-use super::super::repair_persistence::{
+use super::persistence::{
     TargetedRepairPersistenceCompletion, TargetedRepairPersistenceRequest,
     TargetedRepairPersistenceWorker,
 };
-use super::super::repair_phase::RepairPhase;
+use super::phase::RepairPhase;
 
 fn mesh() -> Mesh {
     let mut mesh = Mesh::new(

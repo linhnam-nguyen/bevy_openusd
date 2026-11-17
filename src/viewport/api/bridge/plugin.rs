@@ -3,9 +3,9 @@ use usd_bevy::LiveStage;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 
 use super::ViewerSettingsState;
-use super::bim_properties_lifecycle::{PendingBimProperties, replay_pending_bim_properties};
+use super::bim::properties_lifecycle::{PendingBimProperties, replay_pending_bim_properties};
 use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
-use super::scene_query::{
+use super::query::{
     dispatch_scene_query_commands, publish_scene_query_results, publish_stage_load_state,
     refresh_active_hierarchy_projection,
 };
@@ -44,7 +44,7 @@ impl Plugin for ViewportBridgePlugin {
             .init_resource::<ActiveHierarchyProvider>()
             .init_resource::<BimClassificationRecipeState>()
             .init_resource::<CurrentHierarchyProjection>()
-            .init_resource::<crate::viewport::api::scene_query::SceneQueryService>()
+            .init_resource::<crate::viewport::api::query::SceneQueryService>()
             .init_resource::<BimProvenanceService>()
             .init_resource::<BimClassificationFieldCatalogueState>()
             .init_resource::<SelectedTargets>()
@@ -75,7 +75,7 @@ impl Plugin for ViewportBridgePlugin {
             )
             .add_systems(
                 Update,
-                super::super::scene_index::refresh_scene_anchor_index
+                super::super::index::refresh_scene_anchor_index
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
             .add_systems(
@@ -85,7 +85,7 @@ impl Plugin for ViewportBridgePlugin {
                     replay_pending_bim_properties,
                 )
                     .chain()
-                    .after(super::super::scene_index::refresh_scene_anchor_index)
+                    .after(super::super::index::refresh_scene_anchor_index)
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
             // LiveStagePlugin drains and reprojects in Update. PostUpdate is
@@ -129,7 +129,7 @@ impl Plugin for ViewportBridgePlugin {
                 Update,
                 reduce_authoritative_events.in_set(ViewportBridgeSet::ReduceEvents),
             );
-        super::super::scene_index::register_scene_index_observers(app);
+        super::super::index::register_scene_index_observers(app);
     }
 }
 

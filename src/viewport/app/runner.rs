@@ -1,4 +1,4 @@
-use super::{cadence, headless, offscreen_resize, project_activation, project_stage, scene, sync};
+use super::{cadence, headless, offscreen_resize, project, runner_projection, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -39,8 +39,6 @@ use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground
 use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
-#[path = "runner_projection.rs"]
-mod runner_projection;
 pub(crate) fn run() {
     let launch_options = match parse_launch_options(std::env::args().skip(1)) {
         Ok(options) => options,
@@ -136,8 +134,8 @@ pub(crate) fn run() {
             0x4A, 0x90, 0xE2,
         )))
         .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
-    project_stage::install(&mut app);
-    project_activation::install(&mut app);
+    project::stage::install(&mut app);
+    project::activation::install(&mut app);
     if launch_options.headless {
         app.add_plugins(headless::HeadlessRenderPlugin {
             width: launch_options.width,

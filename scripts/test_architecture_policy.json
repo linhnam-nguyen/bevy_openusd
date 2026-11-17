@@ -834,7 +834,7 @@
       "target": "tests/unit/viewport/api/bim_provenance_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/bridge/bim_properties_lifecycle.rs",
+      "owner_file": "src/viewport/api/bridge/bim/properties_lifecycle.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/api/bridge/bim_properties_lifecycle_test_support.rs"
@@ -894,31 +894,31 @@
       "target": "tests/unit/viewport/api/read_model/tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/scene_index.rs",
+      "owner_file": "src/viewport/api/index/mod.rs",
       "module_path": "",
       "mod_name": "lifecycle_tests",
       "target": "tests/unit/viewport/api/scene_index_lifecycle_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/scene_index.rs",
+      "owner_file": "src/viewport/api/index/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/api/scene_index_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/api/scene_index.rs",
+      "owner_file": "src/viewport/api/index/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/api/scene_index_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/scene_index_reconcile.rs",
+      "owner_file": "src/viewport/api/index/reconcile.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/api/scene_index_reconcile_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/scene_query.rs",
+      "owner_file": "src/viewport/api/query/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/api/scene_query_tests.rs"
@@ -954,61 +954,61 @@
       "target": "tests/unit/viewport/app/offscreen_resize_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation.rs",
+      "owner_file": "src/viewport/app/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "cache_tests",
       "target": "tests/unit/viewport/app/project_activation_cache_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation.rs",
+      "owner_file": "src/viewport/app/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "production_tests",
       "target": "tests/unit/viewport/app/project_activation_production_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation.rs",
+      "owner_file": "src/viewport/app/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/app/project_activation_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation.rs",
+      "owner_file": "src/viewport/app/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/app/project_activation_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation_flow.rs",
+      "owner_file": "src/viewport/app/project/activation/flow.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/app/project_activation_flow_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_activation_queue.rs",
+      "owner_file": "src/viewport/app/project/activation/queue.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/app/project_activation_queue_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_runtime_authority.rs",
+      "owner_file": "src/viewport/app/project/runtime_authority.rs",
       "module_path": "",
       "mod_name": "lease_tests",
       "target": "tests/unit/viewport/app/project_runtime_authority_lease_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_runtime_authority.rs",
+      "owner_file": "src/viewport/app/project/runtime_authority.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/app/project_runtime_authority_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_runtime_snapshot.rs",
+      "owner_file": "src/viewport/app/project/runtime_snapshot.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/app/project_runtime_snapshot_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project_stage.rs",
+      "owner_file": "src/viewport/app/project/stage.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/app/project_stage_tests.rs"
@@ -1020,7 +1020,7 @@
       "target": "tests/unit/viewport/app/sync_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/bim/authoring.rs",
+      "owner_file": "src/viewport/bim/authoring/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/bim/authoring_tests.rs"
@@ -1212,31 +1212,31 @@
       "target": "tests/unit/viewport/residency/animation_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/authority.rs",
+      "owner_file": "src/viewport/residency/authority/mod.rs",
       "module_path": "",
       "mod_name": "payload_satisfaction_tests",
       "target": "tests/unit/viewport/residency/authority_payload_satisfaction_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/authority.rs",
+      "owner_file": "src/viewport/residency/authority/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/residency/authority_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/authority_loading.rs",
+      "owner_file": "src/viewport/residency/authority/loading.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/residency/authority_loading_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/residency/authority_loading.rs",
+      "owner_file": "src/viewport/residency/authority/loading.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/residency/authority_loading_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/authority_runtime.rs",
+      "owner_file": "src/viewport/residency/authority/runtime.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/residency/authority_runtime_inline_tests.rs"
@@ -1284,37 +1284,37 @@
       "target": "tests/unit/viewport/residency/projection_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair.rs",
+      "owner_file": "src/viewport/residency/repair/mod.rs",
       "module_path": "",
       "mod_name": "integration_tests",
       "target": "tests/unit/viewport/residency/repair_integration_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair.rs",
+      "owner_file": "src/viewport/residency/repair/mod.rs",
       "module_path": "",
       "mod_name": "persistence_tests",
       "target": "tests/unit/viewport/residency/repair_persistence_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair.rs",
+      "owner_file": "src/viewport/residency/repair/mod.rs",
       "module_path": "",
       "mod_name": "pressure_tests",
       "target": "tests/unit/viewport/residency/repair_pressure_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair.rs",
+      "owner_file": "src/viewport/residency/repair/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/residency/repair_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair.rs",
+      "owner_file": "src/viewport/residency/repair/mod.rs",
       "module_path": "",
       "mod_name": "waiting_tests",
       "target": "tests/unit/viewport/residency/repair_waiting_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/repair_persistence.rs",
+      "owner_file": "src/viewport/residency/repair/persistence.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/residency/repair_persistence_test_support.rs"
@@ -1344,31 +1344,31 @@
       "target": "tests/unit/viewport/residency/viewpoint_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/residency/worker.rs",
+      "owner_file": "src/viewport/residency/worker/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/residency/worker_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/residency/worker.rs",
+      "owner_file": "src/viewport/residency/worker/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/residency/worker_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color.rs",
+      "owner_file": "src/viewport/scene/classification_color/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/classification_color_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color_plan.rs",
+      "owner_file": "src/viewport/scene/classification_color/plan.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/scene/classification_color_plan_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color_plan.rs",
+      "owner_file": "src/viewport/scene/classification_color/plan.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/classification_color_plan_inline_tests.rs"
@@ -1398,127 +1398,127 @@
       "target": "tests/unit/viewport/scene/ghost/tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box.rs",
+      "owner_file": "src/viewport/scene/section_box/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/section_box_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box_clipping.rs",
+      "owner_file": "src/viewport/scene/section_box/clipping/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/section_box_clipping_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box_face.rs",
+      "owner_file": "src/viewport/scene/section_box/face.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/section_box_face_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box_gizmo.rs",
+      "owner_file": "src/viewport/scene/section_box/gizmo.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/section_box_gizmo_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/section_box_visualization.rs",
+      "owner_file": "src/viewport/scene/section_box/visualization.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/section_box_visualization_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection.rs",
+      "owner_file": "src/viewport/scene/selection/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/selection_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection_color.rs",
+      "owner_file": "src/viewport/scene/selection/color/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/selection_color_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection_hover.rs",
+      "owner_file": "src/viewport/scene/selection/hover.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/selection_hover_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection_outline.rs",
+      "owner_file": "src/viewport/scene/selection/outline/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/selection_outline_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection_presentation_proxy.rs",
+      "owner_file": "src/viewport/scene/selection/presentation/proxy.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/selection_presentation_proxy_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/selection_projection.rs",
+      "owner_file": "src/viewport/scene/selection/projection/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/scene/selection_projection_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/solari.rs",
+      "owner_file": "src/viewport/scene/solari/mod.rs",
       "module_path": "",
       "mod_name": "projection_asset_tests",
       "target": "tests/unit/viewport/scene/solari_projection_asset_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/solari.rs",
+      "owner_file": "src/viewport/scene/solari/mod.rs",
       "module_path": "",
       "mod_name": "projection_tests",
       "target": "tests/unit/viewport/scene/solari_projection_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/solari.rs",
+      "owner_file": "src/viewport/scene/solari/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/solari_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/solari_projection.rs",
+      "owner_file": "src/viewport/scene/solari/projection.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/scene/solari_projection_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization.rs",
+      "owner_file": "src/viewport/scene/visualization/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/visualization_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization_environment.rs",
+      "owner_file": "src/viewport/scene/visualization/environment.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/visualization_environment_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization_render_mode.rs",
+      "owner_file": "src/viewport/scene/visualization/render_mode.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/scene/visualization_render_mode_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization_render_mode.rs",
+      "owner_file": "src/viewport/scene/visualization/render_mode.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/visualization_render_mode_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization_shadows.rs",
+      "owner_file": "src/viewport/scene/visualization/shadows.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/scene/visualization_shadows_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/visualization_shadows.rs",
+      "owner_file": "src/viewport/scene/visualization/shadows.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/scene/visualization_shadows_tests.rs"
@@ -1578,31 +1578,31 @@
       "target": "tests/unit/viewport/session/cache_presentation_gate_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle.rs",
+      "owner_file": "src/viewport/session/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "cache_tests",
       "target": "tests/unit/viewport/session/lifecycle_cache_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle.rs",
+      "owner_file": "src/viewport/session/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
       "target": "tests/unit/viewport/session/lifecycle_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle.rs",
+      "owner_file": "src/viewport/session/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/session/lifecycle_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle_prim_count.rs",
+      "owner_file": "src/viewport/session/lifecycle/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/session/lifecycle_prim_count_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle_scene_presentation.rs",
+      "owner_file": "src/viewport/session/lifecycle/scene_presentation.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/session/lifecycle_scene_presentation_inline_tests.rs"
@@ -1666,7 +1666,7 @@
       "path": "src/viewport/api/bridge/helpers.rs",
       "owner": "src/viewport/api/bridge/mod.rs",
       "consumers": [
-        "src/viewport/api/bridge/commands.rs",
+        "src/viewport/api/bridge/commands/mod.rs",
         "src/viewport/api/bridge/save.rs",
         "src/viewport/api/bridge/tree.rs"
       ],
@@ -1674,10 +1674,10 @@
       "status": "approved"
     },
     {
-      "path": "src/viewport/app/project_activation_flow_helpers.rs",
-      "owner": "src/viewport/app/project_activation_flow.rs",
+      "path": "src/viewport/app/project/activation/support.rs",
+      "owner": "src/viewport/app/project/activation/mod.rs",
       "consumers": [
-        "src/viewport/app/project_activation_flow.rs"
+        "src/viewport/app/project/activation/flow.rs"
       ],
       "reason": "Production project activation state-machine helper module split from project_activation_flow.rs.",
       "status": "approved"
@@ -1693,19 +1693,19 @@
       "status": "approved"
     },
     {
-      "path": "src/viewport/scene/section_box_clipping_support.rs",
-      "owner": "src/viewport/scene/section_box_clipping.rs",
+      "path": "src/viewport/scene/section_box/clipping/support.rs",
+      "owner": "src/viewport/scene/section_box/clipping/mod.rs",
       "consumers": [
-        "src/viewport/scene/section_box_clipping_sync.rs"
+        "src/viewport/scene/section_box/clipping/sync.rs"
       ],
       "reason": "Production section-box clipping plane/AABB math helpers split from section_box_clipping.rs and used by section_box_clipping_sync.rs.",
       "status": "approved"
     },
     {
-      "path": "src/viewport/scene/solari_projection_support.rs",
-      "owner": "src/viewport/scene/solari_projection.rs",
+      "path": "src/viewport/scene/solari/support.rs",
+      "owner": "src/viewport/scene/solari/mod.rs",
       "consumers": [
-        "src/viewport/scene/solari_projection.rs"
+        "src/viewport/scene/solari/projection.rs"
       ],
       "reason": "Production Solari projection material/mesh conversion helpers split from solari_projection.rs.",
       "status": "approved"

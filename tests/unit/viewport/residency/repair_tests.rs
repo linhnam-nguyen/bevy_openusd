@@ -1,4 +1,4 @@
-use super::super::repair_phase::RepairPhase;
+use super::phase::RepairPhase;
 use super::*;
 use crate::project::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,

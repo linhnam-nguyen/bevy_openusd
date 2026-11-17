@@ -1,4 +1,4 @@
-use super::edge::{EdgeOverlay, EdgeOverlayMaterial};
+use super::edge::{EdgeOverlay, EdgeOverlayMaterial, mesh as edge_mesh};
 use super::*;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};

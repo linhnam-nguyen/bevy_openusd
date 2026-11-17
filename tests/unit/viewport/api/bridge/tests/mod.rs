@@ -1,7 +1,7 @@
 // Test submodules for src/viewport/api/bridge.
 // Split by concern to stay within the 400-line per-file budget.
 
-pub(in crate::viewport) use super::scene_query::refresh_active_hierarchy_projection;
+pub(in crate::viewport) use super::query::refresh_active_hierarchy_projection;
 
 #[path = "bim_edit_test.rs"]
 mod bim_edit_test;

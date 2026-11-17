@@ -1,6 +1,5 @@
 //! Current model source, load lifecycle, and stage-derived read model.
 
-#[path = "cache_presentation_gate.rs"]
 mod cache_presentation_gate;
 mod lifecycle;
 mod state;

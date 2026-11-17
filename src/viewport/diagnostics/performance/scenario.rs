@@ -1,9 +1,7 @@
 //! Scenario definitions and invariant steady-state expectations for rendering benchmarks (S1..S24).
 
+use super::scenario_definitions;
 use serde::{Deserialize, Serialize};
-
-#[path = "scenario_definitions.rs"]
-mod scenario_definitions;
 
 /// Canonical Benchmark Scenario Identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -172,7 +170,12 @@ pub struct ScenarioProbeDefinition {
 }
 
 impl ScenarioProbeDefinition {
-    fn new(id: BenchmarkScenarioId, title: &str, fixture: Option<&str>, grid: bool) -> Self {
+    pub(super) fn new(
+        id: BenchmarkScenarioId,
+        title: &str,
+        fixture: Option<&str>,
+        grid: bool,
+    ) -> Self {
         Self {
             id,
             code: id.code().to_string(),

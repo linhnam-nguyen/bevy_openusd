@@ -17,13 +17,11 @@ use crate::project::cache::demand::{
 };
 
 use super::super::loader::LoadJob;
-use super::super::repair_persistence::{
-    TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker,
-};
-use super::super::repair_phase::RepairPhase;
 use super::super::{
     PayloadResidencyState, ResidencyAuthority, ResidencyBudgets, ResidencyReason, ScenePayloadKey,
 };
+use super::persistence::{TargetedRepairPersistenceCompletion, TargetedRepairPersistenceWorker};
+use super::phase::RepairPhase;
 use super::{
     TARGETED_REPAIR_QUEUE_CAPACITY, TargetedRepairQueue, TargetedRepairRequest,
     drain_targeted_repair_persistence_completions,

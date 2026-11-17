@@ -1,4 +1,4 @@
-//! Release benchmark for the M3 renderer configuration matrix and cadence.
+//! Release benchmark for the renderer configuration matrix and cadence.
 
 use bevy::prelude::*;
 use viewport_protocol::{RenderMode as ProtocolRenderMode, RendererConfiguration, ViewportCommand};

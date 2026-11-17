@@ -31,7 +31,7 @@ pub(super) fn apply_editor_command(
     cache_warm: &ProjectCacheWarmQueue,
     selected_targets: &SelectedTargets,
 ) -> bool {
-    let (command, request_id) = match super::bim_commands::try_apply_bim_command(
+    let (command, request_id) = match super::bim::commands::try_apply_bim_command(
         command,
         request_id,
         outbox,

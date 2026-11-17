@@ -5,17 +5,15 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use bevy_glacial::prelude::GroundGrid;
 
-use super::super::aggregate::{
+use super::aggregate::{
     IncidentGridSummary, IncidentSemanticSummary, IsolationReportSummary, PerformanceReport,
     RendererCadenceSummary, WebRtcReportSummary, aggregate_frames,
 };
-use super::super::collector::{
-    collect_cache_snapshot_from_world, collect_phase_metrics_from_world,
-};
-use super::super::counters::RendererCounters;
-use super::super::runner::{BenchmarkLaunchConfig, BenchmarkRunState};
-use super::super::sample::{BenchmarkIdentity, RenderConfiguration, RenderMode};
-use super::super::scenario::{ScenarioProbeDefinition, SteadyStateExpectations};
+use super::collector::{collect_cache_snapshot_from_world, collect_phase_metrics_from_world};
+use super::counters::RendererCounters;
+use super::runner::{BenchmarkLaunchConfig, BenchmarkRunState};
+use super::sample::{BenchmarkIdentity, RenderConfiguration, RenderMode};
+use super::scenario::{ScenarioProbeDefinition, SteadyStateExpectations};
 use crate::viewport::semantic::SemanticWorkingStore;
 use crate::viewport::transport::FrameTransportResource;
 
@@ -180,8 +178,7 @@ pub(super) fn finalize_benchmark_report(world: &mut World) {
                 .cloned()
         })
         .flatten();
-    let geometry_render_preparation =
-        super::super::render_profile::snapshot(world, config.mesh_profile);
+    let geometry_render_preparation = super::render_profile::snapshot(world, config.mesh_profile);
     let cache_snapshot = collect_cache_snapshot_from_world(world);
     let (gpu_adapter, backend) = world
         .get_resource::<bevy::render::renderer::RenderAdapterInfo>()

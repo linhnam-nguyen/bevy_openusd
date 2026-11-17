@@ -7,12 +7,11 @@ mod bim_provenance;
 mod bridge;
 mod hierarchy;
 mod hierarchy_visibility;
+mod index;
 mod interface;
+mod query;
 mod queues;
 mod read_model;
-mod scene_index;
-mod scene_occurrence_index;
-mod scene_query;
 mod session_registry;
 
 pub(crate) use bim_provenance::BimProvenanceService;
@@ -25,12 +24,12 @@ pub(crate) use hierarchy::{
     HierarchyPageIndex, HierarchyVisibilityIndex, HierarchyVisibilityTarget,
 };
 pub(crate) use hierarchy_visibility::refresh_projection_visibility;
+pub(crate) use index::SceneAnchorIndex;
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
 pub(crate) use read_model::ViewportReadModelState;
-pub(crate) use scene_index::SceneAnchorIndex;
 pub(crate) use session_registry::SessionRegistry;
 
 #[cfg(test)]

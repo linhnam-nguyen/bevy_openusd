@@ -3,13 +3,13 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::{SelectionReadModel, ViewportCommand, ViewportEvent};
 
-    use crate::viewport::api::bridge::bim_properties_lifecycle::{
+    use crate::viewport::api::bridge::bim::properties_lifecycle::{
         PendingBimProperties, replay_pending_bim_properties,
     };
-    use crate::viewport::api::bridge::scene_query::dispatch_scene_query_commands;
+    use crate::viewport::api::bridge::query::dispatch_scene_query_commands;
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::bridge::tests::support;
-    use crate::viewport::api::scene_query::SceneQueryService;
+    use crate::viewport::api::query::SceneQueryService;
     use crate::viewport::api::{
         CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
     };

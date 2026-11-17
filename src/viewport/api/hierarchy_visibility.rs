@@ -7,7 +7,7 @@ use viewport_protocol::{
 };
 
 use super::hierarchy::{CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityTarget};
-use super::scene_index::SceneAnchorIndex;
+use super::index::SceneAnchorIndex;
 
 impl CurrentHierarchyProjection {
     pub(crate) fn visibility_targets(
