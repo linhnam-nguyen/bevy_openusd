@@ -85,8 +85,8 @@ fn linked_scene_keeps_snapshot_when_external_source_disappears() {
         .unwrap();
 
     assert_eq!(
-        crate::project::link::status(&parent.join("Project"), linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::InSync
+        crate::project::models::link::status(&parent.join("Project"), linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::InSync
     );
     assert!(
         crate::project::scene::authoring::scene_path(&parent.join("Project"), linked.scene_id)
@@ -95,8 +95,8 @@ fn linked_scene_keeps_snapshot_when_external_source_disappears() {
 
     fs::remove_file(&source).unwrap();
     assert_eq!(
-        crate::project::link::status(&parent.join("Project"), linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::SourceUnavailable
+        crate::project::models::link::status(&parent.join("Project"), linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::SourceUnavailable
     );
     assert!(
         crate::project::scene::authoring::scene_path(&parent.join("Project"), linked.scene_id)
@@ -155,8 +155,8 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     )
     .unwrap();
     assert_eq!(
-        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::OutOfSync
+        crate::project::models::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::OutOfSync
     );
     let synced = service
         .sync_linked_scene(summary.id, linked.scene_id, "sync-operation".to_owned(), 2)
@@ -174,8 +174,8 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
         before
     );
     assert_eq!(
-        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::InSync
+        crate::project::models::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::InSync
     );
     let manifest = ManifestStore::read_validated(&project_root).unwrap();
     assert_eq!(
@@ -238,7 +238,7 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
         .unwrap();
     let project_root = parent.join("Project");
     let scene_path = crate::project::scene::authoring::scene_path(&project_root, linked.scene_id);
-    let binding_path = crate::project::link::binding_path(&project_root, linked.scene_id);
+    let binding_path = crate::project::models::link::binding_path(&project_root, linked.scene_id);
     let source_snapshot = project_root
         .join("imports/scenes")
         .join(linked.scene_id.to_string())
@@ -253,8 +253,8 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
     )
     .unwrap();
     assert_eq!(
-        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::OutOfSync
+        crate::project::models::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::OutOfSync
     );
 
     failure_trigger.fail_before_batch_index(0);

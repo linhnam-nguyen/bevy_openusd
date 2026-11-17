@@ -7,7 +7,7 @@ use usd_project::{ModelId, SceneId, SceneMember, SceneMemberId, SceneMemberTarge
 use super::{
     LEGACY_SCENE_SCHEMA_VERSION, MEMBER_ID_METADATA, MEMBER_NAME_METADATA,
     MEMBER_TARGET_ID_METADATA, MEMBER_TARGET_KIND_METADATA, REFERENCES_FIELD, SCENE_MEMBERS_PRIM,
-    SCENE_ROOT_PRIM, SCENE_SCHEMA_VERSION, SCHEMA_VERSION_METADATA, placement_transform,
+    SCENE_ROOT_PRIM, SCENE_SCHEMA_VERSION, SCHEMA_VERSION_METADATA,
 };
 
 pub(crate) fn validate_scene_file(
@@ -171,7 +171,7 @@ fn read_scene_member_at_path(
         id: member_id,
         target,
         name,
-        transform: placement_transform::read_scene_member_transform(&member)?,
+        transform: super::super::members::placement::read_scene_member_transform(&member)?,
     })
 }
 

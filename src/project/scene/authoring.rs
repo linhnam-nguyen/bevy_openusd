@@ -10,31 +10,23 @@ use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
 };
 
-use super::placement_transform;
-
-#[path = "member_authoring.rs"]
-mod member_authoring;
-pub(crate) use member_authoring::{author_scene_member, author_scene_member_at_path};
+pub(crate) use super::members::authoring::{author_scene_member, author_scene_member_at_path};
 #[path = "reader.rs"]
 mod reader;
+pub(crate) use super::members::display_name::{
+    update_display_name_atomic, update_member_display_name_atomic,
+};
+pub(crate) use super::members::lifecycle::replace_scene_members_atomic;
 pub(crate) use reader::{
     legacy_scene_member_path, member_custom_data, prepare_scene_for_direct_members,
     read_scene_member, read_scene_members, scene_member_path, scene_member_path_for_stage,
     validate_scene_file,
 };
-#[path = "display_name_authoring.rs"]
-mod display_name_authoring;
-pub(crate) use display_name_authoring::{
-    update_display_name_atomic, update_member_display_name_atomic,
-};
-#[path = "member_lifecycle.rs"]
-mod member_lifecycle;
-pub(crate) use member_lifecycle::replace_scene_members_atomic;
 #[path = "publication.rs"]
 mod publication;
 pub(crate) use publication::{author_scene_atomic_at_path, scene_path, scene_path_for_entry};
 
-const SCENE_ROOT_PRIM: &str = "SceneRoot";
+pub(super) const SCENE_ROOT_PRIM: &str = "SceneRoot";
 const SCENE_MEMBERS_PRIM: &str = "Members";
 const SCENE_ID_METADATA: &str = "usdhub:sceneId";
 const SCHEMA_VERSION_METADATA: &str = "usdhub:schemaVersion";
@@ -42,7 +34,7 @@ const MEMBER_ID_METADATA: &str = "usdhub:memberId";
 const MEMBER_TARGET_KIND_METADATA: &str = "usdhub:targetKind";
 const MEMBER_TARGET_ID_METADATA: &str = "usdhub:targetId";
 const MEMBER_NAME_METADATA: &str = "usdhub:name";
-const REFERENCES_FIELD: &str = "references";
+pub(super) const REFERENCES_FIELD: &str = "references";
 const PROTECTED_ROOT_METADATA: &str = "usdhub:protectedRoot";
 const SCENE_SCHEMA_VERSION: i32 = 2;
 const LEGACY_SCENE_SCHEMA_VERSION: i32 = 1;

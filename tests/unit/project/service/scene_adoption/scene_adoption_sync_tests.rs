@@ -86,8 +86,8 @@ fn syncing_linked_child_refreshes_an_active_project_root() {
     )
     .unwrap();
     assert_eq!(
-        crate::project::link::status(&project_root, linked.scene_id).unwrap(),
-        crate::project::link::LinkedSourceStatus::OutOfSync
+        crate::project::models::link::status(&project_root, linked.scene_id).unwrap(),
+        crate::project::models::link::LinkedSourceStatus::OutOfSync
     );
     service
         .sync_linked_scene(project.id, linked.scene_id, "sync-operation".to_owned(), 2)

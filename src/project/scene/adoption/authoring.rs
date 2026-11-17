@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use openusd::{sdf, sdf::Value, usd::Stage};
 use usd_project::{ModelId, SceneId, SceneMember, SceneMemberTarget};
 
-use super::authoring;
+use super::super::authoring;
 
 const SCENE_ROOT_PRIM: &str = "SceneRoot";
 const SOURCE_PRIM: &str = "Source";

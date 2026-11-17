@@ -17,7 +17,7 @@ use super::{
     ProjectCacheTarget, SceneCacheStore,
 };
 use crate::project::{
-    catalog::manifest_store::ManifestStore, model_wrapper::model_wrapper_path,
+    catalog::manifest_store::ManifestStore, models::wrapper::model_wrapper_path,
     scene::authoring::scene_path,
 };
 

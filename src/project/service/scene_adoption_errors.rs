@@ -1,6 +1,6 @@
 use project_protocol::ProjectWriteErrorCode;
 
-use crate::project::scene::adoption_support::{AdoptionPhaseError, SourceRevalidationError};
+use crate::project::scene::adoption::support::{AdoptionPhaseError, SourceRevalidationError};
 
 pub(super) fn source_revalidation_error_code(
     error: &SourceRevalidationError,

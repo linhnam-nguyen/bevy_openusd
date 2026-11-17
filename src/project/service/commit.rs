@@ -231,7 +231,7 @@ fn synchronize_scene_scope(
         synchronize_absolute_path(project_root, staging, &imports)?;
     }
     for model_id in models {
-        let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model_id);
+        let wrapper = crate::project::models::wrapper::model_wrapper_path(project_root, model_id);
         let model_directory = wrapper.parent().ok_or_else(commit_error)?;
         synchronize_absolute_path(project_root, staging, model_directory)?;
         let imports = crate::project::storage::ProjectStorageLayout::new(project_root)

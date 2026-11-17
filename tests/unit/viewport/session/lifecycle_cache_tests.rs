@@ -111,7 +111,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     fs::copy(&source, &project_source).expect("copy source into Project");
     let spatial =
         crate::project::assets::spatial::inspect_source(&source).expect("inspect source A");
-    crate::project::scene::adoption_authoring::author_scene_wrapper_to_path(
+    crate::project::scene::adoption::authoring::author_scene_wrapper_to_path(
         &scene_path,
         project.path(),
         &scene_path,

@@ -46,7 +46,7 @@ pub(super) fn verify_scene_placement(
     if linked_marker != linked {
         return Err(format!("Scene {scene_id} Import/Link marker mismatch"));
     }
-    if linked && !crate::project::link::binding_path(project_root, scene_id).is_file() {
+    if linked && !crate::project::models::link::binding_path(project_root, scene_id).is_file() {
         return Err(format!("linked Scene {scene_id} has no local binding"));
     }
     Ok(())

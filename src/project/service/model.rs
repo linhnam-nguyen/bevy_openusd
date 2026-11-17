@@ -9,7 +9,7 @@ use project_protocol::{
 use usd_project::ProjectRoot;
 
 use super::{ProjectApplicationService, ProjectModelPreparationQueue};
-use crate::project::model_wrapper::{
+use crate::project::models::wrapper::{
     ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic,
 };
 

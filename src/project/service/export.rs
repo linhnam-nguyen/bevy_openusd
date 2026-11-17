@@ -18,7 +18,7 @@ use usd_project::SceneId;
 use uuid::Uuid;
 
 use super::{ProjectApplicationService, commit_runtime::RuntimeLeaseGuard};
-use crate::project::{model_wrapper::model_wrapper_path, storage::ProjectStorageLayout};
+use crate::project::{models::wrapper::model_wrapper_path, storage::ProjectStorageLayout};
 
 #[path = "live_export.rs"]
 mod live_export;

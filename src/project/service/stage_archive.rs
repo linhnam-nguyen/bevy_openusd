@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use project_protocol::ProjectStageTarget;
 use usd_project::{ProjectManifestV1, ProjectRoot};
 
-use crate::project::{model_wrapper::model_wrapper_path, storage::ProjectStorageLayout};
+use crate::project::{models::wrapper::model_wrapper_path, storage::ProjectStorageLayout};
 
 /// Return only packages belonging to the prepared Project target.
 ///

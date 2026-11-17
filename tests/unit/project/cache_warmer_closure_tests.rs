@@ -192,7 +192,7 @@ fn activation_preparation_returns_fallback_when_runtime_warm_fails() -> Result<(
         }],
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    let wrapper = crate::project::model_wrapper::model_wrapper_path(directory.path(), model_id);
+    let wrapper = crate::project::models::wrapper::model_wrapper_path(directory.path(), model_id);
     fs::create_dir_all(wrapper.parent().expect("Model wrapper directory"))?;
     fs::write(&wrapper, b"#usda 1.0\n(this is not a valid USD layer")?;
 

@@ -7,8 +7,8 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};
 use super::preparation::wait_for;
 use super::*;
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::project::model_import::{ModelImportRequest, ModelImporter, UsdModelImporter};
-use crate::project::model_wrapper::{
+use crate::project::models::import::{ModelImportRequest, ModelImporter, UsdModelImporter};
+use crate::project::models::wrapper::{
     ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic,
 };
 #[test]
@@ -428,7 +428,7 @@ fn scene_owned_identity_does_not_import_child_model_payload() -> Result<()> {
         }],
     );
     ManifestStore::write_manifest_atomic(directory.path(), &manifest)?;
-    let wrapper = crate::project::model_wrapper::model_wrapper_path(directory.path(), model_id);
+    let wrapper = crate::project::models::wrapper::model_wrapper_path(directory.path(), model_id);
     fs::create_dir_all(wrapper.parent().unwrap())?;
     fs::write(
         &wrapper,

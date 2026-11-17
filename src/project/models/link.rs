@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use usd_project::{ProjectManifestV1, SceneId};
 use uuid::Uuid;
 
-use super::storage::ProjectStorageLayout;
+use crate::project::storage::ProjectStorageLayout;
 
 const BINDING_SCHEMA_VERSION: u32 = 2;
 const SCENE_SOURCE_PRIM: &str = "/SceneRoot/Source";
@@ -201,7 +201,7 @@ fn migrate_scene_wrapper_marker(scene_path: &Path) -> Result<()> {
 }
 
 pub(crate) fn source_fingerprint(source: &Path) -> Result<String> {
-    super::assets::closure::source_closure_fingerprint(source)
+    crate::project::assets::closure::source_closure_fingerprint(source)
 }
 
 fn canonical_source(source: &Path) -> Result<PathBuf> {
@@ -216,5 +216,5 @@ fn canonical_source(source: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/link_tests.rs"]
+#[path = "../../../tests/unit/project/link_tests.rs"]
 mod tests;

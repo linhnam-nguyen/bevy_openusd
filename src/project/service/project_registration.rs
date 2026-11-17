@@ -152,9 +152,10 @@ pub(super) fn import_project(
             .map_err(|_| ProjectWriteError::Failed {
                 code: ProjectWriteErrorCode::ManifestUnavailable,
             })?;
-            if let Err(error) =
-                crate::project::link::migrate_linked_source_provenance(project_root, &manifest)
-            {
+            if let Err(error) = crate::project::models::link::migrate_linked_source_provenance(
+                project_root,
+                &manifest,
+            ) {
                 log::warn!(
                     "Linked Scene provenance migration skipped for {}: {error:#}",
                     project_root.display()

@@ -13,7 +13,10 @@ use anyhow::{Context, Result, ensure};
 use usd_project::{CompositionInspection, ProjectManifestV1, SceneId};
 use uuid::Uuid;
 
-use super::{adoption, adoption_authoring, adoption_support, authoring};
+use super::super::{
+    adoption, adoption::authoring as adoption_authoring, adoption::support as adoption_support,
+    authoring,
+};
 use crate::project::assets::closure::materialize_source_closure;
 use crate::project::storage::ProjectStorageLayout;
 
@@ -125,7 +128,7 @@ pub(crate) fn sync_linked_scene_atomic(
     let final_source_directory = ProjectStorageLayout::new(request.project_root)
         .canonical_scene_import_dir(request.scene_id);
     let final_binding_path =
-        crate::project::link::binding_path(request.project_root, request.scene_id);
+        crate::project::models::link::binding_path(request.project_root, request.scene_id);
     ensure!(
         final_binding_path.is_file(),
         "Scene is not backed by a linked source binding"
@@ -179,7 +182,7 @@ pub(crate) fn sync_linked_scene_atomic(
             &request.inspection.spatial,
             true,
         )?;
-        crate::project::link::prepare_binding(
+        crate::project::models::link::prepare_binding(
             &temporary_binding_path,
             request.scene_id,
             request.source,

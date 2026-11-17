@@ -5,7 +5,9 @@ use openusd::{sdf::Value, usd::Stage};
 use usd_project::{SceneId, SceneMemberId};
 use uuid::Uuid;
 
-use super::{read_scene_members, scene_member_path_for_stage, sync_parent_best_effort};
+use super::super::authoring::{
+    read_scene_members, scene_member_path_for_stage, sync_parent_best_effort,
+};
 
 /// Update descriptive metadata without changing a managed prim's stable path.
 pub(crate) fn update_display_name_atomic(

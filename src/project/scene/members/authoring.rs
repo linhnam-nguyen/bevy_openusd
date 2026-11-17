@@ -4,7 +4,9 @@ use anyhow::Result;
 use openusd::{sdf, sdf::Value, usd::Stage};
 use usd_project::{SceneMember, SceneMemberTarget};
 
-use super::{REFERENCES_FIELD, SCENE_ROOT_PRIM, member_custom_data, scene_member_path, scene_path};
+use super::super::authoring::{
+    REFERENCES_FIELD, SCENE_ROOT_PRIM, member_custom_data, scene_member_path, scene_path,
+};
 use crate::project::storage::authored_relative_project_asset_path;
 
 /// Author one composition placement in the canonical form used by persisted
@@ -34,7 +36,7 @@ pub(crate) fn author_scene_member_at_path(
         ),
         SceneMemberTarget::Model(model_id) => (
             target_path.map(Path::to_path_buf).unwrap_or_else(|| {
-                crate::project::model_wrapper::model_wrapper_path(project_root, model_id)
+                crate::project::models::wrapper::model_wrapper_path(project_root, model_id)
             }),
             "ModelRoot",
         ),
@@ -58,7 +60,7 @@ pub(crate) fn author_scene_member_at_path(
         Some(name) => member_prim.set_metadata("ui:displayName", Value::String(name.clone()))?,
         None => member_prim,
     };
-    super::placement_transform::author_scene_member_transform(&member_prim, member.transform)?;
+    super::placement::author_scene_member_transform(&member_prim, member.transform)?;
     Ok(())
 }
 

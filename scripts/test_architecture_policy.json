@@ -444,19 +444,19 @@
       "target": "tests/unit/project/ghost_cache/tests.rs"
     },
     {
-      "owner_file": "src/project/link.rs",
+      "owner_file": "src/project/models/link.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/link_tests.rs"
     },
     {
-      "owner_file": "src/project/model_import.rs",
+      "owner_file": "src/project/models/import.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/model_import_tests.rs"
     },
     {
-      "owner_file": "src/project/model_wrapper.rs",
+      "owner_file": "src/project/models/wrapper/mod.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/project/model_wrapper_tests.rs"
@@ -486,7 +486,7 @@
       "target": "tests/unit/project/runtime_delivery_tests.rs"
     },
     {
-      "owner_file": "src/project/scene/adoption.rs",
+      "owner_file": "src/project/scene/adoption/mod.rs",
       "module_path": "",
       "mod_name": "adoption_tests",
       "target": "tests/unit/project/scene/adoption_tests.rs"
@@ -1651,12 +1651,12 @@
       "status": "approved"
     },
     {
-      "path": "src/project/scene/adoption_support.rs",
-      "owner": "src/project/scene/mod.rs",
+      "path": "src/project/scene/adoption/support.rs",
+      "owner": "src/project/scene/adoption/mod.rs",
       "consumers": [
-        "src/project/scene/adoption.rs",
-        "src/project/scene/adoption_placement.rs",
-        "src/project/scene/linked_sync.rs",
+        "src/project/scene/adoption/mod.rs",
+        "src/project/scene/adoption/placement.rs",
+        "src/project/scene/members/linked_sync.rs",
         "src/project/service/scene_adoption.rs"
       ],
       "reason": "Production scene adoption validation, rollback, and placement helpers shared across project adoption workflows.",

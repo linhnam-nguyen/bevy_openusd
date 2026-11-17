@@ -154,7 +154,7 @@ fn rename_with_writer<W: PlacementWriter>(
                     code: ProjectWriteErrorCode::InvalidSelection,
                 })?;
             model.display_name = name.to_owned();
-            placement_paths.push(crate::project::model_wrapper::model_wrapper_path(
+            placement_paths.push(crate::project::models::wrapper::model_wrapper_path(
                 project_root,
                 model_id,
             ));
@@ -227,7 +227,7 @@ fn rename_with_writer<W: PlacementWriter>(
             }
             ProjectWriteTarget::Model(model_id) => {
                 crate::project::scene::authoring::update_display_name_atomic(
-                    &crate::project::model_wrapper::model_wrapper_path(project_root, model_id),
+                    &crate::project::models::wrapper::model_wrapper_path(project_root, model_id),
                     "/ModelRoot",
                     name,
                 )

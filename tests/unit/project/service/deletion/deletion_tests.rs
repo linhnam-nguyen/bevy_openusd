@@ -194,7 +194,7 @@ fn deleting_model_removes_all_placements_but_not_external_source() {
         )
         .unwrap();
     let model_directory =
-        crate::project::model_wrapper::model_wrapper_path(&project_root, published.model_id)
+        crate::project::models::wrapper::model_wrapper_path(&project_root, published.model_id)
             .parent()
             .unwrap()
             .to_owned();

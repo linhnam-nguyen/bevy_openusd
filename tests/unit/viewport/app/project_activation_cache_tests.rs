@@ -127,7 +127,7 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
         .expect("inspect Hummingbird source metadata");
     fs::create_dir_all(scene_path.parent().expect("Hummingbird scene directory"))
         .expect("create Hummingbird scene directory");
-    crate::project::scene::adoption_authoring::author_scene_wrapper_to_path(
+    crate::project::scene::adoption::authoring::author_scene_wrapper_to_path(
         &scene_path,
         &project_root,
         &scene_path,

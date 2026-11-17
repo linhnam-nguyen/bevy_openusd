@@ -13,7 +13,7 @@ use usd_project::{
 use super::*;
 use crate::project::{
     catalog::manifest_store::ManifestStore,
-    model_import::{ModelImportRequest, ModelImporter, UsdModelImporter},
+    models::import::{ModelImportRequest, ModelImporter, UsdModelImporter},
 };
 
 fn source(directory: &Path, name: &str) -> PathBuf {

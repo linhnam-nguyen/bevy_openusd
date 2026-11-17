@@ -158,7 +158,7 @@ impl ProjectApplicationService {
                         scene_path(entry.repository_locator(), *scene_id)
                     }
                     usd_project::ProjectRoot::Model(model_id) => {
-                        crate::project::model_wrapper::model_wrapper_path(
+                        crate::project::models::wrapper::model_wrapper_path(
                             entry.repository_locator(),
                             *model_id,
                         )
@@ -175,7 +175,7 @@ impl ProjectApplicationService {
                 if manifest.model(*model_id).is_none() {
                     return Err(invalid_project_data(project_id));
                 }
-                crate::project::model_wrapper::model_wrapper_path(
+                crate::project::models::wrapper::model_wrapper_path(
                     entry.repository_locator(),
                     *model_id,
                 )

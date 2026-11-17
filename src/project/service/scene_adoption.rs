@@ -134,11 +134,9 @@ pub(super) fn sync_linked_scene(
                 .ok_or(ProjectWriteError::Invalid {
                     code: ProjectWriteErrorCode::SceneNotFound,
                 })?;
-            let source =
-                crate::project::link::resolve_source(project_root, scene_id).map_err(|_| {
-                    ProjectWriteError::Failed {
-                        code: ProjectWriteErrorCode::FilesystemFailure,
-                    }
+            let source = crate::project::models::link::resolve_source(project_root, scene_id)
+                .map_err(|_| ProjectWriteError::Failed {
+                    code: ProjectWriteErrorCode::FilesystemFailure,
                 })?;
             let inspection = crate::project::scene::inspection::inspect_composition(&source)
                 .map_err(|_| ProjectWriteError::Failed {
@@ -274,12 +272,12 @@ fn adopt_scene_inner(
         phase: ProjectImportPhase::Validating,
     });
     let project_root = entry.repository_locator();
-    crate::project::scene::adoption_support::ensure_adoptable(inspection).map_err(|_| {
+    crate::project::scene::adoption::support::ensure_adoptable(inspection).map_err(|_| {
         ProjectWriteError::Failed {
             code: ProjectWriteErrorCode::SourceClassificationRejected,
         }
     })?;
-    crate::project::scene::adoption_support::revalidate_source_for_adoption(source, inspection)
+    crate::project::scene::adoption::support::revalidate_source_for_adoption(source, inspection)
         .map_err(|error| ProjectWriteError::Failed {
             code: source_revalidation_error_code(&error),
         })?;

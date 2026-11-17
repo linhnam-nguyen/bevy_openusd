@@ -22,7 +22,7 @@ pub(super) fn source_entrypoint_prims(source: &Path) -> Result<Vec<String>> {
         .load(InitialLoadSet::LoadNone)
         .open(source_string)
         .context("open prepared Model source")?;
-    crate::project::scene::adoption_support::source_entrypoint_prims(&stage)
+    crate::project::scene::adoption::support::source_entrypoint_prims(&stage)
 }
 
 pub(super) fn author_model_wrapper(

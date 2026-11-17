@@ -197,7 +197,7 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
     .unwrap();
 
     let model_wrapper =
-        crate::project::model_wrapper::model_wrapper_path(&project_root, published.model_id);
+        crate::project::models::wrapper::model_wrapper_path(&project_root, published.model_id);
     for (scene_id, placement_id, expected_translation) in [
         (first_scene.scene_id, first_placement_id, [10.0, 0.0, 0.0]),
         (second_scene.scene_id, second_placement.id, [0.0, 20.0, 0.0]),
@@ -374,7 +374,7 @@ fn model_rename_failure_on_second_placement_restores_everything() {
 
     let manifest_path = crate::project::catalog::manifest_store::manifest_path(&project_root);
     let wrapper_path =
-        crate::project::model_wrapper::model_wrapper_path(&project_root, published.model_id);
+        crate::project::models::wrapper::model_wrapper_path(&project_root, published.model_id);
     let paths = [
         manifest_path,
         wrapper_path,

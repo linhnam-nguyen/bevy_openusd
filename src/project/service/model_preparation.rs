@@ -12,7 +12,7 @@ use project_protocol::{
     ProjectWriteErrorCode,
 };
 
-use crate::project::model_import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
+use crate::project::models::import::{ModelImportRequest, ModelImporterRegistry, PreparedModel};
 
 use super::ProjectImportProgressStore;
 

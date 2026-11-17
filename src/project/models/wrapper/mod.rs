@@ -16,16 +16,15 @@ use usd_project::{
 };
 use uuid::Uuid;
 
-use super::model_import::{ModelImporter, UsdModelImporter};
+use super::import::{ModelImporter, UsdModelImporter};
 use crate::project::{
     assets::closure::materialize_source_closure,
     catalog::manifest_store::ManifestStore,
-    scene::{adoption_authoring, authoring},
+    scene::{adoption::authoring as adoption_authoring, authoring as scene_authoring},
     storage::ProjectStorageLayout,
 };
 
-#[path = "model_wrapper_authoring.rs"]
-mod wrapper_authoring;
+mod authoring;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
 const TRANSACTIONS_DIRECTORY: &str = ".transactions";
@@ -60,7 +59,7 @@ pub(crate) fn model_wrapper_path(project_root: &Path, model_id: usd_project::Mod
 pub(crate) struct ModelWrapperRequest<'a> {
     pub project_root: &'a Path,
     pub base_manifest: &'a ProjectManifestV1,
-    pub prepared: &'a super::model_import::PreparedModel,
+    pub prepared: &'a super::import::PreparedModel,
     pub set_as_root: bool,
     pub placement: Option<ModelPlacement<'a>>,
 }
@@ -135,7 +134,7 @@ pub(crate) fn publish_model_wrapper_atomic(
         );
     }
 
-    let source_prims = wrapper_authoring::source_entrypoint_prims(&request.prepared.source)?;
+    let source_prims = authoring::source_entrypoint_prims(&request.prepared.source)?;
     let model_directory = ProjectStorageLayout::new(request.project_root)
         .canonical_models_dir()
         .join(model_name.as_str());
@@ -196,10 +195,9 @@ pub(crate) fn publish_model_wrapper_atomic(
     let temporary_wrapper_path = temporary_model_directory.join("model.usda");
     let source_directory = ProjectStorageLayout::new(request.project_root)
         .canonical_model_import_dir(request.prepared.id);
-    let parent_scene_path = request
-        .placement
-        .as_ref()
-        .map(|placement| authoring::scene_path(request.project_root, placement.parent_scene_id));
+    let parent_scene_path = request.placement.as_ref().map(|placement| {
+        scene_authoring::scene_path(request.project_root, placement.parent_scene_id)
+    });
     let temporary_parent_path = request.placement.as_ref().map(|placement| {
         transaction_directory
             .join("scenes")
@@ -237,7 +235,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             .context("normalize controlled Model source filename")?;
             source_name = "model.usda".to_owned();
         }
-        wrapper_authoring::author_model_wrapper(
+        authoring::author_model_wrapper(
             &temporary_wrapper_path,
             request.project_root,
             &model_directory.join("model.usda"),
@@ -248,7 +246,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             &model_name,
             &request.prepared.inspection.composition.spatial,
         )?;
-        wrapper_authoring::validate_model_wrapper(
+        authoring::validate_model_wrapper(
             &temporary_wrapper_path,
             request.prepared.id,
             &request.prepared.inspection.composition.spatial,
@@ -272,7 +270,7 @@ pub(crate) fn publish_model_wrapper_atomic(
                 request.prepared.id,
                 &model_directory.join("model.usda"),
             )?;
-            authoring::validate_scene_file(
+            scene_authoring::validate_scene_file(
                 temporary_parent_path,
                 request
                     .placement
@@ -395,5 +393,5 @@ fn ensure_current_manifest(project_root: &Path, expected: &ProjectManifestV1) ->
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/model_wrapper_tests.rs"]
+#[path = "../../../../tests/unit/project/model_wrapper_tests.rs"]
 mod tests;

@@ -8,7 +8,7 @@ use usd_project::{
     SceneId, SceneMember, SceneMemberId, SceneMemberTarget, ScenePlacementTransform,
 };
 
-use super::inspection::inspect_composition;
+use super::super::inspection::inspect_composition;
 use crate::project::catalog::manifest_store::ManifestStore;
 
 #[derive(Debug, Error)]
@@ -36,7 +36,7 @@ pub(crate) enum AdoptionPhaseError {
     Publication(#[source] anyhow::Error),
 }
 
-pub(super) fn ensure_current_manifest(
+pub(in crate::project::scene) fn ensure_current_manifest(
     project_root: &Path,
     expected: &ProjectManifestV1,
 ) -> Result<()> {

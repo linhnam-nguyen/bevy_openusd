@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail, ensure};
 use openusd::{gf::Matrix4d, sdf::Value, usd::Prim};
 use usd_project::ScenePlacementTransform;
 
-pub(crate) fn author_scene_member_transform(
+pub(super) fn author_scene_member_transform(
     member_prim: &Prim,
     transform: ScenePlacementTransform,
 ) -> Result<()> {
@@ -17,7 +17,9 @@ pub(crate) fn author_scene_member_transform(
     Ok(())
 }
 
-pub(super) fn read_scene_member_transform(member_prim: &Prim) -> Result<ScenePlacementTransform> {
+pub(in crate::project::scene) fn read_scene_member_transform(
+    member_prim: &Prim,
+) -> Result<ScenePlacementTransform> {
     let Some(value) = member_prim.attribute("xformOp:transform").get::<Value>()? else {
         return Ok(ScenePlacementTransform::IDENTITY);
     };

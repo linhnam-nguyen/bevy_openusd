@@ -9,7 +9,7 @@ use usd_project::{
 };
 use uuid::Uuid;
 
-use super::{adoption_authoring, authoring};
+use super::{adoption::authoring as adoption_authoring, authoring};
 use crate::project::catalog::manifest_store::ManifestStore;
 
 const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";

@@ -332,9 +332,10 @@ fn migrate_registered_project_roots(registry: &WorkspaceRegistry) {
         let Ok(manifest) = ManifestStore::read_validated(project_root) else {
             continue;
         };
-        if let Err(error) =
-            crate::project::link::migrate_linked_source_provenance(project_root, manifest.raw())
-        {
+        if let Err(error) = crate::project::models::link::migrate_linked_source_provenance(
+            project_root,
+            manifest.raw(),
+        ) {
             log::warn!(
                 "Linked Scene provenance migration skipped for {}: {error:#}",
                 project_root.display()

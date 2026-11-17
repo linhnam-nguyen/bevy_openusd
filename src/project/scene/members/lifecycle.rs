@@ -4,9 +4,9 @@ use anyhow::{Context, Result, ensure};
 use openusd::usd::Stage;
 use usd_project::{SceneId, SceneMember};
 
-use super::{
+use super::super::authoring::{
     author_scene_member_at_path, prepare_scene_for_direct_members, read_scene_members,
-    scene_member_path,
+    scene_member_path, sync_parent_best_effort, validate_scene_file,
 };
 
 /// Replace all authored placements in one Scene with the supplied set.
@@ -45,9 +45,9 @@ pub(crate) fn replace_scene_members_atomic(
             .root_layer()
             .export(&temporary_string)
             .context("export Scene after placement replacement")?;
-        super::validate_scene_file(&temporary_path, expected_scene_id, members)?;
+        validate_scene_file(&temporary_path, expected_scene_id, members)?;
         fs::rename(&temporary_path, path).context("publish Scene after placement replacement")?;
-        super::sync_parent_best_effort(path.parent());
+        sync_parent_best_effort(path.parent());
         Ok(())
     })();
     if result.is_err() {

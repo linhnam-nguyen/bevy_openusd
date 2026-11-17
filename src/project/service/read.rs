@@ -56,7 +56,7 @@ pub(super) fn project_tree(
         ProjectContentNode::Scene {
             scene_id: scene.id,
             name: scene.display_name.clone(),
-            link_status: crate::project::link::status_for_scene(
+            link_status: crate::project::models::link::status_for_scene(
                 project_root,
                 &scene_path,
                 scene.id,
@@ -64,11 +64,13 @@ pub(super) fn project_tree(
             .ok()
             .flatten()
             .map(|status| match status {
-                crate::project::link::LinkedSourceStatus::InSync => ProjectSceneLinkStatus::InSync,
-                crate::project::link::LinkedSourceStatus::SourceUnavailable => {
+                crate::project::models::link::LinkedSourceStatus::InSync => {
+                    ProjectSceneLinkStatus::InSync
+                }
+                crate::project::models::link::LinkedSourceStatus::SourceUnavailable => {
                     ProjectSceneLinkStatus::SourceUnavailable
                 }
-                crate::project::link::LinkedSourceStatus::OutOfSync => {
+                crate::project::models::link::LinkedSourceStatus::OutOfSync => {
                     ProjectSceneLinkStatus::OutOfSync
                 }
             }),

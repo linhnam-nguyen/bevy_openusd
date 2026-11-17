@@ -25,7 +25,7 @@ fn stage_activation_resolves_a_registered_model_to_its_canonical_wrapper() {
         }],
     );
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
-    let wrapper_path = crate::project::model_wrapper::model_wrapper_path(&repository, model_id);
+    let wrapper_path = crate::project::models::wrapper::model_wrapper_path(&repository, model_id);
     fs::create_dir_all(wrapper_path.parent().unwrap()).unwrap();
     fs::write(&wrapper_path, "#usda 1.0\n").unwrap();
     let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();

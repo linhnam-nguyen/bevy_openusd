@@ -213,7 +213,8 @@ fn collect_target_files(
                 inline: model.display_name.as_bytes().to_vec(),
                 presentation_filtered: false,
             });
-            let wrapper = crate::project::model_wrapper::model_wrapper_path(project_root, model.id);
+            let wrapper =
+                crate::project::models::wrapper::model_wrapper_path(project_root, model.id);
             collect_one_file(project_root, &wrapper, files, true)?;
             let imported_directory =
                 crate::project::storage::ProjectStorageLayout::new(project_root)

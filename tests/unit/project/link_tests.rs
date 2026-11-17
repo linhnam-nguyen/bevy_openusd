@@ -1,6 +1,6 @@
 use super::*;
 use crate::project::assets::spatial::inspect_source;
-use crate::project::scene::adoption_authoring::author_scene_wrapper_to_path;
+use crate::project::scene::adoption::authoring::author_scene_wrapper_to_path;
 use tempfile::tempdir;
 
 #[test]

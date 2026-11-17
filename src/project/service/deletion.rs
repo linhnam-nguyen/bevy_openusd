@@ -199,7 +199,7 @@ fn delete_definition(
                 &format!("scene-source-{scene_id}"),
                 &mut tombstones,
             )?;
-            let binding = crate::project::link::binding_path(project_root, *scene_id);
+            let binding = crate::project::models::link::binding_path(project_root, *scene_id);
             move_optional_to_tombstone(
                 &binding,
                 &transaction_directory,
@@ -209,7 +209,7 @@ fn delete_definition(
         }
         for model_id in &plan.models {
             let model_wrapper_path =
-                crate::project::model_wrapper::model_wrapper_path(project_root, *model_id);
+                crate::project::models::wrapper::model_wrapper_path(project_root, *model_id);
             let model_directory = model_wrapper_path
                 .parent()
                 .expect("Model wrapper path has a directory");

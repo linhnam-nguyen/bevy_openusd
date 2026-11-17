@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use usd_project::{CompositionClassification, CompositionInspection, ModelId, ModelSourceKind};
 
-use super::scene::inspection::inspect_composition;
+use crate::project::scene::inspection::inspect_composition;
 
 /// Source-neutral result of inspecting a possible Product Model source.
 #[derive(Clone, Debug, PartialEq)]
@@ -128,5 +128,5 @@ fn ensure_model_importable(inspection: &CompositionInspection) -> Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/project/model_import_tests.rs"]
+#[path = "../../../tests/unit/project/model_import_tests.rs"]
 mod tests;
