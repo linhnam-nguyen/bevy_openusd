@@ -225,7 +225,7 @@ mod tests {
         queue.shutdown_without_waiting();
         let mut outbox = ViewportEventOutbox::default();
         let mut histories = EditorHistories::default();
-        crate::viewport::api::bridge::save::save_current_stage(
+        crate::viewport::api::bridge::editor::save_current_stage(
             "save-backpressure".to_owned(),
             &mut outbox,
             &mut histories,

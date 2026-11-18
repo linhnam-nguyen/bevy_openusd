@@ -837,19 +837,19 @@
       "owner_file": "src/viewport/api/bridge/bim/properties_lifecycle.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/api/bridge/bim_properties_lifecycle_test_support.rs"
+      "target": "tests/unit/viewport/api/bridge/bim/properties_lifecycle_test_support.rs"
     },
     {
       "owner_file": "src/viewport/api/bridge/commands/camera.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/bridge/commands/camera_inline_tests.rs"
+      "target": "tests/unit/viewport/api/bridge/commands/camera_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/bridge/editor_boundary.rs",
+      "owner_file": "src/viewport/api/bridge/editor/boundary.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/bridge/editor_boundary_tests.rs"
+      "target": "tests/unit/viewport/api/bridge/editor/boundary_tests.rs"
     },
     {
       "owner_file": "src/viewport/api/bridge/mod.rs",
@@ -867,7 +867,7 @@
       "owner_file": "src/viewport/api/bridge/state.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/bridge/state_inline_tests.rs"
+      "target": "tests/unit/viewport/api/bridge/state_tests.rs"
     },
     {
       "owner_file": "src/viewport/api/mod.rs",
@@ -1667,7 +1667,7 @@
       "owner": "src/viewport/api/bridge/mod.rs",
       "consumers": [
         "src/viewport/api/bridge/commands/mod.rs",
-        "src/viewport/api/bridge/save.rs",
+        "src/viewport/api/bridge/editor/save.rs",
         "src/viewport/api/bridge/tree.rs"
       ],
       "reason": "Production viewport API bridge snapshot, timeline, and error-rejection helpers.",

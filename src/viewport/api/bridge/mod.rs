@@ -5,7 +5,7 @@
 //! - [`plugin`]    — `ViewportBridgePlugin` registration and lifecycle systems
 //! - [`query`]    — scene-query dispatch and semantic-search publishing
 //! - [`commands`]  — `apply_viewport_commands` system
-//! - [`mutations`] — `apply_runtime_mutations` helper
+//! - [`editor`]    — editor command adaptation, authoring policy, mutations, and save
 //! - [`tree`]      — `apply_tree_commands` and subtree-geometry helpers
 //! - [`helpers`]   — read-model builders and event emitters
 //! - [`settings`]  — authoritative protocol settings state
@@ -14,13 +14,10 @@
 mod bim;
 mod commands;
 pub(crate) mod convert;
-mod editor_boundary;
-mod editor_commands;
+mod editor;
 mod helpers;
-mod mutations;
 mod plugin;
 mod query;
-mod save;
 mod settings;
 mod state;
 mod tree;

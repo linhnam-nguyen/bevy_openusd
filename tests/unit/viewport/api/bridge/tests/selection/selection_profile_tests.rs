@@ -380,14 +380,14 @@ fn profile_i1_7_1_large_multi_selection_baseline() {
     projection_profile_test::profile_gizmo_reconciliation();
 }
 
-#[path = "selection_profile_projection_test.rs"]
+#[path = "selection_profile_projection_tests.rs"]
 mod projection_profile_test;
 
 #[path = "selection_profile_support.rs"]
 mod selection_profile_support;
 
-#[path = "selection_projection_cache_test.rs"]
+#[path = "selection_projection_cache_tests.rs"]
 mod projection_cache_test;
 
-#[path = "selection_color_reconciliation_test.rs"]
+#[path = "selection_color_reconciliation_tests.rs"]
 mod color_reconciliation_test;

@@ -322,5 +322,5 @@ fn deep_topology_re_admission_budgets_every_ancestor_hop() {
     );
 }
 
-#[path = "selection_presentation_supersession_test.rs"]
+#[path = "selection_presentation_supersession_tests.rs"]
 mod presentation_supersession;

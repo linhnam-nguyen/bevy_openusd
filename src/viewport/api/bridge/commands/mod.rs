@@ -1,4 +1,4 @@
-use super::editor_commands::apply_editor_command;
+use super::editor::apply_editor_command;
 use super::helpers::{
     emit_classification_field_catalogue, emit_presentation_changed, emit_snapshot,
     emit_viewer_settings_changed, reject,

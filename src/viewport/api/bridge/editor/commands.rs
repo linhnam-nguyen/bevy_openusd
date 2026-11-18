@@ -3,21 +3,21 @@ use usd_bevy::LiveStage;
 use usd_model::SemanticSnapshot;
 use viewport_protocol::{EditorOperation, ViewportCommand, ViewportEvent, ViewportEventEnvelope};
 
-use super::convert::editor_value_to_usd;
-use super::editor_boundary::validate_command;
-use super::helpers::{
+use super::super::convert::editor_value_to_usd;
+use super::super::helpers::{
     emit_editor_completed, emit_editor_export, emit_runtime_mutation_accepted, reject,
 };
+use super::super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
+use super::boundary::validate_command;
 use super::mutations::apply_runtime_mutations;
 use super::save;
-use super::state::{EditorHistories, EditorHistoryDomain, RuntimeMutationCoordinator};
 use crate::project::{
     cache::hydration::ActiveProjectCacheContext, cache::warming::ProjectCacheWarmQueue,
 };
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::stage::SceneCacheOwnershipContext;
-pub(super) fn apply_editor_command(
+pub(in crate::viewport::api::bridge) fn apply_editor_command(
     command: ViewportCommand,
     request_id: String,
     outbox: &mut ViewportEventOutbox,
@@ -31,7 +31,7 @@ pub(super) fn apply_editor_command(
     cache_warm: &ProjectCacheWarmQueue,
     selected_targets: &SelectedTargets,
 ) -> bool {
-    let (command, request_id) = match super::bim::commands::try_apply_bim_command(
+    let (command, request_id) = match super::super::bim::commands::try_apply_bim_command(
         command,
         request_id,
         outbox,

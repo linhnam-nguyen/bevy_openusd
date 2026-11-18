@@ -72,5 +72,5 @@ pub(in crate::viewport::api::bridge) fn replay_pending_bim_properties(
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/api/bridge/bim_properties_lifecycle_test_support.rs"]
+#[path = "../../../../../tests/unit/viewport/api/bridge/bim/properties_lifecycle_test_support.rs"]
 mod test_support;

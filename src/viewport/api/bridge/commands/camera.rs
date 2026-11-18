@@ -83,5 +83,5 @@ fn standard_view_angles(view: StandardView) -> (f32, f32) {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/api/bridge/commands/camera_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/api/bridge/commands/camera_tests.rs"]
 mod tests;

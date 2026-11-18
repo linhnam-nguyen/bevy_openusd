@@ -2,6 +2,7 @@ use super::{cadence, headless, runner_projection, scene};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
+use crate::viewport::app::launch_options::parse_launch_options;
 use crate::viewport::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
     follow_mounted_camera, sync_chase_camera,
@@ -28,7 +29,7 @@ use crate::viewport::stage::{
     apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
     spawn_when_ready,
 };
-use crate::viewport::transport::{ViewportTransport, parse_launch_options};
+use crate::viewport::transport::ViewportTransport;
 use crate::viewport::ui_frost::ViewerUiPlugin;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;

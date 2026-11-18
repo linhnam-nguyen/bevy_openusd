@@ -314,6 +314,7 @@ MIGRATION_CHECKPOINTS = frozenset(
         "BOV-C5",
         "BOV-C6",
         "BOV-C7",
+        "BOV-C8",
     }
 )
 

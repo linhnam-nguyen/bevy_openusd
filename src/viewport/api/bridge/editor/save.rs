@@ -6,8 +6,8 @@ use anyhow::Result;
 use usd_bevy::LiveStage;
 use viewport_protocol::EditorOperation;
 
-use super::helpers::{emit_editor_completed, reject};
-use super::state::EditorHistories;
+use super::super::helpers::{emit_editor_completed, reject};
+use super::super::state::EditorHistories;
 use crate::project::{
     cache::ProjectCacheTarget, cache::hydration::ActiveProjectCacheContext,
     cache::warming::ProjectCacheWarmQueue, catalog::manifest_store::ManifestStore,
@@ -42,7 +42,7 @@ pub(super) fn save_stage_as(
         cache_warm,
     );
 }
-pub(super) fn save_current_stage(
+pub(in crate::viewport::api::bridge) fn save_current_stage(
     request_id: String,
     outbox: &mut ViewportEventOutbox,
     histories: &mut EditorHistories,

@@ -120,5 +120,5 @@ impl EditorHistories {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/api/bridge/state_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/api/bridge/state_tests.rs"]
 mod tests;

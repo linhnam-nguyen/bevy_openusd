@@ -10379,6 +10379,99 @@
           "target": "usdview"
         }
       ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C8"
+      ],
+      "new_name": "viewport::api::bridge::editor::boundary::tests::model_member_root_remains_editable_but_its_source_does_not",
+      "old_name": "viewport::api::bridge::editor_boundary::tests::model_member_root_remains_editable_but_its_source_does_not",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C8"
+      ],
+      "new_name": "viewport::api::bridge::editor::boundary::tests::model_source_mutations_are_rejected_by_identity",
+      "old_name": "viewport::api::bridge::editor_boundary::tests::model_source_mutations_are_rejected_by_identity",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C8"
+      ],
+      "new_name": "viewport::api::bridge::editor::boundary::tests::runtime_batches_are_validated_before_model_source_authoring",
+      "old_name": "viewport::api::bridge::editor_boundary::tests::runtime_batches_are_validated_before_model_source_authoring",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
     }
   ],
   "schema_version": 1

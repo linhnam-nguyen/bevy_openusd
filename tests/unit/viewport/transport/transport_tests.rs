@@ -1,4 +1,6 @@
 use super::*;
+use crate::viewport::app::launch_options::{LaunchOptions, parse_launch_options};
+use viewport_protocol::CodecId;
 
 #[test]
 fn default_launch_preserves_the_optional_asset_argument() {
