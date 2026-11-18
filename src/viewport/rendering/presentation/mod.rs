@@ -10,13 +10,13 @@ use viewport_protocol::{
 };
 
 use crate::viewport::api::ViewerSettingsState;
-use crate::viewport::camera::ArcballCamera;
-use crate::viewport::scene::{
+use crate::viewport::bim::{
     ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
-    HistoricalGhostState, SelectionPresentationPolicy, draw_semantic_diff,
-    hydrate_historical_ghosts, refresh_classification_color_plan,
-    sync_classification_color_overrides,
+    HistoricalGhostState, draw_semantic_diff, hydrate_historical_ghosts,
+    refresh_classification_color_plan, sync_classification_color_overrides,
 };
+use crate::viewport::camera::ArcballCamera;
+use crate::viewport::scene::SelectionPresentationPolicy;
 use crate::viewport::section_box::{
     SectionBoxState, SectionClipDiagnostics, SectionClipProjectionState,
     capture_section_box_gizmo_transform, draw_section_box, register_embedded_shaders,

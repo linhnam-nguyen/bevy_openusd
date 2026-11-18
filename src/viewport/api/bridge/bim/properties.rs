@@ -7,8 +7,8 @@ use viewport_protocol::{
     SceneAnchor, SelectionReadModel, ViewportEvent, ViewportEventEnvelope,
 };
 
-use crate::viewport::api::BimProvenanceService;
 use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::bim::BimProvenanceService;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState};
 

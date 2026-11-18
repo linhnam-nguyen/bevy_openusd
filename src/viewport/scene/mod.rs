@@ -1,9 +1,6 @@
 //! Scene-derived state and semantic presentation inputs.
 
-mod classification_color;
-mod diff;
 mod entity_order;
-mod ghost;
 pub(crate) mod hierarchy;
 pub(crate) mod index;
 pub(in crate::viewport) mod projection_work;
@@ -29,13 +26,7 @@ pub(crate) use crate::viewport::rendering::debug::skeleton::{
     setup_skeleton_gizmos_on_top,
 };
 pub(crate) use crate::viewport::rendering::solari::{SolariCapability, SolariCapabilityPlugin};
-pub(in crate::viewport) use classification_color::{
-    ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
-    refresh_classification_color_plan, sync_classification_color_overrides,
-};
-pub(crate) use diff::draw_semantic_diff;
 pub(in crate::viewport) use entity_order::EntityOrder;
-pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
 pub(crate) use hierarchy::visibility::refresh_projection_visibility;
 pub(crate) use hierarchy::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,

@@ -4,6 +4,9 @@
 //! inspect the working tree or infer a historical revision from a display
 //! label/path.
 
+pub(super) mod ghost;
+pub(super) mod visualization;
+
 use std::collections::{BTreeMap, HashSet};
 
 use usd_model::{EntitySnapshot, SemanticProperty, SemanticSnapshot, SnapshotSource};
@@ -178,5 +181,5 @@ fn one_sided_property_rows(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/diff_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/bim/comparison/tests.rs"]
 mod tests;

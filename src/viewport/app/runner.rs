@@ -1,4 +1,4 @@
-use super::{cadence, headless, runner_projection, scene, sync};
+use super::{cadence, headless, runner_projection, scene};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -19,7 +19,10 @@ use crate::viewport::scene::{
     setup_skeleton_gizmos_on_top, sync_selected_instance_identity,
     sync_selected_renderable_projection, sync_selection_outlines,
 };
-use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
+use crate::viewport::semantic::{
+    SemanticSyncRuntimeResource, SemanticSyncState, process_semantic_sync_requests,
+    synchronize_live_stage,
+};
 use crate::viewport::stage::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
@@ -37,7 +40,6 @@ use bevy_glacial::prelude::{
 };
 use bevy_mod_outline::OutlinePlugin;
 use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
-use sync::{SemanticSyncRuntimeResource, process_semantic_sync_requests};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
 pub(crate) fn run() {

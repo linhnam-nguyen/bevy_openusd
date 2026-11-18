@@ -41,5 +41,5 @@ impl BimClassificationFieldCatalogueState {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/field_catalogue_inline_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/field_catalogue_tests.rs"]
 mod tests;

@@ -1,4 +1,4 @@
-use super::BimReadService;
+use super::super::BimReadService;
 
 impl<'snapshot> BimReadService<'snapshot> {
     /// Builds the bounded, model-wide field catalogue from BIM-eligible

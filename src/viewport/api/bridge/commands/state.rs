@@ -9,7 +9,7 @@ use crate::project::{
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::{ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
-use crate::viewport::bim::BimClassificationFieldCatalogueState;
+use crate::viewport::bim::{BimClassificationFieldCatalogueState, ClassificationColorPlan};
 use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
@@ -17,9 +17,7 @@ use crate::viewport::rendering::sampling::{
 };
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::scene::{
-    ClassificationColorPlan, SelectedPrim, SelectedTargets, SolariCapability,
-};
+use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
 use crate::viewport::semantic::SemanticSyncState;
 use crate::viewport::stage::{
     LoaderTuning, ReloadRequest, SceneCacheOwnershipContext, Spawned, StageHandle, StageInfo,

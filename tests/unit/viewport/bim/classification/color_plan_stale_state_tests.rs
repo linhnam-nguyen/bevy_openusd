@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
 use crate::viewport::bim::test_fixtures::snapshot;
+use crate::viewport::bim::{ClassificationColorPlan, refresh_classification_color_plan};
 use crate::viewport::scene::ActiveHierarchyProvider;
-use crate::viewport::scene::{ClassificationColorPlan, refresh_classification_color_plan};
 use crate::viewport::semantic::SemanticSyncState;
 
 #[test]

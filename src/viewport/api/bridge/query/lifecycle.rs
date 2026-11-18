@@ -5,14 +5,15 @@ use super::super::ViewerSettingsState;
 use super::super::helpers::build_read_model;
 use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::bim::ClassificationColorPlan;
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::physics::PhysicsActive;
+use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{
     ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
     refresh_projection_visibility,
 };
-use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
 use crate::viewport::stage::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Rebuilds the active virtual provider only when the semantic snapshot

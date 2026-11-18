@@ -15,7 +15,6 @@ pub(crate) mod headless;
 mod runner;
 mod runner_projection;
 mod scene;
-mod sync;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/test_harness.rs"]

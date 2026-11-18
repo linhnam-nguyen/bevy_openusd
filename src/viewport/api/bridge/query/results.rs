@@ -3,8 +3,9 @@ use viewport_protocol::{ViewportEvent, ViewportEventEnvelope};
 
 use super::super::bim::search as bim_search;
 use super::super::state::SceneSearchRequests;
+use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::api::query::{SceneQueryService, SearchMatches, SearchResult};
-use crate::viewport::api::{BimProvenanceService, ViewportEventOutbox};
+use crate::viewport::bim::BimProvenanceService;
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::stage::StageInfo;
 

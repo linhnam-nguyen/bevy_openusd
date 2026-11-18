@@ -10,7 +10,8 @@ use super::super::bim::{properties as bim_properties, search as bim_search};
 use super::super::helpers::reject;
 use super::super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::api::query::SceneQueryService;
-use crate::viewport::api::{BimProvenanceService, ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::bim::BimProvenanceService;
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::{

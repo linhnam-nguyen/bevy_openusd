@@ -190,5 +190,5 @@ fn shared_material(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/classification_color_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/bim/classification/presentation/tests.rs"]
 mod tests;

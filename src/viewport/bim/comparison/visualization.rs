@@ -264,5 +264,5 @@ fn draw_cross(gizmos: &mut Gizmos, origin: Vec3, half_length: f32, color: Color)
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/scene/diff_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/bim/comparison/visualization_tests.rs"]
 mod tests;

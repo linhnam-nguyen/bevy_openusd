@@ -21,6 +21,9 @@ pub(crate) use query::{
 };
 pub(crate) use state::SemanticSyncState;
 pub(crate) use sync::RuntimeDeliveryRuntime;
+pub(in crate::viewport) use sync::{
+    SemanticSyncRuntimeResource, convert_semantic_sync_request, process_semantic_sync_requests,
+};
 pub(crate) use sync::{
     SubtreeUpdateError, drain_runtime_delivery_results, flush_pending_runtime_delivery,
     synchronize_live_stage,

@@ -9,9 +9,11 @@ use crate::viewport::api::RenderServerInterface;
 use crate::viewport::semantic::SemanticSyncState;
 
 #[derive(Resource, Default)]
-pub(super) struct SemanticSyncRuntimeResource(pub(super) Option<TursoClientSyncRuntime>);
+pub(in crate::viewport) struct SemanticSyncRuntimeResource(
+    pub(in crate::viewport) Option<TursoClientSyncRuntime>,
+);
 
-pub(super) fn convert_semantic_sync_request(
+pub(in crate::viewport) fn convert_semantic_sync_request(
     request: viewport_streaming::SemanticSyncRequest,
     snapshot: Option<&usd_model::SemanticSnapshot>,
 ) -> Option<(TursoClientSyncRuntimeCommand, bool)> {
@@ -64,7 +66,7 @@ pub(super) fn convert_semantic_sync_request(
     Some((command, is_close))
 }
 
-pub(super) fn process_semantic_sync_requests(
+pub(in crate::viewport) fn process_semantic_sync_requests(
     interface: Res<RenderServerInterface>,
     runtime: Res<SemanticSyncRuntimeResource>,
     semantic: Res<SemanticSyncState>,
@@ -117,5 +119,5 @@ pub(super) fn process_semantic_sync_requests(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/app/sync_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/semantic/sync/remote_tests.rs"]
 mod tests;

@@ -21,7 +21,7 @@ use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 use viewport_protocol::{BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus, SceneAnchor};
 
-use super::query::LatestMailbox;
+use crate::viewport::api::LatestMailbox;
 
 const MAX_PROVENANCE_HISTORY: usize = 64;
 
@@ -346,5 +346,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/api/bim_provenance_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/provenance_tests.rs"]
 mod tests;

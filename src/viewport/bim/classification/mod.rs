@@ -1,5 +1,11 @@
 //! Deterministic virtual BIM classification index.
 
+mod catalogue_projection;
+mod color;
+pub(super) mod presentation;
+
+pub(super) use color::entries;
+
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 

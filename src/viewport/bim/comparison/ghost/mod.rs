@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
 use usd_model::{BlobId, EntityKey, SnapshotId};
 
-use super::diff::historical_world_matrix;
+use super::visualization::historical_world_matrix;
 use crate::project::cache::blobs::{FilesystemBlobStore, get_mesh};
 use crate::project::cache::historical_geometry::HistoricalGeometryCache;
 use crate::project::stages::recovery::RecoverySettings;
@@ -285,5 +285,5 @@ fn despawn_all_ghosts(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/ghost/tests.rs"]
+#[path = "../../../../../tests/unit/viewport/bim/comparison/ghost/tests.rs"]
 mod tests;

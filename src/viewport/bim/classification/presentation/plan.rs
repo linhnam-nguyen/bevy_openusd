@@ -134,9 +134,9 @@ pub(in crate::viewport) fn refresh_classification_color_plan(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/classification_color_plan_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/bim/classification/presentation/plan_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/scene/classification_color_plan_test_support.rs"]
+#[path = "../../../../../tests/unit/viewport/bim/classification/presentation/plan_test_support.rs"]
 mod test_support;

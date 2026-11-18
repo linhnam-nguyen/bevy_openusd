@@ -5,28 +5,35 @@
 
 pub(crate) mod authoring;
 mod classification;
-mod classification_catalogue_projection;
-mod classification_color;
-pub(super) mod diff;
+pub(super) mod comparison;
 mod field_catalogue;
 mod index;
 mod properties;
+mod provenance;
 mod search;
+
+pub(in crate::viewport) use classification::presentation::{
+    ClassificationColorDiagnostics, ClassificationColorMaterialCache, ClassificationColorPlan,
+    refresh_classification_color_plan, sync_classification_color_overrides,
+};
+pub(crate) use comparison::ghost::{HistoricalGhostState, hydrate_historical_ghosts};
+pub(crate) use comparison::visualization::draw_semantic_diff;
+pub(crate) use provenance::BimProvenanceService;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/bim/test_fixtures.rs"]
 pub(crate) mod test_fixtures;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/classification_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/classification/tests.rs"]
 mod classification_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/classification_contract_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/classification/contract_tests.rs"]
 mod classification_contract_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/classification_real_fixture_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/classification/real_fixture_tests.rs"]
 mod classification_real_fixture_tests;
 
 #[cfg(test)]
@@ -34,7 +41,7 @@ mod classification_real_fixture_tests;
 mod read_performance_tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/color_plan_stale_state_tests.rs"]
+#[path = "../../../tests/unit/viewport/bim/classification/color_plan_stale_state_tests.rs"]
 mod color_plan_stale_state_tests;
 
 #[cfg(test)]
@@ -152,7 +159,7 @@ impl<'snapshot> BimReadService<'snapshot> {
         baseline: &SemanticSnapshot,
         selection: &[SceneAnchor],
     ) -> Option<viewport_protocol::BimPropertyDiffReadModel> {
-        diff::property_diff(baseline, self.snapshot, selection)
+        comparison::property_diff(baseline, self.snapshot, selection)
     }
 
     pub(crate) fn classification_page(
@@ -234,7 +241,7 @@ impl<'snapshot> BimReadService<'snapshot> {
             .classification_cache
             .as_ref()
             .expect("classification cache is initialized");
-        classification_color::entries(&cache.color_groups, intent)
+        classification::entries(&cache.color_groups, intent)
     }
 
     fn ensure_classification_cache(
@@ -324,5 +331,5 @@ impl<'snapshot> BimReadService<'snapshot> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/mod_test_support.rs"]
+#[path = "../../../tests/unit/viewport/bim/test_support.rs"]
 mod test_support;

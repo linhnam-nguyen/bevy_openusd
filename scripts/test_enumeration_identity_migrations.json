@@ -11,7 +11,8 @@
       "BOV-C3": 42,
       "BOV-C4": 27,
       "BOV-C5": 16,
-      "BOV-C6": 38
+      "BOV-C6": 38,
+      "BOV-C7": 22
     },
     "i1_reconciliation_receipts": [
       "AgentsComm\\communication\\agents\\local_agent\\bov_c4_i1_configured_parity_default.json",
@@ -109,6 +110,14 @@
         "records": [
           "docs/refactoring/acceptance/bov-c6-stage-test-migration-ledger.md"
         ]
+      },
+      {
+        "checkpoint": "BOV-C7",
+        "commit": null,
+        "pre_change_commit": "c20c5cbceeb29b62169432d5303517e89efe0fb1",
+        "records": [
+          "AgentsComm/communication/agents/implementer/bov-c7-i1-test-migration-ledger.md"
+        ]
       }
     ],
     "windows_default_phase_unique_name_changes": {
@@ -120,7 +129,8 @@
       "BOV-C3": 42,
       "BOV-C4": 19,
       "BOV-C5": 16,
-      "BOV-C6": 38
+      "BOV-C6": 38,
+      "BOV-C7": 22
     },
     "windows_solari_phase_unique_name_changes": {
       "BOR-C2": 83,
@@ -131,7 +141,8 @@
       "BOV-C3": 42,
       "BOV-C4": 27,
       "BOV-C5": 16,
-      "BOV-C6": 38
+      "BOV-C6": 38,
+      "BOV-C7": 22
     }
   },
   "entries": [
@@ -7087,9 +7098,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C7"
       ],
-      "new_name": "viewport::scene::classification_color::plan::tests::backend_builds_color_plan_from_bim_recipe_without_contextual_provider",
+      "new_name": "viewport::bim::classification::presentation::plan::tests::backend_builds_color_plan_from_bim_recipe_without_contextual_provider",
       "old_name": "viewport::scene::classification_color_plan::tests::backend_builds_color_plan_from_bim_recipe_without_contextual_provider",
       "targets": [
         {
@@ -7118,9 +7130,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C7"
       ],
-      "new_name": "viewport::scene::classification_color::plan::tests::backend_builds_complete_unpaged_plan_once_and_stays_idle",
+      "new_name": "viewport::bim::classification::presentation::plan::tests::backend_builds_complete_unpaged_plan_once_and_stays_idle",
       "old_name": "viewport::scene::classification_color_plan::tests::backend_builds_complete_unpaged_plan_once_and_stays_idle",
       "targets": [
         {
@@ -7149,9 +7162,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C7"
       ],
-      "new_name": "viewport::scene::classification_color::plan::tests::intent_generation_is_monotonic_and_unchanged_intent_is_idle",
+      "new_name": "viewport::bim::classification::presentation::plan::tests::intent_generation_is_monotonic_and_unchanged_intent_is_idle",
       "old_name": "viewport::scene::classification_color_plan::tests::intent_generation_is_monotonic_and_unchanged_intent_is_idle",
       "targets": [
         {
@@ -9775,6 +9789,595 @@
       ],
       "evidence": [
         "BOV-C6"
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::provenance::tests::returns_the_most_recent_commit_that_changed_the_property",
+      "old_name": "viewport::api::bim_provenance::tests::returns_the_most_recent_commit_that_changed_the_property",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::provenance::tests::root_commit_addition_is_a_property_change",
+      "old_name": "viewport::api::bim_provenance::tests::root_commit_addition_is_a_property_change",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::provenance::tests::worker_cancels_a_started_job_when_its_generation_is_superseded",
+      "old_name": "viewport::api::bim_provenance::tests::worker_cancels_a_started_job_when_its_generation_is_superseded",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::provenance::tests::worker_resolves_the_older_property_change_from_real_git_history",
+      "old_name": "viewport::api::bim_provenance::tests::worker_resolves_the_older_property_change_from_real_git_history",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::semantic::sync::remote::tests::convert_semantic_sync_request_converts_all_operations_and_controls",
+      "old_name": "viewport::app::sync::tests::convert_semantic_sync_request_converts_all_operations_and_controls",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::color::tests::active_level_changes_group_color_identity",
+      "old_name": "viewport::bim::classification_color::tests::active_level_changes_group_color_identity",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::color::tests::auto_changes_only_when_the_explicit_generation_changes",
+      "old_name": "viewport::bim::classification_color::tests::auto_changes_only_when_the_explicit_generation_changes",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::color::tests::profile_uses_defined_level_and_value_mapping_for_unpaged_entities",
+      "old_name": "viewport::bim::classification_color::tests::profile_uses_defined_level_and_value_mapping_for_unpaged_entities",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::tests::added_or_deleted_property_marks_existing_entity_modified",
+      "old_name": "viewport::bim::diff::tests::added_or_deleted_property_marks_existing_entity_modified",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::tests::equal_metadata_hash_skips_detail_changes_and_multi_selection_is_disabled",
+      "old_name": "viewport::bim::diff::tests::equal_metadata_hash_skips_detail_changes_and_multi_selection_is_disabled",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::tests::missing_working_entity_is_deleted_by_baseline_path",
+      "old_name": "viewport::bim::diff::tests::missing_working_entity_is_deleted_by_baseline_path",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::tests::uses_entity_key_and_marks_modified_property",
+      "old_name": "viewport::bim::diff::tests::uses_entity_key_and_marks_modified_property",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::presentation::tests::color_plan_rebinds_shared_material_and_disable_restores_authored_route",
+      "old_name": "viewport::scene::classification_color::tests::color_plan_rebinds_shared_material_and_disable_restores_authored_route",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::presentation::tests::color_plan_updates_selection_base_without_overwriting_selection_material",
+      "old_name": "viewport::scene::classification_color::tests::color_plan_updates_selection_base_without_overwriting_selection_material",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::presentation::tests::large_classification_plan_uses_indexed_occurrence_visits",
+      "old_name": "viewport::scene::classification_color::tests::large_classification_plan_uses_indexed_occurrence_visits",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::classification::presentation::tests::path_only_classification_entries_rebind_all_instance_occurrences",
+      "old_name": "viewport::scene::classification_color::tests::path_only_classification_entries_rebind_all_instance_occurrences",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::visualization::tests::overlay_plan_maps_presence_and_path_changes",
+      "old_name": "viewport::scene::diff::tests::overlay_plan_maps_presence_and_path_changes",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::visualization::tests::unchanged_entities_have_no_overlay_plan",
+      "old_name": "viewport::scene::diff::tests::unchanged_entities_have_no_overlay_plan",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C7"
+      ],
+      "new_name": "viewport::bim::comparison::ghost::tests::historical_ghost_is_hydrated_reused_and_removed_with_the_diff",
+      "old_name": "viewport::scene::ghost::tests::historical_ghost_is_hydrated_reused_and_removed_with_the_diff",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
       ]
     }
   ],

@@ -828,10 +828,10 @@
       "target": "tests/unit/viewport/animation/tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/bim_provenance.rs",
+      "owner_file": "src/viewport/bim/provenance.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/bim_provenance_tests.rs"
+      "target": "tests/unit/viewport/bim/provenance_tests.rs"
     },
     {
       "owner_file": "src/viewport/api/bridge/bim/properties_lifecycle.rs",
@@ -1014,34 +1014,34 @@
       "target": "tests/unit/viewport/stage/project/live_stage_runtime_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/sync.rs",
+      "owner_file": "src/viewport/semantic/sync/remote.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/app/sync_inline_tests.rs"
+      "target": "tests/unit/viewport/semantic/sync/remote_tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/authoring/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/bim/authoring_tests.rs"
+      "target": "tests/unit/viewport/bim/authoring/tests.rs"
     },
     {
-      "owner_file": "src/viewport/bim/classification_color.rs",
+      "owner_file": "src/viewport/bim/classification/color.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/bim/classification_color_inline_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/color_tests.rs"
     },
     {
-      "owner_file": "src/viewport/bim/diff.rs",
+      "owner_file": "src/viewport/bim/comparison/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/bim/diff_inline_tests.rs"
+      "target": "tests/unit/viewport/bim/comparison/tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/field_catalogue.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/bim/field_catalogue_inline_tests.rs"
+      "target": "tests/unit/viewport/bim/field_catalogue_tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/index.rs",
@@ -1053,25 +1053,25 @@
       "owner_file": "src/viewport/bim/mod.rs",
       "module_path": "",
       "mod_name": "classification_contract_tests",
-      "target": "tests/unit/viewport/bim/classification_contract_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/contract_tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/mod.rs",
       "module_path": "",
       "mod_name": "classification_real_fixture_tests",
-      "target": "tests/unit/viewport/bim/classification_real_fixture_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/real_fixture_tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/mod.rs",
       "module_path": "",
       "mod_name": "classification_tests",
-      "target": "tests/unit/viewport/bim/classification_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/mod.rs",
       "module_path": "",
       "mod_name": "color_plan_stale_state_tests",
-      "target": "tests/unit/viewport/bim/color_plan_stale_state_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/color_plan_stale_state_tests.rs"
     },
     {
       "owner_file": "src/viewport/bim/mod.rs",
@@ -1095,7 +1095,7 @@
       "owner_file": "src/viewport/bim/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/bim/mod_test_support.rs"
+      "target": "tests/unit/viewport/bim/test_support.rs"
     },
     {
       "owner_file": "src/viewport/bim/mod.rs",
@@ -1356,28 +1356,28 @@
       "target": "tests/unit/viewport/residency/worker_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color/mod.rs",
+      "owner_file": "src/viewport/bim/classification/presentation/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/classification_color_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/presentation/tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color/plan.rs",
+      "owner_file": "src/viewport/bim/classification/presentation/plan.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/scene/classification_color_plan_test_support.rs"
+      "target": "tests/unit/viewport/bim/classification/presentation/plan_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/scene/classification_color/plan.rs",
+      "owner_file": "src/viewport/bim/classification/presentation/plan.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/classification_color_plan_inline_tests.rs"
+      "target": "tests/unit/viewport/bim/classification/presentation/plan_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/diff.rs",
+      "owner_file": "src/viewport/bim/comparison/visualization.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/diff_inline_tests.rs"
+      "target": "tests/unit/viewport/bim/comparison/visualization_tests.rs"
     },
     {
       "owner_file": "src/viewport/scene/entity_order.rs",
@@ -1392,10 +1392,10 @@
       "target": "tests/unit/viewport/scene/extent_inline_tests.rs"
     },
     {
-      "owner_file": "src/viewport/scene/ghost/mod.rs",
+      "owner_file": "src/viewport/bim/comparison/ghost/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/scene/ghost/tests.rs"
+      "target": "tests/unit/viewport/bim/comparison/ghost/tests.rs"
     },
     {
       "owner_file": "src/viewport/section_box/mod.rs",

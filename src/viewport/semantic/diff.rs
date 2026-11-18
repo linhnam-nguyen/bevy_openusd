@@ -67,7 +67,11 @@ impl SemanticDiffState {
     ) -> Option<BimPropertyDiffReadModel> {
         let baseline = self.baseline.as_ref()?;
         let working = self.working.as_ref()?;
-        crate::viewport::bim::diff::property_diff(baseline.as_ref(), working.as_ref(), selection)
+        crate::viewport::bim::comparison::property_diff(
+            baseline.as_ref(),
+            working.as_ref(),
+            selection,
+        )
     }
 
     pub(crate) fn clear_baseline(&mut self) {

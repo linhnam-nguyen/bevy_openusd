@@ -17,11 +17,11 @@ use crate::project::cache::historical_geometry::HistoricalGeometryCache;
 use crate::project::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
 use crate::project::stages::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::viewport::api::{
-    BimProvenanceService, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
-    ViewportTreeCommandInbox,
+    ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState, ViewportTreeCommandInbox,
 };
-use crate::viewport::bim::BimClassificationFieldCatalogueState;
-use crate::viewport::scene::ClassificationColorPlan;
+use crate::viewport::bim::{
+    BimClassificationFieldCatalogueState, BimProvenanceService, ClassificationColorPlan,
+};
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,

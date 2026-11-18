@@ -4,7 +4,12 @@ mod classification_catalogue;
 mod delivery;
 mod delivery_worker;
 mod identity;
+mod remote;
 mod subtree;
+
+pub(in crate::viewport) use remote::{
+    SemanticSyncRuntimeResource, convert_semantic_sync_request, process_semantic_sync_requests,
+};
 
 use std::{sync::Arc, time::Instant};
 

@@ -7,8 +7,8 @@ use viewport_protocol::{
     MAX_CLASSIFICATION_COLOR_ENTRIES,
 };
 
-use super::BimQueryError;
-use super::classification::ClassificationColorGroup;
+use super::super::BimQueryError;
+use super::ClassificationColorGroup;
 
 const DEFAULT_PROFILE_ID: &str = "default";
 const PROFILE_FALLBACK: ColorRgb8 = ColorRgb8::new(0x94, 0xA3, 0xB8);
@@ -72,7 +72,7 @@ const DEFAULT_PROFILE: &[ProfileMapping] = &[
     },
 ];
 
-pub(super) fn entries(
+pub(in crate::viewport::bim) fn entries(
     groups: &Arc<Vec<ClassificationColorGroup>>,
     intent: &ClassificationColorIntent,
 ) -> Result<Vec<ClassificationColorEntry>, BimQueryError> {
@@ -142,5 +142,5 @@ fn auto_color(generation: u64, level: &str, value: &str) -> ColorRgb8 {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/bim/classification_color_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/bim/classification/color_tests.rs"]
 mod tests;
