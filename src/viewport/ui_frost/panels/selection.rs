@@ -4,7 +4,7 @@ use bevy_frost::prelude::*;
 use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
-use crate::viewport::session::LoadRequest;
+use crate::viewport::stage::LoadRequest;
 use crate::viewport::ui_frost::constants::{
     PANEL_H, PANEL_W, RIB_SELECTION, RIBBON_ITEMS, RIBBONS,
 };
@@ -16,7 +16,7 @@ pub fn draw_selection_panel(
     open: Res<RibbonOpen>,
     placement: Res<RibbonPlacement>,
     accent: Res<AccentColor>,
-    requested: Res<crate::viewport::session::RequestedAsset>,
+    requested: Res<crate::viewport::stage::RequestedAsset>,
     mut load_req: ResMut<LoadRequest>,
     read_model: Res<ViewportReadModelState>,
     mut viewport_commands: ResMut<ViewportCommandInbox>,

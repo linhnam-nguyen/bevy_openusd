@@ -8,7 +8,7 @@ use crate::project::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
 };
 use crate::viewport::scene::CurrentHierarchyProjection;
-use crate::viewport::session::{
+use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
 };
 use bevy::prelude::*;
@@ -182,7 +182,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         );
     }
     world.insert_non_send(LiveStage::new(stage));
-    world.remove_resource::<crate::viewport::session::CachePresentationGate>();
+    world.remove_resource::<crate::viewport::stage::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
     {

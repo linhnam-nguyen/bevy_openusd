@@ -954,64 +954,64 @@
       "target": "tests/unit/viewport/rendering/offscreen/resize_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/mod.rs",
+      "owner_file": "src/viewport/stage/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "cache_tests",
-      "target": "tests/unit/viewport/app/project_activation_cache_tests.rs"
+      "target": "tests/unit/viewport/stage/project/activation/cache_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/mod.rs",
+      "owner_file": "src/viewport/stage/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "production_tests",
-      "target": "tests/unit/viewport/app/project_activation_production_tests.rs"
+      "target": "tests/unit/viewport/stage/project/activation/production_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/mod.rs",
+      "owner_file": "src/viewport/stage/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/app/project_activation_test_support.rs"
+      "target": "tests/unit/viewport/stage/project/activation/test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/mod.rs",
+      "owner_file": "src/viewport/stage/project/activation/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/app/project_activation_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/project/activation/tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/flow.rs",
+      "owner_file": "src/viewport/stage/project/activation/flow.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/app/project_activation_flow_test_support.rs"
+      "target": "tests/unit/viewport/stage/project/activation/flow_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/activation/queue.rs",
+      "owner_file": "src/viewport/stage/project/activation/queue.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/app/project_activation_queue_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/project/activation/queue_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/runtime_authority.rs",
+      "owner_file": "src/viewport/stage/project/runtime_authority.rs",
       "module_path": "",
       "mod_name": "lease_tests",
-      "target": "tests/unit/viewport/app/project_runtime_authority_lease_tests.rs"
+      "target": "tests/unit/viewport/stage/project/runtime_authority_lease_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/runtime_authority.rs",
+      "owner_file": "src/viewport/stage/project/runtime_authority.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/app/project_runtime_authority_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/project/runtime_authority_tests.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/runtime_snapshot.rs",
+      "owner_file": "src/viewport/stage/project/runtime_snapshot.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/app/project_runtime_snapshot_test_support.rs"
+      "target": "tests/unit/viewport/stage/project/runtime_snapshot_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/app/project/stage.rs",
+      "owner_file": "src/viewport/stage/project/live_stage_runtime.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/app/project_stage_tests.rs"
+      "target": "tests/unit/viewport/stage/project/live_stage_runtime_tests.rs"
     },
     {
       "owner_file": "src/viewport/app/sync.rs",
@@ -1566,46 +1566,46 @@
       "target": "tests/unit/viewport/semantic/sync/delivery_worker_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/cache_presentation_gate.rs",
+      "owner_file": "src/viewport/stage/cache_presentation_gate.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/session/cache_presentation_gate_test_support.rs"
+      "target": "tests/unit/viewport/stage/cache_presentation_gate_test_support.rs"
     },
     {
-      "owner_file": "src/viewport/session/cache_presentation_gate.rs",
+      "owner_file": "src/viewport/stage/cache_presentation_gate.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/session/cache_presentation_gate_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/cache_presentation_gate_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle/mod.rs",
+      "owner_file": "src/viewport/stage/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "cache_tests",
-      "target": "tests/unit/viewport/session/lifecycle_cache_tests.rs"
+      "target": "tests/unit/viewport/stage/lifecycle/cache_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle/mod.rs",
+      "owner_file": "src/viewport/stage/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/session/lifecycle_test_support.rs"
+      "target": "tests/unit/viewport/stage/lifecycle/test_support.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle/mod.rs",
+      "owner_file": "src/viewport/stage/lifecycle/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/session/lifecycle_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/lifecycle/tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle/prim_count.rs",
+      "owner_file": "src/viewport/stage/lifecycle/prim_count.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/session/lifecycle_prim_count_tests.rs"
+      "target": "tests/unit/viewport/stage/lifecycle/prim_count_tests.rs"
     },
     {
-      "owner_file": "src/viewport/session/lifecycle/scene_presentation.rs",
+      "owner_file": "src/viewport/stage/lifecycle/scene_presentation.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/session/lifecycle_scene_presentation_inline_tests.rs"
+      "target": "tests/unit/viewport/stage/lifecycle/scene_presentation_tests.rs"
     },
     {
       "owner_file": "src/viewport/transport/frame_capture.rs",
@@ -1674,10 +1674,10 @@
       "status": "approved"
     },
     {
-      "path": "src/viewport/app/project/activation/support.rs",
-      "owner": "src/viewport/app/project/activation/mod.rs",
+      "path": "src/viewport/stage/project/activation/support.rs",
+      "owner": "src/viewport/stage/project/activation/mod.rs",
       "consumers": [
-        "src/viewport/app/project/activation/flow.rs"
+        "src/viewport/stage/project/activation/flow.rs"
       ],
       "reason": "Production project activation state-machine helper module split from project_activation_flow.rs.",
       "status": "approved"

@@ -137,7 +137,7 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
     world.insert_resource(TargetedRepairQueue::default());
     world.init_resource::<super::super::worker::LoadedScenePayloadQueue>();
     let mut state: SystemState<(
-        Option<Res<super::super::super::session::SceneCacheOwnershipContext>>,
+        Option<Res<super::super::super::stage::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<super::super::worker::CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,

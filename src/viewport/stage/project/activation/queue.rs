@@ -102,5 +102,5 @@ impl ActivationCancellation {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_queue_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/queue_tests.rs"]
 mod tests;

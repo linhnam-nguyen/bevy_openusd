@@ -13,7 +13,7 @@ use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHie
 
 use super::SceneAnchorIndex;
 use super::rebuild::{SceneIndexCandidate, SceneIndexSnapshot, build_snapshot};
-use crate::viewport::session::StagePresentationContext;
+use crate::viewport::stage::StagePresentationContext;
 
 type WorkerResult = Result<SceneIndexSnapshot, ()>;
 

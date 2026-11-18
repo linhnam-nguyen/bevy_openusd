@@ -3,7 +3,7 @@ use std::{fs, sync::Arc, thread, time::Duration};
 use bevy::prelude::World;
 use project_protocol::ProjectCommitTarget;
 
-use super::super::stage::{
+use super::super::live_stage_runtime::{
     ActiveProjectRuntimeLease, ProjectRuntimeAuthorityRuntime, runtime_renew_response,
     runtime_snapshot_response,
 };

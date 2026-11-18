@@ -3,7 +3,7 @@
 use openusd::usd::Stage;
 use usd_bevy::{PathStore, PrimEntities};
 
-use crate::viewport::session::{
+use crate::viewport::stage::{
     StageCameraData, StageCameraInfo, StageCameraProjection, StageInfo, VariantSetInfo,
 };
 

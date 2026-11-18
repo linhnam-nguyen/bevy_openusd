@@ -9,7 +9,7 @@ use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::index::refresh_scene_anchor_index;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-use crate::viewport::session::Spawned;
+use crate::viewport::stage::Spawned;
 
 const FIRST: &str = "/World/First";
 const SECOND: &str = "/World/Second";

@@ -9,7 +9,7 @@ use crate::project::cache::demand::{
     owned_prim_path_for_payload,
 };
 use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::viewport::session::SceneCacheOwnershipContext;
+use crate::viewport::stage::SceneCacheOwnershipContext;
 
 use super::active_cache_project_root;
 use super::authority::{ResidencyAuthority, ScenePayloadKey};

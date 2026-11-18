@@ -10,7 +10,7 @@ use crate::project::cache::contract::{
 };
 use crate::project::cache::hydration::default_project_cache_config_hash;
 use crate::project::service::{ProjectStageActivationTarget, ProjectStagePresentationContext};
-use crate::viewport::session::SceneCachePresentation;
+use crate::viewport::stage::SceneCachePresentation;
 
 #[test]
 fn scene_cache_presentation_is_published_before_blocking_stage_open() {
@@ -77,7 +77,7 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
     assert!(
         !production
             .world()
-            .resource::<crate::viewport::session::CachePresentationGate>()
+            .resource::<crate::viewport::stage::CachePresentationGate>()
             .rendered()
     );
     assert!(

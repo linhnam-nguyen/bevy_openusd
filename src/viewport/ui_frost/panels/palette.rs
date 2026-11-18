@@ -4,7 +4,7 @@ use bevy_frost::prelude::*;
 use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
-use crate::viewport::session::LoadRequest;
+use crate::viewport::stage::LoadRequest;
 use crate::viewport::ui_frost::constants::{
     PALETTE_ITEMS, RIB_CAMERAS, RIB_INFO, RIB_KEYS, RIB_LOG, RIB_OVERLAYS, RIB_SELECTION,
     RIB_TIMELINE, RIB_TREE, RIB_VARIANTS, RIBBON_LEFT, ViewerCommandPalette,

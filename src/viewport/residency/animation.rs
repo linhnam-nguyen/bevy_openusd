@@ -7,7 +7,7 @@ use usd_project::SceneId;
 
 use crate::project::cache::contract::SceneCacheEntryKind;
 use crate::viewport::animation::UsdStageTime;
-use crate::viewport::session::SceneCachePresentation;
+use crate::viewport::stage::SceneCachePresentation;
 
 use super::{ResidencyAuthority, ResidencyReason, ScenePayloadCatalog, ScenePayloadKey};
 

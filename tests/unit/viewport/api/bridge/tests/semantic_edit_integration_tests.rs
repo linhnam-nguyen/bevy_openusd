@@ -8,7 +8,7 @@ use viewport_protocol::{BimPropertyEditStatus, EditorOperation, ViewportCommand,
 use crate::viewport::api::ViewportCommandInbox;
 use crate::viewport::api::bridge::state::EditorHistories;
 use crate::viewport::semantic::SemanticDiffState;
-use crate::viewport::session::StageHandle;
+use crate::viewport::stage::StageHandle;
 
 use super::semantic_edit_integration_support::*;
 use super::support::runtime_semantic_test_app;

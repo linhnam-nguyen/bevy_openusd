@@ -33,7 +33,7 @@ use crate::viewport::residency::{
     ResidencyAuthority, ResidencyReason, ScenePayloadKey, SceneResidencyProjection,
 };
 use crate::viewport::scene::CurrentHierarchyProjection;
-use crate::viewport::session::{
+use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
     StagePresentationContext,
 };
@@ -351,5 +351,5 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
     );
 }
 
-#[path = "lifecycle_cache_preservation_tests.rs"]
+#[path = "cache_preservation_tests.rs"]
 mod preservation_tests;

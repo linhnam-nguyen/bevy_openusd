@@ -13,7 +13,7 @@ use crate::viewport::scene::{
     refresh_projection_visibility,
 };
 use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
-use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
+use crate::viewport::stage::{LoaderTuning, Spawned, StageHandle, StageInfo};
 
 /// Rebuilds the active virtual provider only when the semantic snapshot
 /// changes. Prim projection refresh remains owned by `SceneAnchorIndex`.

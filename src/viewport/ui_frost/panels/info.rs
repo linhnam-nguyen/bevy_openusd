@@ -7,7 +7,7 @@ use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::ViewportCommandInbox;
 use crate::viewport::semantic::SemanticDiffState;
-use crate::viewport::session::StageInfo;
+use crate::viewport::stage::StageInfo;
 use crate::viewport::ui_frost::constants::{PANEL_H, PANEL_W, RIB_INFO, RIBBON_ITEMS, RIBBONS};
 use crate::viewport::ui_frost::plugin::is_panel_open;
 

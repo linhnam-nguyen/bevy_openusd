@@ -12,7 +12,7 @@ use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHie
 
 use super::super::hierarchy::CurrentHierarchyProjection;
 use super::{SCENE_INDEX_ADMISSION_BUDGET, SceneAnchorIndex};
-use crate::viewport::session::{Spawned, StagePresentationContext};
+use crate::viewport::stage::{Spawned, StagePresentationContext};
 
 #[derive(Component)]
 pub(in crate::viewport) struct SceneIndexIndexedPrim;

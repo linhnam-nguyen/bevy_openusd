@@ -303,7 +303,17 @@ CONFIGS = {f"{os_name}:{feature}" for os_name in SUPPORTED_PLATFORMS
            for feature in ("default", "solari")}
 IDENTITY_MIGRATIONS_FILE = "test_enumeration_identity_migrations.json"
 MIGRATION_CHECKPOINTS = frozenset(
-    {"BOR-C2", "BOR-C3", "BOR-C4", "BOR-C5", "BOR-C7", "BOV-C3", "BOV-C4", "BOV-C5"}
+    {
+        "BOR-C2",
+        "BOR-C3",
+        "BOR-C4",
+        "BOR-C5",
+        "BOR-C7",
+        "BOV-C3",
+        "BOV-C4",
+        "BOV-C5",
+        "BOV-C6",
+    }
 )
 
 

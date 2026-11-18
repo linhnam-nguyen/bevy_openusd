@@ -22,9 +22,9 @@ pub(super) fn rollback_cache_bootstrap(
     world: &mut World,
     target: &crate::project::service::ProjectStageActivationTarget,
 ) {
-    world.remove_resource::<crate::viewport::session::CachePresentationGate>();
+    world.remove_resource::<crate::viewport::stage::CachePresentationGate>();
     if let Some(scene_cache) = target.scene_cache.as_ref() {
-        crate::viewport::session::discard_scene_cache_bootstrap(
+        crate::viewport::stage::discard_scene_cache_bootstrap(
             world,
             scene_cache.descriptor.scene_id,
             scene_cache.descriptor.generation,

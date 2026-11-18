@@ -35,11 +35,11 @@ use crate::viewport::scene::{
 };
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::semantic::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
-use crate::viewport::session::rehydrate_activation_presentation;
-use crate::viewport::session::{Spawned, StageInfo, StagePresentationContext};
+use crate::viewport::stage::rehydrate_activation_presentation;
+use crate::viewport::stage::{Spawned, StageInfo, StagePresentationContext};
 use usd_project::ProjectRoot;
 
-#[path = "project_activation_cache_first_tests.rs"]
+#[path = "cache_first_tests.rs"]
 mod cache_first_tests;
 
 pub(crate) struct ProductionActivationWorld {
@@ -152,11 +152,11 @@ impl ProductionActivationWorld {
     pub(crate) fn mark_cache_rendered_for_test(&mut self) {
         let world = self.app.world_mut();
         let (scene_id, generation) = {
-            let gate = world.resource::<crate::viewport::session::CachePresentationGate>();
+            let gate = world.resource::<crate::viewport::stage::CachePresentationGate>();
             (gate.scene_id.clone(), gate.generation)
         };
         world
-            .resource_mut::<crate::viewport::session::CachePresentationGate>()
+            .resource_mut::<crate::viewport::stage::CachePresentationGate>()
             .observe_rendered_frame(scene_id, generation);
     }
 

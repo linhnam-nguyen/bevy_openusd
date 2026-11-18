@@ -7,7 +7,7 @@ use std::hash::Hash;
 use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::ViewportCommandInbox;
-use crate::viewport::session::{LoaderTuning, StageInfo};
+use crate::viewport::stage::{LoaderTuning, StageInfo};
 use crate::viewport::ui_frost::constants::{PANEL_H, PANEL_W, RIB_VARIANTS, RIBBON_ITEMS, RIBBONS};
 use crate::viewport::ui_frost::plugin::is_panel_open;
 

@@ -13,7 +13,7 @@ use crate::project::cache::contract::{
     SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
 use crate::project::storage::ProjectStorageLayout;
-use crate::viewport::session::SceneDerivedMetadata;
+use crate::viewport::stage::SceneDerivedMetadata;
 
 use super::{
     CachePublication, SceneDerivedMetadataFreshness, publish_scene_cache_count, retry_allowed,

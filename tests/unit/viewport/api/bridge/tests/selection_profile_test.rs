@@ -21,7 +21,7 @@ use crate::viewport::scene::{
     aggregate_selection_bounds, selected_renderable_entities, sync_section_box_state,
     sync_selected_renderable_projection, sync_selection_color_overrides, sync_selection_outlines,
 };
-use crate::viewport::session::{Spawned, StageInfo};
+use crate::viewport::stage::{Spawned, StageInfo};
 use selection_profile_support::{repeat_selection_updates, settle_scene_index};
 
 const PROFILE_SIZES: [usize; 6] = [1, 10, 100, 256, 1_000, 5_000];

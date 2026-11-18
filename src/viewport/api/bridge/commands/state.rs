@@ -21,7 +21,7 @@ use crate::viewport::scene::{
     ClassificationColorPlan, SelectedPrim, SelectedTargets, SolariCapability,
 };
 use crate::viewport::semantic::SemanticSyncState;
-use crate::viewport::session::{
+use crate::viewport::stage::{
     LoaderTuning, ReloadRequest, SceneCacheOwnershipContext, Spawned, StageHandle, StageInfo,
 };
 

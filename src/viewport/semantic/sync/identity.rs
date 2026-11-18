@@ -1,7 +1,7 @@
 use bevy::prelude::World;
 use usd_bevy::StageChangeBatch;
 
-use crate::viewport::session::StageInfo;
+use crate::viewport::stage::StageInfo;
 
 pub(super) fn activation_generation(world: &World) -> u64 {
     world

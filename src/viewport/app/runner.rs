@@ -1,4 +1,4 @@
-use super::{cadence, headless, project, runner_projection, scene, sync};
+use super::{cadence, headless, runner_projection, scene, sync};
 use crate::project::semantic_store::sync::TursoClientSyncRuntime;
 use crate::viewport::animation::{self, UsdStageTime};
 use crate::viewport::api::{RenderServerInterface, ViewportBridgePlugin, ViewportBridgeSet};
@@ -20,7 +20,7 @@ use crate::viewport::scene::{
     sync_selected_renderable_projection, sync_selection_outlines,
 };
 use crate::viewport::semantic::{SemanticSyncState, synchronize_live_stage};
-use crate::viewport::session::{
+use crate::viewport::stage::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
     spawn_when_ready,
@@ -135,8 +135,7 @@ pub(crate) fn run() {
             0x4A, 0x90, 0xE2,
         )))
         .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
-    project::stage::install(&mut app);
-    project::activation::install(&mut app);
+    crate::viewport::stage::project::install(&mut app);
     if launch_options.headless {
         app.add_plugins(headless::HeadlessRenderPlugin {
             width: launch_options.width,

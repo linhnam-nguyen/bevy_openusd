@@ -16,7 +16,7 @@ mod tests {
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
     };
     use crate::viewport::semantic::SemanticSyncState;
-    use crate::viewport::session::StageInfo;
+    use crate::viewport::stage::StageInfo;
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
         let projection = CurrentHierarchyProjection::from_prim_nodes(&nodes, 1);

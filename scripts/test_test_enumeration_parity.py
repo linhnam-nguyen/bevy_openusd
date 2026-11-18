@@ -490,6 +490,109 @@ class TestEnumerationParityTests(unittest.TestCase):
             self.assertEqual(actual, expected)
             self.assertEqual(sum(actual.values()), 32)
 
+    def test_bov_c6_stage_migrations_preserve_target_feature_and_count(self):
+        legacy = parity.load_baseline(CHECKED_IN_BASELINE)
+        baseline_path = REPO_ROOT / "scripts" / "test_enumeration_qualified_baseline.json"
+        configs = parity.load_qualified(baseline_path, legacy)
+        migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+        migrations = parity.load_identity_migrations(migrations_path, configs)
+
+        prior_aliases = (
+            (
+                "viewport::app::project_activation::",
+                "viewport::app::project::activation::",
+            ),
+            (
+                "viewport::app::project_stage::project_runtime_authority::",
+                "viewport::app::project::runtime_authority::",
+            ),
+            (
+                "viewport::app::project_stage::",
+                "viewport::app::project::stage::",
+            ),
+            # BOR-C7 flattened this pinned identity from
+            # project_activation::scene_presentation under lifecycle.
+            (
+                "viewport::session::lifecycle::project_activation::scene_presentation::",
+                "viewport::session::lifecycle::scene_presentation::",
+            ),
+        )
+        c6_prefix_moves = (
+            (
+                "viewport::app::project::activation::",
+                "viewport::stage::project::activation::",
+            ),
+            (
+                "viewport::app::project::runtime_authority::",
+                "viewport::stage::project::runtime_authority::",
+            ),
+            (
+                "viewport::app::project::stage::",
+                "viewport::stage::project::live_stage_runtime::",
+            ),
+            ("viewport::session::", "viewport::stage::"),
+        )
+
+        def c6_destination(name: str) -> str | None:
+            c5_name = name
+            for old_prefix, new_prefix in prior_aliases:
+                if c5_name.startswith(old_prefix):
+                    c5_name = new_prefix + c5_name[len(old_prefix):]
+                    break
+            for old_prefix, new_prefix in c6_prefix_moves:
+                if c5_name.startswith(old_prefix):
+                    return new_prefix + c5_name[len(old_prefix):]
+            return None
+
+        expected_targets = {
+            ("Cargo.toml", ("bin",), "usdview"),
+            ("Cargo.toml", ("lib",), "usdview"),
+        }
+        c6_migrations = [
+            migration for migration in migrations if "BOV-C6" in migration["evidence"]
+        ]
+        self.assertEqual(len(c6_migrations), 38)
+        expected_names = set()
+        for migration in c6_migrations:
+            destination = c6_destination(migration["old_name"])
+            self.assertIsNotNone(destination)
+            self.assertEqual(migration["new_name"], destination)
+            self.assertEqual(set(migration["targets"]), expected_targets)
+            self.assertEqual(migration["configurations"], frozenset(parity.CONFIGS))
+            expected_names.add(migration["new_name"])
+        self.assertEqual(len(expected_names), 38)
+
+        for configuration in sorted(parity.CONFIGS):
+            _, original_tests, benchmarks = parity.parse_targets(
+                configs[configuration]["targets"]
+            )
+            self.assertFalse(benchmarks)
+            old_entries = {
+                key: count
+                for key, count in original_tests.items()
+                if c6_destination(key[-1]) is not None
+            }
+            self.assertEqual(len({key[-1] for key in old_entries}), 38)
+            self.assertEqual(
+                {key[-1] for key in old_entries},
+                {migration["old_name"] for migration in c6_migrations},
+            )
+            self.assertEqual(len(old_entries), 76)
+            expected = {
+                (*key[:3], c6_destination(key[-1])): count
+                for key, count in old_entries.items()
+            }
+            migrated, _ = parity.apply_identity_migrations(
+                original_tests, migrations, configuration
+            )
+            actual = {
+                key: count
+                for key, count in migrated.items()
+                if key[-1] in expected_names
+            }
+            self.assertEqual(actual, expected)
+            self.assertEqual(sum(actual.values()), 76)
+
     def test_windows_executes_every_target_qualified_occurrence_and_rejects_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

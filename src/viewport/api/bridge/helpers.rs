@@ -13,7 +13,7 @@ use crate::viewport::camera::CameraMount;
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};
+use crate::viewport::stage::{LoaderTuning, Spawned, StageInfo};
 
 pub(super) fn resolve_anchor(
     anchor: &SceneAnchor,

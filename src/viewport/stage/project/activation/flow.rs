@@ -10,7 +10,7 @@ use viewport_streaming::ProjectActivationRequest;
 
 use crate::project::service::ProjectStageActivation;
 use crate::viewport::api::RenderServerInterface;
-use crate::viewport::session::{
+use crate::viewport::stage::{
     StageInstallMode, StagePresentationContext,
     activate_open_stage_with_cache_context_for_generation,
 };
@@ -127,7 +127,7 @@ fn commit_empty_activation(
     request: &ProjectActivationRequest,
     command: &project_protocol::ProjectActivationCommand,
 ) -> ProjectActivationReply {
-    crate::viewport::session::clear_active_stage_for_generation(world, command.generation);
+    crate::viewport::stage::clear_active_stage_for_generation(world, command.generation);
     if world
         .resource_mut::<ProjectActivationAuthorityRuntime>()
         .0
@@ -146,7 +146,7 @@ fn activate_prepared_stage(
     target: crate::project::service::ProjectStageActivationTarget,
 ) -> ActivationProgress {
     if let Some(scene_cache) = target.scene_cache.as_ref() {
-        let installed = crate::viewport::session::install_scene_cache_bootstrap_before_stage_open(
+        let installed = crate::viewport::stage::install_scene_cache_bootstrap_before_stage_open(
             world,
             &target.project_root,
             scene_cache,
@@ -216,11 +216,11 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
     }
 
     let can_open = if let Some(mut gate) =
-        world.get_resource_mut::<crate::viewport::session::CachePresentationGate>()
+        world.get_resource_mut::<crate::viewport::stage::CachePresentationGate>()
     {
         gate.can_open_stage()
     } else if let Some(scene_cache) = pending.target.scene_cache.as_ref() {
-        let mut gate = crate::viewport::session::CachePresentationGate::waiting(
+        let mut gate = crate::viewport::stage::CachePresentationGate::waiting(
             scene_cache.descriptor.scene_id,
             scene_cache.descriptor.generation,
         );
@@ -316,10 +316,10 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         }
         Ok(()) => {
             if world
-                .get_resource::<crate::viewport::session::StageInfo>()
+                .get_resource::<crate::viewport::stage::StageInfo>()
                 .is_some_and(|info| info.activation_generation == command.generation)
             {
-                crate::viewport::session::clear_active_stage_for_generation(
+                crate::viewport::stage::clear_active_stage_for_generation(
                     world,
                     command.generation,
                 );
@@ -341,5 +341,5 @@ fn stale_completion_reply(
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_flow_test_support.rs"]
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/flow_test_support.rs"]
 pub(super) mod test_support;

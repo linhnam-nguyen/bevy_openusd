@@ -10,7 +10,7 @@ mod tests {
     use crate::project::cache::{ProjectCacheTarget, SceneCacheStore};
     use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::session::{SceneCacheOwnershipContext, StageHandle};
+    use crate::viewport::stage::{SceneCacheOwnershipContext, StageHandle};
 
     use super::super::support::command_test_app;
 

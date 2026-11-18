@@ -95,5 +95,5 @@ fn install_project_cache_lookup(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/session/lifecycle_scene_presentation_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/lifecycle/scene_presentation_tests.rs"]
 mod tests;

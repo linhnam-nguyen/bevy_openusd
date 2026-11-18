@@ -135,7 +135,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
     else {
         return;
     };
-    let Some(stage_info) = world.get_resource::<crate::viewport::session::StageInfo>() else {
+    let Some(stage_info) = world.get_resource::<crate::viewport::stage::StageInfo>() else {
         return;
     };
     if pending.generation != stage_info.activation_generation {

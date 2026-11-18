@@ -2,6 +2,7 @@
 
 mod cache_presentation_gate;
 mod lifecycle;
+pub(in crate::viewport) mod project;
 mod state;
 
 pub(crate) use cache_presentation_gate::CachePresentationGate;

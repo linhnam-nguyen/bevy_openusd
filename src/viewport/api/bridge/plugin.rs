@@ -31,8 +31,8 @@ use crate::viewport::semantic::{
     RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
     drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
 };
-use crate::viewport::session::StageInfo;
-use crate::viewport::session::rehydrate_activation_presentation;
+use crate::viewport::stage::StageInfo;
+use crate::viewport::stage::rehydrate_activation_presentation;
 
 /// Installs the in-process implementation of the public viewport contract.
 pub(crate) struct ViewportBridgePlugin;

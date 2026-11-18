@@ -3,7 +3,7 @@ use std::path::Path;
 use project_protocol::ProjectWriteErrorCode;
 use usd_project::{ProjectId, SceneId};
 
-use super::stage::{
+use super::live_stage_runtime::{
     ActiveProjectRuntimeLease, ProjectRuntimeAuthorityRuntime, RUNTIME_LEASE_GRACE_MS,
     runtime_failed,
 };
@@ -110,5 +110,5 @@ fn runtime_snapshot_response_inner(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/app/project_runtime_snapshot_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/stage/project/runtime_snapshot_test_support.rs"]
 pub(super) mod test_support;

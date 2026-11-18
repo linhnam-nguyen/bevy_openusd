@@ -202,7 +202,7 @@ fn resolve_project_activation_with_cache(
     Ok(target)
 }
 
-pub(in crate::viewport::app) fn install(app: &mut App) {
+pub(super) fn install(app: &mut App) {
     cache_presentation::install(app);
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
         .insert_resource(ProjectActivationAuthorityRuntime::default())
@@ -210,7 +210,7 @@ pub(in crate::viewport::app) fn install(app: &mut App) {
             Update,
             flow::process_project_activations
                 .before(usd_bevy::LiveStageSet::Project)
-                .before(crate::viewport::session::spawn_when_ready),
+                .before(crate::viewport::stage::spawn_when_ready),
         )
         .add_systems(
             Update,
@@ -221,17 +221,17 @@ pub(in crate::viewport::app) fn install(app: &mut App) {
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_inline_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_cache_tests.rs"]
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/cache_tests.rs"]
 mod cache_tests;
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_production_tests.rs"]
-pub(in crate::viewport::app) mod production_tests;
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/production_tests.rs"]
+pub(in crate::viewport) mod production_tests;
 
 #[cfg(test)]
-#[path = "../../../../../tests/unit/viewport/app/project_activation_test_support.rs"]
+#[path = "../../../../../tests/unit/viewport/stage/project/activation/test_support.rs"]
 pub(super) mod test_support;

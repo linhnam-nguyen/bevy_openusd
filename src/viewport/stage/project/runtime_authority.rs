@@ -2,9 +2,9 @@
 
 use bevy::prelude::World;
 
-use crate::{project::catalog::manifest_store::ManifestStore, viewport::session::StageHandle};
+use crate::{project::catalog::manifest_store::ManifestStore, viewport::stage::StageHandle};
 
-use super::stage::{
+use super::live_stage_runtime::{
     ProjectRuntimeAuthorityRuntime, active_scene_id_for_stage, clear_runtime_lease,
     expire_runtime_lease, project_root_for_stage, runtime_abort_response, runtime_failed,
     runtime_finish_response, runtime_renew_response, runtime_revision_response,
@@ -13,7 +13,7 @@ use super::stage::{
 use crate::project::runtime::authority::{ProjectRuntimeRequest, ProjectRuntimeResponse};
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/app/project_runtime_authority_lease_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/project/runtime_authority_lease_tests.rs"]
 mod lease_tests;
 
 /// Answer host-side Commit/Export requests from the exact LiveStage owner.
@@ -166,5 +166,5 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/app/project_runtime_authority_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/project/runtime_authority_tests.rs"]
 mod tests;

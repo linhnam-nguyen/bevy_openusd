@@ -5,7 +5,7 @@ use super::super::helpers::presentation_read_model;
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::LoaderTuning;
+use crate::viewport::stage::LoaderTuning;
 
 /// Publishes the correlated presentation event only after the requested FPS
 /// has become the effective target consumed by the headless runner.

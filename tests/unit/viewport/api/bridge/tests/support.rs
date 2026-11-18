@@ -17,7 +17,7 @@ use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState, SemanticWorkingStore};
-use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
+use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
 use super::super::ViewerSettingsState;
 

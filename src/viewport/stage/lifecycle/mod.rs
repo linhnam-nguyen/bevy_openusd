@@ -255,13 +255,13 @@ fn clear_projected_stage(world: &mut World) {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/session/lifecycle_cache_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/lifecycle/cache_tests.rs"]
 mod cache_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/session/lifecycle_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/lifecycle/tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/session/lifecycle_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/stage/lifecycle/test_support.rs"]
 mod test_support;

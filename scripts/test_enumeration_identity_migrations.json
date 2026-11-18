@@ -10,7 +10,8 @@
       "BOR-C7": 81,
       "BOV-C3": 42,
       "BOV-C4": 27,
-      "BOV-C5": 16
+      "BOV-C5": 16,
+      "BOV-C6": 38
     },
     "i1_reconciliation_receipts": [
       "AgentsComm\\communication\\agents\\local_agent\\bov_c4_i1_configured_parity_default.json",
@@ -100,6 +101,14 @@
         "records": [
           "docs/refactoring/acceptance/bov-c5-scene-index-hierarchy-test-migration-ledger.md"
         ]
+      },
+      {
+        "checkpoint": "BOV-C6",
+        "commit": null,
+        "pre_change_commit": "a90c2db623d5052e3224be5f350de3e5ed0592b3",
+        "records": [
+          "docs/refactoring/acceptance/bov-c6-stage-test-migration-ledger.md"
+        ]
       }
     ],
     "windows_default_phase_unique_name_changes": {
@@ -110,7 +119,8 @@
       "BOR-C7": 81,
       "BOV-C3": 42,
       "BOV-C4": 19,
-      "BOV-C5": 16
+      "BOV-C5": 16,
+      "BOV-C6": 38
     },
     "windows_solari_phase_unique_name_changes": {
       "BOR-C2": 83,
@@ -120,7 +130,8 @@
       "BOR-C7": 81,
       "BOV-C3": 42,
       "BOV-C4": 27,
-      "BOV-C5": 16
+      "BOV-C5": 16,
+      "BOV-C6": 38
     }
   },
   "entries": [
@@ -6249,9 +6260,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::cache_tests::activation_does_not_wait_for_inflight_cache_warm",
+      "new_name": "viewport::stage::project::activation::cache_tests::activation_does_not_wait_for_inflight_cache_warm",
       "old_name": "viewport::app::project_activation::cache_tests::activation_does_not_wait_for_inflight_cache_warm",
       "targets": [
         {
@@ -6280,9 +6292,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::cache_tests::real_project_hummingbird_activation_reaches_geometry_ready_and_playback",
+      "new_name": "viewport::stage::project::activation::cache_tests::real_project_hummingbird_activation_reaches_geometry_ready_and_playback",
       "old_name": "viewport::app::project_activation::cache_tests::real_project_hummingbird_activation_reaches_geometry_ready_and_playback",
       "targets": [
         {
@@ -6311,9 +6324,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::production_tests::cache_first_tests::scene_cache_presentation_is_published_before_blocking_stage_open",
+      "new_name": "viewport::stage::project::activation::production_tests::cache_first_tests::scene_cache_presentation_is_published_before_blocking_stage_open",
       "old_name": "viewport::app::project_activation::production_tests::cache_first_tests::scene_cache_presentation_is_published_before_blocking_stage_open",
       "targets": [
         {
@@ -6342,9 +6356,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::production_tests::cache_first_tests::stale_cache_first_continuation_rolls_back_without_replacing_newer_authority",
+      "new_name": "viewport::stage::project::activation::production_tests::cache_first_tests::stale_cache_first_continuation_rolls_back_without_replacing_newer_authority",
       "old_name": "viewport::app::project_activation::production_tests::cache_first_tests::stale_cache_first_continuation_rolls_back_without_replacing_newer_authority",
       "targets": [
         {
@@ -6373,9 +6388,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::production_tests::production_activation_keeps_live_semantic_bim_and_provider_state_coherent",
+      "new_name": "viewport::stage::project::activation::production_tests::production_activation_keeps_live_semantic_bim_and_provider_state_coherent",
       "old_name": "viewport::app::project_activation::production_tests::production_activation_keeps_live_semantic_bim_and_provider_state_coherent",
       "targets": [
         {
@@ -6404,9 +6420,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::queue::tests::blocked_preparation_accepts_newest_request_without_waiting_for_old_one",
+      "new_name": "viewport::stage::project::activation::queue::tests::blocked_preparation_accepts_newest_request_without_waiting_for_old_one",
       "old_name": "viewport::app::project_activation::queue::tests::blocked_preparation_accepts_newest_request_without_waiting_for_old_one",
       "targets": [
         {
@@ -6435,9 +6452,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::queue::tests::latest_request_replaces_blocked_preparation",
+      "new_name": "viewport::stage::project::activation::queue::tests::latest_request_replaces_blocked_preparation",
       "old_name": "viewport::app::project_activation::queue::tests::latest_request_replaces_blocked_preparation",
       "targets": [
         {
@@ -6466,9 +6484,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::queue::tests::superseded_request_is_not_current",
+      "new_name": "viewport::stage::project::activation::queue::tests::superseded_request_is_not_current",
       "old_name": "viewport::app::project_activation::queue::tests::superseded_request_is_not_current",
       "targets": [
         {
@@ -6497,9 +6516,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::tests::activation_reply_preserves_project_root_generation_and_has_no_path",
+      "new_name": "viewport::stage::project::activation::tests::activation_reply_preserves_project_root_generation_and_has_no_path",
       "old_name": "viewport::app::project_activation::tests::activation_reply_preserves_project_root_generation_and_has_no_path",
       "targets": [
         {
@@ -6528,9 +6548,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::tests::activation_requests_are_routed_to_the_requesting_session",
+      "new_name": "viewport::stage::project::activation::tests::activation_requests_are_routed_to_the_requesting_session",
       "old_name": "viewport::app::project_activation::tests::activation_requests_are_routed_to_the_requesting_session",
       "targets": [
         {
@@ -6559,9 +6580,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::activation::tests::preparation_worker_preserves_request_identity_when_registry_is_unavailable",
+      "new_name": "viewport::stage::project::activation::tests::preparation_worker_preserves_request_identity_when_registry_is_unavailable",
       "old_name": "viewport::app::project_activation::tests::preparation_worker_preserves_request_identity_when_registry_is_unavailable",
       "targets": [
         {
@@ -6590,9 +6612,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::lease_tests::active_runtime_stage_returns_ready_and_freezes_authoring",
+      "new_name": "viewport::stage::project::runtime_authority::lease_tests::active_runtime_stage_returns_ready_and_freezes_authoring",
       "old_name": "viewport::app::project_stage::project_runtime_authority::lease_tests::active_runtime_stage_returns_ready_and_freezes_authoring",
       "targets": [
         {
@@ -6621,9 +6644,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::lease_tests::empty_inbox_skips_registry_resolution_for_any_project_count",
+      "new_name": "viewport::stage::project::runtime_authority::lease_tests::empty_inbox_skips_registry_resolution_for_any_project_count",
       "old_name": "viewport::app::project_stage::project_runtime_authority::lease_tests::empty_inbox_skips_registry_resolution_for_any_project_count",
       "targets": [
         {
@@ -6652,9 +6676,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::lease_tests::healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen",
+      "new_name": "viewport::stage::project::runtime_authority::lease_tests::healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen",
       "old_name": "viewport::app::project_stage::project_runtime_authority::lease_tests::healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen",
       "targets": [
         {
@@ -6683,9 +6708,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::lease_tests::timed_out_consumed_request_never_freezes_or_creates_a_lease",
+      "new_name": "viewport::stage::project::runtime_authority::lease_tests::timed_out_consumed_request_never_freezes_or_creates_a_lease",
       "old_name": "viewport::app::project_stage::project_runtime_authority::lease_tests::timed_out_consumed_request_never_freezes_or_creates_a_lease",
       "targets": [
         {
@@ -6714,9 +6740,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::lease_tests::timeout_between_export_and_lease_claim_cannot_publish_ready",
+      "new_name": "viewport::stage::project::runtime_authority::lease_tests::timeout_between_export_and_lease_claim_cannot_publish_ready",
       "old_name": "viewport::app::project_stage::project_runtime_authority::lease_tests::timeout_between_export_and_lease_claim_cannot_publish_ready",
       "targets": [
         {
@@ -6745,9 +6772,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::tests::expired_runtime_lease_unfreezes_live_stage",
+      "new_name": "viewport::stage::project::runtime_authority::tests::expired_runtime_lease_unfreezes_live_stage",
       "old_name": "viewport::app::project_stage::project_runtime_authority::tests::expired_runtime_lease_unfreezes_live_stage",
       "targets": [
         {
@@ -6776,9 +6804,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::tests::no_active_stage_answers_registered_requests_as_inactive",
+      "new_name": "viewport::stage::project::runtime_authority::tests::no_active_stage_answers_registered_requests_as_inactive",
       "old_name": "viewport::app::project_stage::project_runtime_authority::tests::no_active_stage_answers_registered_requests_as_inactive",
       "targets": [
         {
@@ -6807,9 +6836,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::runtime_authority::tests::runtime_lease_rejects_a_synchronous_authoring_generation_change",
+      "new_name": "viewport::stage::project::runtime_authority::tests::runtime_lease_rejects_a_synchronous_authoring_generation_change",
       "old_name": "viewport::app::project_stage::project_runtime_authority::tests::runtime_lease_rejects_a_synchronous_authoring_generation_change",
       "targets": [
         {
@@ -6838,9 +6868,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::stage::tests::active_scene_identity_requires_the_canonical_scene_locator",
+      "new_name": "viewport::stage::project::live_stage_runtime::tests::active_scene_identity_requires_the_canonical_scene_locator",
       "old_name": "viewport::app::project_stage::tests::active_scene_identity_requires_the_canonical_scene_locator",
       "targets": [
         {
@@ -6869,9 +6900,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::app::project::stage::tests::project_root_is_derived_only_for_a_project_scene_path",
+      "new_name": "viewport::stage::project::live_stage_runtime::tests::project_root_is_derived_only_for_a_project_scene_path",
       "old_name": "viewport::app::project_stage::tests::project_root_is_derived_only_for_a_project_scene_path",
       "targets": [
         {
@@ -9227,9 +9259,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C6"
       ],
-      "new_name": "viewport::session::lifecycle::scene_presentation::tests::child_flags_are_computed_in_one_parent_index_pass",
+      "new_name": "viewport::stage::lifecycle::scene_presentation::tests::child_flags_are_computed_in_one_parent_index_pass",
       "old_name": "viewport::session::lifecycle::project_activation::scene_presentation::tests::child_flags_are_computed_in_one_parent_index_pass",
       "targets": [
         {
@@ -9246,6 +9279,502 @@
           "manifest": "Cargo.toml",
           "target": "usdview"
         }
+      ]
+    },
+    {
+      "old_name": "viewport::session::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
+      "new_name": "viewport::stage::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
+      "new_name": "viewport::stage::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
+      "new_name": "viewport::stage::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
+      "new_name": "viewport::stage::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
+      "new_name": "viewport::stage::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
+      "new_name": "viewport::stage::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
+      "new_name": "viewport::stage::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
+      "new_name": "viewport::stage::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ]
+    },
+    {
+      "old_name": "viewport::session::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
+      "new_name": "viewport::stage::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
+      "targets": [
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "bin"
+          ],
+          "target": "usdview"
+        },
+        {
+          "manifest": "Cargo.toml",
+          "kind": [
+            "lib"
+          ],
+          "target": "usdview"
+        }
+      ],
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
       ]
     }
   ],

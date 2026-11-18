@@ -12,7 +12,6 @@
 
 pub(crate) mod cadence;
 pub(crate) mod headless;
-mod project;
 mod runner;
 mod runner_projection;
 mod scene;

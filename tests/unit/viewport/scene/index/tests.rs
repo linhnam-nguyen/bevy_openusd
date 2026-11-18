@@ -1,7 +1,7 @@
 use super::*;
 use crate::viewport::scene::HierarchyPageIndex;
 use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
-use crate::viewport::session::Spawned;
+use crate::viewport::stage::Spawned;
 use bevy::asset::Assets;
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::mesh::Mesh;

@@ -18,7 +18,7 @@ mod tests {
     use crate::viewport::scene::SceneAnchorIndex;
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-    use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
+    use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
         let mut app = App::new();

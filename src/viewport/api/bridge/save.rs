@@ -14,7 +14,7 @@ use crate::project::{
     storage::ProjectStorageLayout,
 };
 use crate::viewport::api::ViewportEventOutbox;
-use crate::viewport::session::SceneCacheOwnershipContext;
+use crate::viewport::stage::SceneCacheOwnershipContext;
 
 pub(super) fn save_stage_as(
     request_id: String,

@@ -212,7 +212,7 @@ pub(crate) fn queue_loaded_scene_payloads(
 
 pub(crate) fn install_loaded_scene_payloads(
     mut queue: bevy::prelude::ResMut<LoadedScenePayloadQueue>,
-    presentation: Option<bevy::prelude::Res<crate::viewport::session::SceneCachePresentation>>,
+    presentation: Option<bevy::prelude::Res<crate::viewport::stage::SceneCachePresentation>>,
     mut images: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::image::Image>>>,
     mut materials: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::pbr::StandardMaterial>>>,
     mut seed: Option<bevy::prelude::ResMut<usd_bevy::ProjectionSeed>>,

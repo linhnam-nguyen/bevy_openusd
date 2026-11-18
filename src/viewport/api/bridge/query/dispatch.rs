@@ -17,7 +17,7 @@ use crate::viewport::scene::{
     ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
     refresh_projection_visibility,
 };
-use crate::viewport::session::{StageHandle, StageInfo};
+use crate::viewport::stage::{StageHandle, StageInfo};
 
 use bevy::ecs::system::SystemParam;
 
@@ -27,7 +27,7 @@ pub(crate) struct SceneQuerySemanticParams<'w> {
     semantic_diff: Option<Res<'w, crate::viewport::semantic::SemanticDiffState>>,
     stage_handle: Option<Res<'w, StageHandle>>,
     stage_info: Option<Res<'w, StageInfo>>,
-    pending_activation: Option<ResMut<'w, crate::viewport::session::PendingActivationPresentation>>,
+    pending_activation: Option<ResMut<'w, crate::viewport::stage::PendingActivationPresentation>>,
 }
 
 /// Routes scene-query commands to the current hierarchy projection.

@@ -5,7 +5,7 @@ use usd_model::HashDigest;
 use usd_project::SceneId;
 
 use crate::project::runtime::payload::{RuntimeAlphaMode, RuntimeMaterialTextures};
-use crate::viewport::session::SceneCachePresentation;
+use crate::viewport::stage::SceneCachePresentation;
 use usd_bevy::ProjectionSeed;
 
 fn job(generation: u64) -> LoadJob<ScenePayloadKey> {

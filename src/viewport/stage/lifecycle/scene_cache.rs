@@ -16,7 +16,7 @@ pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
         scene_id: activation.descriptor.scene_id,
         config_hash: activation.descriptor.config_hash,
     });
-    world.insert_resource(crate::viewport::session::CachePresentationGate::waiting(
+    world.insert_resource(crate::viewport::stage::CachePresentationGate::waiting(
         activation.descriptor.scene_id,
         activation.descriptor.generation,
     ));

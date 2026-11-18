@@ -6,7 +6,7 @@ use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::ViewportCommandInbox;
 use crate::viewport::camera::{ArcballCamera, CameraBookmark, CameraBookmarks, CameraMount, FlyTo};
-use crate::viewport::session::{StageCameraProjection, StageInfo};
+use crate::viewport::stage::{StageCameraProjection, StageInfo};
 use crate::viewport::ui_frost::constants::{PANEL_H, PANEL_W, RIB_CAMERAS, RIBBON_ITEMS, RIBBONS};
 use crate::viewport::ui_frost::plugin::is_panel_open;
 

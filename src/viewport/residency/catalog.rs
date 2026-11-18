@@ -6,7 +6,7 @@ use bevy::prelude::Resource;
 use usd_project::SceneId;
 
 use crate::project::cache::contract::{SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntryKind};
-use crate::viewport::session::SceneCachePresentation;
+use crate::viewport::stage::SceneCachePresentation;
 
 use super::{ResidencyReason, ScenePayloadKey};
 

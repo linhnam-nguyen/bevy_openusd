@@ -22,7 +22,7 @@ mod tests {
     use crate::viewport::semantic::{
         SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore,
     };
-    use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
+    use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
         let mut app = App::new();

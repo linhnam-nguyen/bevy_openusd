@@ -16,7 +16,7 @@ use crate::project::{
 };
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SelectedTargets;
-use crate::viewport::session::SceneCacheOwnershipContext;
+use crate::viewport::stage::SceneCacheOwnershipContext;
 pub(super) fn apply_editor_command(
     command: ViewportCommand,
     request_id: String,

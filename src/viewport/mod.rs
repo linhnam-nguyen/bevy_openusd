@@ -23,7 +23,7 @@ pub(crate) mod scene;
 pub(in crate::viewport) mod section_box;
 pub(in crate::viewport) mod selection;
 pub(crate) mod semantic;
-pub(crate) mod session;
+pub(crate) mod stage;
 pub(crate) mod transport;
 pub(crate) mod ui_frost;
 

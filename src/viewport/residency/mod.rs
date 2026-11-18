@@ -21,7 +21,7 @@ use bevy::render::render_asset::RenderAssetBytesPerFrame;
 
 use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::viewport::scene::SectionBoxState;
-use crate::viewport::session::{SceneCacheOwnershipContext, SceneCachePresentation};
+use crate::viewport::stage::{SceneCacheOwnershipContext, SceneCachePresentation};
 
 use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;

@@ -40,7 +40,7 @@ impl PendingBimProperties {
 
 pub(in crate::viewport::api::bridge) fn replay_pending_bim_properties(
     mut pending: ResMut<PendingBimProperties>,
-    stage_info: Res<crate::viewport::session::StageInfo>,
+    stage_info: Res<crate::viewport::stage::StageInfo>,
     selection: Option<Res<SelectedTargets>>,
     semantic: Option<Res<SemanticSyncState>>,
     semantic_diff: Option<Res<SemanticDiffState>>,

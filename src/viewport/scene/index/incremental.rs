@@ -7,7 +7,7 @@ use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::super::hierarchy::CurrentHierarchyProjection;
 use super::{DenseSceneIndex, SceneAnchorIndex};
-use crate::viewport::session::StagePresentationContext;
+use crate::viewport::stage::StagePresentationContext;
 
 pub(super) fn display_name(
     prim: &UsdPrimRef,

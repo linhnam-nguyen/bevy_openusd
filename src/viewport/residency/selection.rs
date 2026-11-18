@@ -10,7 +10,7 @@ use crate::project::cache::contract::{
 };
 use crate::viewport::{
     scene::{SceneAnchorIndex, SelectedTargets},
-    session::SceneCachePresentation,
+    stage::SceneCachePresentation,
 };
 
 use super::{ResidencyAuthority, ResidencyReason, ScenePayloadKey};

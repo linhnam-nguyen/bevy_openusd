@@ -3,7 +3,7 @@ use bevy::prelude::{App, Res, ResMut, Resource};
 use bevy::render::{Extract, ExtractSchedule, MainWorld, Render, RenderApp, RenderSystems};
 use usd_project::SceneId;
 
-use crate::viewport::session::CachePresentationGate;
+use crate::viewport::stage::CachePresentationGate;
 
 #[derive(Resource, Default)]
 struct CachePresentationRenderWitness {

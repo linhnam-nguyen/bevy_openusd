@@ -4,7 +4,7 @@ use super::super::helpers::{emit_presentation_changed, set_overlay};
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::session::LoaderTuning;
+use crate::viewport::stage::LoaderTuning;
 
 pub(super) fn set_overlay_command(
     request_id: String,

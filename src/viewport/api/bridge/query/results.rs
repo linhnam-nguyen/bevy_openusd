@@ -6,7 +6,7 @@ use super::super::state::SceneSearchRequests;
 use crate::viewport::api::query::{SceneQueryService, SearchMatches, SearchResult};
 use crate::viewport::api::{BimProvenanceService, ViewportEventOutbox};
 use crate::viewport::diagnostics::performance::RendererCounters;
-use crate::viewport::session::StageInfo;
+use crate::viewport::stage::StageInfo;
 
 /// Drains hierarchy-search-worker responses and publishes search results.
 pub(crate) fn publish_scene_query_results(

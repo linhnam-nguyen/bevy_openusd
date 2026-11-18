@@ -15,7 +15,7 @@ mod tests {
     use crate::viewport::scene::SelectedTargets;
     use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
     use crate::viewport::semantic::SemanticSyncState;
-    use crate::viewport::session::StageInfo;
+    use crate::viewport::stage::StageInfo;
 
     #[test]
     fn pre_readiness_property_request_replays_for_the_matching_generation() {

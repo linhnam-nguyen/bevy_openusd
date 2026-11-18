@@ -52,9 +52,9 @@ impl CachePresentationGate {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/session/cache_presentation_gate_inline_tests.rs"]
+#[path = "../../../tests/unit/viewport/stage/cache_presentation_gate_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/unit/viewport/session/cache_presentation_gate_test_support.rs"]
+#[path = "../../../tests/unit/viewport/stage/cache_presentation_gate_test_support.rs"]
 mod test_support;

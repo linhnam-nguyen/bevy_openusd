@@ -208,7 +208,7 @@ fn wait_persistence(
 }
 fn process_once(world: &mut World) {
     let mut state: SystemState<(
-        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
+        Option<Res<crate::viewport::stage::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<TargetedRepairPersistenceWorker>,
         ResMut<ResidencyAuthority>,
@@ -245,7 +245,7 @@ fn drain_persistence_once(world: &mut World) {
 fn dispatch_cached_once(world: &mut World) {
     world.init_resource::<ScenePayloadCatalog>();
     let mut state: SystemState<(
-        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
+        Option<Res<crate::viewport::stage::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Option<Res<ScenePayloadCatalog>>,
         Res<CachedResidencyWorker>,
@@ -267,7 +267,7 @@ fn dispatch_cached_once(world: &mut World) {
 fn drain_cached_once(world: &mut World) {
     world.init_resource::<super::super::worker::LoadedScenePayloadQueue>();
     let mut state: SystemState<(
-        Option<Res<crate::viewport::session::SceneCacheOwnershipContext>>,
+        Option<Res<crate::viewport::stage::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,

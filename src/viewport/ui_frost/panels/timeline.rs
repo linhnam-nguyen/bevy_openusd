@@ -5,7 +5,7 @@ use bevy_frost::style;
 use viewport_protocol::ViewportCommand;
 
 use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
-use crate::viewport::session::StageInfo;
+use crate::viewport::stage::StageInfo;
 use crate::viewport::ui_frost::constants::{
     PANEL_H, PANEL_W, RIB_KEYS, RIB_TIMELINE, RIBBON_ITEMS, RIBBONS,
 };

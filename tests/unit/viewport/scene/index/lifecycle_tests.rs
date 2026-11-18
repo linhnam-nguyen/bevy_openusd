@@ -11,7 +11,7 @@ use super::*;
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::service::ProjectApplicationService;
 use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
-use crate::viewport::session::{
+use crate::viewport::stage::{
     ReloadRequest, Spawned, StageInfo, StagePresentationContext,
     activate_stage_with_cache_context_for_generation, handle_usd_hot_reload, spawn_when_ready,
 };

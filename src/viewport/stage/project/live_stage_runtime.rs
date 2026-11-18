@@ -12,7 +12,7 @@ use crate::{
         runtime::authority::ProjectRuntimeResponse,
         service::{ProjectRuntimeAuthorityQueue, ProjectStageMutationQueue},
     },
-    viewport::session::StageHandle,
+    viewport::stage::StageHandle,
 };
 
 use super::runtime_authority;
@@ -51,7 +51,7 @@ impl Default for ProjectRuntimeAuthorityRuntime {
     }
 }
 
-pub(in crate::viewport::app) fn install(app: &mut App) {
+pub(super) fn install(app: &mut App) {
     app.insert_resource(ProjectStageMutationRuntime::default())
         .insert_resource(ProjectRuntimeAuthorityRuntime::default())
         .add_systems(
@@ -297,5 +297,5 @@ pub(super) fn active_scene_id_for_stage(stage_path: &Path, project_root: &Path) 
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/app/project_stage_tests.rs"]
+#[path = "../../../../tests/unit/viewport/stage/project/live_stage_runtime_tests.rs"]
 mod tests;
