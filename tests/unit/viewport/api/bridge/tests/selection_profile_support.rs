@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 use bevy::prelude::{App, World};
 use viewport_protocol::SelectionReadModel;
 

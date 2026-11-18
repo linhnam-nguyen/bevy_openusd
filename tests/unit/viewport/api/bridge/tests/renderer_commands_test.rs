@@ -10,7 +10,7 @@ mod tests {
     };
     use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
-        SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
+        ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
     use crate::viewport::app::cadence::RendererCadence;
     use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
@@ -18,6 +18,7 @@ mod tests {
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
+    use crate::viewport::scene::SceneAnchorIndex;
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};

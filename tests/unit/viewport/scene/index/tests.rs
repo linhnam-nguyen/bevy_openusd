@@ -1,6 +1,6 @@
 use super::*;
-use crate::viewport::api::HierarchyPageIndex;
-use crate::viewport::api::hierarchy::CurrentHierarchyProjection;
+use crate::viewport::scene::HierarchyPageIndex;
+use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
 use crate::viewport::session::Spawned;
 use bevy::asset::Assets;
 use bevy::ecs::hierarchy::ChildOf;
@@ -12,7 +12,7 @@ use viewport_protocol::{
     HierarchySource, HierarchyVisibilityState, MAX_SCENE_PAGE_SIZE, ViewportEvent,
 };
 
-#[path = "scene_index_incremental_tests.rs"]
+#[path = "incremental_tests.rs"]
 mod incremental_tests;
 
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
@@ -302,27 +302,27 @@ fn classification_visibility_reports_mixed_state_and_restores_groups() {
     });
     let page_index = HierarchyPageIndex::from_read_model(&read_model);
     let visibility_index =
-        crate::viewport::api::HierarchyVisibilityIndex::from_targets(HashMap::from([
+        crate::viewport::scene::HierarchyVisibilityIndex::from_targets(HashMap::from([
             (
                 group_id.clone(),
                 vec![
-                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
                         "/World/WindowA".to_owned(),
                     ),
-                    crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                    crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
                         "/World/WindowB".to_owned(),
                     ),
                 ],
             ),
             (
                 first_id.clone(),
-                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                vec![crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
                     "/World/WindowA".to_owned(),
                 )],
             ),
             (
                 second_id.clone(),
-                vec![crate::viewport::api::HierarchyVisibilityTarget::PrimPath(
+                vec![crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
                     "/World/WindowB".to_owned(),
                 )],
             ),

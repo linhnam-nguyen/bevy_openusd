@@ -13,7 +13,8 @@ use super::{
     SectionClipMaterial, SectionClipPresentationKey, SectionClipSystemParam,
     SectionClipUnderlyingMaterial, SectionClipUniform,
 };
-use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::api::ViewerSettingsState;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::DisplayToggles;
 
 #[allow(clippy::type_complexity)]

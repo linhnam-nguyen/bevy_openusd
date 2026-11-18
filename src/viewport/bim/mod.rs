@@ -58,7 +58,7 @@ use viewport_protocol::{
 
 pub(crate) use self::field_catalogue::BimClassificationFieldCatalogueState;
 pub(crate) use self::index::BimReadIndex;
-use crate::viewport::api::{
+use crate::viewport::scene::{
     CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityIndex,
 };
 

@@ -24,14 +24,15 @@ use crate::project::cache::hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
+use crate::viewport::api::RenderServerInterface;
 use crate::viewport::api::test_harness::{
     refresh_active_hierarchy_projection, refresh_scene_anchor_index,
 };
-use crate::viewport::api::{
-    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
-    RenderServerInterface, SceneAnchorIndex,
-};
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
+use crate::viewport::scene::{
+    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
+    SceneAnchorIndex,
+};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::semantic::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 use crate::viewport::session::rehydrate_activation_presentation;

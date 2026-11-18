@@ -11,9 +11,9 @@ use crate::viewport::api::bridge::query::{
 };
 use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::api::query::SceneQueryService;
-use crate::viewport::api::{
+use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::scene::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
-    ViewportCommandInbox, ViewportEventOutbox,
 };
 use crate::viewport::semantic::SemanticDiffState;
 use crate::viewport::semantic::SemanticSyncState;

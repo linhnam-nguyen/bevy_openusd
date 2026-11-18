@@ -11,9 +11,9 @@ mod tests {
     };
     use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
     use crate::viewport::api::query::SceneQueryService;
-    use crate::viewport::api::{
+    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::scene::{
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
-        ViewportCommandInbox, ViewportEventOutbox,
     };
     use crate::viewport::semantic::SemanticSyncState;
     use crate::viewport::session::StageInfo;

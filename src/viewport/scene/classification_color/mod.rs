@@ -12,7 +12,7 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use viewport_protocol::ColorRgb8;
 
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 
 mod plan;
 pub(in crate::viewport) use plan::{ClassificationColorPlan, refresh_classification_color_plan};

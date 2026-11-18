@@ -9,7 +9,7 @@ use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
 use super::SectionBoxBounds;
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 
 pub(in crate::viewport) fn aggregate_selection_bounds(
     targets: &[SceneAnchor],

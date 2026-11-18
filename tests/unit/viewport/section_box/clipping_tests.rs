@@ -2,7 +2,8 @@ use bevy::asset::AssetPlugin;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 
 use super::*;
-use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::api::ViewerSettingsState;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{HoveredTarget, SectionBoxState};
 

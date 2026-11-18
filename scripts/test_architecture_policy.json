@@ -894,28 +894,28 @@
       "target": "tests/unit/viewport/api/read_model/tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/index/mod.rs",
+      "owner_file": "src/viewport/scene/index/mod.rs",
       "module_path": "",
       "mod_name": "lifecycle_tests",
-      "target": "tests/unit/viewport/api/scene_index_lifecycle_tests.rs"
+      "target": "tests/unit/viewport/scene/index/lifecycle_tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/index/mod.rs",
+      "owner_file": "src/viewport/scene/index/mod.rs",
       "module_path": "",
       "mod_name": "test_support",
-      "target": "tests/unit/viewport/api/scene_index_test_support.rs"
+      "target": "tests/unit/viewport/scene/index/test_support.rs"
     },
     {
-      "owner_file": "src/viewport/api/index/mod.rs",
+      "owner_file": "src/viewport/scene/index/mod.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/scene_index_tests.rs"
+      "target": "tests/unit/viewport/scene/index/tests.rs"
     },
     {
-      "owner_file": "src/viewport/api/index/reconcile.rs",
+      "owner_file": "src/viewport/scene/index/reconcile.rs",
       "module_path": "",
       "mod_name": "tests",
-      "target": "tests/unit/viewport/api/scene_index_reconcile_inline_tests.rs"
+      "target": "tests/unit/viewport/scene/index/reconcile_tests.rs"
     },
     {
       "owner_file": "src/viewport/api/query/mod.rs",

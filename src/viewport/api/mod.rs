@@ -5,9 +5,6 @@
 
 mod bim_provenance;
 mod bridge;
-mod hierarchy;
-mod hierarchy_visibility;
-mod index;
 mod interface;
 mod query;
 mod queues;
@@ -19,12 +16,6 @@ pub(crate) use bridge::editor_value_to_usd;
 pub(in crate::viewport) use bridge::{
     ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
 };
-pub(crate) use hierarchy::{
-    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
-    HierarchyPageIndex, HierarchyVisibilityIndex, HierarchyVisibilityTarget,
-};
-pub(crate) use hierarchy_visibility::refresh_projection_visibility;
-pub(crate) use index::SceneAnchorIndex;
 pub(crate) use interface::RenderServerInterface;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,

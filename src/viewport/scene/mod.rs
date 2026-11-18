@@ -4,6 +4,8 @@ mod classification_color;
 mod diff;
 mod entity_order;
 mod ghost;
+pub(crate) mod hierarchy;
+pub(crate) mod index;
 pub(in crate::viewport) mod projection_work;
 
 #[allow(unused_imports)]
@@ -34,6 +36,14 @@ pub(in crate::viewport) use classification_color::{
 pub(crate) use diff::draw_semantic_diff;
 pub(in crate::viewport) use entity_order::EntityOrder;
 pub(crate) use ghost::{HistoricalGhostState, hydrate_historical_ghosts};
+pub(crate) use hierarchy::visibility::refresh_projection_visibility;
+pub(crate) use hierarchy::{
+    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
+    HierarchyPageIndex, HierarchyVisibilityIndex, HierarchyVisibilityTarget,
+};
+pub(crate) use index::SceneAnchorIndex;
+pub(in crate::viewport) use index::refresh_scene_anchor_index;
+pub(crate) use index::register_scene_index_observers;
 pub(crate) mod extent;
 pub(crate) use crate::viewport::rendering::presentation as visualization;
 pub use extent::SceneExtent;

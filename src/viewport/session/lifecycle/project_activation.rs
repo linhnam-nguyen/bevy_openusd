@@ -7,7 +7,7 @@ use crate::project::cache::contract::{ProjectCacheTarget, SceneCacheActivation};
 use crate::project::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
 };
-use crate::viewport::api::CurrentHierarchyProjection;
+use crate::viewport::scene::CurrentHierarchyProjection;
 use crate::viewport::session::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
 };

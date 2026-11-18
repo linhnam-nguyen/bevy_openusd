@@ -14,8 +14,9 @@ use bevy::prelude::*;
 use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
-use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::scene::EntityOrder;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::selection::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};
 
 mod bounds;

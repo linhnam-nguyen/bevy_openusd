@@ -10,11 +10,10 @@ mod tests {
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::bridge::tests::support;
     use crate::viewport::api::query::SceneQueryService;
-    use crate::viewport::api::{
-        CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
-    };
+    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::bim::test_fixtures;
     use crate::viewport::scene::SelectedTargets;
+    use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
     use crate::viewport::semantic::SemanticSyncState;
     use crate::viewport::session::StageInfo;
 

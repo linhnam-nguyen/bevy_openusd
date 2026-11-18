@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 
 use super::SectionBoxTrackedRenderable;
 

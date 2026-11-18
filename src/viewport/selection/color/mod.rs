@@ -10,8 +10,9 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use viewport_protocol::{ColorRgb8, SceneAnchor};
 
-use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::api::ViewerSettingsState;
 use crate::viewport::scene::EntityOrder;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::selection::{
     SelectedRenderableProjection, SelectedTargets, SelectionPresentationPolicy,
 };

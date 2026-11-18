@@ -17,13 +17,16 @@ use crate::project::cache::historical_geometry::HistoricalGeometryCache;
 use crate::project::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
 use crate::project::stages::recovery::{RecoveryCheckpointWork, RecoverySettings};
 use crate::viewport::api::{
-    ActiveHierarchyProvider, BimClassificationRecipeState, BimProvenanceService,
-    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
-    ViewportReadModelState, ViewportTreeCommandInbox,
+    BimProvenanceService, ViewportCommandInbox, ViewportEventOutbox, ViewportReadModelState,
+    ViewportTreeCommandInbox,
 };
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::scene::ClassificationColorPlan;
 use crate::viewport::scene::SelectedTargets;
+use crate::viewport::scene::{
+    ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
+    SceneAnchorIndex,
+};
 use crate::viewport::semantic::{
     RuntimeDeliveryRuntime, SemanticDiffState, SemanticSyncState, SemanticWorkingStore,
     drain_runtime_delivery_results, flush_pending_runtime_delivery, synchronize_live_stage,
@@ -75,7 +78,7 @@ impl Plugin for ViewportBridgePlugin {
             )
             .add_systems(
                 Update,
-                super::super::index::refresh_scene_anchor_index
+                crate::viewport::scene::index::refresh_scene_anchor_index
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
             .add_systems(
@@ -85,7 +88,7 @@ impl Plugin for ViewportBridgePlugin {
                     replay_pending_bim_properties,
                 )
                     .chain()
-                    .after(super::super::index::refresh_scene_anchor_index)
+                    .after(crate::viewport::scene::index::refresh_scene_anchor_index)
                     .in_set(ViewportBridgeSet::RefreshSceneIndex),
             )
             // LiveStagePlugin drains and reprojects in Update. PostUpdate is
@@ -129,7 +132,7 @@ impl Plugin for ViewportBridgePlugin {
                 Update,
                 reduce_authoritative_events.in_set(ViewportBridgeSet::ReduceEvents),
             );
-        super::super::index::register_scene_index_observers(app);
+        crate::viewport::scene::index::register_scene_index_observers(app);
     }
 }
 

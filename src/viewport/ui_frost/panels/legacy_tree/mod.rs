@@ -11,7 +11,8 @@ use std::collections::HashMap;
 use usd_bevy::{UsdDisplayName, UsdPrimRef};
 use viewport_protocol::{FocusMode, ViewportCommand};
 
-use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox};
+use crate::viewport::api::ViewportCommandInbox;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::SelectedPrim;
 use crate::viewport::ui_frost::constants::{
     PANEL_W, RIB_TREE, RIBBON_ITEMS, RIBBONS, TreeExpanded, TreeFilter,

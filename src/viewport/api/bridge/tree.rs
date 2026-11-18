@@ -5,11 +5,11 @@ use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::helpers::{emit_selection_delta, reject};
-use crate::viewport::api::{
-    CurrentHierarchyProjection, HierarchyVisibilityTarget, SceneAnchorIndex, ViewportEventOutbox,
-    ViewportTreeCommand, ViewportTreeCommandInbox,
-};
+use crate::viewport::api::{ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::camera::{ArcballCamera, FlyTo};
+use crate::viewport::scene::{
+    CurrentHierarchyProjection, HierarchyVisibilityTarget, SceneAnchorIndex,
+};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 /// Applies focus and visibility actions after scene anchors have been mapped

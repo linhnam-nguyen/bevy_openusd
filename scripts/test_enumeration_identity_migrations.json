@@ -9,7 +9,8 @@
       "BOR-C5": 25,
       "BOR-C7": 81,
       "BOV-C3": 42,
-      "BOV-C4": 27
+      "BOV-C4": 27,
+      "BOV-C5": 16
     },
     "i1_reconciliation_receipts": [
       "AgentsComm\\communication\\agents\\local_agent\\bov_c4_i1_configured_parity_default.json",
@@ -91,6 +92,14 @@
           "AgentsComm/communication/agents/local_agent/bov_c4_i1_configured_parity_solari.json"
         ],
         "source_fingerprint": "85047d8c7e69649dc48e84995465987dafa3419455a9d5e88b56375ab91878a1"
+      },
+      {
+        "checkpoint": "BOV-C5",
+        "commit": null,
+        "pre_change_commit": "4e8fbe55e7b62f1ea4064f61a0c8eefc0e79d0b8",
+        "records": [
+          "docs/refactoring/acceptance/bov-c5-scene-index-hierarchy-test-migration-ledger.md"
+        ]
       }
     ],
     "windows_default_phase_unique_name_changes": {
@@ -100,7 +109,8 @@
       "BOR-C5": 25,
       "BOR-C7": 81,
       "BOV-C3": 42,
-      "BOV-C4": 19
+      "BOV-C4": 19,
+      "BOV-C5": 16
     },
     "windows_solari_phase_unique_name_changes": {
       "BOR-C2": 83,
@@ -109,7 +119,8 @@
       "BOR-C5": 25,
       "BOR-C7": 81,
       "BOV-C3": 42,
-      "BOV-C4": 27
+      "BOV-C4": 27,
+      "BOV-C5": 16
     }
   },
   "entries": [
@@ -5385,9 +5396,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::lifecycle_tests::project_and_direct_scene_activation_keep_root_authority_through_refresh",
+      "new_name": "viewport::scene::index::lifecycle_tests::project_and_direct_scene_activation_keep_root_authority_through_refresh",
       "old_name": "viewport::api::scene_index::lifecycle_tests::project_and_direct_scene_activation_keep_root_authority_through_refresh",
       "targets": [
         {
@@ -5416,9 +5428,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::reconcile::tests::dense_member_removal_repairs_the_swapped_position",
+      "new_name": "viewport::scene::index::reconcile::tests::dense_member_removal_repairs_the_swapped_position",
       "old_name": "viewport::api::scene_index::reconcile::tests::dense_member_removal_repairs_the_swapped_position",
       "targets": [
         {
@@ -5447,9 +5460,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::classification_visibility_reports_mixed_state_and_restores_groups",
+      "new_name": "viewport::scene::index::tests::classification_visibility_reports_mixed_state_and_restores_groups",
       "old_name": "viewport::api::scene_index::tests::classification_visibility_reports_mixed_state_and_restores_groups",
       "targets": [
         {
@@ -5478,9 +5492,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::dense_scene_index_pages_and_reveal_metadata_are_bounded",
+      "new_name": "viewport::scene::index::tests::dense_scene_index_pages_and_reveal_metadata_are_bounded",
       "old_name": "viewport::api::scene_index::tests::dense_scene_index_pages_and_reveal_metadata_are_bounded",
       "targets": [
         {
@@ -5509,9 +5524,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::generic_projection_keeps_snapshot_acquisition_constant_time",
+      "new_name": "viewport::scene::index::tests::generic_projection_keeps_snapshot_acquisition_constant_time",
       "old_name": "viewport::api::scene_index::tests::generic_projection_keeps_snapshot_acquisition_constant_time",
       "targets": [
         {
@@ -5540,9 +5556,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::hierarchy_snapshot_reuses_cached_projection",
+      "new_name": "viewport::scene::index::tests::hierarchy_snapshot_reuses_cached_projection",
       "old_name": "viewport::api::scene_index::tests::hierarchy_snapshot_reuses_cached_projection",
       "targets": [
         {
@@ -5571,9 +5588,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::incremental_tests::initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_capacity",
+      "new_name": "viewport::scene::index::tests::incremental_tests::initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_capacity",
       "old_name": "viewport::api::scene_index::tests::incremental_tests::initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_capacity",
       "targets": [
         {
@@ -5602,9 +5620,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::incremental_tests::progressive_unique_prim_additions_use_incremental_index_ingestion",
+      "new_name": "viewport::scene::index::tests::incremental_tests::progressive_unique_prim_additions_use_incremental_index_ingestion",
       "old_name": "viewport::api::scene_index::tests::incremental_tests::progressive_unique_prim_additions_use_incremental_index_ingestion",
       "targets": [
         {
@@ -5633,9 +5652,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::incremental_tests::ten_thousand_prim_additions_are_admitted_with_a_hard_per_update_cap",
+      "new_name": "viewport::scene::index::tests::incremental_tests::ten_thousand_prim_additions_are_admitted_with_a_hard_per_update_cap",
       "old_name": "viewport::api::scene_index::tests::incremental_tests::ten_thousand_prim_additions_are_admitted_with_a_hard_per_update_cap",
       "targets": [
         {
@@ -5664,9 +5684,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::incremental_tests::ten_thousand_prim_full_reconciliation_capture_is_hard_capped",
+      "new_name": "viewport::scene::index::tests::incremental_tests::ten_thousand_prim_full_reconciliation_capture_is_hard_capped",
       "old_name": "viewport::api::scene_index::tests::incremental_tests::ten_thousand_prim_full_reconciliation_capture_is_hard_capped",
       "targets": [
         {
@@ -5695,9 +5716,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::native_instance_selection_resolves_real_projected_scene_proxy_paths_only",
+      "new_name": "viewport::scene::index::tests::native_instance_selection_resolves_real_projected_scene_proxy_paths_only",
       "old_name": "viewport::api::scene_index::tests::native_instance_selection_resolves_real_projected_scene_proxy_paths_only",
       "targets": [
         {
@@ -5726,9 +5748,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::prim_name_projection_uses_only_the_final_path_segment",
+      "new_name": "viewport::scene::index::tests::prim_name_projection_uses_only_the_final_path_segment",
       "old_name": "viewport::api::scene_index::tests::prim_name_projection_uses_only_the_final_path_segment",
       "targets": [
         {
@@ -5757,9 +5780,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::projection_only_children_churn_does_not_rebuild_the_scene_index",
+      "new_name": "viewport::scene::index::tests::projection_only_children_churn_does_not_rebuild_the_scene_index",
       "old_name": "viewport::api::scene_index::tests::projection_only_children_churn_does_not_rebuild_the_scene_index",
       "targets": [
         {
@@ -5788,9 +5812,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::semantic_path_resolution_preserves_runtime_reveal_pages",
+      "new_name": "viewport::scene::index::tests::semantic_path_resolution_preserves_runtime_reveal_pages",
       "old_name": "viewport::api::scene_index::tests::semantic_path_resolution_preserves_runtime_reveal_pages",
       "targets": [
         {
@@ -5819,9 +5844,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::semantic_path_visibility_targets_all_native_occurrences",
+      "new_name": "viewport::scene::index::tests::semantic_path_visibility_targets_all_native_occurrences",
       "old_name": "viewport::api::scene_index::tests::semantic_path_visibility_targets_all_native_occurrences",
       "targets": [
         {
@@ -5850,9 +5876,10 @@
         "windows:solari"
       ],
       "evidence": [
-        "BOR-C7"
+        "BOR-C7",
+        "BOV-C5"
       ],
-      "new_name": "viewport::api::index::tests::shared_provider_projection_installs_arc_and_matching_page_index",
+      "new_name": "viewport::scene::index::tests::shared_provider_projection_installs_arc_and_matching_page_index",
       "old_name": "viewport::api::scene_index::tests::shared_provider_projection_installs_arc_and_matching_page_index",
       "targets": [
         {

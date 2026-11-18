@@ -9,7 +9,7 @@ use viewport_protocol::{
     HierarchySource, SceneAnchor, UNCLASSIFIED_LABEL,
 };
 
-use crate::viewport::api::{HierarchyVisibilityIndex, HierarchyVisibilityTarget};
+use crate::viewport::scene::{HierarchyVisibilityIndex, HierarchyVisibilityTarget};
 
 #[derive(Debug)]
 struct ClassificationNode {

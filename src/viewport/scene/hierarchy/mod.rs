@@ -15,6 +15,8 @@ use viewport_protocol::{
     HierarchyReadModel, HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
 };
 
+pub(super) mod visibility;
+
 /// Session-local provider selection. The recipe is retained with the
 /// selection so a semantic snapshot refresh can rebuild the same projection.
 #[derive(Resource, Clone, Debug, Default)]

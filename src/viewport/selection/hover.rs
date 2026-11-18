@@ -8,8 +8,8 @@ use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings};
 use bevy::prelude::*;
 use viewport_protocol::SceneAnchor;
 
-use crate::viewport::api::SceneAnchorIndex;
 use crate::viewport::input::ViewportNavigationInput;
+use crate::viewport::scene::SceneAnchorIndex;
 
 /// Current renderer-local hover target and the inputs used for its last pick.
 ///

@@ -10,12 +10,13 @@ use super::super::bim::{properties as bim_properties, search as bim_search};
 use super::super::helpers::reject;
 use super::super::state::{SceneSearchRequest, SceneSearchRequests};
 use crate::viewport::api::query::SceneQueryService;
-use crate::viewport::api::{
-    ActiveHierarchyProvider, BimProvenanceService, CurrentHierarchyProjection, SceneAnchorIndex,
-    ViewportCommandInbox, ViewportEventOutbox, refresh_projection_visibility,
-};
+use crate::viewport::api::{BimProvenanceService, ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::diagnostics::performance::RendererCounters;
 use crate::viewport::scene::SelectedTargets;
+use crate::viewport::scene::{
+    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
+    refresh_projection_visibility,
+};
 use crate::viewport::session::{StageHandle, StageInfo};
 
 use bevy::ecs::system::SystemParam;
@@ -35,7 +36,7 @@ pub(crate) fn dispatch_scene_query_commands(
     scene_index: Res<SceneAnchorIndex>,
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     mut provider: Option<ResMut<ActiveHierarchyProvider>>,
-    mut bim_classification: Option<ResMut<crate::viewport::api::BimClassificationRecipeState>>,
+    mut bim_classification: Option<ResMut<crate::viewport::scene::BimClassificationRecipeState>>,
     mut semantic_params: SceneQuerySemanticParams,
     selection: Option<Res<SelectedTargets>>,
     scene_query: Res<SceneQueryService>,

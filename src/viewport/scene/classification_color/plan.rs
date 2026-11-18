@@ -5,8 +5,8 @@ use viewport_protocol::{
     ClassificationColorEntry, ClassificationColorIntent, ClassificationColorSource,
 };
 
-use crate::viewport::api::{ActiveHierarchyProvider, BimClassificationRecipeState};
 use crate::viewport::bim::BimReadService;
+use crate::viewport::scene::{ActiveHierarchyProvider, BimClassificationRecipeState};
 use crate::viewport::semantic::SemanticSyncState;
 
 /// Backend-generated temporary presentation plan. Its entries are never part

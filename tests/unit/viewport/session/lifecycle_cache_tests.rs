@@ -29,10 +29,10 @@ use crate::project::cache::hydration::{
 };
 use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::viewport::api::CurrentHierarchyProjection;
 use crate::viewport::residency::{
     ResidencyAuthority, ResidencyReason, ScenePayloadKey, SceneResidencyProjection,
 };
+use crate::viewport::scene::CurrentHierarchyProjection;
 use crate::viewport::session::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
     StagePresentationContext,

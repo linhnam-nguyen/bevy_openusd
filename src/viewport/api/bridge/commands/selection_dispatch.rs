@@ -1,7 +1,8 @@
 use viewport_protocol::ViewportCommand;
 
 use super::selection;
-use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
+use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 pub(super) fn apply_selection_command(

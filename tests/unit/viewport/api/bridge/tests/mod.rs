@@ -13,9 +13,9 @@ mod bim_properties_test;
 mod commands_test;
 #[path = "edit_rejection_tests.rs"]
 mod edit_rejection_tests;
-#[path = "hierarchy_search_test.rs"]
+#[path = "query/hierarchy_search_tests.rs"]
 mod hierarchy_search_test;
-#[path = "hierarchy_visibility_test.rs"]
+#[path = "query/hierarchy_visibility_tests.rs"]
 mod hierarchy_visibility_test;
 #[path = "mutations_test.rs"]
 mod mutations_test;

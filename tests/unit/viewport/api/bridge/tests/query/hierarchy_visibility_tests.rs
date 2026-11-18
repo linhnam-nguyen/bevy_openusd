@@ -7,9 +7,10 @@ use viewport_protocol::{
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::tree::apply_tree_commands;
-use crate::viewport::api::{
+use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::scene::{
     CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityIndex,
-    HierarchyVisibilityTarget, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
+    HierarchyVisibilityTarget, SceneAnchorIndex,
 };
 
 #[test]

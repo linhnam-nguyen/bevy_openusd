@@ -1,7 +1,8 @@
 use viewport_protocol::{SceneAnchor, SelectionReadModel};
 
 use super::super::helpers::{emit_selection_delta, reject};
-use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
+use crate::viewport::api::ViewportEventOutbox;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
 pub(crate) fn select_target(

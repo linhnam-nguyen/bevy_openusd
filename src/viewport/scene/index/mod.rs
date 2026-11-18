@@ -94,13 +94,13 @@ struct DenseSceneNode {
 
 const SCENE_INDEX_ADMISSION_BUDGET: usize = 256;
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/api/scene_index_tests.rs"]
+#[path = "../../../../tests/unit/viewport/scene/index/tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/api/scene_index_lifecycle_tests.rs"]
+#[path = "../../../../tests/unit/viewport/scene/index/lifecycle_tests.rs"]
 mod lifecycle_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/api/scene_index_test_support.rs"]
+#[path = "../../../../tests/unit/viewport/scene/index/test_support.rs"]
 mod test_support;

@@ -8,13 +8,14 @@ mod tests {
     use crate::viewport::api::bridge::commands::apply_viewport_commands;
     use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
     use crate::viewport::api::{
-        SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
+        ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
     use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
     use crate::viewport::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
+    use crate::viewport::scene::SceneAnchorIndex;
     use crate::viewport::scene::visualization::DisplayToggles;
     use crate::viewport::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::session::{LoaderTuning, ReloadRequest, Spawned, StageInfo};

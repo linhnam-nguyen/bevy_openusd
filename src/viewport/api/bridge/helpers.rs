@@ -7,9 +7,10 @@ use viewport_protocol::{
 
 use super::state::EditorHistories;
 use crate::viewport::animation::UsdStageTime;
-use crate::viewport::api::{SceneAnchorIndex, ViewportEventOutbox};
+use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::camera::CameraMount;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::session::{LoaderTuning, Spawned, StageInfo};

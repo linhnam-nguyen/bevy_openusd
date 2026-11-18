@@ -268,5 +268,5 @@ pub(super) fn capture_candidate(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/viewport/api/scene_index_reconcile_inline_tests.rs"]
+#[path = "../../../../tests/unit/viewport/scene/index/reconcile_tests.rs"]
 mod tests;

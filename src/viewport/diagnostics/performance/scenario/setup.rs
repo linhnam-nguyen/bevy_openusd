@@ -1,5 +1,6 @@
 use super::{ActiveScenarioDriver, BenchmarkScenarioId};
-use crate::viewport::api::{SceneAnchorIndex, ViewerSettingsState};
+use crate::viewport::api::ViewerSettingsState;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::SelectedTargets;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::semantic::SemanticWorkingStore;

@@ -6,16 +6,14 @@ use crate::viewport::animation::UsdStageTime;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::plugin::checkpoint_recovery;
 use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-use crate::viewport::api::{
-    CurrentHierarchyProjection, SceneAnchorIndex, ViewportCommandInbox, ViewportEventOutbox,
-    ViewportTreeCommandInbox,
-};
+use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
 use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::semantic::synchronize_live_stage;
 use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState, SemanticWorkingStore};

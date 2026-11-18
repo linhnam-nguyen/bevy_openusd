@@ -7,7 +7,7 @@ use crate::project::{
     cache::hydration::ActiveProjectCacheContext, cache::warming::ProjectCacheWarmQueue,
 };
 use crate::viewport::animation::UsdStageTime;
-use crate::viewport::api::{SceneAnchorIndex, ViewportTreeCommand, ViewportTreeCommandInbox};
+use crate::viewport::api::{ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::app::cadence::RendererCadence;
 use crate::viewport::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
@@ -15,6 +15,7 @@ use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{
     ClassificationColorPlan, SelectedPrim, SelectedTargets, SolariCapability,

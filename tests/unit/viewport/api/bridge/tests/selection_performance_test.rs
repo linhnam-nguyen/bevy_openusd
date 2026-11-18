@@ -6,7 +6,8 @@ use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportCommand};
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::tree::apply_tree_commands;
-use crate::viewport::api::{SceneAnchorIndex, ViewportCommandInbox, ViewportTreeCommandInbox};
+use crate::viewport::api::{ViewportCommandInbox, ViewportTreeCommandInbox};
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::{
     SelectedRenderableProjection, SelectedTargets, sync_selected_renderable_projection,
 };

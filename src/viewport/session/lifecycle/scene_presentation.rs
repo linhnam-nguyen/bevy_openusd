@@ -9,7 +9,7 @@ use crate::project::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
     SceneCacheEntryKind, SceneCacheIndex,
 };
-use crate::viewport::api::CurrentHierarchyProjection;
+use crate::viewport::scene::CurrentHierarchyProjection;
 
 pub(super) fn publish_scene_cache_presentation(
     world: &mut World,

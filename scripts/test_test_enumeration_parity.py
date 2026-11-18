@@ -438,6 +438,58 @@ class TestEnumerationParityTests(unittest.TestCase):
             with self.assertRaises(parity.BaselineError):
                 parity.load_qualified(baseline_path, legacy)
 
+    def test_c5_scene_index_aliases_preserve_target_feature_and_count(self):
+        legacy = parity.load_baseline(CHECKED_IN_BASELINE)
+        baseline_path = REPO_ROOT / "scripts" / "test_enumeration_qualified_baseline.json"
+        configs = parity.load_qualified(baseline_path, legacy)
+        migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+        migrations = parity.load_identity_migrations(migrations_path, configs)
+
+        old_prefix = "viewport::api::scene_index::"
+        new_prefix = "viewport::scene::index::"
+        expected_targets = {
+            ("Cargo.toml", ("bin",), "usdview"),
+            ("Cargo.toml", ("lib",), "usdview"),
+        }
+        c5_migrations = [
+            migration for migration in migrations if "BOV-C5" in migration["evidence"]
+        ]
+        self.assertEqual(len(c5_migrations), 16)
+        for migration in c5_migrations:
+            self.assertTrue(migration["old_name"].startswith(old_prefix))
+            self.assertEqual(
+                migration["new_name"],
+                new_prefix + migration["old_name"][len(old_prefix):],
+            )
+            self.assertEqual(set(migration["targets"]), expected_targets)
+            self.assertEqual(migration["configurations"], frozenset(parity.CONFIGS))
+
+        for configuration in sorted(parity.CONFIGS):
+            _, original_tests, benchmarks = parity.parse_targets(
+                configs[configuration]["targets"]
+            )
+            self.assertFalse(benchmarks)
+            old_entries = {
+                key: count
+                for key, count in original_tests.items()
+                if key[-1].startswith(old_prefix)
+            }
+            self.assertEqual(len({key[-1] for key in old_entries}), 16)
+            expected = {
+                (*key[:3], new_prefix + key[-1][len(old_prefix):]): count
+                for key, count in old_entries.items()
+            }
+            migrated, _ = parity.apply_identity_migrations(
+                original_tests, migrations, configuration
+            )
+            actual = {
+                key: count
+                for key, count in migrated.items()
+                if key[-1].startswith(new_prefix)
+            }
+            self.assertEqual(actual, expected)
+            self.assertEqual(sum(actual.values()), 32)
+
     def test_windows_executes_every_target_qualified_occurrence_and_rejects_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -9,7 +9,8 @@ use crate::project::cache::contract::{
     CacheObjectRef, ProjectCacheLookup, SceneCacheAddress, SceneCacheOccurrence,
 };
 use crate::viewport::{
-    api::SceneAnchorIndex, scene::SelectedTargets, session::SceneCachePresentation,
+    scene::{SceneAnchorIndex, SelectedTargets},
+    session::SceneCachePresentation,
 };
 
 use super::{ResidencyAuthority, ResidencyReason, ScenePayloadKey};

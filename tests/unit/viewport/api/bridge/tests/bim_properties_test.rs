@@ -6,12 +6,12 @@ mod tests {
     use crate::viewport::api::bridge::query::dispatch_scene_query_commands;
     use crate::viewport::api::bridge::state::SceneSearchRequests;
     use crate::viewport::api::query::SceneQueryService;
-    use crate::viewport::api::{
-        ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
-        ViewportCommandInbox, ViewportEventOutbox,
-    };
+    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::bim::test_fixtures;
     use crate::viewport::scene::SelectedTargets;
+    use crate::viewport::scene::{
+        ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
+    };
     use crate::viewport::semantic::SemanticSyncState;
 
     fn properties_test_app() -> App {

@@ -9,7 +9,7 @@ use viewport_protocol::{RenderMode, SceneAnchor};
 use super::super::super::selection::{
     SelectionBaseMaterial, SelectionColorOverride, collect_mesh_descendants,
 };
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::OriginalRenderMaterial;
 
 use super::{

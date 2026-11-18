@@ -4,13 +4,14 @@ use viewport_protocol::{HierarchySource, ViewportEvent, ViewportEventEnvelope};
 use super::super::ViewerSettingsState;
 use super::super::helpers::build_read_model;
 use crate::viewport::animation::UsdStageTime;
-use crate::viewport::api::{
-    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, ViewportEventOutbox,
-    refresh_projection_visibility,
-};
+use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::camera::{CameraMount, CameraOrientationState};
 use crate::viewport::physics::PhysicsActive;
 use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::scene::{
+    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
+    refresh_projection_visibility,
+};
 use crate::viewport::scene::{ClassificationColorPlan, SelectedTargets};
 use crate::viewport::session::{LoaderTuning, Spawned, StageHandle, StageInfo};
 

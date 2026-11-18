@@ -6,8 +6,8 @@ use viewport_protocol::{
     HierarchyReadModel, HierarchySource, HierarchyVisibilityState, ViewportEvent,
 };
 
-use super::hierarchy::{CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityTarget};
-use super::index::SceneAnchorIndex;
+use super::super::index::SceneAnchorIndex;
+use super::{CurrentHierarchyProjection, HierarchyPageIndex, HierarchyVisibilityTarget};
 
 impl CurrentHierarchyProjection {
     pub(crate) fn visibility_targets(

@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::viewport::api::SceneAnchorIndex;
+use crate::viewport::scene::SceneAnchorIndex;
 
 use super::super::{
     ProjectedWorldBounds, SelectedRenderableProjection, SelectedTargets,
