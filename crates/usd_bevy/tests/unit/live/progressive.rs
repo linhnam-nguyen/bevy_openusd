@@ -343,3 +343,31 @@ fn cache_aware_gate_rebuilds_when_a_resident_mesh_asset_is_evicted() {
         .clone();
     assert!(app.world().resource::<Assets<Mesh>>().contains(&rebuilt));
 }
+
+#[test]
+fn loads_empty_stage_with_default_prim() {
+    let stage = usd_support::open_fixture_stage("empty.usda");
+    assert_eq!(
+        stage
+            .stage_metadata("defaultPrim")
+            .expect("defaultPrim metadata"),
+        Some(openusd::sdf::Value::Token("World".into()))
+    );
+    assert!(!stage.layer_stack().is_empty());
+
+    let mut app = App::new();
+    app.add_plugins(LiveStagePlugin);
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+
+    let state = app
+        .world()
+        .resource::<crate::live::ProgressiveProjectionState>();
+    assert_eq!(state.readiness(), ProjectionReadiness::Ready);
+    assert!(
+        app.world()
+            .resource::<PrimEntities>()
+            .entity(app.world().resource::<PathStore>(), "/World")
+            .is_some()
+    );
+}

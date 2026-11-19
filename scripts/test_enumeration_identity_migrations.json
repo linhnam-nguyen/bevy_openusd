@@ -1,4 +1,489 @@
 {
+  "additions": [
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "authoring::tests::variant_default_selection_binds_red",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "authoring::tests::variant_override_selection_binds_blue",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "live::tests::material_patch::projects_per_prim_materials_and_shares_handles",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "live::tests::payload::projects_skel_root_skeleton_and_skinning_data",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "live::tests::progressive::loads_empty_stage_with_default_prim",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "mesh::builder::tests::mesh_from_usd_materialises_all_five_into_bevy_mesh_colors",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "mesh::builder::tests::reads_all_five_primvar_interpolations",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::hierarchy_tests::applies_visibility_and_reads_kind",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::hierarchy_tests::attaches_display_name_component_and_omits_plain",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::hierarchy_tests::projects_three_prim_hierarchy",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::attaches_audio_and_procedural_components_to_right_prims",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::projects_basis_curves_and_points_with_current_topology",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::projects_primitives_with_meshes",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::projects_supported_physics_marker_components",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::projects_supported_render_settings_markers",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::proxy_purpose_collider_survives_and_carries_physics",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::reads_custom_attrs_and_filters_schema_ones",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::geom::tests::reads_subdivision_scheme_and_classifies_meshes",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::material::package_isolation_tests::generated_usdz_decodes_embedded_1x1_texture",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::material::tests::reads_native_preview_materialx_wrapper_and_standard_surface",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "NEM-CLN-C1"
+      ],
+      "name": "route::material::tests::rich_materialx_network_resolves_textures_and_constants",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    }
+  ],
   "baseline_checkpoint": "BO-M9-C1",
   "baseline_commit": "59ccddbea7be85a34a8e8f1d4d131c91c7ade858",
   "derivation": {
@@ -9296,24 +9781,37 @@
       ]
     },
     {
-      "old_name": "viewport::session::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "BOV-C6"
+      ],
       "new_name": "viewport::stage::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
+      "old_name": "viewport::session::cache_presentation_gate::tests::a_stale_rendered_generation_does_not_release_the_gate",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9324,27 +9822,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
+      ],
       "new_name": "viewport::stage::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
+      "old_name": "viewport::session::cache_presentation_gate::tests::rendered_frame_opens_immediately_but_missing_renderer_uses_bounded_fallback",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9355,27 +9853,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
+      ],
       "new_name": "viewport::stage::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
+      "old_name": "viewport::session::lifecycle::cache_tests::changed_source_across_stage_open_cannot_consume_old_cache_seeds",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9386,27 +9884,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
+      ],
       "new_name": "viewport::stage::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
+      "old_name": "viewport::session::lifecycle::cache_tests::corrupt_cache_falls_back_to_a_successfully_opened_canonical_stage",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9417,27 +9915,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
+      ],
       "new_name": "viewport::stage::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
+      "old_name": "viewport::session::lifecycle::cache_tests::poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_stage",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9448,27 +9946,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
+      ],
       "new_name": "viewport::stage::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
+      "old_name": "viewport::session::lifecycle::cache_tests::preservation_tests::canonical_stage_install_preserves_cache_presentation_lookup_and_resident_meshes",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9479,27 +9977,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
+      ],
       "new_name": "viewport::stage::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
+      "old_name": "viewport::session::lifecycle::cache_tests::unequal_activation_and_scene_generations_revalidate_current_scene_cache",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9510,27 +10008,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::descriptor_appearing_after_uncached_activation_reconciles_same_session",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9541,27 +10039,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::late_prior_session_result_cannot_mutate_current_lifecycle",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9572,27 +10070,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_index_publication_is_retryable_lifecycle_failure",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9603,27 +10101,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::malformed_spatial_publication_is_retryable_lifecycle_failure",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9634,27 +10132,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::newer_generation_rejection_leaves_lifecycle_metadata_unchanged",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9665,27 +10163,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::ordinary_non_project_activation_has_no_cache_write",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9696,27 +10194,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::prim_count_retries_have_a_terminal_bound",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9727,58 +10225,27 @@
       ],
       "evidence": [
         "BOV-C6"
-      ]
-    },
-    {
-      "old_name": "viewport::session::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
+      ],
       "new_name": "viewport::stage::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
+      "old_name": "viewport::session::lifecycle::prim_count::tests::same_generation_merge_preserves_latest_cache_metadata",
       "targets": [
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "bin"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "manifest": "Cargo.toml",
           "kind": [
             "lib"
           ],
+          "manifest": "Cargo.toml",
           "target": "usdview"
         }
-      ],
-      "configurations": [
-        "linux:default",
-        "linux:solari",
-        "macos:default",
-        "macos:solari",
-        "windows:default",
-        "windows:solari"
-      ],
-      "evidence": [
-        "BOV-C6"
       ]
     },
     {
-      "old_name": "viewport::session::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
-      "new_name": "viewport::stage::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
-      "targets": [
-        {
-          "manifest": "Cargo.toml",
-          "kind": [
-            "bin"
-          ],
-          "target": "usdview"
-        },
-        {
-          "manifest": "Cargo.toml",
-          "kind": [
-            "lib"
-          ],
-          "target": "usdview"
-        }
-      ],
       "configurations": [
         "linux:default",
         "linux:solari",
@@ -9789,6 +10256,24 @@
       ],
       "evidence": [
         "BOV-C6"
+      ],
+      "new_name": "viewport::stage::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
+      "old_name": "viewport::session::lifecycle::tests::project_activation_replaces_a_with_b_and_failed_b_preserves_a",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
       ]
     },
     {

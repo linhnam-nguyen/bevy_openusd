@@ -382,3 +382,259 @@ fn source_cache_is_bounded_for_deforming_geometry_versions() {
     assert!(cache.source_len() <= MAX_INTERNED);
     assert!(cache.stats().evictions > 0);
 }
+
+fn projected_fixture_app(fixture: &str) -> App {
+    let stage = usd_support::open_fixture_stage(fixture);
+    let mut app = App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+    app
+}
+
+#[test]
+fn projects_basis_curves_and_points_with_current_topology() {
+    let mut app = projected_fixture_app("curves_points.usda");
+    let world = app.world_mut();
+    let mut by_path = HashMap::new();
+    for (prim, mesh) in world.query::<(&crate::UsdPrimRef, &Mesh3d)>().iter(world) {
+        by_path.insert(prim.path.clone(), mesh.0.clone());
+    }
+    for expected in ["/World/Polyline", "/World/Curve", "/World/Cloud"] {
+        assert!(by_path.contains_key(expected), "missing Mesh3d on {expected}");
+    }
+
+    let meshes = app.world().resource::<Assets<Mesh>>();
+    let polyline = meshes.get(&by_path["/World/Polyline"]).unwrap();
+    assert_eq!(polyline.primitive_topology(), PrimitiveTopology::LineList);
+    assert_eq!(polyline.count_vertices(), 5);
+
+    let curve = meshes.get(&by_path["/World/Curve"]).unwrap();
+    assert_eq!(curve.primitive_topology(), PrimitiveTopology::LineList);
+    assert_eq!(curve.count_vertices(), 17);
+
+    let cloud = meshes.get(&by_path["/World/Cloud"]).unwrap();
+    assert_eq!(cloud.primitive_topology(), PrimitiveTopology::PointList);
+    assert_eq!(cloud.count_vertices(), 6);
+}
+
+#[test]
+fn projects_primitives_with_meshes() {
+    let mut app = projected_fixture_app("primitives.usda");
+    let world = app.world_mut();
+    let mut by_path = HashMap::new();
+    for (prim, mesh) in world.query::<(&crate::UsdPrimRef, &Mesh3d)>().iter(world) {
+        by_path.insert(prim.path.clone(), mesh.0.clone());
+    }
+    for expected in [
+        "/World/Box",
+        "/World/Ball",
+        "/World/Pipe",
+        "/World/Cap",
+        "/World/Tri",
+    ] {
+        assert!(by_path.contains_key(expected), "missing Mesh3d on {expected}");
+    }
+    assert!(!by_path.contains_key("/World"));
+
+    let meshes = app.world().resource::<Assets<Mesh>>();
+    let tri = meshes.get(&by_path["/World/Tri"]).unwrap();
+    assert_eq!(tri.count_vertices(), 3);
+}
+
+#[test]
+fn reads_subdivision_scheme_and_classifies_meshes() {
+    use crate::read::geom::SubdivScheme;
+    use crate::route::profile::GeometrySubdivisionClass;
+
+    let stage = usd_support::open_fixture_stage("subdivision.usda");
+    let cc = read_mesh(&stage, &openusd::sdf::path("/World/CatmullClark").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(cc.subdivision_scheme, SubdivScheme::CatmullClark);
+    assert_eq!(
+        GeometrySubdivisionClass::from(cc.subdivision_scheme),
+        GeometrySubdivisionClass::CatmullClark
+    );
+
+    let lp = read_mesh(&stage, &openusd::sdf::path("/World/LoopTri").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(lp.subdivision_scheme, SubdivScheme::Loop);
+    assert_eq!(
+        GeometrySubdivisionClass::from(lp.subdivision_scheme),
+        GeometrySubdivisionClass::Loop
+    );
+
+    let flat = read_mesh(&stage, &openusd::sdf::path("/World/Flat").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(flat.subdivision_scheme, SubdivScheme::None);
+
+    let un = read_mesh(&stage, &openusd::sdf::path("/World/Unauthored").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(un.subdivision_scheme, SubdivScheme::None);
+}
+
+#[test]
+fn reads_custom_attrs_and_filters_schema_ones() {
+    use crate::read::geom::{CustomAttrValue, read_custom_attrs};
+
+    let stage = usd_support::open_fixture_stage("custom_attrs.usda");
+    let plain = read_custom_attrs(&stage, &openusd::sdf::path("/World/Plain").unwrap()).unwrap();
+    assert!(plain.is_empty());
+
+    let robot = read_custom_attrs(&stage, &openusd::sdf::path("/World/Robot").unwrap()).unwrap();
+    assert_eq!(robot.len(), 5);
+    let by_name: HashMap<_, _> = robot.into_iter().collect();
+    assert!(!by_name.contains_key("xformOp:translate"));
+    assert_eq!(
+        by_name.get("userProperties:max_speed"),
+        Some(&CustomAttrValue::Float(2.5))
+    );
+    assert_eq!(
+        by_name.get("userProperties:priority"),
+        Some(&CustomAttrValue::Int(7))
+    );
+    assert_eq!(
+        by_name.get("userProperties:name"),
+        Some(&CustomAttrValue::String("cart_01".to_string()))
+    );
+    assert_eq!(
+        by_name.get("userProperties:active"),
+        Some(&CustomAttrValue::Bool(true))
+    );
+    match by_name.get("arena:tint") {
+        Some(CustomAttrValue::Vec3f(rgb)) => {
+            assert!((rgb[0] - 0.85).abs() < 1e-4);
+            assert!((rgb[1] - 0.55).abs() < 1e-4);
+            assert!((rgb[2] - 0.1).abs() < 1e-4);
+        }
+        other => panic!("arena:tint should decode as Vec3f, got {other:?}"),
+    }
+}
+
+#[test]
+fn attaches_audio_and_procedural_components_to_right_prims() {
+    let mut app = projected_fixture_app("media_proc.usda");
+    let world = app.world_mut();
+
+    let mut audio = Vec::new();
+    for (prim, comp) in world
+        .query::<(&crate::UsdPrimRef, &crate::UsdSpatialAudio)>()
+        .iter(world)
+    {
+        audio.push((prim.path.clone(), comp.clone()));
+    }
+    audio.sort_by(|a, b| a.0.cmp(&b.0));
+    let audio_paths: Vec<_> = audio.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(audio_paths, vec!["/World/Bell", "/World/Click"]);
+    assert_eq!(audio[0].1.file, "sounds/bell.wav");
+    assert_eq!(audio[0].1.aural_mode.as_deref(), Some("spatial"));
+    assert_eq!(audio[0].1.playback_mode.as_deref(), Some("loopFromStart"));
+    assert!((audio[0].1.gain - 0.8).abs() < 1e-6);
+
+    let proc_entries: Vec<_> = world
+        .query::<(&crate::UsdPrimRef, &crate::UsdProcedural)>()
+        .iter(world)
+        .map(|(p, c)| (p.path.clone(), c.system.clone()))
+        .collect();
+    assert_eq!(
+        proc_entries,
+        vec![("/World/Forest".to_string(), Some("houdini".to_string()))]
+    );
+}
+
+#[test]
+fn proxy_purpose_collider_survives_and_carries_physics() {
+    let mut app = projected_fixture_app("physics_proxy.usda");
+    let world = app.world_mut();
+    let entity_of = |world: &mut World, target: &str| -> Entity {
+        world
+            .query::<(Entity, &crate::UsdPrimRef)>()
+            .iter(world)
+            .find(|(_, p)| p.path == target)
+            .map(|(e, _)| e)
+            .unwrap_or_else(|| panic!("missing {target}"))
+    };
+
+    let render_e = entity_of(world, "/World/Robot/RenderMesh");
+    let proxy_e = entity_of(world, "/World/Robot/ProxyCollider");
+    let guide_e = entity_of(world, "/World/Robot/DebugMarker");
+
+    assert_eq!(
+        world.get::<crate::UsdPurpose>(render_e).map(|p| p.0.as_str()),
+        Some("render")
+    );
+    assert_eq!(
+        world.get::<crate::UsdPurpose>(proxy_e).map(|p| p.0.as_str()),
+        Some("proxy")
+    );
+    assert_eq!(
+        world.get::<crate::UsdPurpose>(guide_e).map(|p| p.0.as_str()),
+        Some("guide")
+    );
+    assert!(world.get::<crate::UsdRigidBody>(proxy_e).is_some());
+    assert!(world.get::<crate::UsdCollider>(proxy_e).is_some());
+    // DisplayPurposes::default() shows proxy (Inherited) and hides render and guide.
+    assert_eq!(world.get::<Visibility>(render_e), Some(&Visibility::Hidden));
+    assert_eq!(world.get::<Visibility>(proxy_e), Some(&Visibility::Inherited));
+    assert_eq!(world.get::<Visibility>(guide_e), Some(&Visibility::Hidden));
+}
+
+#[test]
+fn projects_supported_physics_marker_components() {
+    let mut app = projected_fixture_app("physics.usda");
+    let world = app.world_mut();
+    let entity_of = |world: &mut World, target: &str| -> Entity {
+        world
+            .query::<(Entity, &crate::UsdPrimRef)>()
+            .iter(world)
+            .find(|(_, p)| p.path == target)
+            .map(|(e, _)| e)
+            .unwrap_or_else(|| panic!("missing {target}"))
+    };
+
+    let base_e = entity_of(world, "/World/Base");
+    let arm_e = entity_of(world, "/World/Arm");
+    let hinge_e = entity_of(world, "/World/Hinge");
+
+    assert!(world.get::<crate::UsdRigidBody>(base_e).is_some());
+    assert!(world.get::<crate::UsdCollider>(base_e).is_some());
+    let base_mass = world.get::<crate::UsdMass>(base_e).expect("Base UsdMass");
+    assert!((base_mass.mass.expect("mass") - 2.5).abs() < 1e-5);
+
+    assert!(world.get::<crate::UsdRigidBody>(arm_e).is_some());
+    assert!(world.get::<crate::UsdCollider>(arm_e).is_some());
+    assert!(world.get::<crate::UsdMass>(arm_e).is_none());
+
+    assert!(world.get::<crate::UsdPhysicsJoint>(hinge_e).is_some());
+    let joint = world.get::<crate::UsdJoint>(hinge_e).expect("Hinge UsdJoint");
+    assert_eq!(joint.kind, "revolute");
+    assert_eq!(joint.body0.as_deref(), Some("/World/Base"));
+    assert_eq!(joint.body1.as_deref(), Some("/World/Arm"));
+    assert_eq!(joint.axis.as_deref(), Some("Z"));
+    assert_eq!(joint.lower, Some(-45.0));
+    assert_eq!(joint.upper, Some(45.0));
+}
+
+#[test]
+fn projects_supported_render_settings_markers() {
+    let mut app = projected_fixture_app("render_settings.usda");
+    let world = app.world_mut();
+    let settings: Vec<_> = world
+        .query::<(&crate::UsdPrimRef, &crate::route::coverage::UsdRenderSettings)>()
+        .iter(world)
+        .map(|(p, s)| (p.path.clone(), s.clone()))
+        .collect();
+    assert_eq!(settings.len(), 1);
+    assert_eq!(settings[0].0, "/Render/Primary");
+    assert_eq!(
+        settings[0].1.included_purposes,
+        vec!["default".to_string(), "render".to_string()]
+    );
+}

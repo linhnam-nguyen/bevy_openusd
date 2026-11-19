@@ -379,3 +379,69 @@ fn archive_lookup_does_not_discover_unregistered_repository_archives() {
     assert_eq!(stats.archive_index_builds, 0);
     assert_eq!(stats.archive_entries_indexed, 0);
 }
+
+#[test]
+fn reads_native_preview_materialx_wrapper_and_standard_surface() {
+    let stage = usd_support::open_fixture_stage("materialx.usda");
+
+    let native = crate::read::shade::read_preview_material(
+        &stage,
+        &openusd::sdf::path("/World/Materials/Native").unwrap(),
+    )
+    .expect("read ok")
+    .expect("native should decode");
+    assert_eq!(native.diffuse_color, Some([0.9, 0.1, 0.1]));
+    assert_eq!(native.roughness, Some(0.4));
+    assert_eq!(native.metallic, Some(0.0));
+
+    let wrapped = crate::read::shade::read_preview_material(
+        &stage,
+        &openusd::sdf::path("/World/Materials/MtlxWrapped").unwrap(),
+    )
+    .expect("read ok")
+    .expect("wrapped should decode");
+    assert_eq!(wrapped.diffuse_color, Some([0.1, 0.8, 0.2]));
+    assert_eq!(wrapped.roughness, Some(0.25));
+    assert_eq!(wrapped.metallic, Some(0.0));
+
+    let std = crate::read::shade::read_preview_material(
+        &stage,
+        &openusd::sdf::path("/World/Materials/MtlxStandard").unwrap(),
+    )
+    .expect("read ok")
+    .expect("standard_surface should decode");
+    assert_eq!(std.diffuse_color, Some([0.1, 0.25, 0.85]));
+    assert_eq!(std.roughness, Some(0.15));
+    assert_eq!(std.metallic, Some(0.9));
+    assert_eq!(std.emissive_color, Some([0.0, 0.0, 0.5]));
+    let opacity = std.opacity.expect("opacity should decode");
+    assert!((opacity - 0.4).abs() < 1e-4, "opacity got {opacity}");
+}
+
+#[test]
+fn rich_materialx_network_resolves_textures_and_constants() {
+    let stage = usd_support::open_fixture_stage("materialx_rich.usda");
+    let m = crate::read::shade::read_preview_material(
+        &stage,
+        &openusd::sdf::path("/World/Materials/Rich").unwrap(),
+    )
+    .expect("read ok")
+    .expect("rich material should decode");
+
+    assert!(
+        m.diffuse_texture
+            .as_deref()
+            .is_some_and(|p| p.replace('\\', "/").ends_with("textures/diffuse.png")),
+        "expected diffuse texture, got {:?}",
+        m.diffuse_texture
+    );
+    let metal = m.metallic.expect("metalness should decode");
+    assert!((metal - 0.85).abs() < 1e-4, "metallic got {metal}");
+    assert!(
+        m.normal_texture
+            .as_deref()
+            .is_some_and(|p| p.replace('\\', "/").ends_with("textures/normal.png")),
+        "expected normal texture, got {:?}",
+        m.normal_texture
+    );
+}

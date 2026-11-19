@@ -1181,6 +1181,144 @@ class TestEnumerationParityTests(unittest.TestCase):
                 "solari::relocated_scene_test",
             )
 
+    def test_identity_migration_additions_apply_and_reject_collisions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, _, configs = _qualified_fixture(root)
+            migration_path = root / "migrations.json"
+            target = [{"manifest": "Cargo.toml", "kind": ["lib"], "target": "app"}]
+            all_configs = sorted(parity.CONFIGS)
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [],
+                        "additions": [
+                            {
+                                "name": "ported::dormant_contract",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["NEM-CLN-C1"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            migrations = parity.load_identity_migrations(migration_path, configs)
+            self.assertEqual(len(migrations.additions), 1)
+            report = parity.qualified_report(
+                [_target("app", {"alpha::unit": 2, "beta::contract": 1})],
+                [
+                    _target(
+                        "app",
+                        {
+                            "alpha::unit": 2,
+                            "beta::contract": 1,
+                            "ported::dormant_contract": 1,
+                        },
+                    )
+                ],
+                identity_migrations=migrations,
+                configuration="windows:default",
+            )
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["identity_migrations_applied"], 1)
+
+            # Reject colliding with pinned baseline identity
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [],
+                        "additions": [
+                            {
+                                "name": "alpha::unit",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["NEM-CLN-C1"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+            # Reject colliding with a rename migration destination
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [
+                            {
+                                "old_name": "alpha::unit",
+                                "new_name": "alpha::relocated",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["BOV-C4"],
+                            }
+                        ],
+                        "additions": [
+                            {
+                                "name": "alpha::relocated",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["NEM-CLN-C1"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+            migration_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "baseline_checkpoint": parity.BASELINE_CHECKPOINT,
+                        "baseline_commit": parity.BASELINE_COMMIT,
+                        "entries": [],
+                        "additions": [
+                            {
+                                "name": "ported::dup",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["NEM-CLN-C1"],
+                            },
+                            {
+                                "name": "ported::dup",
+                                "targets": target,
+                                "configurations": all_configs,
+                                "evidence": ["NEM-CLN-C1"],
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(parity.BaselineError):
+                parity.load_identity_migrations(migration_path, configs)
+
+    def test_checked_in_additions_match_current_configs(self):
+        legacy = parity.load_baseline(CHECKED_IN_BASELINE)
+        baseline_path = REPO_ROOT / "scripts" / "test_enumeration_qualified_baseline.json"
+        configs = parity.load_qualified(baseline_path, legacy)
+        migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
+        migrations = parity.load_identity_migrations(migrations_path, configs)
+        self.assertEqual(len(migrations.additions), 21)
+        for addition in migrations.additions:
+            self.assertEqual(addition["evidence"], ("NEM-CLN-C1",))
+
 
 if __name__ == "__main__":
     unittest.main()

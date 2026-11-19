@@ -136,3 +136,103 @@ fn hummingbird_materials_use_authored_conversion_and_embedded_textures() {
         0
     );
 }
+
+#[test]
+fn generated_usdz_decodes_embedded_1x1_texture() {
+    let dir = tempdir().expect("tempdir");
+    let archive = dir.path().join("red_box.usdz");
+    let usda = r#"#usda 1.0
+(
+    defaultPrim = "World"
+    upAxis = "Y"
+    metersPerUnit = 1.0
+)
+
+def Xform "World"
+{
+    def Scope "Materials"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/Materials/Red/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Materials/Red/DiffuseTex.outputs:rgb>
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+
+            def Shader "DiffuseTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/red.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    def Cube "RedBox" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 0.5
+        rel material:binding = </World/Materials/Red>
+    }
+}
+"#;
+    {
+        let file = std::fs::File::create(&archive).expect("create red_box.usdz");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("scene.usda", options).unwrap();
+        writer.write_all(usda.as_bytes()).unwrap();
+        writer.start_file("textures/red.png", options).unwrap();
+        writer
+            .write_all(&png_pixel([255, 0, 0, 255]))
+            .unwrap();
+        writer.finish().unwrap();
+    }
+
+    let stage = Stage::open(archive.to_str().expect("archive path")).expect("usdz opens");
+    let archives = super::archive_paths_for_stage(&stage, &archive).expect("archive closure");
+    let mut app = bevy::app::App::new();
+    app.add_plugins(UsdPlugin)
+        .add_plugins(LiveStagePlugin)
+        .init_resource::<Assets<bevy::mesh::Mesh>>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<Assets<StandardMaterial>>()
+        .insert_resource(UsdTextureCache {
+            archive_paths: archives,
+            ..Default::default()
+        });
+    app.world_mut().insert_non_send(LiveStage::new(stage));
+    app.update();
+
+    let world = app.world_mut();
+    let mat_handle = world
+        .query::<(&UsdPrimRef, &MeshMaterial3d<StandardMaterial>)>()
+        .iter(world)
+        .find(|(prim, _)| prim.path == "/World/RedBox")
+        .map(|(_, mat)| mat.0.clone())
+        .expect("RedBox material projected");
+    let mat = app
+        .world()
+        .resource::<Assets<StandardMaterial>>()
+        .get(&mat_handle)
+        .expect("RedBox StandardMaterial exists");
+    let tex = mat
+        .base_color_texture
+        .as_ref()
+        .expect("base_color_texture decoded from USDZ");
+    let image = app
+        .world()
+        .resource::<Assets<Image>>()
+        .get(tex)
+        .expect("embedded 1x1 PNG image exists");
+    assert_eq!(image.texture_descriptor.size.width, 1);
+    assert_eq!(image.texture_descriptor.size.height, 1);
+}

@@ -315,8 +315,17 @@ MIGRATION_CHECKPOINTS = frozenset(
         "BOV-C6",
         "BOV-C7",
         "BOV-C8",
+        "NEM-CLN-C1",
     }
 )
+
+
+class IdentityMigrationSet(list):
+    """List of rename migrations carrying validated explicit post-baseline additions."""
+
+    def __init__(self, entries=(), *, additions=()):
+        super().__init__(entries)
+        self.additions = tuple(additions)
 
 
 def checked_run(cmd, cwd, *, env=None):
@@ -552,10 +561,39 @@ def _migration_target_key(raw):
     return (manifest, tuple(kinds), target)
 
 
-def load_identity_migrations(path, configs):
-    """Load exact aliases whose source identities are present in the pinned baseline.
+def _parse_scoped_targets_configs_evidence(raw, label):
+    raw_targets = raw["targets"]
+    if not isinstance(raw_targets, list) or not raw_targets:
+        raise BaselineError(f"{label}.targets must be non-empty")
+    targets = tuple(_migration_target_key(target) for target in raw_targets)
+    if len(set(targets)) != len(targets) or list(targets) != sorted(set(targets)):
+        raise BaselineError(f"{label}.targets must be unique and sorted")
 
-    The configuration list on each alias is checked against the actual six
+    raw_configs = raw["configurations"]
+    if (
+        not isinstance(raw_configs, list)
+        or not raw_configs
+        or not all(isinstance(config, str) and config in CONFIGS for config in raw_configs)
+        or raw_configs != sorted(set(raw_configs))
+    ):
+        raise BaselineError(f"{label}.configurations are invalid")
+    configurations = frozenset(raw_configs)
+
+    evidence = raw["evidence"]
+    if (
+        not isinstance(evidence, list)
+        or not evidence
+        or not all(isinstance(item, str) and item in MIGRATION_CHECKPOINTS for item in evidence)
+        or len(evidence) != len(set(evidence))
+    ):
+        raise BaselineError(f"{label}.evidence is invalid")
+    return targets, configurations, tuple(evidence)
+
+
+def load_identity_migrations(path, configs):
+    """Load exact aliases and explicit additions against the pinned baseline.
+
+    The configuration list on each entry is checked against the actual six
     qualified captures. This keeps platform/feature applicability explicit and
     prevents a stale map from silently being applied to a different inventory.
     """
@@ -566,16 +604,19 @@ def load_identity_migrations(path, configs):
         or data.get("baseline_checkpoint") != BASELINE_CHECKPOINT
         or data.get("baseline_commit") != BASELINE_COMMIT
         or not isinstance(data.get("entries"), list)
+        or ("additions" in data and not isinstance(data.get("additions"), list))
     ):
         raise BaselineError("identity migration schema/provenance mismatch")
     if not isinstance(configs, dict) or set(configs) != CONFIGS:
         raise BaselineError("identity migrations require all six qualified baseline configurations")
 
+    baseline_targets = {}
     baseline_tests = {}
     for config in CONFIGS:
-        _, tests, benchmarks = parse_targets(configs[config]["targets"])
+        targets_set, tests, benchmarks = parse_targets(configs[config]["targets"])
         if benchmarks:
             raise BaselineError(f"baseline contains benchmarks for {config}")
+        baseline_targets[config] = targets_set
         baseline_tests[config] = tests
 
     migrations = []
@@ -597,31 +638,9 @@ def load_identity_migrations(path, configs):
         ):
             raise BaselineError(f"identity migration entries[{index}] has invalid names")
 
-        raw_targets = raw["targets"]
-        if not isinstance(raw_targets, list) or not raw_targets:
-            raise BaselineError(f"identity migration entries[{index}].targets must be non-empty")
-        targets = tuple(_migration_target_key(target) for target in raw_targets)
-        if len(set(targets)) != len(targets) or list(targets) != sorted(set(targets)):
-            raise BaselineError(f"identity migration entries[{index}].targets must be unique and sorted")
-
-        raw_configs = raw["configurations"]
-        if (
-            not isinstance(raw_configs, list)
-            or not raw_configs
-            or not all(isinstance(config, str) and config in CONFIGS for config in raw_configs)
-            or raw_configs != sorted(set(raw_configs))
-        ):
-            raise BaselineError(f"identity migration entries[{index}].configurations are invalid")
-        configurations = frozenset(raw_configs)
-
-        evidence = raw["evidence"]
-        if (
-            not isinstance(evidence, list)
-            or not evidence
-            or not all(isinstance(item, str) and item in MIGRATION_CHECKPOINTS for item in evidence)
-            or len(evidence) != len(set(evidence))
-        ):
-            raise BaselineError(f"identity migration entries[{index}].evidence is invalid")
+        targets, configurations, evidence = _parse_scoped_targets_configs_evidence(
+            raw, f"identity migration entries[{index}]"
+        )
 
         entry_sources = {(manifest, kinds, target, old_name) for manifest, kinds, target in targets}
         entry_destinations = {(manifest, kinds, target, new_name) for manifest, kinds, target in targets}
@@ -663,13 +682,53 @@ def load_identity_migrations(path, configs):
                 "new_name": new_name,
                 "targets": targets,
                 "configurations": configurations,
-                "evidence": tuple(evidence),
+                "evidence": evidence,
             }
         )
 
     if source_keys & destination_keys:
         raise BaselineError("identity migration chains are not supported")
-    return migrations
+
+    additions = []
+    addition_keys = set()
+    for index, raw in enumerate(data.get("additions", ())):
+        required = {"name", "targets", "configurations", "evidence"}
+        if not isinstance(raw, dict) or set(raw) != required:
+            raise BaselineError(f"identity addition additions[{index}] has invalid fields")
+        name = raw["name"]
+        if not isinstance(name, str) or not name.strip() or name.endswith(TEST_SUFFIX):
+            raise BaselineError(f"identity addition additions[{index}] has invalid name")
+        targets, configurations, evidence = _parse_scoped_targets_configs_evidence(
+            raw, f"identity addition additions[{index}]"
+        )
+        entry_keys = {(manifest, kinds, target, name) for manifest, kinds, target in targets}
+        if addition_keys & entry_keys:
+            raise BaselineError(f"identity addition {name!r} is duplicated")
+        if (source_keys | destination_keys) & entry_keys:
+            raise BaselineError(f"identity addition {name!r} collides with migration entry")
+        for config in configurations:
+            tests = baseline_tests[config]
+            known_targets = baseline_targets[config]
+            for target in targets:
+                if target not in known_targets:
+                    raise BaselineError(
+                        f"identity addition {name!r} target {target} absent from baseline {config}"
+                    )
+                if tests.get((*target, name), 0):
+                    raise BaselineError(
+                        f"identity addition {name!r} already exists in pinned baseline {config}"
+                    )
+        addition_keys.update(entry_keys)
+        additions.append(
+            {
+                "name": name,
+                "targets": targets,
+                "configurations": configurations,
+                "evidence": evidence,
+            }
+        )
+
+    return IdentityMigrationSet(migrations, additions=additions)
 
 
 def apply_identity_migrations(expected_tests, migrations, configuration):
@@ -694,6 +753,17 @@ def apply_identity_migrations(expected_tests, migrations, configuration):
             raise BaselineError(f"identity migration {new_name!r} collides in {configuration}")
         for source, destination in zip(source_keys, destination_keys, strict=True):
             transformed[destination] = transformed.pop(source)
+            applied += 1
+    for addition in getattr(migrations, "additions", ()):
+        if configuration not in addition["configurations"]:
+            continue
+        for target in addition["targets"]:
+            key = (*target, addition["name"])
+            if transformed.get(key, 0):
+                raise BaselineError(
+                    f"identity addition {addition['name']!r} collides in {configuration}"
+                )
+            transformed[key] = 1
             applied += 1
     return transformed, applied
 

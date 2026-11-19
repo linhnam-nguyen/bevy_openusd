@@ -203,3 +203,70 @@ fn persistence_export_and_reopen() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+fn variant_box_color(app: &mut bevy::prelude::App) -> [f32; 3] {
+    let world = app.world_mut();
+    let mat_handle = world
+        .query::<(
+            &crate::UsdPrimRef,
+            &bevy::pbr::MeshMaterial3d<bevy::pbr::StandardMaterial>,
+        )>()
+        .iter(world)
+        .find(|(prim, _)| prim.path == "/Root/Box")
+        .map(|(_, mat)| mat.0.clone())
+        .expect("/Root/Box carries a material");
+    let materials = app
+        .world()
+        .resource::<bevy::asset::Assets<bevy::pbr::StandardMaterial>>();
+    let mat = materials.get(&mat_handle).expect("material exists");
+    let bevy::color::Srgba {
+        red, green, blue, ..
+    } = mat.base_color.to_srgba();
+    [red, green, blue]
+}
+
+#[test]
+fn variant_default_selection_binds_red() {
+    let stage = usd_support::open_fixture_stage("variants.usda");
+    let root = openusd::sdf::path("/Root").unwrap();
+    let selections = crate::read::variants::variant_selections(&stage, &root).unwrap();
+    assert_eq!(selections, vec![("look".to_string(), "red".to_string())]);
+    assert_eq!(
+        crate::read::variants::variant_selection(&stage, &root, "look").as_deref(),
+        Some("red")
+    );
+
+    let mut app = bevy::prelude::App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<bevy::asset::Assets<bevy::mesh::Mesh>>()
+        .init_resource::<bevy::asset::Assets<bevy::image::Image>>()
+        .init_resource::<bevy::asset::Assets<bevy::pbr::StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+
+    let [r, g, b] = variant_box_color(&mut app);
+    assert!((r - 0.9).abs() < 1e-4 && (g - 0.1).abs() < 1e-4 && (b - 0.1).abs() < 1e-4);
+}
+
+#[test]
+fn variant_override_selection_binds_blue() {
+    let stage = usd_support::open_fixture_stage("variants.usda");
+    let mut app = bevy::prelude::App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<bevy::asset::Assets<bevy::mesh::Mesh>>()
+        .init_resource::<bevy::asset::Assets<bevy::image::Image>>()
+        .init_resource::<bevy::asset::Assets<bevy::pbr::StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+
+    {
+        let live = app.world().get_non_send::<crate::LiveStage>().unwrap();
+        set_variant(&live.stage, "/Root", "look", "blue").unwrap();
+    }
+    app.update();
+
+    let [r, g, b] = variant_box_color(&mut app);
+    assert!((r - 0.1).abs() < 1e-4 && (g - 0.2).abs() < 1e-4 && (b - 0.9).abs() < 1e-4);
+}

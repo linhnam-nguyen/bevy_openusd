@@ -387,3 +387,58 @@ fn repeated_material_edits_keep_standard_material_assets_bounded() {
     assert_eq!(stats.retired_assets, stats.cleaned_assets);
     assert!(stats.cleaned_assets >= 32);
 }
+
+#[test]
+fn projects_per_prim_materials_and_shares_handles() {
+    let mut app = build_app();
+    let world = app.world_mut();
+    let mut by_path = std::collections::HashMap::new();
+    for (prim, mat) in world
+        .query::<(&crate::UsdPrimRef, &MeshMaterial3d<StandardMaterial>)>()
+        .iter(world)
+    {
+        by_path.insert(prim.path.clone(), mat.0.clone());
+    }
+
+    for expected in [
+        "/World/RedBox",
+        "/World/GreenBall",
+        "/World/GreenBox",
+        "/World/EmissiveBall",
+    ] {
+        assert!(
+            by_path.contains_key(expected),
+            "expected MeshMaterial3d on {expected}"
+        );
+    }
+    assert_eq!(by_path["/World/GreenBall"], by_path["/World/GreenBox"]);
+    assert_ne!(by_path["/World/RedBox"], by_path["/World/GreenBall"]);
+
+    let materials = app.world().resource::<Assets<StandardMaterial>>();
+    let red = materials
+        .get(&by_path["/World/RedBox"])
+        .expect("Red material missing");
+    let Srgba {
+        red: rr,
+        green: rg,
+        blue: rb,
+        ..
+    } = red.base_color.to_srgba();
+    assert!((rr - 0.8).abs() < 1e-5 && (rg - 0.1).abs() < 1e-5 && (rb - 0.1).abs() < 1e-5);
+
+    let green = materials
+        .get(&by_path["/World/GreenBall"])
+        .expect("Green material missing");
+    assert!((green.metallic - 0.95).abs() < 1e-4);
+
+    let emissive = materials
+        .get(&by_path["/World/EmissiveBall"])
+        .expect("Emissive material missing");
+    let LinearRgba {
+        red: er,
+        green: eg,
+        blue: eb,
+        ..
+    } = emissive.emissive;
+    assert!((er - 0.1).abs() < 1e-5 && (eg - 0.4).abs() < 1e-5 && (eb - 1.2).abs() < 1e-5);
+}

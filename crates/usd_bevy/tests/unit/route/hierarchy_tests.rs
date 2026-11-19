@@ -80,3 +80,121 @@ fn hierarchy_metadata_composed_reference_descendant_uses_composed_path() -> anyh
     let _ = std::fs::remove_file(parent_path);
     Ok(())
 }
+
+#[test]
+fn projects_three_prim_hierarchy() {
+    let stage = usd_support::open_fixture_stage("hierarchy.usda");
+    assert_eq!(
+        stage.stage_metadata("defaultPrim").unwrap(),
+        Some(openusd::sdf::Value::Token("World".into()))
+    );
+    assert!(!stage.layer_stack().is_empty());
+
+    let mut app = App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<Assets<bevy::mesh::Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+
+    let world = app.world_mut();
+    let mut by_path = std::collections::HashMap::new();
+    for (entity, prim) in world.query::<(Entity, &crate::UsdPrimRef)>().iter(world) {
+        if prim.path != "/" {
+            by_path.insert(prim.path.clone(), entity);
+        }
+    }
+    assert!(by_path.contains_key("/World"));
+    assert!(by_path.contains_key("/World/ChildA"));
+    assert!(by_path.contains_key("/World/ChildB"));
+    assert_eq!(by_path.len(), 3);
+
+    let world_children = app
+        .world()
+        .get::<Children>(by_path["/World"])
+        .map(|c| c.len())
+        .unwrap_or(0);
+    assert_eq!(world_children, 2);
+    assert_eq!(
+        app.world()
+            .get::<crate::UsdPrimRef>(by_path["/World/ChildA"])
+            .map(|p| p.path.as_str()),
+        Some("/World/ChildA")
+    );
+}
+
+#[test]
+fn attaches_display_name_component_and_omits_plain() {
+    let stage = usd_support::open_fixture_stage("usdui.usda");
+    let mut app = App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<Assets<bevy::mesh::Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+
+    let world = app.world_mut();
+    let mut by_path = std::collections::HashMap::new();
+    for (prim, dn) in world
+        .query::<(&crate::UsdPrimRef, Option<&UsdDisplayName>)>()
+        .iter(world)
+    {
+        by_path.insert(prim.path.clone(), dn.map(|d| d.0.clone()));
+    }
+    assert_eq!(
+        by_path.get("/World").and_then(|o| o.as_deref()),
+        Some("Top of the world")
+    );
+    assert_eq!(
+        by_path
+            .get("/World/robot_v3_baseLink_geom_0")
+            .and_then(|o| o.as_deref()),
+        Some("Main Body")
+    );
+    assert_eq!(by_path.get("/World/Plain").and_then(|o| o.as_deref()), None);
+}
+
+#[test]
+fn applies_visibility_and_reads_kind() {
+    let stage = usd_support::open_fixture_stage("visibility_kind.usda");
+    assert_eq!(
+        crate::read::geom::read_kind(&stage, &openusd::sdf::path("/World").unwrap())
+            .unwrap()
+            .as_deref(),
+        Some("assembly")
+    );
+    assert_eq!(
+        crate::read::geom::read_kind(&stage, &openusd::sdf::path("/World/Robot").unwrap())
+            .unwrap()
+            .as_deref(),
+        Some("component")
+    );
+    assert!(
+        crate::read::geom::read_kind(&stage, &openusd::sdf::path("/World/Visible").unwrap())
+            .unwrap()
+            .is_none()
+    );
+
+    let mut app = App::new();
+    app.add_plugins(crate::UsdPlugin)
+        .add_plugins(crate::LiveStagePlugin)
+        .init_resource::<Assets<bevy::mesh::Mesh>>()
+        .init_resource::<Assets<StandardMaterial>>();
+    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.update();
+
+    let world = app.world_mut();
+    let mut by_path = std::collections::HashMap::new();
+    for (prim, vis) in world.query::<(&crate::UsdPrimRef, &Visibility)>().iter(world) {
+        by_path.insert(prim.path.clone(), *vis);
+    }
+    assert_eq!(by_path["/World/Visible"], Visibility::Inherited);
+    assert_eq!(by_path["/World/Hidden"], Visibility::Hidden);
+    assert_eq!(by_path["/World/HiddenParent"], Visibility::Hidden);
+    assert_eq!(
+        by_path["/World/HiddenParent/InheritsHidden"],
+        Visibility::Inherited
+    );
+}
