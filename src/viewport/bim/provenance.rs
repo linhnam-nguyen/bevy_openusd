@@ -15,13 +15,26 @@ use std::{
 };
 
 use bevy::prelude::Resource;
-use openusd::usd::Stage;
+use openusd::usd::{ResolveInfo, Stage};
 use usd_git::{CommitInfo, GitRepository, Repository, RevisionId};
 use usd_model::{CanonicalValue, EntityKey, SemanticSnapshot, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 use viewport_protocol::{BimPropertyProvenanceReadModel, BimPropertyProvenanceStatus, SceneAnchor};
 
 use crate::viewport::api::LatestMailbox;
+
+/// Resolve live USD field provenance (`ResolveInfo` — `L33`) for an attribute
+/// on the composed stage, reporting the winning opinion source, layer site, and
+/// whether an authored value opinion is present.
+pub(crate) fn attribute_resolve_info(
+    stage: &Stage,
+    prim_path: &str,
+    property: &str,
+) -> Option<ResolveInfo> {
+    let sdf_path = openusd::sdf::path(prim_path).ok()?;
+    let prim = stage.prim(sdf_path).ok()?;
+    prim.attribute(property).resolve_info().ok()
+}
 
 const MAX_PROVENANCE_HISTORY: usize = 64;
 

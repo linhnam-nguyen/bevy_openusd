@@ -61,6 +61,8 @@ pub use snippet::UsdSnippet;
 pub use usd_macro::usd;
 
 use bevy::app::{App, Plugin, Update};
+use bevy::camera::visibility::VisibilitySystems;
+use bevy::ecs::schedule::IntoScheduleConfigs;
 
 /// Registers the [`UsdPrimRef`] reflect type and installs the built-in
 /// [`SchemaRegistry`] (transform / visibility / mesh / reflect routes). Pair
@@ -101,6 +103,14 @@ impl Plugin for UsdPlugin {
         app.init_resource::<route::material::MaterialProjectionProvenance>();
         app.init_resource::<route::FallbackMaterialColor>();
         app.add_systems(Update, route::sync_fallback_material_color);
+        app.add_systems(
+            bevy::app::PostUpdate,
+            route::xform::propagation::propagate_usd_affine_transforms_system
+                .after(bevy::transform::TransformSystems::Propagate)
+                // Camera frusta and dynamic skinned bounds both read GlobalTransform.
+                .before(VisibilitySystems::UpdateFrusta)
+                .before(VisibilitySystems::CalculateBounds),
+        );
         // Which USD `purpose` classes are displayed (Phase A). Default: show
         // proxy, hide render + guide.
         app.init_resource::<DisplayPurposes>();

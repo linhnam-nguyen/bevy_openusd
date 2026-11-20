@@ -50,7 +50,25 @@ impl Default for UvTransform {
 
 /// Read `material:binding` on a geom prim and return the bound Material prim
 /// path. `None` if no binding is authored.
+///
+/// Resolves direct, ancestor-inherited, collection, `bindMaterialAs` strength,
+/// and purpose bindings via [`openusd_schemas::shade::MaterialBindingAPI`]
+/// (`L28`), falling back to a direct `material:binding` relationship read when
+/// no binding resolves through the schema helper.
 pub fn read_material_binding(stage: &Stage, prim: &Path) -> anyhow::Result<Option<Path>> {
+    if let Ok(prim_ref) = stage.prim(prim.clone()) {
+        let api = openusd_schemas::shade::MaterialBindingAPI::from_prim_unchecked(prim_ref);
+        let mut cache = openusd_schemas::shade::BindingCache::default();
+        if let Ok(Some(resolved)) = api.resolve_binding("preview", true, &mut cache) {
+            return Ok(Some(resolved.material_path().clone()));
+        }
+        if let Ok(Some(resolved)) = api.resolve_binding("full", true, &mut cache) {
+            return Ok(Some(resolved.material_path().clone()));
+        }
+        if let Ok(Some(resolved)) = api.resolve_binding("", true, &mut cache) {
+            return Ok(Some(resolved.material_path().clone()));
+        }
+    }
     let rel_path = prim.append_property("material:binding")?;
     Ok(targets_at(stage, &rel_path)?.into_iter().next())
 }

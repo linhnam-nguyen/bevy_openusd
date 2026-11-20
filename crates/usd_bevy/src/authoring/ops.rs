@@ -5,10 +5,11 @@ type Result<T> = anyhow::Result<T>;
 
 // ─── Namespace ops ──────────────────────────────────────────────────
 
-/// Define (create) a prim of `type_name` at `path`.
+/// Define (create) a prim of `type_name` at `path` in one atomic [`Stage::edit`]
+/// transaction.
 pub fn define_prim(stage: &Stage, path: &str, type_name: &str) -> Result<()> {
     let prim = openusd::sdf::path(path)?;
-    stage.define_prim(prim)?.set_type_name(type_name)?;
+    stage.edit(|edit| edit.define_typed_prim(prim, type_name).map(|_| ()))?;
     Ok(())
 }
 
@@ -49,7 +50,7 @@ pub fn move_prim(stage: &Stage, old: &str, new: &str) -> Result<()> {
 // ─── Attribute ops ──────────────────────────────────────────────────
 
 /// Author `value` onto attribute `name` of `prim` (creating it as
-/// `type_name` if needed).
+/// `type_name` if needed) in one atomic [`Stage::edit`] transaction.
 pub fn set_attribute(
     stage: &Stage,
     prim: &str,
@@ -58,7 +59,7 @@ pub fn set_attribute(
     value: Value,
 ) -> Result<()> {
     let attr = openusd::sdf::path(prim)?.append_property(name)?;
-    stage.create_attribute(attr, type_name)?.set(value)?;
+    stage.edit(|edit| edit.attribute_builder(attr, type_name).set(value).build().map(|_| ()))?;
     Ok(())
 }
 

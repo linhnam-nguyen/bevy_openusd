@@ -18,9 +18,9 @@ pub struct AnimatedPrims(pub HashSet<String>);
 #[derive(Resource, Default)]
 pub(super) struct SampledTime(pub(super) Option<f64>);
 
-/// Whether `prim` animates: it has a time-sampled attribute of its own, or it
-/// is a skinned mesh driven by a time-varying SkelAnimation (whose samples live
-/// on a different prim).
+/// Whether `prim` animates: it has a time-varying attribute of its own
+/// (`Attribute::might_be_time_varying` — `L38`), or it is a skinned mesh driven
+/// by a time-varying SkelAnimation (whose samples live on a different prim).
 pub(super) fn prim_is_animated(stage: &Stage, path: &openusd::sdf::Path) -> bool {
     let own = stage
         .prim(path.clone())
@@ -28,9 +28,10 @@ pub(super) fn prim_is_animated(stage: &Stage, path: &openusd::sdf::Path) -> bool
         .and_then(|prim| prim.attributes().ok())
         .map(|attrs| {
             attrs.iter().any(|a| {
-                a.time_sample_times()
-                    .map(|times| !times.is_empty())
-                    .unwrap_or(false)
+                a.might_be_time_varying().unwrap_or(false)
+                    || a.time_sample_times()
+                        .map(|times| !times.is_empty())
+                        .unwrap_or(false)
             })
         })
         .unwrap_or(false);

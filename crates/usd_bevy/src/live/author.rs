@@ -6,8 +6,10 @@ use openusd::usd::Stage;
 use super::projection::to_bevy_transform;
 use crate::read::xform::read_transform;
 
-/// Author `transform` onto `prim_path` as `xformOp:transform`. Errors if the
-/// path is malformed or the layer rejects the edit.
+/// Author `transform` onto `prim_path` as `xformOp:transform` and
+/// `xformOpOrder = ["xformOp:transform"]` in one atomic [`Stage::edit`]
+/// transaction (`L32`). Errors if the path is malformed or the layer rejects
+/// the edit.
 pub fn author_transform(stage: &Stage, prim_path: &str, transform: &Transform) -> Result<()> {
     let prim = openusd::sdf::path(prim_path)?;
     let cols = Mat4::from_scale_rotation_translation(
@@ -19,13 +21,16 @@ pub fn author_transform(stage: &Stage, prim_path: &str, transform: &Transform) -
     let m: [f64; 16] = std::array::from_fn(|i| cols[i] as f64);
 
     let xop = prim.append_property("xformOp:transform")?;
-    stage
-        .create_attribute(xop, "matrix4d")?
-        .set(Value::Matrix4d(openusd::gf::Mat4d(m)))?;
     let order = prim.append_property("xformOpOrder")?;
-    stage
-        .create_attribute(order, "token[]")?
-        .set(Value::TokenVec(vec!["xformOp:transform".into()]))?;
+    stage.edit(|edit| {
+        edit.attribute_builder(xop, "matrix4d")
+            .set(Value::Matrix4d(openusd::gf::Mat4d(m)))
+            .build()?;
+        edit.attribute_builder(order, "token[]")
+            .set(Value::TokenVec(vec!["xformOp:transform".into()]))
+            .build()?;
+        Ok::<_, openusd::usd::StageAuthoringError>(())
+    })?;
     Ok(())
 }
 

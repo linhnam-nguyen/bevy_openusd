@@ -29,10 +29,19 @@ pub fn read_point_instancer(
     let Some(proto_indices) = read_int_array(stage, prim, "protoIndices")? else {
         return Ok(None);
     };
-    let prototypes = stage
-        .prim(prim.clone())
+    let prototypes = openusd_schemas::geom::PointInstancer::get(stage, prim.clone())
         .ok()
-        .and_then(|p| p.relationship("prototypes").targets().ok())
+        .flatten()
+        .and_then(|pi| {
+            use openusd_schemas::geom::PointInstancerSchema;
+            pi.prototypes_rel().targets().ok()
+        })
+        .or_else(|| {
+            stage
+                .prim(prim.clone())
+                .ok()
+                .and_then(|p| p.relationship("prototypes").targets().ok())
+        })
         .unwrap_or_default();
     let orientations = read_quat_array(stage, prim, "orientations")?.unwrap_or_default();
     let scales = read_vec3f_array(stage, prim, "scales")?.unwrap_or_default();

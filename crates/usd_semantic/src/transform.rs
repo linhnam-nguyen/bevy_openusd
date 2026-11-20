@@ -4,11 +4,22 @@ use anyhow::Result;
 use openusd::sdf::Path;
 use openusd::usd::Stage;
 use openusd::vt::Value;
+use openusd_schemas::geom::{XformCache, XformQuery};
 use usd_model::{HashDigest, TransformSignature};
 
 use crate::config::SemanticConfig;
 
 type Matrix4 = [f64; 16];
+
+/// Evaluate a prim's composed world transform using [`openusd_schemas::geom::XformCache`].
+pub fn compute_world_transform_matrix(
+    cache: &mut XformCache,
+    stage: &Stage,
+    path: &Path,
+) -> Result<Matrix4> {
+    let prim = stage.prim(path.clone())?;
+    Ok(cache.local_to_world_transform(&prim)?.0)
+}
 
 pub fn extract_transform(
     stage: &Stage,
@@ -43,6 +54,20 @@ pub fn extract_transform(
 }
 
 fn compose_transform(stage: &Stage, path: &Path) -> Result<Matrix4> {
+    let prim = stage.prim(path.clone())?;
+    if let Ok(Some(xformable)) = openusd_schemas::geom::Xformable::from_prim(prim.clone())
+        && let Ok(query) = XformQuery::new(&xformable)
+    {
+        return Ok(query.local_transform(cache_default_time())?.0);
+    }
+    compose_transform_fallback(stage, path)
+}
+
+fn cache_default_time() -> Option<openusd::usd::TimeCode> {
+    None
+}
+
+fn compose_transform_fallback(stage: &Stage, path: &Path) -> Result<Matrix4> {
     let Some(raw) = stage
         .prim(path.clone())?
         .attribute("xformOpOrder")

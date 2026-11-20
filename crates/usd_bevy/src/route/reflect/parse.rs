@@ -59,21 +59,24 @@ pub(super) fn resolve<'a>(
 /// Every authored `bevy:` attribute on the prim, grouped by short type path,
 /// each as `(reflect_field_path, composed_value_or_none)`. `None` value means
 /// no layer currently authors an opinion (a cleared field).
+///
+/// Uses [`openusd::usd::Prim::authored_attributes_in_namespace`] (`"bevy"`)
+/// so only authored `bevy:` attributes are inspected.
 pub(super) fn collect(ctx: &RouteCtx) -> Groups {
     let Ok(prim) = ctx.stage.prim(ctx.path.clone()) else {
         return Vec::new();
     };
-    let Ok(names) = prim.property_names() else {
+    let Ok(attrs) = prim.authored_attributes_in_namespace("bevy") else {
         return Vec::new();
     };
     let tc = ctx.time.map(openusd::usd::TimeCode::new);
     let mut groups: Groups = Vec::new();
-    for name in names {
-        let name = name.as_str();
+    for attr in attrs {
+        let name = attr.name();
         let Some((ty, field)) = parse_attr(name) else {
             continue;
         };
-        let value = prim.attribute(name).get_at::<Value>(tc).ok().flatten();
+        let value = attr.get_at::<Value>(tc).ok().flatten();
         match groups.iter_mut().find(|(t, _)| *t == ty) {
             Some((_, fields)) => fields.push((field, value)),
             None => groups.push((ty, vec![(field, value)])),
@@ -83,17 +86,7 @@ pub(super) fn collect(ctx: &RouteCtx) -> Groups {
 }
 
 pub(super) fn as_f64(v: &Value) -> Option<f64> {
-    Some(match v {
-        Value::Float(x) => *x as f64,
-        Value::Double(x) => *x,
-        Value::Half(x) => f32::from(*x) as f64,
-        Value::Int(x) => *x as f64,
-        Value::Int64(x) => *x as f64,
-        Value::Uint(x) => *x as f64,
-        Value::Uint64(x) => *x as f64,
-        Value::Uchar(x) => *x as f64,
-        _ => return None,
-    })
+    v.clone().cast::<f64>().ok()
 }
 
 pub(super) fn as_i64(v: &Value) -> Option<i64> {

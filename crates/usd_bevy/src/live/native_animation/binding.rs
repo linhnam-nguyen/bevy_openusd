@@ -14,7 +14,7 @@ use crate::route::skel::UsdBlendShapeBinding;
 #[derive(Clone)]
 pub(super) struct DiscoveredBinding {
     pub(super) prim: String,
-    pub(super) skeleton: Option<Path>,
+    pub(super) _skeleton: Option<Path>,
     pub(super) animation_source: Option<Path>,
     pub(super) skinning: SkinningQuery,
 }
@@ -61,10 +61,11 @@ pub(super) fn animation_channel_authored(stage: &Stage, path: &Path, name: &str)
         return false;
     };
     let attribute = prim.attribute(name);
-    attribute
-        .time_sample_times()
-        .map(|times| !times.is_empty())
-        .unwrap_or(false)
+    attribute.might_be_time_varying().unwrap_or(false)
+        || attribute
+            .time_sample_times()
+            .map(|times| !times.is_empty())
+            .unwrap_or(false)
 }
 
 pub(super) fn collect_bindings(stage: &Stage) -> HashMap<String, Vec<DiscoveredBinding>> {
@@ -106,7 +107,7 @@ pub(super) fn collect_bindings(stage: &Stage) -> HashMap<String, Vec<DiscoveredB
             for target in binding.skinning_targets() {
                 entry.push(DiscoveredBinding {
                     prim: target.prim().path().as_str().to_owned(),
-                    skeleton: Some(skel_path.clone()),
+                    _skeleton: Some(skel_path.clone()),
                     animation_source: animation_source.clone(),
                     skinning: target.clone(),
                 });
@@ -130,22 +131,29 @@ pub(super) fn collect_transform_bindings(
         let animated = stage
             .prim(path.clone())
             .ok()
-            .and_then(|prim| prim.attributes().ok())
-            .map(|attrs| {
-                attrs.iter().any(|attribute| {
-                    attribute
-                        .path()
-                        .as_str()
-                        .rsplit_once('.')
-                        .map(|(_, name)| name.starts_with("xformOp"))
-                        .unwrap_or(false)
-                        && attribute
-                            .time_sample_times()
-                            .map(|times| !times.is_empty())
+            .and_then(|prim| openusd_schemas::geom::XformQuery::for_prim(&prim).ok())
+            .and_then(|q| q.transform_might_be_time_varying().ok())
+            .unwrap_or(false)
+            || stage
+                .prim(path.clone())
+                .ok()
+                .and_then(|prim| prim.attributes().ok())
+                .map(|attrs| {
+                    attrs.iter().any(|attribute| {
+                        attribute
+                            .path()
+                            .as_str()
+                            .rsplit_once('.')
+                            .map(|(_, name)| name.starts_with("xformOp"))
                             .unwrap_or(false)
+                            && (attribute.might_be_time_varying().unwrap_or(false)
+                                || attribute
+                                    .time_sample_times()
+                                    .map(|times| !times.is_empty())
+                                    .unwrap_or(false))
+                    })
                 })
-            })
-            .unwrap_or(false);
+                .unwrap_or(false);
         if animated {
             let Ok(Some(xform)) = crate::read::xform::bind_transform(stage, &path) else {
                 continue;

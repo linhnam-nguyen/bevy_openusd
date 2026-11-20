@@ -1,6 +1,5 @@
 use crate::read::geom::{Axis, ReadCylinder};
-use bevy::math::Vec3;
-use bevy::mesh::{Mesh, Meshable, VertexAttributeValues};
+use bevy::mesh::{Mesh, Meshable};
 use bevy::prelude::{Capsule3d, Cuboid, Cylinder, Plane3d, Sphere};
 
 /// Build a Bevy mesh from a UsdGeom.Cube's `size`. The USD cube is
@@ -48,17 +47,5 @@ fn apply_axis(mesh: &mut Mesh, axis: Axis) {
 }
 
 pub fn rotate_mesh(mesh: &mut Mesh, rot: bevy::math::Quat) {
-    if let Some(VertexAttributeValues::Float32x3(ps)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
-    {
-        for p in ps.iter_mut() {
-            let v = rot * Vec3::new(p[0], p[1], p[2]);
-            *p = [v.x, v.y, v.z];
-        }
-    }
-    if let Some(VertexAttributeValues::Float32x3(ns)) = mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) {
-        for n in ns.iter_mut() {
-            let v = rot * Vec3::new(n[0], n[1], n[2]);
-            *n = [v.x, v.y, v.z];
-        }
-    }
+    mesh.rotate_by(rot);
 }

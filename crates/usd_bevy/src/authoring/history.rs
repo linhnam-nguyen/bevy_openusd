@@ -164,8 +164,9 @@ impl EditHistory {
 
     /// Applies all attribute edits as one stage transaction from the
     /// editor's undo/redo perspective. Every old value is captured before
-    /// the first write, and a failed forward operation rolls back already
-    /// applied members without publishing a partial history entry.
+    /// the first write, and when each property path is distinct the forward
+    /// batch is committed as a single atomic [`Stage::edit`] transaction
+    /// (`L32`).
     pub fn set_attrs_atomic(&mut self, stage: &Stage, edits: &[AttributeEdit]) -> Result<()> {
         if edits.is_empty() {
             anyhow::bail!("atomic attribute edit batch is empty");
@@ -173,8 +174,13 @@ impl EditHistory {
 
         let mut forward = Vec::with_capacity(edits.len());
         let mut inverse = Vec::with_capacity(edits.len());
+        let mut seen_paths = std::collections::HashSet::with_capacity(edits.len());
+        let mut all_distinct = true;
         for edit in edits {
             let old = current_attribute_value(stage, &edit.prim, &edit.name)?;
+            if !seen_paths.insert((edit.prim.as_str(), edit.name.as_str())) {
+                all_distinct = false;
+            }
             forward.push(Op::SetAttr {
                 prim: edit.prim.clone(),
                 name: edit.name.clone(),
@@ -187,6 +193,25 @@ impl EditHistory {
                 type_name: edit.type_name.clone(),
                 value: old,
             });
+        }
+
+        if all_distinct {
+            let planned = edits
+                .iter()
+                .map(|edit| {
+                    let attr = openusd::sdf::path(&edit.prim)?.append_property(&edit.name)?;
+                    Ok((attr, edit.type_name.as_str(), edit.value.clone()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            stage.edit(|batch| {
+                for (attr, type_name, value) in planned {
+                    batch.attribute_builder(attr, type_name).set(value).build()?;
+                }
+                Ok::<_, openusd::usd::StageAuthoringError>(())
+            })?;
+            self.undo.push(EditGroup { forward, inverse });
+            self.redo.clear();
+            return Ok(());
         }
 
         self.record_group(stage, EditGroup { forward, inverse })

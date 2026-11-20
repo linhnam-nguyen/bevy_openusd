@@ -12,7 +12,7 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{App, Transform, Vec3, Visibility};
 use openusd::sdf;
 use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
-use openusd::{vt, gf::Vec3f, vt::Value};
+use openusd::{gf::Vec3f, vt::Value};
 
 fn fixture_stage(fixture: &str) -> Stage {
     usd_support::open_fixture_stage(fixture)

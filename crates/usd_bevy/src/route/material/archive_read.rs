@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::World;
@@ -6,7 +5,8 @@ use openusd::ar::split_package_relative_path_outer;
 
 use super::{
     ArchiveLookupStats, archive_entry_matches, canonical_archive_path, collect_usdz_files,
-    ensure_archive_index, normalized_archive_entry, scan_archives_without_index,
+    ensure_archive_index, normalized_archive_entry, read_archive_entry_bytes,
+    scan_archives_without_index,
 };
 use crate::route::material::texture_cache::UsdTextureCache;
 
@@ -48,17 +48,7 @@ pub(crate) fn read_texture_bytes(
             archive_stats.misses = 1;
             return (None, archive_stats);
         };
-        let Ok(file) = std::fs::File::open(&package_path) else {
-            return (None, archive_stats);
-        };
-        let Ok(mut archive) = zip::ZipArchive::new(file) else {
-            return (None, archive_stats);
-        };
-        let Ok(mut zip_file) = archive.by_name(&entry_name) else {
-            return (None, archive_stats);
-        };
-        let mut buffer = Vec::new();
-        if zip_file.read_to_end(&mut buffer).is_ok() {
+        if let Some(buffer) = read_archive_entry_bytes(&package_path, &entry_name) {
             archive_stats.hits = 1;
             return (Some(buffer), archive_stats);
         }
@@ -118,17 +108,7 @@ pub(crate) fn read_texture_bytes(
             let Some(entry_name) = entry_name else {
                 continue;
             };
-            let Ok(file) = std::fs::File::open(usdz) else {
-                continue;
-            };
-            let Ok(mut archive) = zip::ZipArchive::new(file) else {
-                continue;
-            };
-            let Ok(mut zip_file) = archive.by_name(&entry_name) else {
-                continue;
-            };
-            let mut buffer = Vec::new();
-            if zip_file.read_to_end(&mut buffer).is_ok() {
+            if let Some(buffer) = read_archive_entry_bytes(usdz, &entry_name) {
                 archive_stats.hits += 1;
                 return (Some(buffer), archive_stats);
             }

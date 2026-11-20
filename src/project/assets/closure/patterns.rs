@@ -19,29 +19,16 @@ pub(super) fn resolve_udim_pattern(
         !authored_path.is_absolute() || authored_path.file_name().is_some(),
         "UDIM asset path must have a filename: {authored}"
     );
-    let file_pattern = authored_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("UDIM asset filename must be valid UTF-8")?;
-    let (prefix, suffix) = file_pattern
-        .split_once("<UDIM>")
-        .context("UDIM asset path has no <UDIM> token")?;
+    let udim = openusd::ar::UdimPath::parse(authored)
+        .with_context(|| format!("UDIM asset path has no valid <UDIM> token: {authored}"))?;
     let anchor = ResolvedPath::new(layer_path.to_owned());
     let mut matches = Vec::new();
-    for tile in 1001..=1999 {
-        let candidate_name = format!("{prefix}{tile:04}{suffix}");
-        let candidate_path = authored_path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .map(|parent| parent.join(&candidate_name))
-            .unwrap_or_else(|| Path::new(&candidate_name).to_owned());
-        let candidate = candidate_path
-            .to_str()
-            .context("UDIM asset path must be valid UTF-8")?;
-        let identifier = resolver.create_identifier(candidate, Some(&anchor));
+    for tile in 1001..=1999u16 {
+        let candidate = udim.tile(tile);
+        let identifier = resolver.create_identifier(&candidate, Some(&anchor));
         let Some(resolved) = resolver
             .resolve(&identifier)
-            .or_else(|| resolver.resolve(candidate))
+            .or_else(|| resolver.resolve(&candidate))
         else {
             continue;
         };

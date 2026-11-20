@@ -107,6 +107,12 @@ pub(crate) fn prepare_bim_value(
     };
     let authored =
         editor_value_to_usd(type_name, &authored_input).map_err(BimAuthoringError::InvalidValue)?;
+    let authored = match openusd::sdf::ValueTypeName::find(type_name) {
+        Some(sdf_type) => sdf_type
+            .coerce(authored)
+            .map_err(|error| BimAuthoringError::InvalidValue(error.to_string()))?,
+        None => authored,
+    };
     let canonical = canonical_value_for_comparison(authored.clone(), measurement)?;
     Ok((authored, canonical))
 }

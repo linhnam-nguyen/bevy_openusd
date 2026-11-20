@@ -71,6 +71,58 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
 
     assert_eq!(world.resource::<UsdTextureCache>().textures.len(), 1);
     assert_eq!(world.resource::<UsdTextureCache>().stats().archive_scans, 3);
+
+    // F-C03-I1-01: Also verify relative inner path resolution (`textures/albedo.png`
+    // without `pkg[inner]` prefix) through the candidate `for usdz in &usdz_files`
+    // loop across distinct packages A and B, missing inner entry isolation, and
+    // same-filename archive replacement invalidating the cached entry bytes.
+    world
+        .resource_mut::<UsdTextureCache>()
+        .replace_active_archives([package_a.clone()]);
+    let rel_a = resolve_texture(&mut world, "textures/albedo.png", true)
+        .expect("candidate A relative lookup succeeds");
+    assert_eq!(first_pixel(&world, &rel_a), [255, 0, 0, 255]);
+
+    assert!(
+        resolve_texture(&mut world, "textures/missing.png", true).is_none(),
+        "missing inner entry in candidate A returns None without reading unrelated bytes"
+    );
+
+    world
+        .resource_mut::<UsdTextureCache>()
+        .replace_active_archives([package_b.clone()]);
+    let rel_b = resolve_texture(&mut world, "textures/albedo.png", true)
+        .expect("candidate B relative lookup succeeds");
+    assert_eq!(first_pixel(&world, &rel_b), [0, 0, 255, 255]);
+
+    // Replace package A at the same filename with new pixel bytes (and append an extra
+    // entry so its file length / ArchiveFingerprint changes reliably even within the
+    // same filesystem timestamp tick).
+    {
+        let file = std::fs::File::create(&package_a).expect("replace USDZ package A");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        archive
+            .start_file("textures/albedo.png", options)
+            .expect("create updated package texture entry");
+        archive
+            .write_all(&png_pixel([0, 255, 0, 255]))
+            .expect("write updated package texture entry");
+        archive
+            .start_file("scene.usda", options)
+            .expect("create scene entry");
+        archive
+            .write_all(b"#usda 1.0\n")
+            .expect("write scene entry");
+        archive.finish().expect("finish replaced USDZ package A");
+    }
+    world
+        .resource_mut::<UsdTextureCache>()
+        .replace_active_archives([package_a.clone()]);
+    let rel_a_replaced = resolve_texture(&mut world, "textures/albedo.png", true)
+        .expect("replaced candidate A relative lookup succeeds");
+    assert_eq!(first_pixel(&world, &rel_a_replaced), [0, 255, 0, 255]);
 }
 
 #[test]

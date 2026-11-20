@@ -10,7 +10,7 @@ repository = "https://github.com/bresilla/bevy_openusd"
 anyhow = { workspace = true }
 blake3 = { workspace = true }
 openusd = { workspace = true }
-openusd-schemas = { workspace = true, features = ["ui"] }
+openusd-schemas = { workspace = true, features = ["geom", "ui"] }
 usd_model = { workspace = true }
 
 [dev-dependencies]

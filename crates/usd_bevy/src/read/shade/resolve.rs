@@ -4,9 +4,10 @@ use openusd::ar::{
     DefaultResolver, ResolvedPath, Resolver, join_package_relative_path,
     split_package_relative_path_outer,
 };
-use openusd::sdf::{Path};
+use openusd::sdf::Path;
+use openusd::usd::{SchemaBase, Stage};
 use openusd::vt::Value;
-use openusd::usd::Stage;
+use openusd_schemas::shade::{Channel, Material, read_preview_surface};
 use std::collections::{HashSet, VecDeque};
 
 use crate::read::util::{
@@ -66,6 +67,12 @@ pub fn read_preview_material(
     };
 
     let mut out = ReadPreviewMaterial::default();
+    if matches!(dialect, SurfaceDialect::Preview)
+        && matches!(shader_id.as_deref(), Some("UsdPreviewSurface") | None)
+        && let Ok(Some(native_ps)) = read_preview_surface(stage, material)
+    {
+        apply_native_preview_surface(&mut out, &native_ps);
+    }
     for (channel, bind_colour, bind_scalar, bind_texture) in channels {
         let (value, texture) = resolve_channel(stage, material, &shader, channel)?;
         if let Some(tex) = texture {
@@ -79,6 +86,43 @@ pub fn read_preview_material(
     }
     out.uv_transform = read_uv_transform(stage, material)?;
     Ok(Some(out))
+}
+
+fn apply_native_preview_surface(
+    out: &mut ReadPreviewMaterial,
+    ps: &openusd_schemas::shade::ReadPreviewSurface,
+) {
+    let color = |ch: &Channel<openusd::gf::Vec3f>| ch.value().map(|v| [v.x, v.y, v.z]);
+    let tex = |ch: &Channel<openusd::gf::Vec3f>| {
+        ch.texture().map(|a| {
+            a.resolved_path()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(a.as_str())
+                .to_string()
+        })
+    };
+    let scalar_tex = |ch: &Channel<f32>| {
+        ch.texture().map(|a| {
+            a.resolved_path()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(a.as_str())
+                .to_string()
+        })
+    };
+    out.diffuse_color = color(&ps.diffuse_color);
+    out.emissive_color = color(&ps.emissive_color);
+    out.opacity = ps.opacity.value().copied();
+    out.opacity_threshold = ps.opacity_threshold.value().copied();
+    out.roughness = ps.roughness.value().copied();
+    out.metallic = ps.metallic.value().copied();
+    out.ior = ps.ior.value().copied();
+    out.diffuse_texture = tex(&ps.diffuse_color);
+    out.emissive_texture = tex(&ps.emissive_color);
+    out.normal_texture = tex(&ps.normal);
+    out.opacity_texture = scalar_tex(&ps.opacity);
+    out.roughness_texture = scalar_tex(&ps.roughness);
+    out.metallic_texture = scalar_tex(&ps.metallic);
+    out.occlusion_texture = scalar_tex(&ps.occlusion);
 }
 
 /// Return the composed prim paths that participate in a material's shading
@@ -164,6 +208,27 @@ fn resolve_surface_shader(
     stage: &Stage,
     material: &Path,
 ) -> anyhow::Result<Option<(Path, SurfaceDialect)>> {
+    if let Ok(Some(mat)) = Material::get(stage, material.clone()) {
+        for (contexts, dialect) in [
+            ([""].as_slice(), SurfaceDialect::Preview),
+            (["mtlx"].as_slice(), SurfaceDialect::MaterialX),
+            (["mdl"].as_slice(), SurfaceDialect::Mdl),
+        ] {
+            if let Ok(Some(terminal)) = mat.surface_source(contexts)
+                && let Some(source) = terminal.sources().first()
+                && let Some(shader) = source.shader()
+            {
+                let dialect = if terminal.render_context().as_str() == "mtlx" {
+                    SurfaceDialect::MaterialX
+                } else if terminal.render_context().as_str() == "mdl" {
+                    SurfaceDialect::Mdl
+                } else {
+                    dialect
+                };
+                return Ok(Some((shader.path().clone(), dialect)));
+            }
+        }
+    }
     let outputs = [
         ("outputs:surface", SurfaceDialect::Preview),
         ("outputs:mtlx:surface", SurfaceDialect::MaterialX),
@@ -318,13 +383,13 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
     if authored.is_empty() || FsPath::new(authored).is_absolute() || authored.starts_with("anon:") {
         return Ok(authored.to_owned());
     }
-    let Some(site) = stage
-        .prim(tex_prim.clone())?
-        .attribute("inputs:file")
-        .property_stack()?
-        .into_iter()
-        .next()
-    else {
+    let attr = stage.prim(tex_prim.clone())?.attribute("inputs:file");
+    let site = attr
+        .resolve_info()
+        .ok()
+        .and_then(|info| info.spec_site().cloned())
+        .or_else(|| attr.property_stack().ok()?.into_iter().next());
+    let Some(site) = site else {
         return Ok(authored.to_owned());
     };
     let layer_identifier = site.layer.identifier().to_string();

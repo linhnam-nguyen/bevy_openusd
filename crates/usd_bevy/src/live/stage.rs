@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use openusd::usd::{CommittedChange, Stage, StageSinkId};
+use openusd::usd::{CommittedChange, Resynced, Stage, StageSink, StageSinkId};
 
 use super::change::{LiveRevision, StageChange, StageChangeBatch};
 
@@ -82,6 +82,12 @@ fn push_committed_change(
             resynced.push(path.as_str().to_string());
         }
     }
+    for path in change.recomposed {
+        resynced.push(path.as_str().to_string());
+    }
+    for path in change.asset_paths_resynced {
+        resynced.push(path.as_str().to_string());
+    }
     for path in change.changed_info_only {
         changed_info.push(path.as_str().to_string());
     }
@@ -91,16 +97,66 @@ fn push_committed_change(
     });
 }
 
+fn push_resynced_notice(queue: &RefCell<Vec<StageChange>>, resynced_notice: Resynced<'_>) {
+    let mut resynced = Vec::with_capacity(
+        resynced_notice.subtrees.len() + resynced_notice.prims.len(),
+    );
+    for path in resynced_notice.subtrees {
+        resynced.push(path.as_str().to_string());
+    }
+    for path in resynced_notice.prims {
+        resynced.push(path.as_str().to_string());
+    }
+    if !resynced.is_empty() {
+        queue.borrow_mut().push(StageChange {
+            resynced,
+            changed_info: Vec::new(),
+        });
+    }
+}
+
+struct LiveStageSink {
+    queue: Rc<RefCell<Vec<StageChange>>>,
+    generation: Rc<Cell<LiveRevision>>,
+}
+
+impl StageSink for LiveStageSink {
+    fn after_commit(&self, _stage: &Stage, change: &CommittedChange<'_>) {
+        push_committed_change(&self.queue, &self.generation, change);
+    }
+
+    fn layer_muting_changed(
+        &self,
+        _stage: &Stage,
+        _layer: &str,
+        _muted: bool,
+        resynced: Resynced<'_>,
+    ) {
+        push_resynced_notice(&self.queue, resynced);
+    }
+
+    fn load_rules_changed(&self, _stage: &Stage, resynced: Resynced<'_>) {
+        push_resynced_notice(&self.queue, resynced);
+    }
+
+    fn loads_retried(&self, _stage: &Stage, resynced: Resynced<'_>) {
+        push_resynced_notice(&self.queue, resynced);
+    }
+
+    fn recomposed(&self, _stage: &Stage, resynced: Resynced<'_>) {
+        push_resynced_notice(&self.queue, resynced);
+    }
+}
+
 impl LiveStage {
     /// Wrap a stage and install the change sink.
     pub fn new(stage: Stage) -> Self {
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
-        let q = queue.clone();
         let authoring_generation = Rc::new(Cell::new(LiveRevision::default()));
-        let generation = authoring_generation.clone();
         let sink = stage
-            .add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
-                push_committed_change(&q, &generation, change);
+            .add_sink(LiveStageSink {
+                queue: queue.clone(),
+                generation: authoring_generation.clone(),
             })
             .expect("stage sink registration failed");
         Self {
@@ -125,7 +181,6 @@ impl LiveStage {
             let _ = self.stage.remove_sink(id);
         }
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
-        let q = queue.clone();
         let authoring_generation = Rc::new(Cell::new(LiveRevision(
             self.authoring_generation
                 .get()
@@ -133,10 +188,10 @@ impl LiveStage {
                 .checked_add(1)
                 .expect("live stage authoring generation exhausted"),
         )));
-        let generation = authoring_generation.clone();
         let sink = stage
-            .add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
-                push_committed_change(&q, &generation, change);
+            .add_sink(LiveStageSink {
+                queue: queue.clone(),
+                generation: authoring_generation.clone(),
             })
             .expect("stage sink registration failed");
         self.stage = stage;

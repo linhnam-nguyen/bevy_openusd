@@ -220,43 +220,89 @@ fn localize_layer(
         .layer(&root_identifier)?
         .with_context(|| format!("find USD layer {} for localization", original.display()))?;
 
-    let records = {
+    // First rewrite `clips` dictionaries before running `modify_asset_paths`:
+    // clip `templateAssetPath` patterns (e.g. `./clip.#.usda`) require sibling
+    // `templateStartTime`/`templateEndTime`/`templateStride` fields in the
+    // clip set dictionary to expand, whereas `modify_asset_paths` visits
+    // individual asset strings without their enclosing clip set dictionary.
+    let clip_records = {
         let borrowed = layer.borrow();
         let data = borrowed.data();
         let mut records = Vec::new();
         for spec_path in data.spec_paths() {
-            for field in data.list_fields(&spec_path).into_iter().flatten() {
-                let Some(value) = data.try_field(&spec_path, &field)? else {
-                    continue;
-                };
-                records.push((spec_path.clone(), field, value.into_owned()));
+            if let Some(value) = data.try_field(&spec_path, "clips")? {
+                records.push((spec_path.clone(), value.into_owned()));
             }
         }
         records
     };
-    let rewritten = records
-        .into_iter()
-        .map(|(path, field, value)| {
-            let value = rewrite::rewrite_value(
-                &value,
+    let mut rewritten_clip_assets = std::collections::HashSet::new();
+    if !clip_records.is_empty() {
+        let rewritten = clip_records
+            .into_iter()
+            .map(|(path, value)| {
+                let value = rewrite::rewrite_value(
+                    &value,
+                    original,
+                    destination,
+                    mapping,
+                    "clips",
+                    resolver.as_ref(),
+                )?;
+                collect_clip_asset_strings(&value, &mut rewritten_clip_assets);
+                Ok((path, value))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        layer
+            .edit(|edit| {
+                for (path, value) in rewritten {
+                    edit.data_mut().set_field(&path, "clips", value);
+                }
+                Ok(())
+            })
+            .with_context(|| format!("rewrite USD clip paths in {}", original.display()))?;
+    }
+
+    // Run OpenUSD's native `modify_asset_paths` over all authored asset fields
+    // (subLayers, reference/payload listOps, asset attributes, timeSamples,
+    // dictionaries, ValueVecs), recording any required-asset resolution failure
+    // so we never silently turn a missing required mapping into `""` deletion.
+    let mut native_error: Result<()> = Ok(());
+    openusd::usd_utils::modify_asset_paths(
+        &layer,
+        |authored| {
+            if native_error.is_err()
+                || authored.is_empty()
+                || rewritten_clip_assets.contains(authored)
+            {
+                return authored.to_owned();
+            }
+            match patterns::rewrite_asset_path(
+                authored,
                 original,
                 destination,
                 mapping,
-                field.as_str(),
                 resolver.as_ref(),
-            )?;
-            Ok((path, field, value))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    layer
-        .edit(|edit| {
-            for (path, field, value) in rewritten {
-                edit.data_mut().set_field(&path, &field, value);
+            ) {
+                Ok(rewritten) => rewritten,
+                Err(error) if super::discovery::is_optional_render_asset(authored) => {
+                    log::debug!(
+                        "retaining missing optional renderer asset {authored} in {}: {error:#}",
+                        original.display()
+                    );
+                    authored.to_owned()
+                }
+                Err(error) => {
+                    native_error = Err(error);
+                    authored.to_owned()
+                }
             }
-            Ok(())
-        })
-        .with_context(|| format!("rewrite USD layer {}", original.display()))?;
+        },
+        true,
+    )
+    .with_context(|| format!("modify USD asset paths in {}", original.display()))?;
+    native_error?;
+
     layer
         .export(
             destination
@@ -264,6 +310,37 @@ fn localize_layer(
                 .context("localized USD layer path must be valid UTF-8")?,
         )
         .with_context(|| format!("export localized USD layer {}", destination.display()))
+}
+
+fn collect_clip_asset_strings(
+    value: &openusd::vt::Value,
+    out: &mut std::collections::HashSet<String>,
+) {
+    match value {
+        openusd::vt::Value::AssetPath(path) => {
+            if !path.is_empty() {
+                out.insert(path.as_str().to_owned());
+            }
+        }
+        openusd::vt::Value::AssetPathVec(paths) => {
+            for path in paths {
+                if !path.is_empty() {
+                    out.insert(path.as_str().to_owned());
+                }
+            }
+        }
+        openusd::vt::Value::String(s) => {
+            if !s.is_empty() {
+                out.insert(s.clone());
+            }
+        }
+        openusd::vt::Value::Dictionary(dict) => {
+            for entry in dict.values() {
+                collect_clip_asset_strings(entry, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn is_usdz_root(path: &Path) -> bool {

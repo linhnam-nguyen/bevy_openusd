@@ -1,6 +1,7 @@
-use openusd::sdf::{Path};
-use openusd::vt::Value;
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
+use openusd_schemas::geom::{Imageable, ImageableExt, Purpose, Visibility};
 
 use super::util::{read_authored_token, read_token};
 
@@ -11,10 +12,17 @@ pub fn read_purpose(stage: &Stage, prim: &Path) -> anyhow::Result<String> {
 }
 
 /// Resolve the effective (inherited) `purpose` for `prim`: the closest ancestor
-/// with an authored `purpose`, falling back to `"default"`. Mirrors
-/// `UsdGeomImageable::ComputePurpose` — `purpose` is a *pruning, inherited*
-/// token, so a `Scope` authored as `proxy` makes its whole subtree proxy.
+/// with an authored `purpose`, falling back to `"default"`. Delegates to
+/// [`ImageableExt::compute_purpose`] when the prim is a valid [`Imageable`],
+/// falling back to an ancestor walk over authored `purpose` attributes for
+/// untyped/legacy prims (`purpose` is a *pruning, inherited* token).
 pub fn read_effective_purpose(stage: &Stage, prim: &Path) -> anyhow::Result<String> {
+    if let Ok(Some(imageable)) = Imageable::get(stage, prim.clone())
+        && let Ok(purpose) = imageable.compute_purpose()
+        && purpose != Purpose::Default
+    {
+        return Ok(purpose.as_token().to_string());
+    }
     let mut cur = prim.clone();
     loop {
         if let Some(t) = read_authored_token(stage, &cur, "purpose")? {
@@ -34,10 +42,63 @@ pub enum VisibilityState {
 }
 
 pub fn read_visibility(stage: &Stage, prim: &Path) -> anyhow::Result<VisibilityState> {
+    read_visibility_at(stage, prim, None)
+}
+
+/// Resolve local or time-sampled visibility for `prim` via the `Imageable`
+/// `visibility` attribute (Bevy's `InheritedVisibility` propagates ancestor
+/// hiding down the ECS hierarchy), and expose [`read_effective_visibility_at`]
+/// for full ancestor-composed visibility via [`ImageableExt::compute_visibility`].
+pub fn read_visibility_at(
+    stage: &Stage,
+    prim: &Path,
+    time: Option<f64>,
+) -> anyhow::Result<VisibilityState> {
+    let tc = time.map(openusd::usd::TimeCode::new);
+    if let Ok(Some(imageable)) = Imageable::get(stage, prim.clone()) {
+        use openusd_schemas::geom::ImageableSchema;
+        if let Ok(Some(vis)) = imageable.visibility_attr().get_at::<Visibility>(tc) {
+            return Ok(match vis {
+                Visibility::Invisible => VisibilityState::Invisible,
+                Visibility::Inherited => VisibilityState::Inherited,
+            });
+        }
+    }
+    if let Some(tc) = tc {
+        if let Ok(Some(v)) = stage
+            .prim(prim.clone())?
+            .attribute("visibility")
+            .get_at::<Value>(Some(tc))
+        {
+            return Ok(match v.as_str() {
+                Some("invisible") => VisibilityState::Invisible,
+                _ => VisibilityState::Inherited,
+            });
+        }
+    }
     Ok(match read_token(stage, prim, "visibility")?.as_deref() {
         Some("invisible") => VisibilityState::Invisible,
         _ => VisibilityState::Inherited,
     })
+}
+
+/// Resolve composed effective visibility for `prim` (including all ancestors)
+/// at `time` using [`ImageableExt::compute_visibility`].
+pub fn read_effective_visibility_at(
+    stage: &Stage,
+    prim: &Path,
+    time: Option<f64>,
+) -> anyhow::Result<VisibilityState> {
+    let tc = time.map(openusd::usd::TimeCode::new);
+    if let Ok(Some(imageable)) = Imageable::get(stage, prim.clone())
+        && let Ok(vis) = imageable.compute_visibility(tc)
+    {
+        return Ok(match vis {
+            Visibility::Invisible => VisibilityState::Invisible,
+            Visibility::Inherited => VisibilityState::Inherited,
+        });
+    }
+    read_visibility_at(stage, prim, time)
 }
 
 pub fn read_kind(stage: &Stage, prim: &Path) -> anyhow::Result<Option<String>> {
@@ -339,4 +400,21 @@ pub fn read_asset_info(stage: &Stage, prim: &Path) -> anyhow::Result<Option<Cust
 
 pub fn read_custom_layer_data(stage: &Stage) -> anyhow::Result<Option<CustomDict>> {
     Ok(dict_from_value(stage.custom_layer_data()?))
+}
+
+/// Resolve the authored included paths for a `UsdCollectionAPI` instance on
+/// `prim` (`collection:<name>`) via [`openusd::usd::CollectionAPI`].
+pub fn read_collection_included_paths(
+    stage: &Stage,
+    prim: &Path,
+    collection_name: &str,
+) -> anyhow::Result<Vec<Path>> {
+    let prim_ref = stage.prim(prim.clone())?;
+    let collection = openusd::usd::CollectionAPI::from_prim_unchecked(prim_ref, collection_name);
+    let query = collection.membership_query()?;
+    Ok(openusd::usd::included_paths(
+        stage,
+        &query,
+        openusd::usd::PrimPredicate::default(),
+    )?)
 }

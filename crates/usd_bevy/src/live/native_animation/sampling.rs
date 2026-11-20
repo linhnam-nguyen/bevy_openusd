@@ -9,11 +9,10 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
         .remove_non_send::<AnimationRuntime>()
         .unwrap_or_default();
     for target in &runtime.transforms {
-        if let Ok(Some(value)) =
-            crate::read::xform::read_bound_transform_at(stage, &target.xform, Some(time))
-            && let Some(mut transform) = world.get_mut::<Transform>(target.entity)
+        if let Ok(Some(eval)) =
+            crate::read::xform::read_bound_local_xform_at(stage, &target.xform, Some(time))
         {
-            *transform = crate::live::projection::to_bevy_transform(value);
+            crate::route::xform::apply_local_xform_evaluation(world, target.entity, Some(eval));
         }
     }
     for skeleton in &runtime.skeletons {

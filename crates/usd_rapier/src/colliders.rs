@@ -15,9 +15,105 @@
 //! this module just hands the dims to Rapier.
 
 use anyhow::Result;
-use openusd_schemas::physics::CollisionApprox;
+use openusd::sdf::Path;
+use openusd::usd::{PrimPredicate, Stage, included_paths};
+use openusd_schemas::physics::{CollisionApprox, CollisionGroup, collision_group_table};
 use rapier3d_f64::glamx::DVec3;
 use rapier3d_f64::prelude::*;
+use std::collections::HashMap;
+
+/// Compute Rapier [`InteractionGroups`] (up to 32 bitplane groups) for every
+/// collider on `stage` covered by [`openusd_schemas::physics::CollisionGroupTable`]
+/// (`L41`, `F-C03-I1-03`).
+///
+/// Rejects stages with more than 32 distinct `PhysicsCollisionGroup` prims (which
+/// exceed Rapier's 32-bit `Group` bitfield capacity) and validates the resulting
+/// `InteractionGroups` against the native USD pairwise collision oracle across all
+/// covered colliders so overlapping multi-group memberships never silently
+/// approximate an unrepresentable pair matrix.
+pub fn stage_collider_interaction_groups(stage: &Stage) -> Result<HashMap<Path, InteractionGroups>> {
+    let table = collision_group_table(stage)?;
+    let groups = table.groups();
+    if groups.len() > 32 {
+        anyhow::bail!(
+            "USD collision groups ({}) exceed 32-bit Rapier InteractionGroups capacity",
+            groups.len()
+        );
+    }
+    let count = groups.len();
+    let mut memberships: HashMap<Path, u32> = HashMap::new();
+    let mut filters: HashMap<Path, u32> = HashMap::new();
+    let mut collider_groups: HashMap<Path, Vec<usize>> = HashMap::new();
+
+    for (group_index, group_path) in groups.iter().enumerate() {
+        let Some(group) = CollisionGroup::get(stage, group_path.clone())? else {
+            continue;
+        };
+        let query = group.colliders_collection().membership_query()?;
+        let included = included_paths(stage, &query, PrimPredicate::DEFAULT_PROXIES)?;
+        let member_bit = 1u32 << group_index;
+        let mut filter_mask = 0u32;
+        for other_index in 0..count {
+            if table.collides_at(group_index, other_index) {
+                filter_mask |= 1u32 << other_index;
+            }
+        }
+        for collider_path in included {
+            *memberships.entry(collider_path.clone()).or_default() |= member_bit;
+            *filters.entry(collider_path.clone()).or_default() |= filter_mask;
+            let list = collider_groups.entry(collider_path).or_default();
+            if !list.contains(&group_index) {
+                list.push(group_index);
+            }
+        }
+    }
+
+    let mut result = HashMap::with_capacity(memberships.len());
+    for (path, membership_bits) in memberships {
+        let filter_bits = filters.get(&path).copied().unwrap_or(u32::MAX);
+        result.insert(
+            path,
+            InteractionGroups::new(
+                Group::from_bits_retain(membership_bits),
+                Group::from_bits_retain(filter_bits),
+                InteractionTestMode::And,
+            ),
+        );
+    }
+
+    // Verify pairwise equivalence against the native USD CollisionGroupTable
+    // oracle across all covered colliders (including self-pair and overlapping
+    // multi-group memberships).
+    let covered: Vec<(&Path, &InteractionGroups, &[usize])> = result
+        .iter()
+        .map(|(path, ig)| {
+            let indices = collider_groups
+                .get(path)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            (path, ig, indices)
+        })
+        .collect();
+    for (i, (path_a, ig_a, groups_a)) in covered.iter().enumerate() {
+        for (path_b, ig_b, groups_b) in &covered[i..] {
+            let expected_usd = groups_a.iter().any(|&ga| {
+                groups_b
+                    .iter()
+                    .any(|&gb| table.collides_at(ga, gb))
+            });
+            let actual_rapier = ig_a.test(**ig_b);
+            if expected_usd != actual_rapier {
+                anyhow::bail!(
+                    "authored USD collision group pair matrix between {} and {} cannot be represented identically by 32-bit Rapier InteractionGroups (expected={expected_usd}, actual={actual_rapier})",
+                    path_a,
+                    path_b
+                );
+            }
+        }
+    }
+
+    Ok(result)
+}
 
 /// Authored shape inputs. The mesh case carries vertices + optional
 /// indices in the *body-local* frame (caller has already baked any

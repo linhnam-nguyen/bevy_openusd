@@ -135,13 +135,14 @@ impl UnitRegistry {
     }
 
     fn new() -> Self {
+        use openusd::sdf::Unit as SdfUnit;
         let definitions = [
-            length("m", 1.0),
-            length("mm", 0.001),
-            length("cm", 0.01),
-            length("km", 1_000.0),
-            length("[in_i]", 0.0254),
-            length("[ft_i]", 0.3048),
+            length("m", SdfUnit::Meter.scale()),
+            length("mm", SdfUnit::Millimeter.scale()),
+            length("cm", SdfUnit::Centimeter.scale()),
+            length("km", SdfUnit::Kilometer.scale()),
+            length("[in_i]", SdfUnit::Inch.scale()),
+            length("[ft_i]", SdfUnit::Foot.scale()),
             area("m2", 1.0),
             area("mm2", 0.000_001),
             area("cm2", 0.0001),
@@ -155,7 +156,10 @@ impl UnitRegistry {
             volume("[in_i]3", 0.000016387064),
             volume("[ft_i]3", 0.028316846592),
             angle("rad", 1.0),
-            angle("deg", std::f64::consts::PI / 180.0),
+            angle(
+                "deg",
+                SdfUnit::Degrees.scale() * (std::f64::consts::PI / 180.0),
+            ),
             temperature("K", 1.0, 0.0),
             temperature("Cel", 1.0, 273.15),
             temperature("[degF]", 5.0 / 9.0, 255.3722222222222),
@@ -168,8 +172,8 @@ impl UnitRegistry {
             pressure("[psi]", 6_894.757293168),
             velocity("m/s", 1.0),
             velocity("km/h", 1.0 / 3.6),
-            velocity("[ft_i]/s", 0.3048),
-            velocity("[mi_i]/h", 1609.344 / 3600.0),
+            velocity("[ft_i]/s", SdfUnit::Foot.scale()),
+            velocity("[mi_i]/h", SdfUnit::Mile.scale() / 3600.0),
             volumetric_flow("m3/s", 1.0),
             volumetric_flow("m3/h", 1.0 / 3_600.0),
             volumetric_flow("L/s", 0.001),
@@ -181,6 +185,18 @@ impl UnitRegistry {
             map.insert(unit, definition);
         }
         Self { definitions: map }
+    }
+
+    /// Resolve a standard OpenUSD [`openusd::sdf::Unit`] token (`mm`, `cm`, `m`,
+    /// `km`, `in`, `ft`, `deg`, `rad`, `%`, `default` — `L43`) to its native
+    /// [`openusd::sdf::Unit`].
+    pub fn sdf_unit(name: &str) -> Option<openusd::sdf::Unit> {
+        let normalized = match name {
+            "[in_i]" => "in",
+            "[ft_i]" => "ft",
+            other => other,
+        };
+        openusd::sdf::Unit::from_name(normalized)
     }
 }
 

@@ -4,7 +4,9 @@ use bevy::ecs::hierarchy::ChildOf;
 use bevy::mesh::morph::MeshMorphWeights;
 use bevy::prelude::*;
 use openusd::usd::Stage;
-use openusd_schemas::skel::{AnimQuery, Animation, BindingAPI as SkelBindingAPI, Skeleton, SkeletonQuery};
+use openusd_schemas::skel::{
+    AnimMapper, AnimQuery, Animation, BindingAPI as SkelBindingAPI, Skeleton, SkeletonQuery,
+};
 
 use super::binding::{DiscoveredBinding, animation_channel_authored, joint_index, matrix_to_transform};
 use super::mesh_binding::attach_native_mesh;
@@ -129,9 +131,14 @@ pub(super) fn rebuild_skeletons(
             continue;
         };
         let animation_joints = animation.joint_order();
-        let mapped = animation_joints
-            .iter()
-            .map(|name| joint_index(&joints, name).and_then(|index| entities[index]))
+        let mapper = AnimMapper::new(&joints, animation_joints);
+        let mapped = (0..animation_joints.len())
+            .map(|anim_slot| {
+                mapper
+                    .source_index(anim_slot)
+                    .or_else(|| joint_index(&joints, &animation_joints[anim_slot]))
+                    .and_then(|index| entities[index])
+            })
             .collect::<Vec<_>>();
         let driver = UsdSkelAnimDriver {
             anim_name: source

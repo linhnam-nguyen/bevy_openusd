@@ -279,53 +279,73 @@ fn read_export_bytes(
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(export_error());
     }
-    let bytes = fs::read(source).map_err(|_| export_error())?;
-    let is_usd_text = source
+    let ext = source
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "usd" | "usda"));
-    if !is_usd_text {
+        .map(|extension| extension.to_ascii_lowercase());
+    let is_usd_layer = matches!(ext.as_deref(), Some("usd" | "usda" | "usdc"));
+    let bytes = fs::read(source).map_err(|_| export_error())?;
+    if !is_usd_layer {
         return Ok(bytes);
     }
-    let text = String::from_utf8(bytes).map_err(|_| export_error())?;
-    rewrite_asset_paths(&text, source, archive_path, mapping).map(|text| text.into_bytes())
+    rewrite_layer_asset_paths(source, &bytes, archive_path, mapping)
 }
 
-fn rewrite_asset_paths(
-    text: &str,
+fn rewrite_layer_asset_paths(
     source: &Path,
+    bytes: &[u8],
     current_archive_path: &str,
     mapping: &HashMap<PathBuf, String>,
-) -> Result<String, ProjectWriteError> {
-    let mut output = String::with_capacity(text.len());
-    let mut cursor = 0;
-    while let Some(open_offset) = text[cursor..].find('@') {
-        let open = cursor + open_offset;
-        output.push_str(&text[cursor..open + 1]);
-        let Some(close_offset) = text[open + 1..].find('@') else {
-            return Err(export_error());
-        };
-        let close = open + 1 + close_offset;
-        let asset = &text[open + 1..close];
-        let asset_path = Path::new(asset);
-        let resolved = if asset_path.is_absolute() {
-            asset_path.to_owned()
-        } else {
-            source
-                .parent()
-                .map(|parent| parent.join(asset_path))
-                .unwrap_or_else(|| asset_path.to_owned())
-        };
-        if let Some(target) = normalize_lookup_path(&resolved).and_then(|path| mapping.get(&path)) {
-            output.push_str(&relative_archive_path(current_archive_path, target));
-        } else {
-            output.push_str(asset);
-        }
-        output.push('@');
-        cursor = close + 1;
+) -> Result<Vec<u8>, ProjectWriteError> {
+    let ext = source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("usda");
+    let tag = format!("export.{ext}");
+    let layer =
+        openusd::sdf::Layer::from_bytes(&tag, bytes.to_vec()).map_err(|_| export_error())?;
+    let handle = openusd::sdf::LayerRegistry::default()
+        .adopt(layer)
+        .map_err(|_| export_error())?;
+    openusd::usd_utils::modify_asset_paths(
+        &handle,
+        |asset| {
+            if asset.is_empty() {
+                return String::new();
+            }
+            let asset_path = Path::new(asset);
+            let resolved = if asset_path.is_absolute() {
+                asset_path.to_owned()
+            } else {
+                source
+                    .parent()
+                    .map(|parent| parent.join(asset_path))
+                    .unwrap_or_else(|| asset_path.to_owned())
+            };
+            if let Some(target) =
+                normalize_lookup_path(&resolved).and_then(|path| mapping.get(&path))
+            {
+                relative_archive_path(current_archive_path, target)
+            } else {
+                asset.to_owned()
+            }
+        },
+        true,
+    )
+    .map_err(|_| export_error())?;
+
+    if ext.eq_ignore_ascii_case("usdc") {
+        let temp = tempfile::tempdir().map_err(|_| export_error())?;
+        let out_path = temp.path().join("rewritten.usdc");
+        let out_str = out_path.to_str().ok_or_else(export_error)?;
+        handle.export(out_str).map_err(|_| export_error())?;
+        fs::read(&out_path).map_err(|_| export_error())
+    } else {
+        handle
+            .export_to_string()
+            .map(String::into_bytes)
+            .map_err(|_| export_error())
     }
-    output.push_str(&text[cursor..]);
-    Ok(output)
 }
 
 fn normalize_lookup_path(path: &Path) -> Option<PathBuf> {

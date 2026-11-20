@@ -1,5 +1,6 @@
 use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd_schemas::geom::{PrimvarsAPI, Subset, SubsetSchema};
 
 use super::util::{
     read_authored_token, read_bool, read_extent, read_float_array, read_int_array,
@@ -143,11 +144,30 @@ pub fn read_mesh_extent(stage: &Stage, prim: &Path) -> anyhow::Result<Option<[[f
 
 fn read_material_subsets(stage: &Stage, mesh_prim: &Path) -> anyhow::Result<Vec<ReadSubset>> {
     let mut out = Vec::new();
-    for child_name in stage.prim(mesh_prim.clone())?.child_names()? {
+    let prim_ref = stage.prim(mesh_prim.clone())?;
+    for child_name in prim_ref.child_names()? {
         let Ok(child_path) = mesh_prim.append_path(child_name.as_str()) else {
             continue;
         };
-        if stage.prim(child_path.clone())?.type_name()?.as_deref() != Some("GeomSubset") {
+        let child_prim = stage.prim(child_path.clone())?;
+        if let Ok(Some(subset)) = Subset::from_prim(child_prim.clone()) {
+            if subset.family_name()?.as_ref().map(|t| t.as_str()) != Some("materialBind") {
+                continue;
+            }
+            if matches!(
+                subset.element_type()?,
+                Some(e) if e != openusd_schemas::geom::ElementType::Face
+            ) {
+                continue;
+            }
+            out.push(ReadSubset {
+                name: child_name.to_string(),
+                indices: subset.indices()?.unwrap_or_default(),
+                material_binding: crate::read::shade::read_material_binding(stage, &child_path)?,
+            });
+            continue;
+        }
+        if child_prim.type_name()?.as_deref() != Some("GeomSubset") {
             continue;
         }
         if read_token(stage, &child_path, "familyName")?.as_deref() != Some("materialBind") {
@@ -166,19 +186,54 @@ fn read_material_subsets(stage: &Stage, mesh_prim: &Path) -> anyhow::Result<Vec<
     Ok(out)
 }
 
+fn read_primvar_schema_meta(
+    stage: &Stage,
+    prim: &Path,
+    name: &str,
+) -> Option<(Option<Interpolation>, Vec<i32>, Option<Path>)> {
+    let primvar_name = name.strip_prefix("primvars:")?;
+    let prim_ref = stage.prim(prim.clone()).ok()?;
+    let api = PrimvarsAPI::from_prim_unchecked(prim_ref);
+    let pv = if api.has_primvar(primvar_name).unwrap_or(false) {
+        api.primvar(primvar_name).ok()?
+    } else {
+        api.primvar_with_inheritance(primvar_name).ok()??
+    };
+    let owner_path = pv.attribute().path().prim_path();
+    let interp = pv
+        .interpolation()
+        .ok()
+        .and_then(|i| Interpolation::parse(i.as_token()));
+    let indices = pv.indices(None).ok().flatten().unwrap_or_default();
+    Some((interp, indices, Some(owner_path)))
+}
+
 fn read_primvar_vec3f(
     stage: &Stage,
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<[f32; 3]>>> {
-    let Some(values) = read_vec3f_array(stage, prim, name)? else {
+    let schema_meta = read_primvar_schema_meta(stage, prim, name);
+    let source_prim = schema_meta
+        .as_ref()
+        .and_then(|(_, _, owner)| owner.as_ref())
+        .unwrap_or(prim);
+    let Some(values) = read_vec3f_array(stage, source_prim, name)? else {
         return Ok(None);
+    };
+    let interpolation = read_primvar_interpolation(stage, source_prim, name)?
+        .or_else(|| schema_meta.as_ref().and_then(|(i, _, _)| *i))
+        .unwrap_or(Interpolation::Vertex);
+    let indices = match read_int_array(stage, source_prim, &format!("{name}:indices"))? {
+        Some(idx) => idx,
+        None => schema_meta
+            .map(|(_, idx, _)| idx)
+            .unwrap_or_default(),
     };
     Ok(Some(MeshPrimvar {
         values,
-        interpolation: read_primvar_interpolation(stage, prim, name)?
-            .unwrap_or(Interpolation::Vertex),
-        indices: read_int_array(stage, prim, &format!("{name}:indices"))?.unwrap_or_default(),
+        interpolation,
+        indices,
     }))
 }
 
@@ -187,14 +242,27 @@ fn read_primvar_float(
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<f32>>> {
-    let Some(values) = read_float_array(stage, prim, name)? else {
+    let schema_meta = read_primvar_schema_meta(stage, prim, name);
+    let source_prim = schema_meta
+        .as_ref()
+        .and_then(|(_, _, owner)| owner.as_ref())
+        .unwrap_or(prim);
+    let Some(values) = read_float_array(stage, source_prim, name)? else {
         return Ok(None);
+    };
+    let interpolation = read_primvar_interpolation(stage, source_prim, name)?
+        .or_else(|| schema_meta.as_ref().and_then(|(i, _, _)| *i))
+        .unwrap_or(Interpolation::Vertex);
+    let indices = match read_int_array(stage, source_prim, &format!("{name}:indices"))? {
+        Some(idx) => idx,
+        None => schema_meta
+            .map(|(_, idx, _)| idx)
+            .unwrap_or_default(),
     };
     Ok(Some(MeshPrimvar {
         values,
-        interpolation: read_primvar_interpolation(stage, prim, name)?
-            .unwrap_or(Interpolation::Vertex),
-        indices: read_int_array(stage, prim, &format!("{name}:indices"))?.unwrap_or_default(),
+        interpolation,
+        indices,
     }))
 }
 
@@ -203,13 +271,26 @@ fn read_primvar_vec2f(
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<MeshPrimvar<[f32; 2]>>> {
-    let Some(values) = read_vec2f_array(stage, prim, name)? else {
+    let schema_meta = read_primvar_schema_meta(stage, prim, name);
+    let source_prim = schema_meta
+        .as_ref()
+        .and_then(|(_, _, owner)| owner.as_ref())
+        .unwrap_or(prim);
+    let Some(values) = read_vec2f_array(stage, source_prim, name)? else {
         return Ok(None);
+    };
+    let interpolation = read_primvar_interpolation(stage, source_prim, name)?
+        .or_else(|| schema_meta.as_ref().and_then(|(i, _, _)| *i))
+        .unwrap_or(Interpolation::FaceVarying);
+    let indices = match read_int_array(stage, source_prim, &format!("{name}:indices"))? {
+        Some(idx) => idx,
+        None => schema_meta
+            .map(|(_, idx, _)| idx)
+            .unwrap_or_default(),
     };
     Ok(Some(MeshPrimvar {
         values,
-        interpolation: read_primvar_interpolation(stage, prim, name)?
-            .unwrap_or(Interpolation::FaceVarying),
-        indices: read_int_array(stage, prim, &format!("{name}:indices"))?.unwrap_or_default(),
+        interpolation,
+        indices,
     }))
 }

@@ -6,10 +6,11 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::{vt, 
-    ar::{DefaultResolver, Resolver, is_package_relative_path},
-    vt::Value,
+use openusd::{
+    ar::{CacheScope, DefaultResolver, Resolver, is_package_relative_path},
     usd::{InitialLoadSet, PrimPredicate, Stage},
+    usd_utils::all_dependencies,
+    vt::Value,
 };
 
 #[path = "patterns.rs"]
@@ -45,6 +46,7 @@ pub(crate) fn discover_with_resolver(
     source: &Path,
     resolver: Arc<dyn Resolver>,
 ) -> Result<LocalizedDependencyReport> {
+    let _cache_scope = CacheScope::begin();
     let root_asset = regular_file(source).context("validate USD source")?;
     if is_usdz_path(&root_asset) {
         return discover_usdz(root_asset, resolver);
@@ -78,6 +80,26 @@ pub(crate) fn discover_with_resolver(
                 continue;
             }
         };
+        if let Some(root_str) = layer_path.to_str()
+            && let Ok(native_deps) = all_dependencies(&stage, root_str)
+        {
+            for dep_layer in &native_deps.layers {
+                if let Some(dep_path) = filesystem_identifier(dep_layer, resolver.as_ref()) {
+                    if is_package_relative_path(dep_layer) || is_usdz_path(Path::new(dep_layer)) {
+                        state.non_layer_assets.insert(dep_path);
+                    } else {
+                        state.add_layer(dep_path);
+                    }
+                }
+            }
+            for dep_asset in &native_deps.assets {
+                if let Some(dep_path) = filesystem_identifier(dep_asset, resolver.as_ref())
+                    && let Ok(canon) = regular_file(&dep_path)
+                {
+                    state.non_layer_assets.insert(canon);
+                }
+            }
+        }
         force_reachable_layers(&stage)?;
         for error in stage.composition_errors() {
             state.unresolved.insert(format!("composition: {error}"));

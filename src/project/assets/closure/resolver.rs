@@ -51,6 +51,26 @@ impl Resolver for SharedResolver {
     fn identity(&self) -> String {
         self.0.identity()
     }
+
+    fn cache_id(&self) -> Option<u64> {
+        self.0.cache_id()
+    }
+
+    fn extension<'a>(&self, asset_path: &'a str) -> &'a str {
+        self.0.extension(asset_path)
+    }
+
+    fn uri_schemes(&self) -> &[&str] {
+        self.0.uri_schemes()
+    }
+
+    fn is_context_dependent_path(&self, asset_path: &str) -> bool {
+        self.0.is_context_dependent_path(asset_path)
+    }
+
+    fn in_memory_identifier<'a>(&self, asset_path: &'a str) -> std::borrow::Cow<'a, str> {
+        self.0.in_memory_identifier(asset_path)
+    }
 }
 
 pub(crate) fn resolve_asset_paths_with_resolver(

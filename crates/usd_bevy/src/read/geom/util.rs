@@ -28,19 +28,7 @@ pub(super) fn attr_default(
 }
 
 fn is_empty_array_value(v: &Value) -> bool {
-    match v {
-        Value::IntVec(a) => a.is_empty(),
-        Value::FloatVec(a) => a.is_empty(),
-        Value::DoubleVec(a) => a.is_empty(),
-        Value::TokenVec(a) => a.is_empty(),
-        Value::StringVec(a) => a.is_empty(),
-        Value::Vec2fVec(a) => a.is_empty(),
-        Value::Vec2dVec(a) => a.is_empty(),
-        Value::Vec3fVec(a) => a.is_empty(),
-        Value::Vec3dVec(a) => a.is_empty(),
-        Value::Vec4fVec(a) => a.is_empty(),
-        _ => false,
-    }
+    v.array_len() == Some(0)
 }
 
 pub(super) fn read_token(stage: &Stage, prim: &Path, name: &str) -> anyhow::Result<Option<String>> {

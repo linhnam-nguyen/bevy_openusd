@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use bevy::prelude::*;
-use openusd::ar::split_package_relative_path_outer;
+use openusd::ar::{CacheScope, DefaultResolver, ResolvedPath, split_package_relative_path_outer};
 use openusd::usd::Stage;
+use openusd::usdz::{open_package, package_entry};
 
 use super::texture_cache::UsdTextureCache;
 
@@ -120,8 +120,11 @@ pub fn archive_paths_for_stage(stage: &Stage, root_path: &Path) -> anyhow::Resul
 }
 
 fn build_archive_index(path: &Path, fingerprint: ArchiveFingerprint) -> (ArchiveIndex, u64) {
+    let _scope = CacheScope::begin();
+    let resolver = DefaultResolver::new();
+    let resolved = ResolvedPath::new(path.to_path_buf());
     let mut entries = HashMap::new();
-    let Ok(file) = std::fs::File::open(path) else {
+    let Ok(package) = open_package(&resolver, &resolved) else {
         return (
             ArchiveIndex {
                 fingerprint,
@@ -130,7 +133,7 @@ fn build_archive_index(path: &Path, fingerprint: ArchiveFingerprint) -> (Archive
             0,
         );
     };
-    let Ok(mut archive) = zip::ZipArchive::new(file) else {
+    let Ok(entry_names) = package.with(|archive| archive.entry_names()) else {
         return (
             ArchiveIndex {
                 fingerprint,
@@ -139,13 +142,8 @@ fn build_archive_index(path: &Path, fingerprint: ArchiveFingerprint) -> (Archive
             0,
         );
     };
-
-    let entries_scanned = archive.len() as u64;
-    for index in 0..archive.len() {
-        let Ok(zip_file) = archive.by_index(index) else {
-            continue;
-        };
-        let original_name = zip_file.name().to_owned();
+    let entries_scanned = entry_names.len() as u64;
+    for original_name in entry_names {
         entries
             .entry(normalized_archive_entry(&original_name))
             .or_insert(original_name);
@@ -158,6 +156,14 @@ fn build_archive_index(path: &Path, fingerprint: ArchiveFingerprint) -> (Archive
         },
         entries_scanned,
     )
+}
+
+pub(super) fn read_archive_entry_bytes(package_path: &Path, entry_name: &str) -> Option<Vec<u8>> {
+    let _scope = CacheScope::begin();
+    let resolver = DefaultResolver::new();
+    let package_str = package_path.to_str()?;
+    let buffer = package_entry(&resolver, package_str, entry_name).ok()?;
+    Some(buffer.to_vec())
 }
 
 fn ensure_archive_index(world: &mut World, path: &Path) -> ArchiveLookupStats {
@@ -197,27 +203,25 @@ fn scan_archives_without_index(
     norm_path: &str,
     archive_stats: &mut ArchiveLookupStats,
 ) -> Option<Vec<u8>> {
+    let _scope = CacheScope::begin();
+    let resolver = DefaultResolver::new();
     for usdz in usdz_files {
         archive_stats.archives_scanned += 1;
-        let Ok(file) = std::fs::File::open(usdz) else {
+        let resolved = ResolvedPath::new(usdz.clone());
+        let Ok(package) = open_package(&resolver, &resolved) else {
             continue;
         };
-        let Ok(mut archive) = zip::ZipArchive::new(file) else {
+        let Ok(names) = package.with(|archive| archive.entry_names()) else {
             continue;
         };
-
-        for index in 0..archive.len() {
+        for original_name in names {
             archive_stats.entries_scanned += 1;
-            let Ok(mut zip_file) = archive.by_index(index) else {
-                continue;
-            };
-            let norm_zip = normalized_archive_entry(zip_file.name());
-            if archive_entry_matches(&norm_zip, norm_path) {
-                let mut buffer = Vec::new();
-                if zip_file.read_to_end(&mut buffer).is_ok() {
-                    archive_stats.hits += 1;
-                    return Some(buffer);
-                }
+            let norm_zip = normalized_archive_entry(&original_name);
+            if archive_entry_matches(&norm_zip, norm_path)
+                && let Some(bytes) = read_archive_entry_bytes(usdz, &original_name)
+            {
+                archive_stats.hits += 1;
+                return Some(bytes);
             }
         }
     }

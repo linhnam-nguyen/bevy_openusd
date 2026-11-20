@@ -15,9 +15,10 @@ pub use curves::{
     ReadNurbsPatch, read_curves, read_hermite_curves, read_nurbs_curves, read_nurbs_patch,
 };
 pub use custom::{
-    CustomAttrValue, CustomDict, VisibilityState, read_asset_info, read_custom_attrs,
-    read_custom_data, read_custom_layer_data, read_effective_purpose, read_kind, read_purpose,
-    read_visibility,
+    CustomAttrValue, CustomDict, VisibilityState, read_asset_info,
+    read_collection_included_paths, read_custom_attrs, read_custom_data, read_custom_layer_data,
+    read_effective_purpose, read_effective_visibility_at, read_kind, read_purpose,
+    read_visibility, read_visibility_at,
 };
 pub use mesh::{
     Interpolation, MeshPrimvar, Orientation, ReadMesh, ReadSubset, SubdivScheme, read_mesh,

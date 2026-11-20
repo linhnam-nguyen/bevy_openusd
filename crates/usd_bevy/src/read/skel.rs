@@ -19,7 +19,7 @@ use openusd_schemas::skel::skinning::{
     resolve_blend_shape_offsets, skinning_transforms,
 };
 use openusd_schemas::skel::{
-    AnimQuery, Animation, BindingAPI as SkelBindingAPI, BindingProperties, BlendShape,
+    AnimMapper, AnimQuery, Animation, BindingAPI as SkelBindingAPI, BindingProperties, BlendShape,
     BlendShapeSchema, Root, Skeleton, SkeletonQuery, SkinningQuery,
 };
 
@@ -382,7 +382,21 @@ pub fn skinned_points_at(
                 let anim = AnimQuery::new(anim_prim)?;
                 let tc = TimeCode::new(time.unwrap_or(0.0));
                 match anim.joint_local_transforms(tc)? {
-                    Some(l) if l.len() == resolver.joint_order().len() => l,
+                    Some(l) if l.len() == anim.joint_order().len() => {
+                        let mapper = AnimMapper::new(anim.joint_order(), resolver.joint_order());
+                        if mapper.is_identity() {
+                            l
+                        } else {
+                            let mut target = rest();
+                            if target.len() == resolver.joint_order().len()
+                                && mapper.remap_into(&l, &mut target)
+                            {
+                                target
+                            } else {
+                                mapper.remap(&l, gf::Mat4d::IDENTITY)
+                            }
+                        }
+                    }
                     _ => rest(),
                 }
             }

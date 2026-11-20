@@ -164,6 +164,38 @@ impl<'a> RouteCtx<'a> {
     pub fn prim_str(&self) -> &str {
         self.path.as_str()
     }
+
+    /// Whether the prim is or inherits from the given registered USD schema
+    /// (`Prim::is_a`), falling back to an exact `type_name` match when the
+    /// stage has no schema registry entry for `schema`.
+    pub fn is_a(&self, schema: &str) -> bool {
+        if self.type_name.as_deref() == Some(schema) {
+            return true;
+        }
+        self.stage
+            .prim(self.path.clone())
+            .ok()
+            .and_then(|prim| prim.is_a(schema).ok())
+            .unwrap_or(false)
+    }
+
+    /// Whether the prim has the named applied API schema (`Prim::has_api_schema`),
+    /// either built-in through its `PrimDefinition` or authored in `apiSchemas`.
+    pub fn has_api_schema(&self, schema: &str) -> bool {
+        self.stage
+            .prim(self.path.clone())
+            .ok()
+            .and_then(|prim| prim.has_api_schema(schema).ok())
+            .unwrap_or(false)
+    }
+
+    /// The prim's resolved schema [`openusd::usd::PrimDefinition`].
+    pub fn prim_definition(&self) -> Option<std::sync::Arc<openusd::usd::PrimDefinition>> {
+        self.stage
+            .prim(self.path.clone())
+            .ok()
+            .and_then(|prim| prim.prim_definition().ok())
+    }
 }
 
 /// One prim-schema → component mapping. Object-safe so routes can be boxed and

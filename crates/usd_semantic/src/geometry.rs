@@ -14,10 +14,15 @@ pub fn extract_geometry(
     config: &SemanticConfig,
 ) -> Result<Option<GeometrySignature>> {
     let prim = stage.prim(path.clone())?;
-    let type_name = prim
-        .type_name()?
-        .map(|value| value.as_str().to_owned());
-    if type_name.as_deref() != Some("Mesh") {
+    let is_mesh = openusd_schemas::geom::Mesh::from_prim(prim.clone())
+        .ok()
+        .flatten()
+        .is_some()
+        || prim
+            .type_name()?
+            .map(|value| value.as_str() == "Mesh")
+            .unwrap_or(false);
+    if !is_mesh {
         return Ok(None);
     }
 

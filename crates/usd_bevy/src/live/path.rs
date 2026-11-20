@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow, bail};
 use bevy::prelude::Resource;
+use openusd::sdf::{Path, PathTable};
 use std::collections::HashMap;
 
 /// Compact identity for one canonical prim path in [`PathStore`].
@@ -115,6 +116,9 @@ impl PathStore {
         if ancestor == "/" || ancestor == candidate {
             return true;
         }
+        if let (Ok(ancestor_sdf), Ok(candidate_sdf)) = (Path::new(ancestor), Path::new(candidate)) {
+            return candidate_sdf.has_prefix(&ancestor_sdf);
+        }
         candidate
             .strip_prefix(ancestor)
             .is_some_and(|suffix| suffix.starts_with('/') || suffix.starts_with('.'))
@@ -182,7 +186,8 @@ fn path_hash(path: &str) -> u64 {
 
 /// Normalizes a USD prim or property path to its owning prim path without trailing slashes.
 ///
-/// Leading `/` is ensured, property specifiers (`.property_name`) are stripped defensively,
+/// Leading `/` is ensured, property specifiers (`.property_name`) are stripped via
+/// [`openusd::sdf::Path::prim_path`] when the trimmed path parses as an SdfPath,
 /// and trailing slashes are removed unless the path is the root `"/"`.
 pub fn normalize_prim_path(path: &str) -> String {
     let trimmed = path.trim();
@@ -201,10 +206,15 @@ pub fn normalize_prim_path(path: &str) -> String {
         normalized.pop();
     }
     if normalized.is_empty() {
-        "/".to_string()
-    } else {
-        normalized
+        return "/".to_string();
     }
+    if let Ok(sdf_path) = Path::new(&normalized) {
+        let prim_path = sdf_path.prim_path();
+        if !prim_path.is_empty() {
+            return prim_path.as_str().to_string();
+        }
+    }
+    normalized
 }
 
 /// Validates that a path string can safely represent a normalized OpenUSD prim path.
@@ -224,13 +234,17 @@ pub fn validate_prim_path(path: &str) -> Result<String> {
     if normalized == "/" {
         return Ok(normalized);
     }
-    openusd::sdf::path(&normalized)
+    let sdf_path = openusd::sdf::path(&normalized)
         .map_err(|e| anyhow!("invalid OpenUSD prim path '{normalized}': {e:#}"))?;
-    Ok(normalized)
+    if !sdf_path.is_prim() {
+        bail!("path '{normalized}' does not address a prim");
+    }
+    Ok(sdf_path.as_str().to_string())
 }
 
 /// Checks whether `candidate` is equal to or a descendant of `ancestor` with boundary awareness.
 ///
+/// Uses [`openusd::sdf::Path::has_prefix`] when both paths parse as valid SdfPaths.
 /// This prevents naive substring matches like `/World/A` falsely matching `/World/AB`.
 pub fn is_descendant_or_self(ancestor: &str, candidate: &str) -> bool {
     let ancestor = normalize_prim_path(ancestor);
@@ -242,6 +256,9 @@ pub fn is_descendant_or_self(ancestor: &str, candidate: &str) -> bool {
     if ancestor == candidate {
         return true;
     }
+    if let (Ok(ancestor_sdf), Ok(candidate_sdf)) = (Path::new(&ancestor), Path::new(&candidate)) {
+        return candidate_sdf.has_prefix(&ancestor_sdf);
+    }
     if candidate.starts_with(&ancestor) {
         let after_ancestor = &candidate[ancestor.len()..];
         return after_ancestor.starts_with('/') || after_ancestor.starts_with('.');
@@ -252,7 +269,8 @@ pub fn is_descendant_or_self(ancestor: &str, candidate: &str) -> bool {
 /// Normalizes and minimizes a set of resync candidate paths.
 ///
 /// Deduplicates exact duplicates, sorts shallowest first, and prunes any child path
-/// whose ancestor is already included. If the stage root `"/"` is present, returns `["/"]`.
+/// whose ancestor is already included using [`openusd::sdf::PathTable`] prefix lookup.
+/// If the stage root `"/"` is present, returns `["/"]`.
 pub fn minimize_resync_roots<I, S>(paths: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -280,10 +298,20 @@ where
     });
 
     let mut accepted: Vec<String> = Vec::new();
+    let mut sdf_roots: PathTable<()> = PathTable::new();
     for candidate in sorted {
-        let is_covered = accepted
-            .iter()
-            .any(|root| is_descendant_or_self(root, &candidate));
+        let is_covered = if let Ok(sdf_candidate) = Path::new(&candidate) {
+            if sdf_roots.nearest_ancestor(&sdf_candidate).is_some() {
+                true
+            } else {
+                sdf_roots.insert(sdf_candidate, ());
+                false
+            }
+        } else {
+            accepted
+                .iter()
+                .any(|root| is_descendant_or_self(root, &candidate))
+        };
         if !is_covered {
             accepted.push(candidate);
         }
@@ -302,11 +330,22 @@ pub(super) fn parent_path(path: &str) -> &str {
 
 /// The prim path owning a (possibly property) path: `/Foo.bar` → `/Foo`.
 pub fn prim_of(path: &str) -> &str {
+    if let Ok(sdf_path) = Path::new(path)
+        && let Some((prim, _)) = sdf_path.split_property()
+    {
+        return &path[..prim.as_str().len()];
+    }
     path.split('.').next().unwrap_or(path)
 }
 
 /// The property part of a (possibly property) path: `/Foo.xformOp:x` →
 /// `Some("xformOp:x")`; a bare prim path → `None`.
 pub fn property_of(path: &str) -> Option<&str> {
+    if let Ok(sdf_path) = Path::new(path) {
+        return sdf_path.split_property().map(|(_, prop)| {
+            let offset = path.len() - prop.len();
+            &path[offset..]
+        });
+    }
     path.split_once('.').map(|(_, prop)| prop)
 }

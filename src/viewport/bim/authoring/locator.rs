@@ -189,7 +189,13 @@ fn is_derived_property(property_key: &str) -> bool {
 /// The supported set is intentionally the same scalar/vector/array surface
 /// accepted by the viewport editor value converter. A resolver must not mark
 /// a property editable when the normal authoring path cannot encode it.
+///
+/// Validates both against [`openusd::sdf::ValueTypeName::find`] (canonical Sdf
+/// type table) and the product editable whitelist.
 fn is_supported_attribute_type(type_name: &str) -> bool {
+    if openusd::sdf::ValueTypeName::find(type_name).is_none() {
+        return false;
+    }
     matches!(
         type_name,
         "bool"

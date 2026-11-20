@@ -1158,6 +1158,29 @@
           "target": "usdview"
         }
       ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C03"
+      ],
+      "name": "route::geom::hierarchy_tests::affine_projection_preserves_shear_far_from_origin",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "BO-M9-C1",

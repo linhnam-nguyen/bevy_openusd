@@ -318,6 +318,7 @@ MIGRATION_CHECKPOINTS = frozenset(
         "NEM-CLN-C1",
         "UP-C01",
         "UP-C02",
+        "UP-C03",
     }
 )
 

@@ -107,6 +107,7 @@ pub(super) fn rewrite_clip_dictionary(
             Some(vt::Value::AssetPath(path)) if !path.is_empty() => {
                 Some(path.authored_path.clone())
             }
+            Some(vt::Value::String(path)) if !path.is_empty() => Some(path.clone()),
             _ => None,
         };
         if let Some(template) = template {
@@ -118,8 +119,10 @@ pub(super) fn rewrite_clip_dictionary(
                 })
                 .collect::<Result<Vec<_>>>()?;
             let rewritten = rewrite_pattern_asset(&template, localized_layer, mapping, &originals)?;
-            if let Some(vt::Value::AssetPath(path)) = set.get_mut("templateAssetPath") {
-                path.authored_path = rewritten;
+            match set.get_mut("templateAssetPath") {
+                Some(vt::Value::AssetPath(path)) => path.authored_path = rewritten,
+                Some(vt::Value::String(path)) => *path = rewritten,
+                _ => {}
             }
         }
     }

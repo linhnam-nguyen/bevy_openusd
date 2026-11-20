@@ -23,5 +23,5 @@ pub use nvidia::{
     NvidiaRevitMeasurementMapping, nvidia_revit_property_descriptor,
     nvidia_revit_property_descriptor_with_display_name,
 };
-pub use transform::extract_transform;
+pub use transform::{compute_world_transform_matrix, extract_transform};
 pub use units::{UnitConversionError, UnitDefinition, UnitRegistry};
