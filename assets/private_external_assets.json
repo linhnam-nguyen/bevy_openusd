@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "description": "Owner-authorized wiring manifest connecting bevy_openusd/UsdHubUI benchmarks and asset probes to private external BIM USD corpora when present on the workstation. Missing roots must skip cleanly rather than failing or blocking.",
+  "owner_authorization_ref": "Owner explicit instruction 2026-11-19T21:39:44+01:00 (M-NEM-MIG-20261119-PC-CDS16-01 / UP-C00 E01-06)",
+  "env_override": "USDHUB_PRIVATE_USD_ROOT",
+  "default_external_root": "D:/Nemeton/TestSpaces/TestUSDs",
+  "on_missing_root": "SKIP_NO_PRIVATE_RESOURCES",
+  "missing_message": "SKIP: no private resources available",
+  "fail_or_block_on_missing": false,
+  "ignore_glob_patterns": [
+    "**/._*",
+    "**/.DS_Store"
+  ],
+  "assets": [
+    {
+      "fixture_identity_id": "FIX-PRIVATE-NORIA-900",
+      "workload": "BIM_REPEATED_EQUIPMENT_AND_MODEL_SCALE",
+      "fixture_kind": "ACTUAL_PRIVATE_BIM",
+      "relative_entry": "NORIA_900.usdz",
+      "packaging": "usdz",
+      "expected_bytes": 3899959,
+      "root_sha256": "9cb89ebce747a2dfdca668be45da14f448817a98cbdaa43959ad1c0182eff99d",
+      "on_missing_asset": "SKIP_NO_PRIVATE_RESOURCES"
+    },
+    {
+      "fixture_identity_id": "FIX-PRIVATE-PROJET1",
+      "workload": "MULTI_FILE_BIM_FEDERATION_WITH_MATERIALS",
+      "fixture_kind": "ACTUAL_PRIVATE_BIM",
+      "relative_entry": "Projet1/Projet1.usdc",
+      "packaging": "directory_closure",
+      "expected_bytes": 52502,
+      "root_sha256": "b2a647d4c203bd84009c97a4e652281188ca402faf6f7596af747cc10d5aa869",
+      "closure_relative_dir": "Projet1",
+      "on_missing_asset": "SKIP_NO_PRIVATE_RESOURCES"
+    }
+  ]
+}
