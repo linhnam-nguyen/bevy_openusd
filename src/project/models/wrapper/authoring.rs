@@ -3,9 +3,9 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::{Context, Result, ensure};
-use openusd::{
+use openusd::{vt, 
     sdf,
-    sdf::Value,
+    vt::Value,
     usd::{InitialLoadSet, Stage},
 };
 
@@ -42,19 +42,22 @@ pub(super) fn author_model_wrapper(
         .set_type_name("Xform")?
         .set_metadata(
             "customData",
-            Value::Dictionary(HashMap::from([
-                (
-                    MODEL_ID_METADATA.to_owned(),
-                    Value::String(model_id.to_string()),
-                ),
-                (
-                    SCHEMA_VERSION_METADATA.to_owned(),
-                    Value::Int(MODEL_SCHEMA_VERSION),
-                ),
-            ])),
+            Value::Dictionary(
+                HashMap::from([
+                    (
+                        MODEL_ID_METADATA.to_owned(),
+                        Value::String(model_id.to_string()),
+                    ),
+                    (
+                        SCHEMA_VERSION_METADATA.to_owned(),
+                        Value::Int(MODEL_SCHEMA_VERSION),
+                    ),
+                ])
+                .into(),
+            ),
         )?;
     stage
-        .prim(format!("/{MODEL_ROOT_PRIM}").as_str())
+        .prim(format!("/{MODEL_ROOT_PRIM}").as_str())?
         .set_metadata("ui:displayName", Value::String(model_name.to_owned()))?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
     crate::project::assets::spatial::author_canonical_stage(&stage)?;
@@ -132,12 +135,12 @@ pub(super) fn validate_model_wrapper(
             .is_some_and(|token| token.as_str() == MODEL_ROOT_PRIM),
         "stable Model wrapper defaultPrim must be /{MODEL_ROOT_PRIM}"
     );
-    let root = stage.prim(format!("/{MODEL_ROOT_PRIM}").as_str());
+    let root = stage.prim(format!("/{MODEL_ROOT_PRIM}").as_str())?;
     ensure!(
         root.is_defined()?,
         "stable Model wrapper root must be defined"
     );
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
+    let Some(Value::Dictionary(data)) = root.metadata::<Value>("customData")? else {
         anyhow::bail!("stable Model wrapper root is missing customData");
     };
     ensure!(
@@ -151,8 +154,8 @@ pub(super) fn validate_model_wrapper(
     let source_path = sdf::path(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}"))?;
     ensure!(
         stage
-            .prim(source_path.as_str())
-            .custom_data()?
+            .prim(source_path.as_str())?
+            .metadata::<Value>("customData")?
             .and_then(|value| match value {
                 Value::Dictionary(data) => data
                     .get(crate::project::assets::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
@@ -165,7 +168,7 @@ pub(super) fn validate_model_wrapper(
         "stable Model wrapper source must carry the transparent hierarchy role"
     );
     validate_source_reference_paths(&stage, &source_path)?;
-    let source_prim = stage.prim(source_path.as_str());
+    let source_prim = stage.prim(source_path.as_str())?;
     ensure!(
         crate::project::assets::spatial::read_source_normalization(&source_prim)?
             == crate::project::assets::spatial::source_normalization_transform(spatial),
@@ -177,15 +180,15 @@ pub(super) fn validate_model_wrapper(
 fn validate_source_reference_paths(stage: &Stage, source_path: &sdf::Path) -> Result<()> {
     let root_layer = stage.root_layer();
     let mut specs = Vec::new();
-    if let Some(spec) = root_layer.prim(source_path)
-        && spec.has_field(REFERENCES_FIELD)
+    if let Some(spec) = root_layer.prim(source_path.clone())?
+        && spec.has_field(REFERENCES_FIELD)?
     {
         specs.push(spec);
     } else {
-        for child in stage.prim(source_path.as_str()).children()? {
+        for child in stage.prim(source_path.as_str())?.children()? {
             if let Ok(path) = sdf::path(child.path().as_str())
-                && let Some(spec) = root_layer.prim(&path)
-                && spec.has_field(REFERENCES_FIELD)
+                && let Some(spec) = root_layer.prim(path)?
+                && spec.has_field(REFERENCES_FIELD)?
             {
                 specs.push(spec);
             }

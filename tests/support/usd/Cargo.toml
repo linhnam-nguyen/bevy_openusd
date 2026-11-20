@@ -11,5 +11,17 @@ path = "lib.rs"
 
 [dependencies]
 openusd = { workspace = true }
+openusd-schemas = { workspace = true, features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 tempfile = { workspace = true }
 anyhow = { workspace = true }

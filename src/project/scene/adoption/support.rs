@@ -134,14 +134,14 @@ pub(crate) fn source_entrypoint_prims(stage: &Stage) -> Result<Vec<String>> {
     if let Some(default_prim) = stage.default_prim() {
         let path = format!("/{default_prim}");
         ensure!(
-            stage.prim(path.as_str()).is_defined()?,
+            stage.prim(path.as_str())?.is_defined()?,
             "USD source defaultPrim is not a defined prim"
         );
         return Ok(vec![path]);
     }
 
     let mut roots = Vec::new();
-    for prim in stage.prim("/").children()? {
+    for prim in stage.prim("/")?.children()? {
         if prim.is_active()? && prim.is_defined()? && !prim.is_abstract()? {
             roots.push(prim.path().as_str().to_owned());
         }

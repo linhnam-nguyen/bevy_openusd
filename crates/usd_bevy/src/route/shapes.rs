@@ -9,8 +9,11 @@
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
-use openusd::schemas::geom::{Capsule, Cone, Cube, Cylinder, Plane, Sphere};
-use openusd::sdf::Value;
+use openusd_schemas::geom::{
+    Capsule, CapsuleSchema, Cone, ConeSchema, Cube, CubeSchema, Cylinder, CylinderSchema, Plane,
+    PlaneSchema, Sphere, SphereSchema,
+};
+use openusd::vt::Value;
 
 use crate::read::shade::read_material_binding;
 
@@ -52,13 +55,13 @@ fn shape_mesh(ctx: &RouteCtx) -> Option<Mesh> {
         "Sphere" => {
             let sphere = Sphere::get(stage, p).ok()??;
             let r = f32_attr(sphere.radius_attr(), 1.0);
-            Some(Mesh::from(bevy::math::primitives::Sphere::new(r)))
+            Some(Mesh::from(bevy::prelude::Sphere::new(r)))
         }
         "Cylinder" => {
             let cyl = Cylinder::get(stage, p).ok()??;
             let r = f32_attr(cyl.radius_attr(), 1.0);
             let h = f32_attr(cyl.height_attr(), 2.0);
-            let mesh = Mesh::from(bevy::math::primitives::Cylinder::new(r, h));
+            let mesh = Mesh::from(bevy::prelude::Cylinder::new(r, h));
             Some(mesh.rotated_by(axis_rotation(cyl.axis_attr())))
         }
         "Capsule" => {
@@ -72,7 +75,7 @@ fn shape_mesh(ctx: &RouteCtx) -> Option<Mesh> {
             let cone = Cone::get(stage, p).ok()??;
             let r = f32_attr(cone.radius_attr(), 1.0);
             let h = f32_attr(cone.height_attr(), 2.0);
-            let mesh = Mesh::from(bevy::math::primitives::Cone::new(r, h));
+            let mesh = Mesh::from(bevy::prelude::Cone::new(r, h));
             Some(mesh.rotated_by(axis_rotation(cone.axis_attr())))
         }
         "Plane" => {

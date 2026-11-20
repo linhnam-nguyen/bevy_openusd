@@ -3,12 +3,10 @@ use std::collections::HashMap;
 use bevy::ecs::hierarchy::ChildOf;
 use bevy::mesh::morph::MeshMorphWeights;
 use bevy::prelude::*;
-use openusd::schemas::skel::{
-    SkelAnimQuery, SkelBinding, SkelBindingAPI, Skeleton, SkeletonResolver,
-};
 use openusd::usd::Stage;
+use openusd_schemas::skel::{AnimQuery, Animation, BindingAPI as SkelBindingAPI, Skeleton, SkeletonQuery};
 
-use super::binding::{animation_channel_authored, joint_index, matrix_to_transform};
+use super::binding::{DiscoveredBinding, animation_channel_authored, joint_index, matrix_to_transform};
 use super::mesh_binding::attach_native_mesh;
 use crate::live::index::PrimEntities;
 use crate::live::path::PathStore;
@@ -51,7 +49,7 @@ pub(super) fn rebuild_skeletons(
     world: &mut World,
     stage: &Stage,
     map: &PrimEntities,
-    by_skeleton: &HashMap<String, Vec<SkelBinding>>,
+    by_skeleton: &HashMap<String, Vec<DiscoveredBinding>>,
 ) {
     let mut skeleton_paths = by_skeleton.keys().cloned().collect::<Vec<_>>();
     skeleton_paths.sort();
@@ -69,15 +67,17 @@ pub(super) fn rebuild_skeletons(
         let Ok(Some(skeleton)) = Skeleton::get(stage, path.clone()) else {
             continue;
         };
-        let Ok(joints) = skeleton.joints() else {
+        let Ok(Some(resolver)) = SkeletonQuery::new(&skeleton) else {
             continue;
         };
-        let Ok(resolver) = SkeletonResolver::from_skeleton(&skeleton) else {
-            continue;
-        };
-        let parents = skeleton
-            .joint_parent_indices()
-            .unwrap_or_else(|_| vec![None; joints.len()]);
+        let joints = resolver.joint_order().to_vec();
+        let parents: Vec<Option<usize>> = resolver
+            .topology()
+            .parents()
+            .iter()
+            .map(|&parent| usize::try_from(parent).ok())
+            .collect();
+        let rest_local = resolver.rest_local_transforms();
         let mut entities = vec![None; joints.len()];
         for index in 0..joints.len() {
             let parent = parents
@@ -85,11 +85,9 @@ pub(super) fn rebuild_skeletons(
                 .and_then(|parent| *parent)
                 .and_then(|parent| entities.get(parent).copied().flatten())
                 .unwrap_or(skeleton_entity);
-            let local = resolver
-                .rest_pose_local()
-                .get(index)
-                .copied()
-                .unwrap_or(openusd::gf::Matrix4d::IDENTITY);
+            let local = rest_local
+                .and_then(|rest| rest.get(index).copied())
+                .unwrap_or(openusd::gf::Mat4d::IDENTITY);
             let name = joints[index]
                 .rsplit_once('/')
                 .map(|(_, leaf)| leaf)
@@ -117,12 +115,17 @@ pub(super) fn rebuild_skeletons(
                 SkelBindingAPI::get(stage, path.clone())
                     .ok()
                     .flatten()
-                    .and_then(|api| api.inherited_animation_source().ok().flatten())
-            });
+                    .and_then(|api| api.animation_source().ok().flatten())
+                    .map(|anim| anim.path().clone())
+            })
+            .or_else(|| crate::read::skel::inherited_animation_source(stage, &path));
         let Some(source) = source else {
             continue;
         };
-        let Ok(Some(animation)) = SkelAnimQuery::new(stage, source.clone()) else {
+        let Ok(Some(anim_prim)) = Animation::get(stage, source.clone()) else {
+            continue;
+        };
+        let Ok(animation) = AnimQuery::new(anim_prim) else {
             continue;
         };
         let animation_joints = animation.joint_order();

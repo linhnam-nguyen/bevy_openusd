@@ -66,7 +66,7 @@ fn test_regression_d_collision_triggers_full_snapshot_fallback() -> Result<()> {
     // Resync /World/A -> Extracted /World/A will collide with unaffected /World/B's artificial key
     // -> resync_subtree_update returns Err -> synchronize_live_stage catches Err and does full fallback
     let live = app.world().get_non_send::<LiveStage>().unwrap();
-    live.load_payload("/World/A");
+    live.load_payload("/World/A")?;
 
     app.update();
 
@@ -161,7 +161,7 @@ fn test_regression_f_root_resync_triggers_full_snapshot_load() -> Result<()> {
 
     // Resync root "/"
     let live = app.world().get_non_send::<LiveStage>().unwrap();
-    live.load_payload("/");
+    live.load_payload("/")?;
 
     app.update();
 

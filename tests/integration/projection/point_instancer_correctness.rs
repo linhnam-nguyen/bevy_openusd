@@ -7,7 +7,8 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_bevy::read::geom::read_point_instancer;
 use usd_bevy::route::instancer::{PointInstancerRoute, UsdInstance, UsdInstanceId};
@@ -151,6 +152,7 @@ fn reprojection_reuses_assets_and_changed_prototype_gets_new_mesh() {
 
     stage
         .prim(Path::new(CUBE_MESH).expect("mesh path is valid"))
+        .expect("cube prim exists")
         .attribute("points")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([-1.0, -0.5, 0.0]),
@@ -211,6 +213,7 @@ fn logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target() {
     ];
     stage
         .prim(path.clone())
+        .expect("instancer prim exists")
         .attribute("positions")
         .set(Value::Vec3fVec(positions))
         .expect("position reorder edit succeeds");
@@ -228,6 +231,7 @@ fn logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target() {
 
     stage
         .prim(path.clone())
+        .expect("instancer prim exists")
         .attribute("invisibleIds")
         .set(Value::Int64Vec(vec![103]))
         .expect("hidden-ID edit succeeds");
@@ -266,6 +270,7 @@ fn live_prototype_edit_reprojects_only_registered_instancer_dependency() {
         .expect("live stage exists");
     live.stage
         .prim(Path::new(CUBE_MESH).expect("mesh path is valid"))
+        .expect("cube prim exists")
         .attribute("points")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([-1.0, -0.5, 0.0]),
@@ -299,6 +304,7 @@ fn live_prototype_ancestor_resync_reprojects_registered_instancer_dependency() {
         .expect("live stage exists");
     live.stage
         .prim(Path::new(CUBE_MESH).expect("mesh path is valid"))
+        .expect("cube prim exists")
         .attribute("points")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([-2.0, -0.5, 0.0]),
@@ -340,6 +346,7 @@ fn live_transform_patch_preserves_logical_selection_and_entity() {
     positions[3][1] += 2.0;
     live.stage
         .prim(path)
+        .expect("instancer prim exists")
         .attribute("positions")
         .set(Value::Vec3fVec(
             positions.into_iter().map(Vec3f::from).collect(),

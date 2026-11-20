@@ -289,8 +289,9 @@ fn records_shared_material_benchmark_artifact() {
         let live = app.world().get_non_send::<LiveStage>().expect("stage");
         live.stage
             .prim(openusd::sdf::path("/World/SharedShaders/RedAlbedo").unwrap())
+            .expect("albedo prim exists")
             .attribute("inputs:file")
-            .set(openusd::sdf::Value::AssetPath(
+            .set(openusd::vt::Value::AssetPath(
                 usd_support::resolve_asset_path(
                     "external/franka/panda/DetailedProps/Materials/Textures/Logo_Textures_Albedo.png",
                 )

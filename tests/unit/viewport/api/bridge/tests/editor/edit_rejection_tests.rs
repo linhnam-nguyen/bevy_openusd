@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use openusd::sdf::Value;
+    use openusd::vt::Value;
     use openusd::usd::Stage;
     use viewport_protocol::*;
 
@@ -28,6 +28,7 @@ mod tests {
             .expect("wall type authors");
         stage
             .prim(openusd::sdf::path("/World/WallA").expect("path parses"))
+            .expect("wall prim exists")
             .create_attribute("Width", "double")
             .expect("attribute creates")
             .set_custom(true)
@@ -45,6 +46,7 @@ mod tests {
         match live
             .stage
             .prim(openusd::sdf::path("/World/WallA").expect("path parses"))
+            .expect("wall prim exists")
             .attribute("Width")
             .get::<Value>()
             .expect("width reads")

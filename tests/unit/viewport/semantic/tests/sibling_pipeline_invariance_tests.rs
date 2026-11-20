@@ -127,7 +127,7 @@ def Xform "World"
         new_mesh
             .create_attribute("points", "point3f[]")
             .unwrap()
-            .set(openusd::sdf::Value::Vec3fVec(vec![
+            .set(openusd::vt::Value::Vec3fVec(vec![
                 openusd::gf::Vec3f::from([0.0, 0.0, 0.0]),
                 openusd::gf::Vec3f::from([2.0, 0.0, 0.0]),
                 openusd::gf::Vec3f::from([0.0, 2.0, 0.0]),
@@ -136,15 +136,15 @@ def Xform "World"
         new_mesh
             .create_attribute("faceVertexCounts", "int[]")
             .unwrap()
-            .set(openusd::sdf::Value::IntVec(vec![3]))
+            .set(openusd::vt::Value::IntVec(vec![3]))
             .unwrap();
         new_mesh
             .create_attribute("faceVertexIndices", "int[]")
             .unwrap()
-            .set(openusd::sdf::Value::IntVec(vec![0, 1, 2]))
+            .set(openusd::vt::Value::IntVec(vec![0, 1, 2]))
             .unwrap();
         let _ = live_ref.drain_change_batch();
-        live_ref.load_payload("/World/A");
+        live_ref.load_payload("/World/A")?;
     }
 
     // ==========================================

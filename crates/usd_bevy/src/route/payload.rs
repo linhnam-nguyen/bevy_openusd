@@ -15,17 +15,24 @@ use super::{PrimRoute, RouteCtx};
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct UsdPayloadUnloaded;
 
+/// Diagnostic attached to a prim entity when inspecting its payload state fails.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct UsdPayloadError(pub String);
+
 /// Tracks payload load state as a marker component.
 pub struct PayloadRoute;
 
-fn is_unloaded(ctx: &RouteCtx) -> bool {
+fn is_unloaded(ctx: &RouteCtx) -> anyhow::Result<bool> {
+    if !ctx.path.is_abs()
+        || (!ctx.path.is_abs_root() && (!ctx.path.is_prim() || ctx.path.has_variant_selection()))
+    {
+        anyhow::bail!("invalid prim path for payload state query: {}", ctx.path);
+    }
     // `is_loaded()` short-circuits to `true` when the stage has no load rules
     // (the fully-loaded common case), so this is cheap on ordinary stages.
-    ctx.stage
-        .prim(ctx.path.clone())
-        .is_loaded()
-        .map(|loaded| !loaded)
-        .unwrap_or(false)
+    let prim = ctx.stage.prim(ctx.path.clone())?;
+    let loaded = prim.is_loaded()?;
+    Ok(!loaded)
 }
 
 impl PrimRoute for PayloadRoute {
@@ -36,12 +43,24 @@ impl PrimRoute for PayloadRoute {
     }
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
-        let unloaded = is_unloaded(ctx);
+        let state = is_unloaded(ctx);
         if let Ok(mut e) = world.get_entity_mut(entity) {
-            if unloaded {
-                e.insert(UsdPayloadUnloaded);
-            } else {
-                e.remove::<UsdPayloadUnloaded>();
+            match state {
+                Ok(true) => {
+                    e.remove::<UsdPayloadError>();
+                    e.insert(UsdPayloadUnloaded);
+                }
+                Ok(false) => {
+                    e.remove::<UsdPayloadError>();
+                    e.remove::<UsdPayloadUnloaded>();
+                }
+                Err(err) => {
+                    bevy::log::warn!(
+                        "PayloadRoute failed to inspect payload state for {}: {err:#}",
+                        ctx.path
+                    );
+                    e.insert(UsdPayloadError(format!("{err:#}")));
+                }
             }
         }
     }
@@ -50,3 +69,7 @@ impl PrimRoute for PayloadRoute {
         self.project(ctx, world, entity);
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/route/payload_tests.rs"]
+mod tests;

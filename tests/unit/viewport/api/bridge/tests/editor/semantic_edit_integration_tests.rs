@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bevy::prelude::*;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SnapshotSource};
 use viewport_protocol::{BimPropertyEditStatus, EditorOperation, ViewportCommand, ViewportEvent};
@@ -135,7 +135,7 @@ fn semantic_edit_diff_undo_redo_save_replace_and_batch_converge() -> Result<()> 
     let reopened = Stage::open(save_path.to_str().expect("save path is UTF-8"))?;
     assert!(matches!(
         reopened
-            .prim(openusd::sdf::path("/World/A")?)
+            .prim(openusd::sdf::path("/World/A")?)?
             .attribute("Width")
             .get::<Value>()?,
         Some(Value::Double(value)) if value == 10.0

@@ -35,14 +35,18 @@ pub(super) fn verify_scene_placement(
         .map_err(|error| format!("open generated Scene {scene_id}: {error}"))?;
     if !stage
         .prim("/SceneRoot")
+        .map_err(|error| error.to_string())?
         .is_defined()
         .map_err(|error| error.to_string())?
     {
         return Err(format!("generated Scene {scene_id} has no SceneRoot"));
     }
-    let linked_marker =
-        crate::project::assets::spatial::source_binding_is_linked(&stage.prim("/SceneRoot/Source"))
-            .map_err(|error| format!("read Scene link marker: {error}"))?;
+    let linked_marker = crate::project::assets::spatial::source_binding_is_linked(
+        &stage
+            .prim("/SceneRoot/Source")
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("read Scene link marker: {error}"))?;
     if linked_marker != linked {
         return Err(format!("Scene {scene_id} Import/Link marker mismatch"));
     }

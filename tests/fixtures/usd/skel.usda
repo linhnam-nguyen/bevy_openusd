@@ -8,7 +8,9 @@
 
 def Xform "World"
 {
-    def SkelRoot "Rig"
+    def SkelRoot "Rig" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
     {
         rel skel:skeleton = </World/Rig/Skel>
         rel skel:animationSource = </World/Rig/Anim>

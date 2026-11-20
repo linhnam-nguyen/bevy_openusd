@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use usd_project::ModelId;
 use viewport_protocol::{RuntimeMutation, RuntimeMutationBatch, ViewportCommand};
 
@@ -16,10 +16,13 @@ fn model_stage() -> (Stage, ModelId) {
         .expect("model root")
         .set_metadata(
             "customData",
-            Value::Dictionary(HashMap::from([(
-                "usdhub:modelId".to_owned(),
-                Value::String(model_id.to_string()),
-            )])),
+            Value::Dictionary(
+                HashMap::from([(
+                    "usdhub:modelId".to_owned(),
+                    Value::String(model_id.to_string()),
+                )])
+                .into(),
+            ),
         )
         .expect("model identity");
     stage
@@ -31,16 +34,19 @@ fn model_stage() -> (Stage, ModelId) {
         .expect("model member")
         .set_metadata(
             "customData",
-            Value::Dictionary(HashMap::from([
-                (
-                    "usdhub:targetKind".to_owned(),
-                    Value::String("model".to_owned()),
-                ),
-                (
-                    "usdhub:targetId".to_owned(),
-                    Value::String(model_id.to_string()),
-                ),
-            ])),
+            Value::Dictionary(
+                HashMap::from([
+                    (
+                        "usdhub:targetKind".to_owned(),
+                        Value::String("model".to_owned()),
+                    ),
+                    (
+                        "usdhub:targetId".to_owned(),
+                        Value::String(model_id.to_string()),
+                    ),
+                ])
+                .into(),
+            ),
         )
         .expect("model member identity");
     (stage, model_id)
@@ -62,11 +68,13 @@ fn model_source_mutations_are_rejected_by_identity() {
 #[test]
 fn model_member_root_remains_editable_but_its_source_does_not() {
     let (stage, _) = model_stage();
-    let member = stage.prim("/SceneRoot/ModelMember");
+    let member = stage
+        .prim("/SceneRoot/ModelMember")
+        .expect("model member prim exists");
     assert!(member.is_defined().expect("model member is defined"));
     assert!(
         member
-            .custom_data()
+            .metadata::<Value>("customData")
             .expect("model member custom data")
             .is_some()
     );

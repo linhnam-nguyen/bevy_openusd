@@ -55,12 +55,15 @@ fn projection_plan_keeps_unloaded_payload_prim_as_placeholder_work() {
     )))
     .open_stage()
     .expect("payload stage opens");
-    stage.unload(openusd::sdf::path("/World/PayloadPrim").expect("payload prim path"));
+    stage
+        .unload(openusd::sdf::path("/World/PayloadPrim").expect("payload prim path"))
+        .expect("payload unloads");
     let plan = ProjectionPlan::from_stage(&stage).expect("payload plan builds");
     assert!(plan.paths().any(|path| path == "/World/PayloadPrim"));
     assert!(
         !stage
             .prim(openusd::sdf::path("/World/PayloadPrim").unwrap())
+            .expect("payload prim exists")
             .is_loaded()
             .expect("payload load state is readable")
     );

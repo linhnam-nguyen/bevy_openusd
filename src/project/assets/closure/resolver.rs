@@ -22,7 +22,9 @@ pub(super) struct SharedResolver(pub(super) Arc<dyn Resolver>);
 impl Resolver for SharedResolver {
     fn create_identifier(&self, asset_path: &str, anchor: Option<&ResolvedPath>) -> String {
         let anchored = self.0.create_identifier(asset_path, anchor);
-        if self.0.resolve(&anchored).is_some() {
+        if (Path::new(&anchored).is_absolute() || is_package_relative_path(&anchored))
+            && self.0.resolve(&anchored).is_some()
+        {
             return anchored;
         }
         self.0
@@ -88,6 +90,11 @@ pub(super) fn filesystem_identifier(identifier: &str, resolver: &dyn Resolver) -
     }
     if is_package_relative_path(identifier) {
         let resolved = resolver.resolve(identifier)?;
+        return resolved_filesystem_path(&resolved).ok();
+    }
+    if !Path::new(identifier).is_absolute()
+        && let Some(resolved) = resolver.resolve(identifier)
+    {
         return resolved_filesystem_path(&resolved).ok();
     }
     Some(PathBuf::from(identifier))

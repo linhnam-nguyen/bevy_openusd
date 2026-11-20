@@ -100,7 +100,10 @@ where
 {
     before_open();
     let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::open(&path_string).map_err(|error| {
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&path_string)
+        .map_err(|error| {
         error!("failed to open Project stage {}: {error:#}", path.display());
         PROJECT_STAGE_OPEN_FAILURE.to_owned()
     })?;

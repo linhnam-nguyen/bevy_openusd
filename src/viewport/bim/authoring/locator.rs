@@ -112,7 +112,7 @@ pub(crate) fn resolve_bim_authoring_locator(
 
     let prim_path = openusd::sdf::path(&target.prim_path)
         .map_err(|_| BimAuthoringError::InvalidPrimPath(target.prim_path.clone()))?;
-    let prim = stage.prim(prim_path);
+    let prim = stage.prim(prim_path).map_err(stage_error)?;
     if !prim.is_valid().map_err(stage_error)? {
         return Err(BimAuthoringError::PrimNotFound(target.prim_path.clone()));
     }

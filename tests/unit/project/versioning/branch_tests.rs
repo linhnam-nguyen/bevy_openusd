@@ -355,6 +355,7 @@ fn switching_to_a_legacy_scene_branch_migrates_and_composes_content() {
     assert!(
         root_stage
             .prim(member_path.as_str())
+            .unwrap()
             .child_names()
             .unwrap()
             .iter()

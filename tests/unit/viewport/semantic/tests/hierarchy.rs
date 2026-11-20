@@ -86,8 +86,8 @@ def Xform "World"
         let new_c = live_ref.stage.define_prim("/World/C/ExtraC").unwrap();
         new_c.set_type_name("Xform").unwrap();
         let _ = live_ref.drain_change_batch();
-        live_ref.load_payload("/World/A");
-        live_ref.load_payload("/World/C");
+        live_ref.load_payload("/World/A")?;
+        live_ref.load_payload("/World/C")?;
     }
 
     app.update();
@@ -177,7 +177,7 @@ def Xform "World"
         let new_prim = live_ref.stage.define_prim("/World/A/NewName").unwrap();
         new_prim.set_type_name("Xform").unwrap();
         let _ = live_ref.drain_change_batch();
-        live_ref.load_payload("/World/A");
+        live_ref.load_payload("/World/A")?;
     }
 
     app.update();
@@ -269,8 +269,8 @@ def Xform "World"
         let new_child = live_ref.stage.define_prim("/World/C/Child").unwrap();
         new_child.set_type_name("Xform").unwrap();
         let _ = live_ref.drain_change_batch();
-        live_ref.load_payload("/World/A");
-        live_ref.load_payload("/World/C");
+        live_ref.load_payload("/World/A")?;
+        live_ref.load_payload("/World/C")?;
     }
 
     app.update();

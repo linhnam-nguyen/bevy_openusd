@@ -22,30 +22,34 @@ fn hierarchy_metadata_composed_reference_descendant_uses_composed_path() -> anyh
     let child_path_str = child_path.to_string_lossy().into_owned();
     let parent_path_str = parent_path.to_string_lossy().into_owned();
 
-    let child = openusd::usd::Stage::builder().in_memory("c6-composed-child.usda")?;
+    let child = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("c6-composed-child.usda")?;
     child
         .define_prim("/SceneRoot/Member_Kitchen")?
         .set_type_name("Xform")?
         .set_metadata(
             "ui:displayName",
-            openusd::sdf::Value::String("Kitchen_set".to_owned()),
+            openusd::vt::Value::String("Kitchen_set".to_owned()),
         )?;
     child.root_layer().export(&child_path_str)?;
 
-    let parent = openusd::usd::Stage::builder().in_memory("c6-composed-parent.usda")?;
+    let parent = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("c6-composed-parent.usda")?;
     parent
         .define_prim("/SceneRoot")?
         .set_type_name("Xform")?
         .set_metadata(
             "ui:displayName",
-            openusd::sdf::Value::String("Pro3".to_owned()),
+            openusd::vt::Value::String("Pro3".to_owned()),
         )?;
     parent
         .define_prim("/SceneRoot/Member_Sc1")?
         .set_type_name("Xform")?
         .set_metadata(
             "references",
-            openusd::sdf::Value::ReferenceListOp(openusd::sdf::ReferenceListOp::prepended([
+            openusd::vt::Value::ReferenceListOp(openusd::sdf::ReferenceListOp::prepended([
                 openusd::sdf::Reference {
                     asset_path: child_path_str,
                     prim_path: openusd::sdf::path("/SceneRoot")?,
@@ -55,9 +59,11 @@ fn hierarchy_metadata_composed_reference_descendant_uses_composed_path() -> anyh
         )?;
     parent.root_layer().export(&parent_path_str)?;
 
-    let stage = openusd::usd::Stage::open(&parent_path_str)?;
+    let stage = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&parent_path_str)?;
     let composed_path = openusd::sdf::path("/SceneRoot/Member_Sc1/Member_Kitchen")?;
-    assert!(stage.prim(composed_path.clone()).is_defined()?);
+    assert!(stage.prim(composed_path.clone())?.is_defined()?);
 
     let mut world = World::new();
     super::prepare_hierarchy_metadata(&stage, &mut world);
@@ -86,7 +92,7 @@ fn projects_three_prim_hierarchy() {
     let stage = usd_support::open_fixture_stage("hierarchy.usda");
     assert_eq!(
         stage.stage_metadata("defaultPrim").unwrap(),
-        Some(openusd::sdf::Value::Token("World".into()))
+        Some(openusd::vt::Value::Token("World".into()))
     );
     assert!(!stage.layer_stack().is_empty());
 

@@ -24,7 +24,8 @@ pub(super) struct SampledTime(pub(super) Option<f64>);
 pub(super) fn prim_is_animated(stage: &Stage, path: &openusd::sdf::Path) -> bool {
     let own = stage
         .prim(path.clone())
-        .attributes()
+        .ok()
+        .and_then(|prim| prim.attributes().ok())
         .map(|attrs| {
             attrs.iter().any(|a| {
                 a.time_sample_times()

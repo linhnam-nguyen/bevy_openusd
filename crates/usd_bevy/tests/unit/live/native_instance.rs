@@ -12,7 +12,7 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{App, Transform, Vec3, Visibility};
 use openusd::sdf;
 use openusd::usd::{EditTargetArc, PrimPredicate, Stage};
-use openusd::{gf::Vec3f, sdf::Value};
+use openusd::{vt, gf::Vec3f, vt::Value};
 
 fn fixture_stage(fixture: &str) -> Stage {
     usd_support::open_fixture_stage(fixture)
@@ -49,15 +49,15 @@ fn projected_entity(app: &App, path: &str) -> bevy::prelude::Entity {
 #[test]
 fn native_instance_exposes_shared_prototype_and_proxy_meshes() -> Result<()> {
     let stage = characterization_stage();
-    let window_a = stage.prim(sdf::path("/World/Window_A")?);
-    let window_b = stage.prim(sdf::path("/World/Window_B")?);
+    let window_a = stage.prim(sdf::path("/World/Window_A")?)?;
+    let window_b = stage.prim(sdf::path("/World/Window_B")?)?;
 
     assert!(window_a.is_instance()?);
     assert!(window_b.is_instance()?);
     assert!(window_a.is_instanceable()?);
     assert_eq!(window_a.prototype()?, window_b.prototype()?);
     let prototype = window_a.prototype()?.expect("instance has a prototype");
-    assert!(stage.prim(prototype.clone()).is_prototype());
+    assert!(stage.prim(prototype.clone())?.is_prototype()?);
 
     let child_paths = window_a
         .children()?
@@ -78,7 +78,7 @@ fn native_instance_exposes_shared_prototype_and_proxy_meshes() -> Result<()> {
             proxy_paths.iter().any(|path| path == mesh),
             "missing {mesh}"
         );
-        let proxy = stage.prim(sdf::path(mesh)?);
+        let proxy = stage.prim(sdf::path(mesh)?)?;
         assert!(proxy.is_instance_proxy()?);
         assert_eq!(
             proxy
@@ -216,8 +216,8 @@ fn native_instance_proxy_preserves_presentation_semantics() {
 #[test]
 fn native_instance_reference_target_maps_proxy_to_source_path() -> Result<()> {
     let stage = characterization_stage();
-    let instance = stage.prim(sdf::path("/World/Window_A")?);
-    let proxy = stage.prim(sdf::path("/World/Window_A/Frame")?);
+    let instance = stage.prim(sdf::path("/World/Window_A")?)?;
+    let proxy = stage.prim(sdf::path("/World/Window_A/Frame")?)?;
     let target = instance.edit_target_for_arc(EditTargetArc::Reference)?;
     assert_eq!(
         target
@@ -259,6 +259,7 @@ fn shared_prototype_change_patches_only_scene_consumers() {
         .expect("live stage exists");
     live.stage
         .prim(sdf::path("/World/WindowPrototype/Frame").unwrap())
+        .unwrap()
         .attribute("points")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([-1.5, 0.0, 0.0]),
@@ -297,16 +298,18 @@ fn shared_prototype_change_patches_only_scene_consumers() {
 #[test]
 fn nested_native_instances_project_scene_paths_and_shared_leaf_meshes() {
     let stage = fixture_stage("native_instance_nested.usda");
-    let outer_a = stage.prim(sdf::path("/Outer_A").unwrap());
-    let outer_b = stage.prim(sdf::path("/Outer_B").unwrap());
-    let nested_a = stage.prim(sdf::path("/Outer_A/Nested").unwrap());
-    let nested_b = stage.prim(sdf::path("/Outer_B/Nested").unwrap());
-    let leaf_a = stage.prim(sdf::path("/Outer_A/Nested/Leaf").unwrap());
+    let outer_a = stage.prim(sdf::path("/Outer_A").unwrap()).unwrap();
+    let outer_b = stage.prim(sdf::path("/Outer_B").unwrap()).unwrap();
+    let nested_a = stage.prim(sdf::path("/Outer_A/Nested").unwrap()).unwrap();
+    let _nested_b = stage.prim(sdf::path("/Outer_B/Nested").unwrap()).unwrap();
+    let leaf_a = stage
+        .prim(sdf::path("/Outer_A/Nested/Leaf").unwrap())
+        .unwrap();
 
     assert!(outer_a.is_instance().unwrap());
     assert!(outer_b.is_instance().unwrap());
     assert!(nested_a.is_instance().unwrap());
-    assert!(nested_b.is_instance().unwrap());
+    assert!(_nested_b.is_instance().unwrap());
     assert_ne!(outer_a.prototype().unwrap(), nested_a.prototype().unwrap());
     assert!(leaf_a.is_instance_proxy().unwrap());
 

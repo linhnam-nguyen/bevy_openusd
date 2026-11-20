@@ -34,6 +34,44 @@ enum Part {
     Expr(String),
 }
 
+// Provenance: ported from openusd-rs/bevy_openusd@f2d474feeb80450597fffd015c787a0469bbbeb1 (MIT)
+// to handle OpenUSD 0.8 strict identifier validation in quoted vs unquoted interpolation.
+#[derive(Default)]
+struct Context {
+    delimiter: Option<char>,
+    escaped: bool,
+    comment: bool,
+}
+
+impl Context {
+    fn literal(&mut self, text: &str) {
+        for c in text.chars() {
+            if self.comment {
+                if c == '\n' {
+                    self.comment = false;
+                }
+            } else if self.escaped {
+                self.escaped = false;
+            } else if c == '\\' && self.delimiter.is_some() {
+                self.escaped = true;
+            } else if self.delimiter == Some(c) {
+                self.delimiter = None;
+            } else if self.delimiter.is_none() {
+                match c {
+                    '\'' | '"' | '@' => self.delimiter = Some(c),
+                    '<' => self.delimiter = Some('>'),
+                    '#' => self.comment = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn quoted(&self) -> bool {
+        matches!(self.delimiter, Some('\'' | '"'))
+    }
+}
+
 /// Split a template into literal / `${expr}` parts. Interpolation does not
 /// support a `}` inside the expression (keep interpolations simple; bind
 /// complex values to a `let` first).
@@ -83,15 +121,31 @@ pub fn usd(input: TokenStream) -> TokenStream {
         Err(e) => return syn::Error::new(lit.span(), e).to_compile_error().into(),
     };
 
-    // Compile-time validation: substitute a neutral placeholder (`0`, valid in
-    // most value positions and inside quotes) for each interpolation and parse.
-    let validation: String = parts
-        .iter()
-        .map(|p| match p {
-            Part::Lit(s) => s.as_str(),
-            Part::Expr(_) => "0",
-        })
-        .collect();
+    // Compile-time validation: substitute a neutral placeholder (`placeholder`
+    // inside quotes, `0` outside) for each interpolation and parse.
+    let mut validation = String::new();
+    let mut context = Context::default();
+    let mut quoted = Vec::new();
+    for part in &parts {
+        match part {
+            Part::Lit(s) => {
+                context.literal(s);
+                validation.push_str(s);
+            }
+            Part::Expr(_) => {
+                if context.escaped || matches!(context.delimiter, Some('@' | '>')) {
+                    return syn::Error::new(
+                        lit.span(),
+                        "USD interpolation cannot follow an escape or occur inside an asset/prim path; use typed authoring",
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+                quoted.push(context.quoted());
+                validation.push_str(if context.quoted() { "placeholder" } else { "0" });
+            }
+        }
+    }
     if let Err(e) = openusd::usda::parse(&validation) {
         return syn::Error::new(
             lit.span(),
@@ -103,14 +157,18 @@ pub fn usd(input: TokenStream) -> TokenStream {
 
     // Runtime: a format string (usda braces doubled) with `{}` per interpolation.
     let mut fmt = String::new();
-    let mut exprs: Vec<Expr> = Vec::new();
+    let mut exprs = Vec::new();
     for part in &parts {
         match part {
             Part::Lit(s) => fmt.push_str(&s.replace('{', "{{").replace('}', "}}")),
             Part::Expr(src) => match syn::parse_str::<Expr>(src) {
                 Ok(e) => {
                     fmt.push_str("{}");
-                    exprs.push(e);
+                    if quoted[exprs.len()] {
+                        exprs.push(quote!(::usd_bevy::snippet::escape_interpolation(&(#e))));
+                    } else {
+                        exprs.push(quote!(::usd_bevy::snippet::scalar_interpolation(&(#e))));
+                    }
                 }
                 Err(err) => {
                     return syn::Error::new(

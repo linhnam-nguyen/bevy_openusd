@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use openusd::{
+use openusd::{vt, 
     ar::{Resolver, join_package_relative_path, split_package_relative_path_outer},
     sdf,
 };
@@ -13,60 +13,87 @@ use super::super::discovery::{is_optional_render_asset, resolve_asset_path_with_
 use super::patterns;
 
 pub(super) fn rewrite_value(
-    value: &sdf::Value,
+    value: &vt::Value,
     original_layer: &Path,
     localized_layer: &Path,
     mapping: &BTreeMap<PathBuf, PathBuf>,
     field: &str,
     resolver: &dyn Resolver,
-) -> Result<sdf::Value> {
+) -> Result<vt::Value> {
     let mut rewritten = value.clone();
     match &mut rewritten {
-        sdf::Value::AssetPath(asset) => {
+        vt::Value::AssetPath(asset) => {
             rewrite_asset(asset, original_layer, localized_layer, mapping, resolver)?
         }
-        sdf::Value::AssetPathVec(assets) => {
+        vt::Value::AssetPathVec(assets) => {
             for asset in assets {
                 rewrite_asset(asset, original_layer, localized_layer, mapping, resolver)?;
             }
         }
-        sdf::Value::ReferenceListOp(references) => {
-            for reference in references.iter_mut() {
+        vt::Value::ReferenceListOp(references) => {
+            let mut err: Result<()> = Ok(());
+            references.update(|reference| {
+                if err.is_err() {
+                    return;
+                }
                 if !reference.asset_path.is_empty() {
-                    reference.asset_path = layer_asset(
+                    match layer_asset(
                         &reference.asset_path,
                         original_layer,
                         localized_layer,
                         mapping,
                         resolver,
-                    )?;
+                    ) {
+                        Ok(rewritten) => reference.asset_path = rewritten,
+                        Err(e) => {
+                            err = Err(e);
+                            return;
+                        }
+                    }
                 }
                 for value in reference.custom_data.values_mut() {
-                    *value = rewrite_value(
+                    match rewrite_value(
                         value,
                         original_layer,
                         localized_layer,
                         mapping,
                         "",
                         resolver,
-                    )?;
+                    ) {
+                        Ok(rewritten) => *value = rewritten,
+                        Err(e) => {
+                            err = Err(e);
+                            return;
+                        }
+                    }
                 }
-            }
+            });
+            err?;
         }
-        sdf::Value::PayloadListOp(payloads) => {
-            for payload in payloads.iter_mut() {
+        vt::Value::PayloadListOp(payloads) => {
+            let mut err: Result<()> = Ok(());
+            payloads.update(|payload| {
+                if err.is_err() {
+                    return;
+                }
                 if !payload.asset_path.is_empty() {
-                    payload.asset_path = layer_asset(
+                    match layer_asset(
                         &payload.asset_path,
                         original_layer,
                         localized_layer,
                         mapping,
                         resolver,
-                    )?;
+                    ) {
+                        Ok(rewritten) => payload.asset_path = rewritten,
+                        Err(e) => {
+                            err = Err(e);
+                        }
+                    }
                 }
-            }
+            });
+            err?;
         }
-        sdf::Value::Payload(payload) => {
+        vt::Value::Payload(payload) => {
             if !payload.asset_path.is_empty() {
                 payload.asset_path = layer_asset(
                     &payload.asset_path,
@@ -77,7 +104,7 @@ pub(super) fn rewrite_value(
                 )?;
             }
         }
-        sdf::Value::Dictionary(values) => {
+        vt::Value::Dictionary(values) => {
             if field == "clips" {
                 patterns::rewrite_clip_dictionary(
                     values,
@@ -99,7 +126,7 @@ pub(super) fn rewrite_value(
                 }
             }
         }
-        sdf::Value::ValueVec(values) => {
+        vt::Value::ValueVec(values) => {
             for value in values {
                 *value = rewrite_value(
                     value,
@@ -111,7 +138,7 @@ pub(super) fn rewrite_value(
                 )?;
             }
         }
-        sdf::Value::TimeSamples(samples) => {
+        vt::Value::TimeSamples(samples) => {
             for (_, value) in samples {
                 *value = rewrite_value(
                     value,
@@ -123,7 +150,7 @@ pub(super) fn rewrite_value(
                 )?;
             }
         }
-        sdf::Value::StringVec(paths) if field == sdf::FieldKey::SubLayers.as_str() => {
+        vt::Value::StringVec(paths) if field == sdf::FieldKey::SubLayers.as_str() => {
             for path in paths {
                 *path = layer_asset(path, original_layer, localized_layer, mapping, resolver)?;
             }

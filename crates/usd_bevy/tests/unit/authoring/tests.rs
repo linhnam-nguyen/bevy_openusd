@@ -1,10 +1,13 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use super::*;
 
 fn stage_with(root: &str) -> Stage {
-    let stage = Stage::builder().in_memory("authoring_test.usda").unwrap();
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("authoring_test.usda")
+        .unwrap();
     stage
         .define_prim(root)
         .unwrap()
@@ -20,6 +23,7 @@ fn define_and_remove() {
     assert_eq!(
         stage
             .prim(openusd::sdf::path("/World/Box").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .as_deref(),
@@ -29,6 +33,7 @@ fn define_and_remove() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/Box").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .is_none(),
@@ -47,6 +52,7 @@ fn rename_and_reparent() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/Renamed").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .is_some(),
@@ -55,6 +61,7 @@ fn rename_and_reparent() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/A").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .is_none(),
@@ -65,6 +72,7 @@ fn rename_and_reparent() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/B/Child").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .is_some(),
@@ -78,6 +86,7 @@ fn set_attribute_roundtrips() {
     set_attribute(&stage, "/World", "radius", "double", Value::Double(2.5)).unwrap();
     let got = stage
         .prim(openusd::sdf::path("/World").unwrap())
+        .unwrap()
         .attribute("radius")
         .get::<Value>()
         .unwrap();
@@ -104,6 +113,7 @@ fn edit_history_undo_redo() {
         .unwrap();
     let read = |s: &Stage| {
         s.prim(openusd::sdf::path("/World/Box").unwrap())
+            .unwrap()
             .attribute("size")
             .get::<Value>()
             .unwrap()
@@ -153,6 +163,7 @@ fn atomic_attribute_edit_undoes_and_redoes_as_one_group() {
     let read = |path: &str| {
         stage
             .prim(openusd::sdf::path(path).unwrap())
+            .unwrap()
             .attribute("Width")
             .get::<Value>()
             .unwrap()
@@ -192,10 +203,14 @@ fn persistence_export_and_reopen() {
     let path = std::env::temp_dir().join("usd_bevy_persist_test.usda");
     let path_str = path.to_str().unwrap();
     save_stage_as(&stage, path_str).unwrap();
-    let reopened = Stage::open(path_str).unwrap();
+    let reopened = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path_str)
+        .unwrap();
     assert!(
         reopened
             .prim(openusd::sdf::path("/World/Saved").unwrap())
+            .unwrap()
             .type_name()
             .unwrap()
             .is_some(),

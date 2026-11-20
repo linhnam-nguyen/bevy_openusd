@@ -7,12 +7,13 @@
 //! returns the decoded value (`None` when unauthored or a type mismatch),
 //! keeping schema decoding local to the current openusd-backed reader layer.
 
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 /// Raw composed `default` value of attribute `name` on `prim`.
 fn attr_default(stage: &Stage, prim: &Path, name: &str) -> anyhow::Result<Option<Value>> {
-    stage.prim(prim.clone()).attribute(name).get::<Value>()
+    Ok(stage.prim(prim.clone())?.attribute(name).get::<Value>()?)
 }
 
 pub fn read_f32(stage: &Stage, prim: &Path, name: &str) -> anyhow::Result<Option<f32>> {
@@ -73,6 +74,103 @@ pub fn read_token_or_string(
         Some(Value::String(s)) => Some(s),
         _ => None,
     })
+}
+
+/// Decode a metadata text value, including USDA `Value::UnregisteredValue`
+/// string literals produced for unregistered fields such as `ui:displayName`.
+pub fn decode_metadata_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Token(token) => Some(token.as_str().to_owned()),
+        Value::UnregisteredValue(literal) => decode_unregistered_string_literal(literal),
+        _ => None,
+    }
+}
+
+fn decode_unregistered_string_literal(literal: &str) -> Option<String> {
+    let trimmed = literal.trim();
+    for quote in ["\"\"\"", "'''", "\"", "'"] {
+        if trimmed.len() >= quote.len() * 2
+            && trimmed.starts_with(quote)
+            && trimmed.ends_with(quote)
+        {
+            let body = &trimmed[quote.len()..trimmed.len() - quote.len()];
+            return Some(unescape_usda_string(body));
+        }
+    }
+    // `usdc` converts unregistered string fields directly into `UnregisteredValue(text)`
+    // without surrounding quotes, whereas non-string USDA literals (numbers, lists, tuples,
+    // dictionaries, `None`, booleans) must not be treated as strings.
+    if trimmed == "None"
+        || trimmed == "true"
+        || trimmed == "false"
+        || trimmed.starts_with('[')
+        || trimmed.starts_with('(')
+        || trimmed.starts_with('{')
+        || trimmed.starts_with('@')
+        || trimmed.parse::<f64>().is_ok()
+    {
+        return None;
+    }
+    Some(literal.to_owned())
+}
+
+fn unescape_usda_string(body: &str) -> String {
+    if !body.contains('\\') {
+        return body.to_owned();
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let Some(escaped) = chars.next() else {
+            break;
+        };
+        match escaped {
+            'a' => out.push('\u{7}'),
+            'b' => out.push('\u{8}'),
+            'f' => out.push('\u{c}'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'v' => out.push('\u{b}'),
+            'x' => {
+                let mut code = 0u32;
+                let mut digits = 0;
+                while digits < 2 {
+                    let Some(digit) = chars.peek().and_then(|ch| ch.to_digit(16)) else {
+                        break;
+                    };
+                    chars.next();
+                    code = code * 16 + digit;
+                    digits += 1;
+                }
+                if digits > 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    out.push(ch);
+                }
+            }
+            '0'..='7' => {
+                let mut code = escaped.to_digit(8).unwrap_or_default();
+                for _ in 1..3 {
+                    let Some(digit) = chars.peek().and_then(|ch| ch.to_digit(8)) else {
+                        break;
+                    };
+                    chars.next();
+                    code = code * 8 + digit;
+                }
+                if let Some(ch) = char::from_u32(code) {
+                    out.push(ch);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// An `asset`, `string`, or `token` scalar (asset path or plain text).
@@ -221,9 +319,9 @@ pub fn read_int_metadata(
 ) -> anyhow::Result<Option<i32>> {
     Ok(
         match stage
-            .prim(prim.clone())
+            .prim(prim.clone())?
             .attribute(attr)
-            .get_metadata::<Value>(key)?
+            .metadata::<Value>(key)?
         {
             Some(Value::Int(n)) => Some(n),
             Some(Value::Int64(n)) => Some(n as i32),
@@ -239,7 +337,7 @@ pub fn read_time_samples(
     name: &str,
 ) -> anyhow::Result<Vec<(f64, Value)>> {
     Ok(stage
-        .prim(prim.clone())
+        .prim(prim.clone())?
         .attribute(name)
         .time_samples()?
         .unwrap_or_default())
@@ -247,7 +345,7 @@ pub fn read_time_samples(
 
 /// Composed relationship target paths (as strings), in authored order.
 pub fn read_rel_targets(stage: &Stage, prim: &Path, rel_name: &str) -> anyhow::Result<Vec<String>> {
-    let targets = stage.prim(prim.clone()).relationship(rel_name).targets()?;
+    let targets = stage.prim(prim.clone())?.relationship(rel_name).targets()?;
     Ok(targets
         .into_iter()
         .map(|p| p.as_str().to_string())
@@ -270,7 +368,7 @@ pub fn connections_at(stage: &Stage, attr_path: &Path) -> anyhow::Result<Vec<Pat
     let Some((prim, name)) = attr_path.split_property() else {
         return Ok(Vec::new());
     };
-    stage.prim(prim).attribute(name).connections()
+    Ok(stage.prim(prim)?.attribute(name).connections()?)
 }
 
 /// Composed relationship target paths at property path `rel_path`.
@@ -278,7 +376,7 @@ pub fn targets_at(stage: &Stage, rel_path: &Path) -> anyhow::Result<Vec<Path>> {
     let Some((prim, name)) = rel_path.split_property() else {
         return Ok(Vec::new());
     };
-    stage.prim(prim).relationship(name).targets()
+    Ok(stage.prim(prim)?.relationship(name).targets()?)
 }
 
 /// Raw composed `default` value of the attribute at property path `attr_path`.
@@ -286,5 +384,5 @@ pub fn default_at(stage: &Stage, attr_path: &Path) -> anyhow::Result<Option<Valu
     let Some((prim, name)) = attr_path.split_property() else {
         return Ok(None);
     };
-    stage.prim(prim).attribute(name).get::<Value>()
+    Ok(stage.prim(prim)?.attribute(name).get::<Value>()?)
 }

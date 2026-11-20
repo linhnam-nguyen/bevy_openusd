@@ -76,7 +76,9 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
 #[test]
 fn active_stage_archive_ownership_is_composition_scoped() {
     let source = usd_support::resolve_asset_path("external/hummingbird.usdz");
-    let stage = Stage::open(source.to_str().expect("fixture path is valid"))
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(source.to_str().expect("fixture path is valid"))
         .expect("Hummingbird stage opens");
     let archives = super::archive_paths_for_stage(&stage, &source).expect("archive closure");
     assert_eq!(archives, vec![std::fs::canonicalize(source).unwrap()]);
@@ -85,7 +87,9 @@ fn active_stage_archive_ownership_is_composition_scoped() {
 #[test]
 fn hummingbird_materials_use_authored_conversion_and_embedded_textures() {
     let source = usd_support::resolve_asset_path("external/hummingbird.usdz");
-    let stage = openusd::usd::Stage::open(source.to_str().expect("fixture path is valid"))
+    let stage = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(source.to_str().expect("fixture path is valid"))
         .expect("Hummingbird stage opens");
     let archives = super::archive_paths_for_stage(&stage, &source).expect("archive closure");
     let mut app = bevy::app::App::new();
@@ -197,7 +201,10 @@ def Xform "World"
         writer.finish().unwrap();
     }
 
-    let stage = Stage::open(archive.to_str().expect("archive path")).expect("usdz opens");
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(archive.to_str().expect("archive path"))
+        .expect("usdz opens");
     let archives = super::archive_paths_for_stage(&stage, &archive).expect("archive closure");
     let mut app = bevy::app::App::new();
     app.add_plugins(UsdPlugin)

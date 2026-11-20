@@ -6,7 +6,7 @@ use super::AnimationRuntime;
 
 pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
     let runtime = world
-        .remove_resource::<AnimationRuntime>()
+        .remove_non_send::<AnimationRuntime>()
         .unwrap_or_default();
     for target in &runtime.transforms {
         if let Ok(Some(value)) =
@@ -17,9 +17,9 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
         }
     }
     for skeleton in &runtime.skeletons {
-        let Ok((translations, rotations, scales)) = skeleton
+        let Ok(Some((translations, rotations, scales))) = skeleton
             .animation
-            .compute_joint_local_transform_components(stage, TimeCode::new(time))
+            .joint_transform_components(TimeCode::new(time))
         else {
             continue;
         };
@@ -43,9 +43,9 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
                 transform.scale = Vec3::new(value.x, value.y, value.z);
             }
         }
-        if let Ok(weights) = skeleton
+        if let Ok(Some(weights)) = skeleton
             .animation
-            .compute_blend_shape_weights(stage, TimeCode::new(time))
+            .blend_shape_weights(TimeCode::new(time))
         {
             for binding in &skeleton.blend_bindings {
                 let Some(mut morph) = world.get_mut::<MeshMorphWeights>(binding.entity) else {
@@ -65,5 +65,5 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
             }
         }
     }
-    world.insert_resource(runtime);
+    world.insert_non_send(runtime);
 }

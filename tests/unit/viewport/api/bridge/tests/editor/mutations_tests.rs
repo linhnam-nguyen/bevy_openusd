@@ -116,8 +116,8 @@ mod tests {
             .expect("live stage");
         assert!(usd_bevy::authoring::prim_exists(&live.stage, "/World/Box"));
         assert!(matches!(
-            live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).attribute("size").get::<openusd::sdf::Value>().unwrap(),
-            Some(openusd::sdf::Value::Double(v)) if (v - 3.0).abs() < f64::EPSILON
+            live.stage.prim(openusd::sdf::path("/World/Box").unwrap()).unwrap().attribute("size").get::<openusd::vt::Value>().unwrap(),
+            Some(openusd::vt::Value::Double(v)) if (v - 3.0).abs() < f64::EPSILON
         ));
 
         app.world_mut()

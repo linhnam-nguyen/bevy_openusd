@@ -159,7 +159,7 @@ fn scene_wrapper_is_linked(scene_path: &Path) -> Result<bool> {
         .open(path.as_ref())
         .context("open Scene wrapper for link status")?;
     Ok(crate::project::assets::spatial::source_binding_is_linked(
-        &stage.prim(SCENE_SOURCE_PRIM),
+        &stage.prim(SCENE_SOURCE_PRIM)?,
     )?)
 }
 
@@ -169,7 +169,7 @@ fn migrate_scene_wrapper_marker(scene_path: &Path) -> Result<()> {
         .load(InitialLoadSet::LoadNone)
         .open(&path)
         .context("open legacy Scene wrapper for link migration")?;
-    let source_prim = stage.prim(SCENE_SOURCE_PRIM);
+    let source_prim = stage.prim(SCENE_SOURCE_PRIM)?;
     ensure!(
         source_prim.is_defined()?,
         "legacy linked Scene wrapper source prim must be defined"

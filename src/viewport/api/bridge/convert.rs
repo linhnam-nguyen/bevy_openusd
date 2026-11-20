@@ -4,8 +4,8 @@ use viewport_protocol::EditorValue;
 pub(crate) fn editor_value_to_usd(
     type_name: &str,
     value: &EditorValue,
-) -> Result<openusd::sdf::Value, String> {
-    use openusd::sdf::Value;
+) -> Result<openusd::vt::Value, String> {
+    use openusd::vt::Value;
 
     fn number(value: &EditorValue) -> Result<f64, String> {
         value
@@ -97,7 +97,7 @@ pub(crate) fn editor_value_to_usd(
         "matrix2d" => Value::Matrix2d(numbers::<4>(value)?.into()),
         "matrix3d" => Value::Matrix3d(numbers::<9>(value)?.into()),
         "matrix4d" => Value::Matrix4d(numbers::<16>(value)?.into()),
-        "path" => Value::PathExpression(text(value)?),
+        "path" => Value::PathExpression(openusd::sdf::PathExpression::parse(&text(value)?)),
         "bool[]" => Value::BoolVec(
             values(value)?
                 .iter()

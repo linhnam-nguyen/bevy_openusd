@@ -1,8 +1,9 @@
 //! USD xform-op composition and semantic quantization.
 
 use anyhow::Result;
-use openusd::sdf::{Path, Value};
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 use usd_model::{HashDigest, TransformSignature};
 
 use crate::config::SemanticConfig;
@@ -43,7 +44,7 @@ pub fn extract_transform(
 
 fn compose_transform(stage: &Stage, path: &Path) -> Result<Matrix4> {
     let Some(raw) = stage
-        .prim(path.clone())
+        .prim(path.clone())?
         .attribute("xformOpOrder")
         .get::<Value>()?
     else {
@@ -75,7 +76,7 @@ fn operation_matrix(stage: &Stage, path: &Path, operation: &str) -> Result<Matri
     let (inverted, base) = operation
         .strip_prefix("!invert!")
         .map_or((false, operation), |value| (true, value));
-    let value = stage.prim(path.clone()).attribute(base).get::<Value>()?;
+    let value = stage.prim(path.clone())?.attribute(base).get::<Value>()?;
     let Some(value) = value else {
         return Ok(identity());
     };

@@ -1,7 +1,11 @@
 use std::path::{Path as FsPath, PathBuf};
 
-use openusd::ar::{DefaultResolver, ResolvedPath, Resolver};
-use openusd::sdf::{Path, Value};
+use openusd::ar::{
+    DefaultResolver, ResolvedPath, Resolver, join_package_relative_path,
+    split_package_relative_path_outer,
+};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use std::collections::{HashSet, VecDeque};
 
@@ -100,7 +104,7 @@ pub fn material_network_dependencies(
     }
 
     while let Some(prim_path) = pending.pop_front() {
-        let prim = stage.prim(prim_path.clone());
+        let prim = stage.prim(prim_path.clone())?;
         for property in prim.property_names()? {
             let property_path = prim_path.append_property(property.as_str())?;
             for target in connections_at(stage, &property_path)? {
@@ -121,7 +125,8 @@ pub fn material_network_dependencies(
 fn read_uv_transform(stage: &Stage, material: &Path) -> anyhow::Result<Option<UvTransform>> {
     for child in stage
         .prim(material.clone())
-        .child_names()
+        .ok()
+        .and_then(|p| p.child_names().ok())
         .unwrap_or_default()
     {
         let node = material.append_path(child.as_str())?;
@@ -173,11 +178,12 @@ fn resolve_surface_shader(
     // Fallback: scan child Shader prims and infer the dialect.
     for child in stage
         .prim(material.clone())
-        .child_names()
+        .ok()
+        .and_then(|p| p.child_names().ok())
         .unwrap_or_default()
     {
         let shader = material.append_path(child.as_str())?;
-        if stage.prim(shader.clone()).type_name()?.as_deref() != Some("Shader") {
+        if stage.prim(shader.clone())?.type_name()?.as_deref() != Some("Shader") {
             continue;
         }
         let shader_id = read_token_or_string(stage, &shader, "info:id")?;
@@ -312,8 +318,8 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
     if authored.is_empty() || FsPath::new(authored).is_absolute() || authored.starts_with("anon:") {
         return Ok(authored.to_owned());
     }
-    let Some((layer_identifier, _)) = stage
-        .prim(tex_prim.clone())
+    let Some(site) = stage
+        .prim(tex_prim.clone())?
         .attribute("inputs:file")
         .property_stack()?
         .into_iter()
@@ -321,15 +327,26 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
     else {
         return Ok(authored.to_owned());
     };
+    let layer_identifier = site.layer.identifier().to_string();
 
     // Keep the package owner in the cache identifier. The archive reader uses
     // the exact outer package, so equal inner names in independent USDZ files
     // cannot collide.
-    if layer_identifier.contains(".usdz[")
-        || FsPath::new(&layer_identifier)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
+    if let Some((outer, inner_layer)) = split_package_relative_path_outer(&layer_identifier) {
+        if let Some(packaged) = resolve_packaged_texture(&outer, &inner_layer, authored) {
+            return Ok(packaged);
+        }
+        let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
+        let anchor = ResolvedPath::new(layer_identifier);
+        return Ok(resolver.create_identifier(authored, Some(&anchor)));
+    }
+    if FsPath::new(&layer_identifier)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("usdz"))
     {
+        if let Some(packaged) = resolve_packaged_texture(&layer_identifier, "", authored) {
+            return Ok(packaged);
+        }
         let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
         let anchor = ResolvedPath::new(layer_identifier);
         return Ok(resolver.create_identifier(authored, Some(&anchor)));
@@ -350,6 +367,34 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
         .or_else(|| resolver.resolve(authored))
         .map(|resolved| resolved.to_string())
         .unwrap_or_else(|| authored.to_owned()))
+}
+
+fn resolve_packaged_texture(outer_package: &str, inner_layer: &str, authored: &str) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+    let inner_dir = inner_layer
+        .replace('\\', "/")
+        .rsplit_once('/')
+        .map(|(dir, _)| dir.to_owned())
+        .unwrap_or_default();
+    for segment in inner_dir.split('/').chain(authored.split(['/', '\\'])) {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            other => parts.push(other),
+        }
+    }
+    let inner_path = parts.join("/");
+    if inner_path.is_empty() {
+        return None;
+    }
+    let candidate = join_package_relative_path(outer_package, &inner_path);
+    let resolver = DefaultResolver::with_search_paths(std::iter::empty::<PathBuf>());
+    resolver
+        .resolve(&candidate)
+        .map(|resolved| resolved.to_string())
+        .or(Some(candidate))
 }
 
 fn value_to_preview(v: Value) -> Option<ResolvedValue> {

@@ -1,4 +1,5 @@
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use super::mesh::Interpolation;
@@ -12,7 +13,7 @@ pub(super) fn attr_default(
     prim: &Path,
     name: &str,
 ) -> anyhow::Result<Option<Value>> {
-    let attr = stage.prim(prim.clone()).attribute(name);
+    let attr = stage.prim(prim.clone())?.attribute(name);
     if let Some(v) = attr.get::<Value>()?
         && !is_empty_array_value(&v)
     {
@@ -48,6 +49,21 @@ pub(super) fn read_token(stage: &Stage, prim: &Path, name: &str) -> anyhow::Resu
         Some(Value::String(s)) => Some(s),
         _ => None,
     })
+}
+
+/// Read a token/string attribute only when an authored opinion exists on `prim`,
+/// ignoring schema fallback values (needed for inherited `purpose` and
+/// `subdivisionScheme` defaults).
+pub(super) fn read_authored_token(
+    stage: &Stage,
+    prim: &Path,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
+    let attr = stage.prim(prim.clone())?.attribute(name);
+    if !attr.has_authored_value()? {
+        return Ok(None);
+    }
+    read_token(stage, prim, name)
 }
 
 pub(super) fn read_double(stage: &Stage, prim: &Path, name: &str) -> anyhow::Result<Option<f64>> {
@@ -205,9 +221,9 @@ pub(super) fn read_primvar_interpolation(
     name: &str,
 ) -> anyhow::Result<Option<Interpolation>> {
     let raw = stage
-        .prim(prim.clone())
+        .prim(prim.clone())?
         .attribute(name)
-        .get_metadata::<Value>("interpolation")?;
+        .metadata::<Value>("interpolation")?;
     if let Some(s) = raw.and_then(|v| match v {
         Value::Token(t) => Some(t.as_str().to_string()),
         Value::String(s) => Some(s),

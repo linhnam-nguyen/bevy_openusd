@@ -2,8 +2,8 @@ use openusd::sdf::Path;
 use openusd::usd::Stage;
 
 use super::util::{
-    read_bool, read_extent, read_float_array, read_int_array, read_primvar_interpolation,
-    read_token, read_vec2f_array, read_vec3f_array,
+    read_authored_token, read_bool, read_extent, read_float_array, read_int_array,
+    read_primvar_interpolation, read_token, read_vec2f_array, read_vec3f_array,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,7 +114,7 @@ pub fn read_mesh(stage: &Stage, prim: &Path) -> anyhow::Result<Option<ReadMesh>>
     let subsets = read_material_subsets(stage, prim)?;
     let double_sided = read_bool(stage, prim, "doubleSided")?.unwrap_or(false);
     let extent = read_extent(stage, prim)?;
-    let subdivision_scheme = read_token(stage, prim, "subdivisionScheme")?
+    let subdivision_scheme = read_authored_token(stage, prim, "subdivisionScheme")?
         .as_deref()
         .and_then(SubdivScheme::parse)
         .unwrap_or_default();
@@ -143,11 +143,11 @@ pub fn read_mesh_extent(stage: &Stage, prim: &Path) -> anyhow::Result<Option<[[f
 
 fn read_material_subsets(stage: &Stage, mesh_prim: &Path) -> anyhow::Result<Vec<ReadSubset>> {
     let mut out = Vec::new();
-    for child_name in stage.prim(mesh_prim.clone()).child_names()? {
+    for child_name in stage.prim(mesh_prim.clone())?.child_names()? {
         let Ok(child_path) = mesh_prim.append_path(child_name.as_str()) else {
             continue;
         };
-        if stage.prim(child_path.clone()).type_name()?.as_deref() != Some("GeomSubset") {
+        if stage.prim(child_path.clone())?.type_name()?.as_deref() != Some("GeomSubset") {
             continue;
         }
         if read_token(stage, &child_path, "familyName")?.as_deref() != Some("materialBind") {

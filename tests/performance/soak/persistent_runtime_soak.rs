@@ -14,7 +14,7 @@ use bevy::pbr::StandardMaterial;
 use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 use openusd::gf::Vec3f;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_bevy::route::cache::ProjectionCache;
 use usd_bevy::route::material::{UsdMaterialCache, UsdTextureCache};
@@ -96,6 +96,7 @@ fn apply_material_network_edits(app: &mut App, cycle: usize) {
         let live = app.world().get_non_send::<LiveStage>().expect("live stage");
         live.stage
             .prim(openusd::sdf::path("/World/RedBox").expect("red box path"))
+            .expect("red box prim exists")
             .create_attribute("visibility", "token")
             .expect("visibility attribute creates")
             .set(Value::Token(if cycle.is_multiple_of(2) {
@@ -111,6 +112,7 @@ fn apply_material_network_edits(app: &mut App, cycle: usize) {
         let live = app.world().get_non_send::<LiveStage>().expect("live stage");
         live.stage
             .prim(openusd::sdf::path("/World/RedBox").expect("red box path"))
+            .expect("red box prim exists")
             .relationship("material:binding")
             .set_targets([openusd::sdf::path(if cycle.is_multiple_of(2) {
                 "/World/Materials/GreenMetal"
@@ -126,6 +128,7 @@ fn apply_material_network_edits(app: &mut App, cycle: usize) {
         let live = app.world().get_non_send::<LiveStage>().expect("live stage");
         live.stage
             .prim(openusd::sdf::path("/World/RedBox").expect("red box path"))
+            .expect("red box prim exists")
             .attribute("size")
             .set(Value::Double(0.5 + cycle as f64 * 0.01))
             .expect("geometry edit authors");
@@ -164,6 +167,7 @@ fn apply_point_instancer_edit(app: &mut App, cycle: usize) {
     let offset = cycle as f32 * 0.1;
     live.stage
         .prim(openusd::sdf::path("/World/Instances").expect("instancer path"))
+        .expect("instancer prim exists")
         .attribute("positions")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([offset, 0.0, 0.0]),

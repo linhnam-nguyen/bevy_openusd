@@ -142,7 +142,10 @@ fn open_stage_system(world: &mut World) {
             cache.archive_paths.push(p);
         }
     }
-    match Stage::open(&path) {
+    match Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&path)
+    {
         Ok(stage) => {
             world.insert_non_send(LiveStage::new(stage));
         }
@@ -186,7 +189,10 @@ fn handle_reload_system(world: &mut World) {
     }
 
     info!("reloading USD stage: {path}");
-    match Stage::open(&path) {
+    match Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&path)
+    {
         Ok(stage) => {
             world.insert_non_send(LiveStage::new(stage));
         }

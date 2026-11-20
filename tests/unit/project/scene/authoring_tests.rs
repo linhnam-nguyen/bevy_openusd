@@ -1,7 +1,7 @@
 use std::fs;
 
 use anyhow::Result;
-use openusd::{gf::Vec3f, sdf::Value, usd::Stage};
+use openusd::{vt, gf::Vec3f, vt::Value, usd::Stage};
 use tempfile::tempdir;
 use usd_project::ScenePlacementTransform;
 
@@ -29,9 +29,9 @@ fn authored_scene_reopens_with_default_prim_and_registry_identity() -> Result<()
         Some(Value::Double(1.0))
     );
 
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?;
     assert!(root.is_defined()?);
-    let Some(Value::Dictionary(custom_data)) = root.custom_data()? else {
+    let Some(Value::Dictionary(custom_data)) = root.metadata::<Value>("customData")? else {
         panic!("SceneRoot customData should be authored");
     };
     assert_eq!(
@@ -98,15 +98,15 @@ fn schema_v2_authors_direct_members_and_relative_project_references() -> Result<
         .export(scene_path.to_string_lossy().as_ref())?;
 
     let reopened = Stage::open(scene_path.to_string_lossy().as_ref())?;
-    assert!(!reopened.prim("/SceneRoot/Members").is_defined()?);
+    assert!(!reopened.prim("/SceneRoot/Members")?.is_defined()?);
     assert!(
         reopened
-            .prim(scene_member_path(members[0].id).as_str())
+            .prim(scene_member_path(members[0].id).as_str())?
             .is_defined()?
     );
     assert!(
         reopened
-            .prim(scene_member_path(members[1].id).as_str())
+            .prim(scene_member_path(members[1].id).as_str())?
             .is_defined()?
     );
     let mut expected_members = members.clone();
@@ -119,7 +119,7 @@ fn schema_v2_authors_direct_members_and_relative_project_references() -> Result<
     ] {
         let spec_path = sdf::path(scene_member_path(member.id).as_str())?;
         let root_layer = reopened.root_layer();
-        let spec = root_layer.prim(&spec_path).expect("member spec");
+        let spec = root_layer.prim(spec_path)?.expect("member spec");
         let Some(Value::ReferenceListOp(references)) = spec.field(REFERENCES_FIELD)? else {
             panic!("direct member reference list should be authored");
         };
@@ -203,14 +203,14 @@ fn non_identity_scene_placement_round_trips_through_usd() -> Result<()> {
     assert_eq!(reopened, vec![member.clone()]);
     let stage = Stage::open(path.to_string_lossy().as_ref())?;
     let value = stage
-        .prim(scene_member_path(member.id).as_str())
+        .prim(scene_member_path(member.id).as_str())?
         .attribute("xformOp:transform")
         .get::<Value>()?
         .expect("authored placement matrix");
     let Value::Matrix4d(matrix) = value else {
         panic!("placement transform should be matrix4d");
     };
-    let origin = matrix.transform_point(Vec3f {
+    let origin = matrix.transform(openusd::gf::Vec3d {
         x: 0.0,
         y: 0.0,
         z: 0.0,
@@ -231,8 +231,8 @@ fn asymmetric_trs_placement_preserves_row_vector_rotation_and_scale() {
         ],
         [2.0, 3.0, 5.0],
     );
-    let matrix = openusd::gf::Matrix4d(transform.0);
-    let transformed = matrix.transform_point(Vec3f {
+    let matrix = openusd::gf::Mat4d(transform.0);
+    let transformed = matrix.transform(openusd::gf::Vec3d {
         x: 1.0,
         y: 2.0,
         z: 0.0,
@@ -257,8 +257,8 @@ fn legacy_scene_placement_without_transform_defaults_to_identity() -> Result<()>
     let path = scene_path(project_directory.path(), scene_id);
     fs::create_dir_all(path.parent().expect("Scene directory"))?;
     let stage = new_scene_stage(scene_id)?;
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
-    let mut root_data = match root.custom_data()? {
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?;
+    let mut root_data = match root.metadata::<Value>("customData")? {
         Some(Value::Dictionary(data)) => data,
         _ => panic!("SceneRoot customData should be authored"),
     };
@@ -273,7 +273,10 @@ fn legacy_scene_placement_without_transform_defaults_to_identity() -> Result<()>
     stage
         .define_prim(legacy_scene_member_path(member.id).as_str())?
         .set_type_name("Xform")?
-        .set_metadata("customData", Value::Dictionary(member_custom_data(&member)))?;
+        .set_metadata(
+            "customData",
+            Value::Dictionary(member_custom_data(&member).into()),
+        )?;
     stage.root_layer().export(path.to_string_lossy().as_ref())?;
 
     assert_eq!(read_scene_members(&path, scene_id)?, vec![member]);

@@ -92,10 +92,14 @@ fn generated_thousand_native_instances_keep_projection_allocation_bounded() -> R
 #[ignore = "requires the local external Omniverse Revit asset"]
 fn projet1_usdc_windows_project_to_scene_proxy_meshes() -> Result<()> {
     let path = usd_support::resolve_external_asset_path("Omniverse/V2/Projet1.usdc");
-    let stage = Stage::open(path.to_str().expect("Revit asset path is valid"))?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path.to_str().expect("Revit asset path is valid"))?;
     let mut window_roots = Vec::new();
     stage.traverse(PrimPredicate::DEFAULT_PROXIES, |path| {
-        let prim = stage.prim(path.clone());
+        let Ok(prim) = stage.prim(path.clone()) else {
+            return;
+        };
         let is_window = prim
             .edit_target_for_arc(openusd::usd::EditTargetArc::Reference)
             .ok()
@@ -113,7 +117,9 @@ fn projet1_usdc_windows_project_to_scene_proxy_meshes() -> Result<()> {
 
     let mut proxy_mesh_paths = Vec::new();
     stage.traverse(PrimPredicate::DEFAULT_PROXIES, |path| {
-        let prim = stage.prim(path.clone());
+        let Ok(prim) = stage.prim(path.clone()) else {
+            return;
+        };
         let is_window_descendant = window_roots.iter().any(|root| {
             path.as_str()
                 .strip_prefix(root)

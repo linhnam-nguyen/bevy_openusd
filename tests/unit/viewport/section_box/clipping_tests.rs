@@ -48,6 +48,32 @@ fn clip_uniform_uses_one_shared_box_space_transform() {
 
 #[test]
 fn extension_keeps_the_standard_material_as_the_base_route() {
+    let mut app = clipping_test_app();
+    register_embedded_shaders(&mut app);
+    app.update();
+
+    let shaders = app.world().resource::<Assets<Shader>>();
+    assert!(
+        shaders.get(&SECTION_CLIP_SHADER_HANDLE).is_some(),
+        "section_box_clipping.wesl must register as an internal Shader asset"
+    );
+    assert!(
+        shaders.get(&SECTION_CLIP_PREPASS_SHADER_HANDLE).is_some(),
+        "section_box_clipping_prepass.wesl must register as an internal Shader asset"
+    );
+    assert!(matches!(
+        SectionClipExtension::fragment_shader(),
+        ShaderRef::Handle(ref handle) if handle == &SECTION_CLIP_SHADER_HANDLE
+    ));
+    assert!(matches!(
+        SectionClipExtension::prepass_fragment_shader(),
+        ShaderRef::Handle(ref handle) if handle == &SECTION_CLIP_PREPASS_SHADER_HANDLE
+    ));
+    assert!(matches!(
+        SectionClipExtension::deferred_fragment_shader(),
+        ShaderRef::Handle(ref handle) if handle == &SECTION_CLIP_SHADER_HANDLE
+    ));
+
     let base = StandardMaterial {
         base_color: Color::srgb(0.2, 0.4, 0.8),
         perceptual_roughness: 0.35,

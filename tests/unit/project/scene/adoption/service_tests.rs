@@ -192,14 +192,14 @@ fn syncing_linked_scene_replaces_closure_without_changing_scene_identity() {
     );
     let refresh = live.drain_change_batch().expect("stage refresh batch");
     assert!(refresh.has_resync());
-    let updated = live.stage.prim("/SceneRoot/Source");
+    let updated = live.stage.prim("/SceneRoot/Source").unwrap();
     assert!(updated.is_defined().unwrap());
     assert_eq!(
         updated
             .attribute("version")
-            .get::<openusd::sdf::Value>()
+            .get::<openusd::vt::Value>()
             .unwrap(),
-        Some(openusd::sdf::Value::String("updated".to_owned()))
+        Some(openusd::vt::Value::String("updated".to_owned()))
     );
 }
 

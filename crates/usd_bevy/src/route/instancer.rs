@@ -22,14 +22,15 @@ use crate::read::geom::{ReadMesh, ReadPointInstancer, read_mesh, read_point_inst
 
 /// Resolve schema `invisibleIds` into source-row indices.
 fn invisible_indices(ctx: &RouteCtx, read: &ReadPointInstancer) -> HashSet<usize> {
-    let hidden_ids = openusd::schemas::geom::PointInstancer::get(ctx.stage, ctx.path.clone())
+    use openusd_schemas::geom::PointInstancerSchema;
+    let hidden_ids = openusd_schemas::geom::PointInstancer::get(ctx.stage, ctx.path.clone())
         .ok()
         .flatten()
-        .and_then(|pi| pi.invisible_ids_attr().get::<openusd::sdf::Value>().ok())
+        .and_then(|pi| pi.invisible_ids_attr().get::<openusd::vt::Value>().ok())
         .flatten()
         .map(|value| match value {
-            openusd::sdf::Value::Int64Vec(values) => values,
-            openusd::sdf::Value::IntVec(values) => values.into_iter().map(i64::from).collect(),
+            openusd::vt::Value::Int64Vec(values) => values,
+            openusd::vt::Value::IntVec(values) => values.into_iter().map(i64::from).collect(),
             _ => Vec::new(),
         })
         .unwrap_or_default();
@@ -292,7 +293,7 @@ fn read_prototype_mesh(
     if let Ok(Some(mesh)) = read_mesh(stage, root) {
         return Some((root.clone(), mesh));
     }
-    let children = stage.prim(root.clone()).children().ok()?;
+    let children = stage.prim(root.clone()).ok()?.children().ok()?;
     let mut result = None;
     for child in children {
         if let Some(found) = read_prototype_mesh(stage, child.path()) {

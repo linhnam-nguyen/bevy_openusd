@@ -28,11 +28,11 @@ pub(crate) fn register_scene_index_observers(app: &mut App) {
 }
 
 fn queue_scene_prim_insert(
-    event: On<Insert, UsdPrimRef>,
+    event: On<Insert<UsdPrimRef>>,
     prims: Query<&UsdPrimRef>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
-    let entity = event.event_target();
+    let entity = event.entity;
     if prims.get(entity).is_ok_and(|prim| prim.path == "/") {
         return;
     }
@@ -43,8 +43,8 @@ fn queue_scene_prim_insert(
     }
 }
 
-fn queue_scene_prim_remove(event: On<Remove, UsdPrimRef>, mut index: ResMut<SceneAnchorIndex>) {
-    let entity = event.event_target();
+fn queue_scene_prim_remove(event: On<Remove<UsdPrimRef>>, mut index: ResMut<SceneAnchorIndex>) {
+    let entity = event.entity;
     index.queued_additions.remove(&entity);
     index.reconcile.remove(entity);
 }
@@ -56,32 +56,32 @@ fn request_if_indexed(entity: Entity, index: &mut SceneAnchorIndex) {
 }
 
 fn queue_display_name_remove(
-    event: On<Remove, UsdDisplayName>,
+    event: On<Remove<UsdDisplayName>>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
-    request_if_indexed(event.event_target(), &mut index);
+    request_if_indexed(event.entity, &mut index);
 }
 
 fn queue_hierarchy_target_remove(
-    event: On<Remove, UsdHierarchyTarget>,
+    event: On<Remove<UsdHierarchyTarget>>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
-    request_if_indexed(event.event_target(), &mut index);
+    request_if_indexed(event.entity, &mut index);
 }
 
 fn queue_transparent_remove(
-    event: On<Remove, UsdTransparentHierarchyNode>,
+    event: On<Remove<UsdTransparentHierarchyNode>>,
     mut index: ResMut<SceneAnchorIndex>,
 ) {
-    request_if_indexed(event.event_target(), &mut index);
+    request_if_indexed(event.entity, &mut index);
 }
 
-fn queue_visibility_remove(event: On<Remove, Visibility>, mut index: ResMut<SceneAnchorIndex>) {
-    request_if_indexed(event.event_target(), &mut index);
+fn queue_visibility_remove(event: On<Remove<Visibility>>, mut index: ResMut<SceneAnchorIndex>) {
+    request_if_indexed(event.entity, &mut index);
 }
 
-fn queue_child_of_remove(event: On<Remove, ChildOf>, mut index: ResMut<SceneAnchorIndex>) {
-    request_if_indexed(event.event_target(), &mut index);
+fn queue_child_of_remove(event: On<Remove<ChildOf>>, mut index: ResMut<SceneAnchorIndex>) {
+    request_if_indexed(event.entity, &mut index);
 }
 
 fn projection_is_settled(state: Option<&usd_bevy::ProgressiveProjectionState>) -> bool {

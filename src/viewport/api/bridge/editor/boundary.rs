@@ -1,6 +1,6 @@
 //! Authoring policy for composed Project Model boundaries.
 
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use usd_project::ModelId;
 use viewport_protocol::{RuntimeMutation, ViewportCommand};
 
@@ -69,12 +69,15 @@ fn reject_if_model_source(
     allow_model_member_root: bool,
 ) -> Result<(), String> {
     for ancestor in ancestors(path) {
-        let prim = stage.prim(ancestor.as_str());
+        let prim = stage
+            .prim(ancestor.as_str())
+            .map_err(|error| error.to_string())?;
         if !prim.is_defined().map_err(|error| error.to_string())? {
             continue;
         }
-        let Some(Value::Dictionary(data)) =
-            prim.custom_data().map_err(|error| error.to_string())?
+        let Some(Value::Dictionary(data)) = prim
+            .metadata::<Value>("customData")
+            .map_err(|error| error.to_string())?
         else {
             continue;
         };

@@ -18,7 +18,7 @@ pub(super) fn validate_localized_root(path: &Path, resolver: Arc<dyn Resolver>) 
         "localized USD root has composition errors"
     );
     ensure!(
-        !stage.prim("/").children()?.is_empty(),
+        !stage.prim("/")?.children()?.is_empty(),
         "localized USD root has no defined root prims"
     );
     Ok(())

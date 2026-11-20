@@ -50,7 +50,9 @@ impl NativeInstanceDependencyIndex {
         let Ok(path) = openusd::sdf::path(proxy) else {
             return;
         };
-        let prim = stage.prim(path.clone());
+        let Ok(prim) = stage.prim(path.clone()) else {
+            return;
+        };
         if !prim.is_instance_proxy().unwrap_or(false) {
             return;
         }
@@ -156,8 +158,10 @@ fn instance_root(stage: &Stage, path: &Path) -> Option<openusd::usd::Prim> {
     let mut current = path.clone();
     while let Some(parent) = current.parent() {
         current = parent;
-        if stage.prim(current.clone()).is_instance().unwrap_or(false) {
-            return Some(stage.prim(current));
+        if let Ok(prim) = stage.prim(current.clone())
+            && prim.is_instance().unwrap_or(false)
+        {
+            return Some(prim);
         }
     }
     None

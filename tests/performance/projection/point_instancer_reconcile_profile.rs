@@ -9,7 +9,8 @@ use bevy::mesh::{Indices, Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use serde::Serialize;
 use usd_bevy::read::geom::read_point_instancer;
@@ -168,6 +169,7 @@ fn records_point_instancer_reconcile_profile() {
         .expect("live stage exists")
         .stage
         .prim(instancer_path)
+        .expect("instancer prim exists")
         .attribute("positions")
         .set(Value::Vec3fVec(updated))
         .expect("live transform edit succeeds");

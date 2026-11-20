@@ -245,7 +245,14 @@ pub(in crate::viewport::api::bridge) fn apply_editor_command(
                 );
                 return true;
             }
-            stage.load_payload(&prim_path);
+            if let Err(err) = stage.load_payload(&prim_path) {
+                reject(
+                    outbox,
+                    request_id,
+                    format!("failed to load payload for {prim_path}: {err:#}"),
+                );
+                return true;
+            }
             emit_editor_completed(
                 outbox,
                 request_id,
@@ -264,7 +271,14 @@ pub(in crate::viewport::api::bridge) fn apply_editor_command(
                 );
                 return true;
             }
-            stage.unload_payload(&prim_path);
+            if let Err(err) = stage.unload_payload(&prim_path) {
+                reject(
+                    outbox,
+                    request_id,
+                    format!("failed to unload payload for {prim_path}: {err:#}"),
+                );
+                return true;
+            }
             emit_editor_completed(
                 outbox,
                 request_id,

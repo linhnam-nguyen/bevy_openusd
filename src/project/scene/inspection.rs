@@ -7,9 +7,9 @@
 use std::{collections::BTreeMap, path::Path};
 
 use anyhow::{Context, Result};
-use openusd::{
+use openusd::{vt, 
     pcp,
-    sdf::Value,
+    vt::Value,
     usd::{InitialLoadSet, PrimPredicate, Stage},
 };
 use usd_project::{
@@ -29,6 +29,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         .to_str()
         .context("USD inspection source path must be valid UTF-8")?;
     let stage = match Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
         .load(InitialLoadSet::LoadNone)
         .open(source_string)
     {
@@ -36,7 +37,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         Err(error) => {
             return Ok(unsupported_inspection(format!(
                 "unable to open source as USD: {}",
-                summarize_error(&error)
+                summarize_error(&anyhow::Error::from(error))
             )));
         }
     };
@@ -87,7 +88,7 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
         return Ok(inspection);
     };
 
-    let root = stage.prim(root_path.as_str());
+    let root = stage.prim(root_path.as_str())?;
     if !root.is_defined()? {
         inspection.classification = CompositionClassification::Unsupported;
         inspection
@@ -103,16 +104,18 @@ pub(crate) fn inspect_composition(source: &Path) -> Result<CompositionInspection
     let root_is_component = root.is_component()?;
 
     stage.traverse(PrimPredicate::ALL, |path| {
-        let prim = stage.prim(path.clone());
+        let Ok(prim) = stage.prim(path.clone()) else {
+            return;
+        };
         for identifier in stage.layer_identifiers() {
-            if let Some(layer) = stage.layer(&identifier)
-                && let Some(spec) = layer.prim(path.clone())
+            if let Ok(Some(layer)) = stage.layer(&identifier)
+                && let Ok(Some(spec)) = layer.prim(path.clone())
             {
-                inspection.has_references |= spec.has_field("references");
-                inspection.has_payloads |= spec.has_field("payload");
+                inspection.has_references |= spec.has_field("references").unwrap_or(false);
+                inspection.has_payloads |= spec.has_field("payload").unwrap_or(false);
             }
         }
-        match prim.variant_sets().get_all_variant_selections() {
+        match prim.variant_sets().selections() {
             Ok(selections) => inspection.has_variants |= !selections.is_empty(),
             Err(_) => inspection
                 .diagnostics
@@ -186,7 +189,7 @@ fn classify(
 
 fn stage_root_prims(stage: &Stage) -> Result<Vec<String>> {
     let mut roots = stage
-        .prim("/")
+        .prim("/")?
         .children()?
         .into_iter()
         .filter_map(|prim| {
@@ -199,7 +202,7 @@ fn stage_root_prims(stage: &Stage) -> Result<Vec<String>> {
 }
 
 fn native_usdhub_scene(root: &openusd::usd::Prim) -> Result<bool> {
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
+    let Some(Value::Dictionary(data)) = root.metadata::<Value>("customData")? else {
         return Ok(false);
     };
     let scene_id_is_string = data
@@ -234,9 +237,9 @@ fn collect_composition_errors(
         inspection.has_references |= error_text.contains("Reference");
         inspection.has_payloads |= error_text.contains("Payload");
         match error {
-            pcp::Error::UnresolvedLayer { .. }
-            | pcp::Error::UnresolvedPrimPath { .. }
-            | pcp::Error::MissingDefaultPrim { .. } => {
+            pcp::CompositionDiagnostic::UnresolvedLayer { .. }
+            | pcp::CompositionDiagnostic::UnresolvedPrimPath { .. }
+            | pcp::CompositionDiagnostic::UnresolvedDefaultPrim { .. } => {
                 dependencies
                     .entry(MISSING_DEPENDENCY.to_owned())
                     .or_insert(DependencyClassification::Missing);
@@ -244,9 +247,9 @@ fn collect_composition_errors(
                     "USD composition contains an unresolved dependency",
                 ));
             }
-            pcp::Error::MalformedLayer { .. }
-            | pcp::Error::InvalidPrimPath { .. }
-            | pcp::Error::InvalidDefaultPrim { .. } => {
+            pcp::CompositionDiagnostic::MalformedLayer { .. }
+            | pcp::CompositionDiagnostic::InvalidPrimPath { .. }
+            | pcp::CompositionDiagnostic::InvalidVariantSelection { .. } => {
                 dependencies
                     .entry(UNSUPPORTED_DEPENDENCY.to_owned())
                     .or_insert(DependencyClassification::Unsupported);

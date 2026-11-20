@@ -1,8 +1,9 @@
 //! Configurable source-identity resolution.
 
 use anyhow::{Result, bail};
-use openusd::sdf::{Path, Value};
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 use usd_model::{EntityKey, IdentitySource};
 
 use crate::config::IdentityConfig;
@@ -18,7 +19,7 @@ pub fn resolve_identity(
     path: &Path,
     config: &IdentityConfig,
 ) -> Result<(EntityKey, IdentitySource)> {
-    let prim = stage.prim(path.clone());
+    let prim = stage.prim(path.clone())?;
     for (source, candidates) in [
         (
             IdentitySource::RevitUniqueId,

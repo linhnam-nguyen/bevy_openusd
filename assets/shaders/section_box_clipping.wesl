@@ -1,20 +1,19 @@
-#import bevy_pbr::{
+import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
-}
+};
 
-#ifdef PREPASS_PIPELINE
-#import bevy_pbr::{
-    prepass_io::{VertexOutput, FragmentOutput},
-    pbr_deferred_functions::deferred_output,
-}
-#else
-#import bevy_pbr::{
+@if(PREPASS_PIPELINE)
+import bevy_pbr::{
+    prepass::io::{VertexOutput, FragmentOutput},
+    deferred::functions::deferred_output,
+};
+@if(!PREPASS_PIPELINE)
+import bevy_pbr::render::{
     forward_io::{VertexOutput, FragmentOutput},
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT,
-}
-#endif
+};
 
 struct SectionClipExtension {
     world_to_box: mat4x4<f32>,
@@ -22,7 +21,7 @@ struct SectionClipExtension {
     _padding: vec3<f32>,
 }
 
-@group(#{MATERIAL_BIND_GROUP}) @binding(100)
+@group(constants::MATERIAL_BIND_GROUP) @binding(100)
 var<uniform> section_clip: SectionClipExtension;
 
 @fragment
@@ -39,13 +38,14 @@ fn fragment(
 
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     pbr_input.material.base_color = alpha_discard(
-        pbr_input.material,
+        pbr_input.material.flags,
+        pbr_input.material.alpha_cutoff,
         pbr_input.material.base_color,
     );
 
-#ifdef PREPASS_PIPELINE
+@if(PREPASS_PIPELINE)
     return deferred_output(in, pbr_input);
-#else
+@else {
     var out: FragmentOutput;
     if (pbr_input.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         out.color = apply_pbr_lighting(pbr_input);
@@ -54,5 +54,5 @@ fn fragment(
     }
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
-#endif
+}
 }

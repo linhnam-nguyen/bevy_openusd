@@ -10,9 +10,9 @@
 
 use bevy::prelude::*;
 
-use openusd::schemas::media::SpatialAudio;
-use openusd::schemas::vol::{Field3DAsset, FieldAsset, OpenVDBAsset, Volume};
-use openusd::sdf::Value;
+use openusd_schemas::media::{SpatialAudio, SpatialAudioSchema};
+use openusd_schemas::vol::{Field3DAsset, OpenVDBAsset, Volume, VolumeFieldAssetSchema};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use super::{PrimRoute, RouteCtx};
@@ -150,7 +150,7 @@ fn resolve_field(stage: &Stage, binding: String, path: openusd::sdf::Path) -> Us
 }
 
 /// Pull `filePath` / `fieldName` / `fieldIndex` off any `FieldAsset`.
-fn field_asset_data<F: FieldAsset>(f: &F) -> (String, Option<String>, Option<i32>) {
+fn field_asset_data<F: VolumeFieldAssetSchema>(f: &F) -> (String, Option<String>, Option<i32>) {
     let file = path_string(f.file_path_attr().get::<Value>().ok().flatten()).unwrap_or_default();
     let grid = token_string(f.field_name_attr().get::<Value>().ok().flatten());
     let index = f.field_index_attr().get::<i32>().ok().flatten();

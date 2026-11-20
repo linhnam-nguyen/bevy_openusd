@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use bevy::mesh::Mesh3d;
 use bevy::mesh::morph::{MeshMorphWeights, MorphAttributes};
 use bevy::prelude::*;
-use openusd::schemas::skel::{SkelBinding, SkeletonResolver};
 use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd_schemas::skel::SkeletonQuery;
 
-use super::binding::selected_joint_indices;
+use super::binding::{DiscoveredBinding, selected_joint_indices};
 use crate::live::index::PrimEntities;
 use crate::live::path::PathStore;
 use crate::route::skel::UsdBlendShapeBinding;
@@ -54,10 +54,10 @@ pub(super) fn attach_native_mesh(
     world: &mut World,
     stage: &Stage,
     map: &PrimEntities,
-    binding: &SkelBinding,
+    binding: &DiscoveredBinding,
     joints: &[String],
     joint_entities: &[Option<Entity>],
-    resolver: &SkeletonResolver,
+    resolver: &SkeletonQuery,
     source: &Path,
 ) {
     let entity = {
@@ -79,10 +79,8 @@ pub(super) fn attach_native_mesh(
         return;
     }
     let selected = if skinned {
-        let Some(subset) = binding.binding.joint_subset().ok() else {
-            return;
-        };
-        let Some(selected) = selected_joint_indices(joints, &subset) else {
+        let subset = binding.skinning.joint_order().unwrap_or(&[]);
+        let Some(selected) = selected_joint_indices(joints, subset) else {
             return;
         };
         selected
@@ -90,7 +88,7 @@ pub(super) fn attach_native_mesh(
         Vec::new()
     };
     let fidelity = if skinned {
-        crate::mesh::skin_fidelity(&binding.binding, read.points.len(), selected.len())
+        crate::mesh::skin_fidelity(&binding.skinning, read.points.len(), selected.len())
             .unwrap_or(crate::mesh::SkinFidelity::Standard4)
     } else {
         crate::mesh::SkinFidelity::Standard4
@@ -99,7 +97,7 @@ pub(super) fn attach_native_mesh(
         match fidelity {
             crate::mesh::SkinFidelity::Standard4 => {
                 let Ok(attrs) = crate::mesh::skin_attrs_from_binding(
-                    &binding.binding,
+                    &binding.skinning,
                     read.points.len(),
                     selected.len(),
                 ) else {
@@ -109,7 +107,7 @@ pub(super) fn attach_native_mesh(
             }
             crate::mesh::SkinFidelity::Extended16 => {
                 let Ok(attrs) = crate::mesh::extended_skin_attrs_from_binding(
-                    &binding.binding,
+                    &binding.skinning,
                     read.points.len(),
                     selected.len(),
                 ) else {
@@ -152,8 +150,7 @@ pub(super) fn attach_native_mesh(
             .map(|&index| {
                 resolver
                     .inverse_bind_transforms()
-                    .get(index)
-                    .copied()
+                    .and_then(|transforms| transforms.get(index).copied())
                     .map(|value| Mat4::from_cols_array(&std::array::from_fn(|i| value.0[i] as f32)))
                     .unwrap_or(Mat4::IDENTITY)
             })

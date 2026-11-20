@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use super::ops::{
@@ -296,8 +296,8 @@ impl EditHistory {
 }
 
 fn current_attribute_value(stage: &Stage, prim: &str, name: &str) -> Result<Option<Value>> {
-    stage
-        .prim(openusd::sdf::path(prim)?)
+    Ok(stage
+        .prim(openusd::sdf::path(prim)?)?
         .attribute(name)
-        .get::<Value>()
+        .get::<Value>()?)
 }

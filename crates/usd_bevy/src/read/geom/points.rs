@@ -31,8 +31,8 @@ pub fn read_point_instancer(
     };
     let prototypes = stage
         .prim(prim.clone())
-        .relationship("prototypes")
-        .targets()
+        .ok()
+        .and_then(|p| p.relationship("prototypes").targets().ok())
         .unwrap_or_default();
     let orientations = read_quat_array(stage, prim, "orientations")?.unwrap_or_default();
     let scales = read_vec3f_array(stage, prim, "scales")?.unwrap_or_default();

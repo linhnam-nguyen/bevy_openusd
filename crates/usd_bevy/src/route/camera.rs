@@ -11,8 +11,8 @@ pub use bevy::camera::Projection;
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
-use openusd::schemas::geom::Camera;
-use openusd::sdf::Value;
+use openusd_schemas::geom::{Camera, CameraSchema};
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx};
 

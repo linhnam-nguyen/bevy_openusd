@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::Result;
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use tempfile::tempdir;
 use usd_project::{
     ProjectId, ProjectManifestV1, ProjectRoot, SceneCompositionGraph, SceneId, SceneManifestEntry,
@@ -142,8 +142,8 @@ def Xform "Second" {}
     ))?;
 
     let stage = Stage::open(&adopted.scene_path.to_string_lossy())?;
-    assert!(stage.prim("/SceneRoot/Source/Root_0").is_defined()?);
-    assert!(stage.prim("/SceneRoot/Source/Root_1").is_defined()?);
+    assert!(stage.prim("/SceneRoot/Source/Root_0")?.is_defined()?);
+    assert!(stage.prim("/SceneRoot/Source/Root_1")?.is_defined()?);
     assert_eq!(stage.start_time_code(), 0.0);
     Ok(())
 }
@@ -174,9 +174,9 @@ fn nested_adoption_publishes_one_distinct_parent_placement() -> Result<()> {
     let parent_path = crate::project::scene::authoring::scene_path(project.path(), parent_id);
     let parent_stage = Stage::open(&parent_path.to_string_lossy())?;
     let member_path = crate::project::scene::authoring::scene_member_path(member.id);
-    let parent_member = parent_stage.prim(member_path.as_str());
+    let parent_member = parent_stage.prim(member_path.as_str())?;
     assert!(parent_member.is_defined()?);
-    let Some(Value::Dictionary(data)) = parent_member.custom_data()? else {
+    let Some(Value::Dictionary(data)) = parent_member.metadata::<Value>("customData")? else {
         panic!("nested Scene placement should retain customData");
     };
     let target_id = adopted.scene_id.to_string();

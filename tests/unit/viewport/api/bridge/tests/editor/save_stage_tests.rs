@@ -68,6 +68,7 @@ mod tests {
         assert!(
             reopened
                 .prim(openusd::sdf::path("/World/Saved").expect("prim path parses"))
+                .expect("saved prim exists")
                 .type_name()
                 .expect("prim type reads")
                 .is_some(),

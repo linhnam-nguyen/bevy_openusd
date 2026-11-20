@@ -45,7 +45,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
         "/World/Robot",
         "userProperties:name",
         "string",
-        openusd::sdf::Value::String("cart_telemetry".to_owned()),
+        openusd::vt::Value::String("cart_telemetry".to_owned()),
     )?;
     app.update();
     let _ = response(app.world().resource::<SemanticWorkingStore>());
@@ -64,7 +64,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     app.world()
         .get_non_send::<usd_bevy::LiveStage>()
         .unwrap()
-        .load_payload("/World/Robot");
+        .load_payload("/World/Robot")?;
     app.update();
     let _ = response(app.world().resource::<SemanticWorkingStore>());
     let after_subtree = app

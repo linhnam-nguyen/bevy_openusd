@@ -16,7 +16,7 @@ use bevy::ecs::reflect::{AppTypeRegistry, ReflectComponent};
 use bevy::prelude::*;
 use bevy::reflect::enums::VariantType;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeRegistry};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use crate::authoring::set_attribute;

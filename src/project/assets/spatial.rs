@@ -4,9 +4,9 @@ use std::path::Path;
 use std::{collections::HashMap, f64::consts::FRAC_PI_2};
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{
-    gf::Matrix4d,
-    sdf::Value,
+use openusd::{vt, 
+    gf::Mat4d,
+    vt::Value,
     usd::{Prim, Stage},
 };
 use usd_project::{SourceSpatialConvention, StageUpAxis};
@@ -25,11 +25,12 @@ pub(crate) fn inspect_stage(stage: &Stage) -> Result<SourceSpatialConvention> {
     let mut up_axis_was_authored = false;
     let mut meters_per_unit_was_authored = false;
     for identifier in stage.layer_stack() {
-        if let Some(layer) = stage.layer(&identifier)
-            && let Some(root) = layer.pseudo_root()
-        {
-            up_axis_was_authored |= root.has_field("upAxis");
-            meters_per_unit_was_authored |= root.has_field("metersPerUnit");
+        if let Some(layer) = stage.layer(&identifier)? {
+            let borrowed = layer.borrow();
+            if let Some(root) = borrowed.pseudo_root() {
+                up_axis_was_authored |= root.has_field("upAxis");
+                meters_per_unit_was_authored |= root.has_field("metersPerUnit");
+            }
         }
     }
 
@@ -60,15 +61,18 @@ pub(crate) fn inspect_source(path: &Path) -> Result<SourceSpatialConvention> {
     let source = path
         .to_str()
         .context("USD spatial inspection path must be valid UTF-8")?;
-    let stage = Stage::open(source).context("open USD source for spatial inspection")?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(source)
+        .context("open USD source for spatial inspection")?;
     inspect_stage(&stage)
 }
 
 /// Author the canonical metrics on a newly-created USDHub Stage.
 pub(crate) fn author_canonical_stage(stage: &Stage) -> Result<()> {
     let root_identifier = stage.root_layer().identifier().to_owned();
-    let mut root_layer = stage
-        .layer_mut(&root_identifier)
+    let root_layer = stage
+        .layer(&root_identifier)?
         .context("USDHub Scene root layer is unavailable")?;
     root_layer
         .edit(|edit| {
@@ -84,12 +88,12 @@ pub(crate) fn author_canonical_stage(stage: &Stage) -> Result<()> {
 /// Return the single stable corrective matrix used by Scene and Model wrappers.
 /// OpenUSD's row-vector matrix convention makes -90 degrees around X map a
 /// right-handed source Z-up basis to canonical Y-up: `(x, y, z) -> (x, z, -y)`.
-pub(crate) fn source_normalization_transform(source: &SourceSpatialConvention) -> Matrix4d {
+pub(crate) fn source_normalization_transform(source: &SourceSpatialConvention) -> Mat4d {
     let unit_scale = source.meters_per_unit / USDHUB_METERS_PER_UNIT;
-    let scale = Matrix4d::scale([unit_scale, unit_scale, unit_scale]);
+    let scale = Mat4d::scale([unit_scale, unit_scale, unit_scale]);
     match source.up_axis {
         StageUpAxis::Y => scale,
-        StageUpAxis::Z => scale * Matrix4d::rotation_x(-FRAC_PI_2),
+        StageUpAxis::Z => scale * Mat4d::rotation_x(-FRAC_PI_2),
     }
 }
 
@@ -120,9 +124,9 @@ pub(crate) fn author_source_normalization(
 /// semantic hierarchy. The marker is explicit metadata, so imported content
 /// merely named `Source` or `Members` is never hidden by convention.
 pub(crate) fn author_source_hierarchy_role(source_prim: &Prim) -> Result<()> {
-    let mut custom_data = match source_prim.custom_data()? {
+    let mut custom_data = match source_prim.metadata::<Value>("customData")? {
         Some(Value::Dictionary(data)) => data,
-        _ => HashMap::new(),
+        _ => openusd::vt::Dictionary::new(),
     };
     custom_data.insert(
         USDHUB_HIERARCHY_ROLE_METADATA.to_owned(),
@@ -139,9 +143,9 @@ pub(crate) fn author_source_hierarchy_role(source_prim: &Prim) -> Result<()> {
 /// path, allowing a cloned Project to report a missing local binding without
 /// confusing it with an ordinary imported Scene.
 pub(crate) fn author_source_binding_role(source_prim: &Prim, linked: bool) -> Result<()> {
-    let mut custom_data = match source_prim.custom_data()? {
+    let mut custom_data = match source_prim.metadata::<Value>("customData")? {
         Some(Value::Dictionary(data)) => data,
-        _ => HashMap::new(),
+        _ => openusd::vt::Dictionary::new(),
     };
     if linked {
         custom_data.insert(
@@ -162,16 +166,18 @@ pub(crate) fn source_binding_is_linked(source_prim: &Prim) -> Result<bool> {
 }
 
 pub(crate) fn source_binding_marker(source_prim: &Prim) -> Result<Option<String>> {
-    Ok(source_prim.custom_data()?.and_then(|value| match value {
-        Value::Dictionary(data) => data
-            .get(USDHUB_SOURCE_BINDING_METADATA)
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        _ => None,
-    }))
+    Ok(source_prim
+        .metadata::<Value>("customData")?
+        .and_then(|value| match value {
+            Value::Dictionary(data) => data
+                .get(USDHUB_SOURCE_BINDING_METADATA)
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            _ => None,
+        }))
 }
 
-pub(crate) fn read_source_normalization(source_prim: &Prim) -> Result<Matrix4d> {
+pub(crate) fn read_source_normalization(source_prim: &Prim) -> Result<Mat4d> {
     let transform = source_prim
         .attribute("xformOp:transform")
         .get::<Value>()?

@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
 use viewport_protocol::SceneAnchor;
@@ -7,6 +7,10 @@ use super::locator::{BimEditability, BimNonEditableReason};
 use super::*;
 
 fn stage_with_attribute(type_name: &str, custom: bool) -> Stage {
+    stage_with_typed_attribute(type_name, custom, Some(Value::Double(1.0)))
+}
+
+fn stage_with_typed_attribute(type_name: &str, custom: bool, value: Option<Value>) -> Stage {
     let stage = Stage::builder()
         .in_memory("bim_authoring_locator.usda")
         .expect("stage opens");
@@ -15,14 +19,16 @@ fn stage_with_attribute(type_name: &str, custom: bool) -> Stage {
         .expect("prim defines")
         .set_type_name("Xform")
         .expect("prim type authors");
-    stage
+    let builder = stage
         .prim(openusd::sdf::path("/World/Wall").expect("path parses"))
+        .expect("wall prim exists")
         .create_attribute("Width", type_name)
         .expect("attribute creates")
         .set_custom(custom)
-        .expect("custom flag authors")
-        .set(Value::Double(1.0))
-        .expect("value authors");
+        .expect("custom flag authors");
+    if let Some(value) = value {
+        builder.set(value).expect("value authors");
+    }
     stage
 }
 
@@ -78,7 +84,11 @@ fn non_custom_and_unsupported_attributes_are_not_editable() {
         }
     );
 
-    let unsupported = stage_with_attribute("dictionary", true);
+    let unsupported = stage_with_typed_attribute(
+        "color3f[]",
+        true,
+        Some(Value::Vec3fVec(vec![openusd::gf::Vec3f::from([1.0, 0.0, 0.0])])),
+    );
     let locator = resolve_bim_authoring_locator(&unsupported, &target(), "Width")
         .expect("unsupported attribute resolves");
     assert_eq!(

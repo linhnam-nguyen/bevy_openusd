@@ -111,7 +111,9 @@ fn inspect_openusd_stage(path: &Path, scan: &mut AssetScan) -> Result<(), String
 
     stage
         .traverse(PrimPredicate::ALL, |path| {
-            let prim = stage.prim(path.clone());
+            let Ok(prim) = stage.prim(path.clone()) else {
+                return;
+            };
             let type_name = prim.type_name().ok().flatten();
             scan.instance_indicator |= type_name.as_deref() == Some("PointInstancer");
             scan.instance_indicator |= prim.is_instanceable().unwrap_or(false);

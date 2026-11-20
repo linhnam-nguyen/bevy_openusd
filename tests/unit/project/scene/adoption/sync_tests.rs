@@ -1,6 +1,6 @@
 use std::fs;
 
-use openusd::{sdf::Value, usd::PrimPredicate};
+use openusd::{vt, vt::Value, usd::PrimPredicate};
 use project_protocol::{PlacementSpec, ProjectWriteTarget};
 use tempfile::tempdir;
 
@@ -132,11 +132,8 @@ fn syncing_linked_child_refreshes_an_active_project_root() {
         })
         .unwrap();
     for path in paths {
-        if let Ok(Some(Value::String(version))) = live_root
-            .stage
-            .prim(path)
-            .attribute("version")
-            .get::<Value>()
+        if let Ok(prim) = live_root.stage.prim(path)
+            && let Ok(Some(Value::String(version))) = prim.attribute("version").get::<Value>()
         {
             found_updated_source |= version == "updated";
         }

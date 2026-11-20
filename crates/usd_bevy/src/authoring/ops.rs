@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::{NamespaceEditor, Stage};
 
 type Result<T> = anyhow::Result<T>;
@@ -21,7 +21,7 @@ pub fn remove_prim(stage: &Stage, path: &str) -> Result<bool> {
 
 /// Rename the prim at `path` to `new_name` (last namespace component only).
 pub fn rename_prim(stage: &Stage, path: &str, new_name: &str) -> Result<()> {
-    let prim = stage.prim(openusd::sdf::path(path)?);
+    let prim = stage.prim(openusd::sdf::path(path)?)?;
     let mut editor = NamespaceEditor::new(stage);
     editor.rename_prim(&prim, new_name)?;
     editor.apply()?;
@@ -30,8 +30,8 @@ pub fn rename_prim(stage: &Stage, path: &str, new_name: &str) -> Result<()> {
 
 /// Reparent the prim at `path` under `new_parent` (keeping its name).
 pub fn reparent_prim(stage: &Stage, path: &str, new_parent: &str) -> Result<()> {
-    let prim = stage.prim(openusd::sdf::path(path)?);
-    let parent = stage.prim(openusd::sdf::path(new_parent)?);
+    let prim = stage.prim(openusd::sdf::path(path)?)?;
+    let parent = stage.prim(openusd::sdf::path(new_parent)?)?;
     let mut editor = NamespaceEditor::new(stage);
     editor.reparent_prim(&prim, &parent)?;
     editor.apply()?;
@@ -41,7 +41,7 @@ pub fn reparent_prim(stage: &Stage, path: &str, new_parent: &str) -> Result<()> 
 /// Move the prim at `old` to the absolute path `new` (rename + reparent in one).
 pub fn move_prim(stage: &Stage, old: &str, new: &str) -> Result<()> {
     let mut editor = NamespaceEditor::new(stage);
-    editor.move_prim(openusd::sdf::path(old)?, openusd::sdf::path(new)?);
+    editor.move_prim(openusd::sdf::path(old)?, openusd::sdf::path(new)?)?;
     editor.apply()?;
     Ok(())
 }
@@ -78,14 +78,14 @@ pub fn set_variant(stage: &Stage, prim: &str, set: &str, selection: &str) -> Res
     let set = set.to_string();
     let selection = selection.to_string();
     stage
-        .prim(openusd::sdf::path(prim)?)
+        .prim(openusd::sdf::path(prim)?)?
         .update_metadata("variantSelection", move |cur| {
             let mut map = match cur {
                 Some(Value::VariantSelectionMap(m)) => m,
                 _ => std::collections::HashMap::new(),
             };
             map.insert(set, selection);
-            Value::VariantSelectionMap(map)
+            Some(Value::VariantSelectionMap(map))
         })?;
     Ok(())
 }
@@ -101,7 +101,7 @@ pub(super) fn current_variant(stage: &Stage, prim: &str, set: &str) -> Option<St
 
 /// Serialize the stage's composed root layer to a `.usda` string.
 pub fn export_stage_string(stage: &Stage) -> Result<String> {
-    stage.root_layer().export_to_string()
+    Ok(stage.root_layer().export_to_string()?)
 }
 
 /// Write the stage's root layer to `filename` (a `.usda`/`.usd` path).
@@ -114,12 +114,7 @@ pub fn save_stage_as(stage: &Stage, filename: &str) -> Result<()> {
 pub fn prim_exists(stage: &Stage, path: &str) -> bool {
     openusd::sdf::path(path)
         .ok()
-        .map(|p| {
-            stage
-                .prim(p)
-                .type_name()
-                .map(|t| t.is_some())
-                .unwrap_or(false)
-        })
+        .and_then(|p| stage.prim(p).ok())
+        .map(|prim| prim.type_name().map(|t| t.is_some()).unwrap_or(false))
         .unwrap_or(false)
 }

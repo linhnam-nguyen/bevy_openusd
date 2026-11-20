@@ -31,7 +31,10 @@ fn world_with(register: impl FnOnce(&mut TypeRegistry)) -> World {
 /// layer.
 #[test]
 fn author_component_roundtrips_through_usd() {
-    let stage = Stage::builder().in_memory("author.usda").unwrap();
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("author.usda")
+        .unwrap();
     stage
         .define_prim("/Enemy")
         .unwrap()
@@ -256,7 +259,10 @@ fn roundtrip<C: Component + PartialReflect + Clone + PartialEq + std::fmt::Debug
     register: impl Fn(&mut TypeRegistry) + Copy,
     value: C,
 ) -> C {
-    let stage = Stage::builder().in_memory("rt.usda").unwrap();
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("rt.usda")
+        .unwrap();
     stage.define_prim("/P").unwrap();
     let short = std::any::type_name::<C>().rsplit("::").next().unwrap();
 
@@ -313,7 +319,10 @@ fn nested_struct_roundtrip() {
 
 #[test]
 fn author_errors_are_graceful() {
-    let stage = Stage::builder().in_memory("err.usda").unwrap();
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("err.usda")
+        .unwrap();
     stage.define_prim("/P").unwrap();
     let mut world = world_with(|r| r.register::<Health>());
     let e = world.spawn(crate::UsdPrimRef::new("/P")).id();
@@ -334,7 +343,10 @@ fn author_errors_are_graceful() {
 /// but the world has no `AppTypeRegistry` (a bare headless world).
 #[test]
 fn no_type_registry_is_graceful() {
-    let stage = Stage::builder().in_memory("noreg.usda").unwrap();
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("noreg.usda")
+        .unwrap();
     stage.define_prim("/P").unwrap();
     stage
         .create_attribute("/P.bevy:Health:max", "double")

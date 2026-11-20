@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use openusd::sdf::Value;
+    use openusd::vt::Value;
     use viewport_protocol::*;
 
     use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
@@ -26,6 +26,7 @@ mod tests {
                 .expect("target type authors");
             stage
                 .prim(openusd::sdf::path(path).expect("path parses"))
+                .expect("prim exists")
                 .create_attribute("Width", "double")
                 .expect("attribute creates")
                 .set_custom(true)
@@ -54,6 +55,7 @@ mod tests {
         match live
             .stage
             .prim(openusd::sdf::path(path).expect("path parses"))
+            .expect("prim exists")
             .attribute("Width")
             .get::<Value>()
             .expect("width reads")

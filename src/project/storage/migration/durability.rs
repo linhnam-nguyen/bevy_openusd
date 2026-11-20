@@ -5,8 +5,8 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{
-    sdf::Value,
+use openusd::{vt, 
+    vt::Value,
     usd::{InitialLoadSet, Stage},
 };
 use usd_project::{ModelId, SceneId};
@@ -68,12 +68,12 @@ fn validate_model_target(path: &Path, model_id: ModelId) -> Result<()> {
             .is_some_and(|token| token.as_str() == "ModelRoot"),
         "canonical Model wrapper defaultPrim must be /ModelRoot"
     );
-    let root = stage.prim("/ModelRoot");
+    let root = stage.prim("/ModelRoot")?;
     ensure!(
         root.is_defined()?,
         "canonical Model wrapper root must be defined"
     );
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
+    let Some(Value::Dictionary(data)) = root.metadata::<Value>("customData")? else {
         bail!("canonical Model wrapper root is missing customData");
     };
     ensure!(
@@ -82,11 +82,11 @@ fn validate_model_target(path: &Path, model_id: ModelId) -> Result<()> {
     );
     let source_path = openusd::sdf::path("/ModelRoot/Source")?;
     ensure!(
-        stage.prim("/ModelRoot/Source").is_defined()?
+        stage.prim("/ModelRoot/Source")?.is_defined()?
             && stage
                 .root_layer()
-                .prim(&source_path)
-                .is_some_and(|spec| spec.has_field("references")),
+                .prim(source_path)?
+                .is_some_and(|spec| spec.has_field("references").unwrap_or(false)),
         "canonical Model wrapper source reference is missing"
     );
     Ok(())

@@ -25,7 +25,9 @@ pub(super) fn refresh(
         let Ok(prim_path) = openusd::sdf::path(path) else {
             continue;
         };
-        let prim = stage.prim(prim_path);
+        let Ok(prim) = stage.prim(prim_path) else {
+            continue;
+        };
         if let Ok(Some(type_name)) = prim.type_name()
             && type_name.as_str() == "Camera"
         {
@@ -37,7 +39,7 @@ pub(super) fn refresh(
                 },
             });
         }
-        if let Ok(selections) = prim.variant_sets().get_all_variant_selections()
+        if let Ok(selections) = prim.variant_sets().selections()
             && !selections.is_empty()
         {
             variants.insert(

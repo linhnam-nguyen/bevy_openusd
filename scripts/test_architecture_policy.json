@@ -120,6 +120,12 @@
       "target": "crates/usd_bevy/tests/unit/route/material/tests.rs"
     },
     {
+      "owner_file": "crates/usd_bevy/src/route/payload.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "crates/usd_bevy/tests/unit/route/payload_tests.rs"
+    },
+    {
       "owner_file": "crates/usd_bevy/src/route/profile.rs",
       "module_path": "",
       "mod_name": "tests",
@@ -1618,6 +1624,12 @@
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/transport/transport_tests.rs"
+    },
+    {
+      "owner_file": "src/viewport/rendering/gpu_limits.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/rendering/gpu_limits_tests.rs"
     }
   ],
   "generated_sources": [
@@ -1633,21 +1645,21 @@
   ],
   "exceptional_production_fixtures": [
     {
-      "path": "crates/usd_bevy/src/extended_skin.wgsl",
+      "path": "crates/usd_bevy/src/extended_skin.wesl",
       "owner": "crates/usd_bevy/src/extended_skin.rs",
       "consumers": [
         "crates/usd_bevy/src/extended_skin.rs"
       ],
-      "reason": "Production Bevy extended-skin WGSL vertex/fragment shader embedded as an internal asset.",
+      "reason": "Production Bevy extended-skin WESL vertex/fragment shader embedded as an internal asset.",
       "status": "approved"
     },
     {
-      "path": "crates/usd_bevy/src/extended_skin_prepass.wgsl",
+      "path": "crates/usd_bevy/src/extended_skin_prepass.wesl",
       "owner": "crates/usd_bevy/src/extended_skin.rs",
       "consumers": [
         "crates/usd_bevy/src/extended_skin.rs"
       ],
-      "reason": "Production Bevy extended-skin prepass WGSL shader embedded as an internal asset.",
+      "reason": "Production Bevy extended-skin prepass WESL shader embedded as an internal asset.",
       "status": "approved"
     },
     {

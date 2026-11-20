@@ -50,7 +50,7 @@ fn test_regression_a_resync_subtree_34_prims_delta_applied() -> Result<()> {
     app.world()
         .get_non_send::<LiveStage>()
         .unwrap()
-        .load_payload("/World/B");
+        .load_payload("/World/B")?;
 
     app.update();
 
@@ -111,7 +111,7 @@ fn test_regression_b_remove_and_add_under_resync_root() -> Result<()> {
     live.stage.remove_prim("/World/A/Child2").unwrap();
     live.stage.define_prim("/World/A/Child3").unwrap();
     let _ = live.drain_change_batch();
-    live.load_payload("/World/A");
+    live.load_payload("/World/A")?;
 
     app.update();
 

@@ -17,7 +17,7 @@
 //!   full per-body bases (Isaac Sim's 90°-rotated chains).
 
 use anyhow::Result;
-use openusd::schemas::physics::{Dof, DriveType};
+use openusd_schemas::physics::{Dof, DriveType};
 use rapier3d_f64::glamx::{DQuat, DVec3};
 use rapier3d_f64::prelude::*;
 
@@ -316,11 +316,11 @@ fn apply_drive_prismatic(b: PrismaticJointBuilder, d: &ReadDrive) -> PrismaticJo
 }
 
 fn dof_matches_revolute(dof: Dof) -> bool {
-    matches!(dof, Dof::Angular | Dof::RotX | Dof::RotY | Dof::RotZ)
+    matches!(dof, Dof::RotX | Dof::RotY | Dof::RotZ)
 }
 
 fn dof_matches_prismatic(dof: Dof) -> bool {
-    matches!(dof, Dof::Linear | Dof::TransX | Dof::TransY | Dof::TransZ)
+    matches!(dof, Dof::TransX | Dof::TransY | Dof::TransZ)
 }
 
 fn vec3_array_to_d(v: [f32; 3]) -> DVec3 {

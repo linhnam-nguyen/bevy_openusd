@@ -38,7 +38,7 @@ mod parse;
 use bevy::ecs::reflect::{AppTypeRegistry, ReflectComponent};
 use bevy::prelude::*;
 use bevy::reflect::{GetPath, std_traits::ReflectDefault};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx};
 use coerce::{set_field, try_set_handle};
@@ -183,7 +183,7 @@ impl ReflectRoute {
                         .as_ref()
                         .and_then(|d| d.reflect_path(path.as_str()).ok())
                         .map(|f| f.to_dynamic());
-                    if let Some(def_val) = def_val
+                    if let Some(Ok(def_val)) = def_val
                         && let Some(mut comp) = reflect_component.reflect_mut(&mut ent)
                         && let Ok(target) = comp.reflect_path_mut(path.as_str())
                     {

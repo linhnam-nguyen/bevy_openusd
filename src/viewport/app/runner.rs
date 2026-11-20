@@ -7,7 +7,9 @@ use crate::viewport::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
     follow_mounted_camera, sync_chase_camera,
 };
-use crate::viewport::input::{ViewportNavigationInput, keyboard::ViewerKeyboardPlugin};
+#[cfg(feature = "legacy_frost")]
+use crate::viewport::input::keyboard::ViewerKeyboardPlugin;
+use crate::viewport::input::ViewportNavigationInput;
 use crate::viewport::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::rendering::offscreen::resize::apply_stream_configuration;
 use crate::viewport::rendering::presentation::{DisplayToggles, OverlaysPlugin};
@@ -30,17 +32,21 @@ use crate::viewport::stage::{
     spawn_when_ready,
 };
 use crate::viewport::transport::ViewportTransport;
+#[cfg(feature = "legacy_frost")]
 use crate::viewport::ui_frost::ViewerUiPlugin;
 use bevy::pbr::MaterialPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+#[cfg(feature = "legacy_frost")]
 use bevy_frost::prelude::AccentColor;
 use bevy_glacial::prelude::{
     AxisGizmoPlugin, GizmoAutoScale, GroundGrid, GroundGridPlugin, TransformGizmoPlugin,
     auto_scale_gizmo_to_target,
 };
 use bevy_mod_outline::OutlinePlugin;
-use scene::{open_default_panel, resolve_requested_asset, spawn_camera_and_ground};
+#[cfg(feature = "legacy_frost")]
+use scene::open_default_panel;
+use scene::{resolve_requested_asset, spawn_camera_and_ground};
 use usd_bevy::{LiveStagePlugin, LiveStageSet, UsdPlugin};
 use usd_semantic::SemanticConfig;
 pub(crate) fn run() {
@@ -134,10 +140,11 @@ pub(crate) fn run() {
                 .copied()
                 .unwrap_or(640.0),
         })
-        .insert_resource(AccentColor(bevy_egui::egui::Color32::from_rgb(
-            0x4A, 0x90, 0xE2,
-        )))
         .insert_resource(cadence::RendererCadence::new(Some(launch_options.fps)));
+    #[cfg(feature = "legacy_frost")]
+    app.insert_resource(AccentColor(bevy_egui::egui::Color32::from_rgb(
+        0x4A, 0x90, 0xE2,
+    )));
     crate::viewport::stage::project::install(&mut app);
     if launch_options.headless {
         app.add_plugins(headless::HeadlessRenderPlugin {
@@ -165,6 +172,7 @@ pub(crate) fn run() {
         .resource_mut::<DisplayToggles>()
         .renderer
         .preferred_fps = Some(launch_options.fps);
+    #[cfg(feature = "legacy_frost")]
     if !launch_options.headless {
         app.add_plugins(ViewerKeyboardPlugin)
             .add_plugins(ViewerUiPlugin)

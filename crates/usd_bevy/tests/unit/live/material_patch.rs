@@ -4,7 +4,7 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use crate::ProjectionSeed;
 use crate::UsdPlugin;
@@ -140,6 +140,7 @@ fn set_material_color(app: &mut App, material: &str, color: [f32; 3]) {
     let path = openusd::sdf::path(material).expect("material path");
     live.stage
         .prim(path)
+        .expect("material prim exists")
         .attribute("inputs:diffuseColor")
         .set(Value::Vec3f(Vec3f::from(color)))
         .expect("material color authoring succeeds");
@@ -151,6 +152,7 @@ fn set_material_binding(app: &mut App, prim: &str, target: Option<&str>) {
     let relationship = live
         .stage
         .prim(openusd::sdf::path(prim).expect("prim path"))
+        .expect("prim exists")
         .relationship("material:binding");
     match target {
         Some(target) => relationship
@@ -167,6 +169,7 @@ fn set_network_shader_roughness(app: &mut App, roughness: f32) {
     let live = app.world().get_non_send::<LiveStage>().expect("stage");
     live.stage
         .prim(openusd::sdf::path(NETWORK_RED_SURFACE).unwrap())
+        .unwrap()
         .attribute("inputs:roughness")
         .set(Value::Float(roughness))
         .expect("shader input authoring succeeds");
@@ -177,6 +180,7 @@ fn set_network_texture_path(app: &mut App, path: &str) {
     let live = app.world().get_non_send::<LiveStage>().expect("stage");
     live.stage
         .prim(openusd::sdf::path(NETWORK_RED_ALBEDO).unwrap())
+        .unwrap()
         .attribute("inputs:file")
         .set(Value::AssetPath(path.into()))
         .expect("texture path authoring succeeds");
@@ -216,6 +220,7 @@ fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     let live = app.world().get_non_send::<LiveStage>().expect("stage");
     live.stage
         .prim(openusd::sdf::path(RED_BOX).unwrap())
+        .unwrap()
         .relationship("material:binding")
         .set_targets([openusd::sdf::path(GREEN).unwrap()])
         .expect("binding authoring succeeds");

@@ -30,7 +30,7 @@ pub(super) fn to_bevy_transform(t: crate::read::xform::Transform3) -> Transform 
 pub(super) fn stage_up_axis(stage: &Stage) -> Quat {
     let is_z = matches!(
         stage.stage_metadata("upAxis").ok().flatten(),
-        Some(openusd::sdf::Value::Token(t)) if t.as_str() == "Z"
+        Some(openusd::vt::Value::Token(t)) if t.as_str() == "Z"
     );
     if is_z {
         Quat::from_rotation_x(-core::f32::consts::FRAC_PI_2)
@@ -93,7 +93,7 @@ pub fn extract_render_payloads_for_paths(
         let path = validate_prim_path(raw_path)?;
         ensure!(path != "/", "targeted extraction cannot request stage root");
         let sdf_path = openusd::sdf::path(&path)?;
-        let prim = stage.prim(sdf_path);
+        let prim = stage.prim(sdf_path)?;
         ensure!(prim.is_active()?, "targeted prim {path} is inactive");
         ensure!(prim.is_defined()?, "targeted prim {path} is undefined");
         ensure!(!prim.is_abstract()?, "targeted prim {path} is abstract");
@@ -167,8 +167,8 @@ pub fn project_paths(
             continue;
         }
         let sdf_path = openusd::sdf::path(path)?;
-        if !live.stage.prim(sdf_path).is_loaded()? {
-            live.load_payload(path);
+        if !live.stage.prim(sdf_path)?.is_loaded()? {
+            live.load_payload(path)?;
         }
     }
     let plan =

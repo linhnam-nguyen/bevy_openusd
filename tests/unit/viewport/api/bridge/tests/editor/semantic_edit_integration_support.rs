@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Result, bail};
 use bevy::prelude::*;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SemanticSnapshot, SnapshotSource};
 use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportEventEnvelope};
@@ -83,6 +83,7 @@ pub(super) fn read_width(app: &App, path: &str) -> f64 {
     match live
         .stage
         .prim(openusd::sdf::path(path).expect("path parses"))
+        .expect("prim exists")
         .attribute("Width")
         .get::<Value>()
         .expect("width reads")

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use usd_project::{ModelId, SceneId, SceneMember, SceneMemberTarget};
 
 use super::super::authoring;
@@ -26,7 +26,7 @@ pub(crate) fn author_scene_wrapper_to_path(
 ) -> Result<()> {
     let stage = authoring::new_scene_stage(scene_id)?;
     stage
-        .prim("/SceneRoot")
+        .prim("/SceneRoot")?
         .set_metadata("ui:displayName", Value::String(scene_name.to_owned()))?;
     crate::project::stages::metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
@@ -101,7 +101,7 @@ pub(crate) fn validate_scene_wrapper(
         .context("reopen temporary adopted Scene wrapper")?;
     ensure!(
         stage
-            .prim(format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}").as_str())
+            .prim(format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
             .is_defined()?,
         "adopted Scene wrapper source prim must be defined"
     );
@@ -112,8 +112,8 @@ pub(crate) fn validate_scene_wrapper(
     );
     ensure!(
         stage
-            .prim(source_path.as_str())
-            .custom_data()?
+            .prim(source_path.as_str())?
+            .metadata::<Value>("customData")?
             .and_then(|value| match value {
                 Value::Dictionary(data) => data
                     .get(crate::project::assets::spatial::USDHUB_HIERARCHY_ROLE_METADATA)
@@ -127,12 +127,12 @@ pub(crate) fn validate_scene_wrapper(
     );
     ensure!(
         crate::project::assets::spatial::source_binding_is_linked(
-            &stage.prim(source_path.as_str())
+            &stage.prim(source_path.as_str())?
         )? == linked_source,
         "adopted Scene wrapper linked-source provenance does not match the request"
     );
     validate_source_reference_paths(&stage, &source_path)?;
-    let source_prim = stage.prim(source_path.as_str());
+    let source_prim = stage.prim(source_path.as_str())?;
     ensure!(
         crate::project::assets::spatial::read_source_normalization(&source_prim)?
             == crate::project::assets::spatial::source_normalization_transform(spatial),
@@ -142,34 +142,39 @@ pub(crate) fn validate_scene_wrapper(
 }
 
 fn has_source_reference(stage: &Stage, source_path: &sdf::Path) -> Result<bool> {
-    let source = stage.prim(source_path.as_str());
+    let source = stage.prim(source_path.as_str())?;
     if stage
         .root_layer()
-        .prim(source_path)
-        .is_some_and(|spec| spec.has_field(REFERENCES_FIELD))
+        .prim(source_path.clone())?
+        .is_some_and(|spec| spec.has_field(REFERENCES_FIELD).unwrap_or(false))
     {
         return Ok(true);
     }
     let root_layer = stage.root_layer();
     Ok(source.children()?.into_iter().any(|child| {
-        let path = sdf::path(child.path().as_str()).ok();
-        path.and_then(|path| root_layer.prim(&path))
-            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD))
+        let Ok(path) = sdf::path(child.path().as_str()) else {
+            return false;
+        };
+        root_layer
+            .prim(path)
+            .ok()
+            .flatten()
+            .is_some_and(|spec| spec.has_field(REFERENCES_FIELD).unwrap_or(false))
     }))
 }
 
 fn validate_source_reference_paths(stage: &Stage, source_path: &sdf::Path) -> Result<()> {
     let mut specs = Vec::new();
     let root_layer = stage.root_layer();
-    if let Some(spec) = root_layer.prim(source_path)
-        && spec.has_field(REFERENCES_FIELD)
+    if let Some(spec) = root_layer.prim(source_path.clone())?
+        && spec.has_field(REFERENCES_FIELD)?
     {
         specs.push(spec);
     } else {
-        for child in stage.prim(source_path.as_str()).children()? {
+        for child in stage.prim(source_path.as_str())?.children()? {
             if let Ok(path) = sdf::path(child.path().as_str())
-                && let Some(spec) = root_layer.prim(&path)
-                && spec.has_field(REFERENCES_FIELD)
+                && let Some(spec) = root_layer.prim(path)?
+                && spec.has_field(REFERENCES_FIELD)?
             {
                 specs.push(spec);
             }

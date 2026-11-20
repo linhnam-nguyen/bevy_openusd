@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use project_protocol::{ProjectWriteError, ProjectWriteTarget};
 use usd_project::{ProjectRoot, ProjectSummary, SceneId};
 
@@ -164,7 +164,9 @@ pub(super) fn seed_bim_metadata(fixture: &CanonicalProject) -> Result<(), String
         let path = fixture.scene_path(scene.id);
         let stage = Stage::open(&path.to_string_lossy())
             .map_err(|error| format!("open Scene fixture for BIM metadata: {error}"))?;
-        let root = stage.prim("/SceneRoot");
+        let root = stage
+            .prim("/SceneRoot")
+            .map_err(|error| format!("open SceneRoot for BIM metadata: {error}"))?;
         for (name, value) in [
             ("BIM:Instance:ElementId", format!("or8-scene-{ordinal:03}")),
             ("BIM:Instance:Category", "Project Scene".to_owned()),

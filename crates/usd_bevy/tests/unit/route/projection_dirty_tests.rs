@@ -1,6 +1,6 @@
 use super::*;
 use bevy::asset::Assets;
-use bevy::math::primitives::Cuboid;
+use bevy::prelude::Cuboid;
 
 #[test]
 fn dirty_set_deduplicates_entities_until_consumed() {

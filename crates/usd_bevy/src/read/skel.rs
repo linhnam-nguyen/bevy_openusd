@@ -12,15 +12,16 @@
 //! incorrectly (proper `AnimMapper` remap is a follow-up).
 
 use openusd::gf;
-use openusd::schemas::skel::skinning::{
-    BlendShapeWeighted, InbetweenRef, apply_blend_shapes, resolve_blend_shape_offsets,
-};
-use openusd::schemas::skel::{
-    BlendShape, SkelAnimQuery, SkelBinding, SkelBindingAPI, Skeleton, SkeletonResolver,
-    SkinningResolver, discover_bindings,
-};
 use openusd::sdf::Path;
-use openusd::usd::{Stage, TimeCode};
+use openusd::usd::{Attribute, SchemaBase, Stage, TimeCode};
+use openusd_schemas::skel::skinning::{
+    BlendShapeWeighted, InbetweenRef, apply_blend_shapes, joint_local_to_skel_space,
+    resolve_blend_shape_offsets, skinning_transforms,
+};
+use openusd_schemas::skel::{
+    AnimQuery, Animation, BindingAPI as SkelBindingAPI, BindingProperties, BlendShape,
+    BlendShapeSchema, Root, Skeleton, SkeletonQuery, SkinningQuery,
+};
 
 use super::util::{read_float_vec, read_int_vec, read_rel_first_target};
 
@@ -46,7 +47,7 @@ pub fn has_blend_shapes(stage: &Stage, prim: &Path) -> bool {
     SkelBindingAPI::get(stage, prim.clone())
         .ok()
         .flatten()
-        .and_then(|b| b.blend_shapes().ok())
+        .and_then(|b| b.blend_shapes().ok().flatten())
         .map(|v| !v.is_empty())
         .unwrap_or(false)
 }
@@ -64,8 +65,8 @@ pub fn blend_is_time_varying(stage: &Stage, mesh_path: &Path) -> bool {
         return false;
     };
     matches!(
-        SkelAnimQuery::new(stage, anim_path),
-        Ok(Some(anim)) if anim.blend_shape_weights_might_be_time_varying()
+        Animation::get(stage, anim_path).ok().flatten().and_then(|a| AnimQuery::new(a).ok()),
+        Some(anim) if anim.blend_shape_weights_might_be_time_varying().unwrap_or(false)
     )
 }
 
@@ -83,7 +84,11 @@ fn blend_shape_deform(
     time: Option<f64>,
 ) -> Option<Vec<[f32; 3]>> {
     let api = SkelBindingAPI::get(stage, mesh_path.clone()).ok()??;
-    let names = api.blend_shapes().ok()?;
+    let names = api
+        .blend_shapes_attr()
+        .cast::<Vec<String>>()
+        .ok()
+        .flatten()?;
     let targets = api.blend_shape_targets().ok()?;
     if names.is_empty() {
         return None;
@@ -93,11 +98,12 @@ fn blend_shape_deform(
     let binding = binding_of(stage, mesh_path)?;
     let skel_path = binding.skeleton.clone()?;
     let anim_path = animation_source(stage, &skel_path, &binding)?;
-    let anim = SkelAnimQuery::new(stage, anim_path).ok()??;
+    let anim_prim = Animation::get(stage, anim_path).ok()??;
+    let anim = AnimQuery::new(anim_prim).ok()?;
     let order = anim.blend_shape_order();
     let weights = anim
-        .compute_blend_shape_weights(stage, TimeCode::new(time.unwrap_or(0.0)))
-        .ok()?;
+        .blend_shape_weights(TimeCode::new(time.unwrap_or(0.0)))
+        .ok()??;
     let weight_of = |name: &str| -> f32 {
         order
             .iter()
@@ -120,8 +126,8 @@ fn blend_shape_deform(
         let Ok(Some(bs)) = BlendShape::get(stage, target.clone()) else {
             continue;
         };
-        let primary = bs.offsets().unwrap_or_default();
-        let point_indices = bs.point_indices().unwrap_or_default();
+        let primary = bs.offsets().ok().flatten().unwrap_or_default();
+        let point_indices = bs.point_indices().ok().flatten().unwrap_or_default();
         let inbetweens = bs.inbetweens().unwrap_or_default();
         if inbetweens.is_empty() {
             owned.push((w, primary, point_indices));
@@ -129,10 +135,12 @@ fn blend_shape_deform(
             // Resolve inbetweens → effective offsets at `w`; apply at weight 1.
             let ib: Vec<(f32, Vec<gf::Vec3f>)> = inbetweens
                 .iter()
-                .filter_map(|ib| Some((ib.weight?, ib.offsets.clone())))
+                .filter_map(|ib| Some((ib.weight().ok()??, ib.offsets().ok()?.unwrap_or_default())))
                 .collect();
             let ib_refs: Vec<InbetweenRef> = ib.iter().map(|(w, o)| (*w, o.as_slice())).collect();
-            let resolved = resolve_blend_shape_offsets(w, &ib_refs, &primary);
+            let Some(resolved) = resolve_blend_shape_offsets(w, &ib_refs, &primary) else {
+                continue;
+            };
             owned.push((1.0, resolved, point_indices));
         }
     }
@@ -149,7 +157,7 @@ fn blend_shape_deform(
         })
         .collect();
     let pts: Vec<gf::Vec3f> = rest.iter().map(|p| gf::Vec3f::from(*p)).collect();
-    let morphed = apply_blend_shapes(&pts, &shapes);
+    let morphed = apply_blend_shapes(&pts, &shapes)?;
     Some(morphed.into_iter().map(|v| [v.x, v.y, v.z]).collect())
 }
 
@@ -178,53 +186,63 @@ fn inherited_rel(stage: &Stage, prim: &Path, rel: &str) -> Option<String> {
     None
 }
 
+/// A mesh's `SkelBindingAPI` with the skeleton and animation targets it inherits.
+pub(crate) struct MeshBinding {
+    binding: SkelBindingAPI,
+    skeleton: Option<Path>,
+    animation_source: Option<Path>,
+}
+
+/// Resolve `skel:animationSource` authored directly on `skel_path` or inherited
+/// from an ancestor (for fixtures/assets that author `rel skel:animationSource`
+/// on `SkelRoot` without `apiSchemas = ["SkelBindingAPI"]`).
+pub(crate) fn inherited_animation_source(stage: &Stage, skel_path: &Path) -> Option<Path> {
+    inherited_rel(stage, skel_path, "skel:animationSource")
+        .and_then(|s| openusd::sdf::path(&s).ok())
+}
+
 /// Resolve the SkelAnimation bound to the mesh: `skel:animationSource` is
 /// authored on the *skeleton* (or inherited to it), not necessarily in the
 /// mesh's own namespace — so resolve from the skeleton first, then fall back to
 /// the mesh's binding.
-fn animation_source(stage: &Stage, skel_path: &Path, mesh_binding: &SkelBinding) -> Option<Path> {
-    inherited_rel(stage, skel_path, "skel:animationSource")
-        .and_then(|s| openusd::sdf::path(&s).ok())
-        .or_else(|| mesh_binding.animation_source.clone())
+fn animation_source(stage: &Stage, skel_path: &Path, mesh_binding: &MeshBinding) -> Option<Path> {
+    inherited_animation_source(stage, skel_path).or_else(|| mesh_binding.animation_source.clone())
 }
 
-/// The enclosing `SkelRoot` of `prim` (walking up, inclusive), which scopes
-/// UsdSkel binding resolution.
-fn enclosing_skel_root(stage: &Stage, prim: &Path) -> Option<Path> {
-    let mut cur = Some(prim.clone());
-    while let Some(p) = cur {
-        let is_root =
-            stage.prim(p.clone()).type_name().ok().flatten().as_deref() == Some("SkelRoot");
-        if is_root {
-            return Some(p);
-        }
-        cur = p.parent();
-    }
-    None
-}
-
-/// Resolve the fully-inherited binding (skeleton + animation source) for the
-/// skinned mesh at `mesh_path`, via `discover_bindings` over its SkelRoot.
-pub(crate) fn binding_of(stage: &Stage, mesh_path: &Path) -> Option<SkelBinding> {
-    let skel_root = enclosing_skel_root(stage, mesh_path)?;
-    let bindings = discover_bindings(stage, &skel_root).ok()?;
-    bindings.into_iter().find(|b| b.prim == mesh_path.as_str())
+/// Resolve a mesh's binding and inherited skeleton / animation targets; only a
+/// mesh inside a `SkelRoot` is bound.
+pub(crate) fn binding_of(stage: &Stage, mesh_path: &Path) -> Option<MeshBinding> {
+    let binding = SkelBindingAPI::get(stage, mesh_path.clone()).ok()??;
+    Root::find(binding.prim()).ok()??;
+    let target = |name| {
+        inherited_rel(stage, mesh_path, name).and_then(|path| openusd::sdf::path(&path).ok())
+    };
+    Some(MeshBinding {
+        skeleton: target("skel:skeleton"),
+        animation_source: target("skel:animationSource"),
+        binding,
+    })
 }
 
 /// Resolve the typed animation source for one skinned mesh without exposing
 /// the binding-discovery implementation to application cache adapters.
-pub fn animation_query_for_mesh(stage: &Stage, mesh_path: &Path) -> Option<SkelAnimQuery> {
+pub fn animation_query_for_mesh(stage: &Stage, mesh_path: &Path) -> Option<AnimQuery> {
     let binding = binding_of(stage, mesh_path)?;
     let skel_path = binding.skeleton.clone()?;
     let anim_path = animation_source(stage, &skel_path, &binding)?;
-    SkelAnimQuery::new(stage, anim_path).ok().flatten()
+    let anim_prim = Animation::get(stage, anim_path).ok()??;
+    AnimQuery::new(anim_prim).ok()
 }
 
 /// Read primary blend-shape offsets once. Inbetween evaluation remains on the
 /// CPU compatibility route; native playback uses these static primary targets.
 pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendShapeData> {
     let api = SkelBindingAPI::get(stage, mesh_path.clone()).ok()??;
-    let names = api.blend_shapes().ok()?;
+    let names = api
+        .blend_shapes_attr()
+        .cast::<Vec<String>>()
+        .ok()
+        .flatten()?;
     let targets = api.blend_shape_targets().ok()?;
     let mut data = BlendShapeData {
         names: Vec::new(),
@@ -243,7 +261,9 @@ pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendS
         data.offsets.push(
             shape
                 .offsets()
-                .ok()?
+                .ok()
+                .flatten()
+                .unwrap_or_default()
                 .into_iter()
                 .map(|v| [v.x, v.y, v.z])
                 .collect(),
@@ -251,12 +271,15 @@ pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendS
         data.normal_offsets.push(
             shape
                 .normal_offsets()
-                .ok()?
+                .ok()
+                .flatten()
+                .unwrap_or_default()
                 .into_iter()
                 .map(|v| [v.x, v.y, v.z])
                 .collect(),
         );
-        data.point_indices.push(shape.point_indices().ok()?);
+        data.point_indices
+            .push(shape.point_indices().ok().flatten().unwrap_or_default());
     }
     (!data.names.is_empty()).then_some(data)
 }
@@ -274,8 +297,8 @@ pub fn skin_is_time_varying(stage: &Stage, mesh_path: &Path) -> bool {
         return false;
     };
     matches!(
-        SkelAnimQuery::new(stage, anim_path),
-        Ok(Some(anim)) if anim.joint_transforms_might_be_time_varying()
+        Animation::get(stage, anim_path).ok().flatten().and_then(|a| AnimQuery::new(a).ok()),
+        Some(anim) if anim.joint_transforms_might_be_time_varying().unwrap_or(false)
     )
 }
 
@@ -319,40 +342,76 @@ pub fn skinned_points_at(
     let Some(skeleton) = Skeleton::get(stage, skel_path.clone())? else {
         return Ok(None);
     };
-    let joints = skeleton.joints()?;
-    let skinning = SkinningResolver::from_binding(&binding.binding, &joints)?;
+    let Some(resolver) = SkeletonQuery::new(&skeleton)? else {
+        return Ok(None);
+    };
+    let authored = |attribute: Attribute| -> anyhow::Result<Option<Attribute>> {
+        Ok(attribute.has_authored_value()?.then_some(attribute))
+    };
+    let api = &binding.binding;
+    let properties = BindingProperties {
+        joint_indices: authored(api.joint_indices_attr())?,
+        joint_weights: authored(api.joint_weights_attr())?,
+        skinning_method: authored(api.skinning_method_attr())?,
+        geom_bind_transform: authored(api.geom_bind_transform_attr())?,
+        joints: authored(api.joints_attr())?,
+        ..BindingProperties::default()
+    };
+    let skinning = SkinningQuery::new(
+        api.prim().clone(),
+        properties,
+        resolver.joint_order().to_vec(),
+        Vec::<String>::new(),
+    )?;
     if skinning.is_rigidly_deformed() || !skinning.has_joint_influences() {
         return Ok(None);
     }
-    let resolver = SkeletonResolver::from_skeleton(&skeleton)?;
 
     // Joint-local transforms at `time`: from the bound SkelAnimation, else the
     // skeleton's rest pose (which yields the undeformed mesh).
-    let rest = || resolver.rest_pose_local().to_vec();
+    let rest = || -> Vec<gf::Mat4d> {
+        resolver
+            .rest_local_transforms()
+            .map(<[_]>::to_vec)
+            .unwrap_or_default()
+    };
     let anim_path = animation_source(stage, &skel_path, &binding);
-    let locals: Vec<gf::Matrix4d> = match anim_path {
-        Some(anim_path) => match SkelAnimQuery::new(stage, anim_path)? {
-            Some(anim) => {
+    let locals: Vec<gf::Mat4d> = match anim_path {
+        Some(anim_path) => match Animation::get(stage, anim_path)? {
+            Some(anim_prim) => {
+                let anim = AnimQuery::new(anim_prim)?;
                 let tc = TimeCode::new(time.unwrap_or(0.0));
-                let l = anim.compute_joint_local_transforms(stage, tc)?;
-                // Order must line up with the skeleton; otherwise fall back to
-                // rest rather than deform incorrectly.
-                if l.len() == joints.len() { l } else { rest() }
+                match anim.joint_local_transforms(tc)? {
+                    Some(l) if l.len() == resolver.joint_order().len() => l,
+                    _ => rest(),
+                }
             }
             None => rest(),
         },
         None => rest(),
     };
-
-    let skel_xforms =
-        resolver.compute_skinning_transforms_from_local(&locals, gf::Matrix4d::IDENTITY);
+    let Some(skel) = joint_local_to_skel_space(&locals, resolver.topology(), None) else {
+        return Ok(None);
+    };
+    let Some(inverse) = resolver.inverse_bind_transforms() else {
+        return Ok(None);
+    };
+    let Some(skel_xforms) = skinning_transforms(&skel, inverse) else {
+        return Ok(None);
+    };
+    let pose = openusd_schemas::skel::Pose::from(skel_xforms);
 
     let Some(mesh) = super::geom::read_mesh(stage, mesh_path)? else {
         return Ok(None);
     };
     // Canonical UsdSkel order: morph blend shapes first, then skin the result.
-    let rest = blend_shape_deform(stage, mesh_path, &mesh.points, time).unwrap_or(mesh.points);
-    let pts: Vec<gf::Vec3f> = rest.iter().map(|p| gf::Vec3f::from(*p)).collect();
-    let d = skinning.compute_skinned_points(&pts, &skel_xforms);
-    Ok(Some(d.into_iter().map(|v| [v.x, v.y, v.z]).collect()))
+    let rest_pts = blend_shape_deform(stage, mesh_path, &mesh.points, time).unwrap_or(mesh.points);
+    let pts: Vec<gf::Vec3f> = rest_pts.iter().map(|p| gf::Vec3f::from(*p)).collect();
+    if let Some(skinned) =
+        skinning.skinned_points(&pose, &pts, TimeCode::new(time.unwrap_or(0.0)))?
+    {
+        Ok(Some(skinned.into_iter().map(|v| [v.x, v.y, v.z]).collect()))
+    } else {
+        Ok(None)
+    }
 }

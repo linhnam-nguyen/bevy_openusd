@@ -2,13 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bevy::asset::AssetEvent;
-use bevy::asset::AssetPath;
+use bevy::asset::{AssetEvent, Handle, load_internal_asset, uuid_handle};
 use bevy::ecs::system::SystemParam;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderType};
-use bevy::shader::ShaderRef;
+use bevy::shader::{Shader, ShaderRef};
 use viewport_protocol::{ColorRgb8, RenderMode, SceneAnchor};
 
 use super::super::selection::{
@@ -27,15 +26,26 @@ mod sync;
 
 pub(in crate::viewport) use sync::sync_section_box_clipping;
 
-const SHADER_ASSET_PATH: &str = "../../../../assets/shaders/section_box_clipping.wgsl";
-const PREPASS_SHADER_ASSET_PATH: &str =
-    "../../../../assets/shaders/section_box_clipping_prepass.wgsl";
+pub(in crate::viewport) const SECTION_CLIP_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("d4f7b9a1-4c2e-4f8a-9b12-5d8e3a1c7f01");
+pub(in crate::viewport) const SECTION_CLIP_PREPASS_SHADER_HANDLE: Handle<Shader> =
+    uuid_handle!("d4f7b9a1-4c2e-4f8a-9b12-5d8e3a1c7f02");
 
 pub(in crate::viewport) fn register_embedded_shaders(app: &mut App) {
-    bevy::asset::embedded_asset!(app, "../../../../assets/shaders/section_box_clipping.wgsl");
-    bevy::asset::embedded_asset!(
+    if !app.world().contains_resource::<Assets<Shader>>() {
+        app.init_asset::<Shader>();
+    }
+    load_internal_asset!(
         app,
-        "../../../../assets/shaders/section_box_clipping_prepass.wgsl"
+        SECTION_CLIP_SHADER_HANDLE,
+        "../../../../assets/shaders/section_box_clipping.wesl",
+        Shader::from_wesl
+    );
+    load_internal_asset!(
+        app,
+        SECTION_CLIP_PREPASS_SHADER_HANDLE,
+        "../../../../assets/shaders/section_box_clipping_prepass.wesl",
+        Shader::from_wesl
     );
 }
 
@@ -57,24 +67,15 @@ pub(in crate::viewport) type SectionClipMaterial =
 
 impl MaterialExtension for SectionClipExtension {
     fn fragment_shader() -> ShaderRef {
-        ShaderRef::Path(
-            AssetPath::from_path_buf(bevy::asset::embedded_path!(SHADER_ASSET_PATH))
-                .with_source("embedded"),
-        )
+        SECTION_CLIP_SHADER_HANDLE.into()
     }
 
     fn prepass_fragment_shader() -> ShaderRef {
-        ShaderRef::Path(
-            AssetPath::from_path_buf(bevy::asset::embedded_path!(PREPASS_SHADER_ASSET_PATH))
-                .with_source("embedded"),
-        )
+        SECTION_CLIP_PREPASS_SHADER_HANDLE.into()
     }
 
     fn deferred_fragment_shader() -> ShaderRef {
-        ShaderRef::Path(
-            AssetPath::from_path_buf(bevy::asset::embedded_path!(SHADER_ASSET_PATH))
-                .with_source("embedded"),
-        )
+        SECTION_CLIP_SHADER_HANDLE.into()
     }
 }
 

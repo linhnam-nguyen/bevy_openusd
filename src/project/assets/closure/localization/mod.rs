@@ -216,12 +216,13 @@ fn localize_layer(
     let stage = open_stage_with_resolver(original, resolver.clone(), InitialLoadSet::LoadNone)
         .with_context(|| format!("open USD layer {} for localization", original.display()))?;
     let root_identifier = stage.root_layer().identifier().to_owned();
-    let mut layer = stage
-        .layer_mut(&root_identifier)
+    let layer = stage
+        .layer(&root_identifier)?
         .with_context(|| format!("find USD layer {} for localization", original.display()))?;
 
     let records = {
-        let data = layer.data();
+        let borrowed = layer.borrow();
+        let data = borrowed.data();
         let mut records = Vec::new();
         for spec_path in data.spec_paths() {
             for field in data.list_fields(&spec_path).into_iter().flatten() {

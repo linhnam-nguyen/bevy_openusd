@@ -89,7 +89,7 @@ impl LiveStagePlugin {
             .init_resource::<PerformanceCounters>()
             .init_resource::<NativeInstanceDependencyIndex>()
             .init_resource::<SampledTime>()
-            .init_resource::<native_animation::AnimationRuntime>()
+            .init_non_send::<native_animation::AnimationRuntime>()
             .init_resource::<crate::route::DisplayPurposes>()
             .init_resource::<AppliedPurposes>()
             .configure_sets(

@@ -88,7 +88,7 @@ impl ProjectionPlanBuilder {
         let Some((parent_path, parent_index)) = self.pending.pop_front() else {
             return Ok(true);
         };
-        let parent = self.stage.prim(openusd::sdf::path(&parent_path)?);
+        let parent = self.stage.prim(openusd::sdf::path(&parent_path)?)?;
         let mut children = parent.children()?;
         children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
         for child in children {
@@ -138,7 +138,7 @@ impl ProjectionPlan {
         // Reconcile only the requested namespace. The previous implementation
         // walked the entire composed stage and filtered afterward, which made
         // a small subtree resync pay the full-stage traversal cost.
-        let _ = stage.prim(openusd::sdf::path(&root)?);
+        let _ = stage.prim(openusd::sdf::path(&root)?)?;
         let mut entries = vec![
             ProjectionPlanEntry {
                 path: "/".to_string(),
@@ -151,7 +151,7 @@ impl ProjectionPlan {
         ];
         let mut pending = VecDeque::from([(root, 1usize)]);
         while let Some((parent_path, parent_index)) = pending.pop_front() {
-            let parent = stage.prim(openusd::sdf::path(&parent_path)?);
+            let parent = stage.prim(openusd::sdf::path(&parent_path)?)?;
             let mut children = parent.children()?;
             children
                 .sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
@@ -181,7 +181,7 @@ impl ProjectionPlan {
         for raw_path in requested_paths {
             let path = validate_prim_path(raw_path)?;
             ensure!(path != "/", "targeted projection cannot request stage root");
-            let prim = stage.prim(openusd::sdf::path(&path)?);
+            let prim = stage.prim(openusd::sdf::path(&path)?)?;
             ensure!(prim.is_active()?, "targeted prim {path} is inactive");
             ensure!(prim.is_defined()?, "targeted prim {path} is undefined");
             ensure!(!prim.is_abstract()?, "targeted prim {path} is abstract");

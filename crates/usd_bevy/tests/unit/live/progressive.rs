@@ -351,7 +351,7 @@ fn loads_empty_stage_with_default_prim() {
         stage
             .stage_metadata("defaultPrim")
             .expect("defaultPrim metadata"),
-        Some(openusd::sdf::Value::Token("World".into()))
+        Some(openusd::vt::Value::Token("World".into()))
     );
     assert!(!stage.layer_stack().is_empty());
 

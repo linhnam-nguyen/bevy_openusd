@@ -28,3 +28,15 @@ bevy = { workspace = true, features = [
 ] }
 usd_bevy = { workspace = true }
 openusd = { workspace = true }
+openusd-schemas = { workspace = true, features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }

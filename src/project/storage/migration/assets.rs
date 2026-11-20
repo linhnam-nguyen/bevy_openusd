@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use usd_project::{ModelId, ProjectManifestV1, ProjectRoot, SceneId, SceneMemberTarget};
 
 use crate::project::scene::authoring;
@@ -140,8 +140,8 @@ pub(super) fn author_model_migration(
 ) -> Result<()> {
     let old_path_string = old_path.to_string_lossy().into_owned();
     let stage = Stage::open(&old_path_string).context("open legacy Model wrapper")?;
-    let root = stage.prim("/ModelRoot");
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
+    let root = stage.prim("/ModelRoot")?;
+    let Some(Value::Dictionary(data)) = root.metadata::<Value>("customData")? else {
         bail!("legacy Model wrapper root is missing customData");
     };
     ensure!(
@@ -167,14 +167,14 @@ fn rewrite_source_references(
     asset_map: &AssetMap,
 ) -> Result<()> {
     for prim_path in ["/SceneRoot/Source", "/ModelRoot/Source"] {
-        let prim = stage.prim(prim_path);
+        let prim = stage.prim(prim_path)?;
         if !prim.is_defined()? {
             continue;
         }
         let spec_path = sdf::path(prim_path)?;
         let references = {
             let root_layer = stage.root_layer();
-            let Some(spec) = root_layer.prim(&spec_path) else {
+            let Some(spec) = root_layer.prim(spec_path)? else {
                 continue;
             };
             let Some(Value::ReferenceListOp(references)) = spec.field(REFERENCES_FIELD)? else {

@@ -108,14 +108,14 @@ impl Plugin for ExtendedSkinPlugin {
         load_internal_asset!(
             app,
             EXTENDED_SKIN_SHADER_HANDLE,
-            "extended_skin.wgsl",
-            Shader::from_wgsl
+            "extended_skin.wesl",
+            Shader::from_wesl
         );
         load_internal_asset!(
             app,
             EXTENDED_SKIN_PREPASS_SHADER_HANDLE,
-            "extended_skin_prepass.wgsl",
-            Shader::from_wgsl
+            "extended_skin_prepass.wesl",
+            Shader::from_wesl
         );
         app.add_plugins(MaterialPlugin::<ExtendedSkinMaterial>::default());
     }

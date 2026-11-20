@@ -384,7 +384,10 @@ impl ProjectStageActivation {
 }
 
 fn open_activation_stage(path: &Path) -> Result<Stage, String> {
-    Stage::open(&path.to_string_lossy()).map_err(|error| format!("open activated Stage: {error}"))
+    Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&path.to_string_lossy())
+        .map_err(|error| format!("open activated Stage: {error}"))
 }
 
 #[cfg(test)]

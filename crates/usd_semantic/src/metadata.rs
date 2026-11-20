@@ -1,10 +1,11 @@
 //! Semantic fields and canonical custom-property extraction.
 
 use anyhow::Result;
-use openusd::schemas::ui::SceneGraphPrimAPI;
-use openusd::sdf::{Path, Value};
+use openusd::sdf::Path;
 use openusd::tf::Token;
 use openusd::usd::Stage;
+use openusd::vt::Value;
+use openusd_schemas::ui::SceneGraphPrimAPI;
 use usd_model::{CanonicalValue, SemanticInfo, SemanticProperty};
 
 use crate::config::SemanticConfig;
@@ -14,7 +15,7 @@ pub fn extract_metadata(
     path: &Path,
     config: &SemanticConfig,
 ) -> Result<(SemanticInfo, Vec<SemanticProperty>)> {
-    let prim = stage.prim(path.clone());
+    let prim = stage.prim(path.clone())?;
     let type_name = prim.type_name()?.map(|value| value.as_str().to_owned());
     let category = prim.kind()?.map(|value| value.as_str().to_owned());
     let display_name = match config.display_name_property.as_deref() {
@@ -61,7 +62,7 @@ fn authored_display_name(stage: &Stage, path: &Path) -> Result<Option<String>> {
 }
 
 fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticProperty>> {
-    let prim = stage.prim(path.clone());
+    let prim = stage.prim(path.clone())?;
     let mut properties = Vec::new();
     for attribute in prim.attributes()? {
         if !attribute.is_custom()? {
@@ -77,12 +78,12 @@ fn extract_custom_properties(stage: &Stage, path: &Path) -> Result<Vec<SemanticP
             .map(|(_, property)| property.to_owned())
             .unwrap_or_else(|| attribute.path().as_str().to_owned());
         let display_name = attribute
-            .get_metadata::<String>("displayName")
+            .metadata::<String>("displayName")
             .ok()
             .flatten()
             .or_else(|| {
                 attribute
-                    .get_metadata::<Value>("displayName")
+                    .metadata::<Value>("displayName")
                     .ok()
                     .flatten()
                     .and_then(text_value)
@@ -110,7 +111,7 @@ fn configured_text_property(
         return Ok(None);
     };
     let value = stage
-        .prim(path.clone())
+        .prim(path.clone())?
         .attribute(property)
         .get::<Value>()?;
     Ok(value.and_then(text_value))

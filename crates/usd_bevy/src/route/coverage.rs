@@ -10,10 +10,10 @@
 
 use bevy::prelude::*;
 
-use openusd::schemas::proc::GenerativeProcedural;
-use openusd::schemas::render::RenderSettings;
-use openusd::schemas::ui::Backdrop;
-use openusd::sdf::Value;
+use openusd_schemas::proc::{GenerativeProcedural, GenerativeProceduralSchema};
+use openusd_schemas::render::{Settings as RenderSettings, SettingsSchema};
+use openusd_schemas::ui::{Backdrop, BackdropSchema};
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx};
 

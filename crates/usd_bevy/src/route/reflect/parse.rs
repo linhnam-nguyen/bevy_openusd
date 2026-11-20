@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use super::super::RouteCtx;
 
@@ -60,7 +60,9 @@ pub(super) fn resolve<'a>(
 /// each as `(reflect_field_path, composed_value_or_none)`. `None` value means
 /// no layer currently authors an opinion (a cleared field).
 pub(super) fn collect(ctx: &RouteCtx) -> Groups {
-    let prim = ctx.stage.prim(ctx.path.clone());
+    let Ok(prim) = ctx.stage.prim(ctx.path.clone()) else {
+        return Vec::new();
+    };
     let Ok(names) = prim.property_names() else {
         return Vec::new();
     };

@@ -107,7 +107,7 @@ pub(super) fn apply_bim_property_mutation(
 
 struct PreparedBimMutation {
     locator: BimAuthoringLocator,
-    authored: openusd::sdf::Value,
+    authored: openusd::vt::Value,
     current: usd_model::CanonicalValue,
     new_value: usd_model::CanonicalValue,
 }
@@ -139,7 +139,7 @@ fn prepare_bim_mutation(
 fn prepare_bim_mutation_with_measurement(
     mutation: &BimPropertyMutation,
     locator: BimAuthoringLocator,
-    current_raw: openusd::sdf::Value,
+    current_raw: openusd::vt::Value,
     measurement: Option<&usd_model::MeasurementMetadata>,
 ) -> Result<PreparedBimMutation, BimAuthoringError> {
     let current = canonical_value_for_comparison(current_raw, measurement)?;

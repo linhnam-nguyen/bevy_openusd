@@ -333,12 +333,13 @@ mod tests {
         let value = live
             .stage
             .prim(openusd::sdf::path("/World/Box").unwrap())
+            .unwrap()
             .attribute("size")
-            .get::<openusd::sdf::Value>()
+            .get::<openusd::vt::Value>()
             .unwrap();
         assert!(matches!(
             value,
-            Some(openusd::sdf::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
+            Some(openusd::vt::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
         ));
     }
 }

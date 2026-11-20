@@ -1,7 +1,7 @@
 use super::*;
 use bevy::camera::primitives::Frustum;
+use bevy::shape::{HalfSpace, ViewFrustum};
 use bevy::math::Vec4;
-use bevy::math::primitives::{HalfSpace, ViewFrustum};
 use usd_model::{BlobId, HashDigest};
 use usd_project::{SceneId, SceneMemberId, ScenePlacementTransform};
 

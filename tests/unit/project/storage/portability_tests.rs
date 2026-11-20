@@ -258,15 +258,15 @@ fn pro2_storage_and_composition_acceptance() -> anyhow::Result<()> {
         display_name(&root_stage, "/SceneRoot")?,
         Some("Pro2".to_owned())
     );
-    assert!(!root_stage.prim("/SceneRoot/Members").is_defined()?);
+    assert!(!root_stage.prim("/SceneRoot/Members")?.is_defined()?);
     let lv1_path = crate::project::scene::authoring::scene_member_path(
         lv1.placement_id.expect("Lv1 placement"),
     );
     let projet1_path = crate::project::scene::authoring::scene_member_path(
         projet1.placement_id.expect("Projet1 placement"),
     );
-    assert!(root_stage.prim(lv1_path.as_str()).is_defined()?);
-    assert!(root_stage.prim(projet1_path.as_str()).is_defined()?);
+    assert!(root_stage.prim(lv1_path.as_str())?.is_defined()?);
+    assert!(root_stage.prim(projet1_path.as_str())?.is_defined()?);
     assert_eq!(
         display_name(&root_stage, &lv1_path)?,
         Some("Lv1".to_owned())
@@ -277,7 +277,7 @@ fn pro2_storage_and_composition_acceptance() -> anyhow::Result<()> {
     );
     assert!(
         root_stage
-            .prim(projet1_path.as_str())
+            .prim(projet1_path.as_str())?
             .children()?
             .into_iter()
             .any(|child| child.path().as_str() != projet1_path)
@@ -325,12 +325,12 @@ fn pro2_storage_and_composition_acceptance() -> anyhow::Result<()> {
 fn display_name(stage: &Stage, path: &str) -> anyhow::Result<Option<String>> {
     let layer = stage.root_layer();
     let path = sdf::path(path)?;
-    let Some(spec) = layer.prim(&path) else {
+    let Some(spec) = layer.prim(path)? else {
         return Ok(None);
     };
     Ok(spec
         .field("ui:displayName")?
-        .and_then(|value| value.as_str().map(str::to_owned)))
+        .and_then(|value| usd_bevy::read::util::decode_metadata_string(&value)))
 }
 
 fn remove_dir_all_after_cache_workers(path: &Path) -> anyhow::Result<()> {

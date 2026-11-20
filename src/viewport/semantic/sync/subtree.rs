@@ -92,8 +92,9 @@ pub(in crate::viewport::semantic) fn resync_subtree_update(
         })?;
         if stage
             .prim(usd_path.clone())
+            .map_err(|e| SubtreeUpdateError::ExtractionFailed(e.into()))?
             .is_valid()
-            .map_err(SubtreeUpdateError::ExtractionFailed)?
+            .map_err(|e| SubtreeUpdateError::ExtractionFailed(e.into()))?
         {
             let entity = extractor
                 .extract_entity(stage, &usd_path)

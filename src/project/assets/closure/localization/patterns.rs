@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use openusd::vt;
 use openusd::ar::Resolver;
 use openusd::sdf;
 
@@ -68,17 +69,17 @@ fn rewrite_pattern_asset(
 }
 
 pub(super) fn rewrite_clip_dictionary(
-    values: &mut std::collections::HashMap<String, sdf::Value>,
+    values: &mut std::collections::HashMap<String, vt::Value>,
     original_layer: &Path,
     localized_layer: &Path,
     mapping: &BTreeMap<PathBuf, PathBuf>,
     resolver: &dyn Resolver,
 ) -> Result<()> {
     for set in values.values_mut().filter_map(|value| match value {
-        sdf::Value::Dictionary(set) => Some(set),
+        vt::Value::Dictionary(set) => Some(set),
         _ => None,
     }) {
-        if let Some(sdf::Value::AssetPathVec(paths)) = set.get_mut("assetPaths") {
+        if let Some(vt::Value::AssetPathVec(paths)) = set.get_mut("assetPaths") {
             for path in paths {
                 if !path.is_empty() {
                     path.authored_path = super::rewrite::layer_asset(
@@ -91,7 +92,7 @@ pub(super) fn rewrite_clip_dictionary(
                 }
             }
         }
-        if let Some(sdf::Value::AssetPath(path)) = set.get_mut("manifestAssetPath")
+        if let Some(vt::Value::AssetPath(path)) = set.get_mut("manifestAssetPath")
             && !path.is_empty()
         {
             path.authored_path = super::rewrite::layer_asset(
@@ -103,7 +104,7 @@ pub(super) fn rewrite_clip_dictionary(
             )?;
         }
         let template = match set.get("templateAssetPath") {
-            Some(sdf::Value::AssetPath(path)) if !path.is_empty() => {
+            Some(vt::Value::AssetPath(path)) if !path.is_empty() => {
                 Some(path.authored_path.clone())
             }
             _ => None,
@@ -117,7 +118,7 @@ pub(super) fn rewrite_clip_dictionary(
                 })
                 .collect::<Result<Vec<_>>>()?;
             let rewritten = rewrite_pattern_asset(&template, localized_layer, mapping, &originals)?;
-            if let Some(sdf::Value::AssetPath(path)) = set.get_mut("templateAssetPath") {
+            if let Some(vt::Value::AssetPath(path)) = set.get_mut("templateAssetPath") {
                 path.authored_path = rewritten;
             }
         }

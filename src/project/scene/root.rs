@@ -7,7 +7,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result, ensure};
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use usd_project::{
     ProjectManifestV1, ProjectRoot, SceneCompositionGraph, SceneId, SceneManifestEntry,
     SceneMember, SceneMemberId, SceneMemberTarget, StorageKey,
@@ -107,8 +107,8 @@ fn protected_root_path(
 pub(crate) fn is_protected_root_scene(path: &Path, expected_scene_id: SceneId) -> Result<bool> {
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open Project root Scene")?;
-    let root = stage.prim("/SceneRoot");
-    let Some(Value::Dictionary(custom_data)) = root.custom_data()? else {
+    let root = stage.prim("/SceneRoot")?;
+    let Some(Value::Dictionary(custom_data)) = root.metadata::<Value>("customData")? else {
         anyhow::bail!("Project root Scene is missing customData");
     };
     let Some(scene_id) = custom_data.get("usdhub:sceneId").and_then(Value::as_str) else {

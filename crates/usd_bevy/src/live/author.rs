@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bevy::prelude::*;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use super::projection::to_bevy_transform;
@@ -21,7 +21,7 @@ pub fn author_transform(stage: &Stage, prim_path: &str, transform: &Transform) -
     let xop = prim.append_property("xformOp:transform")?;
     stage
         .create_attribute(xop, "matrix4d")?
-        .set(Value::Matrix4d(openusd::gf::Matrix4d(m)))?;
+        .set(Value::Matrix4d(openusd::gf::Mat4d(m)))?;
     let order = prim.append_property("xformOpOrder")?;
     stage
         .create_attribute(order, "token[]")?

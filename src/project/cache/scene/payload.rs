@@ -71,15 +71,17 @@ impl SceneAnimationBlob {
 /// evaluated typed components. The source stage remains authoritative; this
 /// is a deterministic cache/residency representation.
 pub(crate) fn prepare_animation_payload(stage: &Stage, mesh_path: &str) -> Result<Option<Vec<u8>>> {
+    use openusd::usd::SchemaBase;
     let mesh_path = sdf::path(mesh_path)?;
     let Some(query) = usd_bevy::read::skel::animation_query_for_mesh(stage, &mesh_path) else {
         return Ok(None);
     };
-    let animation_path = sdf::path(query.prim_path())
+    let source_path = query.animation().prim().path().as_str().to_owned();
+    let animation_path = sdf::path(source_path.as_str())
         .context("Scene animation query returned an invalid source path")?;
     let mut times = Vec::new();
     for property in ["translations", "rotations", "scales", "blendShapeWeights"] {
-        let attribute = stage.attribute(animation_path.append_property(property)?);
+        let attribute = stage.attribute(animation_path.append_property(property)?)?;
         times.extend(attribute.time_sample_times()?);
     }
     times.retain(|time| time.is_finite());
@@ -89,25 +91,54 @@ pub(crate) fn prepare_animation_payload(stage: &Stage, mesh_path: &str) -> Resul
         times.push(0.0);
     }
 
+    let translations_authored = stage
+        .attribute(animation_path.append_property("translations")?)?
+        .has_authored_value()?;
+    let rotations_authored = stage
+        .attribute(animation_path.append_property("rotations")?)?
+        .has_authored_value()?;
+    let scales_authored = stage
+        .attribute(animation_path.append_property("scales")?)?
+        .has_authored_value()?;
+    let joint_count = query.joint_order().len();
+
     let samples = times
         .iter()
         .map(|time| {
+            let tc = TimeCode::new(*time);
             let (translations, rotations, scales) =
-                query.compute_joint_local_transform_components(stage, TimeCode::new(*time))?;
-            let blend_shape_weights =
-                query.compute_blend_shape_weights(stage, TimeCode::new(*time))?;
+                if let Some((translations, rotations, scales)) = query.joint_transform_components(tc)?
+                {
+                    (
+                        translations.into_iter().map(Into::into).collect(),
+                        rotations.into_iter().map(Into::into).collect(),
+                        scales.into_iter().map(Into::into).collect(),
+                    )
+                } else if !translations_authored && !rotations_authored && !scales_authored {
+                    let identity_rotation: [f32; 4] = openusd::gf::Quatf::IDENTITY.into();
+                    (
+                        vec![[0.0, 0.0, 0.0]; joint_count],
+                        vec![identity_rotation; joint_count],
+                        vec![[1.0, 1.0, 1.0]; joint_count],
+                    )
+                } else {
+                    anyhow::bail!("animation sample missing joint transform components");
+                };
+            let blend_shape_weights = query
+                .blend_shape_weights(tc)?
+                .unwrap_or_default();
             Ok(SceneAnimationSample {
                 time: *time,
-                translations: translations.into_iter().map(Into::into).collect(),
-                rotations: rotations.into_iter().map(Into::into).collect(),
-                scales: scales.into_iter().map(Into::into).collect(),
+                translations,
+                rotations,
+                scales,
                 blend_shape_weights,
             })
         })
         .collect::<Result<Vec<_>>>()?;
     let payload = SceneAnimationBlob {
         version: SCENE_ANIMATION_VERSION,
-        source_path: query.prim_path().to_owned(),
+        source_path,
         joint_order: query.joint_order().to_vec(),
         blend_shape_order: query.blend_shape_order().to_vec(),
         samples,

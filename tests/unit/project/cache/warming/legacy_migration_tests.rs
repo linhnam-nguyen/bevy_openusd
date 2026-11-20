@@ -36,17 +36,17 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
         .set_type_name("Mesh")?;
     content
         .create_attribute("points", "point3f[]")?
-        .set(openusd::sdf::Value::Vec3fVec(vec![
+        .set(openusd::vt::Value::Vec3fVec(vec![
             openusd::gf::Vec3f::from([0.0, 0.0, 0.0]),
             openusd::gf::Vec3f::from([1.0, 0.0, 0.0]),
             openusd::gf::Vec3f::from([0.0, 1.0, 0.0]),
         ]))?;
     content
         .create_attribute("faceVertexCounts", "int[]")?
-        .set(openusd::sdf::Value::IntVec(vec![3]))?;
+        .set(openusd::vt::Value::IntVec(vec![3]))?;
     content
         .create_attribute("faceVertexIndices", "int[]")?
-        .set(openusd::sdf::Value::IntVec(vec![0, 1, 2]))?;
+        .set(openusd::vt::Value::IntVec(vec![0, 1, 2]))?;
     legacy_stage.set_default_prim("SceneRoot")?;
     legacy_stage
         .root_layer()

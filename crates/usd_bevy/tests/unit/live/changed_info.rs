@@ -70,9 +70,9 @@ fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> an
         "/tests/fixtures/live/changed_info_2.usda"
     )))
     .open_stage()?;
-    stage.prim("/World/Source").set_metadata(
+    stage.prim("/World/Source")?.set_metadata(
         "ui:displayName",
-        openusd::sdf::Value::String("Before patch".to_owned()),
+        openusd::vt::Value::String("Before patch".to_owned()),
     )?;
     let live = LiveStage::new(stage);
     let mut app = App::new();
@@ -92,9 +92,9 @@ fn same_stage_metadata_patch_rebuilds_hierarchy_index_for_batch_revision() -> an
 
     {
         let live = app.world().get_non_send::<LiveStage>().expect("live stage");
-        live.stage.prim("/World/Source").set_metadata(
+        live.stage.prim("/World/Source")?.set_metadata(
             "ui:displayName",
-            openusd::sdf::Value::String("After patch".to_owned()),
+            openusd::vt::Value::String("After patch".to_owned()),
         )?;
     }
     app.update();

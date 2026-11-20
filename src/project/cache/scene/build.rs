@@ -53,6 +53,7 @@ pub(crate) fn build_scene_cache_index(
         .map(|member| crate::project::scene::authoring::scene_member_path(member.id))
         .collect::<HashSet<_>>();
     let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
         .load(InitialLoadSet::LoadNone)
         .open(path.to_string_lossy().as_ref())
         .context("open Scene-owned cache source")?;
@@ -230,7 +231,7 @@ fn collect_owned_prim_paths(
     member_roots: &HashSet<String>,
     out: &mut Vec<String>,
 ) -> Result<()> {
-    let parent = stage.prim(sdf::path(parent_path)?);
+    let parent = stage.prim(sdf::path(parent_path)?)?;
     let mut children = parent.children()?;
     children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
     for child in children {

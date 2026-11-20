@@ -106,7 +106,7 @@ def Xform "World"
     // Unload payload under /World/A
     {
         let live_ref = app.world().get_non_send::<LiveStage>().unwrap();
-        live_ref.unload_payload("/World/A");
+        live_ref.unload_payload("/World/A")?;
     }
     app.update();
     assert!(matches!(
@@ -140,7 +140,7 @@ def Xform "World"
     // Load payload under /World/A
     {
         let live_ref = app.world().get_non_send::<LiveStage>().unwrap();
-        live_ref.load_payload("/World/A");
+        live_ref.load_payload("/World/A")?;
     }
     app.update();
     assert!(matches!(

@@ -5,7 +5,7 @@ use bevy::reflect::enums::{DynamicEnum, DynamicVariant, VariantInfo};
 use bevy::reflect::structs::DynamicStruct;
 use bevy::reflect::tuple::DynamicTuple;
 use bevy::reflect::{PartialReflect, ReflectRef, TypeInfo};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use super::parse::{as_f64, as_i64, as_vec};
 

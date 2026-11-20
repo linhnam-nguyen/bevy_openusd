@@ -22,7 +22,7 @@ pub(crate) fn replace_scene_members_atomic(
     prepare_scene_for_direct_members(&stage)?;
     for member in existing {
         if stage
-            .prim(scene_member_path(member.id).as_str())
+            .prim(scene_member_path(member.id).as_str())?
             .is_defined()?
         {
             ensure!(

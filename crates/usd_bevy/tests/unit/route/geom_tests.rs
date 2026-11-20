@@ -199,19 +199,21 @@ fn persistent_mesh_seed_is_consumed_by_the_normal_route() {
 
 #[test]
 fn hierarchy_metadata_route_projects_display_name_and_explicit_source_role() -> anyhow::Result<()> {
-    let stage = openusd::usd::Stage::builder().in_memory("hierarchy-metadata.usda")?;
+    let stage = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("hierarchy-metadata.usda")?;
     let prim = stage
         .define_prim("/World/Source")?
         .set_type_name("Xform")?
         .set_metadata(
             "ui:displayName",
-            openusd::sdf::Value::String("Friendly Source".to_owned()),
+            openusd::vt::Value::String("Friendly Source".to_owned()),
         )?
         .set_metadata(
             "customData",
-            openusd::sdf::Value::Dictionary(HashMap::from([(
+            openusd::vt::Value::Dictionary(openusd::vt::Dictionary::from([(
                 USDHUB_HIERARCHY_ROLE_METADATA.to_owned(),
-                openusd::sdf::Value::String(USDHUB_TRANSPARENT_SOURCE_ROLE.to_owned()),
+                openusd::vt::Value::String(USDHUB_TRANSPARENT_SOURCE_ROLE.to_owned()),
             )])),
         )?;
     let path = openusd::sdf::path("/World/Source")?;
@@ -235,13 +237,15 @@ fn hierarchy_metadata_route_projects_display_name_and_explicit_source_role() -> 
 
 #[test]
 fn hierarchy_metadata_legacy_opinions_are_indexed_once_per_stage() -> anyhow::Result<()> {
-    let stage = openusd::usd::Stage::builder().in_memory("hierarchy-index.usda")?;
+    let stage = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("hierarchy-index.usda")?;
     stage
         .define_prim("/World/Source")?
         .set_type_name("Xform")?
         .set_metadata(
             "ui:displayName",
-            openusd::sdf::Value::String("Indexed Source".to_owned()),
+            openusd::vt::Value::String("Indexed Source".to_owned()),
         )?;
     let mut world = World::new();
 

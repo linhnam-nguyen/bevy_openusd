@@ -3,22 +3,22 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use openusd::{sdf, usd::Stage};
+use openusd::{vt, sdf, usd::Stage};
 
 use openusd::ar::split_package_relative_path_outer;
 
 pub(super) fn authored_archive_paths(stage: &Stage) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for identifier in stage.layer_identifiers() {
-        let Some(layer) = stage.layer(&identifier) else {
+        let Some(layer) = stage.layer(&identifier)? else {
             continue;
         };
         let layer_base = split_package_relative_path_outer(&identifier)
             .map_or_else(|| identifier.clone(), |(outer, _)| outer);
-        let Some(root) = layer.pseudo_root() else {
+        let Some(root) = layer.pseudo_root()? else {
             continue;
         };
-        for child in root.prim_children().unwrap_or_default() {
+        for child in root.prim_children()?.unwrap_or_default() {
             let child_path = sdf::Path::abs_root().append_path(child.as_str())?;
             collect_prim(&layer, &child_path, &layer_base, &mut paths)?;
         }
@@ -27,12 +27,12 @@ pub(super) fn authored_archive_paths(stage: &Stage) -> Result<Vec<PathBuf>> {
 }
 
 fn collect_prim(
-    layer: &sdf::Layer,
+    layer: &sdf::LayerHandle,
     path: &sdf::Path,
     layer_base: &str,
     paths: &mut Vec<PathBuf>,
 ) -> Result<()> {
-    let Some(prim) = layer.prim(path.clone()) else {
+    let Some(prim) = layer.prim(path.clone())? else {
         return Ok(());
     };
     for field in [
@@ -43,22 +43,22 @@ fn collect_prim(
             collect_asset_paths(&value, layer_base, paths);
         }
     }
-    for child in prim.prim_children().unwrap_or_default() {
+    for child in prim.prim_children()?.unwrap_or_default() {
         let child_path = path.append_path(child.as_str())?;
         collect_prim(layer, &child_path, layer_base, paths)?;
     }
     Ok(())
 }
 
-fn collect_asset_paths(value: &sdf::Value, layer_base: &str, paths: &mut Vec<PathBuf>) {
+fn collect_asset_paths(value: &vt::Value, layer_base: &str, paths: &mut Vec<PathBuf>) {
     match value {
-        sdf::Value::ReferenceListOp(references) => {
+        vt::Value::ReferenceListOp(references) => {
             for reference in references.iter() {
                 push_asset_path(layer_base, &reference.asset_path, paths);
             }
         }
-        sdf::Value::Payload(payload) => push_asset_path(layer_base, &payload.asset_path, paths),
-        sdf::Value::PayloadListOp(payloads) => {
+        vt::Value::Payload(payload) => push_asset_path(layer_base, &payload.asset_path, paths),
+        vt::Value::PayloadListOp(payloads) => {
             for payload in payloads.iter() {
                 push_asset_path(layer_base, &payload.asset_path, paths);
             }

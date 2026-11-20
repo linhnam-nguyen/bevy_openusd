@@ -11,8 +11,8 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;
 use bevy::prelude::*;
 
-use openusd::schemas::geom::{BasisCurves, Curves, PointBased};
-use openusd::sdf::Value;
+use openusd_schemas::geom::{BasisCurves, BasisCurvesSchema, CurvesSchema, PointBasedSchema};
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx, track_mesh_projection};
 

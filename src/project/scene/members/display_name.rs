@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result, ensure};
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use usd_project::{SceneId, SceneMemberId};
 use uuid::Uuid;
 
@@ -18,7 +18,7 @@ pub(crate) fn update_display_name_atomic(
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open managed layer for display-name update")?;
     stage
-        .prim(prim_path)
+        .prim(prim_path)?
         .set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;
     let temporary_path = path.with_file_name(format!(
         ".{}.rename-{}.tmp.usda",
@@ -61,7 +61,7 @@ pub(crate) fn update_member_display_name_atomic(
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open parent Scene for display-name update")?;
     let member_path = scene_member_path_for_stage(&stage, member_id)?;
-    let member = stage.prim(member_path.as_str());
+    let member = stage.prim(member_path.as_str())?;
     member
         .clone()
         .set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;

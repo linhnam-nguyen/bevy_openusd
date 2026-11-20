@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use image::RgbaImage;
-use openusd::schemas::shade::{Connectable, Material, MaterialBindingAPI, Shader};
+use openusd_schemas::shade::{Connectable, Material, MaterialBindingAPI, Shader};
+use openusd::vt;
 use openusd::sdf;
 use tempfile::tempdir;
 use usd_model::HashDigest;
@@ -190,29 +191,33 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
     let texture_path = directory.path().join("scene-diffuse.png");
     RgbaImage::from_pixel(1, 1, image::Rgba([48, 96, 192, 255])).save(&texture_path)?;
-    let stage = openusd::usd::Stage::open(scene_path.to_string_lossy().as_ref())?;
+    let stage = openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(scene_path.to_string_lossy().as_ref())?;
 
     let material = Material::define(&stage, "/SceneRoot/Materials/Mat")?;
     let texture = Shader::define(&stage, "/SceneRoot/Materials/Mat/Texture")?;
     texture
+        .node_def()
         .create_id_attr()?
-        .set(sdf::Value::token("UsdUVTexture"))?;
+        .set(vt::Value::token("UsdUVTexture"))?;
     texture
         .create_input("file", "asset")?
-        .set(sdf::Value::AssetPath(
+        .set(vt::Value::AssetPath(
             texture_path.to_string_lossy().into_owned().into(),
         ))?;
     texture.create_output("rgb", "float3")?;
     let surface = Shader::define(&stage, "/SceneRoot/Materials/Mat/Surface")?;
     surface
+        .node_def()
         .create_id_attr()?
-        .set(sdf::Value::token("UsdPreviewSurface"))?;
+        .set(vt::Value::token("UsdPreviewSurface"))?;
     surface
         .create_input("diffuseColor", "color3f")?
         .set_connections([sdf::path("/SceneRoot/Materials/Mat/Texture.outputs:rgb")?])?;
     surface
         .create_input("roughness", "float")?
-        .set(sdf::Value::Float(0.35))?;
+        .set(vt::Value::Float(0.35))?;
     surface.create_output("surface", "token")?;
     material
         .create_surface_output()?
@@ -224,16 +229,16 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .define_prim("/SceneRoot/Renderable")?
         .set_type_name("Mesh")?;
     mesh.create_attribute("points", "point3f[]")?
-        .set(sdf::Value::Vec3fVec(vec![
+        .set(vt::Value::Vec3fVec(vec![
             openusd::gf::Vec3f::from([0.0, 0.0, 0.0]),
             openusd::gf::Vec3f::from([1.0, 0.0, 0.0]),
             openusd::gf::Vec3f::from([0.0, 1.0, 0.0]),
         ]))?;
     mesh.create_attribute("faceVertexCounts", "int[]")?
-        .set(sdf::Value::IntVec(vec![3]))?;
+        .set(vt::Value::IntVec(vec![3]))?;
     mesh.create_attribute("faceVertexIndices", "int[]")?
-        .set(sdf::Value::IntVec(vec![0, 1, 2]))?;
-    MaterialBindingAPI::apply(&stage, sdf::path("/SceneRoot/Renderable")?)?
+        .set(vt::Value::IntVec(vec![0, 1, 2]))?;
+    MaterialBindingAPI::apply(&mesh)?
         .bind(sdf::path("/SceneRoot/Materials/Mat")?)?;
     let temporary = scene_path.with_extension("payload.usda");
     stage

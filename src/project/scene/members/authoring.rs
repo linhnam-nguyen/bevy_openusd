@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use usd_project::{SceneMember, SceneMemberTarget};
 
 use super::super::authoring::{
@@ -51,7 +51,10 @@ pub(crate) fn author_scene_member_at_path(
     let member_prim = stage
         .define_prim(scene_member_path(member.id).as_str())?
         .set_type_name("Xform")?
-        .set_metadata("customData", Value::Dictionary(member_custom_data(member)))?
+        .set_metadata(
+            "customData",
+            Value::Dictionary(member_custom_data(member).into()),
+        )?
         .set_metadata(
             REFERENCES_FIELD,
             Value::ReferenceListOp(sdf::ReferenceListOp::prepended([reference])),

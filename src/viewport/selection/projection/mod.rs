@@ -152,31 +152,31 @@ pub(in crate::viewport) fn register_selection_projection_observers(app: &mut App
 }
 
 fn queue_mesh_insert(
-    event: On<Insert, Mesh3d>,
+    event: On<Insert<Mesh3d>>,
     mut projection: ResMut<SelectedRenderableProjection>,
 ) {
-    projection.enqueue_topology(event.event_target(), false);
+    projection.enqueue_topology(event.entity, false);
 }
 
 fn queue_mesh_remove(
-    event: On<Remove, Mesh3d>,
+    event: On<Remove<Mesh3d>>,
     mut projection: ResMut<SelectedRenderableProjection>,
 ) {
-    projection.enqueue_topology(event.event_target(), false);
+    projection.enqueue_topology(event.entity, false);
 }
 
 fn queue_child_of_insert(
-    event: On<Insert, ChildOf>,
+    event: On<Insert<ChildOf>>,
     mut projection: ResMut<SelectedRenderableProjection>,
 ) {
-    projection.enqueue_topology(event.event_target(), true);
+    projection.enqueue_topology(event.entity, true);
 }
 
 fn queue_child_of_remove(
-    event: On<Remove, ChildOf>,
+    event: On<Remove<ChildOf>>,
     mut projection: ResMut<SelectedRenderableProjection>,
 ) {
-    projection.enqueue_topology(event.event_target(), true);
+    projection.enqueue_topology(event.entity, true);
 }
 
 #[allow(clippy::type_complexity)]

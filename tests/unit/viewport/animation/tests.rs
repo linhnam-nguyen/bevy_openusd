@@ -35,7 +35,10 @@ fn playback_app() -> App {
 }
 
 fn open_stage(path: &std::path::Path) -> Stage {
-    Stage::open(path.to_str().expect("fixture path is valid")).expect("stage opens")
+    Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path.to_str().expect("fixture path is valid"))
+        .expect("stage opens")
 }
 
 fn settle(app: &mut App) {

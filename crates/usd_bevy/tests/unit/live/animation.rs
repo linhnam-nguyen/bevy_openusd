@@ -7,8 +7,10 @@ use crate::{StageTime, UsdPlugin};
 
 fn animated_app() -> App {
     let path = usd_support::resolve_asset_path("anim_test_simple.usda");
-    let stage =
-        Stage::open(path.to_str().expect("fixture path is valid")).expect("animated fixture opens");
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path.to_str().expect("fixture path is valid"))
+        .expect("animated fixture opens");
     let mut app = App::new();
     app.add_plugins(UsdPlugin)
         .add_plugins(LiveStagePlugin)
@@ -132,12 +134,12 @@ fn test_reconcile_subtrees_adds_animated_prim_under_affected_subtree() {
         .create_attribute("xformOp:translate", "double3")
         .unwrap()
         .set_at(
-            openusd::sdf::Value::Vec3d(openusd::gf::Vec3d::from([0.0, 0.0, 0.0])),
+            openusd::vt::Value::Vec3d(openusd::gf::Vec3d::from([0.0, 0.0, 0.0])),
             openusd::usd::TimeCode::new(1.0),
         )
         .unwrap()
         .set_at(
-            openusd::sdf::Value::Vec3d(openusd::gf::Vec3d::from([0.0, 5.0, 0.0])),
+            openusd::vt::Value::Vec3d(openusd::gf::Vec3d::from([0.0, 5.0, 0.0])),
             openusd::usd::TimeCode::new(2.0),
         )
         .unwrap();

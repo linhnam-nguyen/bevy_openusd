@@ -8,11 +8,12 @@
 
 use bevy::prelude::*;
 
-use openusd::schemas::physics::{
-    CollisionAPI, DriveAPI, LimitAPI, MassAPI, PrismaticJoint, RevoluteJoint, RigidBodyAPI,
-};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Attribute;
+use openusd_schemas::physics::{
+    CollisionAPI, DriveAPI, LimitAPI, MassAPI, PrismaticJoint, PrismaticJointSchema,
+    RevoluteJoint, RevoluteJointSchema, RigidBodyAPI,
+};
 
 use super::{PrimRoute, RouteCtx};
 use crate::read::util::targets_at;
@@ -227,7 +228,11 @@ fn read_joint(ctx: &RouteCtx, type_name: &str) -> UsdJoint {
 }
 
 fn read_drives(ctx: &RouteCtx) -> UsdDrives {
-    let drives = DriveAPI::get_all(ctx.stage, ctx.path.clone())
+    let drives = ctx
+        .stage
+        .prim(ctx.path.clone())
+        .ok()
+        .and_then(|prim| DriveAPI::all(&prim).ok())
         .unwrap_or_default()
         .into_iter()
         .map(|d| UsdDrive {
@@ -244,7 +249,11 @@ fn read_drives(ctx: &RouteCtx) -> UsdDrives {
 }
 
 fn read_limits(ctx: &RouteCtx) -> UsdLimits {
-    let limits = LimitAPI::get_all(ctx.stage, ctx.path.clone())
+    let limits = ctx
+        .stage
+        .prim(ctx.path.clone())
+        .ok()
+        .and_then(|prim| LimitAPI::all(&prim).ok())
         .unwrap_or_default()
         .into_iter()
         .map(|l| UsdLimit {

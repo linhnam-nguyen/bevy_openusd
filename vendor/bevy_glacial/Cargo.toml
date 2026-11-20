@@ -1,0 +1,59 @@
+[package]
+name = "bevy_glacial"
+description = "Reusable 3D-scene niceties for Bevy editor-style apps: chase / orbit camera with mouse pan-orbit-zoom, LOD ground grid that follows the camera, selection ring, and a transform gizmo (vendored from transform-gizmo by Urho Laukkarinen). Companion to bevy_frost (which handles the egui UI side)."
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/bresilla/bevy_glacial"
+
+[dependencies]
+bevy = { version = "0.20.1", default-features = false, features = [
+    "std",
+    "async_executor",
+    "multi_threaded",
+    "bevy_asset",
+    "bevy_state",
+    "bevy_log",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_input_focus",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_light",
+    "bevy_mesh",
+    "bevy_camera",
+    "bevy_image",
+    "bevy_gizmos",
+    "bevy_gizmos_render",
+    "bevy_picking",
+    "default_font",
+    "tonemapping_luts",
+    "smaa_luts",
+    "ktx2",
+    "zstd_rust",
+    "png",
+    "x11",
+    "reflect_auto_register",
+] }
+# Enable `mint` on bevy_math so bevy::math::DVec3 (and friends) gets the
+# `From<mint::Vector3<f64>>` impl that the inlined gizmo adapter needs.
+bevy_math = { version = "0.20.1", default-features = false, features = ["mint"] }
+
+# Direct deps for the inlined transform-gizmo source under `src/gizmo/`.
+# Versions match the upstream `transform-gizmo` 0.9.0 and
+# `transform-gizmo-bevy` 0.9.0 manifests (vendored 2026-04-25).
+ahash = "0.8"
+bytemuck = "1.25"
+ecolor = "0.35"
+emath = "0.35"
+enum_dispatch = "0.3"
+enumset = "1.1"
+epaint = "0.35"
+glam = { version = "0.30", features = ["mint"] }
+mint = "0.5"
+uuid = "1.17"
+
+[[example]]
+name = "gizmo"
+path = "examples/gizmo.rs"

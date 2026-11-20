@@ -95,8 +95,8 @@ pub(crate) fn extract_scene_payloads_for_repair(
         "targeted Scene extraction rejects unknown or composed-only path {path}"
     );
     let sdf_path = sdf::path(path)?;
-    if !live.stage.prim(sdf_path).is_loaded()? {
-        live.load_payload(path);
+    if !live.stage.prim(sdf_path)?.is_loaded()? {
+        live.load_payload(path)?;
     }
     let requested = [path];
     let payloads = usd_bevy::extract_render_payloads_for_paths(&live.stage, &requested)?;

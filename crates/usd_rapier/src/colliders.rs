@@ -15,7 +15,7 @@
 //! this module just hands the dims to Rapier.
 
 use anyhow::Result;
-use openusd::schemas::physics::CollisionApprox;
+use openusd_schemas::physics::CollisionApprox;
 use rapier3d_f64::glamx::DVec3;
 use rapier3d_f64::prelude::*;
 

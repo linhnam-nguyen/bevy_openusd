@@ -16,23 +16,16 @@ members = [
     "tests/support/project",
     "tests/support/viewport",
 ]
-exclude = ["xtra"]
+exclude = ["xtra", "vendor/bevy_pbr", "vendor/bevy_glacial"]
+
+[patch.crates-io]
+bevy_pbr = { path = "vendor/bevy_pbr" }
 
 [workspace.dependencies]
 # Keep every USD layer on one exact upstream revision. Updating this single
-# entry updates usd_macro, usd_rapier, and usd_bevy together.
-openusd = { git = "https://github.com/mxpv/openusd", rev = "8d605e31891fd4cfada1c068fbf6ac2a17c704aa", features = [
-    "geom",
-    "shade",
-    "skel",
-    "lux",
-    "physics",
-    "media",
-    "vol",
-    "render",
-    "proc",
-    "ui",
-] }
+# entry updates usd_macro, usd_rapier, usd_semantic, usd_support, and usd_bevy together.
+openusd = { git = "https://github.com/mxpv/openusd", rev = "900ea31591348e3fbf416d4661d703aa8700771b" }
+openusd-schemas = { git = "https://github.com/mxpv/openusd", rev = "900ea31591348e3fbf416d4661d703aa8700771b" }
 usd_macro = { path = "crates/usd_macro" }
 usd_rapier = { path = "crates/usd_rapier" }
 usd_bevy = { path = "crates/usd_bevy" }
@@ -56,9 +49,10 @@ bitflags = "2"
 blake3 = "1"
 regex = "1"
 
-bevy = { version = "0.19", default-features = false }
+bevy = { version = "0.20.1", default-features = false }
+bevy_pbr = { version = "0.20.1", default-features = false }
 rapier3d-f64 = "0.34"
-glam = "0.32"
+glam = "0.30"
 anyhow = "1"
 thiserror = "2"
 log = "0.4"
@@ -73,6 +67,7 @@ tempfile = "3"
 name = "usdview"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.97.1"
 license = "MIT"
 description = "Interactive viewer for OpenUSD scenes — built on bevy + the usd_bevy plugin."
 repository = "https://github.com/bresilla/bevy_openusd"
@@ -89,6 +84,9 @@ dlss = [
     "bevy/dlss",
     "bevy/raw_vulkan_init",
 ]
+# Transitional isolation for Frost chrome (incompatible with Bevy 0.20.1);
+# removed at UP-C02-S05 once Mara native UI parity is complete.
+legacy_frost = ["dep:bevy_frost"]
 
 [[bin]]
 name = "usdview"
@@ -154,6 +152,18 @@ project_protocol = { workspace = true }
 # Pure USD-physics → Rapier builders used by the viewport-owned adapter.
 usd_rapier = { workspace = true }
 openusd = { workspace = true }
+openusd-schemas = { workspace = true, features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 # Direct Rapier dep for the viewport-owned f64 simulation state.
 rapier3d-f64 = { workspace = true }
 viewport_protocol = { workspace = true }
@@ -216,16 +226,16 @@ anyhow = { workspace = true }
 # Native file-picker dialog for the "Browse USD…" button.
 rfd = "0.17.2"
 # VS-Code-style egui chrome.
-bevy_egui = { version = "0.41", default-features = false, features = [
+bevy_egui = { version = "0.43.1", default-features = false, features = [
     "default_fonts",
     "render",
 ] }
-# Renderer-owned arbitrary-mesh selection silhouettes; 0.13 targets Bevy 0.19.
-bevy_mod_outline = "0.13.0"
-# Glass-themed editor UI kit (ribbons, floating panels, widgets, tokens).
-bevy_frost = { path = "../bevy_frost/crates/bevy_frost" }
-# Reusable 3D-scene gizmos (axis triads + joint primitives).
-bevy_glacial = { path = "../bevy_glacial" }
+# Renderer-owned arbitrary-mesh selection silhouettes; 0.14 targets Bevy 0.20.
+bevy_mod_outline = "0.14.0"
+# Glass-themed editor UI kit (transitional optional isolation until UP-C02-S05 Mara parity).
+bevy_frost = { path = "../bevy_frost/crates/bevy_frost", optional = true }
+# Reusable 3D-scene gizmos adapted for Bevy 0.20.1 (transitional until UP-C02-S04).
+bevy_glacial = { path = "vendor/bevy_glacial" }
 # `build.rs` bakes a sample USDZ (USDA + procedural PNG) into
 # `assets/external/` so `cargo run -- usdz_sample.usdz` always has
 # something real to show.
@@ -235,6 +245,18 @@ image = { workspace = true, features = ["png"] }
 
 [dev-dependencies]
 openusd = { workspace = true }
+openusd-schemas = { workspace = true, features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 usd_git = { workspace = true }
 usd_support = { workspace = true }
 project_support = { workspace = true }

@@ -1,7 +1,7 @@
 //! Semantic hierarchy metadata projected from the authoritative USD Stage.
 
 use bevy::prelude::{Entity, World};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::PrimPredicate;
 use std::collections::HashMap;
 
@@ -69,19 +69,20 @@ fn build_metadata_index(
 ) -> HierarchyMetadataIndex {
     let mut display_names = HashMap::new();
     let _ = stage.traverse(PrimPredicate::ALL, |composed_path| {
-        let prim = stage.prim(composed_path.clone());
+        let Ok(prim) = stage.prim(composed_path.clone()) else {
+            return;
+        };
         let Ok(prim_stack) = prim.prim_stack() else {
             return;
         };
-        for (identifier, spec_path) in prim_stack {
-            let Some(layer) = stage.layer(&identifier) else {
+        for site in prim_stack {
+            let Ok(Some(spec)) = site.layer.prim(site.path.clone()) else {
                 continue;
             };
-            let data = layer.data();
-            let Ok(Some(value)) = data.try_field(&spec_path, DISPLAY_NAME_FIELD) else {
+            let Ok(Some(value)) = spec.field(DISPLAY_NAME_FIELD) else {
                 continue;
             };
-            if let Some(value) = as_text(value.into_owned()) {
+            if let Some(value) = as_text(value) {
                 // Prim::prim_stack is strength ordered, so the first opinion
                 // wins while the composed path preserves reference mapping.
                 display_names.insert(composed_path.as_str().to_owned(), value);
@@ -105,9 +106,8 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
     let transparent_source = ctx
         .stage
         .prim(ctx.path.clone())
-        .custom_data()
         .ok()
-        .flatten()
+        .and_then(|prim| prim.metadata::<Value>("customData").ok().flatten())
         .and_then(|value| match value {
             Value::Dictionary(data) => data
                 .get(USDHUB_HIERARCHY_ROLE_METADATA)
@@ -119,9 +119,8 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
     let target = ctx
         .stage
         .prim(ctx.path.clone())
-        .custom_data()
         .ok()
-        .flatten()
+        .and_then(|prim| prim.metadata::<Value>("customData").ok().flatten())
         .and_then(|value| match value {
             Value::Dictionary(data) => Some(UsdHierarchyTarget::new(
                 data.get(TARGET_KIND_FIELD)?.as_str()?,
@@ -156,16 +155,13 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
 /// storage-v2 project layer. The index is prepared at the Stage→Bevy
 /// projection boundary, so this per-prim read never scans the layer stack.
 fn as_text(value: Value) -> Option<String> {
-    match value {
-        Value::String(value) => Some(value),
-        Value::Token(value) => Some(value.as_str().to_owned()),
-        _ => None,
-    }
+    crate::read::util::decode_metadata_string(&value)
 }
 
 fn read_display_name(ctx: &RouteCtx, index: Option<&HierarchyMetadataIndex>) -> Option<String> {
     ctx.stage
         .prim(ctx.path.clone())
+        .ok()?
         .attribute(DISPLAY_NAME_FIELD)
         .get::<Value>()
         .ok()

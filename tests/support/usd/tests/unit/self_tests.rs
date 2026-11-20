@@ -8,12 +8,14 @@ fn test_model_usda_fixture_validity() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );
     assert!(
         stage
             .prim(openusd::sdf::path("/World/Building/Wall_A").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );
@@ -25,6 +27,7 @@ fn test_synthetic_wide_stage_structure() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );
@@ -33,6 +36,7 @@ fn test_synthetic_wide_stage_structure() {
         assert!(
             stage
                 .prim(openusd::sdf::path(&group_path).unwrap())
+                .unwrap()
                 .is_valid()
                 .unwrap()
         );
@@ -41,6 +45,7 @@ fn test_synthetic_wide_stage_structure() {
             assert!(
                 stage
                     .prim(openusd::sdf::path(&prim_path).unwrap())
+                    .unwrap()
                     .is_valid()
                     .unwrap()
             );
@@ -54,18 +59,21 @@ fn test_deep_overlap_stage_structure() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/A/Child/Leaf").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );
     assert!(
         stage
             .prim(openusd::sdf::path("/World/B").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );
     assert!(
         stage
             .prim(openusd::sdf::path("/World/C").unwrap())
+            .unwrap()
             .is_valid()
             .unwrap()
     );

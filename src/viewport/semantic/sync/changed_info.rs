@@ -31,7 +31,7 @@ pub(in crate::viewport::semantic) fn changed_info_update(
         .traverse(PrimPredicate::DEFAULT, |path| {
             available_paths.insert(path.as_str().to_owned());
         })
-        .map_err(SubtreeUpdateError::ExtractionFailed)?;
+        .map_err(|e| SubtreeUpdateError::ExtractionFailed(e.into()))?;
 
     // 1. Capture old affected keys and paths from previous_snapshot before mutation
     let mut old_affected_keys = HashSet::new();
@@ -61,7 +61,7 @@ pub(in crate::viewport::semantic) fn changed_info_update(
             })?;
             let entity = extractor
                 .extract_entity(stage, &usd_path)
-                .map_err(SubtreeUpdateError::ExtractionFailed)?;
+                .map_err(|e| SubtreeUpdateError::ExtractionFailed(e.into()))?;
             if let Some(existing_path) =
                 path_by_key.insert(entity.key.clone(), entity.prim_path.clone())
             {

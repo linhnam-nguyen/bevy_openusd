@@ -58,6 +58,39 @@ impl Drop for AuthoredSuppressionGuard {
     }
 }
 
+fn push_committed_change(
+    queue: &RefCell<Vec<StageChange>>,
+    generation: &Cell<LiveRevision>,
+    change: &CommittedChange<'_>,
+) {
+    let next = generation
+        .get()
+        .0
+        .checked_add(1)
+        .expect("live stage authoring generation exhausted");
+    generation.set(LiveRevision(next));
+
+    let mut resynced = Vec::new();
+    let mut changed_info = Vec::new();
+    for path in change.resynced {
+        if path.is_property() {
+            // OpenUSD 0.8 reports newly created/removed property specs in
+            // `CommittedChange::resynced`; the owning prim composes unchanged,
+            // so route them as property info changes rather than subtree resyncs.
+            changed_info.push(path.as_str().to_string());
+        } else {
+            resynced.push(path.as_str().to_string());
+        }
+    }
+    for path in change.changed_info_only {
+        changed_info.push(path.as_str().to_string());
+    }
+    queue.borrow_mut().push(StageChange {
+        resynced,
+        changed_info,
+    });
+}
+
 impl LiveStage {
     /// Wrap a stage and install the change sink.
     pub fn new(stage: Stage) -> Self {
@@ -65,26 +98,11 @@ impl LiveStage {
         let q = queue.clone();
         let authoring_generation = Rc::new(Cell::new(LiveRevision::default()));
         let generation = authoring_generation.clone();
-        let sink = stage.add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
-            let next = generation
-                .get()
-                .0
-                .checked_add(1)
-                .expect("live stage authoring generation exhausted");
-            generation.set(LiveRevision(next));
-            q.borrow_mut().push(StageChange {
-                resynced: change
-                    .resynced
-                    .iter()
-                    .map(|p| p.as_str().to_string())
-                    .collect(),
-                changed_info: change
-                    .changed_info_only
-                    .iter()
-                    .map(|p| p.as_str().to_string())
-                    .collect(),
-            });
-        });
+        let sink = stage
+            .add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
+                push_committed_change(&q, &generation, change);
+            })
+            .expect("stage sink registration failed");
         Self {
             stage,
             session_id: NEXT_LIVE_SESSION_ID.fetch_add(1, Ordering::Relaxed),
@@ -104,7 +122,7 @@ impl LiveStage {
     /// derived state before the root resync is projected.
     pub fn replace_stage(&mut self, stage: Stage) {
         if let Some(id) = self.sink.take() {
-            self.stage.remove_sink(id);
+            let _ = self.stage.remove_sink(id);
         }
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
         let q = queue.clone();
@@ -116,26 +134,11 @@ impl LiveStage {
                 .expect("live stage authoring generation exhausted"),
         )));
         let generation = authoring_generation.clone();
-        let sink = stage.add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
-            let next = generation
-                .get()
-                .0
-                .checked_add(1)
-                .expect("live stage authoring generation exhausted");
-            generation.set(LiveRevision(next));
-            q.borrow_mut().push(StageChange {
-                resynced: change
-                    .resynced
-                    .iter()
-                    .map(|p| p.as_str().to_string())
-                    .collect(),
-                changed_info: change
-                    .changed_info_only
-                    .iter()
-                    .map(|p| p.as_str().to_string())
-                    .collect(),
-            });
-        });
+        let sink = stage
+            .add_sink(move |_stage: &Stage, change: &CommittedChange<'_>| {
+                push_committed_change(&q, &generation, change);
+            })
+            .expect("stage sink registration failed");
         self.stage = stage;
         self.stage_generation = self
             .stage_generation
@@ -253,22 +256,22 @@ impl LiveStage {
     /// change — it fires the change sink, so the next `apply_changes` reconciles
     /// and the newly-composed subtree is projected. The reversible counterpart
     /// of BSN's `queue_spawn_scene`.
-    pub fn load_payload(&self, prim: &str) {
-        if let Ok(p) = openusd::sdf::path(prim) {
-            self.stage
-                .load(p, openusd::usd::LoadPolicy::WithDescendants);
-            self.enqueue_resync(prim);
-        }
+    pub fn load_payload(&self, prim: &str) -> anyhow::Result<()> {
+        let p = openusd::sdf::path(prim)?;
+        self.stage
+            .load(p, openusd::usd::LoadPolicy::WithDescendants)?;
+        self.enqueue_resync(prim);
+        Ok(())
     }
 
     /// Unload `prim`'s payload — the projected subtree is despawned on the next
     /// `apply_changes` and the prim is marked
     /// [`UsdPayloadUnloaded`](crate::route::payload::UsdPayloadUnloaded).
-    pub fn unload_payload(&self, prim: &str) {
-        if let Ok(p) = openusd::sdf::path(prim) {
-            self.stage.unload(p);
-            self.enqueue_resync(prim);
-        }
+    pub fn unload_payload(&self, prim: &str) -> anyhow::Result<()> {
+        let p = openusd::sdf::path(prim)?;
+        self.stage.unload(p)?;
+        self.enqueue_resync(prim);
+        Ok(())
     }
 
     /// Enqueue a `resynced` change for `prim`. openusd's `load`/`unload` change
@@ -286,7 +289,7 @@ impl LiveStage {
 impl Drop for LiveStage {
     fn drop(&mut self) {
         if let Some(id) = self.sink.take() {
-            self.stage.remove_sink(id);
+            let _ = self.stage.remove_sink(id);
         }
     }
 }

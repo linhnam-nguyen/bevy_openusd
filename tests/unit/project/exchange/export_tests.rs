@@ -213,7 +213,7 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
         crate::project::scene::authoring::scene_path(&target_root, imported.scene_id);
     let imported_stage =
         openusd::usd::Stage::open(imported_path.to_string_lossy().as_ref()).unwrap();
-    assert!(imported_stage.prim("/SceneRoot").is_defined().unwrap());
+    assert!(imported_stage.prim("/SceneRoot").unwrap().is_defined().unwrap());
     imported_stage
         .traverse(openusd::usd::PrimPredicate::DEFAULT, |_| {})
         .unwrap();
@@ -233,7 +233,7 @@ fn exported_scene_round_trips_through_inspection_and_default_or_matrix_import() 
     let placement_id = placed.placement_id.expect("matrix import placement");
     let placed_path = crate::project::scene::authoring::scene_path(&target_root, placed.scene_id);
     let placed_stage = openusd::usd::Stage::open(placed_path.to_string_lossy().as_ref()).unwrap();
-    assert!(placed_stage.prim("/SceneRoot").is_defined().unwrap());
+    assert!(placed_stage.prim("/SceneRoot").unwrap().is_defined().unwrap());
     placed_stage
         .traverse(openusd::usd::PrimPredicate::DEFAULT, |_| {})
         .unwrap();

@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use openusd::ar::{ResolvedPath, Resolver};
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use super::resolver::resolved_filesystem_path;
 

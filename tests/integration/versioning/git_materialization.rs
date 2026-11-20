@@ -24,6 +24,7 @@ fn historical_materialization_opens_through_openusd() {
     assert!(
         stage
             .prim(openusd::sdf::path("/World/HistoricalChild").unwrap())
+            .expect("materialized historical prim exists")
             .is_valid()
             .expect("query materialized historical prim validity")
     );

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use usd_project::{ModelId, SceneId, SceneMember, SceneMemberId, SceneMemberTarget};
 
 use super::{
@@ -25,12 +25,12 @@ pub(crate) fn validate_scene_file(
         "Project Scene defaultPrim must be /{SCENE_ROOT_PRIM}"
     );
 
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?;
     ensure!(
         root.is_defined()?,
         "Project Scene root prim must be defined"
     );
-    let Some(Value::Dictionary(custom_data)) = root.custom_data()? else {
+    let Some(Value::Dictionary(custom_data)) = root.metadata::<Value>("customData")? else {
         bail!("Project Scene root prim is missing customData");
     };
 
@@ -65,7 +65,7 @@ pub(crate) fn validate_scene_file(
     if schema_version == SCENE_SCHEMA_VERSION {
         ensure!(
             !stage
-                .prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())
+                .prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
                 .is_defined()?,
             "Project Scene schema v2 must not contain /{SCENE_MEMBERS_PRIM}"
         );
@@ -76,7 +76,7 @@ pub(crate) fn validate_scene_file(
         } else {
             scene_member_path(expected_member.id)
         };
-        let member = stage.prim(member_path.as_str());
+        let member = stage.prim(member_path.as_str())?;
         ensure!(
             member.is_defined()?,
             "Project Scene member prim must be defined"
@@ -85,8 +85,8 @@ pub(crate) fn validate_scene_file(
         ensure!(
             stage
                 .root_layer()
-                .prim(&member_spec_path)
-                .is_some_and(|spec| spec.has_field(REFERENCES_FIELD)),
+                .prim(member_spec_path.clone())?
+                .is_some_and(|spec| spec.has_field(REFERENCES_FIELD).unwrap_or(false)),
             "Project Scene member prim must contain a target reference"
         );
         if schema_version == SCENE_SCHEMA_VERSION {
@@ -133,8 +133,8 @@ fn read_scene_member_at_path(
     member_path: &str,
     member_id: SceneMemberId,
 ) -> Result<SceneMember> {
-    let member = stage.prim(member_path);
-    let Some(Value::Dictionary(data)) = member.custom_data()? else {
+    let member = stage.prim(member_path)?;
+    let Some(Value::Dictionary(data)) = member.metadata::<Value>("customData")? else {
         bail!("Project Scene member is missing customData");
     };
     let encoded_id = metadata_string(&data, MEMBER_ID_METADATA)?;
@@ -153,16 +153,14 @@ fn read_scene_member_at_path(
         let root_layer = stage.root_layer();
         let member_spec_path = sdf::path(member_path)?;
         root_layer
-            .prim(&member_spec_path)
+            .prim(member_spec_path)?
             .map(|spec| spec.field("ui:displayName"))
             .transpose()?
             .flatten()
     };
     let name = match display_name.or_else(|| data.get(MEMBER_NAME_METADATA).cloned()) {
         Some(value) => Some(
-            value
-                .as_str()
-                .map(str::to_owned)
+            usd_bevy::read::util::decode_metadata_string(&value)
                 .context("Project Scene member name must be a string")?,
         ),
         None => None,
@@ -184,8 +182,8 @@ pub(crate) fn read_scene_members(
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open Project Scene for read projection")?;
     let Some(Value::Dictionary(root_data)) = stage
-        .prim(format!("/{SCENE_ROOT_PRIM}").as_str())
-        .custom_data()?
+        .prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
+        .metadata::<Value>("customData")?
     else {
         bail!("Project Scene root prim is missing customData");
     };
@@ -194,9 +192,9 @@ pub(crate) fn read_scene_members(
         _ => bail!("Project Scene schema version is unsupported or missing"),
     };
     let members_root = if schema_version == LEGACY_SCENE_SCHEMA_VERSION {
-        stage.prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())
+        stage.prim(format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}").as_str())?
     } else {
-        stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())
+        stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
     };
     if schema_version != LEGACY_SCENE_SCHEMA_VERSION && schema_version != SCENE_SCHEMA_VERSION {
         bail!("Project Scene schema version is unsupported or missing");
@@ -207,7 +205,7 @@ pub(crate) fn read_scene_members(
 
     let mut members = Vec::new();
     for child in members_root.children()? {
-        let Some(Value::Dictionary(data)) = child.custom_data()? else {
+        let Some(Value::Dictionary(data)) = child.metadata::<Value>("customData")? else {
             if schema_version == SCENE_SCHEMA_VERSION {
                 continue;
             }
@@ -256,8 +254,8 @@ pub(crate) fn scene_member_path_for_stage(
     stage: &Stage,
     member_id: SceneMemberId,
 ) -> Result<String> {
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
-    let Some(Value::Dictionary(data)) = root.custom_data()? else {
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?;
+    let Some(Value::Dictionary(data)) = root.metadata::<Value>("customData")? else {
         bail!("Project Scene root prim is missing customData");
     };
     match data.get(SCHEMA_VERSION_METADATA) {
@@ -270,7 +268,7 @@ pub(crate) fn scene_member_path_for_stage(
 pub(crate) fn prepare_scene_for_direct_members(stage: &Stage) -> Result<()> {
     let legacy_members_path = format!("/{SCENE_ROOT_PRIM}/{SCENE_MEMBERS_PRIM}");
     let legacy_member_paths = stage
-        .prim(legacy_members_path.as_str())
+        .prim(legacy_members_path.as_str())?
         .children()?
         .into_iter()
         .map(|child| child.path().as_str().to_owned())
@@ -304,10 +302,10 @@ pub(crate) fn prepare_scene_for_direct_members(stage: &Stage) -> Result<()> {
             })
             .context("move legacy Project Scene members to direct paths")?;
     }
-    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str());
-    let mut custom_data = match root.custom_data()? {
+    let root = stage.prim(format!("/{SCENE_ROOT_PRIM}").as_str())?;
+    let mut custom_data = match root.metadata::<Value>("customData")? {
         Some(Value::Dictionary(data)) => data,
-        _ => HashMap::new(),
+        _ => openusd::vt::Dictionary::new(),
     };
     custom_data.insert(
         SCHEMA_VERSION_METADATA.to_owned(),
@@ -319,7 +317,7 @@ pub(crate) fn prepare_scene_for_direct_members(stage: &Stage) -> Result<()> {
 
 fn validate_relative_member_references(stage: &Stage, member_spec_path: &sdf::Path) -> Result<()> {
     let root_layer = stage.root_layer();
-    let Some(spec) = root_layer.prim(member_spec_path) else {
+    let Some(spec) = root_layer.prim(member_spec_path.clone())? else {
         bail!("Project Scene member spec is missing");
     };
     let Some(Value::ReferenceListOp(references)) = spec.field(REFERENCES_FIELD)? else {

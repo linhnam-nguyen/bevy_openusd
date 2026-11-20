@@ -149,9 +149,8 @@ impl<'a> RouteCtx<'a> {
     pub fn at(stage: &'a Stage, path: &'a Path, time: Option<f64>) -> Self {
         let type_name = stage
             .prim(path.clone())
-            .type_name()
             .ok()
-            .flatten()
+            .and_then(|prim| prim.type_name().ok().flatten())
             .map(|t| t.as_str().to_string());
         Self {
             stage,

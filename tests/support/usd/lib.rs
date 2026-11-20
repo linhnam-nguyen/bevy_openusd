@@ -28,7 +28,10 @@ pub fn stage_from_usda(usda_text: &str) -> anyhow::Result<openusd::usd::Stage> {
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("temp path is not valid UTF-8"))?;
     // As with UsdSnippet, the stage owns the parsed data after opening.
-    openusd::usd::Stage::open(path_str)
+    openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path_str)
+        .map_err(anyhow::Error::from)
 }
 
 pub fn make_synthetic_wide_stage() -> openusd::usd::Stage {
@@ -128,7 +131,9 @@ pub fn resolve_crate_fixture_path(manifest_dir: &str, relative: &str) -> PathBuf
 pub fn open_fixture_stage(relative: &str) -> openusd::usd::Stage {
     let path = resolve_fixture_path(relative);
     let path_str = path.to_str().expect("fixture path is valid utf-8");
-    openusd::usd::Stage::open(path_str)
+    openusd::usd::Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(path_str)
         .unwrap_or_else(|err| panic!("failed to open fixture stage at {}: {err}", path.display()))
 }
 

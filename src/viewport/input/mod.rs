@@ -1,6 +1,7 @@
 //! Desktop input adapters for the native viewport.
 
 mod headless_gizmo;
+#[cfg(feature = "legacy_frost")]
 pub(crate) mod keyboard;
 pub(crate) mod navigation;
 

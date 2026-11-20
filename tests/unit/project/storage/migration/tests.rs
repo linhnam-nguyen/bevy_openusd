@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::Result;
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use tempfile::{TempDir, tempdir};
 use usd_project::{
     ModelId, ModelManifestEntry, ModelSourceKind, ProjectId, ProjectManifestV1, ProjectRoot,
@@ -182,10 +182,10 @@ fn write_empty_model(path: &Path, model_id: ModelId) {
 
 fn write_legacy_scene(path: &Path, scene_id: SceneId, members: &[(SceneMember, String, &str)]) {
     let stage = authoring::new_scene_stage(scene_id).unwrap();
-    let root = stage.prim("/SceneRoot");
-    let mut data = match root.custom_data().unwrap() {
+    let root = stage.prim("/SceneRoot").unwrap();
+    let mut data = match root.metadata::<Value>("customData").unwrap() {
         Some(Value::Dictionary(data)) => data,
-        _ => HashMap::new(),
+        _ => openusd::vt::Dictionary::new(),
     };
     data.insert("usdhub:schemaVersion".to_owned(), Value::Int(1));
     root.set_metadata("customData", Value::Dictionary(data))
@@ -202,7 +202,7 @@ fn write_legacy_scene(path: &Path, scene_id: SceneId, members: &[(SceneMember, S
             .unwrap()
             .set_metadata(
                 "customData",
-                Value::Dictionary(authoring::member_custom_data(member)),
+                Value::Dictionary(authoring::member_custom_data(member).into()),
             )
             .unwrap()
             .set_metadata(
@@ -231,10 +231,13 @@ fn write_legacy_model(path: &Path, model_id: ModelId, asset_path: &str) {
         .unwrap()
         .set_metadata(
             "customData",
-            Value::Dictionary(HashMap::from([(
-                "usdhub:modelId".to_owned(),
-                Value::String(model_id.to_string()),
-            )])),
+            Value::Dictionary(
+                HashMap::from([(
+                    "usdhub:modelId".to_owned(),
+                    Value::String(model_id.to_string()),
+                )])
+                .into(),
+            ),
         )
         .unwrap();
     stage
@@ -264,20 +267,20 @@ fn rewrite_placeholder_reference(path: &Path, model_id: ModelId) {
     let mut refs = {
         let root_layer = stage.root_layer();
         let spec = root_layer
-            .prim(&sdf::path("/ModelRoot/Source").unwrap())
+            .prim(sdf::path("/ModelRoot/Source").unwrap())
+            .unwrap()
             .unwrap();
         let Some(Value::ReferenceListOp(refs)) = spec.field("references").unwrap() else {
             panic!("legacy Model Source reference missing");
         };
         refs
     };
-    let reference = refs
-        .iter_mut()
-        .next()
-        .expect("legacy Model Source reference");
-    reference.asset_path = format!("../../imports/models/{model_id}/model.usda");
+    refs.update(|reference| {
+        reference.asset_path = format!("../../imports/models/{model_id}/model.usda");
+    });
     stage
         .prim("/ModelRoot/Source")
+        .unwrap()
         .set_metadata("references", Value::ReferenceListOp(refs))
         .unwrap();
     stage

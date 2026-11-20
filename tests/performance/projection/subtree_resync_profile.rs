@@ -109,7 +109,8 @@ where
         app.world()
             .get_non_send::<LiveStage>()
             .unwrap()
-            .load_payload("/");
+            .load_payload("/")
+            .expect("load root payload");
         let t0 = Instant::now();
         app.update();
         old_bevy_timings.push(t0.elapsed());
@@ -128,7 +129,9 @@ where
         // New behavior: scoped resync on target subtrees
         let live_ref = app.world().get_non_send::<LiveStage>().unwrap();
         for target in resync_targets {
-            live_ref.load_payload(target);
+            live_ref
+                .load_payload(target)
+                .expect("load target payload");
         }
         let t0 = Instant::now();
         app.update();

@@ -10,8 +10,7 @@ mod mesh_binding;
 mod sampling;
 mod skeleton;
 
-use bevy::prelude::Resource;
-use openusd::schemas::skel::SkelAnimQuery;
+use openusd_schemas::skel::AnimQuery;
 
 use super::index::PrimEntities;
 use super::performance::PerformanceCounters;
@@ -32,7 +31,7 @@ pub(super) struct BlendBinding {
 
 #[derive(Clone)]
 pub(super) struct SkeletonBinding {
-    pub(super) animation: SkelAnimQuery,
+    pub(super) animation: AnimQuery,
     pub(super) joints: Vec<bevy::ecs::entity::Entity>,
     pub(super) has_translations: bool,
     pub(super) has_rotations: bool,
@@ -42,7 +41,7 @@ pub(super) struct SkeletonBinding {
 
 /// Compact, typed playback targets. It is rebuilt only after projection or a
 /// structural reconcile, never on every StageTime change.
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub(super) struct AnimationRuntime {
     pub(super) transforms: Vec<TransformBinding>,
     pub(super) skeletons: Vec<SkeletonBinding>,
@@ -61,7 +60,7 @@ pub(super) fn rebuild(world: &mut bevy::ecs::world::World, live: &LiveStage, map
     skeleton::rebuild_skeletons(world, stage, map, &by_skeleton);
     let transforms = binding::collect_transform_bindings(world, stage, map);
     let skeletons = binding::collect_skeleton_runtime(world, stage);
-    world.insert_resource(AnimationRuntime {
+    world.insert_non_send(AnimationRuntime {
         transforms,
         skeletons,
     });

@@ -8,7 +8,8 @@ fn valid_snippet_parses_and_opens() {
     assert!(
         stage
             .prim(openusd::sdf::path("/Foo").unwrap())
-            .is_valid()
+            .ok()
+            .and_then(|prim| prim.is_valid().ok())
             .unwrap_or(false),
         "the prim exists on the opened stage"
     );

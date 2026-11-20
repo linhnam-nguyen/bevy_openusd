@@ -71,7 +71,7 @@ fn stable_wrapper_survives_original_source_rename() -> Result<()> {
     );
     assert!(published.wrapper_path.exists());
     let wrapper = Stage::open(&published.wrapper_path.to_string_lossy())?;
-    assert!(wrapper.prim("/ModelRoot/Source").is_defined()?);
+    assert!(wrapper.prim("/ModelRoot/Source")?.is_defined()?);
     assert!(
         project
             .path()
@@ -167,8 +167,8 @@ fn multi_root_source_without_default_prim_can_be_wrapped_as_one_model() -> Resul
     })?;
 
     let stage = Stage::open(&published.wrapper_path.to_string_lossy())?;
-    assert!(stage.prim("/ModelRoot/Source/Root_0").is_defined()?);
-    assert!(stage.prim("/ModelRoot/Source/Root_1").is_defined()?);
+    assert!(stage.prim("/ModelRoot/Source/Root_0")?.is_defined()?);
+    assert!(stage.prim("/ModelRoot/Source/Root_1")?.is_defined()?);
     Ok(())
 }
 

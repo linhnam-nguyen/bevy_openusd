@@ -6,9 +6,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use openusd::{
+use openusd::{vt, 
     ar::{DefaultResolver, Resolver, is_package_relative_path},
-    sdf::Value,
+    vt::Value,
     usd::{InitialLoadSet, PrimPredicate, Stage},
 };
 
@@ -95,7 +95,7 @@ pub(crate) fn discover_with_resolver(
             } else if state.add_layer(identifier_path.clone()).is_none() {
                 continue;
             }
-            if let Some(layer) = stage.layer(&identifier) {
+            if let Some(layer) = stage.layer(&identifier)? {
                 if state.scanned.insert(identifier.clone()) {
                     let anchor = if is_package_relative_path(&identifier)
                         || is_usdz_path(Path::new(&identifier))
@@ -104,7 +104,8 @@ pub(crate) fn discover_with_resolver(
                     } else {
                         identifier_path
                     };
-                    scan_layer(&layer, &anchor, &mut state, resolver.as_ref())?;
+                    let borrowed = layer.borrow();
+                    scan_layer(&borrowed, &anchor, &mut state, resolver.as_ref())?;
                 }
             }
         }
@@ -161,6 +162,7 @@ pub(crate) fn open_stage_with_resolver(
         .to_str()
         .context("USD dependency path must be valid UTF-8")?;
     Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
         .resolver(SharedResolver(resolver))
         .load(load)
         .open(path_string)
@@ -260,8 +262,9 @@ impl DiscoveryState {
 
 fn force_reachable_layers(stage: &Stage) -> Result<()> {
     stage.traverse(PrimPredicate::ALL, |path| {
-        let prim = stage.prim(path);
-        let _ = prim.prim_index().graph();
+        if let Ok(prim) = stage.prim(path) {
+            let _ = prim.prim_index().graph();
+        }
     })?;
     Ok(())
 }

@@ -3,15 +3,15 @@ use super::*;
 #[test]
 fn normalization_matrix_covers_axis_and_metric_combinations() {
     let cases = [
-        (StageUpAxis::Y, 1.0, Matrix4d::IDENTITY),
-        (StageUpAxis::Z, 1.0, Matrix4d::rotation_x(-FRAC_PI_2)),
-        (StageUpAxis::Y, 0.01, Matrix4d::scale([0.01; 3])),
+        (StageUpAxis::Y, 1.0, Mat4d::IDENTITY),
+        (StageUpAxis::Z, 1.0, Mat4d::rotation_x(-FRAC_PI_2)),
+        (StageUpAxis::Y, 0.01, Mat4d::scale([0.01; 3])),
         (
             StageUpAxis::Z,
             0.01,
-            Matrix4d::scale([0.01; 3]) * Matrix4d::rotation_x(-FRAC_PI_2),
+            Mat4d::scale([0.01; 3]) * Mat4d::rotation_x(-FRAC_PI_2),
         ),
-        (StageUpAxis::Y, 0.001, Matrix4d::scale([0.001; 3])),
+        (StageUpAxis::Y, 0.001, Mat4d::scale([0.001; 3])),
     ];
     for (up_axis, meters_per_unit, expected) in cases {
         let actual = source_normalization_transform(&SourceSpatialConvention {
@@ -78,12 +78,12 @@ fn canonical_stage_is_explicit_and_native_source_needs_no_second_correction() ->
             up_axis_was_authored: true,
             meters_per_unit_was_authored: true,
         }),
-        Matrix4d::IDENTITY
+        Mat4d::IDENTITY
     );
     Ok(())
 }
 
-fn transform_point(matrix: Matrix4d, point: [f64; 4]) -> [f64; 3] {
+fn transform_point(matrix: Mat4d, point: [f64; 4]) -> [f64; 3] {
     [
         point[0] * matrix.0[0]
             + point[1] * matrix.0[4]

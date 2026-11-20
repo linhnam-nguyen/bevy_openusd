@@ -14,8 +14,9 @@
 
 use bevy::prelude::*;
 
-use openusd::schemas::lux::{DomeLight, Light};
-use openusd::sdf::Value;
+use openusd::usd::SchemaBase;
+use openusd::vt::Value;
+use openusd_schemas::lux::{DomeLight, DomeLightSchema, LightAPI};
 
 use super::{PrimRoute, RouteCtx};
 
@@ -72,18 +73,19 @@ impl PrimRoute for DomeLightRoute {
         let Ok(Some(dome)) = DomeLight::get(ctx.stage, ctx.path.clone()) else {
             return;
         };
-        let color = match dome.color_attr().get::<Value>() {
+        let light = LightAPI::from_prim_unchecked(dome.prim().clone());
+        let color = match light.color_attr().get::<Value>() {
             Ok(Some(Value::Vec3f(c))) => [c.x, c.y, c.z],
             Ok(Some(Value::Vec3d(c))) => [c.x as f32, c.y as f32, c.z as f32],
             _ => [1.0, 1.0, 1.0],
         };
-        let base = dome
+        let base = light
             .intensity_attr()
             .get::<f32>()
             .ok()
             .flatten()
             .unwrap_or(1.0);
-        let exposure = dome
+        let exposure = light
             .exposure_attr()
             .get::<f32>()
             .ok()

@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use usd_project::{
     ModelId, SceneCompositionGraph, SceneId, SceneMember, SceneMemberId, SceneMemberTarget,
 };
@@ -121,7 +121,7 @@ pub(crate) fn new_scene_stage_with_name_and_protection(
     let root = stage
         .define_prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
         .set_type_name("Xform")?
-        .set_metadata("customData", Value::Dictionary(custom_data))?;
+        .set_metadata("customData", Value::Dictionary(custom_data.into()))?;
     if let Some(display_name) = display_name {
         root.set_metadata("ui:displayName", Value::String(display_name.to_owned()))?;
     }

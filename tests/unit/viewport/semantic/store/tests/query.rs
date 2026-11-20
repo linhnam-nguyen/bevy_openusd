@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 

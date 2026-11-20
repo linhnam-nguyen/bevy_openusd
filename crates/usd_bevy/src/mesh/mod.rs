@@ -47,17 +47,13 @@ pub(crate) struct ExtendedSkinAttrs {
 
 /// Convert a composed UsdSkel binding to Bevy's four-wide vertex attributes.
 pub(crate) fn skin_attrs_from_binding(
-    binding: &openusd::schemas::skel::SkelBindingAPI,
+    skinning: &openusd_schemas::skel::SkinningQuery,
     vertex_count: usize,
     joint_count: usize,
 ) -> anyhow::Result<SkinAttrs> {
-    let indices = binding.joint_indices()?;
-    let weights = binding.joint_weights()?;
-    let influences = binding.elements_per_element()?.max(1) as usize;
-    let constant = matches!(
-        binding.interpolation()?,
-        openusd::schemas::skel::InfluenceInterpolation::Constant
-    );
+    let (indices, weights) = skinning.joint_influences(None)?.unwrap_or_default();
+    let influences = skinning.influences_per_component().max(1);
+    let constant = skinning.is_rigidly_deformed();
     let mut output_indices = vec![[0; 4]; vertex_count];
     let mut output_weights = vec![[0.0; 4]; vertex_count];
     for vertex in 0..vertex_count {
@@ -131,17 +127,13 @@ pub(crate) fn mesh_from_usd_with_skin(read: &ReadMesh, skin: &SkinAttrs) -> bevy
 /// Classify a binding from valid, non-zero influence count. This is the only
 /// selector used by the production path; it does not inspect prim names.
 pub(crate) fn skin_fidelity(
-    binding: &openusd::schemas::skel::SkelBindingAPI,
+    skinning: &openusd_schemas::skel::SkinningQuery,
     vertex_count: usize,
     joint_count: usize,
 ) -> anyhow::Result<SkinFidelity> {
-    let indices = binding.joint_indices()?;
-    let weights = binding.joint_weights()?;
-    let influences = binding.elements_per_element()?.max(1) as usize;
-    let constant = matches!(
-        binding.interpolation()?,
-        openusd::schemas::skel::InfluenceInterpolation::Constant
-    );
+    let (indices, weights) = skinning.joint_influences(None)?.unwrap_or_default();
+    let influences = skinning.influences_per_component().max(1);
+    let constant = skinning.is_rigidly_deformed();
     for vertex in 0..vertex_count {
         let base = if constant { 0 } else { vertex * influences };
         let count = (0..influences)
@@ -163,17 +155,13 @@ pub(crate) fn skin_fidelity(
 /// Convert a binding to four native groups, retaining at most sixteen valid
 /// influences and normalizing the retained weights exactly once.
 pub(crate) fn extended_skin_attrs_from_binding(
-    binding: &openusd::schemas::skel::SkelBindingAPI,
+    skinning: &openusd_schemas::skel::SkinningQuery,
     vertex_count: usize,
     joint_count: usize,
 ) -> anyhow::Result<ExtendedSkinAttrs> {
-    let indices = binding.joint_indices()?;
-    let weights = binding.joint_weights()?;
-    let influences = binding.elements_per_element()?.max(1) as usize;
-    let constant = matches!(
-        binding.interpolation()?,
-        openusd::schemas::skel::InfluenceInterpolation::Constant
-    );
+    let (indices, weights) = skinning.joint_influences(None)?.unwrap_or_default();
+    let influences = skinning.influences_per_component().max(1);
+    let constant = skinning.is_rigidly_deformed();
     let mut output_indices = vec![[[0; 4]; 4]; vertex_count];
     let mut output_weights = vec![[[0.0; 4]; 4]; vertex_count];
     for vertex in 0..vertex_count {

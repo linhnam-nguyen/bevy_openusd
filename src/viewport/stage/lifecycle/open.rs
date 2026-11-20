@@ -24,7 +24,10 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
 
     info!("opening USD stage: {}", path.display());
     let path_string = path.to_string_lossy().into_owned();
-    match Stage::open(&path_string) {
+    match Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(&path_string)
+    {
         Ok(stage) => {
             let archive_paths = match usd_bevy::route::material::archive_paths_for_stage(
                 &stage, &path,

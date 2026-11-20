@@ -117,9 +117,9 @@ fn legacy_global_cache_is_a_scene_v3_miss() -> Result<()> {
 #[test]
 fn scene_owned_builder_prunes_child_and_publishes_payload_spatial_deterministically() -> Result<()>
 {
-    use openusd::{
+    use openusd::{vt, 
         gf::{Vec3d, Vec3f},
-        sdf::Value,
+        vt::Value,
     };
     use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};
 

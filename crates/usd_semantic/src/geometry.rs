@@ -1,8 +1,9 @@
 //! Renderer-independent geometry signatures.
 
 use anyhow::Result;
-use openusd::sdf::{Path, Value};
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 use usd_model::{Bounds3, GeometrySignature, HashDigest, QuantizedPoint3};
 
 use crate::config::SemanticConfig;
@@ -12,15 +13,14 @@ pub fn extract_geometry(
     path: &Path,
     config: &SemanticConfig,
 ) -> Result<Option<GeometrySignature>> {
-    let type_name = stage
-        .prim(path.clone())
+    let prim = stage.prim(path.clone())?;
+    let type_name = prim
         .type_name()?
         .map(|value| value.as_str().to_owned());
     if type_name.as_deref() != Some("Mesh") {
         return Ok(None);
     }
 
-    let prim = stage.prim(path.clone());
     let Some(points) = read_points(&prim.attribute("points").get::<Value>()?) else {
         return Ok(None);
     };

@@ -1,4 +1,4 @@
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 use usd_model::{CanonicalValue, MeasurementMetadata, UnitId};
 use viewport_protocol::EditorValue;
@@ -16,6 +16,7 @@ pub(crate) fn current_bim_value(
             openusd::sdf::path(&locator.prim_path)
                 .map_err(|_| BimAuthoringError::InvalidPrimPath(locator.prim_path.clone()))?,
         )
+        .map_err(|error| BimAuthoringError::Stage(error.to_string()))?
         .attribute(&locator.property_key);
     attribute
         .get::<Value>()

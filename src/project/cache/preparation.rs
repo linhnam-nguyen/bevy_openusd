@@ -22,7 +22,10 @@ pub(super) fn build_runtime_cache(
     let stage_path = path
         .to_str()
         .context("canonical Project stage path must be valid UTF-8")?;
-    let stage = Stage::open(stage_path).context("open canonical Project stage for cache warm")?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(stage_path)
+        .context("open canonical Project stage for cache warm")?;
     let config = usd_semantic::SemanticConfig::default();
     let mut snapshot = usd_semantic::SemanticExtractor::new(config).extract(
         &stage,

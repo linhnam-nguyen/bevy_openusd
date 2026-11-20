@@ -1,12 +1,13 @@
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
-use super::util::read_token;
+use super::util::{read_authored_token, read_token};
 
 // ── Imageable / model metadata ──────────────────────────────────────────
 
 pub fn read_purpose(stage: &Stage, prim: &Path) -> anyhow::Result<String> {
-    Ok(read_token(stage, prim, "purpose")?.unwrap_or_else(|| "default".to_string()))
+    Ok(read_authored_token(stage, prim, "purpose")?.unwrap_or_else(|| "default".to_string()))
 }
 
 /// Resolve the effective (inherited) `purpose` for `prim`: the closest ancestor
@@ -16,7 +17,7 @@ pub fn read_purpose(stage: &Stage, prim: &Path) -> anyhow::Result<String> {
 pub fn read_effective_purpose(stage: &Stage, prim: &Path) -> anyhow::Result<String> {
     let mut cur = prim.clone();
     loop {
-        if let Some(t) = read_token(stage, &cur, "purpose")? {
+        if let Some(t) = read_authored_token(stage, &cur, "purpose")? {
             return Ok(t);
         }
         match cur.parent() {
@@ -41,7 +42,7 @@ pub fn read_visibility(stage: &Stage, prim: &Path) -> anyhow::Result<VisibilityS
 
 pub fn read_kind(stage: &Stage, prim: &Path) -> anyhow::Result<Option<String>> {
     Ok(stage
-        .prim(prim.clone())
+        .prim(prim.clone())?
         .kind()?
         .map(|t| t.as_str().to_string()))
 }
@@ -214,12 +215,10 @@ pub fn read_custom_attrs(
     prim: &Path,
 ) -> anyhow::Result<Vec<(String, CustomAttrValue)>> {
     let mut out = Vec::new();
-    for name in stage.prim(prim.clone()).property_names()? {
-        let attr = stage.prim(prim.clone()).attribute(&name);
-        let is_custom = matches!(
-            attr.get_metadata::<bool>("custom").ok().flatten(),
-            Some(true)
-        );
+    let prim_ref = stage.prim(prim.clone())?;
+    for name in prim_ref.property_names()? {
+        let attr = prim_ref.attribute(&name);
+        let is_custom = matches!(attr.metadata::<bool>("custom").ok().flatten(), Some(true));
         if !is_custom {
             continue;
         }
@@ -294,7 +293,7 @@ fn value_to_custom(v: Value) -> CustomAttrValue {
         Value::Vec4dVec(v) => C::Vec4dArray(v.into_iter().map(|a| [a.x, a.y, a.z, a.w]).collect()),
         Value::QuatfVec(v) => C::QuatfArray(v.into_iter().map(|q| [q.w, q.x, q.y, q.z]).collect()),
         Value::Matrix4dVec(v) => C::Matrix4dArray(v.into_iter().map(|m| m.0).collect()),
-        Value::Dictionary(dict) => C::Dict(dict_from_value_map(dict)),
+        Value::Dictionary(dict) => C::Dict(dict_from_value_map(dict.into())),
         Value::TimeSamples(samples) => C::TimeSamples(
             samples
                 .into_iter()
@@ -317,7 +316,7 @@ fn dict_from_value_map(map: std::collections::HashMap<String, Value>) -> CustomD
 fn dict_from_value(raw: Option<Value>) -> Option<CustomDict> {
     match raw {
         Some(Value::Dictionary(d)) => {
-            let dict = dict_from_value_map(d);
+            let dict = dict_from_value_map(d.into());
             (!dict.is_empty()).then_some(dict)
         }
         _ => None,
@@ -325,7 +324,9 @@ fn dict_from_value(raw: Option<Value>) -> Option<CustomDict> {
 }
 
 pub fn read_custom_data(stage: &Stage, prim: &Path) -> anyhow::Result<Option<CustomDict>> {
-    Ok(dict_from_value(stage.prim(prim.clone()).custom_data()?))
+    Ok(dict_from_value(
+        stage.prim(prim.clone())?.metadata::<Value>("customData")?,
+    ))
 }
 
 /// `assetInfo` dictionary on a prim (package-management metadata). Read via

@@ -190,8 +190,10 @@ fn invalid_binding_evidence_does_not_mark_legacy_wrapper() {
             .open(scene_path.to_string_lossy().as_ref())
             .unwrap();
         assert_eq!(
-            crate::project::assets::spatial::source_binding_marker(&stage.prim(SCENE_SOURCE_PRIM))
-                .unwrap(),
+            crate::project::assets::spatial::source_binding_marker(
+                &stage.prim(SCENE_SOURCE_PRIM).unwrap()
+            )
+            .unwrap(),
             None,
             "invalid {label} binding must not backfill provenance"
         );

@@ -60,7 +60,8 @@ def Xform "World"
         app.world()
             .get_non_send::<LiveStage>()
             .unwrap()
-            .load_payload("/World/A");
+            .load_payload("/World/A")
+            .expect("load payload A");
         let t0 = std::time::Instant::now();
         app.update();
         let _ = response(app.world().resource::<SemanticWorkingStore>());
@@ -101,7 +102,8 @@ def Xform "World"
         app.world()
             .get_non_send::<LiveStage>()
             .unwrap()
-            .load_payload("/World/A");
+            .load_payload("/World/A")
+            .expect("load payload A");
         let t0 = std::time::Instant::now();
         app.update();
         let _ = response(app.world().resource::<SemanticWorkingStore>());

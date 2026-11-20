@@ -2,12 +2,25 @@
 name = "usd_bevy"
 version = "0.0.1"
 edition = "2024"
+rust-version = "1.97.1"
 license = "MIT"
 description = "Bevy plugin: live OpenUSD stage projection, routing, authoring, and marker components."
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
 openusd = { workspace = true }
+openusd-schemas = { workspace = true, features = [
+    "geom",
+    "shade",
+    "skel",
+    "lux",
+    "physics",
+    "media",
+    "vol",
+    "render",
+    "proc",
+    "ui",
+] }
 usd_model = { workspace = true }
 usd_macro = { workspace = true }
 usd_rapier = { workspace = true }

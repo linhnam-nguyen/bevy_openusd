@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs};
 
-use openusd::{sdf::Value, usd::Stage};
+use openusd::{vt, vt::Value, usd::Stage};
 use tempfile::tempdir;
 use usd_project::{
     ModelId, ModelManifestEntry, ModelSourceKind, ProjectId, ProjectManifestV1, ProjectRoot,
@@ -54,12 +54,12 @@ fn migrated_legacy_scene_composes_content_and_is_idempotent() -> anyhow::Result<
     assert!(
         root_stage
             .root_layer()
-            .prim(&member_spec_path)
-            .is_some_and(|spec| spec.has_field("references"))
+            .prim(member_spec_path)?
+            .is_some_and(|spec| spec.has_field("references").unwrap_or(false))
     );
     assert!(
         root_stage
-            .prim(member_path.as_str())
+            .prim(member_path.as_str())?
             .child_names()?
             .iter()
             .any(|name| name.as_str() == "LegacyBuilding")
@@ -101,13 +101,16 @@ fn migrated_legacy_model_composes_content_and_is_idempotent() -> anyhow::Result<
         .set_type_name("Xform")?
         .set_metadata(
             "customData",
-            Value::Dictionary(HashMap::from([
-                (
-                    "usdhub:modelId".to_owned(),
-                    Value::String(model_id.to_string()),
-                ),
-                ("usdhub:schemaVersion".to_owned(), Value::Int(1)),
-            ])),
+            Value::Dictionary(
+                HashMap::from([
+                    (
+                        "usdhub:modelId".to_owned(),
+                        Value::String(model_id.to_string()),
+                    ),
+                    ("usdhub:schemaVersion".to_owned(), Value::Int(1)),
+                ])
+                .into(),
+            ),
         )?;
     legacy_stage
         .define_prim("/ModelRoot/LegacyAsset/Mesh")?
@@ -136,12 +139,12 @@ fn migrated_legacy_model_composes_content_and_is_idempotent() -> anyhow::Result<
     assert!(
         root_stage
             .root_layer()
-            .prim(&member_spec_path)
-            .is_some_and(|spec| spec.has_field("references"))
+            .prim(member_spec_path)?
+            .is_some_and(|spec| spec.has_field("references").unwrap_or(false))
     );
     assert!(
         root_stage
-            .prim(member_path.as_str())
+            .prim(member_path.as_str())?
             .child_names()?
             .iter()
             .any(|name| name.as_str() == "LegacyAsset")

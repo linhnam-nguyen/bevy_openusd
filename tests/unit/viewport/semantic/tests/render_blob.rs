@@ -89,7 +89,7 @@ def Xform "World"
     app.world()
         .get_non_send::<LiveStage>()
         .unwrap()
-        .load_payload("/World/A");
+        .load_payload("/World/A")?;
 
     // Frame 2: Subtree delta update
     app.update();

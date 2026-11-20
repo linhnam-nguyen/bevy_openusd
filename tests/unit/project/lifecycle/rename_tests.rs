@@ -1,6 +1,6 @@
 use std::fs;
 
-use openusd::{sdf, sdf::Value, usd::Stage};
+use openusd::{vt, sdf, vt::Value, usd::Stage};
 use project_protocol::{PlacementSpec, ProjectWriteTarget};
 use tempfile::tempdir;
 use usd_project::{
@@ -204,9 +204,10 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
     ] {
         let path = scene_path(&project_root, scene_id);
         let stage = Stage::open(path.to_string_lossy().as_ref()).unwrap();
-        let member =
-            stage.prim(crate::project::scene::authoring::scene_member_path(placement_id).as_str());
-        let Some(Value::Dictionary(data)) = member.custom_data().unwrap() else {
+        let member = stage
+            .prim(crate::project::scene::authoring::scene_member_path(placement_id).as_str())
+            .unwrap();
+        let Some(Value::Dictionary(data)) = member.metadata::<Value>("customData").unwrap() else {
             panic!("model placement must have customData");
         };
         assert_eq!(
@@ -222,20 +223,20 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
             Some(published.model_id.to_string().as_str())
         );
         assert!(!data.contains_key("usdhub:name"));
-        assert_eq!(
-            stage
-                .root_layer()
-                .prim(
-                    &sdf::path(crate::project::scene::authoring::scene_member_path(
-                        placement_id
-                    ),)
-                    .unwrap()
-                )
-                .unwrap()
-                .field("ui:displayName")
+        let display_name = stage
+            .root_layer()
+            .prim(
+                sdf::path(crate::project::scene::authoring::scene_member_path(
+                    placement_id,
+                ))
                 .unwrap(),
-            Some(Value::String("chair".to_owned()))
-        );
+            )
+            .unwrap()
+            .unwrap()
+            .field("ui:displayName")
+            .unwrap()
+            .and_then(|value| usd_bevy::read::util::decode_metadata_string(&value));
+        assert_eq!(display_name, Some("chair".to_owned()));
         let transform = member
             .attribute("xformOp:transform")
             .get::<Value>()
@@ -248,11 +249,12 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
         let root_layer = stage.root_layer();
         let spec = root_layer
             .prim(
-                &sdf::path(crate::project::scene::authoring::scene_member_path(
+                sdf::path(crate::project::scene::authoring::scene_member_path(
                     placement_id,
                 ))
                 .unwrap(),
             )
+            .unwrap()
             .unwrap();
         let Some(Value::ReferenceListOp(references)) = spec.field("references").unwrap() else {
             panic!("model placement must reference the canonical wrapper");
@@ -283,15 +285,15 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
         "Chair Renamed"
     );
     let wrapper = Stage::open(model_wrapper.to_string_lossy().as_ref()).unwrap();
-    assert_eq!(
-        wrapper
-            .root_layer()
-            .prim(&sdf::path("/ModelRoot").unwrap())
-            .unwrap()
-            .field("ui:displayName")
-            .unwrap(),
-        Some(Value::String("Chair Renamed".to_owned()))
-    );
+    let wrapper_display_name = wrapper
+        .root_layer()
+        .prim(sdf::path("/ModelRoot").unwrap())
+        .unwrap()
+        .unwrap()
+        .field("ui:displayName")
+        .unwrap()
+        .and_then(|value| usd_bevy::read::util::decode_metadata_string(&value));
+    assert_eq!(wrapper_display_name, Some("Chair Renamed".to_owned()));
     for scene_id in [first_scene.scene_id, second_scene.scene_id] {
         let members = read_scene_members(&scene_path(&project_root, scene_id), scene_id).unwrap();
         assert_eq!(members.len(), 1);
@@ -308,7 +310,8 @@ fn model_rename_updates_every_self_describing_placement_without_aliases() {
         .unwrap();
         let Some(Value::Dictionary(data)) = stage
             .prim(crate::project::scene::authoring::scene_member_path(members[0].id).as_str())
-            .custom_data()
+            .unwrap()
+            .metadata::<Value>("customData")
             .unwrap()
         else {
             panic!("renamed model placement must retain customData");

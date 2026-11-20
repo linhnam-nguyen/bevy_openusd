@@ -6,8 +6,8 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;
 use bevy::prelude::*;
 
-use openusd::schemas::geom::{PointBased, Points};
-use openusd::sdf::Value;
+use openusd_schemas::geom::{PointBasedSchema, Points};
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx, track_mesh_projection};
 

@@ -8,6 +8,7 @@ use bevy::{camera::CameraMainTextureUsages, render::render_resource::TextureUsag
 use bevy_glacial::prelude::{AxisGizmo, ChaseCamera, GizmoCamera};
 
 use crate::viewport::camera::ArcballCamera;
+#[cfg(feature = "legacy_frost")]
 use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT};
 
 /// Tag on the viewer's fallback `DirectionalLight`.
@@ -15,6 +16,7 @@ use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT};
 pub(super) struct DefaultSun;
 
 /// Opens the prim tree on startup to give the viewer an immediate focal panel.
+#[cfg(feature = "legacy_frost")]
 pub(super) fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
     ribbon.toggle(RIBBON_LEFT, RIB_TREE);
 }

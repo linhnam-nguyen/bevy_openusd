@@ -1,11 +1,13 @@
 use super::*;
 use crate::{NvidiaRevitConfig, NvidiaRevitIdentityConfig, NvidiaRevitMeasurementMapping};
 use openusd::gf::{Vec3d, Vec3f};
-use openusd::schemas::ui::SceneGraphPrimAPI;
-use openusd::sdf::Value;
+use openusd::vt::Value;
+use openusd_schemas::ui::SceneGraphPrimAPI;
 
 fn fixture() -> Result<Stage> {
-    let stage = Stage::builder().in_memory("semantic-fixture.usda")?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("semantic-fixture.usda")?;
     stage.define_prim("/World")?.set_type_name("Xform")?;
 
     let mesh = stage
@@ -36,7 +38,7 @@ fn fixture() -> Result<Stage> {
         .set(Value::Double(10.0))?;
     mesh.create_attribute("height_unit", "string")?
         .set(Value::String("[ft_i]".to_owned()))?;
-    let ui = SceneGraphPrimAPI::apply(&stage, "/World/Triangle")?;
+    let ui = SceneGraphPrimAPI::apply(&mesh)?;
     ui.create_display_name_attr()?
         .set(Value::token("Triangle"))?;
 
@@ -81,7 +83,9 @@ fn extraction_is_deterministic_and_contains_mesh_signatures() -> Result<()> {
 
 #[test]
 fn absent_display_name_does_not_fall_back_to_prim_basename() -> Result<()> {
-    let stage = Stage::builder().in_memory("display-name-authority.usda")?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .in_memory("display-name-authority.usda")?;
     stage.define_prim("/Architecture")?.set_type_name("Xform")?;
     stage
         .define_prim("/Architecture/Level01")?
@@ -143,7 +147,7 @@ fn changing_a_custom_property_changes_entity_and_metadata_hashes() -> Result<()>
     let extractor = SemanticExtractor::new(config);
 
     let before = extractor.extract(&stage, source())?;
-    let prim = stage.prim(openusd::sdf::path("/World/Triangle")?);
+    let prim = stage.prim(openusd::sdf::path("/World/Triangle")?)?;
     prim.attribute("family")
         .set(Value::String("Lighting".to_owned()))?;
     let after = extractor.extract(&stage, source())?;
@@ -168,7 +172,7 @@ fn measurement_metadata_changes_hashes_even_when_canonical_value_is_unchanged() 
     let baseline = SemanticExtractor::default().extract(&stage, source())?;
 
     stage
-        .prim(openusd::sdf::path("/World/Triangle")?)
+        .prim(openusd::sdf::path("/World/Triangle")?)?
         .attribute("height_unit")
         .set(Value::String("m".to_owned()))?;
     let configured = SemanticConfig {
@@ -217,7 +221,9 @@ fn real_nvidia_revit_export_properties_reach_semantic_snapshot() -> Result<()> {
     let fixture = fixture
         .to_str()
         .expect("real Revit fixture path should be valid UTF-8");
-    let stage = Stage::open(fixture)?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(fixture)?;
 
     let config = SemanticConfig {
         nvidia_revit: NvidiaRevitConfig {
@@ -284,7 +290,7 @@ fn authored_attribute_display_name_is_extracted_and_changes_hashes() -> Result<(
     assert_eq!(baseline_height.display_name, None);
 
     // Set authored displayName metadata on the attribute
-    let prim = stage.prim(openusd::sdf::path("/World/Triangle")?);
+    let prim = stage.prim(openusd::sdf::path("/World/Triangle")?)?;
     let height_attr = prim.attribute("height");
     height_attr.set_metadata("displayName", Value::String("Height (Authored)".to_owned()))?;
 

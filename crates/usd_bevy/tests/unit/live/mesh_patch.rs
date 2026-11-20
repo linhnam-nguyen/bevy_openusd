@@ -1,7 +1,7 @@
 use bevy::asset::Assets;
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use serde::Serialize;
 use std::time::Instant;
 
@@ -152,6 +152,7 @@ fn set_points(app: &mut App) {
     let path = openusd::sdf::path(MESH_PATH).expect("mesh path is valid");
     live.stage
         .prim(path)
+        .expect("mesh prim exists")
         .attribute("points")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([0.0, 0.0, 0.0]),
@@ -170,6 +171,7 @@ fn set_display_color(app: &mut App) {
     let path = openusd::sdf::path(MESH_PATH).expect("mesh path is valid");
     live.stage
         .prim(path)
+        .expect("mesh prim exists")
         .attribute("primvars:displayColor")
         .set(Value::Vec3fVec(vec![
             Vec3f::from([0.0, 1.0, 1.0]),

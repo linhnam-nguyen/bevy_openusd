@@ -2,7 +2,8 @@
 //! TRS, read from the composed stage via openusd.
 
 use glam::{Mat4, Quat, Vec3};
-use openusd::sdf::{Path, Value};
+use openusd::sdf::{Path};
+use openusd::vt::Value;
 use openusd::usd::{Stage, TimeCode};
 
 /// Decomposed local transform: translate, rotate (quaternion `xyzw`), scale.
@@ -50,10 +51,10 @@ fn attr_value(
     name: &str,
     time: Option<TimeCode>,
 ) -> anyhow::Result<Option<Value>> {
-    stage
-        .prim(prim.clone())
+    Ok(stage
+        .prim(prim.clone())?
         .attribute(name)
-        .get_at::<Value>(time)
+        .get_at::<Value>(time)?)
 }
 
 /// Read `xformOpOrder` and compose every listed op into a single 4×4, then

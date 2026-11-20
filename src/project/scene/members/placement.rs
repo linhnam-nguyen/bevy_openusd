@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use openusd::{gf::Matrix4d, sdf::Value, usd::Prim};
+use openusd::{vt, gf::Mat4d, vt::Value, usd::Prim};
 use usd_project::ScenePlacementTransform;
 
 pub(super) fn author_scene_member_transform(
@@ -9,7 +9,7 @@ pub(super) fn author_scene_member_transform(
     member_prim
         .create_attribute("xformOp:transform", "matrix4d")?
         .set_custom(false)?
-        .set(Value::Matrix4d(Matrix4d(transform.0)))?;
+        .set(Value::Matrix4d(Mat4d(transform.0)))?;
     member_prim
         .create_attribute("xformOpOrder", "token[]")?
         .set_custom(false)?

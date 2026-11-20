@@ -15,10 +15,11 @@
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
-use openusd::schemas::lux::{
-    CylinderLight, DiskLight, DistantLight, Light, RectLight, ShapingAPI, SphereLight,
+use openusd_schemas::lux::{
+    CylinderLight, CylinderLightSchema, DiskLight, DiskLightSchema, DistantLight, LightAPI,
+    RectLight, RectLightSchema, ShapingAPI, SphereLight, SphereLightSchema,
 };
-use openusd::sdf::Value;
+use openusd::vt::Value;
 
 use super::{PrimRoute, RouteCtx};
 
@@ -51,7 +52,8 @@ struct LuxInputs {
 
 /// Read the `UsdLuxLightAPI` inputs common to every light through the schema's
 /// typed getters (`inputs:intensity`, `inputs:color`, `inputs:exposure`).
-fn common_inputs<L: Light>(light: &L) -> (Color, f32) {
+fn common_inputs<L: openusd::usd::SchemaBase>(light: &L) -> (Color, f32) {
+    let light = LightAPI::from_prim_unchecked(light.prim().clone());
     let color = match light.color_attr().get::<Value>() {
         Ok(Some(Value::Vec3f(c))) => Color::linear_rgb(c.x, c.y, c.z),
         Ok(Some(Value::Vec3d(c))) => Color::linear_rgb(c.x as f32, c.y as f32, c.z as f32),
@@ -76,7 +78,7 @@ fn cone_angle(ctx: &RouteCtx) -> Option<f32> {
     let shaping = ShapingAPI::get(ctx.stage, ctx.path.clone())
         .ok()
         .flatten()?;
-    shaping.cone_angle_attr().get::<f32>().ok().flatten()
+    shaping.shaping_cone_angle_attr().get::<f32>().ok().flatten()
 }
 
 /// Maps UsdLux prims to Bevy light components.

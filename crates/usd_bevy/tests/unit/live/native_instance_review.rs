@@ -4,7 +4,7 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{App, Transform, Vec3};
 use openusd::gf::Vec3f;
-use openusd::sdf::Value;
+use openusd::vt::Value;
 use openusd::usd::Stage;
 
 use crate::live::{
