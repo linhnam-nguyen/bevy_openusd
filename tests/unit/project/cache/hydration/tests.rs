@@ -126,7 +126,7 @@ fn fixture() -> Result<(
         meshes: vec![RuntimeBlobReference {
             blob_id: mesh_id.0.clone(),
             payload_kind: RuntimePayloadKind::Mesh,
-            payload_version: 1,
+            payload_version: crate::project::cache::blobs::mesh_payload_version(&mesh_bytes)?,
             byte_size: mesh_bytes.len() as u64,
         }],
         materials: vec![RuntimeBlobReference {

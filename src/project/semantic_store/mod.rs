@@ -8,17 +8,14 @@ mod turso;
 use std::{future::Future, path::Path};
 
 use anyhow::{Context, Result, bail};
-use openusd::usd::Stage;
 use usd_git::GitRepository;
 use usd_model::{EntityKey, EntitySnapshot, SemanticSnapshot, SnapshotId, SnapshotSource};
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
-pub(crate) use query::{
+pub(crate) use crate::semantic_query::{
     DistinctFieldKeys, DistinctFieldKeysResult, GroupField, SemanticFilter, SemanticGroup,
     SemanticKey, SemanticQuery, SemanticQueryResult, SemanticQueryRow, SortField,
 };
-
-mod query;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/semantic_store/test_support.rs"]
@@ -99,8 +96,7 @@ pub(crate) fn regenerate_git_snapshot(
             stage_path.display()
         );
     }
-    let stage_path_string = stage_path.to_string_lossy().into_owned();
-    let stage = Stage::open(&stage_path_string)
+    let stage = usd_bevy::LiveStage::open_authoritative(&stage_path)
         .with_context(|| format!("opening materialized USD stage {}", stage_path.display()))?;
     SemanticExtractor::new(config)
         .extract(

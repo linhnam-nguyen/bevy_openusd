@@ -35,7 +35,7 @@ pub(super) fn apply_display_purposes_system(world: &mut World) {
     };
     for (path, entity) in entries {
         if let Ok(p) = openusd::sdf::path(&path) {
-            registry.patch_prim(&live.stage, &p, world, entity, &["purpose"]);
+            registry.patch_prim(&live.projection_stage(), &p, world, entity, &["purpose"]);
         }
     }
     world.insert_resource(map);
@@ -47,15 +47,15 @@ pub(super) fn apply_display_purposes_system(world: &mut World) {
 
 /// Drain the live stage's change queue once and publish the batch.
 pub(super) fn drain_stage_changes_system(world: &mut World) {
-    let batch = world
+    let (batch, projection) = world
         .get_non_send::<LiveStage>()
-        .and_then(LiveStage::drain_change_batch);
-    world.resource_mut::<PendingStageChanges>().batch = batch;
+        .map_or((None, None), LiveStage::drain_batches);
+    *world.resource_mut::<PendingStageChanges>() = PendingStageChanges { batch, projection };
 }
 
 /// Reproject the batch published by [`drain_stage_changes_system`].
 pub(super) fn reproject_from_batch_system<E: ReconcileExecutor + Default>(world: &mut World) {
-    let batch = world.resource::<PendingStageChanges>().batch.clone();
+    let batch = world.resource::<PendingStageChanges>().projection.clone();
     let Some(batch) = batch else {
         return;
     };

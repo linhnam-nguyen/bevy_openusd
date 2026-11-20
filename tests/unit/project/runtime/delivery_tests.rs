@@ -65,7 +65,8 @@ fn snapshot(mesh_blob: Option<usd_model::BlobId>) -> SemanticSnapshot {
 fn bundle_reuses_mesh_bytes_and_excludes_semantic_properties() -> Result<()> {
     let directory = tempdir()?;
     let store = FilesystemBlobStore::new(directory.path().join("objects"))?;
-    let mesh_id = store.put(b"mesh-bytes")?;
+    let mesh = br#"{"version":1,"positions":[[0.0,0.0,0.0],[1.0,0.0,0.0],[0.0,1.0,0.0]],"normals":null,"uvs":null,"colors":null,"indices":[0,1,2]}"#;
+    let mesh_id = store.put(mesh)?;
     let bundle = build_runtime_delivery(
         &store,
         &snapshot(Some(mesh_id.clone())),
@@ -80,7 +81,50 @@ fn bundle_reuses_mesh_bytes_and_excludes_semantic_properties() -> Result<()> {
             .windows(b"secret".len())
             .any(|window| window == b"secret")
     }));
-    assert_eq!(bundle.blobs[1], (mesh_id.0, b"mesh-bytes".to_vec()));
+    assert_eq!(bundle.manifest.meshes[0].payload_version, 1);
+    assert_eq!(bundle.blobs[1], (mesh_id.0, mesh.to_vec()));
+
+    // Construct a valid compact v2 triangle without relying on a fixture
+    // that might inadvertently be accepted through the legacy JSON path.
+    let mut v2 = Vec::new();
+    v2.extend_from_slice(b"NMSH");
+    v2.extend_from_slice(&2_u16.to_le_bytes());
+    v2.extend_from_slice(&0_u16.to_le_bytes()); // no optional attributes
+    v2.extend_from_slice(&3_u32.to_le_bytes()); // vertices
+    v2.extend_from_slice(&3_u32.to_le_bytes()); // triangle indices
+    for component in [0_f32, 0., 0., 1., 0., 0., 0., 1., 0.] {
+        v2.extend_from_slice(&component.to_le_bytes());
+    }
+    for index in [0_u32, 1, 2] {
+        v2.extend_from_slice(&index.to_le_bytes());
+    }
+    let v2_id = store.put(&v2)?;
+    let v2_bundle =
+        build_runtime_delivery(&store, &snapshot(Some(v2_id)), RuntimeProfile::NativeMedium)?;
+    assert_eq!(v2_bundle.manifest.meshes[0].payload_version, 2);
+
+    // Store malformed payloads under THEIR OWN correct content hashes.
+    // A digest mismatch is not allowed to mask the semantic-validation bug.
+    let mut non_finite_v2 = v2.clone();
+    non_finite_v2[16..20].copy_from_slice(&f32::NAN.to_le_bytes());
+    let mut invalid_index_v2 = v2.clone();
+    let last_index = invalid_index_v2.len() - 4;
+    invalid_index_v2[last_index..].copy_from_slice(&9_u32.to_le_bytes());
+    let invalid_json = br#"{"version":1,"positions":[[0,0,0],[1,0,0],[0,1,0]],"normals":null,"uvs":null,"colors":null,"indices":[0,1,9]}"#;
+    let invalid_attrs = br#"{"version":1,"positions":[[0,0,0],[1,0,0],[0,1,0]],"normals":[[0,0,1]],"uvs":null,"colors":null,"indices":[0,1,2]}"#;
+    for invalid in [
+        non_finite_v2.as_slice(),
+        invalid_index_v2.as_slice(),
+        invalid_json.as_slice(),
+        invalid_attrs.as_slice(),
+        &v2[..v2.len() - 1],
+    ] {
+        let id = store.put(invalid)?;
+        let error =
+            build_runtime_delivery(&store, &snapshot(Some(id)), RuntimeProfile::NativeMedium)
+                .expect_err("correctly hashed malformed geometry must not be published");
+        assert!(format!("{error:#}").contains("runtime mesh"));
+    }
     Ok(())
 }
 

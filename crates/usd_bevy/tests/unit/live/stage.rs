@@ -36,6 +36,7 @@ fn pending_batch_is_readable_without_consuming_it() {
     };
     let pending = PendingStageChanges {
         batch: Some(batch.clone()),
+        ..Default::default()
     };
 
     assert_eq!(pending.batch(), Some(&batch));

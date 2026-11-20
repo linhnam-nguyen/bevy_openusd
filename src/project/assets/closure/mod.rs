@@ -19,7 +19,7 @@ pub(crate) mod scene_service;
 pub(crate) use discovery::{LocalizedDependencyReport, discover, open_stage_with_resolver};
 pub(crate) use localization::{
     materialize_source_closure, materialize_source_closure_with_resolver,
-    source_closure_fingerprint,
+    source_closure_files, source_closure_fingerprint,
 };
 
 /// Discover a canonical Project asset and prove its complete dependency

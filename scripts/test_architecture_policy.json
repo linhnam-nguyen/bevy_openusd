@@ -288,6 +288,18 @@
       "target": "crates/viewport_streaming/tests/unit/router.rs"
     },
     {
+      "owner_file": "src/project/cache/assembly.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/project/cache/assembly_tests.rs"
+    },
+    {
+      "owner_file": "crates/usd_bevy/src/live/visual_stage.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "crates/usd_bevy/tests/unit/live/visual_stage_snapshot.rs"
+    },
+    {
       "owner_file": "src/project/cache/blobs.rs",
       "module_path": "",
       "mod_name": "repair_tests",

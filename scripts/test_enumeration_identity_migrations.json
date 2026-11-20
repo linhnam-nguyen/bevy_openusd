@@ -1181,6 +1181,59 @@
           "target": "usd_bevy"
         }
       ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C04"
+      ],
+      "name": "project::cache::assembly::tests::standalone_assembly_is_deterministic_and_preserves_source",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C04"
+      ],
+      "name": "live::visual_stage::tests::sealed_document_keeps_open_time_assets_and_replays_without_source_files",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "BO-M9-C1",

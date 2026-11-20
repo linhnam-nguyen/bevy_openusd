@@ -12,7 +12,6 @@ use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
 };
 use bevy::prelude::*;
-use openusd::usd::Stage;
 pub(crate) use scene_cache::install_scene_cache_bootstrap_before_stage_open;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -32,7 +31,7 @@ pub(crate) enum StageInstallMode {
 pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     world: &mut World,
     path: std::path::PathBuf,
-    stage: Stage,
+    stage: LiveStage,
     cache_context: Option<ActiveProjectCacheContext>,
     scene_cache: Option<SceneCacheActivation>,
     scene_cache_project_root: Option<std::path::PathBuf>,
@@ -42,6 +41,12 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     presentation: StagePresentationContext,
     install_mode: StageInstallMode,
 ) -> Result<(), String> {
+    if world
+        .get_non_send::<LiveStage>()
+        .is_some_and(LiveStage::is_authoring_frozen)
+    {
+        return Err("the active document is already leased for publication".to_owned());
+    }
     let install_started = Instant::now();
     let root = path
         .parent()
@@ -93,7 +98,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         }
     });
     let archive_paths = archive_paths.unwrap_or_else(|| {
-        usd_bevy::route::material::archive_paths_for_stage(&stage, &path).unwrap_or_else(|error| {
+        usd_bevy::route::material::archive_paths_for_stage(&stage.stage, &path).unwrap_or_else(|error| {
             bevy::log::warn!(
                 "could not derive active USDZ packages for {}; embedded textures will use source fallback: {error:#}",
                 path.display()
@@ -181,7 +186,8 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
             scene_cache_project_root.as_deref(),
         );
     }
-    world.insert_non_send(LiveStage::new(stage));
+    world.insert_non_send(stage);
+    crate::viewport::api::reset_document_edit_state(world);
     world.remove_resource::<crate::viewport::stage::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
@@ -377,6 +383,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
 /// activation before the caller commits its logical authority.
 pub(crate) fn clear_active_stage_for_generation(world: &mut World, activation_generation: u64) {
     super::clear_projected_stage(world);
+    crate::viewport::api::reset_document_edit_state(world);
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
     {
         cache.clear_active_archives();

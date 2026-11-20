@@ -89,7 +89,17 @@ fn persist(
     scene_cache_owner: Option<&SceneCacheOwnershipContext>,
     cache_warm: &ProjectCacheWarmQueue,
 ) {
-    if let Err(error) = usd_bevy::authoring::save_stage_as(&stage.stage, filename) {
+    if !stage.try_freeze_authoring() {
+        reject(
+            outbox,
+            request_id,
+            "the active document is already leased for publication".to_owned(),
+        );
+        return;
+    }
+    let written = usd_bevy::authoring::save_stage_as(&stage.stage, filename);
+    stage.unfreeze_authoring();
+    if let Err(error) = written {
         reject(outbox, request_id, error.to_string());
         return;
     }

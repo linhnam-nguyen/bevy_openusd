@@ -71,9 +71,9 @@ fn canonical_stage_install_preserves_cache_presentation_lookup_and_resident_mesh
     activate_open_stage_with_cache_context_for_generation(
         &mut world,
         stage_path,
-        stage,
+        LiveStage::new(stage),
         None,
-        Some(activation),
+        Some(activation.clone()),
         Some(project.path().to_path_buf()),
         Some(scene_id),
         Some(Vec::new()),
@@ -83,6 +83,11 @@ fn canonical_stage_install_preserves_cache_presentation_lookup_and_resident_mesh
     )
     .expect("install canonical Stage after cache bootstrap");
 
+    assert!(!install_scene_cache_bootstrap_before_stage_open(
+        &mut world,
+        project.path(),
+        &activation,
+    ));
     assert!(world.get_non_send::<LiveStage>().is_some());
     assert!(world.get_resource::<SceneCachePresentation>().is_some());
     assert!(world.get_resource::<SceneCacheOwnershipContext>().is_some());

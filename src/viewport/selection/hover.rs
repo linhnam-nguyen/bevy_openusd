@@ -27,6 +27,7 @@ pub(in crate::viewport) struct HoveredTarget {
     last_camera_viewport_size: Option<Vec2>,
     last_focused: Option<bool>,
     last_scene_revision: Option<u64>,
+    last_visual_context: Option<usd_bevy::VisualContextId>,
 }
 
 /// Renderer diagnostics used by the B5 performance evidence packet.
@@ -45,6 +46,7 @@ pub(crate) struct HoverPickStats {
 pub(in crate::viewport) fn update_hover_target(
     input: Res<ViewportNavigationInput>,
     scene_index: Res<SceneAnchorIndex>,
+    live: Option<NonSend<usd_bevy::LiveStage>>,
     mut hovered: ResMut<HoveredTarget>,
     mut stats: ResMut<HoverPickStats>,
     cameras: Query<(&Camera, &GlobalTransform, &Transform), With<Camera3d>>,
@@ -69,8 +71,15 @@ pub(in crate::viewport) fn update_hover_target(
         || hovered.last_camera_viewport_size != Some(camera_viewport_size);
     let focus_changed = hovered.last_focused != Some(input.focused);
     let scene_changed = hovered.last_scene_revision != Some(scene_index.revision());
+    let visual_context = live.as_deref().map(usd_bevy::LiveStage::visual_context_id);
+    let context_changed = hovered.last_visual_context != visual_context;
 
-    if !pointer_changed && !viewport_changed && !camera_changed && !focus_changed && !scene_changed
+    if !pointer_changed
+        && !viewport_changed
+        && !camera_changed
+        && !focus_changed
+        && !scene_changed
+        && !context_changed
     {
         stats.skipped_idle_frames = stats.skipped_idle_frames.saturating_add(1);
         return;
@@ -84,6 +93,7 @@ pub(in crate::viewport) fn update_hover_target(
     hovered.last_camera_viewport_size = Some(camera_viewport_size);
     hovered.last_focused = Some(input.focused);
     hovered.last_scene_revision = Some(scene_index.revision());
+    hovered.last_visual_context = visual_context;
     stats.raycasts = stats.raycasts.saturating_add(1);
 
     let next = if !input.focused {

@@ -55,7 +55,7 @@ pub(super) fn rebuild(world: &mut bevy::ecs::world::World, live: &LiveStage, map
         counters.animation_runtime_rebuilds(1);
     }
     skeleton::clear_bindings(world);
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     let by_skeleton = binding::collect_bindings(stage);
     skeleton::rebuild_skeletons(world, stage, map, &by_skeleton);
     let transforms = binding::collect_transform_bindings(world, stage, map);

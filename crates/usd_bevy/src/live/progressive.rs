@@ -22,11 +22,12 @@ pub(super) fn project_on_load_system(world: &mut World) {
             (
                 live.session_id(),
                 live.stage_identity(),
-                live.stage.start_time_code(),
+                live.projection_stage().start_time_code(),
                 live.has_changes(),
             )
         })
     else {
+        world.remove_non_send::<super::visual_stage::SnapshotTextures>();
         return;
     };
     let route_stage_identity = world.resource::<crate::route::StageTime>().stage_identity();
@@ -83,6 +84,7 @@ pub(super) fn project_on_load_system(world: &mut World) {
         let Some(live) = world.remove_non_send::<LiveStage>() else {
             return;
         };
+        live.install_texture_snapshot(world);
         let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
         drain_generation(world, &live, &mut map);
         world.insert_resource(map);
@@ -101,6 +103,7 @@ pub(super) fn project_on_load_system(world: &mut World) {
     let Some(live) = world.remove_non_send::<LiveStage>() else {
         return;
     };
+    live.install_texture_snapshot(world);
     let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
     start_generation(world, &live, &mut map, session_id);
     drain_generation(world, &live, &mut map);
@@ -122,7 +125,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
         counters.projection_full_stage_walks(1);
     }
-    let plan_builder = ProjectionPlanBuilder::new(&live.stage);
+    let plan_builder = ProjectionPlanBuilder::new(&live.projection_stage());
     world.remove_non_send::<ProjectionPlanBuilder>();
     world.insert_non_send(plan_builder);
     world.insert_resource(AnimatedPrims::default());
@@ -234,12 +237,12 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                 .and_then(|parent| state.entities.get(parent).copied().flatten());
             (state.next_index, entry, parent)
         };
-        let entity = project_plan_entry(world, &live.stage, &registry, map, &entry, parent);
+        let entity = project_plan_entry(world, &live.projection_stage(), &registry, map, &entry, parent);
         let is_mesh = world.get::<Mesh3d>(entity).is_some();
         if entry.path() != "/"
             && openusd::sdf::path(entry.path())
                 .ok()
-                .is_some_and(|path| prim_is_animated(&live.stage, &path))
+                .is_some_and(|path| prim_is_animated(&live.projection_stage(), &path))
         {
             world
                 .resource_mut::<ProgressiveProjectionState>()
@@ -337,7 +340,7 @@ fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
         let rebuild = world.resource_scope(
             |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
                 let mut paths = world.resource_mut::<PathStore>();
-                dependencies.rebuild(&mut paths, &live.stage)
+                dependencies.rebuild(&mut paths, &live.projection_stage())
             },
         );
         if let Err(error) = rebuild {

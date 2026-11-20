@@ -20,7 +20,10 @@ use usd_bevy::ProjectionSeed;
 use usd_model::BlobId;
 use viewport_protocol::{RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind};
 
-use super::blobs::{BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, get_mesh};
+use super::blobs::{
+    BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, decode_mesh_payload, mesh_payload_version,
+    read_mesh_payload,
+};
 use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore};
 use crate::project::runtime::delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
 use crate::project::runtime::payload::{
@@ -90,8 +93,16 @@ pub(crate) fn hydrate_project_cache(
                 geometry.blob_id
             )
         })?;
-        let mesh = get_mesh(&store, &BlobId(geometry.blob_id.clone()))?
+        let bytes = read_mesh_payload(&store, &BlobId(geometry.blob_id.clone()))?
             .with_context(|| format!("cached mesh {} is missing", geometry.blob_id))?;
+        ensure!(
+            reference.payload_kind == RuntimePayloadKind::Mesh
+                && reference.payload_version == mesh_payload_version(&bytes)?
+                && reference.byte_size == bytes.len() as u64,
+            "cached runtime mesh {} does not match its descriptor",
+            geometry.blob_id
+        );
+        let mesh = decode_mesh_payload(&bytes)?;
         meshes.push((geometry.blob_id.clone(), mesh, reference.byte_size));
     }
 

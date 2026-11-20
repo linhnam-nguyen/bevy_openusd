@@ -1,7 +1,6 @@
 //! Lifecycle for opening, projecting, and reloading a live USD stage.
 
 use bevy::prelude::*;
-use openusd::usd::Stage;
 use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
 use crate::project::cache::hydration::ActiveProjectCacheContext;
@@ -99,11 +98,7 @@ where
     F: FnOnce(),
 {
     before_open();
-    let path_string = path.to_string_lossy().into_owned();
-    let stage = Stage::builder()
-        .schema_registry(openusd_schemas::schema_registry())
-        .open(&path_string)
-        .map_err(|error| {
+    let stage = LiveStage::open_document(&path).map_err(|error| {
         error!("failed to open Project stage {}: {error:#}", path.display());
         PROJECT_STAGE_OPEN_FAILURE.to_owned()
     })?;
@@ -130,11 +125,12 @@ pub(crate) fn handle_usd_hot_reload(world: &mut World) {
     }
     world.resource_mut::<ReloadRequest>().requested = false;
 
-    let path = {
-        let requested = world.resource::<RequestedAsset>();
-        requested.root.join(&requested.name)
+    let Some(path) = world
+        .get_resource::<RequestedAsset>()
+        .map(|requested| requested.root.join(&requested.name))
+    else {
+        return;
     };
-    clear_projected_stage(world);
     open::open_stage(world, path);
 }
 

@@ -15,6 +15,9 @@ pub(crate) fn read_texture_bytes(
     texture_path: &str,
 ) -> (Option<Vec<u8>>, ArchiveLookupStats) {
     let mut archive_stats = ArchiveLookupStats::default();
+    if let Some(snapshot) = world.get_non_send::<crate::live::visual_stage::SnapshotTextures>() {
+        return (snapshot.read(texture_path), archive_stats);
+    }
     if openusd::ar::is_package_relative_path(texture_path) {
         let Some((package, inner)) = split_package_relative_path_outer(texture_path) else {
             return (None, archive_stats);

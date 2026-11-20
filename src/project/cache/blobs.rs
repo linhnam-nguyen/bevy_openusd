@@ -7,7 +7,7 @@
 //! payload references stored in the project model.
 
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -17,6 +17,7 @@ use bevy::mesh::{Indices, Mesh, PrimitiveTopology, VertexAttributeValues};
 use serde::{Deserialize, Serialize};
 use usd_model::BlobId;
 
+use super::mesh_codec;
 use crate::project::storage::CACHE_OBJECTS_RELATIVE_PATH;
 
 pub(crate) const OBJECTS_DIRECTORY: &str = CACHE_OBJECTS_RELATIVE_PATH;
@@ -25,6 +26,16 @@ pub(crate) trait BlobStore {
     fn put(&self, bytes: &[u8]) -> Result<BlobId>;
     fn get(&self, id: &BlobId) -> Result<Option<Vec<u8>>>;
     fn contains(&self, id: &BlobId) -> Result<bool>;
+
+    fn get_bounded(&self, id: &BlobId, max_bytes: usize) -> Result<Option<Vec<u8>>> {
+        let bytes = self.get(id)?;
+        anyhow::ensure!(
+            bytes.as_ref().is_none_or(|bytes| bytes.len() <= max_bytes),
+            "blob {} exceeds its encoded byte limit",
+            id.0
+        );
+        Ok(bytes)
+    }
 }
 
 /// Immutable mesh payload prepared on the Bevy owner thread and persisted by
@@ -122,14 +133,47 @@ impl BlobStore for FilesystemBlobStore {
     }
 
     fn get(&self, id: &BlobId) -> Result<Option<Vec<u8>>> {
+        self.read_object(id, None)
+    }
+
+    fn get_bounded(&self, id: &BlobId, max_bytes: usize) -> Result<Option<Vec<u8>>> {
+        self.read_object(id, Some(max_bytes))
+    }
+
+    fn contains(&self, id: &BlobId) -> Result<bool> {
+        // Validate the digest as well as existence. This makes corruption
+        // observable to callers instead of reporting a bad object as usable.
+        Ok(self.get(id)?.is_some())
+    }
+}
+
+impl FilesystemBlobStore {
+    fn read_object(&self, id: &BlobId, max_bytes: Option<usize>) -> Result<Option<Vec<u8>>> {
         let path = self.object_path(id)?;
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
+        let mut file = match fs::File::open(&path) {
+            Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => {
                 return Err(error).with_context(|| format!("read blob {}", path.display()));
             }
         };
+        let mut bytes = Vec::new();
+        if let Some(max_bytes) = max_bytes {
+            anyhow::ensure!(
+                file.metadata()?.len() <= max_bytes as u64,
+                "blob {} exceeds its encoded byte limit",
+                id.0
+            );
+            file.take((max_bytes as u64).saturating_add(1))
+                .read_to_end(&mut bytes)?;
+            anyhow::ensure!(
+                bytes.len() <= max_bytes,
+                "blob {} exceeds its encoded byte limit",
+                id.0
+            );
+        } else {
+            file.read_to_end(&mut bytes)?;
+        }
         let actual = blake3::hash(&bytes).to_hex().to_string();
         if actual != id.0 {
             bail!(
@@ -139,12 +183,6 @@ impl BlobStore for FilesystemBlobStore {
             );
         }
         Ok(Some(bytes))
-    }
-
-    fn contains(&self, id: &BlobId) -> Result<bool> {
-        // Validate the digest as well as existence. This makes corruption
-        // observable to callers instead of reporting a bad object as usable.
-        Ok(self.get(id)?.is_some())
     }
 }
 
@@ -163,11 +201,7 @@ fn validate_blob_id(id: &BlobId) -> Result<()> {
     Ok(())
 }
 
-/// Versioned first serializer for projected triangle-list Bevy meshes.
-///
-/// JSON is intentionally a simple milestone-17 format. The blob boundary is
-/// stable, so it can later be replaced by a compact binary codec without
-/// changing object addressing or the project metadata contract.
+/// Renderer-neutral triangle-list mesh data. JSON v1 remains readable.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(crate) struct MeshBlob {
     pub(crate) version: u16,
@@ -212,26 +246,23 @@ impl MeshBlob {
             Some(Indices::U32(values)) => values.clone(),
             None => bail!("mesh blob requires indexed geometry"),
         };
-        if indices.len() % 3 != 0 {
-            bail!("triangle-list mesh index count must be divisible by three");
-        }
-
-        validate_attribute_len("normals", normals.as_deref(), positions.len())?;
-        validate_attribute_len("UVs", uvs.as_deref(), positions.len())?;
-        validate_attribute_len("colors", colors.as_deref(), positions.len())?;
-
-        Ok(Self {
-            version: 1,
+        let mesh = Self {
+            version: mesh_codec::BINARY_VERSION,
             positions,
             normals,
             uvs,
             colors,
             indices,
-        })
+        };
+        mesh.validate()?;
+        Ok(mesh)
     }
 
-    pub(crate) fn to_bevy_mesh(&self) -> Result<Mesh> {
-        if self.version != 1 {
+    pub(super) fn validate(&self) -> Result<()> {
+        if !matches!(
+            self.version,
+            mesh_codec::LEGACY_JSON_VERSION | mesh_codec::BINARY_VERSION
+        ) {
             bail!("unsupported mesh blob version {}", self.version);
         }
         if !self.indices.len().is_multiple_of(3) {
@@ -240,7 +271,22 @@ impl MeshBlob {
         validate_attribute_len("normals", self.normals.as_deref(), self.positions.len())?;
         validate_attribute_len("UVs", self.uvs.as_deref(), self.positions.len())?;
         validate_attribute_len("colors", self.colors.as_deref(), self.positions.len())?;
+        if self
+            .indices
+            .iter()
+            .any(|&index| index as usize >= self.positions.len())
+        {
+            bail!("mesh index exceeds vertex count");
+        }
+        validate_finite_components("positions", Some(&self.positions))?;
+        validate_finite_components("normals", self.normals.as_deref())?;
+        validate_finite_components("UVs", self.uvs.as_deref())?;
+        validate_finite_components("colors", self.colors.as_deref())?;
+        Ok(())
+    }
 
+    pub(crate) fn to_bevy_mesh(&self) -> Result<Mesh> {
+        self.validate()?;
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
@@ -258,14 +304,16 @@ impl MeshBlob {
         mesh.insert_indices(Indices::U32(self.indices.clone()));
         Ok(mesh)
     }
+}
 
-    fn encode(&self) -> Result<Vec<u8>> {
-        serde_json::to_vec(self).context("encode mesh blob")
+fn validate_finite_components<const N: usize>(
+    name: &str,
+    values: Option<&[[f32; N]]>,
+) -> Result<()> {
+    if values.is_some_and(|values| values.iter().flatten().any(|value| !value.is_finite())) {
+        bail!("mesh {name} contain a non-finite component");
     }
-
-    fn decode(bytes: &[u8]) -> Result<Self> {
-        serde_json::from_slice(bytes).context("decode mesh blob")
-    }
+    Ok(())
 }
 
 fn validate_attribute_len<T>(name: &str, values: Option<&[T]>, expected: usize) -> Result<()> {
@@ -297,16 +345,30 @@ pub(crate) fn put_mesh(store: &impl BlobStore, mesh: &Mesh) -> Result<BlobId> {
 /// blocking data-plane resource.
 pub(crate) fn prepare_mesh_payload(mesh: &Mesh) -> Result<PreparedMeshBlob> {
     let blob = MeshBlob::from_bevy_mesh(mesh)?;
-    let bytes = blob.encode()?;
+    let bytes = mesh_codec::encode(&blob)?;
     let blob_id = BlobId(blake3::hash(&bytes).to_hex().to_string());
     Ok(PreparedMeshBlob { blob_id, bytes })
 }
 
 pub(crate) fn get_mesh(store: &impl BlobStore, id: &BlobId) -> Result<Option<Mesh>> {
-    let Some(bytes) = store.get(id)? else {
+    let Some(bytes) = read_mesh_payload(store, id)? else {
         return Ok(None);
     };
-    Ok(Some(MeshBlob::decode(&bytes)?.to_bevy_mesh()?))
+    Ok(Some(decode_mesh_payload(&bytes)?))
+}
+
+pub(crate) use mesh_codec::payload_version as mesh_payload_version;
+
+pub(crate) fn read_mesh_payload(store: &impl BlobStore, id: &BlobId) -> Result<Option<Vec<u8>>> {
+    store.get_bounded(id, mesh_codec::MAX_RENDER_BLOB_BYTES)
+}
+
+pub(crate) fn decode_mesh_payload(bytes: &[u8]) -> Result<Mesh> {
+    mesh_codec::decode(bytes)?.to_bevy_mesh()
+}
+
+pub(crate) fn validate_mesh_payload(bytes: &[u8]) -> Result<u16> {
+    Ok(mesh_codec::decode(bytes)?.version)
 }
 
 #[cfg(test)]

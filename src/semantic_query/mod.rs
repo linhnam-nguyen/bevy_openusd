@@ -1,5 +1,7 @@
 //! Transport-neutral semantic query types shared by working and durable stores.
 
+pub(crate) mod sql;
+
 use usd_model::EntityKey;
 
 /// Query expressed by viewport/application code without exposing SQL.

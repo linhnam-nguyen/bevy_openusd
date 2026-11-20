@@ -15,6 +15,7 @@
 )]
 
 mod project;
+mod semantic_query;
 mod viewport;
 
 fn main() {

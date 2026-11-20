@@ -1,11 +1,10 @@
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Instant,
 };
 
-use openusd::usd::Stage;
 use project_protocol::{
     ProjectActivationCommand, ProjectReadError, ProjectReadErrorCode, ProjectStageTarget,
 };
@@ -351,7 +350,7 @@ fn invalid_project_data(project_id: ProjectId) -> ProjectReadError {
 /// Bevy lifecycle remains the sole producer of stage-derived hierarchy and
 /// semantic/BIM resources after installation.
 pub struct ProjectStageActivation {
-    stage: Stage,
+    document: usd_bevy::LiveStage,
 }
 
 impl ProjectStageActivation {
@@ -363,31 +362,23 @@ impl ProjectStageActivation {
             return Err("activation target does not match its command".to_owned());
         }
         let stage_started = Instant::now();
-        let stage = open_activation_stage(&target.path)?;
+        let document = usd_bevy::LiveStage::open_document(&target.path)
+            .map_err(|error| format!("open activated Stage: {error:#}"))?;
         log::debug!(
             "[project-loading] stage_open_ms={:.3} target={}",
             stage_started.elapsed().as_secs_f64() * 1_000.0,
             target.path.display()
         );
-        if !stage.composition_errors().is_empty() {
-            return Err(format!(
-                "activated Stage has composition errors: {:?}",
-                stage.composition_errors()
-            ));
-        }
-        Ok(Self { stage })
+        Ok(Self { document })
     }
 
-    pub fn into_stage(self) -> Stage {
-        self.stage
+    pub fn into_stage(self) -> openusd::usd::Stage {
+        self.document.stage.clone()
     }
-}
 
-fn open_activation_stage(path: &Path) -> Result<Stage, String> {
-    Stage::builder()
-        .schema_registry(openusd_schemas::schema_registry())
-        .open(&path.to_string_lossy())
-        .map_err(|error| format!("open activated Stage: {error}"))
+    pub(crate) fn into_live_stage(self) -> usd_bevy::LiveStage {
+        self.document
+    }
 }
 
 #[cfg(test)]

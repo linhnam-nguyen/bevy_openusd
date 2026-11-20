@@ -3,7 +3,8 @@ use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::super::SemanticDatabase;
-use crate::viewport::semantic::query::{SemanticFilter, SemanticQuery};
+use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
+use crate::viewport::semantic::query::{GroupField, SemanticFilter, SemanticQuery};
 
 #[test]
 fn test_query_after_subtree_delta_with_property_filters() {
@@ -243,5 +244,41 @@ def Xform "World"
             generic_result.rows[0].prim_path,
             "/Architecture/Level01/Wall_0042"
         );
+
+        let durable_directory = tempfile::tempdir().expect("durable database directory");
+        let durable_path = durable_directory.path().join("semantic.db");
+        let mut durable = TursoSemanticStore::open(&durable_path)
+            .await
+            .expect("durable store opens");
+        let mut durable_snapshot = snapshot.clone();
+        durable_snapshot.source = SnapshotSource::GitCommit {
+            oid: "ab".repeat(20),
+        };
+        durable
+            .put_snapshot(&durable_snapshot)
+            .await
+            .expect("persist same snapshot");
+        drop(durable);
+        let durable = TursoSemanticStore::open(&durable_path)
+            .await
+            .expect("reopen durable store");
+        for query in [
+            wall_query,
+            SemanticQuery {
+                text: Some("EXTERIOR".to_owned()),
+                group_by: vec![GroupField::Category, GroupField::TypeName],
+                offset: 1,
+                limit: 1,
+                ..Default::default()
+            },
+        ] {
+            assert_eq!(
+                database.query(&query).await.expect("working query"),
+                durable
+                    .query(&snapshot.snapshot_id, &query)
+                    .await
+                    .expect("durable query")
+            );
+        }
     });
 }

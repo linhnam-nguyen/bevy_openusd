@@ -20,18 +20,14 @@ pub struct StageChange {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LiveRevision(pub u64);
 
-/// One authoritative, once-drained batch of stage changes.
-///
-/// The batch is retained in [`PendingStageChanges`] for the rest of the
-/// frame, so projection, semantic indexing, and diagnostics can all consume
-/// the same revision without independently draining [`super::stage::LiveStage`].
+/// One once-drained batch of changes for its stage context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StageChangeBatch {
     pub revision: LiveRevision,
     pub changes: Vec<StageChange>,
 }
 
-/// The stage-change batch drained for the current frame.
+/// The canonical and projection change batches drained for the current frame.
 ///
 /// This is intentionally a transient fan-out resource, not another model
 /// representation. It is replaced by [`drain_stage_changes_system`] before
@@ -40,9 +36,11 @@ pub struct StageChangeBatch {
 #[derive(Resource, Default)]
 pub struct PendingStageChanges {
     pub(super) batch: Option<StageChangeBatch>,
+    pub(super) projection: Option<StageChangeBatch>,
 }
 
 impl PendingStageChanges {
+    /// Authoritative changes only. Composition residency belongs to projection.
     pub fn batch(&self) -> Option<&StageChangeBatch> {
         self.batch.as_ref()
     }

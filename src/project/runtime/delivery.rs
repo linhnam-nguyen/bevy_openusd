@@ -14,10 +14,9 @@ use viewport_protocol::{
 };
 
 use super::payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
-use crate::project::cache::blobs::BlobStore;
+use crate::project::cache::blobs::{BlobStore, read_mesh_payload, validate_mesh_payload};
 
 pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 3;
-pub(crate) const RUNTIME_MESH_VERSION: u16 = 1;
 
 /// A complete server-owned manifest and the verified bytes it references.
 #[derive(Debug)]
@@ -81,18 +80,19 @@ pub(crate) fn build_runtime_delivery_with_payloads(
     let mut mesh_references = Vec::with_capacity(mesh_ids.len());
     for blob_id in mesh_ids {
         let model_blob_id = usd_model::BlobId(blob_id.clone());
-        let Some(bytes) = store
-            .get(&model_blob_id)
+        let Some(bytes) = read_mesh_payload(store, &model_blob_id)
             .with_context(|| format!("read runtime mesh blob {blob_id}"))?
         else {
             bail!("runtime mesh blob {blob_id} is missing from the BlobStore");
         };
+        let payload_version = validate_mesh_payload(&bytes)
+            .with_context(|| format!("validate runtime mesh geometry {blob_id}"))?;
         let byte_size = bytes.len() as u64;
         blobs.push((blob_id.clone(), bytes));
         mesh_references.push(RuntimeBlobReference {
             blob_id,
             payload_kind: RuntimePayloadKind::Mesh,
-            payload_version: RUNTIME_MESH_VERSION,
+            payload_version,
             byte_size,
         });
     }

@@ -18,6 +18,7 @@ mod projection_plan;
 mod reconcile;
 mod stage;
 mod system;
+pub(crate) mod visual_stage;
 
 pub use animation::AnimatedPrims;
 pub use author::{TransformHistory, author_transform, current_transform};
@@ -37,7 +38,7 @@ pub use projection::{
 };
 pub use projection_plan::{ProjectionPlan, ProjectionPlanBuilder, ProjectionPlanEntry};
 pub use reconcile::{apply_change_batch, apply_changes};
-pub use stage::{AuthoredSuppressionGuard, LiveStage};
+pub use stage::{AuthoredSuppressionGuard, LiveStage, VisualContextId};
 
 use bevy::app::{App, Plugin, Update};
 use bevy::prelude::*;

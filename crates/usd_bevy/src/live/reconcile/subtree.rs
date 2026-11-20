@@ -26,7 +26,7 @@ pub(super) fn reconcile_subtrees(
     revision: LiveRevision,
     executor: &mut impl ReconcileExecutor,
 ) {
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     let registry = registry_of(world);
     let root_entity = {
         let paths = world.resource::<PathStore>();
@@ -171,7 +171,7 @@ pub(super) fn execute_subtree_work(
         added,
         removed,
     } = work;
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     for (path_id, entity) in removed {
         let Some(path) = world
             .resource::<PathStore>()

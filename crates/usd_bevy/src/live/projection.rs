@@ -147,6 +147,7 @@ pub fn project_paths(
     map: &mut PrimEntities,
     requested_paths: &[&str],
 ) -> Result<usize> {
+    live.install_texture_snapshot(world);
     let normalized = requested_paths
         .iter()
         .map(|path| validate_prim_path(path))
@@ -167,12 +168,12 @@ pub fn project_paths(
             continue;
         }
         let sdf_path = openusd::sdf::path(path)?;
-        if !live.stage.prim(sdf_path)?.is_loaded()? {
+        if !live.projection_stage().prim(sdf_path)?.is_loaded()? {
             live.load_payload(path)?;
         }
     }
     let plan =
-        ProjectionPlan::from_paths(&live.stage, &requested.iter().copied().collect::<Vec<_>>())?;
+        ProjectionPlan::from_paths(&live.projection_stage(), &requested.iter().copied().collect::<Vec<_>>())?;
     let registry = registry_of(world);
     world.init_resource::<PathStore>();
     let mut materialized = 0;
@@ -184,7 +185,7 @@ pub fn project_paths(
         if let Some(entity) = existing {
             if requested.contains(entry.path()) {
                 if let Ok(path) = openusd::sdf::path(entry.path()) {
-                    registry.project_prim(&live.stage, &path, world, entity);
+                    registry.project_prim(&live.projection_stage(), &path, world, entity);
                 }
             }
             continue;
@@ -196,7 +197,7 @@ pub fn project_paths(
                 .and_then(|_| map.entity(&paths, parent_path(entry.path())))
                 .or_else(|| map.entity(&paths, "/"))
         };
-        project_plan_entry(world, &live.stage, &registry, map, entry, parent);
+        project_plan_entry(world, &live.projection_stage(), &registry, map, entry, parent);
         materialized += 1;
     }
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
@@ -231,8 +232,9 @@ pub struct ProjectionStats {
 }
 
 pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
+    live.install_texture_snapshot(world);
     let start = std::time::Instant::now();
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     let registry = registry_of(world);
     world.init_resource::<PathStore>();
     let Ok(plan) = ProjectionPlan::from_stage(stage) else {
@@ -294,7 +296,7 @@ pub fn project_stage(world: &mut World, live: &LiveStage, map: &mut PrimEntities
     if let Err(error) = rebuild {
         bevy::log::warn!("[projection] native instance dependency index rebuild failed: {error:#}");
     }
-    let _ = live.drain_change_batch();
+    let _ = live.drain_batches();
 }
 
 pub(super) fn project_plan_entry(

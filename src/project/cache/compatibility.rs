@@ -14,6 +14,9 @@ pub(crate) const PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION: u16 = 2;
 /// Explicit projection contract version included in Project cache identity.
 pub(crate) const RUNTIME_PROJECTION_VERSION: u16 = 1;
 
+/// Geometry interpretation, independent of compatible stored mesh encodings.
+const RENDER_MESH_SEMANTICS_VERSION: u16 = 1;
+
 /// Build the cache configuration identity from every renderer-neutral runtime
 /// contract that can affect hydrated material, mesh, hierarchy, or texture
 /// output.
@@ -23,7 +26,7 @@ pub(crate) fn project_runtime_cache_config_hash(semantic_config_hash: HashDigest
     hasher.update(&PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION.to_le_bytes());
     hasher.update(&RUNTIME_PROJECTION_VERSION.to_le_bytes());
     hasher.update(&crate::project::runtime::delivery::RUNTIME_HIERARCHY_VERSION.to_le_bytes());
-    hasher.update(&crate::project::runtime::delivery::RUNTIME_MESH_VERSION.to_le_bytes());
+    hasher.update(&RENDER_MESH_SEMANTICS_VERSION.to_le_bytes());
     hasher.update(&crate::project::runtime::payload::RUNTIME_MATERIAL_VERSION.to_le_bytes());
     hasher.update(&crate::project::runtime::payload::RUNTIME_TEXTURE_VERSION.to_le_bytes());
     hasher.update(semantic_config_bytes(semantic_config_hash).as_slice());

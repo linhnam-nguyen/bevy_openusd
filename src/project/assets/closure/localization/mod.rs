@@ -93,15 +93,7 @@ pub(crate) fn materialize_source_closure_with_resolver(
 /// Fingerprint only the exact transitive closure used by the source, excluding
 /// unrelated neighboring files from the source directory.
 pub(crate) fn source_closure_fingerprint(source: &Path) -> Result<String> {
-    let report = discover(source).context("discover USD source dependency closure")?;
-    ensure_resolved(&report)?;
-    let source_parent = report
-        .root_asset
-        .parent()
-        .context("USD source has no parent directory")?;
-    let mapping = logical_mapping(&report, source_parent)?;
-    let mut entries = mapping.into_iter().collect::<Vec<_>>();
-    entries.sort_by(|left, right| left.1.cmp(&right.1));
+    let (_, entries) = source_closure_files(source)?;
 
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"USDHub source closure fingerprint v2\0");
@@ -114,6 +106,22 @@ pub(crate) fn source_closure_fingerprint(source: &Path) -> Result<String> {
         hasher.update(&bytes);
     }
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Physical files and canonical logical names for the exact source closure.
+/// Callers that retain these files can persist their original encoded bytes.
+pub(crate) fn source_closure_files(source: &Path) -> Result<(PathBuf, Vec<(PathBuf, String)>)> {
+    let report = discover(source).context("discover USD source dependency closure")?;
+    ensure_resolved(&report)?;
+    let source_parent = report
+        .root_asset
+        .parent()
+        .context("USD source has no parent directory")?;
+    let mut files = logical_mapping(&report, source_parent)?
+        .into_iter()
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.1.cmp(&right.1));
+    Ok((report.root_asset, files))
 }
 
 fn ensure_resolved(report: &LocalizedDependencyReport) -> Result<()> {

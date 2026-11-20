@@ -30,3 +30,12 @@ pub(crate) use convert::editor_value_to_usd;
 pub(crate) use plugin::ViewportBridgePlugin;
 pub(in crate::viewport) use settings::ViewerSettingsState;
 pub(crate) use state::ViewportBridgeSet;
+
+pub(in crate::viewport) fn reset_document_edit_state(world: &mut bevy::prelude::World) {
+    if let Some(mut history) = world.get_resource_mut::<state::EditorHistories>() {
+        *history = state::EditorHistories::default();
+    }
+    if let Some(mut mutations) = world.get_resource_mut::<state::RuntimeMutationCoordinator>() {
+        mutations.reset();
+    }
+}

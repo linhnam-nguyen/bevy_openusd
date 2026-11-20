@@ -115,6 +115,15 @@ fn apply_prepared_activation(
     {
         return ActivationProgress::Reply(stale_completion_reply(&command));
     }
+    if world
+        .get_non_send::<usd_bevy::LiveStage>()
+        .is_some_and(usd_bevy::LiveStage::is_authoring_frozen)
+    {
+        return ActivationProgress::Reply(ProjectActivationReply::failed(
+            &command,
+            "the active document is already leased for publication",
+        ));
+    }
     match target {
         Ok(None) => ActivationProgress::Reply(commit_empty_activation(world, request, &command)),
         Ok(Some(target)) => activate_prepared_stage(world, request, &command, target),
@@ -177,7 +186,7 @@ fn activate_prepared_stage(
     match activate_open_stage_with_cache_context_for_generation(
         world,
         target.path,
-        activation.into_stage(),
+        activation.into_live_stage(),
         cache_context,
         target.scene_cache.clone(),
         Some(target.project_root.clone()),
@@ -295,7 +304,7 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
     let result = activate_open_stage_with_cache_context_for_generation(
         world,
         path,
-        activation.into_stage(),
+        activation.into_live_stage(),
         cache_context,
         scene_cache,
         Some(project_root),

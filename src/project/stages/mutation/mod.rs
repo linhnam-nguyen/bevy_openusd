@@ -335,9 +335,7 @@ fn apply_mutation(
     if let ProjectStageMutation::RefreshSceneDefinition { scene_id, .. } = mutation {
         let refresh_scene_id = active_scene_id.unwrap_or(*scene_id);
         let path = crate::project::scene::authoring::scene_path(project_root, refresh_scene_id);
-        let path_string = path.to_string_lossy().into_owned();
-        let stage = openusd::usd::Stage::open(&path_string).map_err(|_| filesystem_error())?;
-        live.replace_stage(stage);
+        live.replace_document(&path).map_err(|_| filesystem_error())?;
         return Ok(());
     }
     let placement = match mutation {

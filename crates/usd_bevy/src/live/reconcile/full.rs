@@ -22,7 +22,7 @@ pub(super) fn reconcile_full(
     map: &mut PrimEntities,
     executor: &mut impl ReconcileExecutor,
 ) {
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     let registry = registry_of(world);
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
         counters.projection_full_stage_walks(1);
@@ -78,7 +78,7 @@ pub(super) fn execute_full_work(
         current,
         stale,
     } = work;
-    let stage = &live.stage;
+    let stage = &live.projection_stage();
     for (path, entity) in stale {
         if let Some(mut semantic_idx) = world.get_resource_mut::<SemanticEntityIndex>() {
             semantic_idx.remove_entity(entity);

@@ -86,7 +86,15 @@ pub(super) fn build_runtime_cache(
             "runtime cache digest mismatch for {blob_id}"
         );
     }
+    prepare_document_assembly(project_root, path);
     Ok(bundle.manifest)
+}
+
+pub(super) fn prepare_document_assembly(project_root: &Path, source: &Path) {
+    let cache_root = crate::project::storage::ProjectStorageLayout::new(project_root).cache_dir();
+    if let Err(error) = super::assembly::prepare_and_publish(source, &cache_root) {
+        log::warn!("derived assembly preparation failed for {}: {error:#}", source.display());
+    }
 }
 
 fn persist_mesh_blob(

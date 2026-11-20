@@ -197,7 +197,7 @@ impl<'a> ChangePlan<'a> {
 
 /// Drain the change queue and reproject affected entities.
 pub fn apply_changes(world: &mut World, live: &LiveStage, map: &mut PrimEntities) {
-    let Some(batch) = live.drain_change_batch() else {
+    let (_, Some(batch)) = live.drain_batches() else {
         return;
     };
     apply_change_batch(world, live, map, &batch);
@@ -304,7 +304,7 @@ fn execute_sparse_work(
         };
         executor.patch_prim(
             registry,
-            &live.stage,
+            &live.projection_stage(),
             &path,
             world,
             entity,
@@ -313,7 +313,7 @@ fn execute_sparse_work(
     }
     apply_prototype_dependents(
         world,
-        &live.stage,
+        &live.projection_stage(),
         map,
         registry,
         dependent_instancers,
@@ -321,7 +321,7 @@ fn execute_sparse_work(
     );
     apply_native_instance_dependents(
         world,
-        &live.stage,
+        &live.projection_stage(),
         map,
         registry,
         native_dependents,
@@ -402,6 +402,7 @@ pub(super) fn apply_change_batch_with_executor(
     if batch.is_empty() {
         return;
     }
+    live.install_texture_snapshot(world);
     crate::route::geom::note_hierarchy_metadata_revision(world, batch.revision.0);
     if batch.has_resync() {
         let all_resynced: Vec<&str> = batch
@@ -480,7 +481,7 @@ pub(super) fn apply_change_batch_with_executor(
             let registry = registry_of(world);
             apply_prototype_dependents(
                 world,
-                &live.stage,
+                &live.projection_stage(),
                 map,
                 &registry,
                 instancer_dependencies,
@@ -488,7 +489,7 @@ pub(super) fn apply_change_batch_with_executor(
             );
             apply_native_instance_dependents(
                 world,
-                &live.stage,
+                &live.projection_stage(),
                 map,
                 &registry,
                 native_dependencies,

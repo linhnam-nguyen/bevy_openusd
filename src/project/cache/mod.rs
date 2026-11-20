@@ -13,6 +13,7 @@ use usd_git::GitRepository;
 
 use super::storage::{CACHE_DIRECTORY, PROJECT_METADATA_DIRECTORY, RECOVERY_DIRECTORY};
 
+mod assembly;
 pub(crate) mod blobs;
 pub(crate) mod compatibility;
 pub(crate) mod contract;
@@ -21,6 +22,7 @@ mod descriptor;
 pub(crate) mod historical_geometry;
 pub(crate) mod hydration;
 mod lookup;
+mod mesh_codec;
 mod preparation;
 pub(crate) mod scene;
 pub(crate) mod warming;

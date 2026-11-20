@@ -11,7 +11,7 @@ use anyhow::Result;
 use usd_model::{EntityKey, EntitySnapshot, SemanticSnapshot, SnapshotId};
 
 use super::SemanticStore;
-use super::query::{SemanticQuery, SemanticQueryResult};
+use crate::semantic_query::{SemanticQuery, SemanticQueryResult};
 
 impl SemanticStore for TursoSemanticStore {
     async fn put_snapshot(&mut self, snapshot: &SemanticSnapshot) -> Result<()> {

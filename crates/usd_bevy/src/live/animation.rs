@@ -60,7 +60,7 @@ pub(super) fn resample_animation_system(world: &mut World) {
     let Some(live) = world.remove_non_send::<LiveStage>() else {
         return;
     };
-    native_animation::sample(world, &live.stage, current.unwrap_or_default());
+    native_animation::sample(world, &live.projection_stage(), current.unwrap_or_default());
     world.insert_non_send(live);
     if let Some(mut sampled) = world.get_resource_mut::<SampledTime>() {
         sampled.0 = current;

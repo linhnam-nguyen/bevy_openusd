@@ -3,7 +3,6 @@ use super::helpers::{
     emit_classification_field_catalogue, emit_presentation_changed, emit_snapshot,
     emit_viewer_settings_changed, reject,
 };
-use super::state::EditorHistories;
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
@@ -101,8 +100,6 @@ pub(super) fn apply_viewport_commands(
             }
             ViewportCommand::ReloadSession => {
                 state.reload.requested = true;
-                *state.histories = EditorHistories::default();
-                state.runtime_mutations.reset();
                 emit_snapshot(
                     &mut outbox,
                     request_id.clone(),

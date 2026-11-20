@@ -12,7 +12,7 @@ mod session_registry;
 
 pub(crate) use bridge::editor_value_to_usd;
 pub(in crate::viewport) use bridge::{
-    ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet,
+    ViewerSettingsState, ViewportBridgePlugin, ViewportBridgeSet, reset_document_edit_state,
 };
 pub(crate) use interface::RenderServerInterface;
 pub(in crate::viewport) use query::LatestMailbox;

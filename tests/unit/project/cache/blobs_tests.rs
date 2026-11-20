@@ -65,8 +65,38 @@ fn mesh_blob_round_trips() -> Result<()> {
 
     let expected = MeshBlob::from_bevy_mesh(&mesh)?;
     let id = put_mesh(&store, &mesh)?;
+    let updated_bytes = store.get(&id)?.unwrap();
+    assert!(
+        updated_bytes.starts_with(b"NMSH"),
+        "new mesh writes use a distinct binary format"
+    );
     let restored = get_mesh(&store, &id)?.expect("mesh blob should exist");
     assert_eq!(expected, MeshBlob::from_bevy_mesh(&restored)?);
+
+    let mut legacy = expected.clone();
+    legacy.version = 1;
+    let old_bytes = serde_json::to_vec(&legacy)?;
+    let old_id = store.put(&old_bytes)?;
+    let old_mesh = get_mesh(&store, &old_id)?.expect("legacy mesh is still readable");
+    assert_eq!(expected, MeshBlob::from_bevy_mesh(&old_mesh)?);
+    assert_ne!(id, old_id);
+    assert_eq!(updated_bytes.len(), 172);
+    assert!(updated_bytes.len() < old_bytes.len());
+    println!(
+        "mesh fixture cache hits: 2/2, v1={} bytes, v2={} bytes",
+        old_bytes.len(),
+        updated_bytes.len()
+    );
+
+    legacy.indices[2] = 99;
+    let malformed_index = store.put(&serde_json::to_vec(&legacy)?)?;
+    assert!(get_mesh(&store, &malformed_index).is_err());
+    let mut oversized = updated_bytes[..16].to_vec();
+    oversized[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(get_mesh(&store, &store.put(&oversized)?).is_err());
+    let truncated = store.put(&updated_bytes[..updated_bytes.len() - 1])?;
+    assert!(get_mesh(&store, &truncated).is_err());
+    assert_eq!(store.get(&old_id)?.unwrap(), old_bytes);
     Ok(())
 }
 

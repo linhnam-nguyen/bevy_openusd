@@ -40,6 +40,23 @@ mod tests {
         app.world_mut()
             .resource_mut::<EditorHistories>()
             .record(EditorHistoryDomain::Authoring);
+
+        assert!(
+            app.world()
+                .get_non_send::<usd_bevy::LiveStage>()
+                .unwrap()
+                .try_freeze_authoring()
+        );
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStage);
+        app.update();
+        assert!(!path.exists(), "a save must honor an active publication lease");
+        assert!(app.world_mut().resource_mut::<ViewportEventOutbox>().pop().is_some());
+        let live = app.world().get_non_send::<usd_bevy::LiveStage>().unwrap();
+        assert!(live.is_authoring_frozen());
+        live.unfreeze_authoring();
+
         let request_id = app
             .world_mut()
             .resource_mut::<ViewportCommandInbox>()

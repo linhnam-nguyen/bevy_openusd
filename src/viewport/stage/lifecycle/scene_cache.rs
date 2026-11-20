@@ -8,7 +8,11 @@ pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
     project_root: &std::path::Path,
     activation: &SceneCacheActivation,
 ) -> bool {
-    if !is_current(Some(project_root), activation) {
+    // An existing stage owns the current presentation until its successor
+    // has composed successfully. Cache-first startup is for an empty world.
+    if world.get_non_send::<usd_bevy::LiveStage>().is_some()
+        || !is_current(Some(project_root), activation)
+    {
         return false;
     }
     world.insert_resource(SceneCacheOwnershipContext {

@@ -283,8 +283,7 @@ fn property_value_for_commit(
         .materialize_revision(revision, materialized.path())
         .map_err(|error| format!("materializing BIM provenance commit {revision}: {error}"))?;
     let stage_path = materialized.path().join(stage_relative_path);
-    let stage_path_string = stage_path.to_string_lossy().into_owned();
-    let stage = Stage::open(&stage_path_string)
+    let stage = usd_bevy::LiveStage::open_authoritative(&stage_path)
         .map_err(|error| format!("opening BIM provenance commit stage: {error}"))?;
     let snapshot = SemanticExtractor::new(SemanticConfig::default())
         .extract(

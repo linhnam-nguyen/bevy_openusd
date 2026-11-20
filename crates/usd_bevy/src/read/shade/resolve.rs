@@ -369,6 +369,12 @@ fn shader_kind(stage: &Stage, prim: &Path) -> anyhow::Result<ShaderKind> {
 }
 
 fn read_texture_file(stage: &Stage, tex_prim: &Path) -> anyhow::Result<Option<String>> {
+    let attribute = stage.prim(tex_prim.clone())?.attribute("inputs:file");
+    if let Ok(Some(asset)) = attribute.get::<openusd::sdf::AssetPath>()
+        && let Some(resolved) = asset.resolved_path()
+    {
+        return Ok(Some(resolved.to_owned()));
+    }
     let Some(authored) = read_asset_path(stage, tex_prim, "inputs:file")? else {
         return Ok(None);
     };

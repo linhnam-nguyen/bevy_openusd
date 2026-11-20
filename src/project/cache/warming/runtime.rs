@@ -149,6 +149,10 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
         store.publish_generation(&descriptor, &index, &spatial)?;
     }
     publish_current_project_cache_lookup(project_root)?;
+    if managed {
+        let source = crate::project::scene::authoring::scene_path(project_root, descriptor.scene_id);
+        super::super::preparation::prepare_document_assembly(project_root, &source);
+    }
     Ok(Some(index))
 }
 #[cfg(test)]
