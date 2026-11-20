@@ -942,10 +942,22 @@
       "target": "tests/unit/viewport/app/cadence_inline_tests.rs"
     },
     {
+      "owner_file": "src/viewport/app/composition.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/app/composition_tests.rs"
+    },
+    {
       "owner_file": "src/viewport/app/headless.rs",
       "module_path": "",
       "mod_name": "tests",
       "target": "tests/unit/viewport/app/headless_inline_tests.rs"
+    },
+    {
+      "owner_file": "src/viewport/app/hosts/mara/mod.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/app/mara_host_tests.rs"
     },
     {
       "owner_file": "src/viewport/app/mod.rs",

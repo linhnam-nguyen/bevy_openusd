@@ -2,11 +2,12 @@
 
 use bevy::camera::Projection;
 use bevy::prelude::*;
+use bevy::camera_controller::pan_orbit_camera::controller::component::PanOrbitCamera;
 use usd_bevy::{Projection as UsdProjection, UsdCamera, UsdPrimRef};
 
 use super::{
     ArcballCamera, CameraMount, CameraNavigationConfig, FlyTo, apply_rig, distance_as_f32,
-    finite_positive_distance,
+    finite_positive_distance, sync_pan_orbit_from_arcball,
 };
 use crate::viewport::scene::visualization::SceneExtent;
 
@@ -16,7 +17,7 @@ use crate::viewport::scene::visualization::SceneExtent;
 /// Frames the arcball camera around the scene after its first materialization.
 pub(crate) fn fit_camera_once(
     extent: Res<SceneExtent>,
-    mut cameras: Query<&mut ArcballCamera>,
+    mut cameras: Query<(&mut Transform, &mut ArcballCamera, Option<&mut PanOrbitCamera>)>,
     mut done: Local<bool>,
     mut wait_ticks: Local<u32>,
     mut last_diag: Local<f32>,
@@ -40,7 +41,7 @@ pub(crate) fn fit_camera_once(
         *last_diag = diag;
         return;
     }
-    let Ok(mut cam) = cameras.single_mut() else {
+    let Ok((mut transform, mut cam, pan_orbit)) = cameras.single_mut() else {
         return;
     };
     cam.focus = extent.centre();
@@ -54,6 +55,10 @@ pub(crate) fn fit_camera_once(
     let effective = diag.max(2.0);
     cam.distance = effective * 1.1;
     cam.zoom_target = cam.distance as f64;
+    apply_rig(&cam, &mut transform);
+    if let Some(mut pan_orbit) = pan_orbit {
+        sync_pan_orbit_from_arcball(&cam, &mut pan_orbit);
+    }
     *done = true;
     info!(
         "camera framed on scene: focus={:?}, diag={:.2} m (effective={:.2} m), {} prims (waited {} ticks)",
@@ -67,12 +72,12 @@ pub(crate) fn fit_camera_once(
 pub(crate) fn apply_fly_to(
     time: Res<Time>,
     mut fly: ResMut<FlyTo>,
-    mut cameras: Query<(&mut Transform, &mut ArcballCamera)>,
+    mut cameras: Query<(&mut Transform, &mut ArcballCamera, Option<&mut PanOrbitCamera>)>,
 ) {
     if fly.remaining <= 0.0 {
         return;
     }
-    let Ok((mut transform, mut cam)) = cameras.single_mut() else {
+    let Ok((mut transform, mut cam, pan_orbit)) = cameras.single_mut() else {
         return;
     };
     let dt = time.delta_secs().min(1.0 / 30.0);
@@ -99,6 +104,9 @@ pub(crate) fn apply_fly_to(
         cam.elevation = se + (te - se) * eased;
     }
     apply_rig(&cam, &mut transform);
+    if let Some(mut pan_orbit) = pan_orbit {
+        sync_pan_orbit_from_arcball(&cam, &mut pan_orbit);
+    }
 }
 
 /// Interpolates angles along the shortest wrapped path.

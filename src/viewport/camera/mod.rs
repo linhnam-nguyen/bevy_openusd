@@ -1,11 +1,10 @@
-//! Orbit camera — ported verbatim from
-//! `../bevy_urdf/src/camera.rs`. Astrocraft-style rig:
+//! Orbit/pan/zoom camera controller backed by Bevy's `PanOrbitCamera`.
 //!
-//! - Scroll            → zoom (logarithmic, smoothed, close-inspection friendly)
-//! - Middle/Shift drag → pan (screen-space, not ground-plane locked)
-//! - Left + Right drag → orbit (yaw + elevation, clamped -89°–89°)
+//! - Scroll            → focus-centered exponential zoom
+//! - Middle/Shift drag → pixel-locked screen-space pan
+//! - Left + Right drag → orbit around focus (fixed +Y up)
 //!
-//! Run conditions yield to egui when a panel wants the pointer, so orbiting
+//! Run conditions yield to host UI when a panel wants the pointer, so orbiting
 //! doesn't fight with panel scroll / sliders.
 
 mod glacial;
@@ -16,14 +15,26 @@ mod state;
 mod zoom_tests;
 
 use bevy::camera::Projection;
+use bevy::math::DVec3;
 use bevy::prelude::*;
-use bevy_egui::input::egui_wants_any_pointer_input;
+use bevy::camera_controller::pan_orbit_camera::{
+    SyncCameraPosition,
+    controller::{
+        MinimalPanOrbitCameraPlugin,
+        component::{OrbitConstraint, PanOrbitCamera, Sensitivity},
+        momentum::Momentum,
+        motion::CurrentMotion,
+        smoothing::Smoothing,
+        zoom::ZoomLimits,
+    },
+};
 use usd_bevy::UsdCamera;
 use viewport_protocol::{CameraOrientationReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::input::{
     ViewportNavigationInput, apply_local_navigation_input, reset_navigation_frame,
+    ui_wants_pointer_input,
 };
 
 pub(crate) use glacial::sync_chase_camera;
@@ -45,15 +56,29 @@ pub(crate) enum ArcballCameraSet {
 
 impl Plugin for ArcballCameraPlugin {
     fn build(&self, app: &mut App) {
-        // Arcball yields to egui (so scrolling a panel doesn't zoom) AND
-        // to the Cameras tab (so a mounted USD camera isn't fought by
-        // orbit/pan input). Tiny run-condition saves a lot of confusion.
-        app.init_resource::<ViewportNavigationInput>()
+        if !app
+            .world()
+            .contains_resource::<Messages<bevy::window::RequestRedraw>>()
+        {
+            app.add_message::<bevy::window::RequestRedraw>();
+        }
+        if !app.is_plugin_added::<MinimalPanOrbitCameraPlugin>() {
+            app.add_plugins(MinimalPanOrbitCameraPlugin);
+        }
+        // Camera controller yields to host UI (so scrolling a panel doesn't zoom)
+        // AND to the Cameras tab (so a mounted USD camera isn't fought by
+        // orbit/pan input).
+        app.init_resource::<crate::viewport::input::HostUiInputCapture>()
+            .init_resource::<ViewportNavigationInput>()
             .init_resource::<CameraNavigationConfig>()
             .init_resource::<CameraOrientationState>()
             .configure_sets(
                 Update,
                 (ArcballCameraSet::PrepareInput, ArcballCameraSet::ApplyInput).chain(),
+            )
+            .add_systems(
+                PreUpdate,
+                sync_arcball_from_pan_orbit.after(SyncCameraPosition),
             )
             .add_systems(
                 Update,
@@ -63,8 +88,7 @@ impl Plugin for ArcballCameraPlugin {
             )
             .add_systems(
                 Update,
-                (drive_arcball, drive_arcball_zoom)
-                    .run_if(not(egui_wants_any_pointer_input))
+                drive_pan_orbit_camera
                     .run_if(arcball_is_active)
                     .in_set(ArcballCameraSet::ApplyInput),
             )
@@ -83,6 +107,7 @@ fn arcball_is_active(mount: Res<CameraMount>) -> bool {
     matches!(*mount, CameraMount::Arcball)
 }
 
+/// Product camera rig state synchronized with Bevy's `PanOrbitCamera` motion authority.
 #[derive(Component, Clone)]
 pub struct ArcballCamera {
     pub focus: Vec3,
@@ -110,12 +135,77 @@ impl Default for ArcballCamera {
     }
 }
 
-/// Converts active mouse drags into screen-space panning and orbit updates.
-fn drive_arcball(
-    input: Res<ViewportNavigationInput>,
-    mut cameras: Query<(&mut Transform, &mut ArcballCamera, &Projection)>,
+/// Constructs a `PanOrbitCamera` configured for CAD/BIM extreme-scale
+/// navigation with fixed `+Y` up and no cursor-zoom drift.
+pub(crate) fn default_pan_orbit_camera(distance: f32) -> PanOrbitCamera {
+    PanOrbitCamera {
+        orbit_constraint: OrbitConstraint::Fixed {
+            up: DVec3::Y,
+            can_pass_tdc: false,
+        },
+        zoom_limits: ZoomLimits {
+            min_size_per_pixel: 1e-6,
+            max_size_per_pixel: 1e27,
+            zoom_through_objects: false,
+        },
+        smoothing: Smoothing {
+            orbit: std::time::Duration::ZERO,
+            pan: std::time::Duration::ZERO,
+            zoom: std::time::Duration::from_millis(25),
+        },
+        momentum: Momentum {
+            orbit_damping: 255,
+            orbit_friction: 100.0,
+            init_orbit: std::time::Duration::ZERO,
+            pan_damping: 255,
+            pan_friction: 100.0,
+            init_pan: std::time::Duration::ZERO,
+        },
+        input_debounce: std::time::Duration::ZERO,
+        sensitivity: Sensitivity {
+            orbit: Vec2::splat(1.0),
+            zoom: 1.0,
+        },
+        last_anchor_depth: -(f64::from(distance.max(1.0e-5))),
+        ..Default::default()
+    }
+}
+
+/// Synchronizes `PanOrbitCamera`'s view-space anchor depth after programmatic
+/// `ArcballCamera` changes (`fit_camera_once`, `FlyTo`, `follow_mounted_camera`).
+pub(crate) fn sync_pan_orbit_from_arcball(
+    cam: &ArcballCamera,
+    pan_orbit: &mut PanOrbitCamera,
 ) {
-    if !input.focused {
+    pan_orbit.last_anchor_depth = -(f64::from(cam.distance.max(1.0e-5)));
+    pan_orbit.current_motion = CurrentMotion::Stationary;
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum ActiveMotion {
+    #[default]
+    None,
+    Pan,
+    Orbit,
+    Zoom,
+}
+
+/// Routes unified native and remote `ViewportNavigationInput` into Bevy's
+/// single `PanOrbitCamera` motion authority using focus-centered anchors.
+fn drive_pan_orbit_camera(
+    input: Res<ViewportNavigationInput>,
+    capture: Option<Res<crate::viewport::input::HostUiInputCapture>>,
+    config: Res<CameraNavigationConfig>,
+    mut active: Local<ActiveMotion>,
+    mut cameras: Query<(&ArcballCamera, &mut PanOrbitCamera)>,
+) {
+    if !input.focused || ui_wants_pointer_input(capture) {
+        if *active != ActiveMotion::None {
+            for (_, mut pan_orbit) in cameras.iter_mut() {
+                pan_orbit.end_move();
+            }
+            *active = ActiveMotion::None;
+        }
         return;
     }
 
@@ -136,74 +226,82 @@ fn drive_arcball(
     } else {
         Vec2::ZERO
     };
-    let window_height = input.viewport_size.y.max(1.0);
+    let scroll_delta = input.wheel_delta.y;
+    let viewport_height = input.viewport_size.y.max(1.0) as f64;
 
-    for (mut tr, mut cam, projection) in cameras.iter_mut() {
-        if pan_delta != Vec2::ZERO {
-            let pan_world = screen_space_pan_delta(&tr, &cam, projection, pan_delta, window_height);
-            cam.focus += pan_world;
+    for (cam, mut pan_orbit) in cameras.iter_mut() {
+        // Focus-centered anchor in camera view space keeps scroll centered on
+        // `cam.focus` instead of drifting toward the cursor.
+        let focus_anchor = DVec3::new(0.0, 0.0, -(f64::from(cam.distance.max(1.0e-5))));
+
+        if pan_drag {
+            if *active != ActiveMotion::Pan {
+                pan_orbit.start_pan(Some(focus_anchor));
+                *active = ActiveMotion::Pan;
+            }
+            if pan_delta != Vec2::ZERO {
+                pan_orbit.send_screenspace_input(pan_delta * cam.pan_sensitivity);
+            }
+            if scroll_delta != 0.0 {
+                let zoom_input = (f64::from(scroll_delta) * config.zoom_speed * viewport_height) as f32;
+                pan_orbit.send_zoom_input(zoom_input);
+            }
+        } else if both_lr {
+            if *active != ActiveMotion::Orbit {
+                pan_orbit.start_orbit(Some(focus_anchor));
+                *active = ActiveMotion::Orbit;
+            }
+            if orbit_delta != Vec2::ZERO {
+                pan_orbit.send_screenspace_input(orbit_delta);
+            }
+            if scroll_delta != 0.0 {
+                let zoom_input = (f64::from(scroll_delta) * config.zoom_speed * viewport_height) as f32;
+                pan_orbit.send_zoom_input(zoom_input);
+            }
+        } else if scroll_delta != 0.0 {
+            if *active != ActiveMotion::Zoom {
+                pan_orbit.start_zoom(Some(focus_anchor));
+                *active = ActiveMotion::Zoom;
+            }
+            let zoom_input = (f64::from(scroll_delta) * config.zoom_speed * viewport_height) as f32;
+            pan_orbit.send_zoom_input(zoom_input);
+        } else if *active != ActiveMotion::None {
+            pan_orbit.end_move();
+            *active = ActiveMotion::None;
         }
-        if orbit_delta != Vec2::ZERO {
-            cam.yaw -= orbit_delta.x * cam.orbit_speed;
-            cam.elevation += orbit_delta.y * cam.orbit_speed;
-            cam.elevation = cam
-                .elevation
-                .clamp((-89f32).to_radians(), 89f32.to_radians());
-        }
-        apply_rig(&cam, &mut tr);
     }
 }
 
-/// Converts a cursor delta to world space at the camera's current depth.
-fn screen_space_pan_delta(
-    tr: &Transform,
-    cam: &ArcballCamera,
-    projection: &Projection,
-    pan_delta: Vec2,
-    window_height: f32,
-) -> Vec3 {
-    let fov = match projection {
-        Projection::Perspective(p) => p.fov,
-        _ => core::f32::consts::FRAC_PI_4,
-    };
-    let world_units_per_pixel =
-        2.0 * cam.distance.max(f32::MIN_POSITIVE) * (fov * 0.5).tan() / window_height;
-    let right = tr.rotation * Vec3::X;
-    let up = tr.rotation * Vec3::Y;
-    (-right * pan_delta.x + up * pan_delta.y) * world_units_per_pixel * cam.pan_sensitivity
-}
-
-/// Applies multiplicative, smoothed scroll-wheel zoom without user-scale
-/// bounds. Numeric guards only keep the finite camera state representable.
-fn drive_arcball_zoom(
-    time: Res<Time>,
-    input: Res<ViewportNavigationInput>,
-    config: Res<CameraNavigationConfig>,
-    mut cameras: Query<(&mut Transform, &mut ArcballCamera)>,
+/// Mirrors `PanOrbitCamera` transform/anchor updates back into `ArcballCamera`
+/// so bookmarks, `FlyTo`, `ChaseCamera`, and extent clipping read live state.
+fn sync_arcball_from_pan_orbit(
+    mount: Res<CameraMount>,
+    mut cameras: Query<(&Transform, &PanOrbitCamera, &mut ArcballCamera)>,
 ) {
-    let scroll_delta = input.wheel_delta.y as f64;
-
-    for (mut tr, mut cam) in cameras.iter_mut() {
-        let mut target = finite_positive_distance(cam.zoom_target, f64::from(cam.distance));
-
-        if scroll_delta != 0.0 {
-            target = zoom_target_after_scroll(target, scroll_delta, config.zoom_speed);
+    if !matches!(*mount, CameraMount::Arcball) {
+        return;
+    }
+    for (transform, pan_orbit, mut cam) in cameras.iter_mut() {
+        if matches!(pan_orbit.current_motion, CurrentMotion::Stationary) {
+            continue;
         }
-
-        cam.zoom_target = target;
-
-        let dt = time.delta_secs_f64();
-        let log_current =
-            finite_positive_distance(f64::from(cam.distance), f64::from(f32::MIN_POSITIVE)).ln();
-        let log_target = target.ln();
-        let log_diff = log_target - log_current;
-        if log_diff.abs() > 1e-4 {
-            let new_log = log_current + log_diff * (cam.zoom_smoothing * dt).min(0.9);
-            cam.distance = distance_as_f32(new_log.exp());
-            apply_rig(&cam, &mut tr);
-        } else if log_diff.abs() > 1e-5 {
-            cam.distance = distance_as_f32(target);
-            apply_rig(&cam, &mut tr);
+        let distance = distance_as_f32(-pan_orbit.last_anchor_depth());
+        let forward = transform.rotation * Vec3::NEG_Z;
+        let focus = transform.translation + forward * distance;
+        if focus.is_finite() {
+            cam.focus = focus;
+        }
+        cam.distance = distance;
+        cam.zoom_target = f64::from(distance);
+        let offset = -forward;
+        let horiz = offset.x.hypot(offset.z);
+        cam.elevation = offset
+            .y
+            .clamp(-1.0, 1.0)
+            .asin()
+            .clamp((-89f32).to_radians(), 89f32.to_radians());
+        if horiz > 1.0e-5 {
+            cam.yaw = offset.x.atan2(offset.z);
         }
     }
 }
@@ -236,6 +334,7 @@ fn distance_as_f32(value: f64) -> f32 {
     }
 }
 
+#[allow(dead_code)]
 fn zoom_target_after_scroll(target: f64, scroll_delta: f64, zoom_speed: f64) -> f64 {
     let current = finite_positive_distance(target, 1.0);
     let exponent = -scroll_delta * zoom_speed;

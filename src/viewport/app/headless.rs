@@ -24,17 +24,6 @@ pub struct OffscreenTarget {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HeadlessInputWindow;
 
-/// Keeps shared Egui input resources available without creating or servicing
-/// a native-window Egui context in the headless renderer.
-pub(crate) fn configure_headless_egui(app: &mut App) {
-    let mut settings = app
-        .world_mut()
-        .resource_mut::<bevy_egui::EguiGlobalSettings>();
-    settings.auto_create_primary_context = false;
-    settings.enable_ime = false;
-    settings.enable_cursor_icon_updates = false;
-}
-
 /// Headless rendering plugin for offscreen Bevy App setup.
 pub struct HeadlessRenderPlugin {
     pub width: u32,

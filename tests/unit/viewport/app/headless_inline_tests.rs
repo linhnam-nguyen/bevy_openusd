@@ -1,19 +1,19 @@
 use super::*;
+use crate::viewport::input::HostUiInputCapture;
 
 #[test]
-fn headless_egui_is_passive_without_removing_shared_input() {
+fn headless_host_stays_windowless_with_shared_ui_capture_inactive() {
     let mut app = App::new();
-    app.init_resource::<Assets<bevy::shader::Shader>>();
-    app.add_plugins(bevy_egui::EguiPlugin::default());
+    app.init_resource::<Assets<Image>>()
+        .init_resource::<HostUiInputCapture>()
+        .add_plugins(HeadlessRenderPlugin {
+            width: 640,
+            height: 360,
+        });
 
-    configure_headless_egui(&mut app);
-
-    let settings = app.world().resource::<bevy_egui::EguiGlobalSettings>();
-    assert!(!settings.auto_create_primary_context);
-    assert!(!settings.enable_ime);
-    assert!(!settings.enable_cursor_icon_updates);
-    assert!(
-        app.world()
-            .contains_resource::<bevy_egui::input::EguiWantsInput>()
-    );
+    let capture = app.world().resource::<HostUiInputCapture>();
+    assert!(!capture.wants_pointer);
+    assert!(!capture.wants_keyboard);
+    let target = app.world().resource::<OffscreenTarget>();
+    assert_eq!((target.width, target.height), (640, 360));
 }

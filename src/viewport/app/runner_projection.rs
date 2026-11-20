@@ -9,5 +9,7 @@ use crate::viewport::residency::ResidencyPlugin;
 
 pub(super) fn configure(app: &mut App) {
     app.insert_resource(ProjectionBudget::time(Duration::from_millis(8)));
-    app.add_plugins(ResidencyPlugin);
+    if !app.is_plugin_added::<ResidencyPlugin>() {
+        app.add_plugins(ResidencyPlugin);
+    }
 }

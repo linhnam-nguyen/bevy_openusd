@@ -7,19 +7,11 @@ use bevy::prelude::*;
 use bevy::{camera::CameraMainTextureUsages, render::render_resource::TextureUsages};
 use bevy_glacial::prelude::{AxisGizmo, ChaseCamera, GizmoCamera};
 
-use crate::viewport::camera::ArcballCamera;
-#[cfg(feature = "legacy_frost")]
-use crate::viewport::ui_frost::{RIB_TREE, RIBBON_LEFT};
+use crate::viewport::camera::{ArcballCamera, apply_rig, default_pan_orbit_camera};
 
 /// Tag on the viewer's fallback `DirectionalLight`.
 #[derive(Component)]
 pub(super) struct DefaultSun;
-
-/// Opens the prim tree on startup to give the viewer an immediate focal panel.
-#[cfg(feature = "legacy_frost")]
-pub(super) fn open_default_panel(mut ribbon: ResMut<bevy_frost::RibbonOpen>) {
-    ribbon.toggle(RIBBON_LEFT, RIB_TREE);
-}
 
 /// Resolves the CLI stage argument into a stage path and its asset root.
 ///
@@ -69,6 +61,13 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
     // chalky; ACES tone mapping (the curve usdview / Quick Look apply)
     // restores the filmic falloff. Bloom adds the soft edge around
     // light sources and bright reflections.
+    let initial_arcball = ArcballCamera {
+        focus: Vec3::new(0.0, 0.4, 0.0),
+        distance: 4.0,
+        ..default()
+    };
+    let mut initial_transform = Transform::default();
+    apply_rig(&initial_arcball, &mut initial_transform);
     commands.spawn((
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
@@ -81,30 +80,10 @@ pub(super) fn spawn_camera_and_ground(mut commands: Commands) {
         #[cfg(feature = "solari")]
         Msaa::Off,
         Hdr,
-        // AgX is the modern filmic curve Blender / Krita default to.
-        // ACES is more contrasty + clips highlights harder; with a
-        // single 50k-lux sun ACES turned the teapot into a pure-white
-        // blob. AgX rolls highlights gently, reproduces albedo more
-        // faithfully, and tolerates wider exposure ranges before
-        // clipping.
         Tonemapping::AgX,
-        // Bloom is OFF by default — turn it on with `Bloom::default()`
-        // once the user wants it. With strong direct lighting + HDR +
-        // ACES, the default bloom radius blew the highlights out into
-        // halos that overlapped the entire silhouette.
-        // (Re-enable: add `Bloom::default()` here.)
-        Transform::from_xyz(3.0, 2.5, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ArcballCamera {
-            focus: Vec3::new(0.0, 0.4, 0.0),
-            distance: 4.0,
-            ..default()
-        },
-        // bevy_glacial's GroundGridPlugin queries `&ChaseCamera` to
-        // pick the LOD level. Tag our arcball-camera entity so the
-        // grid follows our actual viewport without us having to
-        // adopt their full ChaseCameraPlugin (we keep our orbit
-        // controls). `sync_chase_camera` mirrors focus/distance/yaw
-        // every frame.
+        initial_transform,
+        default_pan_orbit_camera(initial_arcball.distance),
+        initial_arcball,
         ChaseCamera::default(),
         GizmoCamera,
     ));

@@ -11,11 +11,13 @@
 //! Keyboard: T I O ? toggle panels · G X P toggle overlays.
 
 pub(crate) mod cadence;
+pub(crate) mod composition;
 pub(crate) mod headless;
+pub(crate) mod hosts;
 pub(crate) mod launch_options;
 mod runner;
 mod runner_projection;
-mod scene;
+pub(crate) mod scene;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/viewport/app/test_harness.rs"]

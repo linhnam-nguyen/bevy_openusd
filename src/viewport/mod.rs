@@ -25,7 +25,5 @@ pub(in crate::viewport) mod selection;
 pub(crate) mod semantic;
 pub(crate) mod stage;
 pub(crate) mod transport;
-#[cfg(feature = "legacy_frost")]
-pub(crate) mod ui_frost;
 
 pub(crate) use app::run;

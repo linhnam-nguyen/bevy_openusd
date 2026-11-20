@@ -6,7 +6,7 @@ use viewport_protocol::{
 use crate::viewport::transport::ViewportTransport;
 
 /// Command-line configuration that is independent of Bevy startup.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LaunchOptions {
     pub(crate) asset_argument: Option<String>,
     pub(crate) transport: Option<ViewportTransport>,

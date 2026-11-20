@@ -588,6 +588,576 @@
           "target": "usdview"
         }
       ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::composition::tests::generic_viewport_wires_without_project_git_turso_or_cache_providers",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::composition::tests::shared_application_composition_preserves_launch_flags_and_injects_product_services",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_host_negotiates_gpu_storage_limits_for_adapter",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_toolbar_and_panel_icons_resolve_to_distinct_glyphs",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_panel_actions_dispatch_through_single_viewport_command_inbox",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::camera::tests::pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_properties_ready_selection_accepts_matching_request_and_clears_on_selection_change",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_properties_reordered_responses_and_stale_errors_fail_closed",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_stage_reload_same_path_and_stage_switch_invalidate_properties_and_catalogue",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_repeated_identical_snapshot_and_selection_delta_noop_preserve_pending_and_ready",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_transport_pages_assemble_out_of_order_idempotently_and_reject_corrupt_pages",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_materials_panel_is_read_only_and_preserves_render_assets",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_page_window_handles_empty_boundaries_shrinking_and_large_counts",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_properties_current_id_mismatched_metadata_transitions_to_error_and_recovers",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::api::read_model::tests::bim_catalogue_anonymous_events_never_install_directly_and_coalesce_refresh",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "name": "viewport::app::hosts::mara::tests::mara_host_preserves_not_requested_catalogue_when_command_inbox_absent",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "BO-M9-C1",
@@ -11047,6 +11617,37 @@
       ],
       "new_name": "viewport::api::bridge::editor::boundary::tests::runtime_batches_are_validated_before_model_source_authoring",
       "old_name": "viewport::api::bridge::editor_boundary::tests::runtime_batches_are_validated_before_model_source_authoring",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C02"
+      ],
+      "new_name": "viewport::app::headless::tests::headless_host_stays_windowless_with_shared_ui_capture_inactive",
+      "old_name": "viewport::app::headless::tests::headless_egui_is_passive_without_removing_shared_input",
       "targets": [
         {
           "kind": [

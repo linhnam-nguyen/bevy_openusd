@@ -19,7 +19,9 @@ pub(in crate::viewport) use query::LatestMailbox;
 pub(crate) use queues::{
     ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox,
 };
-pub(crate) use read_model::ViewportReadModelState;
+pub(crate) use read_model::{
+    BimCatalogueLoadState, BimPropertiesLoadState, ViewportReadModelState,
+};
 pub(crate) use session_registry::SessionRegistry;
 
 #[cfg(test)]

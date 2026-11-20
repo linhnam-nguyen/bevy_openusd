@@ -15,6 +15,21 @@ use crate::viewport::app::headless::HeadlessInputWindow;
 const REMOTE_INPUT_TIMEOUT: Duration = Duration::from_millis(750);
 const REMOTE_PAN_MULTIPLIER: f32 = 2.0;
 
+/// Host UI capture state (populated by Mara native host, `false` in headless).
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HostUiInputCapture {
+    pub(crate) wants_pointer: bool,
+    pub(crate) wants_keyboard: bool,
+}
+
+pub(crate) fn ui_wants_pointer_input(capture: Option<Res<HostUiInputCapture>>) -> bool {
+    capture.is_some_and(|c| c.wants_pointer)
+}
+
+pub(crate) fn ui_wants_keyboard_input(capture: Option<Res<HostUiInputCapture>>) -> bool {
+    capture.is_some_and(|c| c.wants_keyboard)
+}
+
 /// Renderer-neutral input consumed by the arcball camera.
 #[derive(Resource, Debug)]
 pub(crate) struct ViewportNavigationInput {
