@@ -7,7 +7,7 @@ use crate::read::shade::{
 
 use super::super::{PrimRoute, ProjectionSeed, RouteCtx, mark_render_projection_dirty};
 use super::consumers::MaterialConsumerIndex;
-use super::material_cache::intern_material;
+use super::material_cache::{InitialMaterialMemo, InitialMaterialRead, intern_material};
 use super::provenance::MaterialProjectionProvenance;
 use super::texture_cache::resolve_texture;
 
@@ -44,14 +44,30 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     if world.get_resource::<MaterialConsumerIndex>().is_none() {
         world.init_resource::<MaterialConsumerIndex>();
     }
-    let dependencies = binding_path.as_ref().map(|material_path| {
-        material_network_dependencies(ctx.stage, material_path)
-            .unwrap_or_else(|_| vec![material_path.as_str().to_owned()])
+    let memo_key = binding
+        .as_ref()
+        .map(|path| (path.clone(), ctx.time.map(f64::to_bits)));
+    let memoized = memo_key.as_ref().and_then(|key| {
+        world
+            .get_resource::<InitialMaterialMemo>()?
+            .entries
+            .get(key)
+            .cloned()
     });
+    let (dependencies, network_resolved) = if let Some(read) = &memoized {
+        (read.dependencies.clone(), true)
+    } else if let Some(path) = &binding_path {
+        match material_network_dependencies(ctx.stage, path) {
+            Ok(dependencies) => (dependencies, true),
+            Err(_) => (vec![path.as_str().to_owned()], false),
+        }
+    } else {
+        (Vec::new(), false)
+    };
     world.resource_mut::<MaterialConsumerIndex>().update(
         ctx.prim_str(),
         binding.as_deref(),
-        dependencies.as_deref().unwrap_or(&[]),
+        &dependencies,
         entity,
     );
 
@@ -68,10 +84,29 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
                 .mark_authored(ctx.prim_str());
             return Some(handle);
         }
-        super::record_descriptor_read(world);
-        let descriptor = read_preview_material(ctx.stage, binding_path)
-            .ok()
-            .flatten()?;
+        let descriptor = if let Some(read) = memoized {
+            read.descriptor
+        } else {
+            super::record_descriptor_read(world);
+            let descriptor = read_preview_material(ctx.stage, binding_path)
+                .ok()
+                .flatten()?;
+            if network_resolved
+                && let Some(key) = memo_key
+                && let Some(mut memo) = world.get_resource_mut::<InitialMaterialMemo>()
+                && memo.entries.len() < 256
+                && static_untextured_material(ctx, &descriptor, &dependencies)
+            {
+                memo.entries.insert(
+                    key,
+                    InitialMaterialRead {
+                        descriptor: descriptor.clone(),
+                        dependencies,
+                    },
+                );
+            }
+            descriptor
+        };
         let handle = intern_material(world, binding_path.as_str(), &descriptor);
         if handle.is_some() {
             world
@@ -124,6 +159,39 @@ fn apply_bound_material(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     if changed {
         mark_render_projection_dirty(world, entity);
     }
+}
+
+fn static_untextured_material(
+    ctx: &RouteCtx,
+    descriptor: &ReadPreviewMaterial,
+    dependencies: &[String],
+) -> bool {
+    descriptor.uv_transform.is_none()
+        && [
+            &descriptor.diffuse_texture,
+            &descriptor.normal_texture,
+            &descriptor.roughness_texture,
+            &descriptor.metallic_texture,
+            &descriptor.opacity_texture,
+            &descriptor.emissive_texture,
+            &descriptor.occlusion_texture,
+        ]
+        .into_iter()
+        .all(Option::is_none)
+        && dependencies.len() <= 64
+        && dependencies.iter().all(|path| {
+            openusd::sdf::path(path)
+                .ok()
+                .and_then(|path| ctx.stage.prim(path).ok())
+                .and_then(|prim| prim.attributes().ok())
+                .is_some_and(|attributes| {
+                    attributes.into_iter().all(|attribute| {
+                        attribute
+                            .time_sample_times()
+                            .is_ok_and(|samples| samples.is_empty())
+                    })
+                })
+        })
 }
 
 fn reproject_consumers(ctx: &RouteCtx, world: &mut World) {
@@ -214,14 +282,18 @@ impl PrimRoute for MaterialRoute {
     }
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
-        if world.get_resource::<Assets<StandardMaterial>>().is_none() {
+        if world.get_resource::<Assets<StandardMaterial>>().is_none()
+            || world.get::<super::super::geom::DeferredSourceMesh>(entity).is_some()
+        {
             return;
         }
         apply_bound_material(ctx, world, entity);
     }
 
     fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
-        if !material_patch_relevant(ctx, changed) {
+        if !material_patch_relevant(ctx, changed)
+            || world.get::<super::super::geom::DeferredSourceMesh>(entity).is_some()
+        {
             return;
         }
         apply_bound_material(ctx, world, entity);

@@ -29,6 +29,10 @@ enum MaterialSeedProvenance {
 }
 
 impl ProjectionSeed {
+    pub(crate) fn has_mesh(&self, path: &str) -> bool {
+        self.meshes.contains_key(path)
+    }
+
     /// Insert a validated mesh for one composed USD prim path.
     pub fn insert_mesh(
         &mut self,

@@ -1,5 +1,7 @@
 use super::*;
+use crate::route::payload::UsdPayloadError;
 use crate::{LiveStage, LiveStagePlugin, ProjectionBudget, UsdPlugin, UsdSnippet};
+use crate::{PrimRoute, RouteCtx, SchemaRegistry};
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 
@@ -10,6 +12,20 @@ fn geometry_stage() -> openusd::usd::Stage {
     )))
     .open_stage()
     .expect("geometry stage opens")
+}
+
+struct BrokenPayloadRoute;
+
+impl PrimRoute for BrokenPayloadRoute {
+    fn matches(&self, context: &RouteCtx) -> bool {
+        context.prim_str() == "/World/Cube"
+    }
+
+    fn project(&self, _context: &RouteCtx, world: &mut World, entity: Entity) {
+        world
+            .entity_mut(entity)
+            .insert(UsdPayloadError("fixture payload failure".to_string()));
+    }
 }
 
 #[test]
@@ -52,6 +68,13 @@ fn an_older_projection_generation_cannot_regress_current_session() {
     assert!(!state.observe(11, 3, ProjectionReadiness::Ready, true));
     assert_eq!(state.projection_generation(), 4);
     assert_eq!(state.readiness(), Some(ProjectOpenReadiness::FirstGeometry));
+
+    assert!(state.observe(11, 4, ProjectionReadiness::Ready, true));
+    assert!(state.observe(11, 5, ProjectionReadiness::Planning, false));
+    assert_eq!(state.activation_generation(), 1);
+    assert_eq!(state.projection_generation(), 5);
+    assert_eq!(state.readiness(), Some(ProjectOpenReadiness::StageOpened));
+    assert!(!state.observe(11, 4, ProjectionReadiness::Ready, true));
 }
 
 #[test]
@@ -80,12 +103,27 @@ fn live_stage_plugin_observes_readiness_without_a_second_projection_scheduler() 
     let mut saw_first_geometry = false;
     for _ in 0..64 {
         app.update();
-        let readiness = app
-            .world()
-            .resource::<ProjectOpenReadinessState>()
-            .readiness();
+        let world = app.world();
+        let readiness = world.resource::<ProjectOpenReadinessState>().readiness();
+        let map = world.resource::<crate::PrimEntities>();
+        let paths = world.resource::<crate::PathStore>();
+        if !saw_first_geometry && readiness == Some(ProjectOpenReadiness::FirstGeometry) {
+            assert!(map.entity(paths, "/World/Cube").is_some());
+            assert!(
+                map.entity(paths, "/World/AHidden").is_none(),
+                "visible geometry should project before the lexically earlier hidden subtree"
+            );
+        }
+        if map.entity(paths, "/World/AHidden").is_some() {
+            assert!(
+                world
+                    .resource::<ProgressiveProjectionState>()
+                    .visible_candidates_ready()
+            );
+        }
         saw_first_geometry |= readiness == Some(ProjectOpenReadiness::FirstGeometry);
         if readiness == Some(ProjectOpenReadiness::ProjectionComplete) {
+            assert!(map.entity(paths, "/World/AHidden/Cube").is_some());
             break;
         }
     }
@@ -102,4 +140,28 @@ fn live_stage_plugin_observes_readiness_without_a_second_projection_scheduler() 
             .plan_builds(),
         1
     );
+
+    app.world_mut()
+        .resource_mut::<SchemaRegistry>()
+        .register(BrokenPayloadRoute);
+    app.world_mut()
+        .insert_non_send(LiveStage::new(geometry_stage()));
+    for _ in 0..64 {
+        app.update();
+        let state = app.world().resource::<ProgressiveProjectionState>();
+        if state.readiness() == ProjectionReadiness::Failed {
+            break;
+        }
+    }
+    let world = app.world();
+    let state = world.resource::<ProgressiveProjectionState>();
+    assert_eq!(state.readiness(), ProjectionReadiness::Failed);
+    assert!(!state.visible_candidates_ready());
+    assert!(
+        state
+            .last_error()
+            .is_some_and(|message| message.contains("/World/Cube")
+                && message.contains("fixture payload failure"))
+    );
+    assert!(world.resource::<crate::PrimEntities>().is_empty());
 }

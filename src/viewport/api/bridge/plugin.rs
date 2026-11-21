@@ -4,7 +4,9 @@ use viewport_protocol::{PROTOCOL_VERSION, ViewportEvent, ViewportEventEnvelope};
 
 use super::ViewerSettingsState;
 use super::bim::properties_lifecycle::{PendingBimProperties, replay_pending_bim_properties};
-use super::commands::{apply_pending_renderer_cadence, apply_viewport_commands};
+use super::commands::{
+    apply_pending_renderer_cadence, apply_viewport_commands, reject_locked_viewport_commands,
+};
 use super::query::{
     dispatch_scene_query_commands, publish_scene_query_results, publish_stage_load_state,
     refresh_active_hierarchy_projection,
@@ -109,6 +111,7 @@ impl Plugin for ViewportBridgePlugin {
             .add_systems(
                 Update,
                 (
+                    reject_locked_viewport_commands,
                     publish_scene_query_results,
                     dispatch_scene_query_commands,
                     apply_viewport_commands,

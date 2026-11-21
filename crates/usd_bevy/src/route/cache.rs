@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::time::Instant;
 
-use bevy::mesh::VertexAttributeValues;
+use super::cache_key::{MAX_SOURCE_KEY_BYTES, MeshSourceKey};
 use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
 
@@ -25,6 +25,7 @@ use bevy::prelude::*;
 /// drops those strong refs so `Assets<Mesh>` can reclaim anything unreferenced;
 /// still-referenced meshes simply get re-interned on their next projection.
 pub(crate) const MAX_INTERNED: usize = 8192;
+pub(crate) const MAX_SOURCE_MESHES: usize = 256;
 
 /// Counters collected by [`ProjectionCache`] so cache policy changes can be
 /// based on observed scene behavior rather than assumptions.
@@ -57,7 +58,8 @@ pub struct MeshInternMetrics {
 #[derive(Resource, Default)]
 pub struct ProjectionCache {
     meshes: HashMap<u64, Handle<Mesh>>,
-    source_meshes: HashMap<u64, Handle<Mesh>>,
+    source_meshes: HashMap<MeshSourceKey, Handle<Mesh>>,
+    source_key_bytes: usize,
     stats: ProjectionCacheStats,
 }
 
@@ -75,6 +77,11 @@ impl ProjectionCache {
     /// Number of source-read keys retained for pre-conversion reuse.
     pub fn source_len(&self) -> usize {
         self.source_meshes.len()
+    }
+
+    fn clear_source_keys(&mut self) {
+        self.source_meshes.clear();
+        self.source_key_bytes = 0;
     }
 
     /// Snapshot hit/miss and eviction counters for diagnostics or profiling.
@@ -119,13 +126,15 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
         .meshes
         .get(&sig)
         .cloned();
-    let is_alive = existing
+    let cached_mesh = existing
         .as_ref()
-        .is_some_and(|handle| world.resource::<Assets<Mesh>>().contains(handle));
+        .and_then(|handle| world.resource::<Assets<Mesh>>().get(handle));
+    let is_alive = cached_mesh.is_some();
+    let is_equal = cached_mesh.is_some_and(|cached| render_mesh_eq(cached, &mesh));
     {
         let mut cache = world.resource_mut::<ProjectionCache>();
         cache.stats.lookups += 1;
-        if is_alive {
+        if is_equal {
             cache.stats.hits += 1;
             return (
                 existing.expect("alive cache entry must have a handle"),
@@ -138,7 +147,7 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
                 },
             );
         }
-        if existing.is_some() {
+        if existing.is_some() && !is_alive {
             cache.stats.stale_handles += 1;
         }
         cache.stats.misses += 1;
@@ -152,7 +161,7 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
     // swept here rather than lingering.
     if cache.meshes.len() >= MAX_INTERNED {
         cache.meshes.clear();
-        cache.source_meshes.clear();
+        cache.clear_source_keys();
         cache.stats.evictions += 1;
     }
     cache.meshes.insert(sig, handle.clone());
@@ -169,11 +178,11 @@ pub fn intern_mesh_profiled(world: &mut World, mesh: Mesh) -> (Handle<Mesh>, Mes
 }
 
 /// Look up a source-read mesh before candidate mesh construction.
-pub(crate) fn lookup_source_mesh(world: &mut World, key: u64) -> Option<Handle<Mesh>> {
+pub(crate) fn lookup_source_mesh(world: &mut World, key: &MeshSourceKey) -> Option<Handle<Mesh>> {
     let existing = world
         .resource::<ProjectionCache>()
         .source_meshes
-        .get(&key)
+        .get(key)
         .cloned();
     let handle = existing?;
     let alive = world
@@ -186,29 +195,33 @@ pub(crate) fn lookup_source_mesh(world: &mut World, key: u64) -> Option<Handle<M
         return Some(handle);
     }
     cache.stats.stale_handles += 1;
-    cache.source_meshes.remove(&key);
+    cache.source_meshes.remove(key);
+    cache.source_key_bytes -= key.0.len();
     None
 }
 
 /// Remember the source key after a mesh has been built or found by the final
-/// geometry interner. Both source and final caches share the same bound.
-pub(crate) fn remember_source_mesh(world: &mut World, key: u64, handle: Handle<Mesh>) {
+/// geometry interner. The source index is independently bounded by count and key bytes.
+pub(crate) fn remember_source_mesh(world: &mut World, key: MeshSourceKey, handle: Handle<Mesh>) {
     let mut cache = world.resource_mut::<ProjectionCache>();
-    if cache.source_meshes.len() >= MAX_INTERNED {
-        cache.meshes.clear();
-        cache.source_meshes.clear();
-        cache.stats.evictions += 1;
+    let bytes = key.0.len();
+    if bytes > MAX_SOURCE_KEY_BYTES {
+        return;
     }
+    if let Some(existing) = cache.source_meshes.get_mut(&key) {
+        *existing = handle;
+        return;
+    }
+    if cache.source_meshes.len() >= MAX_SOURCE_MESHES
+        || bytes > MAX_SOURCE_KEY_BYTES - cache.source_key_bytes
+    {
+        return;
+    }
+    cache.source_key_bytes += bytes;
     cache.source_meshes.insert(key, handle);
 }
 
-/// A 64-bit signature over the geometry that defines a mesh's appearance:
-/// topology, indices, and every attribute the mesh builder emits
-/// (position / normal / uv / vertex color). Two meshes with equal signatures
-/// render identically, so they can share one handle. Float lanes are hashed by
-/// bit pattern (exact-equality — no fuzzy matching). Any attribute added here
-/// MUST be one the builder actually produces, else the signature is stable but
-/// blind to a difference and two visually distinct meshes could alias.
+/// A fast lookup hint. Reuse also checks the mesh and the exact vertex bytes.
 fn mesh_signature(mesh: &Mesh) -> u64 {
     let mut h = FixedHasher.build_hasher();
     std::mem::discriminant(&mesh.primitive_topology()).hash(&mut h);
@@ -223,54 +236,23 @@ fn mesh_signature(mesh: &Mesh) -> u64 {
         }
         None => 2u8.hash(&mut h),
     }
-    for id in [
-        Mesh::ATTRIBUTE_POSITION.id,
-        Mesh::ATTRIBUTE_NORMAL.id,
-        Mesh::ATTRIBUTE_UV_0.id,
-        Mesh::ATTRIBUTE_COLOR.id,
-    ] {
-        hash_attribute(mesh, id, &mut h);
+    for (attribute, values) in mesh.attributes() {
+        attribute.id.hash(&mut h);
+        attribute.format.hash(&mut h);
+        values.get_bytes().hash(&mut h);
     }
     h.finish()
 }
 
-fn hash_attribute(mesh: &Mesh, id: bevy::mesh::MeshVertexAttributeId, h: &mut impl Hasher) {
-    let Some(values) = mesh
-        .attributes()
-        .find(|(attr, _)| attr.id == id)
-        .map(|(_, v)| v)
-    else {
-        0u8.hash(h);
-        return;
-    };
-    match values {
-        VertexAttributeValues::Float32x3(v) => {
-            for a in v {
-                for f in a {
-                    f.to_bits().hash(h);
-                }
-            }
-        }
-        VertexAttributeValues::Float32x2(v) => {
-            for a in v {
-                for f in a {
-                    f.to_bits().hash(h);
-                }
-            }
-        }
-        VertexAttributeValues::Float32x4(v) => {
-            for a in v {
-                for f in a {
-                    f.to_bits().hash(h);
-                }
-            }
-        }
-        _ => {
-            // Attribute present but a variant we don't fold in: fold its length
-            // so meshes differing only there still get distinct signatures.
-            values.len().hash(h);
-        }
-    }
+fn render_mesh_eq(cached: &Mesh, requested: &Mesh) -> bool {
+    cached == requested
+        && cached.try_attributes().is_ok_and(|mut attributes| {
+            attributes.all(|(attribute, values)| {
+                requested
+                    .attribute(attribute.id)
+                    .is_some_and(|other| values.get_bytes() == other.get_bytes())
+            })
+        })
 }
 
 #[cfg(test)]

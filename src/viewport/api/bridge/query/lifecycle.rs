@@ -78,21 +78,18 @@ pub(crate) fn publish_stage_load_state(
     toggles: Res<DisplayToggles>,
     tuning: Res<LoaderTuning>,
     physics: Res<PhysicsActive>,
-    projection: Option<Res<usd_bevy::ProgressiveProjectionState>>,
+    gate: crate::viewport::input::ViewerInteractionGate,
     mut last: Local<Option<(viewport_protocol::StageLoadState, u64)>>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
     use viewport_protocol::StageLoadState;
-    let projection_ready = projection
-        .as_ref()
-        .is_none_or(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
     let state = match stage {
         None => StageLoadState::Idle,
-        Some(stage) => match &stage.error {
+        Some(stage) => match stage.error.as_deref().or_else(|| gate.projection_error()) {
             Some(error) => StageLoadState::Failed {
-                message: error.clone(),
+                message: error.to_owned(),
             },
-            None if spawned.0 && projection_ready => StageLoadState::Ready,
+            None if spawned.0 && !gate.locked() => StageLoadState::Ready,
             _ => StageLoadState::Loading,
         },
     };

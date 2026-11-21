@@ -381,7 +381,11 @@ impl WindowApp for UsdMaraApp {
                 let benchmarking = world
                     .contains_resource::<crate::viewport::diagnostics::performance::BenchmarkLaunchConfig>(
                     );
-                playing || flying || mounted || benchmarking
+                playing
+                    || flying
+                    || mounted
+                    || benchmarking
+                    || crate::viewport::input::viewer_interaction_locked(world)
             };
             self.bevy_view.set_continuous_rendering(continuous);
         } else {

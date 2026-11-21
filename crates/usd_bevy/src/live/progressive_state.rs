@@ -85,6 +85,8 @@ pub struct ProgressiveProjectionState {
     pub(super) planning_work_items: u64,
     pub(super) first_projected_prim_ms: Option<f64>,
     pub(super) first_mesh_ms: Option<f64>,
+    pub(super) visible_candidates_ready: bool,
+    pub(super) material_memo: crate::route::material::InitialMaterialMemo,
     pub(super) restart_requested: bool,
     pub(super) last_error: Option<String>,
     pub(super) cancelled_generations: u64,
@@ -102,6 +104,10 @@ impl ProgressiveProjectionState {
     }
     pub fn readiness(&self) -> ProjectionReadiness {
         self.readiness
+    }
+    /// The complete projected namespace has registered its native instance bindings.
+    pub fn native_instance_dependencies_ready(&self) -> bool {
+        self.readiness == ProjectionReadiness::Ready
     }
     pub fn completed(&self) -> usize {
         self.completed
@@ -139,6 +145,16 @@ impl ProgressiveProjectionState {
     }
     pub fn first_mesh_ms(&self) -> Option<f64> {
         self.first_mesh_ms
+    }
+    /// Initial projection has processed every potentially visible branch at
+    /// this generation's authored default visibility. Frame presentation is
+    /// owned by the renderer or remote client.
+    pub fn visible_candidates_ready(&self) -> bool {
+        self.visible_candidates_ready
+            && !matches!(
+                self.readiness,
+                ProjectionReadiness::Cancelled | ProjectionReadiness::Failed
+            )
     }
     pub fn cancelled_generations(&self) -> u64 {
         self.cancelled_generations

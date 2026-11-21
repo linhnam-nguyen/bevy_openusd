@@ -20,7 +20,12 @@ pub(in crate::viewport) struct SectionBoxGizmoTarget;
 pub(in crate::viewport) fn capture_section_box_gizmo_transform(
     mut state: ResMut<SectionBoxState>,
     targets: Query<(&Transform, &GizmoTarget), With<SectionBoxGizmoTarget>>,
+    gate: crate::viewport::input::ViewerInteractionGate,
 ) {
+    if gate.locked() {
+        state.face_drag = None;
+        return;
+    }
     let Ok((transform, target)) = targets.single() else {
         return;
     };
@@ -82,8 +87,9 @@ pub(in crate::viewport) fn sync_section_box_gizmo_target(
         (Entity, &mut Transform, Option<&BoundsGizmoTarget>),
         With<SectionBoxGizmoTarget>,
     >,
+    gate: crate::viewport::input::ViewerInteractionGate,
 ) {
-    if !state.enabled || !state.visible {
+    if gate.locked() || !state.enabled || !state.visible {
         for (entity, ..) in &mut targets {
             commands.entity(entity).despawn();
         }

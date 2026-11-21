@@ -202,7 +202,7 @@ impl LiveStage {
             return;
         }
         if let Some(mut cache) = world.get_resource_mut::<crate::route::material::UsdTextureCache>() {
-            cache.textures.clear();
+            cache.invalidate_textures();
         }
         if let Some(visual) = visual.as_ref() {
             world.insert_non_send(visual.texture_source(identity));

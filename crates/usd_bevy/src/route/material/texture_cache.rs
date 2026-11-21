@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::path::PathBuf;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::Image;
+use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
@@ -55,6 +57,8 @@ pub struct UsdTextureCache {
     pub archive_paths: Vec<PathBuf>,
     pub(super) archive_indices: HashMap<PathBuf, ArchiveIndex>,
     pub(super) stats: TextureCacheStats,
+    pub(super) context_revision: u64,
+    pub(super) decoded_images: HashMap<u64, Handle<Image>>,
 }
 
 impl UsdTextureCache {
@@ -84,13 +88,22 @@ impl UsdTextureCache {
         // an identical package list may contain changed bytes, so the image
         // handles and archive indexes must not survive the replacement.
         self.archive_paths = next;
-        self.textures.clear();
+        self.invalidate_textures();
         self.archive_indices.clear();
     }
 
     /// Drop every stage-owned package and its derived texture entries.
     pub fn clear_active_archives(&mut self) {
         self.replace_active_archives(std::iter::empty());
+    }
+
+    pub(crate) fn invalidate_textures(&mut self) {
+        self.textures.clear();
+        self.decoded_images.clear();
+        self.context_revision = self
+            .context_revision
+            .checked_add(1)
+            .expect("texture context revision exhausted");
     }
 
     pub(super) fn archive_indices(&self) -> &HashMap<PathBuf, ArchiveIndex> {
@@ -186,9 +199,29 @@ pub(super) fn resolve_texture(
         RenderAssetUsages::default(),
     );
 
-    let handle = world.resource_mut::<Assets<Image>>().add(bevy_image);
+    let image_key = FixedHasher.hash_one((width, height, format, &bevy_image.data));
+    let cached_image = world
+        .get_resource::<UsdTextureCache>()
+        .and_then(|cache| cache.decoded_images.get(&image_key))
+        .filter(|handle| {
+            world
+                .resource::<Assets<Image>>()
+                .get(*handle)
+                .is_some_and(|image| {
+                    image.texture_descriptor == bevy_image.texture_descriptor
+                        && image.asset_usage == bevy_image.asset_usage
+                        && image.data == bevy_image.data
+                })
+        })
+        .cloned();
+    let handle =
+        cached_image.unwrap_or_else(|| world.resource_mut::<Assets<Image>>().add(bevy_image));
 
     if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+        if cache.decoded_images.len() >= 256 && !cache.decoded_images.contains_key(&image_key) {
+            cache.decoded_images.clear();
+        }
+        cache.decoded_images.insert(image_key, handle.clone());
         cache.textures.insert(key, handle.clone());
     }
 

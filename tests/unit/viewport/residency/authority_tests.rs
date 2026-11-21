@@ -43,6 +43,12 @@ fn camera_admission(sample: CameraSample) -> CameraAdmission {
     }
 }
 
+impl ResidencyAuthority {
+    fn update_camera_near(&mut self, admission: CameraAdmission) -> bool {
+        self.update_camera_near_filtered(admission, |_| true)
+    }
+}
+
 #[test]
 fn camera_and_selection_share_one_load_but_keep_two_reasons() {
     let scene = SceneId::new_v4();
@@ -55,10 +61,14 @@ fn camera_and_selection_share_one_load_but_keep_two_reasons() {
     });
     let mut assets = Assets::<Mesh>::default();
     authority.install_scene(scene, 7, vec![payload]);
-    assert!(authority.update_camera_near(camera_admission(CameraSample::default())));
-    assert_eq!(authority.queue_len(), 1);
+    let sample = CameraSample::default();
+    assert!(authority.update_camera_near_filtered(camera_admission(sample), |_| false));
+    assert_eq!(authority.queue_len(), 0, "a hidden occurrence must not load for the camera");
     assert!(authority.request_reason(key, ResidencyReason::Selected, 7, 8, 8));
     assert_eq!(authority.queue_len(), 1);
+    let revealed = CameraSample { visibility_revision: 1, ..sample };
+    assert!(authority.update_camera_near_filtered(camera_admission(revealed), |_| true));
+    assert_eq!(authority.queue_len(), 1, "reveal shares the already queued selection load");
     assert_eq!(authority.reasons(&key).unwrap().len(), 2);
     let job = authority.begin_next_load().unwrap();
     assert!(authority.complete_cpu(job.key, 7, 8, 8));

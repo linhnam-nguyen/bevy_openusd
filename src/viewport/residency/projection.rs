@@ -70,6 +70,7 @@ impl SceneResidencyProjection {
         key: ScenePayloadKey,
         handle: Handle<Mesh>,
         commands: &mut Commands,
+        is_visible: impl Fn(&SceneCacheAddress) -> bool,
     ) {
         let addresses = self
             .payload_occurrences
@@ -93,7 +94,7 @@ impl SceneResidencyProjection {
                         bounds: entry.bounds,
                     },
                     SceneResidencySourceTransform(entry.transform.clone()),
-                    Visibility::Visible,
+                    cached_visibility(is_visible(&address)),
                 ))
                 .id();
             entry.mesh = Some(handle.clone());
@@ -102,6 +103,20 @@ impl SceneResidencyProjection {
                 .entry(asset_id)
                 .or_default()
                 .push(address);
+        }
+    }
+
+    pub(crate) fn sync_visibility(
+        &self,
+        commands: &mut Commands,
+        is_visible: impl Fn(&SceneCacheAddress) -> bool,
+    ) {
+        for address in self.asset_occurrences.values().flatten() {
+            if let Some(entity) = self.entries.get(address).and_then(|entry| entry.entity) {
+                commands
+                    .entity(entity)
+                    .insert_if_neq(cached_visibility(is_visible(address)));
+            }
         }
     }
 
@@ -144,6 +159,14 @@ impl SceneResidencyProjection {
         self.entries.clear();
         self.payload_occurrences.clear();
         self.asset_occurrences.clear();
+    }
+}
+
+fn cached_visibility(visible: bool) -> Visibility {
+    if visible {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
     }
 }
 

@@ -323,11 +323,13 @@ fn bake_prototype(
     let read_mesh_ms = read_start
         .map(|started| started.elapsed().as_secs_f64() * 1000.0)
         .unwrap_or_default();
-    let source_key = source_mesh_key(&mesh_read);
-    let source_hit = lookup_source_mesh(world, source_key);
-    let source_cache_lookup = world
+    let source_key = world
         .get_resource::<super::cache::ProjectionCache>()
-        .is_some();
+        .and_then(|_| source_mesh_key(&mesh_read));
+    let source_hit = source_key
+        .as_ref()
+        .and_then(|key| lookup_source_mesh(world, key));
+    let source_cache_lookup = source_key.is_some();
     let source_cache_hit = source_hit.is_some();
     let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
         (mesh_handle, Default::default(), Default::default())
@@ -342,7 +344,7 @@ fn bake_prototype(
         } else {
             (intern_mesh(world, mesh), Default::default())
         };
-        if source_cache_lookup {
+        if let Some(source_key) = source_key {
             remember_source_mesh(world, source_key, mesh_handle.clone());
         }
         (mesh_handle, build_metrics, intern_metrics)

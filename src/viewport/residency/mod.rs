@@ -19,8 +19,10 @@ use bevy::mesh::Mesh;
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetBytesPerFrame;
 
+use crate::project::cache::contract::{SceneCacheAddress, SceneCacheOccurrence};
 use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::viewport::scene::SectionBoxState;
+use crate::viewport::api::ViewportBridgeSet;
+use crate::viewport::scene::{SceneAnchorIndex, SectionBoxState};
 use crate::viewport::stage::{SceneCacheOwnershipContext, SceneCachePresentation};
 
 use animation::{AnimationResidencyState, sync_animation_residency};
@@ -31,6 +33,8 @@ use repair::{
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,
 };
 use selection::{SelectionResidencyState, release_selected_residency, sync_selected_residency};
+use usd_bevy::live::source_mesh::{SourceMeshIdentity, SourceMeshInput, publish_source_mesh};
+use usd_bevy::route::geom::{DeferHiddenSourceMeshes, DeferredSourceMesh, source_mesh_is_hidden};
 use viewpoint::{ActiveViewpointResidencyState, sync_active_viewpoint_residency};
 use worker::{CachedResidencyWorker, LoadedScenePayloadQueue, install_loaded_scene_payloads};
 
@@ -55,6 +59,9 @@ impl Plugin for ResidencyPlugin {
             .init_resource::<AnimationResidencyState>()
             .init_resource::<ActiveViewpointResidencyState>()
             .init_resource::<SelectionResidencyState>()
+            .init_resource::<DeferHiddenSourceMeshes>()
+            .init_resource::<SourceDemandScan>()
+            .init_resource::<VisibilityChangeEpoch>()
             .insert_resource(RenderAssetBytesPerFrame::new(
                 DEFAULT_UPLOAD_BYTES_PER_FRAME,
             ))
@@ -65,16 +72,193 @@ impl Plugin for ResidencyPlugin {
                     sync_animation_residency,
                     sync_active_viewpoint_residency,
                     sync_selected_residency,
+                    advance_visibility_epoch
+                        .after(ViewportBridgeSet::ApplyTreeCommands)
+                        .after(usd_bevy::LiveStageSet::Presentation),
                     update_camera_residency,
                     install_loaded_scene_payloads,
                     drain_cached_residency_completions,
                     drain_targeted_repair_persistence_completions,
                     process_targeted_residency_repairs,
+                    dispatch_source_meshes,
                     dispatch_cached_residency_loads,
                     pump_residency_uploads,
                 )
                     .chain(),
             );
+    }
+}
+
+#[derive(Component)]
+struct PreparingSourceMesh(SourceMeshIdentity);
+
+#[derive(Resource, Default)]
+struct SourceDemandScan(Option<SourceDemandStamp>);
+
+#[derive(Resource, Default)]
+struct VisibilityChangeEpoch(u64);
+
+fn advance_visibility_epoch(
+    changed: Query<
+        (),
+        (
+            Without<projection::SceneResidencyOccurrence>,
+            Or<(Changed<Visibility>, Changed<ChildOf>)>,
+        ),
+    >,
+    mut removed_visibility: RemovedComponents<Visibility>,
+    mut removed_parent: RemovedComponents<ChildOf>,
+    mut epoch: ResMut<VisibilityChangeEpoch>,
+) {
+    let removed_visibility = removed_visibility.read().count() != 0;
+    let removed_parent = removed_parent.read().count() != 0;
+    if removed_visibility || removed_parent || !changed.is_empty() {
+        epoch.0 = epoch.0.saturating_add(1);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SourceDemandStamp {
+    context: usd_bevy::VisualContextId,
+    generation: u64,
+    scene_revision: u64,
+    selection_revision: u64,
+    visibility_epoch: u64,
+    enabled: bool,
+}
+
+fn source_mesh_requested(world: &World, entity: Entity) -> bool {
+    if !world.contains_resource::<DeferHiddenSourceMeshes>()
+        || !source_mesh_is_hidden(world, entity)
+    {
+        return true;
+    }
+    world
+        .get_resource::<SceneAnchorIndex>()
+        .and_then(|index| index.anchor_for(entity))
+        .is_some_and(|anchor| {
+            world
+                .get_resource::<crate::viewport::scene::SelectedTargets>()
+                .is_some_and(|selected| selected.0.targets.contains(&anchor))
+        })
+}
+
+fn dispatch_source_meshes(world: &mut World) {
+    let stamp = world
+        .get_non_send::<usd_bevy::LiveStage>()
+        .and_then(|live| {
+            let projection = world.get_resource::<usd_bevy::ProgressiveProjectionState>()?;
+            if !projection.native_instance_dependencies_ready()
+                || projection.session_id() != Some(live.session_id())
+                || live.has_changes()
+            {
+                return None;
+            }
+            let scene = world.get_resource::<SceneAnchorIndex>()?;
+            let selection = world.get_resource::<crate::viewport::scene::SelectedTargets>()?;
+            Some(SourceDemandStamp {
+                context: live.visual_context_id(),
+                generation: projection.generation(),
+                scene_revision: scene.revision(),
+                selection_revision: selection.revision(),
+                visibility_epoch: world.get_resource::<VisibilityChangeEpoch>()?.0,
+                enabled: world.contains_resource::<DeferHiddenSourceMeshes>(),
+            })
+        });
+    if stamp.is_none()
+        && let Some(mut scan) = world.get_resource_mut::<SourceDemandScan>()
+        && scan.0.is_some()
+    {
+        scan.0 = None;
+    }
+    if stamp.is_some()
+        && world
+            .get_resource::<SourceDemandScan>()
+            .is_some_and(|scan| scan.0 == stamp)
+    {
+        return;
+    }
+    let mut deferred =
+        world.query_filtered::<Entity, (With<DeferredSourceMesh>, Without<PreparingSourceMesh>)>();
+    let requested = deferred
+        .iter(world)
+        .filter(|&entity| source_mesh_requested(world, entity))
+        .take(worker::WORKER_QUEUE_CAPACITY)
+        .collect::<Vec<_>>();
+    if requested.is_empty() {
+        if let Some(mut scan) = world.get_resource_mut::<SourceDemandScan>() {
+            scan.0 = stamp;
+        }
+        return;
+    }
+    let worker = world.resource::<CachedResidencyWorker>();
+    if !worker.is_available() {
+        if let Some(identity) = requested
+            .into_iter()
+            .find_map(|entity| SourceMeshIdentity::capture(world, entity))
+        {
+            publish_source_mesh(world, identity, None);
+        }
+        return;
+    }
+    let Some(capacity) = worker.source_capacity() else {
+        return;
+    };
+    let mut batch = Vec::with_capacity(capacity.jobs);
+    let mut remaining_bytes = capacity.bytes;
+    for entity in requested.into_iter().take(capacity.jobs) {
+        let Some(identity) = SourceMeshIdentity::capture(world, entity) else {
+            continue;
+        };
+        let Some(input) = SourceMeshInput::capture(world, identity) else {
+            if batch.is_empty() {
+                publish_source_mesh(world, identity, None);
+            }
+            break;
+        };
+        let bytes = input.estimated_bytes();
+        if bytes > remaining_bytes {
+            if batch.is_empty() && capacity.allow_oversized {
+                batch.push((bytes, input));
+            }
+            break;
+        }
+        batch.push((bytes, input));
+        remaining_bytes -= bytes;
+        if remaining_bytes == 0 {
+            break;
+        }
+    }
+    batch.sort_by_key(|(bytes, _)| std::cmp::Reverse(*bytes));
+    for (_, input) in batch {
+        let identity = input.identity;
+        if !world
+            .resource::<CachedResidencyWorker>()
+            .dispatch_source(input)
+        {
+            break;
+        }
+        world
+            .entity_mut(identity.entity)
+            .insert(PreparingSourceMesh(identity));
+    }
+}
+
+fn complete_source_mesh(world: &mut World, identity: SourceMeshIdentity, mesh: Option<Mesh>) {
+    if !world
+        .get::<PreparingSourceMesh>(identity.entity)
+        .is_some_and(|pending| pending.0 == identity)
+    {
+        return;
+    }
+    world
+        .entity_mut(identity.entity)
+        .remove::<PreparingSourceMesh>();
+    if source_mesh_requested(world, identity.entity) {
+        if let Some(mut scan) = world.get_resource_mut::<SourceDemandScan>() {
+            scan.0 = None;
+        }
+        publish_source_mesh(world, identity, mesh);
     }
 }
 
@@ -123,6 +307,9 @@ fn update_camera_residency(
     mut authority: ResMut<ResidencyAuthority>,
     section_box: Option<Res<SectionBoxState>>,
     cameras: Query<(&Camera, &GlobalTransform, &Projection), With<Camera3d>>,
+    scene_index: Option<Res<SceneAnchorIndex>>,
+    epoch: Res<VisibilityChangeEpoch>,
+    visibility: Query<(Option<&Visibility>, Option<&ChildOf>)>,
 ) {
     let Ok((camera, global_transform, projection)) = cameras.single() else {
         return;
@@ -137,6 +324,8 @@ fn update_camera_residency(
             .physical_viewport_size()
             .map_or([0, 0], |size| [size.x, size.y]),
         section_box_revision,
+        visibility_revision: scene_index.as_ref().map_or(0, |index| index.revision()),
+        visibility_epoch: epoch.0,
         ..CameraSample::default()
     };
     let section_box = section_box.as_deref().and_then(|state| {
@@ -147,11 +336,46 @@ fn update_camera_residency(
                 .map(|plane| plane.to_array().map(f64::from)),
         })
     });
-    authority.update_camera_near(CameraAdmission {
-        sample,
-        frustum: projection.compute_frustum(global_transform),
-        section_box,
-    });
+    authority.update_camera_near_filtered(
+        CameraAdmission {
+            sample,
+            frustum: projection.compute_frustum(global_transform),
+            section_box,
+        },
+        |candidate| {
+            cached_occurrence_visible(&candidate.address, scene_index.as_deref(), &visibility)
+        },
+    );
+}
+
+fn cached_occurrence_visible(
+    address: &SceneCacheAddress,
+    scene_index: Option<&SceneAnchorIndex>,
+    visibility: &Query<(Option<&Visibility>, Option<&ChildOf>)>,
+) -> bool {
+    let (Some(index), SceneCacheOccurrence::PrimPath(path)) = (scene_index, &address.occurrence)
+    else {
+        return true;
+    };
+    let occurrences = index.resolve_all_by_prim_path(path);
+    occurrences.is_empty()
+        || occurrences
+            .iter()
+            .any(|&entity| occurrence_visible(entity, visibility))
+}
+
+fn occurrence_visible(
+    mut entity: Entity,
+    visibility: &Query<(Option<&Visibility>, Option<&ChildOf>)>,
+) -> bool {
+    while let Ok((current, parent)) = visibility.get(entity) {
+        match (current.copied().unwrap_or(Visibility::Inherited), parent) {
+            (Visibility::Hidden, _) => return false,
+            (Visibility::Visible, _) | (Visibility::Inherited, None) => return true,
+            (Visibility::Inherited, Some(parent)) => entity = parent.parent(),
+        }
+    }
+    true
 }
 
 fn dispatch_cached_residency_loads(
@@ -199,10 +423,22 @@ fn pump_residency_uploads(
     render_budget: Res<RenderAssetBytesPerFrame>,
     mut projection: ResMut<SceneResidencyProjection>,
     mut commands: Commands,
+    scene_index: Option<Res<SceneAnchorIndex>>,
+    epoch: Res<VisibilityChangeEpoch>,
+    visibility: Query<(Option<&Visibility>, Option<&ChildOf>)>,
+    mut last_visibility_revision: Local<Option<(Option<u64>, u64)>>,
 ) {
+    let is_visible = |address: &SceneCacheAddress| {
+        cached_occurrence_visible(address, scene_index.as_deref(), &visibility)
+    };
+    let visibility_revision = (scene_index.as_ref().map(|index| index.revision()), epoch.0);
+    if *last_visibility_revision != Some(visibility_revision) {
+        projection.sync_visibility(&mut commands, &is_visible);
+        *last_visibility_revision = Some(visibility_revision);
+    }
     for key in authority.pump_uploads(&mut assets, render_budget.max_bytes) {
         if let Some(handle) = authority.render_handle(&key) {
-            projection.attach_payload(key, handle, &mut commands);
+            projection.attach_payload(key, handle, &mut commands, &is_visible);
         }
     }
     release_retired_render_assets(&mut authority, &mut assets, &mut projection, &mut commands);

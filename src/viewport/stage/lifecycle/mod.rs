@@ -134,8 +134,7 @@ pub(crate) fn handle_usd_hot_reload(world: &mut World) {
     open::open_stage(world, path);
 }
 
-/// Marks a live stage ready once `LiveStagePlugin` has projected real prims
-/// and captures the stage metadata used by the viewport read model.
+/// Admits the projected generation once its native instance dependencies are bound.
 pub(crate) fn spawn_when_ready(world: &mut World) {
     let Some((session_id, stage)) = world
         .get_non_send::<LiveStage>()
@@ -144,14 +143,22 @@ pub(crate) fn spawn_when_ready(world: &mut World) {
         return;
     };
     prim_count::update(world, session_id);
-    let projection_ready = world
+    let binding_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
-        .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
+        .is_none_or(|state| {
+            state.session_id() == Some(session_id) && state.native_instance_dependencies_ready()
+        });
+    if !binding_ready {
+        if world.resource::<Spawned>().0 {
+            world.resource_mut::<Spawned>().0 = false;
+        }
+        return;
+    }
     let metadata_complete = world
         .get_resource::<StageMetadataState>()
         .is_some_and(|state| state.session_id == Some(session_id) && state.complete);
     if world.resource::<Spawned>().0 {
-        if !projection_ready || metadata_complete {
+        if metadata_complete {
             return;
         }
         world.resource_scope(|world, mut info: Mut<StageInfo>| {
@@ -187,15 +194,13 @@ pub(crate) fn spawn_when_ready(world: &mut World) {
     world.resource_mut::<Spawned>().0 = true;
     world.insert_resource(StageMetadataState {
         session_id: Some(session_id),
-        complete: projection_ready,
+        complete: true,
     });
-    if projection_ready {
-        world.resource_scope(|world, mut info: Mut<StageInfo>| {
-            let map = world.resource::<PrimEntities>();
-            let paths = world.resource::<PathStore>();
-            metadata::refresh(&stage, map, paths, &mut info);
-        });
-    }
+    world.resource_scope(|world, mut info: Mut<StageInfo>| {
+        let map = world.resource::<PrimEntities>();
+        let paths = world.resource::<PathStore>();
+        metadata::refresh(&stage, map, paths, &mut info);
+    });
     info!(
         "live USD stage projected: {} prims ({} animated), default_prim={default_prim:?}",
         prim_count.saturating_sub(1),

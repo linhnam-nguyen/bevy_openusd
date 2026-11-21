@@ -1,7 +1,7 @@
 use super::*;
 use bevy::camera::primitives::Frustum;
-use bevy::shape::{HalfSpace, ViewFrustum};
 use bevy::math::Vec4;
+use bevy::shape::{HalfSpace, ViewFrustum};
 use usd_model::{BlobId, HashDigest};
 use usd_project::{SceneId, SceneMemberId, ScenePlacementTransform};
 
@@ -103,9 +103,9 @@ fn scene_payloads_compose_ancestor_transform_for_camera_space() {
     let payloads = scene_payloads(&[parent, child]);
     assert_eq!(payloads.len(), 1);
     let payload = &payloads[0];
-    let expected = Mat4::from_cols_array(&parent_transform.0.map(|value| value as f32))
-        * Mat4::from_cols_array(&child_transform.0.map(|value| value as f32));
-    assert_eq!(payload.transform.0, expected.to_cols_array().map(f64::from));
+    let expected =
+        DMat4::from_cols_array(&parent_transform.0) * DMat4::from_cols_array(&child_transform.0);
+    assert_eq!(payload.transform.0, expected.to_cols_array());
     assert!((payload.bounds.min[0] - 9.0).abs() <= 1e-5);
     assert!(payload.bounds.min[1] > 1.0);
     assert!(payload.admitted_to(&admission([10.0, 4.0, 0.0])));
@@ -123,6 +123,44 @@ fn scene_payloads_compose_ancestor_transform_for_camera_space() {
             .count(),
         0
     );
+
+    let origin = 10_000_000_000.25;
+    let projected = scene_payloads(&[cache_entry(
+        SceneCacheAddress {
+            scene_id,
+            occurrence: crate::project::cache::contract::SceneCacheOccurrence::PrimPath(
+                "/Large".into(),
+            ),
+        },
+        None,
+        CachedTransform::Placement(ScenePlacementTransform::from_translation([
+            origin, 0.0, 0.0,
+        ])),
+        Some(Bounds3 {
+            min: [0.0; 3],
+            max: [1.0; 3],
+        }),
+    )]);
+    assert_eq!(
+        projected[0].bounds.min[0], origin,
+        "camera bounds preserve sub-metre offsets far from origin"
+    );
+    assert_eq!(projected[0].bounds.max[0], origin + 1.0);
+    let far_index = CameraCandidateIndex::from_payloads(projected);
+    assert_eq!(
+        far_index
+            .candidates(CameraRegion::around([origin + 0.5, 0.5, 0.5], 0.0, 0.0))
+            .count(),
+        1
+    );
+    let plane = Frustum(ViewFrustum {
+        half_spaces: [HalfSpace::new(Vec4::new(1.0, 0.0, 0.0, -1.0)); 6],
+    });
+    assert!(
+        intersects_frustum([0.0; 3], [1.0; 3], &plane),
+        "touching candidates stay admitted"
+    );
+    assert!(!intersects_frustum([0.0; 3], [0.5; 3], &plane));
 }
 
 fn cache_entry(

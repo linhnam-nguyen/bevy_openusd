@@ -1,5 +1,6 @@
 use super::super::camera::CameraAdmission;
 use super::super::spatial::CameraRegion;
+use super::super::spatial::SceneSpatialPayload;
 use super::{ResidencyAuthority, ResidencyReason};
 
 impl ResidencyAuthority {
@@ -46,7 +47,11 @@ impl ResidencyAuthority {
             })
     }
 
-    pub(crate) fn update_camera_near(&mut self, admission: CameraAdmission) -> bool {
+    pub(crate) fn update_camera_near_filtered(
+        &mut self,
+        admission: CameraAdmission,
+        mut admits_visibility: impl FnMut(&SceneSpatialPayload) -> bool,
+    ) -> bool {
         let sample = admission.sample;
         if self
             .last_camera
@@ -71,7 +76,9 @@ impl ResidencyAuthority {
                 scene
                     .spatial
                     .candidates(region)
-                    .filter(|candidate| candidate.admitted_to(&admission))
+                    .filter(|candidate| {
+                        candidate.admitted_to(&admission) && admits_visibility(candidate)
+                    })
                     .cloned()
                     .collect::<Vec<_>>(),
             )

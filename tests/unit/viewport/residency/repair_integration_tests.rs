@@ -273,9 +273,10 @@ fn drain_cached_once(world: &mut World) {
         ResMut<ResidencyAuthority>,
         ResMut<TargetedRepairQueue>,
         Option<ResMut<super::super::worker::LoadedScenePayloadQueue>>,
+        bevy::prelude::Commands,
     )> = SystemState::new(world);
     {
-        let (scene_owner, context, worker, authority, repairs, payload_queue) =
+        let (scene_owner, context, worker, authority, repairs, payload_queue, commands) =
             state.get_mut(world).expect("cached drains");
         drain_cached_residency_completions(
             scene_owner,
@@ -284,6 +285,7 @@ fn drain_cached_once(world: &mut World) {
             authority,
             repairs,
             payload_queue,
+            commands,
         );
     }
     state.apply(world);

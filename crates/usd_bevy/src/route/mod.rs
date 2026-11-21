@@ -241,6 +241,7 @@ pub trait PrimRoute: Send + Sync + 'static {
 #[derive(Resource, Clone, Default)]
 pub struct SchemaRegistry {
     routes: Vec<Arc<dyn PrimRoute>>,
+    builtins_only: bool,
 }
 
 impl SchemaRegistry {
@@ -281,13 +282,19 @@ impl SchemaRegistry {
         // Unloaded payloads → placeholder marker.
         r.register(payload::PayloadRoute);
         r.register(reflect::ReflectRoute);
+        r.builtins_only = true;
         r
     }
 
     /// Append a route. This is the analog of "make a component available in
     /// `bsn!`": apps register routes for their own schemas/components.
     pub fn register<R: PrimRoute>(&mut self, route: R) {
+        self.builtins_only = false;
         self.routes.push(Arc::new(route));
+    }
+
+    pub(crate) fn has_only_builtin_routes(&self) -> bool {
+        self.builtins_only
     }
 
     /// Number of registered routes.

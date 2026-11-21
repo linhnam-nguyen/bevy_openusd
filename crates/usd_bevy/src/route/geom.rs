@@ -109,6 +109,58 @@ impl PrimRoute for VisibilityRoute {
 /// carries no renderable geometry.
 pub struct MeshRoute;
 
+/// Opt-in for a host that services deferred canonical geometry through its residency worker.
+#[derive(Resource, Default)]
+pub struct DeferHiddenSourceMeshes;
+
+/// Logical prim retained while its render mesh is absent.
+#[derive(Component, Debug)]
+pub struct DeferredSourceMesh;
+
+pub fn source_mesh_is_hidden(world: &World, mut entity: Entity) -> bool {
+    loop {
+        match world.get::<Visibility>(entity) {
+            Some(Visibility::Hidden) => return true,
+            Some(Visibility::Visible) => return false,
+            _ => match world.get::<ChildOf>(entity) {
+                Some(parent) => entity = parent.parent(),
+                None => return false,
+            },
+        }
+    }
+}
+
+pub(crate) fn deferred_mesh_supported(ctx: &RouteCtx) -> bool {
+    if ctx.type_name.as_deref() != Some("Mesh") {
+        return false;
+    }
+    let Ok(prim) = ctx.stage.prim(ctx.path.clone()) else {
+        return false;
+    };
+    if !matches!(prim.is_instance_proxy(), Ok(false)) || !matches!(prim.is_instance(), Ok(false)) {
+        return false;
+    }
+    let mut path = Some(ctx.path.clone());
+    while let Some(current) = path {
+        if current.as_str() == "/" {
+            break;
+        }
+        let Ok(ancestor) = ctx.stage.prim(current.clone()) else {
+            return false;
+        };
+        if !matches!(ancestor.type_name(), Ok(name) if name.as_deref() != Some("SkelRoot"))
+            || !matches!(ancestor.authored_api_schemas(), Ok(schemas) if schemas.iter().all(|schema| schema.as_str() == "MaterialBindingAPI"))
+            || !matches!(ancestor.attributes(), Ok(attributes) if attributes.iter().all(|attribute| {
+                attribute.time_sample_times().is_ok_and(|samples| samples.is_empty())
+            }))
+        {
+            return false;
+        }
+        path = current.parent();
+    }
+    true
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MeshPatchAction {
     Ignore,
@@ -198,7 +250,7 @@ fn update_extent(ctx: &RouteCtx, world: &mut World, entity: Entity) {
 
 impl MeshRoute {
     /// Bake + attach; returns whether a `Mesh3d` was inserted.
-    fn attach(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) -> bool {
+    pub(crate) fn attach(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) -> bool {
         if world.get_resource::<Assets<Mesh>>().is_none()
             || world.get_resource::<Assets<StandardMaterial>>().is_none()
         {
@@ -253,8 +305,10 @@ impl MeshRoute {
         );
         let source_key = world
             .get_resource::<ProjectionCache>()
-            .map(|_| source_mesh_key(&read));
-        let source_hit = source_key.and_then(|key| lookup_source_mesh(world, key));
+            .and_then(|_| source_mesh_key(&read));
+        let source_hit = source_key
+            .as_ref()
+            .and_then(|key| lookup_source_mesh(world, key));
         let source_cache_lookup = source_key.is_some();
         let source_cache_hit = source_hit.is_some();
         let (mesh_handle, build_metrics, intern_metrics) = if let Some(mesh_handle) = source_hit {
@@ -320,10 +374,36 @@ impl PrimRoute for MeshRoute {
     }
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
+        if world.contains_resource::<DeferHiddenSourceMeshes>()
+            && world.contains_resource::<super::material::InitialMaterialMemo>()
+            && !world
+                .get_resource::<ProjectionSeed>()
+                .is_some_and(|seed| seed.has_mesh(ctx.prim_str()))
+            && world
+                .get_resource::<super::SchemaRegistry>()
+                .is_some_and(super::SchemaRegistry::has_only_builtin_routes)
+            && source_mesh_is_hidden(world, entity)
+            && deferred_mesh_supported(ctx)
+            && let Ok(Some([min, max])) = read_mesh_extent(ctx.stage, ctx.path)
+        {
+            world
+                .entity_mut(entity)
+                .insert((UsdLocalExtent { min, max }, DeferredSourceMesh));
+            return;
+        }
         self.attach(ctx, world, entity);
     }
 
     fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
+        if world.get::<DeferredSourceMesh>(entity).is_some() {
+            update_extent(ctx, world, entity);
+            if world.get::<UsdLocalExtent>(entity).is_none() || !deferred_mesh_supported(ctx) {
+                world.entity_mut(entity).remove::<DeferredSourceMesh>();
+                self.attach(ctx, world, entity);
+                super::material::MaterialRoute.project(ctx, world, entity);
+            }
+            return;
+        }
         match mesh_patch_action(changed) {
             MeshPatchAction::Ignore => {}
             MeshPatchAction::UpdateExtent => update_extent(ctx, world, entity),

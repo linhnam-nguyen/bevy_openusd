@@ -185,7 +185,9 @@ pub(crate) fn configure_generic_viewport_core(app: &mut App, config: &GenericVie
             poll_scene_cache_revalidation
                 .after(LiveStageSet::Presentation)
                 .before(spawn_when_ready),
-            spawn_when_ready.after(LiveStageSet::Presentation),
+            spawn_when_ready
+                .after(LiveStageSet::Presentation)
+                .before(ViewportBridgeSet::ApplyCommands),
             fit_camera_once,
             handle_usd_hot_reload,
             apply_load_request,

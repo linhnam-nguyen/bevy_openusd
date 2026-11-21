@@ -1,9 +1,19 @@
 use anyhow::{Result, anyhow, ensure};
-use openusd::usd::Stage;
+use openusd::usd::{Prim, PrimPredicate, PrimStatus, Stage};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
 use super::path::{parent_path, validate_prim_path};
+use crate::read::geom::{VisibilityState, read_visibility};
+
+// Retain unloaded payload roots so logical projection can publish placeholders.
+fn projection_predicate() -> PrimPredicate {
+    PrimPredicate::new(
+        PrimStatus::ACTIVE.union(PrimStatus::DEFINED),
+        PrimStatus::ABSTRACT,
+    )
+    .with_instance_proxies(true)
+}
 
 /// One deterministic unit of initial projection work.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,6 +45,9 @@ pub struct ProjectionPlan {
 pub struct ProjectionPlanBuilder {
     stage: Stage,
     pending: VecDeque<(String, usize)>,
+    deferred: VecDeque<(String, usize)>,
+    children: Option<(usize, std::vec::IntoIter<Prim>)>,
+    prioritize_visibility: bool,
     entries: Vec<ProjectionPlanEntry>,
 }
 
@@ -56,11 +69,24 @@ impl ProjectionPlanBuilder {
         Self {
             stage: stage.clone(),
             pending,
+            deferred: VecDeque::new(),
+            children: None,
+            prioritize_visibility: false,
             entries: vec![ProjectionPlanEntry {
                 path: "/".to_string(),
                 parent: None,
             }],
         }
+    }
+
+    pub(super) fn visible_first(stage: &Stage) -> Self {
+        let mut builder = Self::new(stage);
+        builder.prioritize_visibility = true;
+        builder
+    }
+
+    pub(super) fn visible_discovery_finished(&self) -> bool {
+        self.prioritize_visibility && self.pending.is_empty() && self.children.is_none()
     }
 
     /// Number of entries discovered so far, including the synthetic root.
@@ -75,7 +101,7 @@ impl ProjectionPlanBuilder {
 
     /// Whether every queued parent has been expanded.
     pub fn is_finished(&self) -> bool {
-        self.pending.is_empty()
+        self.pending.is_empty() && self.deferred.is_empty() && self.children.is_none()
     }
 
     /// Access a discovered entry while the plan is still being built.
@@ -83,27 +109,50 @@ impl ProjectionPlanBuilder {
         self.entries.get(index)
     }
 
-    /// Expand one parent and enqueue its valid children in lexical order.
+    /// Expand one parent, classify one visible-phase child, or admit one deferred subtree.
     pub fn advance_one(&mut self) -> Result<bool> {
-        let Some((parent_path, parent_index)) = self.pending.pop_front() else {
-            return Ok(true);
-        };
-        let parent = self.stage.prim(openusd::sdf::path(&parent_path)?)?;
-        let mut children = parent.children()?;
-        children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
-        for child in children {
-            if !child.is_active()? || !child.is_defined()? || child.is_abstract()? {
-                continue;
+        if let Some((parent, children)) = &mut self.children {
+            let parent = *parent;
+            let child = children.next().expect("pending children is nonempty");
+            if children.len() == 0 {
+                self.children = None;
             }
             let path = child.path().as_str().to_string();
-            let index = self.entries.len();
-            self.entries.push(ProjectionPlanEntry {
-                path: path.clone(),
-                parent: Some(parent_index),
-            });
-            self.pending.push_back((path, index));
+            if read_visibility(&self.stage, child.path())? == VisibilityState::Invisible {
+                // Invisibility is inherited, so the whole subtree can wait.
+                self.deferred.push_back((path, parent));
+            } else {
+                self.enqueue(path, parent);
+            }
+            return Ok(self.is_finished());
         }
-        Ok(self.pending.is_empty())
+        let Some((parent_path, parent_index)) = self.pending.pop_front() else {
+            if let Some((path, parent)) = self.deferred.pop_front() {
+                self.prioritize_visibility = false;
+                self.enqueue(path, parent);
+            }
+            return Ok(self.is_finished());
+        };
+        let parent = self.stage.prim(openusd::sdf::path(&parent_path)?)?;
+        let mut children = parent.filtered_children(projection_predicate())?;
+        children.sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
+        if self.prioritize_visibility && !children.is_empty() {
+            self.children = Some((parent_index, children.into_iter()));
+        } else {
+            for child in children {
+                self.enqueue(child.path().as_str().to_string(), parent_index);
+            }
+        }
+        Ok(self.is_finished())
+    }
+
+    fn enqueue(&mut self, path: String, parent: usize) {
+        let index = self.entries.len();
+        self.entries.push(ProjectionPlanEntry {
+            path: path.clone(),
+            parent: Some(parent),
+        });
+        self.pending.push_back((path, index));
     }
 
     /// Finish an exhausted builder and return its immutable plan.
@@ -139,36 +188,13 @@ impl ProjectionPlan {
         // walked the entire composed stage and filtered afterward, which made
         // a small subtree resync pay the full-stage traversal cost.
         let _ = stage.prim(openusd::sdf::path(&root)?)?;
-        let mut entries = vec![
-            ProjectionPlanEntry {
-                path: "/".to_string(),
-                parent: None,
-            },
-            ProjectionPlanEntry {
-                path: root.clone(),
-                parent: Some(0),
-            },
-        ];
-        let mut pending = VecDeque::from([(root, 1usize)]);
-        while let Some((parent_path, parent_index)) = pending.pop_front() {
-            let parent = stage.prim(openusd::sdf::path(&parent_path)?)?;
-            let mut children = parent.children()?;
-            children
-                .sort_unstable_by(|left, right| left.path().as_str().cmp(right.path().as_str()));
-            for child in children {
-                if !child.is_active()? || !child.is_defined()? || child.is_abstract()? {
-                    continue;
-                }
-                let path = child.path().as_str().to_string();
-                let index = entries.len();
-                entries.push(ProjectionPlanEntry {
-                    path: path.clone(),
-                    parent: Some(parent_index),
-                });
-                pending.push_back((path, index));
-            }
+        let mut builder = ProjectionPlanBuilder::new(stage);
+        builder.pending.clear();
+        builder.enqueue(root, 0);
+        while !builder.is_finished() {
+            builder.advance_one()?;
         }
-        Ok(Self { entries })
+        builder.finish()
     }
 
     /// Build a parent-before-child plan for exact requested prim paths.

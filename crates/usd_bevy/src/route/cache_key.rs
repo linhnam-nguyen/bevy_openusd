@@ -4,11 +4,41 @@ use bevy::platform::hash::FixedHasher;
 
 use crate::read::geom::{Interpolation, MeshPrimvar, ReadMesh};
 
-/// Deterministic key for the source data that controls `mesh_from_usd` output.
+pub(crate) const MAX_SOURCE_KEY_BYTES: usize = 128 * 1024 * 1024;
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub(crate) struct MeshSourceKey(pub(crate) Box<[u8]>);
+
+#[derive(Default)]
+struct KeyBytes {
+    bytes: Vec<u8>,
+    oversized: bool,
+}
+
+impl Hasher for KeyBytes {
+    fn finish(&self) -> u64 {
+        FixedHasher.hash_one(&self.bytes)
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        if self.oversized {
+            return;
+        }
+        if bytes.len() > MAX_SOURCE_KEY_BYTES - self.bytes.len() {
+            self.oversized = true;
+            self.bytes = Vec::new();
+            return;
+        }
+        self.bytes.extend_from_slice(bytes);
+    }
+}
+
+/// Exact encoded inputs that control the current `mesh_from_usd` recipe.
 /// Transform, visibility, material binding, extent, and other projection-only
 /// state are intentionally excluded so those edits can reuse the same mesh.
-pub(crate) fn source_mesh_key(read: &ReadMesh) -> u64 {
-    let mut hasher = FixedHasher.build_hasher();
+pub(crate) fn source_mesh_key(read: &ReadMesh) -> Option<MeshSourceKey> {
+    let mut hasher = KeyBytes::default();
+    hasher.write(b"usd_bevy/base_mesh/v1");
     hash_vec3(&read.points, &mut hasher);
     read.face_vertex_counts.hash(&mut hasher);
     read.face_vertex_indices.hash(&mut hasher);
@@ -18,7 +48,7 @@ pub(crate) fn source_mesh_key(read: &ReadMesh) -> u64 {
     hash_vec3_primvar(read.display_color.as_ref(), &mut hasher);
     hash_float_primvar(read.display_opacity.as_ref(), &mut hasher);
     std::mem::discriminant(&read.subdivision_scheme).hash(&mut hasher);
-    hasher.finish()
+    (!hasher.oversized).then(|| MeshSourceKey(hasher.bytes.into_boxed_slice()))
 }
 
 fn hash_vec3(values: &[[f32; 3]], hasher: &mut impl Hasher) {

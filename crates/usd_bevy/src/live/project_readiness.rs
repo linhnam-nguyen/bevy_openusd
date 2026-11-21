@@ -65,8 +65,7 @@ impl ProjectOpenReadinessState {
     ///
     /// A new `stage_session_id` starts a new activation generation. Once a
     /// session has been superseded, observations from its old identity are
-    /// ignored. Within the current session, readiness is monotonic so a
-    /// delayed lower milestone cannot regress the open result.
+    /// ignored. Readiness is monotonic within each projection generation.
     pub fn observe(
         &mut self,
         stage_session_id: u64,
@@ -87,8 +86,9 @@ impl ProjectOpenReadinessState {
             self.readiness = Some(ProjectOpenReadiness::ProjectReady);
         } else if projection_generation < self.projection_generation {
             return false;
-        } else {
+        } else if projection_generation > self.projection_generation {
             self.projection_generation = projection_generation;
+            self.readiness = Some(ProjectOpenReadiness::ProjectReady);
         }
 
         let observed = if projection_readiness == ProjectionReadiness::Ready {
@@ -121,11 +121,16 @@ pub(super) fn observe_project_open_readiness(world: &mut World) {
             world
                 .get_resource::<ProgressiveProjectionState>()
                 .map(|state| {
+                    let current = state.session_id() == Some(session_id);
                     (
                         session_id,
                         state.generation(),
-                        state.readiness(),
-                        state.first_mesh_ms().is_some(),
+                        if current {
+                            state.readiness()
+                        } else {
+                            ProjectionReadiness::Idle
+                        },
+                        current && state.first_mesh_ms().is_some(),
                     )
                 })
         })

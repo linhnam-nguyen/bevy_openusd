@@ -4,6 +4,7 @@ use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
+use super::commands::VIEWER_BINDING_PENDING;
 use super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::camera::{ArcballCamera, FlyTo};
@@ -33,8 +34,19 @@ pub(super) fn apply_tree_commands(
     children: Query<&Children>,
     mut visibility: Query<(Entity, &mut Visibility)>,
     mut fly_to: ResMut<FlyTo>,
+    gate: crate::viewport::input::ViewerInteractionGate,
 ) {
+    let locked = gate.locked();
     while let Some(command) = inbox.pop() {
+        if locked {
+            let request_id = match command {
+                ViewportTreeCommand::Focus { request_id, .. }
+                | ViewportTreeCommand::SetSubtreeVisibility { request_id, .. }
+                | ViewportTreeCommand::SetHierarchyNodeVisibility { request_id, .. } => request_id,
+            };
+            reject(&mut outbox, request_id, VIEWER_BINDING_PENDING.to_owned());
+            continue;
+        }
         match command {
             ViewportTreeCommand::Focus {
                 request_id,

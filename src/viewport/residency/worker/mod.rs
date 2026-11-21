@@ -1,13 +1,14 @@
 //! Bounded cache read/decode work for viewport residency.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use bevy::mesh::Mesh;
+use usd_bevy::live::source_mesh::{SourceMeshIdentity, SourceMeshInput};
 use usd_model::BlobId;
 
 use bevy::prelude::Resource;
@@ -26,6 +27,8 @@ mod payloads;
 use payloads::load_cached_scene_payloads;
 
 pub(crate) const WORKER_QUEUE_CAPACITY: usize = 8;
+const WORKER_THREADS: usize = 4;
+const WORKER_INPUT_BUDGET: u64 = 16 * 1024 * 1024;
 
 struct LoadRequest {
     project_root: PathBuf,
@@ -57,11 +60,69 @@ struct LoadedScenePayloadCompletion {
     payloads: LoadedScenePayloads,
 }
 
+enum WorkerRequest {
+    Cached(LoadRequest),
+    Source(SourceMeshInput),
+}
+
+pub(crate) enum WorkerCompletion {
+    Cached(LoadCompletion),
+    Source {
+        identity: SourceMeshIdentity,
+        bytes: u64,
+        mesh: Option<Mesh>,
+    },
+}
+
+impl WorkerRequest {
+    fn bytes(&self) -> u64 {
+        match self {
+            Self::Cached(request) => request.job.cpu_bytes,
+            Self::Source(input) => input.estimated_bytes(),
+        }
+    }
+
+    fn prepare(self) -> WorkerCompletion {
+        match self {
+            Self::Cached(request) => WorkerCompletion::Cached(prepare_cached_request(request)),
+            Self::Source(input) => {
+                let bytes = input.estimated_bytes();
+                let identity = input.identity;
+                let mesh =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.prepare())).ok();
+                WorkerCompletion::Source {
+                    identity,
+                    bytes,
+                    mesh,
+                }
+            }
+        }
+    }
+}
+
+type SequencedRequest = (u64, WorkerRequest);
+type SequencedCompletion = (u64, WorkerCompletion);
+
+#[derive(Default)]
+struct WorkerWindow {
+    next_request: u64,
+    next_publish: u64,
+    reserved_bytes: u64,
+    ready: BTreeMap<u64, WorkerCompletion>,
+}
+
+pub(super) struct SourceWorkCapacity {
+    pub(super) jobs: usize,
+    pub(super) bytes: u64,
+    pub(super) allow_oversized: bool,
+}
+
 #[derive(Resource)]
 pub(crate) struct CachedResidencyWorker {
-    requests: Option<SyncSender<LoadRequest>>,
-    completions: Option<Mutex<Receiver<LoadCompletion>>>,
-    thread: Option<JoinHandle<()>>,
+    requests: Option<SyncSender<SequencedRequest>>,
+    completions: Option<Mutex<Receiver<SequencedCompletion>>>,
+    threads: Vec<JoinHandle<()>>,
+    window: Mutex<WorkerWindow>,
     available: AtomicBool,
 }
 
@@ -73,69 +134,38 @@ impl Default for CachedResidencyWorker {
 
 impl CachedResidencyWorker {
     pub(crate) fn new() -> Self {
-        let (request_tx, request_rx) = mpsc::sync_channel::<LoadRequest>(WORKER_QUEUE_CAPACITY);
+        let (request_tx, request_rx) =
+            mpsc::sync_channel::<SequencedRequest>(WORKER_QUEUE_CAPACITY);
+        let requests = Arc::new(Mutex::new(request_rx));
         let (completion_tx, completion_rx) =
-            mpsc::sync_channel::<LoadCompletion>(WORKER_QUEUE_CAPACITY);
-        let thread = thread::Builder::new()
-            .name("viewport-residency-cache".to_owned())
-            .spawn(move || {
-                while let Ok(request) = request_rx.recv() {
-                    let result = if request.mask.geometry {
-                        load_cached_mesh(&request.project_root, &request.job)
-                    } else {
-                        Ok(None)
-                    };
-                    let (result, payloads) = match result {
-                        Ok(Some(mesh)) => match load_cached_scene_payloads(
-                            &request.project_root,
-                            request.mask,
-                            &request.descriptors,
-                        ) {
-                            Ok(payloads) => (Ok(Some(mesh)), Some(payloads)),
-                            Err(error) => (Err(error), None),
-                        },
-                        Ok(None) if !request.mask.geometry => match load_cached_scene_payloads(
-                            &request.project_root,
-                            request.mask,
-                            &request.descriptors,
-                        ) {
-                            Ok(payloads) => (Ok(None), Some(payloads)),
-                            Err(error) => (Err(error), None),
-                        },
-                        Ok(None) => (Ok(None), None),
-                        Err(error) => (Err(error), None),
-                    };
-                    if completion_tx
-                        .send(LoadCompletion {
-                            job: request.job,
-                            mask: request.mask,
-                            result,
-                            payloads,
-                        })
-                        .is_err()
-                    {
-                        break;
+            mpsc::sync_channel::<SequencedCompletion>(WORKER_QUEUE_CAPACITY);
+        let mut threads = Vec::with_capacity(WORKER_THREADS);
+        for slot in 0..WORKER_THREADS {
+            let requests = Arc::clone(&requests);
+            let completions = completion_tx.clone();
+            let worker = thread::Builder::new()
+                .name(format!("viewport-residency-cache-{slot}"))
+                .spawn(move || {
+                    while let Ok((sequence, request)) = receive_request(&requests) {
+                        if completions.send((sequence, request.prepare())).is_err() {
+                            break;
+                        }
                     }
-                }
-            });
-        match thread {
-            Ok(thread) => Self {
-                requests: Some(request_tx),
-                completions: Some(Mutex::new(completion_rx)),
-                thread: Some(thread),
-                available: AtomicBool::new(true),
-            },
-            Err(error) => {
-                bevy::log::error!(
-                    "[viewport-residency] cached worker unavailable; cached demand remains deferred: {error}"
-                );
-                Self {
-                    requests: None,
-                    completions: Some(Mutex::new(completion_rx)),
-                    thread: None,
-                    available: AtomicBool::new(false),
-                }
+                });
+            match worker {
+                Ok(thread) => threads.push(thread),
+                Err(error) => bevy::log::warn!(
+                    "[viewport-residency] cache worker {slot} unavailable: {error}"
+                ),
             }
+        }
+        let available = !threads.is_empty();
+        Self {
+            requests: available.then_some(request_tx),
+            completions: Some(Mutex::new(completion_rx)),
+            threads,
+            window: Mutex::default(),
+            available: AtomicBool::new(available),
         }
     }
 
@@ -158,43 +188,137 @@ impl CachedResidencyWorker {
         mask: PayloadLoadMask,
         descriptors: Vec<ScenePayloadDescriptor>,
     ) -> Result<(), LoadJob<ScenePayloadKey>> {
-        if !self.is_available() {
-            return Err(job);
-        }
-        let Some(requests) = self.requests.as_ref() else {
-            return Err(job);
-        };
-        let request = LoadRequest {
+        match self.admit(WorkerRequest::Cached(LoadRequest {
             project_root,
             job,
             mask,
             descriptors,
-        };
-        match requests.try_send(request) {
+        })) {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(request)) => Err(request.job),
-            Err(TrySendError::Disconnected(request)) => {
+            Err(WorkerRequest::Cached(request)) => Err(request.job),
+            Err(WorkerRequest::Source(_)) => unreachable!("rejection preserves the request type"),
+        }
+    }
+
+    pub(crate) fn dispatch_source(&self, source: SourceMeshInput) -> bool {
+        self.admit(WorkerRequest::Source(source)).is_ok()
+    }
+
+    pub(super) fn source_capacity(&self) -> Option<SourceWorkCapacity> {
+        let window = self.window.lock().ok()?;
+        let outstanding = (window.next_request - window.next_publish) as usize;
+        let jobs = WORKER_QUEUE_CAPACITY - outstanding;
+        let bytes = WORKER_INPUT_BUDGET.saturating_sub(window.reserved_bytes);
+        (jobs > 0 && bytes > 0).then_some(SourceWorkCapacity {
+            jobs,
+            bytes,
+            allow_oversized: outstanding == 0,
+        })
+    }
+
+    fn admit(&self, request: WorkerRequest) -> Result<(), WorkerRequest> {
+        if !self.is_available() {
+            return Err(request);
+        }
+        let Some(requests) = self.requests.as_ref() else {
+            return Err(request);
+        };
+        let Ok(mut window) = self.window.lock() else {
+            return Err(request);
+        };
+        let outstanding = window.next_request - window.next_publish;
+        let bytes = request.bytes();
+        if outstanding >= WORKER_QUEUE_CAPACITY as u64
+            || (outstanding > 0
+                && (window.reserved_bytes > WORKER_INPUT_BUDGET
+                    || bytes > WORKER_INPUT_BUDGET - window.reserved_bytes))
+        {
+            return Err(request);
+        }
+        match requests.try_send((window.next_request, request)) {
+            Ok(()) => {
+                window.next_request += 1;
+                window.reserved_bytes += bytes;
+                Ok(())
+            }
+            Err(TrySendError::Full((_, request))) => Err(request),
+            Err(TrySendError::Disconnected((_, request))) => {
                 self.available.store(false, Ordering::Release);
-                Err(request.job)
+                Err(request)
             }
         }
     }
 
-    pub(crate) fn drain_completions(&self) -> Vec<LoadCompletion> {
+    pub(crate) fn drain_completions(&self) -> Vec<WorkerCompletion> {
         let Some(completions) = self.completions.as_ref() else {
             return Vec::new();
         };
         let Ok(receiver) = completions.lock() else {
             return Vec::new();
         };
+        let Ok(mut window) = self.window.lock() else {
+            return Vec::new();
+        };
         let mut completions = Vec::with_capacity(WORKER_QUEUE_CAPACITY);
-        while completions.len() < WORKER_QUEUE_CAPACITY {
+        while window.ready.len() < WORKER_QUEUE_CAPACITY {
             match receiver.try_recv() {
-                Ok(completion) => completions.push(completion),
+                Ok((sequence, completion)) => {
+                    window.ready.insert(sequence, completion);
+                }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
         }
+        loop {
+            let sequence = window.next_publish;
+            let Some(completion) = window.ready.remove(&sequence) else {
+                break;
+            };
+            window.next_publish += 1;
+            window.reserved_bytes -= match &completion {
+                WorkerCompletion::Cached(completion) => completion.job.cpu_bytes,
+                WorkerCompletion::Source { bytes, .. } => *bytes,
+            };
+            completions.push(completion);
+        }
         completions
+    }
+}
+
+fn receive_request(
+    receiver: &Mutex<Receiver<SequencedRequest>>,
+) -> Result<SequencedRequest, mpsc::RecvError> {
+    receiver.lock().map_err(|_| mpsc::RecvError)?.recv()
+}
+
+fn prepare_cached_request(request: LoadRequest) -> LoadCompletion {
+    // A bad payload must still occupy its sequence so later work can publish in order.
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mesh = if request.mask.geometry {
+            load_cached_mesh(&request.project_root, &request.job)?
+        } else {
+            None
+        };
+        let payloads = if mesh.is_some() || !request.mask.geometry {
+            Some(load_cached_scene_payloads(
+                &request.project_root,
+                request.mask,
+                &request.descriptors,
+            )?)
+        } else {
+            None
+        };
+        Ok((mesh, payloads))
+    }));
+    let (result, payloads) = match outcome {
+        Ok(Ok((mesh, payloads))) => (Ok(mesh), payloads),
+        Ok(Err(error)) => (Err(error), None),
+        Err(_) => (Err("cached payload preparation panicked".to_owned()), None),
+    };
+    LoadCompletion {
+        job: request.job,
+        mask: request.mask,
+        result,
+        payloads,
     }
 }
 
@@ -307,7 +431,7 @@ impl Drop for CachedResidencyWorker {
         self.available.store(false, Ordering::Release);
         self.requests.take();
         self.completions.take();
-        if let Some(thread) = self.thread.take() {
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }

@@ -11,7 +11,8 @@ use openusd::usd::{PrimPredicate, Stage};
 
 use crate::UsdPlugin;
 use crate::live::{
-    LiveStage, NativeInstanceDependencyIndex, PathStore, PrimEntities, ProjectionPlan,
+    LiveStage, LiveStagePlugin, NativeInstanceDependencyIndex, PathStore, PrimEntities,
+    ProgressiveProjectionState, ProjectionBudget, ProjectionPlan, ProjectionReadiness,
     project_stage,
 };
 use crate::snippet::UsdSnippet;
@@ -50,6 +51,39 @@ fn projected_app(stage: Stage) -> (App, PrimEntities, f64) {
 fn generated_thousand_native_instances_keep_projection_allocation_bounded() -> Result<()> {
     let stage = generated_instance_stage(1_000)?;
     let plan = ProjectionPlan::from_stage(&stage)?;
+    let mut progressive = App::new();
+    progressive.add_plugins(LiveStagePlugin);
+    progressive.insert_resource(ProjectionBudget::work_items(64));
+    progressive
+        .world_mut()
+        .insert_non_send(LiveStage::new(stage.clone()));
+    let proxy_path = "/World/Instance0000/Leaf";
+    let mut observed_partial_proxy = false;
+    for _ in 0..plan.len() {
+        progressive.update();
+        let world = progressive.world();
+        let state = world.resource::<ProgressiveProjectionState>();
+        if state.readiness() == ProjectionReadiness::Ready {
+            break;
+        }
+        if world
+            .resource::<PrimEntities>()
+            .entity(world.resource::<PathStore>(), proxy_path)
+            .is_some()
+        {
+            assert!(
+                !world.resource::<NativeInstanceDependencyIndex>().is_empty(),
+                "a projected proxy has recorded dependencies before the generation finishes"
+            );
+            observed_partial_proxy = true;
+            break;
+        }
+    }
+    assert!(
+        observed_partial_proxy,
+        "proxy is projected within a partial generation"
+    );
+
     let (mut app, map, projection_ms) = projected_app(stage.clone());
 
     let leaf_paths = map

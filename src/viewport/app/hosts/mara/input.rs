@@ -11,7 +11,9 @@ use viewport_protocol::{InputModifiers, OverlayKind, PointerButtons, ViewportCom
 
 use super::{MaraHostUiState, panels};
 use crate::viewport::api::{ViewportCommandInbox, ViewportReadModelState};
-use crate::viewport::input::{HostUiInputCapture, ViewportNavigationInput};
+use crate::viewport::input::{
+    HostUiInputCapture, ViewportNavigationInput, viewer_interaction_locked,
+};
 
 /// Synchronizes `HostUiInputCapture` and forwards viewport pointer/scroll/button
 /// input from Mara's `egui::Context` into `ViewportNavigationInput`.
@@ -24,6 +26,18 @@ pub(super) fn sync_viewport_input(
     let Some(world) = world else {
         return;
     };
+    if viewer_interaction_locked(world) {
+        ui_state.viewport_drag_active = false;
+        ui_state.last_viewport_drag_pos = None;
+        world
+            .resource_mut::<ViewportNavigationInput>()
+            .clear_remote_state();
+        if let Some(mut capture) = world.get_resource_mut::<HostUiInputCapture>() {
+            capture.wants_pointer = true;
+            capture.wants_keyboard = true;
+        }
+        return;
+    }
 
     let wants_pointer = egui_ctx.egui_wants_pointer_input();
     let wants_keyboard = egui_ctx.egui_wants_keyboard_input();

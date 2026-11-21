@@ -267,6 +267,18 @@ fn texture_cache_separates_color_space_variants() {
             ..Default::default()
         }
     );
+    let alias_directory = tempfile::tempdir().unwrap();
+    let alias_path = alias_directory.path().join("identical.png");
+    std::fs::copy(&path, &alias_path).unwrap();
+    let aliased = resolve_texture(&mut world, alias_path.to_str().unwrap(), true).unwrap();
+    assert_eq!(
+        aliased, color_handle,
+        "equal decoded pixels and layout share an image"
+    );
+    assert_ne!(
+        aliased, data_handle,
+        "color-space interpretation remains part of identity"
+    );
 }
 
 #[test]

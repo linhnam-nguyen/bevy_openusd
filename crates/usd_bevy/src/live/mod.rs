@@ -16,6 +16,7 @@ mod project_readiness;
 mod projection;
 mod projection_plan;
 mod reconcile;
+pub mod source_mesh;
 mod stage;
 mod system;
 pub(crate) mod visual_stage;

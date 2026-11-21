@@ -28,6 +28,19 @@ pub(super) fn project_on_load_system(world: &mut World) {
         })
     else {
         world.remove_non_send::<super::visual_stage::SnapshotTextures>();
+        if world.remove_non_send::<ProjectionPlanBuilder>().is_some() {
+            let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
+            clear_projection(world, &mut map);
+            world.insert_resource(map);
+            let mut state = world.resource_mut::<ProgressiveProjectionState>();
+            state.cancel();
+            state.session_id = None;
+            state.completed = 0;
+            state.restart_requested = false;
+            state.entities.clear();
+            state.animated.clear();
+            state.material_memo = Default::default();
+        }
         return;
     };
     let route_stage_identity = world.resource::<crate::route::StageTime>().stage_identity();
@@ -125,11 +138,12 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
         counters.projection_full_stage_walks(1);
     }
-    let plan_builder = ProjectionPlanBuilder::new(&live.projection_stage());
+    let plan_builder = ProjectionPlanBuilder::visible_first(&live.projection_stage());
     world.remove_non_send::<ProjectionPlanBuilder>();
     world.insert_non_send(plan_builder);
     world.insert_resource(AnimatedPrims::default());
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
+    state.cancel();
     state.readiness = ProjectionReadiness::Planning;
     state.plan_builds += 1;
     state.last_error = None;
@@ -151,6 +165,8 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     state.planning_work_items = 0;
     state.first_projected_prim_ms = None;
     state.first_mesh_ms = None;
+    state.visible_candidates_ready = false;
+    state.material_memo = Default::default();
     state.restart_requested = false;
     state.resident_validation_requested = false;
     world.insert_resource(ProjectionStats::default());
@@ -161,6 +177,14 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
     let started = Instant::now();
     let mut processed = 0usize;
     let registry = registry_of(world);
+    if registry.has_only_builtin_routes() {
+        let memo = std::mem::take(
+            &mut world
+                .resource_mut::<ProgressiveProjectionState>()
+                .material_memo,
+        );
+        world.insert_resource(memo);
+    }
     if world.contains_non_send::<ProjectionPlanBuilder>() {
         world
             .resource_mut::<ProgressiveProjectionState>()
@@ -183,13 +207,23 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
             finalize_plan(world);
             continue;
         }
-        let needs_plan_work = {
+        let (needs_plan_work, visible_discovery_finished) = {
             let next_index = world.resource::<ProgressiveProjectionState>().next_index;
             world
                 .get_non_send::<ProjectionPlanBuilder>()
-                .is_some_and(|builder| next_index >= builder.len())
+                .map_or((false, false), |builder| {
+                    (
+                        next_index >= builder.len(),
+                        builder.visible_discovery_finished(),
+                    )
+                })
         };
         if needs_plan_work {
+            if visible_discovery_finished {
+                world
+                    .resource_mut::<ProgressiveProjectionState>()
+                    .visible_candidates_ready = true;
+            }
             let plan_step_start = Instant::now();
             let result = world
                 .get_non_send_mut::<ProjectionPlanBuilder>()
@@ -211,7 +245,11 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                     world
                         .resource_mut::<ProgressiveProjectionState>()
                         .planning_time += plan_step_duration;
-                    fail_generation(world, error);
+                    fail_generation(
+                        world,
+                        map,
+                        format!("failed to build projection plan: {error:#}"),
+                    );
                     break;
                 }
             }
@@ -237,17 +275,40 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
                 .and_then(|parent| state.entities.get(parent).copied().flatten());
             (state.next_index, entry, parent)
         };
-        let entity = project_plan_entry(world, &live.projection_stage(), &registry, map, &entry, parent);
+        let entity = project_plan_entry(
+            world,
+            &live.projection_stage(),
+            &registry,
+            map,
+            &entry,
+            parent,
+        );
+        if let Some(error) = world.get::<crate::route::payload::UsdPayloadError>(entity) {
+            let message = format!("{}: payload projection failed: {}", entry.path(), error.0);
+            fail_generation(world, map, message);
+            break;
+        }
         let is_mesh = world.get::<Mesh3d>(entity).is_some();
-        if entry.path() != "/"
-            && openusd::sdf::path(entry.path())
+        if entry.path() != "/" {
+            let stage = live.projection_stage();
+            world.resource_scope(
+                |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
+                    dependencies.refresh_path(
+                        &mut world.resource_mut::<PathStore>(),
+                        &stage,
+                        entry.path(),
+                    );
+                },
+            );
+            if openusd::sdf::path(entry.path())
                 .ok()
-                .is_some_and(|path| prim_is_animated(&live.projection_stage(), &path))
-        {
-            world
-                .resource_mut::<ProgressiveProjectionState>()
-                .animated
-                .insert(entry.path().to_string());
+                .is_some_and(|path| prim_is_animated(&stage, &path))
+            {
+                world
+                    .resource_mut::<ProgressiveProjectionState>()
+                    .animated
+                    .insert(entry.path().to_string());
+            }
         }
         let elapsed_ms = world
             .resource::<ProgressiveProjectionState>()
@@ -282,7 +343,16 @@ fn drain_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities)
             );
         }
     }
+    let memo = world.remove_resource::<crate::route::material::InitialMaterialMemo>();
     finish_if_ready(world, live, map);
+    let mut state = world.resource_mut::<ProgressiveProjectionState>();
+    if matches!(
+        state.readiness,
+        ProjectionReadiness::Planning | ProjectionReadiness::Projecting
+    ) && let Some(memo) = memo
+    {
+        state.material_memo = memo;
+    }
 }
 
 fn finalize_plan(world: &mut World) {
@@ -297,6 +367,7 @@ fn finalize_plan(world: &mut World) {
     state.total = plan.len();
     state.plan = Some(plan);
     state.readiness = ProjectionReadiness::Projecting;
+    state.visible_candidates_ready = true;
     state.plan_complete_ms = Some(state.planning_time.as_secs_f64() * 1000.0);
     bevy::log::debug!(
         plan_ms = state.plan_complete_ms.unwrap_or_default(),
@@ -305,13 +376,18 @@ fn finalize_plan(world: &mut World) {
     );
 }
 
-fn fail_generation(world: &mut World, error: anyhow::Error) {
+fn fail_generation(world: &mut World, map: &mut PrimEntities, message: String) {
+    clear_projection(world, map);
+    world.remove_non_send::<ProjectionPlanBuilder>();
+    bevy::log::error!("[progressive] {message}");
     let mut state = world.resource_mut::<ProgressiveProjectionState>();
     state.readiness = ProjectionReadiness::Failed;
-    state.last_error = Some(format!(
-        "failed to build deterministic projection plan: {error:#}"
-    ));
-    world.remove_non_send::<ProjectionPlanBuilder>();
+    state.last_error = Some(message);
+    state.plan = None;
+    state.completed = 0;
+    state.total = 0;
+    state.entities.clear();
+    state.animated.clear();
 }
 
 fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
@@ -336,18 +412,6 @@ fn finish_if_ready(world: &mut World, live: &LiveStage, map: &PrimEntities) {
         )
     };
     if ready {
-        world.init_resource::<NativeInstanceDependencyIndex>();
-        let rebuild = world.resource_scope(
-            |world, mut dependencies: Mut<NativeInstanceDependencyIndex>| {
-                let mut paths = world.resource_mut::<PathStore>();
-                dependencies.rebuild(&mut paths, &live.projection_stage())
-            },
-        );
-        if let Err(error) = rebuild {
-            bevy::log::warn!(
-                "[progressive] native instance dependency index rebuild failed: {error:#}"
-            );
-        }
         world.insert_resource(AnimatedPrims(animated));
         native_animation::rebuild(world, live, map);
         if let Some(mut stats) = world.get_resource_mut::<ProjectionStats>() {

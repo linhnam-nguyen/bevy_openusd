@@ -10,6 +10,7 @@ use viewport_protocol::{
     PointerMotion,
 };
 
+use super::ViewerInteractionGate;
 use crate::viewport::app::headless::HeadlessInputWindow;
 
 const REMOTE_INPUT_TIMEOUT: Duration = Duration::from_millis(750);
@@ -236,10 +237,19 @@ pub(crate) fn apply_remote_navigation_input(
     interface: Option<Res<crate::viewport::api::RenderServerInterface>>,
     mut input: ResMut<ViewportNavigationInput>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
+    gate: ViewerInteractionGate,
+    mut was_locked: Local<bool>,
 ) {
     let Some(interface) = interface else {
         return;
     };
+    let locked = gate.locked();
+    if locked || *was_locked {
+        *was_locked = locked;
+        interface.shared().clear_remote_input();
+        input.clear_remote_state();
+        return;
+    }
     if interface.take_input_reset() {
         input.clear_remote_state();
     }
@@ -269,10 +279,17 @@ pub(crate) fn apply_local_navigation_input(
     mut pan_anchor: Local<Option<Vec2>>,
     mut orbit_anchor: Local<Option<Vec2>>,
     mut input: ResMut<ViewportNavigationInput>,
+    gate: ViewerInteractionGate,
 ) {
     let Ok(window) = window.single() else {
         return;
     };
+    if gate.locked() {
+        *pan_anchor = None;
+        *orbit_anchor = None;
+        input.clear_remote_state();
+        return;
+    }
 
     input.focused = window.focused;
     input.pan_multiplier = 1.0;

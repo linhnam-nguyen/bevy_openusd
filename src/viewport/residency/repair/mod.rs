@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use bevy::prelude::{NonSend, Res, ResMut};
+use bevy::prelude::{Commands, NonSend, Res, ResMut};
 
 use crate::project::cache::demand::{
     OwnedPrimPathResolution, TargetedSceneRepair, extract_scene_payloads_for_repair,
@@ -14,7 +14,9 @@ use crate::viewport::stage::SceneCacheOwnershipContext;
 use super::active_cache_project_root;
 use super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::loader::LoadJob;
-use super::worker::{CachedResidencyWorker, LoadedScenePayloadQueue, queue_loaded_scene_payloads};
+use super::worker::{
+    CachedResidencyWorker, LoadedScenePayloadQueue, WorkerCompletion, queue_loaded_scene_payloads,
+};
 
 mod handoff;
 pub(crate) mod persistence;
@@ -46,9 +48,19 @@ pub(crate) fn drain_cached_residency_completions(
     mut authority: ResMut<ResidencyAuthority>,
     mut repairs: ResMut<TargetedRepairQueue>,
     mut payload_queue: Option<ResMut<LoadedScenePayloadQueue>>,
+    mut commands: Commands,
 ) {
     let project_root = active_cache_project_root(scene_owner.as_deref(), legacy_cache.as_deref());
     for completion in worker.drain_completions() {
+        let completion = match completion {
+            WorkerCompletion::Cached(completion) => completion,
+            WorkerCompletion::Source { identity, mesh, .. } => {
+                commands.queue(move |world: &mut bevy::prelude::World| {
+                    super::complete_source_mesh(world, identity, mesh)
+                });
+                continue;
+            }
+        };
         if !authority.load_is_current(&completion.job) {
             continue;
         }

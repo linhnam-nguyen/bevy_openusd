@@ -190,6 +190,10 @@ fn set_network_texture_path(app: &mut App, path: &str) {
 #[test]
 fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     let mut app = build_app();
+    let initial_descriptor_reads = app
+        .world()
+        .resource::<MaterialRouteDiagnostics>()
+        .descriptor_reads;
     let red_before = material_handle(&app, RED_BOX);
     let red_mesh = mesh_handle(&app, RED_BOX);
     let green_mesh = mesh_handle(&app, "/World/GreenBall");
@@ -241,7 +245,7 @@ fn material_patch_keeps_unrelated_edits_sparse_and_propagates_shared_inputs() {
     assert!(diagnostics.matches > 0);
     assert!(diagnostics.projects > 0);
     assert!(diagnostics.patches >= 4);
-    assert!(diagnostics.descriptor_reads >= 7);
+    assert_eq!(diagnostics.descriptor_reads - initial_descriptor_reads, 3);
 }
 
 #[test]
@@ -418,6 +422,13 @@ fn projects_per_prim_materials_and_shares_handles() {
     }
     assert_eq!(by_path["/World/GreenBall"], by_path["/World/GreenBox"]);
     assert_ne!(by_path["/World/RedBox"], by_path["/World/GreenBall"]);
+    assert_eq!(
+        app.world()
+            .resource::<MaterialRouteDiagnostics>()
+            .descriptor_reads,
+        3,
+        "four consumers of three static materials need three descriptor reads"
+    );
 
     let materials = app.world().resource::<Assets<StandardMaterial>>();
     let red = materials

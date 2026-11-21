@@ -195,11 +195,12 @@ enum ActiveMotion {
 fn drive_pan_orbit_camera(
     input: Res<ViewportNavigationInput>,
     capture: Option<Res<crate::viewport::input::HostUiInputCapture>>,
+    gate: crate::viewport::input::ViewerInteractionGate,
     config: Res<CameraNavigationConfig>,
     mut active: Local<ActiveMotion>,
     mut cameras: Query<(&ArcballCamera, &mut PanOrbitCamera)>,
 ) {
-    if !input.focused || ui_wants_pointer_input(capture) {
+    if gate.locked() || !input.focused || ui_wants_pointer_input(capture) {
         if *active != ActiveMotion::None {
             for (_, mut pan_orbit) in cameras.iter_mut() {
                 pan_orbit.end_move();

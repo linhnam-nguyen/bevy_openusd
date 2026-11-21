@@ -1,8 +1,8 @@
 //! R-tree-backed Scene payload candidates for camera residency.
 
 use crate::project::cache::contract::{CachedTransform, SceneCacheAddress, SceneCacheEntry};
-use bevy::camera::primitives::Aabb;
-use bevy::math::{Mat4, Quat, Vec3};
+use bevy::camera::primitives::{Aabb, Frustum};
+use bevy::math::{DMat4, DQuat, DVec3, Vec3};
 use rstar::{AABB, RTree, RTreeObject};
 use usd_model::{Bounds3, TransformSignature};
 use usd_project::ScenePlacementTransform;
@@ -27,11 +27,7 @@ impl SceneSpatialPayload {
 
     pub(crate) fn admitted_to(&self, admission: &CameraAdmission) -> bool {
         let (min, max) = normalized_bounds(self.bounds);
-        let aabb = Aabb::from_min_max(
-            Vec3::from_array(min.map(|value| value as f32)),
-            Vec3::from_array(max.map(|value| value as f32)),
-        );
-        if !admission.frustum.intersects_obb_identity(&aabb) {
+        if !intersects_frustum(min, max, &admission.frustum) {
             return false;
         }
         let preload_distance =
@@ -77,14 +73,14 @@ pub(crate) fn scene_payloads(entries: &[SceneCacheEntry]) -> Vec<SceneSpatialPay
 fn resolve_scene_matrix(
     index: usize,
     entries: &[SceneCacheEntry],
-    resolved: &mut [Option<Mat4>],
+    resolved: &mut [Option<DMat4>],
     visiting: &mut [bool],
-) -> Mat4 {
+) -> DMat4 {
     if let Some(matrix) = resolved.get(index).and_then(Option::as_ref) {
         return *matrix;
     }
     if index >= entries.len() || visiting[index] {
-        return Mat4::IDENTITY;
+        return DMat4::IDENTITY;
     }
     visiting[index] = true;
     let entry = &entries[index];
@@ -94,50 +90,48 @@ fn resolve_scene_matrix(
         .map(|parent| parent as usize)
         .filter(|parent| *parent < entries.len())
         .map(|parent| resolve_scene_matrix(parent, entries, resolved, visiting))
-        .unwrap_or(Mat4::IDENTITY);
+        .unwrap_or(DMat4::IDENTITY);
     let matrix = parent * local;
     visiting[index] = false;
     resolved[index] = Some(matrix);
     matrix
 }
-fn cached_transform_matrix(transform: &CachedTransform) -> Mat4 {
+fn cached_transform_matrix(transform: &CachedTransform) -> DMat4 {
     match transform {
-        CachedTransform::Placement(transform) => {
-            Mat4::from_cols_array(&transform.0.map(|value| value as f32))
-        }
+        CachedTransform::Placement(transform) => DMat4::from_cols_array(&transform.0),
         CachedTransform::Prim(signature) => prim_transform_matrix(signature),
     }
 }
-fn scene_transform(matrix: Mat4) -> ScenePlacementTransform {
-    ScenePlacementTransform(matrix.to_cols_array().map(f64::from))
+fn scene_transform(matrix: DMat4) -> ScenePlacementTransform {
+    ScenePlacementTransform(matrix.to_cols_array())
 }
-fn prim_transform_matrix(signature: &TransformSignature) -> Mat4 {
-    let translation = signature.translation_mm.map(|value| value as f32 / 1_000.0);
+fn prim_transform_matrix(signature: &TransformSignature) -> DMat4 {
+    let translation = signature.translation_mm.map(|value| value as f64 / 1_000.0);
     let rotation = signature
         .rotation_quantized
-        .map(|value| value as f32 / 100_000.0);
+        .map(|value| value as f64 / 100_000.0);
     let scale = signature
         .scale_quantized
-        .map(|value| value as f32 / 10_000.0);
-    Mat4::from_scale_rotation_translation(
-        Vec3::from_array(scale),
-        Quat::from_xyzw(rotation[1], rotation[2], rotation[3], rotation[0]),
-        Vec3::from_array(translation),
+        .map(|value| value as f64 / 10_000.0);
+    DMat4::from_scale_rotation_translation(
+        DVec3::from_array(scale),
+        DQuat::from_xyzw(rotation[1], rotation[2], rotation[3], rotation[0]),
+        DVec3::from_array(translation),
     )
 }
-fn transformed_bounds(bounds: Bounds3, matrix: Mat4) -> Bounds3 {
+fn transformed_bounds(bounds: Bounds3, matrix: DMat4) -> Bounds3 {
     let (min, max) = normalized_bounds(bounds);
     let mut transformed_min = [f64::INFINITY; 3];
     let mut transformed_max = [f64::NEG_INFINITY; 3];
     for index in 0..8 {
-        let corner = Vec3::new(
-            (if index & 1 == 0 { min[0] } else { max[0] }) as f32,
-            (if index & 2 == 0 { min[1] } else { max[1] }) as f32,
-            (if index & 4 == 0 { min[2] } else { max[2] }) as f32,
+        let corner = DVec3::new(
+            if index & 1 == 0 { min[0] } else { max[0] },
+            if index & 2 == 0 { min[1] } else { max[1] },
+            if index & 4 == 0 { min[2] } else { max[2] },
         );
         let world = matrix.transform_point3(corner);
         for axis in 0..3 {
-            let value = f64::from(world.to_array()[axis]);
+            let value = world.to_array()[axis];
             transformed_min[axis] = transformed_min[axis].min(value);
             transformed_max[axis] = transformed_max[axis].max(value);
         }
@@ -208,6 +202,35 @@ fn normalized_bounds(bounds: Bounds3) -> ([f64; 3], [f64; 3]) {
 fn finite_or_zero(value: f64) -> f64 {
     if value.is_finite() { value } else { 0.0 }
 }
+fn intersects_frustum(min: [f64; 3], max: [f64; 3], frustum: &Frustum) -> bool {
+    let min32 = Vec3::from_array(min.map(|value| value as f32));
+    let max32 = Vec3::from_array(max.map(|value| value as f32));
+    if min32.is_finite()
+        && max32.is_finite()
+        && frustum.intersects_obb_identity(&Aabb::from_min_max(min32, max32))
+    {
+        return true;
+    }
+
+    // Native culling uses f32 and treats a touching AABB as outside. Before
+    // dropping a residency candidate, check its f64 support point conservatively.
+    frustum.0.half_spaces.iter().all(|plane| {
+        let [nx, ny, nz, offset] = plane.normal_d().to_array().map(f64::from);
+        if !offset.is_finite() {
+            return true;
+        }
+        let support = [nx, ny, nz]
+            .into_iter()
+            .enumerate()
+            .map(|(axis, normal)| normal * if normal < 0.0 { min[axis] } else { max[axis] });
+        let (distance, magnitude) = support
+            .fold((offset, offset.abs()), |(distance, magnitude), value| {
+                (distance + value, magnitude + value.abs())
+            });
+        distance >= -(magnitude * f64::from(f32::EPSILON) * 4.0)
+    })
+}
+
 fn squared_distance_to_aabb(point: [f64; 3], min: [f64; 3], max: [f64; 3]) -> f64 {
     point
         .into_iter()

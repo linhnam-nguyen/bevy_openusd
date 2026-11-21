@@ -36,6 +36,19 @@ fn stats_distinguish_projection_hit_and_miss() {
             evictions: 0,
         }
     );
+
+    let mut tangent_mesh = triangle();
+    tangent_mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, vec![[1.0, 0.0, 0.0, 1.0]; 3]);
+    // Model a collision without relying on the hash function or searching for one.
+    world
+        .resource_mut::<ProjectionCache>()
+        .meshes
+        .insert(mesh_signature(&tangent_mesh), first.clone());
+    let with_tangent = intern_mesh(&mut world, tangent_mesh);
+    assert_ne!(
+        first, with_tangent,
+        "the same positions and indices do not imply identical render attributes"
+    );
 }
 
 #[test]

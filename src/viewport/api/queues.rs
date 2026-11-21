@@ -59,6 +59,10 @@ impl ViewportCommandInbox {
         self.pending.pop_front()
     }
 
+    pub(crate) fn retain(&mut self, keep: impl FnMut(&ViewportCommandEnvelope) -> bool) {
+        self.pending.retain(keep);
+    }
+
     /// Removes lazy scene-query commands while preserving the order of all
     /// other viewport commands for the main command system.
     pub(crate) fn take_scene_query_commands(&mut self) -> Vec<ViewportCommandEnvelope> {

@@ -226,6 +226,7 @@ fn reload_midway_cancels_old_session_and_never_mixes_paths() {
         .world()
         .resource::<crate::live::ProgressiveProjectionState>();
     assert_ne!(state.session_id(), old_session);
+    assert_eq!(state.cancelled_generations(), 1);
     assert_eq!(state.completed(), 1);
     assert_eq!(
         app.world()

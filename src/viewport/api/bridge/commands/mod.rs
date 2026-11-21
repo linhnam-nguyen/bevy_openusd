@@ -4,6 +4,7 @@ use super::helpers::{
     emit_viewer_settings_changed, reject,
 };
 use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommand};
+use crate::viewport::input::ViewerInteractionGate;
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
 };
@@ -19,6 +20,44 @@ mod timeline;
 mod variants;
 pub(super) use cadence::apply_pending_renderer_cadence;
 use state::ApplyViewportCommandState;
+
+pub(in crate::viewport::api::bridge) const VIEWER_BINDING_PENDING: &str =
+    "Viewer interaction is unavailable while native instance dependencies are binding";
+
+pub(super) fn reject_locked_viewport_commands(
+    mut inbox: ResMut<ViewportCommandInbox>,
+    mut outbox: ResMut<ViewportEventOutbox>,
+    gate: ViewerInteractionGate,
+) {
+    if !gate.locked() {
+        return;
+    }
+    inbox.retain(|envelope| {
+        let permitted = envelope.protocol_version != PROTOCOL_VERSION
+            || matches!(
+                envelope.command,
+                ViewportCommand::RequestSnapshot
+                    | ViewportCommand::RequestBimClassificationFieldCatalogue { .. }
+                    | ViewportCommand::RequestSceneChildren { .. }
+                    | ViewportCommand::SearchScene { .. }
+                    | ViewportCommand::SearchBim { .. }
+                    | ViewportCommand::RequestBimProperties
+                    | ViewportCommand::RequestBimPropertyProvenance { .. }
+                    | ViewportCommand::RequestHierarchyChildren { .. }
+                    | ViewportCommand::SearchHierarchy { .. }
+                    | ViewportCommand::ReloadSession
+            );
+        if !permitted {
+            reject(
+                &mut outbox,
+                envelope.request_id.clone(),
+                VIEWER_BINDING_PENDING.to_owned(),
+            );
+        }
+        permitted
+    });
+}
+
 pub(super) fn apply_viewport_commands(
     mut inbox: ResMut<ViewportCommandInbox>,
     mut outbox: ResMut<ViewportEventOutbox>,

@@ -73,8 +73,13 @@ pub(crate) fn apply_fly_to(
     time: Res<Time>,
     mut fly: ResMut<FlyTo>,
     mut cameras: Query<(&mut Transform, &mut ArcballCamera, Option<&mut PanOrbitCamera>)>,
+    gate: crate::viewport::input::ViewerInteractionGate,
 ) {
     if fly.remaining <= 0.0 {
+        return;
+    }
+    if gate.locked() {
+        fly.remaining = 0.0;
         return;
     }
     let Ok((mut transform, mut cam, pan_orbit)) = cameras.single_mut() else {

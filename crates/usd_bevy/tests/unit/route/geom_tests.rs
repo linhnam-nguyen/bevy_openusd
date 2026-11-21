@@ -4,8 +4,10 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 
 use super::super::ProjectionSeed;
-use super::super::cache::{MAX_INTERNED, ProjectionCache, remember_source_mesh};
-use super::super::cache_key::source_mesh_key;
+use super::super::cache::{
+    MAX_SOURCE_MESHES, ProjectionCache, lookup_source_mesh, remember_source_mesh,
+};
+use super::super::cache_key::{MeshSourceKey, source_mesh_key};
 use super::{MeshPatchAction, MeshRoute, UsdDisplayName, UsdLocalExtent, mesh_patch_action};
 use crate::read::geom::{Interpolation, MeshPrimvar, read_mesh};
 use crate::route::{PrimRoute, RouteCtx};
@@ -373,18 +375,26 @@ fn source_cache_is_bounded_for_deforming_geometry_versions() {
     world.init_resource::<Assets<Mesh>>();
     world.insert_resource(ProjectionCache::default());
 
-    for version in 0..=MAX_INTERNED {
+    for version in 0..=MAX_SOURCE_MESHES {
         let mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
         );
         let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
-        remember_source_mesh(&mut world, version as u64, handle);
+        remember_source_mesh(
+            &mut world,
+            MeshSourceKey(Box::new(version.to_le_bytes())),
+            handle,
+        );
     }
 
     let cache = world.resource::<ProjectionCache>();
-    assert!(cache.source_len() <= MAX_INTERNED);
-    assert!(cache.stats().evictions > 0);
+    assert_eq!(cache.source_len(), MAX_SOURCE_MESHES);
+    assert_eq!(cache.stats().evictions, 0);
+    let first = MeshSourceKey(Box::new(0usize.to_le_bytes()));
+    let overflow = MeshSourceKey(Box::new(MAX_SOURCE_MESHES.to_le_bytes()));
+    assert!(lookup_source_mesh(&mut world, &first).is_some());
+    assert!(lookup_source_mesh(&mut world, &overflow).is_none());
 }
 
 fn projected_fixture_app(fixture: &str) -> App {
@@ -394,7 +404,8 @@ fn projected_fixture_app(fixture: &str) -> App {
         .add_plugins(crate::LiveStagePlugin)
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<StandardMaterial>>();
-    app.world_mut().insert_non_send(crate::LiveStage::new(stage));
+    app.world_mut()
+        .insert_non_send(crate::LiveStage::new(stage));
     app.update();
     app
 }
@@ -408,7 +419,10 @@ fn projects_basis_curves_and_points_with_current_topology() {
         by_path.insert(prim.path.clone(), mesh.0.clone());
     }
     for expected in ["/World/Polyline", "/World/Curve", "/World/Cloud"] {
-        assert!(by_path.contains_key(expected), "missing Mesh3d on {expected}");
+        assert!(
+            by_path.contains_key(expected),
+            "missing Mesh3d on {expected}"
+        );
     }
 
     let meshes = app.world().resource::<Assets<Mesh>>();
@@ -440,7 +454,10 @@ fn projects_primitives_with_meshes() {
         "/World/Cap",
         "/World/Tri",
     ] {
-        assert!(by_path.contains_key(expected), "missing Mesh3d on {expected}");
+        assert!(
+            by_path.contains_key(expected),
+            "missing Mesh3d on {expected}"
+        );
     }
     assert!(!by_path.contains_key("/World"));
 
@@ -571,22 +588,31 @@ fn proxy_purpose_collider_survives_and_carries_physics() {
     let guide_e = entity_of(world, "/World/Robot/DebugMarker");
 
     assert_eq!(
-        world.get::<crate::UsdPurpose>(render_e).map(|p| p.0.as_str()),
+        world
+            .get::<crate::UsdPurpose>(render_e)
+            .map(|p| p.0.as_str()),
         Some("render")
     );
     assert_eq!(
-        world.get::<crate::UsdPurpose>(proxy_e).map(|p| p.0.as_str()),
+        world
+            .get::<crate::UsdPurpose>(proxy_e)
+            .map(|p| p.0.as_str()),
         Some("proxy")
     );
     assert_eq!(
-        world.get::<crate::UsdPurpose>(guide_e).map(|p| p.0.as_str()),
+        world
+            .get::<crate::UsdPurpose>(guide_e)
+            .map(|p| p.0.as_str()),
         Some("guide")
     );
     assert!(world.get::<crate::UsdRigidBody>(proxy_e).is_some());
     assert!(world.get::<crate::UsdCollider>(proxy_e).is_some());
     // DisplayPurposes::default() shows proxy (Inherited) and hides render and guide.
     assert_eq!(world.get::<Visibility>(render_e), Some(&Visibility::Hidden));
-    assert_eq!(world.get::<Visibility>(proxy_e), Some(&Visibility::Inherited));
+    assert_eq!(
+        world.get::<Visibility>(proxy_e),
+        Some(&Visibility::Inherited)
+    );
     assert_eq!(world.get::<Visibility>(guide_e), Some(&Visibility::Hidden));
 }
 
@@ -617,7 +643,9 @@ fn projects_supported_physics_marker_components() {
     assert!(world.get::<crate::UsdMass>(arm_e).is_none());
 
     assert!(world.get::<crate::UsdPhysicsJoint>(hinge_e).is_some());
-    let joint = world.get::<crate::UsdJoint>(hinge_e).expect("Hinge UsdJoint");
+    let joint = world
+        .get::<crate::UsdJoint>(hinge_e)
+        .expect("Hinge UsdJoint");
     assert_eq!(joint.kind, "revolute");
     assert_eq!(joint.body0.as_deref(), Some("/World/Base"));
     assert_eq!(joint.body1.as_deref(), Some("/World/Arm"));
@@ -631,7 +659,10 @@ fn projects_supported_render_settings_markers() {
     let mut app = projected_fixture_app("render_settings.usda");
     let world = app.world_mut();
     let settings: Vec<_> = world
-        .query::<(&crate::UsdPrimRef, &crate::route::coverage::UsdRenderSettings)>()
+        .query::<(
+            &crate::UsdPrimRef,
+            &crate::route::coverage::UsdRenderSettings,
+        )>()
         .iter(world)
         .map(|(p, s)| (p.path.clone(), s.clone()))
         .collect();

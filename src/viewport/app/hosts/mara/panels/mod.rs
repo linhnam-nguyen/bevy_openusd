@@ -422,6 +422,20 @@ pub(super) fn apply_panel_action(
     world: &mut World,
     ui_state: &mut MaraHostUiState,
 ) {
+    if crate::viewport::input::viewer_interaction_locked(world)
+        && matches!(
+            &action,
+            PanelAction::SaveStageAsDialog
+                | PanelAction::CaptureDiffBaseline
+                | PanelAction::ClearDiffBaseline
+                | PanelAction::SaveBookmark
+                | PanelAction::JumpBookmark(_)
+                | PanelAction::DeleteBookmark(_)
+                | PanelAction::FrameVisibleScene
+        )
+    {
+        return;
+    }
     match action {
         PanelAction::Command(command) => match command {
             ViewportCommand::RequestBimProperties => {

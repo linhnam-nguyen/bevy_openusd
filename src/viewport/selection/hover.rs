@@ -8,7 +8,7 @@ use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings};
 use bevy::prelude::*;
 use viewport_protocol::SceneAnchor;
 
-use crate::viewport::input::ViewportNavigationInput;
+use crate::viewport::input::{ViewerInteractionGate, ViewportNavigationInput};
 use crate::viewport::scene::SceneAnchorIndex;
 
 /// Current renderer-local hover target and the inputs used for its last pick.
@@ -52,7 +52,15 @@ pub(in crate::viewport) fn update_hover_target(
     cameras: Query<(&Camera, &GlobalTransform, &Transform), With<Camera3d>>,
     child_of: Query<&ChildOf>,
     mut mesh_ray_cast: MeshRayCast,
+    gate: ViewerInteractionGate,
 ) {
+    if gate.locked() {
+        if hovered.last_focused != Some(false) || hovered.anchor.is_some() {
+            hovered.last_focused = Some(false);
+            hovered.anchor = None;
+        }
+        return;
+    }
     let Ok((camera, camera_global, camera_local)) = cameras.single() else {
         return;
     };

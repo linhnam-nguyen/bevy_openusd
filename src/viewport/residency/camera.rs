@@ -11,6 +11,8 @@ pub(crate) struct CameraSample {
     pub(crate) projection: [f32; 16],
     pub(crate) viewport_size: [u32; 2],
     pub(crate) section_box_revision: u64,
+    pub(crate) visibility_revision: u64,
+    pub(crate) visibility_epoch: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,6 +37,8 @@ impl Default for CameraSample {
             projection: [0.0; 16],
             viewport_size: [0; 2],
             section_box_revision: 0,
+            visibility_revision: 0,
+            visibility_epoch: 0,
         }
     }
 }
@@ -50,6 +54,8 @@ impl CameraSample {
             || self.projection != next.projection
             || self.viewport_size != next.viewport_size
             || self.section_box_revision != next.section_box_revision
+            || self.visibility_revision != next.visibility_revision
+            || self.visibility_epoch != next.visibility_epoch
     }
 }
 

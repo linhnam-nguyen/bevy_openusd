@@ -7,6 +7,17 @@ use crate::read::shade::ReadPreviewMaterial;
 
 use super::builder::build_standard_material;
 
+#[derive(Clone, Debug, Default, Resource)]
+pub(crate) struct InitialMaterialMemo {
+    pub(super) entries: HashMap<(String, Option<u64>), InitialMaterialRead>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct InitialMaterialRead {
+    pub(super) descriptor: ReadPreviewMaterial,
+    pub(super) dependencies: Vec<String>,
+}
+
 /// Counters collected by [`UsdMaterialCache`] for binding reuse and live
 /// descriptor changes.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -26,6 +37,7 @@ pub struct MaterialCacheStats {
 pub(super) struct CachedMaterial {
     pub(super) descriptor: ReadPreviewMaterial,
     pub(super) handle: Handle<StandardMaterial>,
+    texture_context: Option<u64>,
 }
 
 /// Cache of decoded materials keyed by their composed USD Material path.
@@ -67,6 +79,9 @@ pub(super) fn intern_material(
     descriptor: &ReadPreviewMaterial,
 ) -> Option<Handle<StandardMaterial>> {
     world.get_resource::<Assets<StandardMaterial>>()?;
+    let texture_context = world
+        .get_resource::<super::texture_cache::UsdTextureCache>()
+        .map(|cache| cache.context_revision);
 
     let cached = world
         .get_resource::<UsdMaterialCache>()
@@ -76,9 +91,9 @@ pub(super) fn intern_material(
             .resource::<Assets<StandardMaterial>>()
             .contains(&entry.handle)
     });
-    let descriptor_matches = cached
-        .as_ref()
-        .is_some_and(|entry| entry.descriptor == *descriptor);
+    let descriptor_matches = cached.as_ref().is_some_and(|entry| {
+        entry.descriptor == *descriptor && entry.texture_context == texture_context
+    });
 
     if let Some(mut cache) = world.get_resource_mut::<UsdMaterialCache>() {
         cache.stats.lookups += 1;
@@ -113,6 +128,7 @@ pub(super) fn intern_material(
             CachedMaterial {
                 descriptor: descriptor.clone(),
                 handle: handle.clone(),
+                texture_context,
             },
         );
     }

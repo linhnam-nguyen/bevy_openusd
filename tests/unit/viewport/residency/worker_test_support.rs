@@ -6,21 +6,28 @@ impl CachedResidencyWorker {
         Self {
             requests: None,
             completions: None,
-            thread: None,
+            threads: Vec::new(),
+            window: Mutex::default(),
             available: AtomicBool::new(false),
         }
     }
 
     pub(crate) fn with_completion_for_test(completion: LoadCompletion) -> Self {
         let (completion_tx, completion_rx) = mpsc::sync_channel(WORKER_QUEUE_CAPACITY);
+        let reserved_bytes = completion.job.cpu_bytes;
         completion_tx
-            .send(completion)
+            .send((0, WorkerCompletion::Cached(completion)))
             .expect("test completion queue accepts one completion");
         drop(completion_tx);
         Self {
             requests: None,
             completions: Some(Mutex::new(completion_rx)),
-            thread: None,
+            threads: Vec::new(),
+            window: Mutex::new(WorkerWindow {
+                next_request: 1,
+                reserved_bytes,
+                ..Default::default()
+            }),
             available: AtomicBool::new(false),
         }
     }

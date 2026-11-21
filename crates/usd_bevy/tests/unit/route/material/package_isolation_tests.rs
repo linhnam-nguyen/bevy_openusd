@@ -54,6 +54,8 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
 
     let mut world = World::new();
     world.init_resource::<Assets<Image>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<super::UsdMaterialCache>();
     world.insert_resource(UsdTextureCache::default());
 
     let activate = |world: &mut World, package: &std::path::Path, expected| {
@@ -82,6 +84,12 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
     let rel_a = resolve_texture(&mut world, "textures/albedo.png", true)
         .expect("candidate A relative lookup succeeds");
     assert_eq!(first_pixel(&world, &rel_a), [255, 0, 0, 255]);
+    let descriptor = crate::read::shade::ReadPreviewMaterial {
+        diffuse_texture: Some("textures/albedo.png".to_owned()),
+        ..Default::default()
+    };
+    let material_a =
+        super::material_cache::intern_material(&mut world, "/Material", &descriptor).unwrap();
 
     assert!(
         resolve_texture(&mut world, "textures/missing.png", true).is_none(),
@@ -94,6 +102,20 @@ fn package_texture_identity_survives_a_b_a_activation_sequence() {
     let rel_b = resolve_texture(&mut world, "textures/albedo.png", true)
         .expect("candidate B relative lookup succeeds");
     assert_eq!(first_pixel(&world, &rel_b), [0, 0, 255, 255]);
+    let material_b =
+        super::material_cache::intern_material(&mut world, "/Material", &descriptor).unwrap();
+    assert_ne!(
+        material_a, material_b,
+        "equal authored descriptors can resolve different stage texture bytes"
+    );
+    let texture = world
+        .resource::<Assets<StandardMaterial>>()
+        .get(&material_b)
+        .unwrap()
+        .base_color_texture
+        .as_ref()
+        .unwrap();
+    assert_eq!(first_pixel(&world, texture), [0, 0, 255, 255]);
 
     // Replace package A at the same filename with new pixel bytes (and append an extra
     // entry so its file length / ArchiveFingerprint changes reliably even within the
@@ -247,9 +269,7 @@ def Xform "World"
         writer.start_file("scene.usda", options).unwrap();
         writer.write_all(usda.as_bytes()).unwrap();
         writer.start_file("textures/red.png", options).unwrap();
-        writer
-            .write_all(&png_pixel([255, 0, 0, 255]))
-            .unwrap();
+        writer.write_all(&png_pixel([255, 0, 0, 255])).unwrap();
         writer.finish().unwrap();
     }
 

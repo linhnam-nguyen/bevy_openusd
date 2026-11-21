@@ -143,9 +143,10 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
         ResMut<ResidencyAuthority>,
         ResMut<TargetedRepairQueue>,
         Option<ResMut<super::super::worker::LoadedScenePayloadQueue>>,
+        bevy::prelude::Commands,
     )> = SystemState::new(&mut world);
     {
-        let (scene_owner, context, worker, authority, repairs, payload_queue) = state
+        let (scene_owner, context, worker, authority, repairs, payload_queue, commands) = state
             .get_mut(&mut world)
             .expect("completion-drain resources are present");
         drain_cached_residency_completions(
@@ -155,6 +156,7 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
             authority,
             repairs,
             payload_queue,
+            commands,
         );
     }
     state.apply(&mut world);
