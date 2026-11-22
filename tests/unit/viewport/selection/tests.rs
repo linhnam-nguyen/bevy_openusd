@@ -179,15 +179,15 @@ fn selected_instance_bridge_captures_identity_before_reconcile() {
     let selection = app.world().resource::<PointInstancerSelection>().clone();
     assert_eq!(selection.instancer_path.as_deref(), Some(INSTANCER));
     assert_eq!(selection.logical_id, Some(103));
-    let new_entity = instance_entity(app.world_mut(), 103);
-    assert_ne!(
-        old_entity, new_entity,
-        "resync replaces the transient child"
+    let resolved_entity = instance_entity(app.world_mut(), 103);
+    assert_eq!(
+        old_entity, resolved_entity,
+        "resync retains the continuously authored occurrence entity"
     );
 
     assert_eq!(
         app.world().resource::<ResolvedSelection>().0,
-        Some(new_entity),
-        "the stable selection resolves to the replacement child"
+        Some(resolved_entity),
+        "the bridged logical selection resolves after reconciliation"
     );
 }

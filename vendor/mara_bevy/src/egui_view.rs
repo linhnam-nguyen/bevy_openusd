@@ -56,6 +56,12 @@ fn next_viewport_instance() -> u64 {
 }
 
 impl MaraBevyViewport {
+    /// Returns the egui layer of the embedded viewport interaction surface.
+    pub fn pointer_layer(&self, ctx: &egui::Context) -> Option<egui::LayerId> {
+        let id = egui::Id::unique(("mara_embedded_bevy_viewport_interact", self.instance));
+        ctx.read_response(id).map(|response| response.layer_id)
+    }
+
     pub fn new() -> Self {
         Self {
             instance: next_viewport_instance(),
@@ -413,10 +419,15 @@ impl MaraBevyViewport {
                     let active_interval = 1.0 / 30.0;
                     #[cfg(not(target_arch = "wasm32"))]
                     let active_interval = 1.0 / 60.0;
-                    let target_interval = frame_interval(self.continuous_rendering, input_active
-                        || resize_pending
-                        || texture_needs_committed_frame
-                        || !has_texture, active_interval, idle_interval);
+                    let target_interval = frame_interval(
+                        self.continuous_rendering,
+                        input_active
+                            || resize_pending
+                            || texture_needs_committed_frame
+                            || !has_texture,
+                        active_interval,
+                        idle_interval,
+                    );
                     let elapsed = now - self.last_render_time;
                     let should_render = resize_pending
                         || !has_texture
@@ -544,8 +555,7 @@ impl MaraBevyViewport {
                     if waiting_for_resize_settle {
                         next = next.min((self.resize_settle_until - now).max(0.0));
                     }
-                    ui.ctx()
-                        .request_repaint_after(repaint_delay(next));
+                    ui.ctx().request_repaint_after(repaint_delay(next));
                 },
             );
         }
@@ -593,7 +603,11 @@ impl MaraBevyViewport {
 }
 
 fn frame_interval(continuous: bool, interactive: bool, active: f64, idle: f64) -> f64 {
-    if continuous || interactive { active } else { idle }
+    if continuous || interactive {
+        active
+    } else {
+        idle
+    }
 }
 
 fn next_frame_delay(interval: f64, spent: f64) -> f64 {
@@ -627,7 +641,10 @@ mod pacing_tests {
         assert!((next_frame_delay(interval, 0.005) - (interval - 0.005)).abs() < 1e-12);
         assert_eq!(next_frame_delay(interval, 0.018), 0.0);
         assert_eq!(next_frame_delay(interval, 0.0), interval);
-        assert_eq!(repaint_delay(next_frame_delay(interval, 0.018)), Duration::ZERO);
+        assert_eq!(
+            repaint_delay(next_frame_delay(interval, 0.018)),
+            Duration::ZERO
+        );
     }
 
     #[test]
@@ -636,9 +653,15 @@ mod pacing_tests {
             let ctx = egui::Context::default();
             let mut output = egui::FullOutput::default();
             for _ in 0..5 {
-                output = ctx.run_ui(egui::RawInput { predicted_dt, ..Default::default() }, |ui| {
-                    ui.ctx().request_repaint_after(repaint_delay(1.0 / 60.0));
-                });
+                output = ctx.run_ui(
+                    egui::RawInput {
+                        predicted_dt,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.ctx().request_repaint_after(repaint_delay(1.0 / 60.0));
+                    },
+                );
                 // Headless: nothing uploads the texture deltas.
                 output.textures_delta.clear();
             }

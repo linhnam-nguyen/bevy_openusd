@@ -7,17 +7,16 @@ use bevy::mesh::{Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::{Path};
-use openusd::vt::Value;
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 use usd_bevy::read::geom::read_point_instancer;
 use usd_bevy::route::instancer::{PointInstancerRoute, UsdInstance, UsdInstanceId};
 use usd_bevy::{
-    LiveStage, LiveStagePlugin, PointInstancerSelection, PointInstancerStats, PrimRoute, RouteCtx,
-    UsdPlugin,
+    LiveStage, PointInstancerSelection, PointInstancerStats, PrimRoute, RouteCtx, UsdPlugin,
 };
 
-const FIXTURE: &str = "point_instancer_prototypes.usda";
+const FIXTURE: &str = include_str!("../../fixtures/usd/point_instancer_prototypes.usda");
 const INSTANCER: &str = "/World/Instances";
 const CUBE_MESH: &str = "/World/Prototypes/CubeProto/Mesh";
 
@@ -31,7 +30,7 @@ struct InstanceSnapshot {
 }
 
 fn open_fixture() -> (Stage, Path) {
-    let stage = usd_support::open_fixture_stage(FIXTURE);
+    let stage = usd_support::stage_from_usda(FIXTURE).expect("point instancer fixture opens");
     let instancer = Path::new(INSTANCER).expect("instancer path is valid");
     (stage, instancer)
 }
@@ -52,20 +51,15 @@ fn project_once(app: &mut App, stage: &Stage, path: &Path, entity: Entity) {
 }
 
 fn snapshot(world: &mut World) -> InstanceSnapshot {
-    let mut ids = Vec::new();
-    let mut mesh_handles = Vec::new();
-    let mut material_handles = Vec::new();
-    let mut query = world.query::<(
-        &UsdInstanceId,
-        Option<&Mesh3d>,
-        Option<&MeshMaterial3d<StandardMaterial>>,
-    )>();
-    for (id, mesh, material) in query.iter(world) {
-        ids.push(*id);
-        mesh_handles.extend(mesh.map(|handle| handle.0.id()));
-        material_handles.extend(material.map(|handle| handle.0.id()));
-    }
-    ids.sort_by_key(|id| id.source_index);
+    let mut query = world.query::<(&UsdInstanceId, &Mesh3d, &MeshMaterial3d<StandardMaterial>)>();
+    let mut rows: Vec<_> = query.iter(world).collect();
+    rows.sort_by_key(|(id, _, _)| id.source_index);
+    let ids = rows.iter().map(|(id, _, _)| **id).collect();
+    let mesh_handles = rows.iter().map(|(_, mesh, _)| mesh.0.id()).collect();
+    let material_handles = rows
+        .iter()
+        .map(|(_, _, material)| material.0.id())
+        .collect();
     let mesh_assets = world.resource::<Assets<Mesh>>().iter().count();
     let material_assets = world.resource::<Assets<StandardMaterial>>().iter().count();
     InstanceSnapshot {
@@ -132,6 +126,84 @@ fn shared_prototypes_preserve_logical_order_and_invisible_ids() {
     );
     assert_eq!(result.mesh_assets, 2);
     assert_eq!(result.material_assets, 1);
+
+    // Some USD caches author an empty default and populate the first sample.
+    // Opening them at the default time retains that existing projection behavior.
+    let prim = stage.prim(path.clone()).unwrap();
+    let positions = prim.attribute("positions");
+    let authored = positions.get::<Value>().unwrap().unwrap();
+    let time = openusd::usd::TimeCode::new(1.0);
+    positions.clone().set_at(authored, time).unwrap();
+    positions.set(Value::Vec3fVec(Vec::new())).unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert_eq!(
+        read_point_instancer(&stage, &path)
+            .unwrap()
+            .unwrap()
+            .positions
+            .len(),
+        6
+    );
+    assert_eq!(snapshot(app.world_mut()).ids, result.ids);
+
+    let equipment = Path::new("/Equipment/Instances").unwrap();
+    assert_eq!(
+        read_point_instancer(&stage, &equipment)
+            .expect("equipment arrays read")
+            .expect("equipment arrays exist")
+            .ids,
+        Some(vec![200, 201]),
+    );
+    let equipment_parent = app.world_mut().spawn_empty().id();
+    project_once(&mut app, &stage, &equipment, equipment_parent);
+    let occurrence = instance_entity(app.world_mut(), 200);
+    let parts: Vec<_> = app
+        .world()
+        .get::<Children>(occurrence)
+        .unwrap()
+        .iter()
+        .collect();
+    assert_eq!(parts.len(), 2, "both equipment parts must be projected");
+    let world = app.world();
+    let housing = world
+        .get::<MeshMaterial3d<StandardMaterial>>(parts[0])
+        .unwrap();
+    let panel = world
+        .get::<MeshMaterial3d<StandardMaterial>>(parts[1])
+        .unwrap();
+    assert_ne!(housing.0, panel.0);
+    assert_eq!(
+        world.get::<Mesh3d>(parts[0]).unwrap().0,
+        world.get::<Mesh3d>(parts[1]).unwrap().0
+    );
+    let local_to_occurrence = world
+        .get::<usd_bevy::route::xform::UsdFullLocalAffine>(parts[1])
+        .unwrap()
+        .0;
+    let occurrence_to_world = world.get::<Transform>(occurrence).unwrap().compute_affine();
+    let world_point = (occurrence_to_world * local_to_occurrence).transform_point3(Vec3::Y);
+    assert!(world_point.abs_diff_eq(Vec3::new(14.5, 1.0, 0.0), 1e-5));
+    project_once(&mut app, &stage, &equipment, equipment_parent);
+    let world = app.world();
+    assert_eq!(
+        world
+            .get::<Children>(occurrence)
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>(),
+        parts
+    );
+    stage
+        .prim("/Equipment/Prototype/PanelMount")
+        .unwrap()
+        .attribute("visibility")
+        .set(Value::Token("invisible".into()))
+        .unwrap();
+    project_once(&mut app, &stage, &equipment, equipment_parent);
+    let world = app.world();
+    assert!(world.get::<Mesh3d>(parts[0]).is_some());
+    assert!(world.get::<Mesh3d>(parts[1]).is_none());
+    assert_eq!(world.get::<Visibility>(parts[1]), Some(&Visibility::Hidden));
 }
 
 #[test]
@@ -179,7 +251,7 @@ fn point_instancer_marker_count_matches_visible_logical_rows() {
     project_once(&mut app, &stage, &path, entity);
 
     let world = app.world_mut();
-    let mut query = world.query::<&UsdInstance>();
+    let mut query = world.query_filtered::<&UsdInstance, With<Mesh3d>>();
     assert_eq!(query.iter(world).count(), 5);
 }
 
@@ -217,17 +289,34 @@ fn logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target() {
         .attribute("positions")
         .set(Value::Vec3fVec(positions))
         .expect("position reorder edit succeeds");
+    let prim = stage.prim(path.clone()).unwrap();
+    prim.attribute("ids")
+        .set(Value::Int64Vec(vec![103, 100, 101, 102, 104, 105]))
+        .unwrap();
     project_once(&mut app, &stage, &path, entity);
 
     let selected_after = instance_entity(app.world_mut(), 103);
-    assert_ne!(
+    assert_eq!(
         selected_before, selected_after,
-        "full reproject replaces the child entity"
+        "keyed reconciliation retains the authored logical instance entity"
     );
     assert_eq!(
         app.world().resource::<PointInstancerSelection>().logical_id,
         Some(103)
     );
+    let children = app.world().get::<Children>(entity).unwrap();
+    assert_eq!(children.iter().next(), Some(selected_before));
+
+    prim.attribute("ids")
+        .set(Value::Int64Vec(vec![103, 103, 101, 102, 104, 105]))
+        .unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    let children = app.world().get::<Children>(entity).unwrap();
+    assert_eq!(children.iter().next(), Some(selected_before));
+    assert_eq!(children.len(), 6);
+    prim.attribute("ids")
+        .set(Value::Int64Vec(vec![103, 100, 101, 102, 104, 105]))
+        .unwrap();
 
     stage
         .prim(path.clone())
@@ -237,11 +326,61 @@ fn logical_selection_survives_reprojection_and_hidden_ids_remove_pick_target() {
         .expect("hidden-ID edit succeeds");
     project_once(&mut app, &stage, &path, entity);
     let world = app.world_mut();
-    let mut ids = world.query::<&UsdInstanceId>();
-    assert!(
-        ids.iter(world).all(|id| id.logical_id != 103),
-        "hidden logical IDs must have no rendered or pickable entity"
+    assert_eq!(instance_entity(world, 103), selected_before);
+    assert_eq!(
+        world.get::<Visibility>(selected_before),
+        Some(&Visibility::Hidden)
     );
+    assert!(world.get::<Mesh3d>(selected_before).is_none());
+
+    // A removed ID may later be authored again, but cannot inherit the old
+    // selection or the old representation.
+    prim.attribute("ids")
+        .set(Value::Int64Vec(vec![106, 100, 101, 102, 104, 105]))
+        .unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert!(app.world().get_entity(selected_before).is_err());
+    assert_eq!(
+        app.world().resource::<PointInstancerSelection>().logical_id,
+        None
+    );
+    prim.attribute("ids")
+        .set(Value::Int64Vec(vec![103, 100, 101, 102, 104, 105]))
+        .unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert_ne!(instance_entity(app.world_mut(), 103), selected_before);
+
+    prim.attribute("invisibleIds")
+        .set(Value::Int64Vec(Vec::new()))
+        .unwrap();
+    prim.clone()
+        .set_metadata(
+            "inactiveIds",
+            Value::Int64ListOp(openusd::sdf::ListOp::explicit(vec![103])),
+        )
+        .unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    let masked = instance_entity(app.world_mut(), 103);
+    assert_eq!(
+        app.world().get::<Visibility>(masked),
+        Some(&Visibility::Hidden)
+    );
+    prim.clone().clear_metadata("inactiveIds").unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert_eq!(instance_entity(app.world_mut(), 103), masked);
+    assert!(app.world().get::<Mesh3d>(masked).is_some());
+
+    prim.attribute("ids").clear().unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert!(app.world().get_entity(masked).is_err());
+    let anonymous = instance_entity(app.world_mut(), 0);
+    project_once(&mut app, &stage, &path, entity);
+    assert_eq!(instance_entity(app.world_mut(), 0), anonymous);
+    prim.attribute("protoIndices")
+        .set(Value::IntVec(vec![1, 0, 0, 1, 0, 1]))
+        .unwrap();
+    project_once(&mut app, &stage, &path, entity);
+    assert_ne!(instance_entity(app.world_mut(), 0), anonymous);
 }
 
 fn live_app(stage: Stage) -> App {

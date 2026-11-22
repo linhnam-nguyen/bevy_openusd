@@ -9378,6 +9378,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "bevy",
+ "bytemuck",
  "glam 0.30.10",
  "image",
  "log",

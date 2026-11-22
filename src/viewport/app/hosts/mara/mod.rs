@@ -344,9 +344,11 @@ impl WindowApp for UsdMaraApp {
         let viewport_rect = {
             let mut vctx = host.view_ctx(&mut self.workspace, accent, RibbonAvoidance::all());
             let rect: egui::Rect = vctx.screen_rect().into();
+            let viewport_layer = self.bevy_view.pointer_layer(host.__internal_egui());
             input::sync_viewport_input(
                 host.__internal_egui(),
                 rect,
+                viewport_layer,
                 self.bevy_view.world_mut(),
                 &mut self.ui_state,
             );

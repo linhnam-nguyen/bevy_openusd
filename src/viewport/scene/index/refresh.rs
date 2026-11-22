@@ -20,6 +20,8 @@ pub(in crate::viewport) struct SceneIndexIndexedPrim;
 pub(crate) fn register_scene_index_observers(app: &mut App) {
     app.add_observer(queue_scene_prim_insert)
         .add_observer(queue_scene_prim_remove)
+        .add_observer(super::occurrence::upsert_point_occurrence)
+        .add_observer(super::occurrence::remove_point_occurrence)
         .add_observer(queue_display_name_remove)
         .add_observer(queue_hierarchy_target_remove)
         .add_observer(queue_transparent_remove)

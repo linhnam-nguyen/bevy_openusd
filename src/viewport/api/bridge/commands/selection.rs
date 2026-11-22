@@ -5,6 +5,14 @@ use crate::viewport::api::ViewportEventOutbox;
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets};
 
+fn stale_point_target(index: &SceneAnchorIndex, anchor: &SceneAnchor) -> bool {
+    anchor
+        .instance_context
+        .as_deref()
+        .is_some_and(|key| key.starts_with("point:"))
+        && !index.is_point_target(anchor)
+}
+
 pub(crate) fn select_target(
     request_id: String,
     target: Option<SceneAnchor>,
@@ -23,6 +31,14 @@ pub(crate) fn select_target(
         Some(anchor) => {
             if let Err(error) = anchor.validate() {
                 reject(outbox, request_id, error.to_string());
+                return;
+            }
+            if stale_point_target(scene_index, &anchor) {
+                reject(
+                    outbox,
+                    request_id,
+                    "Point instance is no longer in the active scene".to_owned(),
+                );
                 return;
             }
             selected_prim.0 = scene_index.resolve(&anchor);
@@ -46,6 +62,18 @@ pub(crate) fn replace_selection(
     let mut next_selection = SelectionReadModel { targets, primary };
     if let Err(error) = next_selection.canonicalize() {
         reject(outbox, request_id, error.to_string());
+        return;
+    }
+    if next_selection
+        .targets
+        .iter()
+        .any(|target| stale_point_target(scene_index, target))
+    {
+        reject(
+            outbox,
+            request_id,
+            "Point instance is no longer in the active scene".to_owned(),
+        );
         return;
     }
 
@@ -91,6 +119,14 @@ pub(crate) fn add_selection_targets(
     for target in &targets {
         if let Err(error) = target.validate() {
             reject(outbox, request_id, error.to_string());
+            return;
+        }
+        if stale_point_target(scene_index, target) {
+            reject(
+                outbox,
+                request_id,
+                "Point instance is no longer in the active scene".to_owned(),
+            );
             return;
         }
     }

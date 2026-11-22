@@ -36,6 +36,7 @@ pub(crate) struct SceneAnchorIndex {
     by_anchor: HashMap<SceneAnchor, Entity>,
     by_entity: HashMap<Entity, SceneAnchor>,
     occurrence_index: SceneOccurrenceIndex,
+    point_occurrences: occurrence::ScenePointOccurrences,
     nodes: Vec<PrimNodeReadModel>,
     node_index_by_anchor: HashMap<SceneAnchor, usize>,
     dense: DenseSceneIndex,

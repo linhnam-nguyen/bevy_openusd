@@ -2,15 +2,12 @@
 //! child entity per instance, sharing the prototype's baked mesh.
 //!
 //! This is *point* instancing (an explicit position/orientation/scale table),
-//! distinct from USD native scenegraph instancing (which is openusd-blocked).
-//! Instances are spawned as children of the instancer entity, each carrying a
-//! [`UsdInstance`] marker so a reproject can clear the previous batch. All
-//! instances of one prototype share a single `Mesh`/`StandardMaterial` handle
-//! (baked once per project), so N instances cost one mesh in memory.
+//! distinct from USD native scenegraph instancing.
+//! Instance children reconcile by logical ID on reprojection. Occurrences of
+//! one prototype share the prototype's mesh and material assets.
 
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
-use std::time::Instant;
 
 use super::cache::{intern_mesh, intern_mesh_profiled, lookup_source_mesh, remember_source_mesh};
 use super::cache_key::source_mesh_key;
@@ -18,39 +15,45 @@ use super::instancer_dependency::PointInstancerDependencyIndex;
 pub use super::instancer_state::{PointInstancerSelection, PointInstancerStats};
 use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{PrimRoute, RouteCtx};
-use crate::read::geom::{ReadMesh, ReadPointInstancer, read_mesh, read_point_instancer};
+use crate::read::geom::{ReadMesh, ReadPointInstancer, read_point_instancer_at};
 
-/// Resolve schema `invisibleIds` into source-row indices.
-fn invisible_indices(ctx: &RouteCtx, read: &ReadPointInstancer) -> HashSet<usize> {
+mod gpu_route;
+mod prototype;
+mod reconcile;
+pub use prototype::UsdPrototypePart;
+
+/// Resolve composed masks to source rows (upstream f2d474fe, route/instancer.rs).
+fn invisible_indices(ctx: &RouteCtx, read: &ReadPointInstancer) -> anyhow::Result<HashSet<usize>> {
+    use openusd::vt::Value;
     use openusd_schemas::geom::PointInstancerSchema;
-    let hidden_ids = openusd_schemas::geom::PointInstancer::get(ctx.stage, ctx.path.clone())
-        .ok()
-        .flatten()
-        .and_then(|pi| pi.invisible_ids_attr().get::<openusd::vt::Value>().ok())
-        .flatten()
-        .map(|value| match value {
-            openusd::vt::Value::Int64Vec(values) => values,
-            openusd::vt::Value::IntVec(values) => values.into_iter().map(i64::from).collect(),
-            _ => Vec::new(),
-        })
-        .unwrap_or_default();
-
-    if let Some(ids) = &read.ids {
-        return ids
-            .iter()
-            .enumerate()
-            .filter_map(|(index, id)| hidden_ids.contains(id).then_some(index))
-            .collect();
+    let mut hidden_ids = HashSet::<i64>::default();
+    let prim = ctx.stage.prim(ctx.path.clone())?;
+    match prim.metadata::<Value>("inactiveIds")? {
+        Some(Value::Int64ListOp(op)) if op.is_explicit() => {
+            hidden_ids.extend(op.explicit_items().iter().copied());
+        }
+        None => {}
+        _ => anyhow::bail!("invalid composed inactiveIds metadata"),
     }
-    hidden_ids
-        .into_iter()
-        .filter_map(|id| usize::try_from(id).ok())
-        .filter(|&index| index < read.positions.len())
-        .collect()
+    if let Some(instancer) =
+        openusd_schemas::geom::PointInstancer::get(ctx.stage, ctx.path.clone())?
+    {
+        let attr = instancer.invisible_ids_attr();
+        let mask = ctx.time.map_or_else(
+            || attr.get::<Value>(),
+            |time| attr.get_at::<Value>(openusd::usd::TimeCode::new(time)),
+        )?;
+        match mask {
+            Some(Value::Int64Vec(values)) => hidden_ids.extend(values),
+            Some(Value::IntVec(values)) => hidden_ids.extend(values.into_iter().map(i64::from)),
+            None => {}
+            _ => anyhow::bail!("invalid invisibleIds array"),
+        }
+    }
+    Ok((0..read.positions.len())
+        .filter(|&row| hidden_ids.contains(&PointInstancerRoute::logical_id(read, row)))
+        .collect())
 }
-
-/// A baked prototype's shared render handles.
-type ProtoHandles = (Handle<Mesh>, Handle<StandardMaterial>);
 
 /// Marker on entities spawned for a PointInstancer instance.
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -71,6 +74,24 @@ pub struct UsdInstanceId {
     pub prototype_index: u32,
 }
 
+/// Logical occurrence metadata shared by renderer and viewport adapters.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct UsdPointOccurrence {
+    pub instancer: std::sync::Arc<str>,
+    pub logical_id: i64,
+    pub authored: bool,
+    /// Zero for initial load, otherwise the projection that admitted this row.
+    pub incarnation: u64,
+    pub masked: bool,
+}
+
+/// Bounding volume of visible prototype parts in occurrence-local space.
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct UsdOccurrenceBounds {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
 /// Maps a `PointInstancer` prim to per-instance child entities.
 pub struct PointInstancerRoute;
 
@@ -79,7 +100,7 @@ fn instance_transform(read: &ReadPointInstancer, i: usize) -> Transform {
     let mut xf = Transform::from_translation(Vec3::from_array(t));
     if let Some(o) = read.orientations.get(i) {
         // read_quat_array yields [w, x, y, z]; bevy is xyzw.
-        xf.rotation = Quat::from_xyzw(o[1], o[2], o[3], o[0]);
+        xf.rotation = Quat::from_xyzw(o[1], o[2], o[3], o[0]).normalize();
     }
     if let Some(s) = read.scales.get(i) {
         xf.scale = Vec3::from_array(*s);
@@ -88,23 +109,6 @@ fn instance_transform(read: &ReadPointInstancer, i: usize) -> Transform {
 }
 
 impl PointInstancerRoute {
-    /// Despawn instance children this route spawned on a previous project, so a
-    /// reproject doesn't stack duplicate batches.
-    fn clear_instances(world: &mut World, entity: Entity) -> usize {
-        let existing: Vec<Entity> = world
-            .get::<Children>(entity)
-            .map(|c| c.iter().collect())
-            .unwrap_or_default();
-        let mut despawned = 0;
-        for child in existing {
-            if world.get::<UsdInstance>(child).is_some() {
-                world.entity_mut(child).despawn();
-                despawned += 1;
-            }
-        }
-        despawned
-    }
-
     fn record_stats(world: &mut World, update: impl FnOnce(&mut PointInstancerStats)) {
         if let Some(mut stats) = world.get_resource_mut::<PointInstancerStats>() {
             update(&mut stats);
@@ -124,6 +128,7 @@ impl PointInstancerRoute {
         world: &mut World,
         entity: Entity,
     ) -> Option<usize> {
+        let gpu = crate::route::gpu_instancing::has_draws(world, entity);
         let children: Vec<Entity> = world
             .get::<Children>(entity)
             .map(|children| children.iter().collect())
@@ -147,39 +152,44 @@ impl PointInstancerRoute {
             .enumerate()
             .filter(|(index, _)| !invisible.contains(index))
             .count();
-        if visible_count != by_logical_id.len() {
+        if read.positions.len() != by_logical_id.len() {
             return None;
         }
 
-        let mut updates = Vec::with_capacity(visible_count);
-        for (source_index, _) in read.positions.iter().enumerate() {
-            if invisible.contains(&source_index) {
-                continue;
-            }
+        let mut updates = Vec::with_capacity(read.positions.len());
+        for source_index in 0..read.positions.len() {
             let logical_id = Self::logical_id(read, source_index);
             let (child, prototype_index) = by_logical_id.get(&logical_id).copied()?;
-            let next_prototype = read
-                .proto_indices
-                .get(source_index)
-                .and_then(|index| u32::try_from(*index).ok())
-                .unwrap_or(0);
-            if prototype_index != next_prototype {
+            if prototype_index != read.proto_indices[source_index] as u32
+                || world.get::<UsdInstanceId>(child)?.source_index != source_index as u32
+                || (world.get::<Visibility>(child) == Some(&Visibility::Hidden))
+                    != invisible.contains(&source_index)
+            {
                 return None;
             }
-            updates.push((
-                child,
-                UsdInstanceId {
-                    logical_id,
-                    source_index: source_index as u32,
-                    prototype_index,
-                },
-                instance_transform(read, source_index),
-            ));
+            let transform = instance_transform(read, source_index);
+            if gpu && !invisible.contains(&source_index) && transform.scale.min_element() <= 1e-6 {
+                return None;
+            }
+            if world.get::<Transform>(child) != Some(&transform) {
+                updates.push((child, logical_id, transform));
+            }
         }
 
-        for (child, instance_id, transform) in updates {
-            world.entity_mut(child).insert((instance_id, transform));
+        if updates.is_empty() {
+            return Some(visible_count);
         }
+        if gpu {
+            let changed = updates
+                .iter()
+                .map(|(_, id, transform)| (*id, *transform))
+                .collect();
+            crate::route::gpu_instancing::patch_transforms(world, entity, &changed);
+        }
+        for (child, _, transform) in updates {
+            world.entity_mut(child).insert(transform);
+        }
+        reconcile::sync_instancer_extent(world, entity);
         Some(visible_count)
     }
 }
@@ -190,73 +200,39 @@ impl PrimRoute for PointInstancerRoute {
     }
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
-        let Ok(Some(read)) = read_point_instancer(ctx.stage, ctx.path) else {
-            return;
+        let read_validated = || {
+            let Some(read) = read_point_instancer_at(ctx.stage, ctx.path, ctx.time)? else {
+                anyhow::bail!("positions or protoIndices are unavailable");
+            };
+            reconcile::validate(&read).map_err(anyhow::Error::msg)?;
+            let invisible = invisible_indices(ctx, &read)?;
+            Ok::<_, anyhow::Error>((read, invisible))
         };
-        let instance_despawns = Self::clear_instances(world, entity);
-        let prototype_roots = read
+        let (read, invisible) = match read_validated() {
+            Ok(data) => data,
+            Err(reason) => {
+                bevy::log::warn!(target: "usd_bevy::route::instancer", "{}: {reason}", ctx.prim_str());
+                return;
+            }
+        };
+        let mut prototype_roots = read
             .prototypes
             .iter()
             .map(|prototype| prototype.as_str().to_string())
             .collect::<Vec<_>>();
+        let totals = reconcile::apply(ctx, world, entity, &read, &invisible);
+        prototype_roots.extend(totals.prototype_dependencies);
         world.resource_scope(
             |world, mut dependencies: Mut<PointInstancerDependencyIndex>| {
                 let mut paths = world.resource_mut::<crate::live::PathStore>();
                 dependencies.replace_instancer(&mut paths, ctx.prim_str(), prototype_roots);
             },
         );
-
-        // Honor `invisibleIds` (read through the geom schema): those instances
-        // are culled entirely.
-        let invisible = invisible_indices(ctx, &read);
-
-        let have_assets = world.get_resource::<Assets<Mesh>>().is_some()
-            && world.get_resource::<Assets<StandardMaterial>>().is_some();
-
-        // Bake each referenced prototype's mesh once; share the handles.
-        let mut proto_cache: HashMap<usize, Option<ProtoHandles>> = HashMap::default();
-
-        let mut instance_spawns = 0;
-        for i in 0..read.positions.len() {
-            if invisible.contains(&i) {
-                continue;
-            }
-            let xf = instance_transform(&read, i);
-            let proto_idx = read
-                .proto_indices
-                .get(i)
-                .and_then(|index| usize::try_from(*index).ok())
-                .unwrap_or(0);
-
-            let handles = if have_assets {
-                proto_cache
-                    .entry(proto_idx)
-                    .or_insert_with(|| bake_prototype(ctx, world, &read, proto_idx))
-                    .clone()
-            } else {
-                None
-            };
-
-            let mut e = world.spawn((
-                UsdInstance,
-                UsdInstanceId {
-                    logical_id: Self::logical_id(&read, i),
-                    source_index: i as u32,
-                    prototype_index: proto_idx as u32,
-                },
-                xf,
-                Visibility::default(),
-                ChildOf(entity),
-            ));
-            if let Some((mesh, material)) = handles {
-                e.insert((Mesh3d(mesh), MeshMaterial3d(material)));
-            }
-            instance_spawns += 1;
-        }
         Self::record_stats(world, |stats| {
             stats.full_projects += 1;
-            stats.instance_spawns += instance_spawns;
-            stats.instance_despawns += instance_despawns as u64;
+            stats.instance_spawns += totals.spawned;
+            stats.instance_despawns += totals.despawned;
+            stats.transform_updates += totals.reused;
         });
     }
 
@@ -265,8 +241,11 @@ impl PrimRoute for PointInstancerRoute {
             && changed
                 .iter()
                 .all(|property| matches!(*property, "positions" | "orientations" | "scales"));
-        if transform_only && let Ok(Some(read)) = read_point_instancer(ctx.stage, ctx.path) {
-            let invisible = invisible_indices(ctx, &read);
+        if transform_only
+            && let Ok(Some(read)) = read_point_instancer_at(ctx.stage, ctx.path, ctx.time)
+            && reconcile::validate(&read).is_ok()
+            && let Ok(invisible) = invisible_indices(ctx, &read)
+        {
             if let Some(updated) = Self::patch_transforms(&read, &invisible, world, entity) {
                 Self::record_stats(world, |stats| {
                     stats.sparse_transform_patches += 1;
@@ -279,50 +258,15 @@ impl PrimRoute for PointInstancerRoute {
     }
 }
 
-/// Find the first renderable mesh in a prototype subtree.
-///
-/// USD PointInstancer relationships commonly target an Xform prototype whose
-/// mesh is a child, rather than targeting a Mesh directly. The current Bevy
-/// instance representation carries one mesh handle per logical instance, so a
-/// prototype with multiple mesh children is intentionally left for a future
-/// multi-part representation instead of silently drawing only one part.
-fn read_prototype_mesh(
-    stage: &openusd::usd::Stage,
-    root: &openusd::sdf::Path,
-) -> Option<(openusd::sdf::Path, ReadMesh)> {
-    if let Ok(Some(mesh)) = read_mesh(stage, root) {
-        return Some((root.clone(), mesh));
-    }
-    let children = stage.prim(root.clone()).ok()?.children().ok()?;
-    let mut result = None;
-    for child in children {
-        if let Some(found) = read_prototype_mesh(stage, child.path()) {
-            if result.is_some() {
-                return None;
-            }
-            result = Some(found);
-        }
-    }
-    result
-}
-
-/// Bake the prototype at `proto_idx` into a shared `(Mesh, Material)`. Returns
-/// `None` if the prototype path does not resolve to exactly one readable mesh.
-fn bake_prototype(
-    ctx: &RouteCtx,
+fn bake_mesh(
     world: &mut World,
-    read: &ReadPointInstancer,
-    proto_idx: usize,
-) -> Option<ProtoHandles> {
-    let proto_root = read.prototypes.get(proto_idx)?;
-    let (proto_path, mesh_read) = read_prototype_mesh(ctx.stage, proto_root)?;
+    proto_path: &openusd::sdf::Path,
+    mesh_read: ReadMesh,
+    read_mesh_ms: f64,
+) -> Handle<Mesh> {
     let profile_enabled = world
         .get_resource::<GeometryProfile>()
         .is_some_and(|profile| profile.enabled);
-    let read_start = profile_enabled.then(Instant::now);
-    let read_mesh_ms = read_start
-        .map(|started| started.elapsed().as_secs_f64() * 1000.0)
-        .unwrap_or_default();
     let source_key = world
         .get_resource::<super::cache::ProjectionCache>()
         .and_then(|_| source_mesh_key(&mesh_read));
@@ -362,6 +306,5 @@ fn bake_prototype(
             source_cache_hit,
         );
     }
-    let material = super::fallback_material(world);
-    Some((mesh_handle, material))
+    mesh_handle
 }

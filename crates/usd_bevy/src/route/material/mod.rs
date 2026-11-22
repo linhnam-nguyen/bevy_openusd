@@ -15,8 +15,9 @@ mod texture_cache;
 pub use archive::archive_paths_for_stage;
 pub use builder::MaterialRoute;
 pub(crate) use consumers::MaterialConsumerIndex;
-pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
 pub(crate) use material_cache::InitialMaterialMemo;
+pub(in crate::route) use material_cache::intern_material;
+pub use material_cache::{MaterialCacheStats, UsdMaterialCache};
 pub use provenance::{MaterialProjectionProvenance, MaterialProjectionStatus};
 pub use texture_cache::{TextureCacheKey, TextureCacheStats, UsdTextureCache};
 

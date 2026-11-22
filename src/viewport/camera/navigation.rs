@@ -1,8 +1,8 @@
 //! Scene framing, focus transitions, and authored-camera mounting.
 
 use bevy::camera::Projection;
-use bevy::prelude::*;
 use bevy::camera_controller::pan_orbit_camera::controller::component::PanOrbitCamera;
+use bevy::prelude::*;
 use usd_bevy::{Projection as UsdProjection, UsdCamera, UsdPrimRef};
 
 use super::{
@@ -17,11 +17,16 @@ use crate::viewport::scene::visualization::SceneExtent;
 /// Frames the arcball camera around the scene after its first materialization.
 pub(crate) fn fit_camera_once(
     extent: Res<SceneExtent>,
-    mut cameras: Query<(&mut Transform, &mut ArcballCamera, Option<&mut PanOrbitCamera>)>,
+    mut cameras: Query<(
+        &mut Transform,
+        &mut ArcballCamera,
+        Option<&mut PanOrbitCamera>,
+    )>,
     mut done: Local<bool>,
     mut wait_ticks: Local<u32>,
     mut last_diag: Local<f32>,
     prims: Query<(), With<UsdPrimRef>>,
+    progressive: Option<Res<usd_bevy::ProgressiveProjectionState>>,
 ) {
     if *done || extent.count == 0 || prims.iter().count() == 0 {
         return;
@@ -35,6 +40,16 @@ pub(crate) fn fit_camera_once(
     // origins alone — the camera zooms in to a point and the actual
     // mesh sits behind the camera.
     let diag = extent.diag();
+    if diag < 0.05
+        && progressive.as_ref().is_some_and(|state| {
+            matches!(
+                state.readiness(),
+                usd_bevy::ProjectionReadiness::Planning | usd_bevy::ProjectionReadiness::Projecting
+            )
+        })
+    {
+        return;
+    }
     *wait_ticks += 1;
     if *wait_ticks < 60 && diag > *last_diag * 1.05 {
         // Extent is still growing — keep waiting.
@@ -64,6 +79,11 @@ pub(crate) fn fit_camera_once(
         "camera framed on scene: focus={:?}, diag={:.2} m (effective={:.2} m), {} prims (waited {} ticks)",
         cam.focus, diag, effective, extent.count, *wait_ticks
     );
+    debug!(
+        min = ?extent.min,
+        max = ?extent.max,
+        "world bounds used for initial camera framing"
+    );
 }
 
 /// Lerp the arcball's focus + distance toward the last-requested
@@ -72,7 +92,11 @@ pub(crate) fn fit_camera_once(
 pub(crate) fn apply_fly_to(
     time: Res<Time>,
     mut fly: ResMut<FlyTo>,
-    mut cameras: Query<(&mut Transform, &mut ArcballCamera, Option<&mut PanOrbitCamera>)>,
+    mut cameras: Query<(
+        &mut Transform,
+        &mut ArcballCamera,
+        Option<&mut PanOrbitCamera>,
+    )>,
     gate: crate::viewport::input::ViewerInteractionGate,
 ) {
     if fly.remaining <= 0.0 {

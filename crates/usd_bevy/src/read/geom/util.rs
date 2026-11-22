@@ -1,6 +1,6 @@
-use openusd::sdf::{Path};
-use openusd::vt::Value;
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 
 use super::mesh::Interpolation;
 
@@ -131,22 +131,6 @@ pub(super) fn read_int64_array(
     Ok(match attr_default(stage, prim, name)? {
         Some(Value::Int64Vec(v)) => Some(v),
         Some(Value::IntVec(v)) => Some(v.into_iter().map(|i| i as i64).collect()),
-        _ => None,
-    })
-}
-
-pub(super) fn read_quat_array(
-    stage: &Stage,
-    prim: &Path,
-    name: &str,
-) -> anyhow::Result<Option<Vec<[f32; 4]>>> {
-    Ok(match attr_default(stage, prim, name)? {
-        Some(Value::QuatfVec(v)) => Some(v.into_iter().map(|q| [q.w, q.x, q.y, q.z]).collect()),
-        Some(Value::QuatdVec(v)) => Some(
-            v.into_iter()
-                .map(|q| [q.w as f32, q.x as f32, q.y as f32, q.z as f32])
-                .collect(),
-        ),
         _ => None,
     })
 }

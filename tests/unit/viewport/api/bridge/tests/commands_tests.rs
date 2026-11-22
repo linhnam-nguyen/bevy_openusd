@@ -341,5 +341,19 @@ mod tests {
             value,
             Some(openusd::vt::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
         ));
+
+        let undo_request = app.world_mut().resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::UndoEditor);
+        app.update();
+        let undo_event = app.world_mut().resource_mut::<ViewportEventOutbox>()
+            .pop().expect("undo should publish an event");
+        assert_eq!(undo_event.request_id.as_deref(), Some(undo_request.as_str()));
+        assert!(matches!(undo_event.event, ViewportEvent::EditorCommandCompleted {
+            operation: EditorOperation::Undo, ..
+        }));
+        let live = app.world().get_non_send::<usd_bevy::LiveStage>().expect("live stage");
+        let size = live.stage.prim("/World/Box").unwrap().attribute("size");
+        assert!(!matches!(size.get::<openusd::vt::Value>().unwrap(),
+            Some(openusd::vt::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON));
     }
 }

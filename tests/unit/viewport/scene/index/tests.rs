@@ -168,6 +168,7 @@ fn projection_only_children_churn_does_not_rebuild_the_scene_index() {
         .init_resource::<CurrentHierarchyProjection>()
         .init_resource::<Spawned>()
         .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
 
     let root = app
         .world_mut()
@@ -179,8 +180,43 @@ fn projection_only_children_churn_does_not_rebuild_the_scene_index() {
     let rebuilds_after_prim = app.world().resource::<SceneAnchorIndex>().rebuild_count();
     assert_eq!(rebuilds_after_prim, 0);
 
-    app.world_mut().spawn(ChildOf(root));
+    let mut occurrence = usd_bevy::UsdPointOccurrence {
+        instancer: "/World".into(),
+        logical_id: -7,
+        authored: true,
+        incarnation: 0,
+        masked: false,
+    };
+    let instance = app
+        .world_mut()
+        .spawn((ChildOf(root), occurrence.clone()))
+        .id();
+    app.world_mut().spawn(ChildOf(instance));
     app.update();
+
+    let index = app.world().resource::<SceneAnchorIndex>();
+    let anchor = index
+        .anchor_for(instance)
+        .expect("occurrence anchor created");
+    assert_eq!(index.resolve(&anchor), Some(instance));
+    assert_eq!(index.children_page(None, 0, 20).total, 1);
+    assert_ne!(anchor, SceneAnchor::active_session("/World"));
+    occurrence.masked = true;
+    app.world_mut()
+        .entity_mut(instance)
+        .insert(occurrence.clone());
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.anchor_for(instance), Some(anchor.clone()));
+    assert_eq!(
+        index.visibility_for_anchor(&anchor),
+        HierarchyVisibilityState::Hidden
+    );
+    app.world_mut().despawn(instance);
+    occurrence.incarnation = 1;
+    let replacement = app.world_mut().spawn((ChildOf(root), occurrence)).id();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.resolve(&anchor), None);
+    assert_ne!(index.anchor_for(replacement), Some(anchor));
 
     assert_eq!(
         app.world().resource::<SceneAnchorIndex>().rebuild_count(),

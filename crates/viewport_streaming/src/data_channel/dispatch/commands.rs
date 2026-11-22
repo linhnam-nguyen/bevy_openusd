@@ -53,7 +53,7 @@ pub(super) fn handle_authenticated_command(
             let _ = command;
         }
         ClientCommand::Input(command) => {
-            if let Err(error) = state.interface.submit_input(command) {
+            if let Err(error) = state.interface.submit_reliable_input(command) {
                 send_command_rejection(
                     channel,
                     state,

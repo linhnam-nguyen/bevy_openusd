@@ -63,6 +63,7 @@ impl Plugin for OverlaysPlugin {
             .init_resource::<SelectionPresentationPolicy>()
             .init_resource::<CoarseSelectionProxyState>()
             .init_resource::<HoveredTarget>()
+            .init_resource::<crate::viewport::selection::PointClick>()
             .init_resource::<HoverPickStats>()
             .init_resource::<SectionBoxState>()
             .init_resource::<SelectedRenderableProjection>()
@@ -82,6 +83,7 @@ impl Plugin for OverlaysPlugin {
             .add_systems(
                 Update,
                 (
+                    sync_point_instancing_policy,
                     sync_selected_renderable_projection,
                     sync_coarse_selection_proxy,
                     sync_gizmo_size,
@@ -112,7 +114,11 @@ impl Plugin for OverlaysPlugin {
                     apply_render_mode,
                     refresh_classification_color_plan,
                     sync_classification_color_overrides,
-                    update_hover_target,
+                    (
+                        update_hover_target,
+                        crate::viewport::selection::select_point_click,
+                    )
+                        .chain(),
                     sync_selection_color_overrides,
                     sync_section_box_clipping,
                     apply_wireframe_toggle,
@@ -129,6 +135,48 @@ impl Plugin for OverlaysPlugin {
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
     }
+}
+
+fn sync_point_instancing_policy(world: &mut World, mut last: Local<Option<(u64, u64, bool)>>) {
+    if !world.contains_resource::<usd_bevy::route::gpu_instancing::UsdGpuInstancing>() {
+        return;
+    }
+    let renderer = &world.resource::<DisplayToggles>().renderer;
+    let compatible = renderer.render_mode == viewport_protocol::RenderMode::Shaded
+        && !renderer.edges
+        && world
+            .resource::<ClassificationColorPlan>()
+            .intent
+            .as_ref()
+            .is_none_or(|intent| {
+                intent.source == viewport_protocol::ClassificationColorSource::None
+            })
+        && world
+            .get_resource::<crate::viewport::semantic::SemanticDiffState>()
+            .is_none_or(|diff| diff.stage_diff().is_none())
+        && !world
+            .resource::<ViewerSettingsState>()
+            .section_box_enabled();
+    let selection = world.resource::<crate::viewport::selection::SelectedTargets>();
+    let index = world.resource::<crate::viewport::scene::SceneAnchorIndex>();
+    let revision = (selection.revision(), index.revision(), compatible);
+    if *last == Some(revision) {
+        return;
+    }
+    *last = Some(revision);
+    let mut points = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for anchor in &selection.0.targets {
+        if let Some(key) = index.point_presentation_key(anchor) {
+            points
+                .entry(anchor.prim_path.clone())
+                .or_default()
+                .push(key);
+        }
+    }
+    for group in points.values_mut() {
+        group.sort_unstable();
+    }
+    usd_bevy::live::sync_point_instancing_presentation(world, compatible, points);
 }
 
 /// Applies the user's Selection-panel gizmo size level to both ordinary gizmo

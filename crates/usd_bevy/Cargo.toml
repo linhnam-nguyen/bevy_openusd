@@ -8,6 +8,7 @@ description = "Bevy plugin: live OpenUSD stage projection, routing, authoring, a
 repository = "https://github.com/bresilla/bevy_openusd"
 
 [dependencies]
+bytemuck = { version = "1", features = ["derive"] }
 openusd = { workspace = true }
 openusd-schemas = { workspace = true, features = [
     "geom",

@@ -1,9 +1,8 @@
 use openusd::sdf::Path;
-use openusd::usd::Stage;
+use openusd::usd::{Stage, TimeCode};
+use openusd::vt::Value;
 
-use super::util::{
-    read_float_array, read_int_array, read_int64_array, read_quat_array, read_vec3f_array,
-};
+use super::util::{read_float_array, read_int_array, read_int64_array, read_vec3f_array};
 
 // ── PointInstancer ──────────────────────────────────────────────────────
 
@@ -23,29 +22,80 @@ pub fn read_point_instancer(
     stage: &Stage,
     prim: &Path,
 ) -> anyhow::Result<Option<ReadPointInstancer>> {
-    let Some(positions) = read_vec3f_array(stage, prim, "positions")? else {
+    read_point_instancer_at(stage, prim, None)
+}
+
+/// Sample the point-instancer arrays together at one stage time.
+pub fn read_point_instancer_at(
+    stage: &Stage,
+    prim: &Path,
+    time: Option<f64>,
+) -> anyhow::Result<Option<ReadPointInstancer>> {
+    let owner = stage.prim(prim.clone())?;
+    let value = |name| {
+        let attribute = owner.attribute(name);
+        let default = || {
+            let value = attribute.get::<Value>()?;
+            if value
+                .as_ref()
+                .is_some_and(|value| value.array_len() != Some(0))
+            {
+                return Ok(value);
+            }
+            // Some caches author an empty default as a placeholder. Preserve
+            // the original first-sample fallback, while allowing an empty
+            // table with no samples to remove all rows.
+            Ok(attribute
+                .time_samples()?
+                .and_then(|samples| samples.into_iter().next().map(|(_, sampled)| sampled))
+                .or(value))
+        };
+        time.map_or_else(default, |time| {
+            attribute.get_at::<Value>(TimeCode::new(time))
+        })
+    };
+    let vec3f = |name| match value(name)? {
+        Some(Value::Vec3fVec(values)) => {
+            Ok(Some(values.into_iter().map(|v| [v.x, v.y, v.z]).collect()))
+        }
+        Some(Value::Vec3dVec(values)) => Ok(Some(
+            values
+                .into_iter()
+                .map(|v| [v.x as f32, v.y as f32, v.z as f32])
+                .collect(),
+        )),
+        None => Ok(None),
+        _ => anyhow::bail!("invalid {name} array"),
+    };
+    let Some(positions) = vec3f("positions")? else {
         return Ok(None);
     };
-    let Some(proto_indices) = read_int_array(stage, prim, "protoIndices")? else {
-        return Ok(None);
+    let proto_indices = match value("protoIndices")? {
+        Some(Value::IntVec(values)) => values,
+        None => return Ok(None),
+        _ => anyhow::bail!("invalid protoIndices array"),
     };
-    let prototypes = openusd_schemas::geom::PointInstancer::get(stage, prim.clone())
-        .ok()
-        .flatten()
-        .and_then(|pi| {
-            use openusd_schemas::geom::PointInstancerSchema;
-            pi.prototypes_rel().targets().ok()
-        })
-        .or_else(|| {
-            stage
-                .prim(prim.clone())
-                .ok()
-                .and_then(|p| p.relationship("prototypes").targets().ok())
-        })
-        .unwrap_or_default();
-    let orientations = read_quat_array(stage, prim, "orientations")?.unwrap_or_default();
-    let scales = read_vec3f_array(stage, prim, "scales")?.unwrap_or_default();
-    let ids = read_int64_array(stage, prim, "ids")?;
+    let prototypes = owner.relationship("prototypes").targets()?;
+    let orientations = match value("orientations")? {
+        Some(Value::QuathVec(values)) => values
+            .into_iter()
+            .map(|q| [q.w.to_f32(), q.x.to_f32(), q.y.to_f32(), q.z.to_f32()])
+            .collect(),
+        Some(Value::QuatfVec(values)) => values.into_iter().map(|q| [q.w, q.x, q.y, q.z]).collect(),
+        Some(Value::QuatdVec(values)) => values
+            .into_iter()
+            .map(|q| [q.w as f32, q.x as f32, q.y as f32, q.z as f32])
+            .collect(),
+        None => Vec::new(),
+        _ => anyhow::bail!("invalid orientations array"),
+    };
+    let scales = vec3f("scales")?.unwrap_or_default();
+    let ids = match value("ids")? {
+        Some(Value::Int64Vec(values)) => Some(values),
+        Some(Value::IntVec(values)) => Some(values.into_iter().map(i64::from).collect()),
+        None => None,
+        _ => anyhow::bail!("invalid ids array"),
+    };
     Ok(Some(ReadPointInstancer {
         prototypes,
         positions,

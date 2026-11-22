@@ -26,6 +26,7 @@ pub use author::{TransformHistory, author_transform, current_transform};
 pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatch};
 pub use index::PrimEntities;
 pub use native_instance_dependency::NativeInstanceDependencyIndex;
+pub(crate) use native_instance_dependency::native_proxy_sources;
 pub use path::{
     PathId, PathStore, is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of,
     property_of, validate_prim_path,
@@ -52,6 +53,84 @@ use system::{
     AppliedPurposes, apply_display_purposes_system, drain_stage_changes_system,
     reproject_from_batch_system,
 };
+
+/// Reconcile existing PointInstancers when the current presentation policy
+/// switches between packed raster and the regular entity representation.
+pub fn sync_point_instancing_presentation(
+    world: &mut World,
+    compatible: bool,
+    selected: std::collections::BTreeMap<String, Vec<(i64, u64)>>,
+) {
+    use crate::route::gpu_instancing::{
+        PROMOTION_BUDGET, PointPresentations, SelectionOnlyPointProjection, UsdGpuInstancing,
+    };
+    use crate::route::instancer::PointInstancerRoute;
+    use crate::route::instancer_dependency::PointInstancerDependencyIndex;
+    use crate::route::{PrimRoute, RouteCtx};
+
+    let Some(mut policy) = world.get_resource_mut::<UsdGpuInstancing>() else {
+        return;
+    };
+    let compatibility_changed = policy.presentation_compatible != compatible;
+    policy.presentation_compatible = compatible;
+    let over_budget = selected.values().map(Vec::len).sum::<usize>() > PROMOTION_BUDGET;
+    let previous = world.resource::<PointPresentations>();
+    let next = PointPresentations {
+        selected,
+        over_budget,
+    };
+    if !compatibility_changed && *previous == next {
+        return;
+    }
+    let selection_only = !compatibility_changed && !previous.over_budget && !next.over_budget;
+    let changed_paths: std::collections::HashSet<_> = previous
+        .selected
+        .keys()
+        .chain(next.selected.keys())
+        .filter(|path| {
+            previous.over_budget != next.over_budget
+                || previous.selected.get(*path) != next.selected.get(*path)
+        })
+        .cloned()
+        .collect();
+    world.insert_resource(next);
+    let Some(stage) = world
+        .get_non_send::<LiveStage>()
+        .map(LiveStage::projection_stage)
+    else {
+        return;
+    };
+    let paths = world.resource::<PathStore>();
+    let entities = world.resource::<PrimEntities>();
+    let targets: Vec<_> = world
+        .resource::<PointInstancerDependencyIndex>()
+        .instancers()
+        .filter_map(|id| {
+            let resolved = paths.path(id)?;
+            if !compatibility_changed && !changed_paths.contains(resolved) {
+                return None;
+            }
+            let path = openusd::sdf::path(resolved).ok()?;
+            Some((path, entities.entity_id(id)?))
+        })
+        .collect();
+    let time = world.get_resource::<StageTime>().map(|time| time.current);
+    bevy::log::info!(
+        target: "usd_bevy::route::gpu_instancing",
+        compatible,
+        instancers = targets.len(),
+        "reconciling point-instancer presentation for viewport settings"
+    );
+    if selection_only {
+        world.insert_resource(SelectionOnlyPointProjection);
+    }
+    for (path, entity) in targets {
+        PointInstancerRoute.project(&RouteCtx::at(&stage, &path, time), world, entity);
+    }
+    if selection_only {
+        world.remove_resource::<SelectionOnlyPointProjection>();
+    }
+}
 
 /// Registers the `PrimEntities` bimap and the per-frame reprojection system.
 /// Insert a `LiveStage` non-send resource to begin a live session.

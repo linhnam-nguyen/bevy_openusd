@@ -62,6 +62,16 @@ pub(in crate::viewport) struct SectionClipExtension {
     clip: SectionClipUniform,
 }
 
+impl SectionClipExtension {
+    pub(in crate::viewport) fn keeps_world_point(&self, point: Vec3) -> bool {
+        if self.clip.enabled == 0 {
+            return true;
+        }
+        let point = self.clip.world_to_box.transform_point3(point);
+        point.cmpge(Vec3::splat(-0.5)).all() && point.cmple(Vec3::splat(0.5)).all()
+    }
+}
+
 pub(in crate::viewport) type SectionClipMaterial =
     ExtendedMaterial<StandardMaterial, SectionClipExtension>;
 
@@ -89,6 +99,7 @@ pub(in crate::viewport) struct SectionClipUnderlyingMaterial(
 #[derive(Resource, Debug, Default)]
 pub(in crate::viewport) struct SectionClipProjectionState {
     active_entities: HashSet<Entity>,
+    pick_revision: u64,
     selected_meshes: HashSet<Entity>,
     hovered_meshes: HashSet<Entity>,
     material_cache: HashMap<AssetId<StandardMaterial>, Handle<SectionClipMaterial>>,
@@ -99,6 +110,12 @@ pub(in crate::viewport) struct SectionClipProjectionState {
     last_scene_revision: Option<u64>,
     last_projection_generation: Option<u64>,
     last_presentation: Option<SectionClipPresentationKey>,
+}
+
+impl SectionClipProjectionState {
+    pub(in crate::viewport) fn pick_revision(&self) -> u64 {
+        self.pick_revision
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

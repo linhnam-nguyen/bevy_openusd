@@ -25,7 +25,8 @@ pub use mesh::{
     read_mesh_extent,
 };
 pub use points::{
-    ReadPointInstancer, ReadPoints, ReadTetMesh, read_point_instancer, read_points, read_tetmesh,
+    ReadPointInstancer, ReadPoints, ReadTetMesh, read_point_instancer, read_point_instancer_at,
+    read_points, read_tetmesh,
 };
 pub use shapes::{
     Axis, ReadCylinder, read_capsule, read_cube_size, read_cylinder, read_double_attr,

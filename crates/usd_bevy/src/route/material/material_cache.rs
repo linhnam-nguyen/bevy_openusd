@@ -73,7 +73,7 @@ impl UsdMaterialCache {
     }
 }
 
-pub(super) fn intern_material(
+pub(in crate::route) fn intern_material(
     world: &mut World,
     binding: &str,
     descriptor: &ReadPreviewMaterial,

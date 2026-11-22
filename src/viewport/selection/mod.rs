@@ -19,7 +19,9 @@ pub(in crate::viewport) use color::{
     SelectionColorOverrideState, color_from_rgb8, init_selection_color_material,
     sync_selection_color_overrides,
 };
-pub(in crate::viewport) use hover::{HoverPickStats, HoveredTarget, update_hover_target};
+pub(in crate::viewport) use hover::{
+    HoverPickStats, HoveredTarget, PointClick, select_point_click, update_hover_target,
+};
 pub(in crate::viewport) use outline::{
     SelectionOutline, SelectionOutlineState, collect_mesh_descendants, sync_selection_outlines,
 };

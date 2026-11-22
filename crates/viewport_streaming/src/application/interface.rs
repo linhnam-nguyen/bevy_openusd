@@ -95,6 +95,22 @@ impl RenderServerInterface {
 
     /// Queues reliable input state and keeps only the newest motion packet.
     pub fn submit_input(&self, command: InputCommand) -> Result<(), RenderServerPortError> {
+        self.submit_input_with_policy(command, true)
+    }
+
+    /// Reliable control may carry the event position of the following button edge.
+    pub(crate) fn submit_reliable_input(
+        &self,
+        command: InputCommand,
+    ) -> Result<(), RenderServerPortError> {
+        self.submit_input_with_policy(command, false)
+    }
+
+    fn submit_input_with_policy(
+        &self,
+        command: InputCommand,
+        coalesce_motion: bool,
+    ) -> Result<(), RenderServerPortError> {
         command
             .validate()
             .map_err(|_| RenderServerPortError::InvalidPayload)?;
@@ -103,7 +119,7 @@ impl RenderServerInterface {
             .pending
             .lock()
             .map_err(|_| RenderServerPortError::QueueClosed)?;
-        if let InputCommand::PointerMotion(motion) = command {
+        if coalesce_motion && let InputCommand::PointerMotion(motion) = command {
             if motion.sequence <= pending.last_pointer_sequence {
                 return Ok(());
             }

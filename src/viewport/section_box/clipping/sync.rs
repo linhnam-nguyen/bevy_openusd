@@ -120,6 +120,7 @@ pub(in crate::viewport) fn sync_section_box_clipping(
     let hover_handle = hover_material.as_ref().map(|material| &material.0);
     let uniform_handle = uniform_material.as_ref().map(|material| &material.0);
     let mut deferred_clip_ids = HashSet::new();
+    let previous_active_count = projection.active_entities.len();
     let stale_entities = projection
         .active_entities
         .difference(&desired)
@@ -240,6 +241,12 @@ pub(in crate::viewport) fn sync_section_box_clipping(
         next_active.insert(*entity);
     }
 
+    if previous_active_count != projection.active_entities.len()
+        || projection.active_entities != next_active
+        || (state_revision_changed && !next_active.is_empty())
+    {
+        projection.pick_revision = projection.pick_revision.wrapping_add(1);
+    }
     projection.active_entities = next_active;
     projection.last_targets = Some(state.targets.clone());
     projection.last_hovered_anchor = hovered_target.anchor.clone();

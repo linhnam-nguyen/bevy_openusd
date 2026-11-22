@@ -20,6 +20,7 @@ use crate::viewport::input::{
 pub(super) fn sync_viewport_input(
     egui_ctx: &egui::Context,
     viewport_rect: egui::Rect,
+    viewport_layer: Option<egui::LayerId>,
     world: Option<&mut World>,
     ui_state: &mut MaraHostUiState,
 ) {
@@ -37,14 +38,6 @@ pub(super) fn sync_viewport_input(
             capture.wants_keyboard = true;
         }
         return;
-    }
-
-    let wants_pointer = egui_ctx.egui_wants_pointer_input();
-    let wants_keyboard = egui_ctx.egui_wants_keyboard_input();
-
-    if let Some(mut capture) = world.get_resource_mut::<HostUiInputCapture>() {
-        capture.wants_pointer = wants_pointer;
-        capture.wants_keyboard = wants_keyboard;
     }
 
     let (pointer_pos, primary, secondary, middle, scroll_y, modifiers, focused) =
@@ -66,7 +59,45 @@ pub(super) fn sync_viewport_input(
             )
         });
 
-    let pointer_in_viewport = pointer_pos.is_some_and(|p| viewport_rect.contains(p));
+    // Read egui's ordered raw button events, not only its final primary_down
+    // level. Two events in one host frame must remain two renderer edges.
+    let primary_events: Vec<_> = egui_ctx.input(|input| {
+        input
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers,
+                } => Some((
+                    *pos,
+                    *pressed,
+                    InputModifiers {
+                        shift: modifiers.shift,
+                        control: modifiers.ctrl,
+                        alt: modifiers.alt,
+                        meta: modifiers.mac_cmd || modifiers.command,
+                    },
+                )),
+                _ => None,
+            })
+            .collect()
+    });
+
+    let viewport_owns = |pos| {
+        viewport_rect.contains(pos)
+            && viewport_layer.is_some_and(|layer| egui_ctx.layer_id_at(pos) == Some(layer))
+    };
+    let pointer_in_viewport = pointer_pos.is_some_and(viewport_owns);
+    // The background viewport widget itself uses egui pointer capture.
+    // Only a different topmost layer should prevent viewport input.
+    let wants_pointer = !pointer_in_viewport && egui_ctx.egui_wants_pointer_input();
+    if let Some(mut capture) = world.get_resource_mut::<HostUiInputCapture>() {
+        capture.wants_pointer = wants_pointer;
+        capture.wants_keyboard = egui_ctx.egui_wants_keyboard_input();
+    }
     let any_drag_button = primary || secondary || middle;
     if !wants_pointer && pointer_in_viewport && any_drag_button {
         ui_state.viewport_drag_active = true;
@@ -75,7 +106,8 @@ pub(super) fn sync_viewport_input(
         ui_state.last_viewport_drag_pos = None;
     }
 
-    let can_drive_viewport = !wants_pointer && (pointer_in_viewport || ui_state.viewport_drag_active);
+    let can_drive_viewport =
+        !wants_pointer && (pointer_in_viewport || ui_state.viewport_drag_active);
     let ppp = egui_ctx.pixels_per_point().max(f32::EPSILON);
 
     let mut nav = world.resource_mut::<ViewportNavigationInput>();
@@ -85,6 +117,19 @@ pub(super) fn sync_viewport_input(
         (viewport_rect.width() * ppp).max(1.0),
         (viewport_rect.height() * ppp).max(1.0),
     );
+    nav.modifiers = modifiers;
+    for (pos, pressed, edge_modifiers) in primary_events {
+        // A release outside the viewport is not a click. If the host no
+        // longer owns the pointer, selection's capture/focus gate cancels it.
+        if viewport_owns(pos) {
+            nav.pointer_position = Some(Vec2::new(
+                ((pos.x - viewport_rect.left()) * ppp).clamp(0.0, nav.viewport_size.x),
+                ((pos.y - viewport_rect.top()) * ppp).clamp(0.0, nav.viewport_size.y),
+            ));
+            nav.modifiers = edge_modifiers;
+            nav.record_primary_edge(pressed);
+        }
+    }
     nav.modifiers = modifiers;
 
     if can_drive_viewport {

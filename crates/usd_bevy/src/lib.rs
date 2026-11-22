@@ -43,7 +43,9 @@ pub use route::camera::{Projection, UsdCamera};
 pub use route::coverage::UsdProcedural;
 pub use route::curves::CurvesRoute;
 pub use route::geom::{UsdDisplayName, UsdKind, UsdLocalExtent, UsdPurpose};
-pub use route::instancer::{PointInstancerSelection, PointInstancerStats, UsdInstanceId};
+pub use route::instancer::{
+    PointInstancerSelection, PointInstancerStats, UsdInstanceId, UsdPointOccurrence,
+};
 pub use route::instancer_dependency::PointInstancerDependencyIndex;
 pub use route::physics::{
     UsdCollider, UsdDrives, UsdJoint, UsdLimits, UsdMass, UsdPhysicsJoint, UsdRigidBody,

@@ -9,14 +9,16 @@ use bevy::mesh::{Indices, Mesh, Mesh3d};
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use openusd::gf::Vec3f;
-use openusd::sdf::{Path};
-use openusd::vt::Value;
+use openusd::sdf::Path;
 use openusd::usd::Stage;
+use openusd::vt::Value;
 use serde::Serialize;
 use usd_bevy::read::geom::read_point_instancer;
 use usd_bevy::route::cache::ProjectionCache;
-use usd_bevy::route::instancer::UsdInstance;
-use usd_bevy::{LiveStage, LiveStagePlugin, PointInstancerStats, UsdPlugin};
+use usd_bevy::route::instancer::{PointInstancerRoute, UsdInstance, UsdPrototypePart};
+use usd_bevy::{
+    LiveStage, LiveStagePlugin, PointInstancerStats, PrimRoute, RouteCtx, UsdPlugin, UsdPrimRef,
+};
 
 const FIXTURE: &str = "external/PointInstancedMedCity.usdz";
 const INSTANCER: &str = "/MediterraneanHills/Buildings";
@@ -43,6 +45,12 @@ struct M8C6Artifact {
     instance_spawns: u64,
     instance_despawns: u64,
     transform_updates: u64,
+    warm_keyed_reprojection_ms: Vec<f64>,
+    warm_clear_and_respawn_oracle_ms: Vec<f64>,
+    keyed_reprojection_spawns: u64,
+    keyed_reprojection_despawns: u64,
+    oracle_reprojection_spawns: u64,
+    oracle_reprojection_despawns: u64,
     cache_lookups: u64,
     cache_hits: u64,
     cache_misses: u64,
@@ -86,7 +94,7 @@ fn main_metrics(world: &mut World) -> (usize, usize, usize, usize, usize, usize,
     let ecs_entities = entities.iter(world).count();
     let mut mesh_handles = HashSet::new();
     let mut render_rows =
-        world.query::<(&UsdInstance, &Mesh3d, &MeshMaterial3d<StandardMaterial>)>();
+        world.query::<(&UsdPrototypePart, &Mesh3d, &MeshMaterial3d<StandardMaterial>)>();
     for (_, mesh, _) in render_rows.iter(world) {
         mesh_handles.insert(mesh.0.id());
     }
@@ -179,6 +187,70 @@ fn records_point_instancer_reconcile_profile() {
     let stats = *app.world().resource::<PointInstancerStats>();
     let (_, _, _, _, mesh_assets_after, _, _) = main_metrics(app.world_mut());
 
+    let instancer_path = Path::new(INSTANCER).unwrap();
+    let stage = app
+        .world()
+        .get_non_send::<LiveStage>()
+        .unwrap()
+        .stage
+        .clone();
+    let world = app.world_mut();
+    let instancer = world
+        .query::<(Entity, &UsdPrimRef)>()
+        .iter(world)
+        .find_map(|(entity, prim)| (prim.path == INSTANCER).then_some(entity))
+        .expect("instancer projected");
+    let ctx = RouteCtx::new(&stage, &instancer_path);
+    let route = PointInstancerRoute;
+    let mut keyed = Vec::new();
+    let mut oracle = Vec::new();
+    let mut keyed_churn = (0, 0);
+    let mut oracle_churn = (0, 0);
+    for pair in 0..8 {
+        // Compare the same source arrays and warm assets. The oracle forces
+        // the previous clear-and-respawn lifecycle through today's projector.
+        for clear_first in [pair % 2 == 1, pair % 2 == 0] {
+            *world.resource_mut::<PointInstancerStats>() = PointInstancerStats::default();
+            let started = Instant::now();
+            let cleared = if clear_first {
+                let children: Vec<_> = world
+                    .get::<Children>(instancer)
+                    .unwrap()
+                    .iter()
+                    .filter(|child| world.get::<UsdInstance>(*child).is_some())
+                    .collect();
+                let count = children.len();
+                for child in children {
+                    world.despawn(child);
+                }
+                count as u64
+            } else {
+                0
+            };
+            route.project(&ctx, world, instancer);
+            let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+            let counters = world.resource::<PointInstancerStats>();
+            let churn = (
+                counters.instance_spawns,
+                counters.instance_despawns + cleared,
+            );
+            if pair > 0 {
+                if clear_first {
+                    oracle.push(elapsed);
+                    oracle_churn = churn;
+                } else {
+                    keyed.push(elapsed);
+                    keyed_churn = churn;
+                }
+            }
+        }
+    }
+    assert_eq!(keyed_churn, (0, 0));
+    assert_eq!(
+        oracle_churn,
+        (logical_instance_count as u64, logical_instance_count as u64)
+    );
+
     let cache = app.world().resource::<ProjectionCache>().stats();
     let artifact = M8C6Artifact {
         schema: "usdhub.m8.c6.instancing-freeze.v2",
@@ -201,6 +273,12 @@ fn records_point_instancer_reconcile_profile() {
         instance_spawns: stats.instance_spawns,
         instance_despawns: stats.instance_despawns,
         transform_updates: stats.transform_updates,
+        warm_keyed_reprojection_ms: keyed,
+        warm_clear_and_respawn_oracle_ms: oracle,
+        keyed_reprojection_spawns: keyed_churn.0,
+        keyed_reprojection_despawns: keyed_churn.1,
+        oracle_reprojection_spawns: oracle_churn.0,
+        oracle_reprojection_despawns: oracle_churn.1,
         cache_lookups: cache.lookups,
         cache_hits: cache.hits,
         cache_misses: cache.misses,

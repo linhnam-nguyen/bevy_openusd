@@ -25,6 +25,7 @@ pub mod curves;
 pub mod dome;
 mod fallback_material;
 pub mod geom;
+pub mod gpu_instancing;
 pub mod instancer;
 pub mod instancer_dependency;
 mod instancer_state;

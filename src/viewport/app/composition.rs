@@ -226,6 +226,22 @@ pub(crate) fn configure_generic_viewport_render(app: &mut App) {
     if !app.is_plugin_added::<usd_bevy::ExtendedSkinPlugin>() {
         app.add_plugins(usd_bevy::ExtendedSkinPlugin);
     }
+    if !cfg!(feature = "solari")
+        && std::env::var("USDHUB_GPU_POINT_INSTANCING").is_ok_and(|value| value == "1")
+    {
+        use usd_bevy::route::gpu_instancing::{UsdGpuInstancing, UsdGpuInstancingPlugin};
+        app.insert_resource(UsdGpuInstancing {
+            enabled: true,
+            min_pixels: 0.0,
+            shadows: true,
+            max_chunk_instances: std::env::var("USDHUB_GPU_POINT_INSTANCING_CHUNK_CAP")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(UsdGpuInstancing::default().max_chunk_instances),
+            ..default()
+        });
+        app.add_plugins(UsdGpuInstancingPlugin);
+    }
     if !app.is_plugin_added::<OutlinePlugin>() {
         app.add_plugins(OutlinePlugin::JUMP_FLOOD);
     }

@@ -7,6 +7,7 @@
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
+use usd_bevy::route::instancer::UsdPrototypePart;
 use viewport_protocol::RenderMode;
 
 use super::DisplayToggles;
@@ -74,7 +75,7 @@ pub(super) fn apply_render_mode(
                 Option<&mut OriginalRenderMaterial>,
                 Option<&mut SelectionBaseMaterial>,
             ),
-            With<UsdPrimRef>,
+            Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
         >,
         Query<
             (
@@ -84,8 +85,12 @@ pub(super) fn apply_render_mode(
                 Option<&mut SelectionBaseMaterial>,
             ),
             (
-                With<UsdPrimRef>,
-                Or<(Added<UsdPrimRef>, Changed<MeshMaterial3d<StandardMaterial>>)>,
+                Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
+                Or<(
+                    Added<UsdPrimRef>,
+                    Added<UsdPrototypePart>,
+                    Changed<MeshMaterial3d<StandardMaterial>>,
+                )>,
             ),
         >,
         Query<
@@ -123,7 +128,7 @@ fn apply_render_mode_core(
                 Option<&mut OriginalRenderMaterial>,
                 Option<&mut SelectionBaseMaterial>,
             ),
-            With<UsdPrimRef>,
+            Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
         >,
         Query<
             (
@@ -133,8 +138,12 @@ fn apply_render_mode_core(
                 Option<&mut SelectionBaseMaterial>,
             ),
             (
-                With<UsdPrimRef>,
-                Or<(Added<UsdPrimRef>, Changed<MeshMaterial3d<StandardMaterial>>)>,
+                Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
+                Or<(
+                    Added<UsdPrimRef>,
+                    Added<UsdPrototypePart>,
+                    Changed<MeshMaterial3d<StandardMaterial>>,
+                )>,
             ),
         >,
         Query<

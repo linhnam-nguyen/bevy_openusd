@@ -30,7 +30,7 @@ fn clipping_test_app() -> App {
 #[test]
 fn clip_uniform_uses_one_shared_box_space_transform() {
     let transform =
-        Transform::from_translation(Vec3::new(2.0, 3.0, 4.0)).with_scale(Vec3::splat(6.0));
+        Transform::from_translation(Vec3::new(2.0, 3.0, 4.0)).with_scale(Vec3::splat(8.0));
     let uniform = SectionClipUniform {
         world_to_box: transform.to_matrix().inverse(),
         enabled: 1,
@@ -44,6 +44,10 @@ fn clip_uniform_uses_one_shared_box_space_transform() {
             .transform_point3(transform.translation)
             .abs_diff_eq(Vec3::ZERO, 0.0001)
     );
+    let clip = SectionClipExtension { clip: uniform };
+    assert!(clip.keeps_world_point(transform.translation));
+    assert!(clip.keeps_world_point(transform.translation + 4.0 * Vec3::X));
+    assert!(!clip.keeps_world_point(transform.translation + 4.01 * Vec3::X));
 }
 
 #[test]

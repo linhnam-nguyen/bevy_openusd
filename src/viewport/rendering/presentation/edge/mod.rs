@@ -4,6 +4,7 @@ use bevy::asset::prelude::AssetChanged;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 use usd_bevy::UsdPrimRef;
+use usd_bevy::route::instancer::UsdPrototypePart;
 
 use super::DisplayToggles;
 
@@ -64,18 +65,21 @@ pub(super) fn sync_edge_overlays(
     mut stats: ResMut<EdgeOverlayStats>,
     mut counters: Option<ResMut<crate::viewport::diagnostics::performance::RendererCounters>>,
     mut commands: Commands,
-    sources: Query<(Entity, &Mesh3d, Option<&Children>), With<UsdPrimRef>>,
+    sources: Query<
+        (Entity, &Mesh3d, Option<&Children>),
+        Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
+    >,
     changed_sources: Query<
         (Entity, &Mesh3d, Option<&Children>),
         (
-            With<UsdPrimRef>,
+            Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>,
             Or<(Added<Mesh3d>, Changed<Mesh3d>, AssetChanged<Mesh3d>)>,
         ),
     >,
-    source_children: Query<&Children, With<UsdPrimRef>>,
+    source_children: Query<&Children, Or<(With<UsdPrimRef>, With<UsdPrototypePart>)>>,
     mut overlays: Query<
         (Entity, &mut EdgeOverlay, &mut Mesh3d, &mut Visibility),
-        Without<UsdPrimRef>,
+        (Without<UsdPrimRef>, Without<UsdPrototypePart>),
     >,
     mut removed_meshes: RemovedComponents<Mesh3d>,
 ) {
@@ -153,7 +157,7 @@ fn sync_one_edge_overlay(
     stats: &mut EdgeOverlayStats,
     overlays: &mut Query<
         (Entity, &mut EdgeOverlay, &mut Mesh3d, &mut Visibility),
-        Without<UsdPrimRef>,
+        (Without<UsdPrimRef>, Without<UsdPrototypePart>),
     >,
 ) {
     let source_mesh_id = mesh.0.id();

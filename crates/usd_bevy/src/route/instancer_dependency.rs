@@ -17,6 +17,10 @@ pub struct PointInstancerDependencyIndex {
 }
 
 impl PointInstancerDependencyIndex {
+    pub(crate) fn instancers(&self) -> impl Iterator<Item = PathId> + '_ {
+        self.by_instancer.keys().copied()
+    }
+
     pub(crate) fn replace_instancer(
         &mut self,
         paths: &mut PathStore,

@@ -51,3 +51,65 @@ def Xform "World"
         int64[] invisibleIds = [101]
     }
 }
+
+def Xform "Equipment"
+{
+    def Xform "Prototype"
+    {
+        double3 xformOp:translate = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Housing" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </Equipment/Red>
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+        }
+
+        def Xform "PanelMount"
+        {
+            matrix4d xformOp:transform = ((1, 0, 0, 0), (0.5, 1, 0, 0), (0, 0, 1, 0), (3, 0, 0, 1))
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+            def Mesh "Panel" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Equipment/Blue>
+                point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+                int[] faceVertexCounts = [3]
+                int[] faceVertexIndices = [0, 1, 2]
+            }
+        }
+    }
+
+    def Material "Red"
+    {
+        token outputs:surface.connect = </Equipment/Red/Surface.outputs:surface>
+        def Shader "Surface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (1, 0, 0)
+            token outputs:surface
+        }
+    }
+    def Material "Blue"
+    {
+        token outputs:surface.connect = </Equipment/Blue/Surface.outputs:surface>
+        def Shader "Surface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0, 0, 1)
+            token outputs:surface
+        }
+    }
+    def PointInstancer "Instances"
+    {
+        rel prototypes = [</Equipment/Prototype>]
+        int[] protoIndices = [0, 0]
+        point3f[] positions = [(10, 0, 0), (20, 0, 0)]
+        int64[] ids = [200, 201]
+    }
+}

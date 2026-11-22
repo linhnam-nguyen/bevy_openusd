@@ -50,35 +50,12 @@ impl NativeInstanceDependencyIndex {
         let Ok(path) = openusd::sdf::path(proxy) else {
             return;
         };
-        let Ok(prim) = stage.prim(path.clone()) else {
+        let keys: HashSet<_> = native_proxy_sources(stage, &path)
+            .into_iter()
+            .map(|source| paths.intern(source.as_str()))
+            .collect();
+        if keys.is_empty() {
             return;
-        };
-        if !prim.is_instance_proxy().unwrap_or(false) {
-            return;
-        }
-        let Some(prototype) = prim
-            .prim_in_prototype()
-            .ok()
-            .flatten()
-            .map(|prim| paths.intern(prim.path().as_str()))
-        else {
-            return;
-        };
-        let mut keys = HashSet::from([prototype]);
-        if let Some(instance) = instance_root(stage, &path) {
-            for arc in [
-                EditTargetArc::Reference,
-                EditTargetArc::Payload,
-                EditTargetArc::Inherit,
-                EditTargetArc::Specialize,
-            ] {
-                let Ok(target) = instance.edit_target_for_arc(arc) else {
-                    continue;
-                };
-                if let Some(source) = target.map_to_spec_path(&path) {
-                    keys.insert(paths.intern(source.as_str()));
-                }
-            }
         }
         for key in &keys {
             self.by_prototype
@@ -152,6 +129,35 @@ impl NativeInstanceDependencyIndex {
             .expect("a path ID returned by lookup has canonical path bytes");
         self.dependents_for_path(paths, root)
     }
+}
+
+/// Authored and composed native source paths used by a projected proxy.
+pub(crate) fn native_proxy_sources(stage: &Stage, path: &Path) -> Vec<Path> {
+    let Ok(prim) = stage.prim(path.clone()) else {
+        return Vec::new();
+    };
+    if !prim.is_instance_proxy().unwrap_or(false) {
+        return Vec::new();
+    }
+    let Some(prototype) = prim.prim_in_prototype().ok().flatten() else {
+        return Vec::new();
+    };
+    let mut sources = vec![prototype.path().clone()];
+    if let Some(instance) = instance_root(stage, path) {
+        for arc in [
+            EditTargetArc::Reference,
+            EditTargetArc::Payload,
+            EditTargetArc::Inherit,
+            EditTargetArc::Specialize,
+        ] {
+            if let Ok(target) = instance.edit_target_for_arc(arc)
+                && let Some(source) = target.map_to_spec_path(path)
+            {
+                sources.push(source);
+            }
+        }
+    }
+    sources
 }
 
 fn instance_root(stage: &Stage, path: &Path) -> Option<openusd::usd::Prim> {

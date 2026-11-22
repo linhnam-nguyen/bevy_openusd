@@ -1,6 +1,336 @@
 {
   "additions": [
     {
+        "configurations": [
+            "linux:default",
+            "linux:solari",
+            "macos:default",
+            "macos:solari",
+            "windows:default",
+            "windows:solari"
+        ],
+        "evidence": [
+            "UP-C06"
+        ],
+        "name": "viewport::selection::hover::tests::queued_click_rejects_changed_view_and_returned_camera_pose",
+        "targets": [
+            {
+                "kind": [
+                    "bin"
+                ],
+                "manifest": "Cargo.toml",
+                "target": "usdview"
+            },
+            {
+                "kind": [
+                    "lib"
+                ],
+                "manifest": "Cargo.toml",
+                "target": "usdview"
+            }
+        ]
+    },
+    {
+        "configurations": [
+            "linux:default",
+            "linux:solari",
+            "macos:default",
+            "macos:solari",
+            "windows:default",
+            "windows:solari"
+        ],
+        "evidence": [
+            "UP-C06"
+        ],
+        "name": "viewport::selection::hover::tests::queued_click_remains_valid_only_in_unchanged_view",
+        "targets": [
+            {
+                "kind": [
+                    "bin"
+                ],
+                "manifest": "Cargo.toml",
+                "target": "usdview"
+            },
+            {
+                "kind": [
+                    "lib"
+                ],
+                "manifest": "Cargo.toml",
+                "target": "usdview"
+            }
+        ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "viewport::selection::hover::tests::same_update_remote_taps_retain_reliable_positions",
+      "targets": [
+        {
+          "kind": ["bin"],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": ["lib"],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::cancelled_traversal_never_overwrites_new_request",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::draw_budget_is_partitioned_even_when_one_mesh_exceeds_work_budget",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::late_point_readback_cannot_replace_latest_pointer_result",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::later_batch_hit_is_nearest_and_visible_count_deduplicates_parts",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::over_capacity_multipart_draws_are_split_into_bounded_tasks",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::readback_failure_is_distinct_from_a_geometric_miss",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::representation_change_discards_in_flight_point_readback",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "route::gpu_instancing::picking::tests::workgroup_limit_cannot_overflow_dispatch_dimension",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "viewport::selection::hover::tests::front_clipped_rear_surface_is_reached_on_same_mesh_ray",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "viewport::selection::hover::tests::ray_parallel_to_box_outside_has_no_intersection",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
       "configurations": [
         "linux:default",
         "linux:solari",

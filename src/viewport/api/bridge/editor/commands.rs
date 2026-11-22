@@ -173,11 +173,12 @@ pub(in crate::viewport::api::bridge) fn apply_editor_command(
                     return true;
                 }
             };
-            if let Err(e) = stage.with_authored(prim_path.clone(), || {
-                histories
-                    .authoring
-                    .set_attr(&stage.stage, &prim_path, &name, &type_name, value)
-            }) {
+            // This command edits USD only. The live projection must consume
+            // its notice to update geometry, masks, and dependent prototypes.
+            if let Err(e) = histories
+                .authoring
+                .set_attr(&stage.stage, &prim_path, &name, &type_name, value)
+            {
                 reject(outbox, request_id, e.to_string());
                 return true;
             }

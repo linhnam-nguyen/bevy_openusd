@@ -90,6 +90,12 @@
       "target": "crates/usd_bevy/tests/unit/route/geom_tests.rs"
     },
     {
+      "owner_file": "crates/usd_bevy/src/route/gpu_instancing/picking.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "crates/usd_bevy/tests/unit/route/gpu_point_picking_tests.rs"
+    },
+    {
       "owner_file": "crates/usd_bevy/src/route/hierarchy.rs",
       "module_path": "",
       "mod_name": "test_support",
@@ -1668,6 +1674,60 @@
     }
   ],
   "exceptional_production_fixtures": [
+    {
+      "path": "crates/usd_bevy/src/route/gpu_instancing.wesl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "Packed point-instancer raster shader.",
+      "status": "approved"
+    },
+    {
+      "path": "crates/usd_bevy/src/route/gpu_instancing_cull.wgsl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "Point-instancer per-view compute culling and visible-slot compaction.",
+      "status": "approved"
+    },
+    {
+      "path": "crates/usd_bevy/src/route/gpu_instancing_pick.wgsl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "Point-instancer integer selection compute and readback source.",
+      "status": "approved"
+    },
+    {
+      "path": "crates/usd_bevy/src/route/gpu_instancing_shadow.wesl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "Point-instancer directional shadow vertex shader.",
+      "status": "approved"
+    },
+    {
+      "path": "crates/usd_bevy/src/route/gpu_instancing_types.wesl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "Shared raster and shadow types for the packed point-instancer GPU layout.",
+      "status": "approved"
+    },
+    {
+      "path": "crates/usd_bevy/src/route/sheen_functions.wesl",
+      "owner": "crates/usd_bevy/src/route/gpu_instancing.rs",
+      "consumers": [
+        "crates/usd_bevy/src/route/gpu_instancing.rs"
+      ],
+      "reason": "WESL library imported by the point-instancer raster shader.",
+      "status": "approved"
+    },
     {
       "path": "crates/usd_bevy/src/extended_skin.wesl",
       "owner": "crates/usd_bevy/src/extended_skin.rs",

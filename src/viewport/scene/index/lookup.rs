@@ -4,6 +4,19 @@ use viewport_protocol::{HierarchyVisibilityState, SceneAnchor};
 use super::SceneAnchorIndex;
 
 impl SceneAnchorIndex {
+    pub(crate) fn point_presentation_key(&self, anchor: &SceneAnchor) -> Option<(i64, u64)> {
+        self.point_occurrences.presentation_key(anchor)
+    }
+
+    pub(crate) fn is_point_target(&self, anchor: &SceneAnchor) -> bool {
+        self.point_occurrences.resolve(anchor).is_some()
+    }
+
+    pub(crate) fn point_anchor(&self, instancer: &str, logical_id: i64) -> Option<SceneAnchor> {
+        self.point_occurrences
+            .anchor_for_logical_id(instancer, logical_id)
+    }
+
     pub(crate) fn resolve(&self, anchor: &SceneAnchor) -> Option<Entity> {
         self.dense
             .by_anchor
@@ -11,6 +24,7 @@ impl SceneAnchorIndex {
             .and_then(|index| self.dense.node(*index))
             .and_then(|node| node.entity)
             .or_else(|| self.by_anchor.get(anchor).copied())
+            .or_else(|| self.point_occurrences.resolve(anchor))
     }
 
     /// Resolves every current scene occurrence for a semantic prim path.
@@ -22,6 +36,9 @@ impl SceneAnchorIndex {
     }
 
     pub(crate) fn visibility_for_anchor(&self, anchor: &SceneAnchor) -> HierarchyVisibilityState {
+        if let Some(visibility) = self.point_occurrences.visibility(anchor) {
+            return visibility;
+        }
         self.dense
             .by_anchor
             .get(anchor)
@@ -57,9 +74,11 @@ impl SceneAnchorIndex {
             .and_then(|index| self.dense.node(*index))
             .map(|node| node.anchor.clone())
             .or_else(|| self.by_entity.get(&entity).cloned())
+            .or_else(|| self.point_occurrences.anchor_for(entity))
     }
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+            .saturating_add(self.point_occurrences.revision)
     }
 }
