@@ -95,6 +95,8 @@ pub(crate) enum ProjectRuntimeResponse {
         session_id: u64,
         scene_id: SceneId,
         live_revision: u64,
+        #[serde(default)]
+        opened_root_digest: Option<[u8; 32]>,
         root_layer: Vec<u8>,
     },
     Finished {

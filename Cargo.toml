@@ -51,6 +51,7 @@ syn = { version = "2", features = ["full"] }
 bitflags = "2"
 blake3 = "1"
 regex = "1"
+meshopt = "=0.7.0"
 
 bevy = { version = "0.20.1", default-features = false }
 bevy_pbr = { version = "0.20.1", default-features = false }
@@ -175,6 +176,7 @@ viewport_streaming = { workspace = true }
 turso = { workspace = true }
 blake3 = { workspace = true }
 regex = { workspace = true }
+meshopt = { workspace = true }
 rstar = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 reqwest = { version = "0.12", default-features = false, features = [

@@ -35,6 +35,9 @@ pub(super) fn set_variant_selection(
             return;
         }
         suppression.commit();
+        if let Some(pins) = state.edit_pins.as_deref_mut() {
+            pins.record_path(stage.stage_identity(), prim_path.clone());
+        }
         state
             .histories
             .record(super::super::state::EditorHistoryDomain::Authoring);

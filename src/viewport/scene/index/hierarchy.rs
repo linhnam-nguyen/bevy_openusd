@@ -4,11 +4,68 @@ use viewport_protocol::{
 };
 
 use super::super::hierarchy::CurrentHierarchyProjection;
-use super::SceneAnchorIndex;
+use super::{DenseSceneIndex, SceneAnchorIndex};
 
 impl SceneAnchorIndex {
     pub(crate) fn prim_projection(&self) -> CurrentHierarchyProjection {
-        CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision)
+        if self.visual_unload_rows.is_empty() {
+            return CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision);
+        }
+        CurrentHierarchyProjection::from_prim_nodes(&self.logical_nodes(), self.revision)
+    }
+
+    /// Snapshot logical rows before an automatic visual-only payload unload.
+    /// Scene and selection resolution still use live entities when available.
+    pub(crate) fn retain_visual_unload_rows(&mut self, roots: &[String]) {
+        for node in &self.nodes {
+            if roots.iter().any(|root| {
+                node.anchor
+                    .prim_path
+                    .strip_prefix(root)
+                    .is_some_and(|tail| tail.starts_with('/'))
+            }) {
+                self.visual_unload_rows
+                    .insert(node.anchor.clone(), node.clone());
+            }
+        }
+    }
+
+    pub(crate) fn clear_visual_unload_rows(&mut self) {
+        if !self.visual_unload_rows.is_empty() {
+            self.visual_unload_rows.clear();
+            self.derived_dirty = true;
+        }
+    }
+
+    fn logical_nodes(&self) -> Vec<viewport_protocol::PrimNodeReadModel> {
+        let mut by_anchor: std::collections::HashMap<_, _> = self
+            .visual_unload_rows
+            .values()
+            .map(|row| (row.anchor.clone(), row.clone()))
+            .collect();
+        for node in &self.nodes {
+            by_anchor.insert(node.anchor.clone(), node.clone());
+        }
+        let parents: Vec<_> = by_anchor
+            .values()
+            .filter_map(|row| row.parent.clone())
+            .collect();
+        for parent in parents {
+            if let Some(row) = by_anchor.get_mut(&parent) {
+                row.has_children = true;
+            }
+        }
+        let mut rows: Vec<_> = by_anchor.into_values().collect();
+        rows.sort_unstable_by(|a, b| a.anchor.cmp(&b.anchor));
+        rows
+    }
+
+    pub(super) fn rebuild_logical_dense(&mut self) {
+        if self.visual_unload_rows.is_empty() {
+            self.dense = DenseSceneIndex::from_nodes(&self.nodes, &self.by_anchor);
+        } else {
+            self.dense = DenseSceneIndex::from_nodes(&self.logical_nodes(), &self.by_anchor);
+        }
     }
 
     /// Returns the bounded initial tree payload. Descendants stay in the
@@ -18,7 +75,7 @@ impl SceneAnchorIndex {
         let page = self.children_page(None, 0, DEFAULT_SCENE_PAGE_SIZE);
         SceneReadModel {
             prims: page.nodes,
-            total_prims: self.nodes.len() as u32,
+            total_prims: self.dense.nodes.len() as u32,
             total_roots: page.total,
             root_page_size: page.page_size,
         }

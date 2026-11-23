@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use openusd::usd::Stage;
 use project_protocol::{
     LocalSelectionToken, ProjectCommitRequest, ProjectCommitTarget, ProjectExportSceneRequest,
     ProjectWriteTarget,
@@ -99,7 +98,7 @@ fn live_snapshot(
     marker: &str,
 ) -> ProjectRuntimeSnapshot {
     let scene_path = crate::project::scene::authoring::scene_path(project_root, scene_id);
-    let live = LiveStage::new(Stage::open(scene_path.to_string_lossy().as_ref()).unwrap());
+    let live = LiveStage::open_document(&scene_path).unwrap();
     usd_bevy::authoring::define_prim(&live.stage, &format!("/SceneRoot/{marker}"), "Xform")
         .unwrap();
     let live_revision = live.drain_change_batch().unwrap().revision;
@@ -108,6 +107,9 @@ fn live_snapshot(
         session_id: live.session_id(),
         scene_id,
         live_revision,
+        opened_root_digest: Some(
+            *blake3::hash(live.opened_root_bytes().unwrap().as_ref()).as_bytes(),
+        ),
         root_layer: live
             .stage
             .root_layer()
@@ -203,8 +205,16 @@ fn public_commit_uses_live_snapshot_and_persists_semantic_cache() {
     ))
     .unwrap();
     assert!(committed_scene.contains("LiveOnlyPublicCommit"));
+    assert_eq!(
+        std::fs::read(crate::project::scene::authoring::scene_path(
+            &project_root,
+            scene.scene_id
+        ))
+        .unwrap(),
+        committed_scene.as_bytes(),
+    );
     assert_eq!(authority.begin_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(authority.validate_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(authority.validate_calls.load(Ordering::Relaxed), 2);
     assert_eq!(authority.finish_calls.load(Ordering::Relaxed), 1);
     assert!(
         project_root
@@ -319,6 +329,14 @@ fn scene_commit_includes_dirty_active_ancestor_snapshot() {
     ))
     .unwrap();
     assert!(ancestor_layer.contains("DirtyActiveAncestor"));
+    assert_eq!(
+        std::fs::read(crate::project::scene::authoring::scene_path(
+            &project_root,
+            ancestor.scene_id
+        ))
+        .unwrap(),
+        ancestor_layer.as_bytes(),
+    );
 }
 
 #[test]

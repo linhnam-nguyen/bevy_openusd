@@ -234,7 +234,12 @@ impl SceneAnchorIndex {
             .incremental_work
             .projected_rows
             .saturating_add(row_count);
-        projection
+        if self.visual_unload_rows.is_empty() {
+            projection
+        } else {
+            self.rebuild_logical_dense();
+            self.prim_projection()
+        }
     }
 }
 

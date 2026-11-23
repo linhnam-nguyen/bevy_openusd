@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::commands::VIEWER_BINDING_PENDING;
+use super::focus_bounds::focus_params_for_payload;
 use super::helpers::{emit_selection_delta, reject};
 use crate::viewport::api::{ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox};
 use crate::viewport::camera::{ArcballCamera, FlyTo};
@@ -23,7 +24,7 @@ pub(super) fn apply_tree_commands(
     mut outbox: ResMut<ViewportEventOutbox>,
     mut selected: ResMut<SelectedPrim>,
     mut selection: ResMut<SelectedTargets>,
-    scene_index: Res<SceneAnchorIndex>,
+    (scene_index, live_stage): (Res<SceneAnchorIndex>, Option<NonSend<usd_bevy::LiveStage>>),
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     cameras: Query<&ArcballCamera>,
     transforms: Query<&Transform>,
@@ -88,16 +89,33 @@ pub(super) fn apply_tree_commands(
                     continue;
                 };
 
-                let Some((target_focus, target_distance)) = fit_params_for_entity(
-                    entity,
-                    &transforms,
-                    &child_of,
-                    &extents,
-                    &aabbs,
-                    &meshes,
-                    &children,
-                    camera.distance,
-                ) else {
+                let canonical = live_stage.as_deref().map_or(Ok(None), |stage| {
+                    let unique_prim = target.instance_context.is_none()
+                        && matches!(
+                            scene_index.resolve_all_by_prim_path(&target.prim_path),
+                            [only] if *only == entity
+                        );
+                    focus_params_for_payload(stage, &target.prim_path, unique_prim)
+                });
+                let canonical = match canonical {
+                    Ok(fit) => fit,
+                    Err(reason) => {
+                        reject(&mut outbox, request_id, reason.to_owned());
+                        continue;
+                    }
+                };
+                let Some((target_focus, target_distance)) = canonical.or_else(|| {
+                    fit_params_for_entity(
+                        entity,
+                        &transforms,
+                        &child_of,
+                        &extents,
+                        &aabbs,
+                        &meshes,
+                        &children,
+                        camera.distance,
+                    )
+                }) else {
                     // A Mesh3d can exist for a frame before Bevy has produced
                     // its Aabb. Preserve the command and retry next frame so
                     // the camera never commits to the prim origin as a fake

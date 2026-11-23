@@ -6,7 +6,8 @@ use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportCommand};
 use super::support::command_test_app;
 use crate::viewport::api::bridge::commands::apply_viewport_commands;
 use crate::viewport::api::bridge::tree::apply_tree_commands;
-use crate::viewport::api::{ViewportCommandInbox, ViewportTreeCommandInbox};
+use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
+use crate::viewport::camera::{ArcballCamera, FlyTo};
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::{
     SelectedRenderableProjection, SelectedTargets, sync_selected_renderable_projection,
@@ -18,6 +19,146 @@ const HEAVY_MESH_COUNT: usize = 10_000;
 
 fn anchor(path: &str) -> SceneAnchor {
     SceneAnchor::active_session(path)
+}
+
+#[test]
+fn focus_keeps_canonical_nested_bounds_after_visual_unload() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path().join("root.usda");
+    let source = br#"#usda 1.0
+(
+    upAxis = "Z"
+)
+def Xform "Assembly" {
+    def Cube "Lower" {}
+    def Xform "Nested" (payload = @./nested.usda@</Nested>) {}
+}
+"#;
+    std::fs::write(&root, source)?;
+    std::fs::write(
+        dir.path().join("nested.usda"),
+        br#"#usda 1.0
+def Xform "Nested" {
+    def Cube "Upper" {
+        double3 xformOp:translate = (0, 0, 12)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+"#,
+    )?;
+    let live = usd_bevy::LiveStage::open_document(&root)?;
+    assert!(
+        live.visual_loadable_paths_if_backed()?.is_some(),
+        "file-backed source must expose a distinct visual ownership context"
+    );
+    live.apply_visual_load_batch(&[], &["/Assembly/Nested".to_owned()])?;
+    assert!(
+        !live
+            .visual_loaded_paths()?
+            .contains(&"/Assembly/Nested".to_owned())
+    );
+
+    let target = anchor("/Assembly");
+    let mut app = focus_test_app(&target, Vec3::ZERO);
+    app.world_mut().insert_non_send(live);
+    let focus = request_focus(&mut app, target.clone());
+    assert!((focus.0 - Vec3::Y * 6.0).length() < 0.001, "{focus:?}");
+    assert!((focus.1 - 22.4).abs() < 0.001, "{focus:?}");
+    assert_eq!(std::fs::read(root)?, source);
+
+    // Introduce a genuine canonical composition error after the file-backed
+    // context has been published. Its visual snapshot remains incomplete.
+    let live = app.world().get_non_send::<usd_bevy::LiveStage>().unwrap();
+    live.stage.prim("/Assembly")?.set_metadata(
+        "references",
+        openusd::vt::Value::ReferenceListOp(openusd::sdf::ReferenceListOp::prepended([
+            openusd::sdf::Reference {
+                asset_path: "./missing.usda".to_owned(),
+                prim_path: openusd::sdf::path("/Missing")?,
+                ..Default::default()
+            },
+        ])),
+    )?;
+    assert!(live.visual_loadable_paths_if_backed().is_err());
+    let request =
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::FocusTarget {
+                target,
+                mode: viewport_protocol::FocusMode::FrameTarget,
+            });
+    app.update();
+    let mut outbox = app.world_mut().resource_mut::<ViewportEventOutbox>();
+    let events: Vec<_> = std::iter::from_fn(|| outbox.pop())
+        .filter(|event| event.request_id.as_deref() == Some(request.as_str()))
+        .collect();
+    assert!(matches!(
+        events.as_slice(),
+        [viewport_protocol::ViewportEventEnvelope {
+            event: viewport_protocol::ViewportEvent::CommandRejected { reason, .. },
+            ..
+        }] if reason == "cannot verify visual payload owners for focus"
+    ));
+    let fly_to = app.world().resource::<FlyTo>();
+    assert_eq!((fly_to.target_focus, fly_to.target_distance), focus);
+    Ok(())
+}
+
+#[test]
+fn focus_uses_resident_geometry_for_occurrences_and_disconnected_targets() {
+    let mut occurrence = anchor("/Assembly");
+    occurrence.instance_context = Some("occurrence".to_owned());
+    let mut app = focus_test_app(&occurrence, Vec3::X * 20.0);
+    let stage = openusd::usd::Stage::builder()
+        .in_memory("focus.usda")
+        .unwrap();
+    let live = usd_bevy::LiveStage::new(stage);
+    assert!(
+        live.visual_loadable_paths_if_backed().unwrap().is_none(),
+        "documentless scene must retain the existing resident-entity fit"
+    );
+    app.world_mut().insert_non_send(live);
+    assert_eq!(request_focus(&mut app, occurrence), (Vec3::X * 20.0, 3.2));
+
+    let target = anchor("/Unconnected");
+    let mut app = focus_test_app(&target, Vec3::Z * 5.0);
+    assert_eq!(request_focus(&mut app, target), (Vec3::Z * 5.0, 3.2));
+}
+
+fn focus_test_app(target: &SceneAnchor, position: Vec3) -> App {
+    let mut app = command_test_app();
+    app.add_systems(Update, apply_tree_commands.after(apply_viewport_commands));
+    app.world_mut().spawn(ArcballCamera::default());
+    let entity = app
+        .world_mut()
+        .spawn((
+            Transform::from_translation(position),
+            UsdLocalExtent {
+                min: [-1.0; 3],
+                max: [1.0; 3],
+            },
+            Visibility::Visible,
+        ))
+        .id();
+    *app.world_mut().resource_mut::<SceneAnchorIndex>() =
+        SceneAnchorIndex::from_test_entity(target.clone(), entity);
+    app
+}
+
+fn request_focus(app: &mut App, target: SceneAnchor) -> (Vec3, f32) {
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::FocusTarget {
+            target: target.clone(),
+            mode: viewport_protocol::FocusMode::FrameTarget,
+        });
+    app.update();
+    assert_eq!(
+        app.world().resource::<SelectedTargets>().0.primary,
+        Some(target)
+    );
+    let fly_to = app.world().resource::<FlyTo>();
+    (fly_to.target_focus, fly_to.target_distance)
 }
 
 #[test]

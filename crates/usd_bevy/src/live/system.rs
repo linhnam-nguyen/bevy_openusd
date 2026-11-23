@@ -55,7 +55,9 @@ pub(super) fn drain_stage_changes_system(world: &mut World) {
 
 /// Reproject the batch published by [`drain_stage_changes_system`].
 pub(super) fn reproject_from_batch_system<E: ReconcileExecutor + Default>(world: &mut World) {
-    let batch = world.resource::<PendingStageChanges>().projection.clone();
+    let pending = world.resource::<PendingStageChanges>();
+    let visual_only = pending.batch.is_none();
+    let batch = pending.projection.clone();
     let Some(batch) = batch else {
         return;
     };
@@ -64,6 +66,21 @@ pub(super) fn reproject_from_batch_system<E: ReconcileExecutor + Default>(world:
     };
     let mut map = world.remove_resource::<PrimEntities>().unwrap_or_default();
     apply_change_batch_with_executor(world, &live, &mut map, &batch, &mut E::default());
+    if visual_only
+        && batch.has_resync()
+        && let Some(mut state) =
+            world.get_resource_mut::<super::progressive_state::ProgressiveProjectionState>()
+        && state.session_id == Some(live.session_id())
+        && state.readiness == super::progressive_state::ProjectionReadiness::Ready
+    {
+        // A visual-only subtree reconciliation is already authoritative for
+        // the resident entity map. A changed count is expected on load/unload.
+        // Keeping the old count would force a whole-stage progressive restart
+        // and invalidate unrelated entity, selection and asset bindings.
+        state.total = map.len();
+        state.completed = map.len();
+        state.resident_paths_changed = true;
+    }
     world.insert_resource(map);
     world.insert_non_send(live);
 }

@@ -248,6 +248,7 @@ fn poisoned_scene_revalidation_discards_cache_presentation_without_losing_live_s
         activation_generation: generation,
         scene_generation: generation,
         expected_hash: None,
+        visual_proof: None,
         config_hash: HashDigest::new([0; HashDigest::BYTE_LEN]),
         result,
     });
@@ -288,7 +289,7 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
         ))
         .expect("publish Scene cache descriptor");
 
-    let result = Arc::new(Mutex::new(Some(Ok(actual_hash))));
+    let result = Arc::new(Mutex::new(Some(Ok(expected_hash))));
     let stage_path = usd_support::resolve_fixture_path("mesh_correctness.usda");
     let stage = Stage::open(stage_path.to_string_lossy().as_ref()).expect("open canonical stage");
     let mut world = World::new();
@@ -314,17 +315,42 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
         state: SceneCacheState::Partial,
         entries: Vec::new(),
     });
-    world.insert_resource(PendingSceneCacheRevalidation {
+    let live = world.get_non_send::<LiveStage>().unwrap();
+    let visual_proof = Some(crate::viewport::stage::VerifiedSceneVisualInputs {
+        scene_id,
+        generation: scene_generation,
+        stage: live.stage_identity(),
+        authoring: live.authoring_generation(),
+    });
+    let pending = || PendingSceneCacheRevalidation {
         project_root: project.path().to_path_buf(),
         scene_id,
         activation_generation,
         scene_generation,
         expected_hash: Some(expected_hash),
+        visual_proof,
         config_hash,
         result: Arc::clone(&result),
-    });
-
+    };
+    world.insert_resource(pending());
     poll_scene_cache_revalidation(&mut world);
+    let cache = world.resource::<SceneCachePresentation>();
+    assert_eq!(cache.state, SceneCacheState::Partial);
+    assert!(
+        world
+            .resource::<crate::viewport::stage::VerifiedSceneVisualInputs>()
+            .matches_authoring(cache, world.get_non_send::<LiveStage>().unwrap())
+    );
+
+    // A changed source removes both the metadata and its visual-use proof.
+    *result.lock().unwrap() = Some(Ok(actual_hash));
+    world.insert_resource(pending());
+    poll_scene_cache_revalidation(&mut world);
+    assert!(
+        world
+            .get_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>()
+            .is_none()
+    );
 
     assert!(result.lock().expect("result slot remains usable").is_none());
     assert!(world.get_non_send::<LiveStage>().is_some());

@@ -25,6 +25,7 @@ pub struct ProjectRuntimeSnapshot {
     pub session_id: u64,
     pub scene_id: SceneId,
     pub live_revision: LiveRevision,
+    pub opened_root_digest: Option<[u8; 32]>,
     pub root_layer: Vec<u8>,
 }
 

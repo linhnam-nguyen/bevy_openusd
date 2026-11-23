@@ -6,7 +6,7 @@ use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHie
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::super::hierarchy::CurrentHierarchyProjection;
-use super::{DenseSceneIndex, SceneAnchorIndex};
+use super::SceneAnchorIndex;
 use crate::viewport::stage::StagePresentationContext;
 
 pub(super) fn display_name(
@@ -192,7 +192,7 @@ impl SceneAnchorIndex {
             .enumerate()
             .map(|(index, node)| (node.anchor.clone(), index))
             .collect();
-        self.dense = DenseSceneIndex::from_nodes(&self.nodes, &self.by_anchor);
+        self.rebuild_logical_dense();
         let row_count = self.nodes.len() as u64;
         self.incremental_work.reindexed_rows = self
             .incremental_work

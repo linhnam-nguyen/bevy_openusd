@@ -79,17 +79,33 @@ pub(crate) fn publish_stage_load_state(
     tuning: Res<LoaderTuning>,
     physics: Res<PhysicsActive>,
     gate: crate::viewport::input::ViewerInteractionGate,
+    visual_health: Option<Res<crate::viewport::residency::VisualStreamingHealth>>,
     mut last: Local<Option<(viewport_protocol::StageLoadState, u64)>>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
     use viewport_protocol::StageLoadState;
     let state = match stage {
         None => StageLoadState::Idle,
-        Some(stage) => match stage.error.as_deref().or_else(|| gate.projection_error()) {
+        Some(stage) => match stage
+            .error
+            .as_deref()
+            .or_else(|| gate.projection_error())
+            .or_else(|| {
+                visual_health
+                    .as_deref()
+                    .and_then(|health| health.last_error.as_deref().or(health.lod_error.as_deref()))
+            }) {
             Some(error) => StageLoadState::Failed {
                 message: error.to_owned(),
             },
-            None if spawned.0 && !gate.locked() => StageLoadState::Ready,
+            None if spawned.0
+                && !gate.locked()
+                && !visual_health
+                    .as_deref()
+                    .is_some_and(|health| health.awaiting_payloads) =>
+            {
+                StageLoadState::Ready
+            }
             _ => StageLoadState::Loading,
         },
     };

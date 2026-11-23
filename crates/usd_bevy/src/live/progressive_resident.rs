@@ -12,17 +12,11 @@ pub(super) fn resident_projection(
     paths: &PathStore,
     state: &ProgressiveProjectionState,
 ) -> bool {
-    let Some(plan) = state.plan() else {
-        return false;
-    };
-    plan.entries().all(|entry| {
-        let Some(entity) = map.entity(paths, entry.path()) else {
-            return false;
-        };
+    let is_resident = |path: &str, entity: Entity| {
         let Some(prim) = world.get::<crate::prim_ref::UsdPrimRef>(entity) else {
             return false;
         };
-        if prim.path != entry.path() {
+        if prim.path != path {
             return false;
         }
         if let Some(mesh) = world.get::<Mesh3d>(entity)
@@ -38,5 +32,18 @@ pub(super) fn resident_projection(
             return false;
         }
         true
-    })
+    };
+    if state.resident_paths_changed {
+        // The initial plan has been superseded by a successful targeted
+        // reconcile. Validate the current registered paths and handles.
+        map.iter(paths)
+            .all(|(path, entity)| is_resident(path, entity))
+    } else {
+        state.plan().is_some_and(|plan| {
+            plan.entries().all(|entry| {
+                map.entity(paths, entry.path())
+                    .is_some_and(|entity| is_resident(entry.path(), entity))
+            })
+        })
+    }
 }

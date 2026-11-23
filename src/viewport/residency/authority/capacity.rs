@@ -35,7 +35,7 @@ impl ResidencyAuthority {
     }
 
     pub(super) fn evict_to_budget(&mut self) {
-        while self.cpu_used > self.budgets.cpu_bytes || self.gpu_used > self.budgets.gpu_bytes {
+        while !self.can_fit_cpu(0) || !self.can_fit_gpu(0) {
             if !self.evict_oldest_warm() {
                 break;
             }
@@ -59,13 +59,35 @@ impl ResidencyAuthority {
     }
 
     fn can_fit_cpu(&self, bytes: u64) -> bool {
-        self.cpu_used <= self.budgets.cpu_bytes
-            && self.cpu_reserved <= self.budgets.cpu_bytes - self.cpu_used
-            && bytes <= self.budgets.cpu_bytes - self.cpu_used - self.cpu_reserved
+        self.cpu_used
+            .saturating_add(self.cpu_reserved)
+            .saturating_add(self.generated_cpu)
+            .saturating_add(bytes)
+            <= self.budgets.cpu_bytes
     }
 
     fn can_fit_gpu(&self, bytes: u64) -> bool {
-        self.gpu_used <= self.budgets.gpu_bytes && bytes <= self.budgets.gpu_bytes - self.gpu_used
+        self.gpu_used
+            .saturating_add(self.generated_gpu)
+            .saturating_add(bytes)
+            <= self.budgets.gpu_bytes
+    }
+
+    pub(in crate::viewport::residency) fn can_admit_generated(
+        &self,
+        (cpu, gpu): (u64, u64),
+    ) -> bool {
+        self.can_fit_cpu(cpu) && self.can_fit_gpu(gpu)
+    }
+
+    pub(in crate::viewport::residency) fn reserve_generated(&mut self, (cpu, gpu): (u64, u64)) {
+        self.generated_cpu = self.generated_cpu.saturating_add(cpu);
+        self.generated_gpu = self.generated_gpu.saturating_add(gpu);
+    }
+
+    pub(in crate::viewport::residency) fn release_generated(&mut self, (cpu, gpu): (u64, u64)) {
+        self.generated_cpu = self.generated_cpu.saturating_sub(cpu);
+        self.generated_gpu = self.generated_gpu.saturating_sub(gpu);
     }
 
     pub(super) fn ensure_capacity(&mut self, cpu_bytes: u64, gpu_bytes: u64) -> bool {

@@ -15,6 +15,7 @@ use crate::viewport::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
+use crate::viewport::residency::EditPayloadPins;
 use crate::viewport::scene::SceneAnchorIndex;
 use crate::viewport::scene::visualization::DisplayToggles;
 use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
@@ -48,6 +49,7 @@ pub(in crate::viewport::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub tuning: ResMut<'w, LoaderTuning>,
     pub physics: ResMut<'w, PhysicsActive>,
     pub histories: ResMut<'w, EditorHistories>,
+    pub edit_pins: Option<ResMut<'w, EditPayloadPins>>,
     pub runtime_mutations: ResMut<'w, RuntimeMutationCoordinator>,
     pub configuration: ParamSet<'w, 's, (Res<'w, StageInfo>, Option<ResMut<'w, RendererCadence>>)>,
     pub stage: Option<NonSend<'w, LiveStage>>,

@@ -48,7 +48,7 @@ fn runtime_snapshot_response_inner(
     if queue.is_cancelled(project_root, request_id) {
         return runtime_failed(request_id, ProjectWriteErrorCode::Busy);
     }
-    let (root_layer, lease_id, session_id, live_revision) = {
+    let (root_layer, lease_id, session_id, live_revision, opened_root_digest) = {
         let Some(live) = world.get_non_send::<usd_bevy::LiveStage>() else {
             return runtime_failed(request_id, ProjectWriteErrorCode::Busy);
         };
@@ -75,6 +75,8 @@ fn runtime_snapshot_response_inner(
             uuid::Uuid::new_v4().to_string(),
             live.session_id(),
             live.authoring_generation().0,
+            live.opened_root_bytes()
+                .map(|bytes| *blake3::hash(bytes.as_ref()).as_bytes()),
         )
     };
     if let Some(before_claim) = before_claim {
@@ -105,6 +107,7 @@ fn runtime_snapshot_response_inner(
         session_id,
         scene_id: active_scene_id,
         live_revision,
+        opened_root_digest,
         root_layer: root_layer.into_bytes(),
     }
 }

@@ -169,6 +169,7 @@ fn start_generation(world: &mut World, live: &LiveStage, map: &mut PrimEntities,
     state.material_memo = Default::default();
     state.restart_requested = false;
     state.resident_validation_requested = false;
+    state.resident_paths_changed = false;
     world.insert_resource(ProjectionStats::default());
 }
 

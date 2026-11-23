@@ -83,6 +83,40 @@ pub(crate) struct SceneCacheOwnershipContext {
     pub(crate) config_hash: HashDigest,
 }
 
+/// Proof that the metadata-first Scene cache still matches the native source.
+/// Partial coverage remains usable for candidates with independent bounds and
+/// identity proof. The descriptor's completeness classification stays intact.
+#[derive(Resource, Clone, Copy)]
+pub(crate) struct VerifiedSceneVisualInputs {
+    pub(crate) scene_id: SceneId,
+    pub(crate) generation: u64,
+    pub(crate) stage: (u64, u64),
+    pub(crate) authoring: usd_bevy::LiveRevision,
+}
+
+impl VerifiedSceneVisualInputs {
+    pub(crate) fn matches(
+        &self,
+        cache: &SceneCachePresentation,
+        stage: &usd_bevy::LiveStage,
+    ) -> bool {
+        matches!(
+            cache.state,
+            SceneCacheState::Partial | SceneCacheState::Ready
+        ) && self.scene_id == cache.scene_id
+            && self.generation == cache.generation
+            && self.stage == stage.stage_identity()
+    }
+
+    pub(crate) fn matches_authoring(
+        &self,
+        cache: &SceneCachePresentation,
+        stage: &usd_bevy::LiveStage,
+    ) -> bool {
+        self.matches(cache, stage) && self.authoring == stage.authoring_generation()
+    }
+}
+
 impl SceneCachePresentation {
     pub(crate) fn from_activation(activation: &SceneCacheActivation) -> Self {
         Self {
@@ -106,6 +140,7 @@ pub(crate) struct PendingSceneCacheRevalidation {
     pub(crate) expected_hash: Option<HashDigest>,
     pub(crate) config_hash: HashDigest,
     pub(crate) result: Arc<Mutex<Option<Result<HashDigest, String>>>>,
+    pub(crate) visual_proof: Option<VerifiedSceneVisualInputs>,
 }
 
 /// Generation-owned derived metadata for the active Scene snapshot.

@@ -93,6 +93,7 @@ pub struct ProgressiveProjectionState {
     pub(super) plan_builds: u64,
     pub(super) resident_short_circuits: u64,
     pub(super) resident_validation_requested: bool,
+    pub(super) resident_paths_changed: bool,
 }
 
 impl ProgressiveProjectionState {

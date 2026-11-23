@@ -544,7 +544,15 @@ pub(in crate::viewport) fn update_hover_target(
         &MeshMaterial3d<SectionClipMaterial>,
         &InheritedVisibility,
     )>,
-    meshes: Res<Assets<Mesh>>,
+    generated_source: (
+        Query<(
+            Entity,
+            &crate::viewport::residency::GeneratedLodSource,
+            &GlobalTransform,
+            &InheritedVisibility,
+        )>,
+        Res<Assets<Mesh>>,
+    ),
     gpu_picker: Option<Res<GpuPointPicker>>,
     clicks: Res<PointClick>,
     gate: ViewerInteractionGate,
@@ -558,6 +566,7 @@ pub(in crate::viewport) fn update_hover_target(
         return;
     }
     let (section_box, section_clip) = section_view;
+    let (generated_meshes, meshes) = generated_source;
     let Ok((camera_entity, camera, camera_global, camera_local, projection)) = cameras.single()
     else {
         hovered.last_pick_view = None;
@@ -697,6 +706,7 @@ pub(in crate::viewport) fn update_hover_target(
                 // the first reported hit would hide a visible rear surface.
                 let filter = |entity| {
                     clipped.get(entity).is_err()
+                        && generated_meshes.get(entity).is_err()
                         && anchor_for_hit(entity, &scene_index, &child_of).is_some()
                 };
                 let settings = MeshRayCastSettings::default().with_filter(&filter);
@@ -709,6 +719,27 @@ pub(in crate::viewport) fn update_hover_target(
                                 .map(|anchor| (anchor, hit.distance))
                         });
                 let mut hit = ordinary;
+                for (entity, full, transform, visibility) in &generated_meshes {
+                    if !visibility.get() {
+                        continue;
+                    }
+                    let Some(anchor) = anchor_for_hit(entity, &scene_index, &child_of) else {
+                        continue;
+                    };
+                    let Some(mesh) = meshes.get(&full.0) else {
+                        continue;
+                    };
+                    if let Ok(Some(distance)) = nearest_section_clip_triangle(
+                        ray,
+                        mesh,
+                        transform,
+                        Some(bevy::render::render_resource::Face::Back),
+                        |_| true,
+                    ) && hit.as_ref().is_none_or(|(_, best)| distance < *best)
+                    {
+                        hit = Some((anchor, distance));
+                    }
+                }
                 for (entity, mesh3d, transform, material_handle, visibility) in &clipped_meshes {
                     if !visibility.get() {
                         continue;

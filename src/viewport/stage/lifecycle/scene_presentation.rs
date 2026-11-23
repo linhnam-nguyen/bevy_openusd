@@ -61,6 +61,7 @@ pub(super) fn publish_scene_cache_presentation(
             CurrentHierarchyProjection::from_prim_nodes(&nodes, activation.descriptor.generation);
     }
     install_project_cache_lookup(world, activation, project_root);
+    world.remove_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>();
     world.insert_resource(SceneCachePresentation::from_activation(activation));
 }
 

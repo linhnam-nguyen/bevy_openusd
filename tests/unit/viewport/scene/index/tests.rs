@@ -413,3 +413,24 @@ fn classification_visibility_reports_mixed_state_and_restores_groups() {
             .all(|node| { node.visibility == HierarchyVisibilityState::Visible })
     );
 }
+
+#[test]
+fn camera_visual_unload_keeps_logical_tree_rows_without_entity_resolution() {
+    let root = node("/Scene", None, "Scene");
+    let owner = node("/Scene/Plant", Some("/Scene"), "Plant");
+    let geometry = node("/Scene/Plant/Valve", Some("/Scene/Plant"), "Valve");
+    let mut index =
+        SceneAnchorIndex::from_test_nodes(vec![root.clone(), owner.clone(), geometry.clone()]);
+    index.retain_visual_unload_rows(&["/Scene/Plant".to_owned()]);
+    index.nodes = vec![root, owner.clone()];
+    index.rebuild_logical_dense();
+    assert_eq!(
+        index.children_page(Some(&owner.anchor), 0, 10).nodes,
+        vec![geometry.clone()]
+    );
+    assert!(index.search_match_for_path("/Scene/Plant/Valve").is_some());
+    assert!(index.resolve(&geometry.anchor).is_none());
+    index.clear_visual_unload_rows();
+    index.rebuild_logical_dense();
+    assert!(index.search_match_for_path("/Scene/Plant/Valve").is_none());
+}

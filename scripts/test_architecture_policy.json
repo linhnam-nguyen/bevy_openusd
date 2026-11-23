@@ -18,6 +18,18 @@
   ],
   "reviewed_path_only_attachments": [
     {
+      "owner_file": "src/project/cache/derived_lod.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/project/cache/derived_lod_tests.rs"
+    },
+    {
+      "owner_file": "src/viewport/residency/visual_policy.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/residency/visual_policy_tests.rs"
+    },
+    {
       "owner_file": "crates/usd_bevy/src/authoring/mod.rs",
       "module_path": "",
       "mod_name": "tests",

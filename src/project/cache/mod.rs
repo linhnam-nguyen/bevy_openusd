@@ -18,6 +18,7 @@ pub(crate) mod blobs;
 pub(crate) mod compatibility;
 pub(crate) mod contract;
 pub(crate) mod demand;
+pub(crate) mod derived_lod;
 mod descriptor;
 pub(crate) mod historical_geometry;
 pub(crate) mod hydration;

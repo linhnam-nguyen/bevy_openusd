@@ -191,6 +191,7 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
                 session_id,
                 scene_id,
                 live_revision,
+                opened_root_digest,
                 root_layer,
                 ..
             }) => Ok(Some(ProjectRuntimeSnapshot {
@@ -198,6 +199,7 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
                 session_id,
                 scene_id,
                 live_revision: LiveRevision(live_revision),
+                opened_root_digest,
                 root_layer,
             })),
             Some(ProjectRuntimeResponse::Inactive { .. }) => Ok(None),
@@ -324,6 +326,7 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
                 session_id,
                 scene_id,
                 live_revision,
+                opened_root_digest,
                 root_layer,
                 ..
             }) => Ok(Some(ProjectRuntimeSnapshot {
@@ -331,6 +334,7 @@ impl ProjectRuntimeAuthority for ProjectRuntimeAuthorityQueue {
                 session_id,
                 scene_id,
                 live_revision: LiveRevision(live_revision),
+                opened_root_digest,
                 root_layer,
             })),
             Some(ProjectRuntimeResponse::Inactive { .. }) => Ok(None),

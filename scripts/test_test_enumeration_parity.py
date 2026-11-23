@@ -487,8 +487,12 @@ class TestEnumerationParityTests(unittest.TestCase):
                 for key, count in migrated.items()
                 if key[-1].startswith(new_prefix)
             }
+            visual_unload_test = (
+                new_prefix + "tests::camera_visual_unload_keeps_logical_tree_rows_without_entity_resolution"
+            )
+            expected.update({(*target, visual_unload_test): 1 for target in expected_targets})
             self.assertEqual(actual, expected)
-            self.assertEqual(sum(actual.values()), 32)
+            self.assertEqual(sum(actual.values()), 34)
 
     def test_bov_c6_stage_migrations_preserve_target_feature_and_count(self):
         legacy = parity.load_baseline(CHECKED_IN_BASELINE)
@@ -1315,7 +1319,7 @@ class TestEnumerationParityTests(unittest.TestCase):
         configs = parity.load_qualified(baseline_path, legacy)
         migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
         migrations = parity.load_identity_migrations(migrations_path, configs)
-        self.assertEqual(len(migrations.additions), 60)
+        self.assertEqual(len(migrations.additions), 75)
         counts = {}
         for addition in migrations.additions:
             counts[addition["evidence"]] = counts.get(addition["evidence"], 0) + 1
@@ -1325,9 +1329,10 @@ class TestEnumerationParityTests(unittest.TestCase):
                 ("NEM-CLN-C1",): 21,
                 ("UP-C01",): 4,
                 ("UP-C02",): 19,
-                ("UP-C03",): 1,
+                ("UP-C03",): 2,
                 ("UP-C04",): 2,
                 ("UP-C06",): 13,
+                ("UP-C07",): 14,
             },
         )
 

@@ -4,6 +4,8 @@ mod animation;
 mod authority;
 mod camera;
 mod catalog;
+mod generated_lod;
+pub(crate) use generated_lod::GeneratedLodSource;
 mod loader;
 mod lru;
 mod projection;
@@ -11,6 +13,10 @@ mod repair;
 mod selection;
 mod spatial;
 mod viewpoint;
+mod visual_composition;
+pub(crate) use visual_composition::{EditPayloadPins, VisualStreamingHealth};
+mod visual_lod;
+mod visual_policy;
 mod worker;
 
 use bevy::asset::Assets;
@@ -50,6 +56,9 @@ pub(crate) struct ResidencyPlugin;
 impl Plugin for ResidencyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ResidencyAuthority>()
+            .init_resource::<visual_composition::VisualStreaming>()
+            .init_resource::<visual_composition::EditPayloadPins>()
+            .init_resource::<visual_composition::VisualStreamingHealth>()
             .init_resource::<ScenePayloadCatalog>()
             .init_resource::<SceneResidencyProjection>()
             .init_resource::<TargetedRepairQueue>()
@@ -76,6 +85,9 @@ impl Plugin for ResidencyPlugin {
                         .after(ViewportBridgeSet::ApplyTreeCommands)
                         .after(usd_bevy::LiveStageSet::Presentation),
                     update_camera_residency,
+                    visual_composition::synchronize_visual_composition,
+                    visual_lod::synchronize_authored_lod
+                        .before(ViewportBridgeSet::PublishStageLoadState),
                     install_loaded_scene_payloads,
                     drain_cached_residency_completions,
                     drain_targeted_repair_persistence_completions,
@@ -83,10 +95,20 @@ impl Plugin for ResidencyPlugin {
                     dispatch_source_meshes,
                     dispatch_cached_residency_loads,
                     pump_residency_uploads,
+                    generated_lod::synchronize_generated_lod,
                 )
                     .chain(),
             );
     }
+}
+
+fn visual_projection_settled(state: Option<&usd_bevy::ProgressiveProjectionState>) -> bool {
+    state.is_none_or(|state| {
+        matches!(
+            state.readiness(),
+            usd_bevy::ProjectionReadiness::Idle | usd_bevy::ProjectionReadiness::Ready
+        )
+    })
 }
 
 #[derive(Component)]
@@ -457,6 +479,10 @@ fn release_retired_render_assets(
 }
 
 pub(crate) fn retire_scene_cache_resources(world: &mut World) {
+    generated_lod::clear_generated_lods(world);
+    if let Some(mut index) = world.get_resource_mut::<SceneAnchorIndex>() {
+        index.clear_visual_unload_rows();
+    }
     world.remove_resource::<crate::project::cache::scene::hydration::SceneAnimationPayloads>();
     if let Some(mut catalog) = world.get_resource_mut::<ScenePayloadCatalog>() {
         *catalog = ScenePayloadCatalog::default();

@@ -95,6 +95,11 @@ struct ActiveScene {
 #[derive(Resource, Debug)]
 pub(crate) struct ResidencyAuthority {
     budgets: ResidencyBudgets,
+    pub(super) generated_lods: super::generated_lod::GeneratedLodState,
+    generated_cpu: u64,
+    generated_gpu: u64,
+    pub(super) authored_lods: super::visual_lod::AuthoredLodState,
+    pub(super) visual_composition: super::visual_composition::VisualCompositionState,
     scene_generations: HashMap<SceneId, u64>,
     records: HashMap<ScenePayloadKey, PayloadRecord>,
     loader: BoundedLoader<ScenePayloadKey>,
@@ -124,6 +129,11 @@ impl ResidencyAuthority {
     pub(crate) fn with_budgets(budgets: ResidencyBudgets) -> Self {
         Self {
             budgets,
+            visual_composition: Default::default(),
+            authored_lods: Default::default(),
+            generated_lods: Default::default(),
+            generated_cpu: 0,
+            generated_gpu: 0,
             scene_generations: HashMap::new(),
             records: HashMap::new(),
             loader: BoundedLoader::new(DEFAULT_LOADER_CAPACITY),

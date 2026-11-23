@@ -88,6 +88,8 @@ pub enum ProjectWriteErrorCode {
 /// Typed write failures safe to return through the native host.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, thiserror::Error)]
 pub enum ProjectWriteError {
+    #[error("Project revision {revision:?} was committed but live completion failed")]
+    LiveCommitIncomplete { revision: RevisionSummary },
     #[error("unsupported Project write protocol version {actual}; expected {expected}")]
     UnsupportedProtocolVersion { expected: u16, actual: u16 },
     #[error("Project write request is invalid ({code:?})")]

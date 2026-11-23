@@ -44,6 +44,7 @@ pub(super) struct VisualStage {
     path: PathBuf,
     source: Rc<RefCell<LayerBytes>>,
     revisions: LayerBytes,
+    session_path: PathBuf,
     pub(super) stage: Stage,
     pub(super) authoring_revision: LiveRevision,
 }
@@ -187,6 +188,9 @@ fn lexical_path(path: &Path) -> PathBuf {
 }
 
 impl VisualStage {
+    pub(super) fn opened_root_bytes(&self) -> Option<SharedBuffer> {
+        self.source.borrow().get(&self.path).cloned()
+    }
     pub(super) fn texture_source(&self, stage_identity: (u64, u64)) -> SnapshotTextures {
         SnapshotTextures {
             stage_identity,
@@ -201,7 +205,12 @@ impl VisualStage {
         let source = capture_source_snapshot(&path)?;
         let stage = open(&path, &source, HashMap::new(), true)?;
         validate_composition(&stage)?;
-        let visual = open(&path, &source, HashMap::new(), true)?;
+        let session_path = path.with_extension("nemeton_visual_session.usda");
+        ensure!(
+            !source.borrow().contains_key(&session_path),
+            "visual session name collides with a source layer"
+        );
+        let visual = open_visual(&path, &source, HashMap::new(), &session_path)?;
         validate_composition(&visual)?;
         Ok((
             stage,
@@ -209,6 +218,7 @@ impl VisualStage {
                 path,
                 source,
                 revisions: HashMap::new(),
+                session_path,
                 stage: visual,
                 authoring_revision: LiveRevision::default(),
             },
@@ -235,7 +245,14 @@ impl VisualStage {
                 revisions.insert(PathBuf::from(path), bytes);
             }
         }
-        let stage = open(&self.path, &self.source, revisions.clone(), true)?;
+        // Re-evaluate camera overrides against the newly authored variant
+        // topology. Replaying old opinions could conceal an author's edit.
+        let stage = open_visual(
+            &self.path,
+            &self.source,
+            revisions.clone(),
+            &self.session_path,
+        )?;
         stage.set_load_rules(self.stage.load_rules());
         validate_composition(&stage)?;
         self.stage = stage;
@@ -365,6 +382,35 @@ fn open_with_resolver(path: &Path, resolver: SnapshotResolver) -> Result<Stage> 
     Ok(Stage::builder()
         .resolver(resolver)
         .schema_registry(openusd_schemas::schema_registry())
+        .load(InitialLoadSet::LoadAll)
+        .open(identifier)?)
+}
+
+fn open_visual(
+    path: &Path,
+    source: &Rc<RefCell<LayerBytes>>,
+    mut revisions: LayerBytes,
+    session_path: &Path,
+) -> Result<Stage> {
+    let identifier = path
+        .to_str()
+        .context("USD stage path must be valid UTF-8")?;
+    let session_name = session_path
+        .to_str()
+        .context("visual session path must be UTF-8")?;
+    revisions.insert(
+        session_path.to_owned(),
+        SharedBuffer::new(b"#usda 1.0\n".to_vec()),
+    );
+    Ok(Stage::builder()
+        .resolver(SnapshotResolver {
+            filesystem: DefaultResolver::new(),
+            source: source.clone(),
+            revisions,
+            sealed: true,
+        })
+        .schema_registry(openusd_schemas::schema_registry())
+        .session_layer(session_name)
         .load(InitialLoadSet::LoadAll)
         .open(identifier)?)
 }

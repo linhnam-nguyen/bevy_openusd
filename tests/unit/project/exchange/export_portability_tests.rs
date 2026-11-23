@@ -7,6 +7,87 @@ use project_protocol::{
 use tempfile::tempdir;
 
 #[test]
+fn registered_project_exports_loose_nested_payload_layers() {
+    let dir = tempdir().unwrap();
+    let mut creator = ProjectApplicationService::open(dir.path().join("creator.json")).unwrap();
+    let project = creator.create_project(dir.path(), "Loose Export").unwrap();
+    let root = dir.path().join("Loose Export");
+    let scene = creator
+        .create_scene(
+            project.id,
+            ProjectWriteTarget::Project(project.id),
+            "LooseScene",
+        )
+        .unwrap();
+    let scene_path = crate::project::scene::authoring::scene_path(&root, scene.scene_id);
+    let parts = scene_path.with_file_name("parts.usda");
+    let nested = parts.with_file_name("nested.usda");
+    fs::write(&parts, "#usda 1.0\ndef Xform \"Part\" {\n def Xform \"Nested\" (payload = @./nested.usda@</Nested>) {}\n}\n").unwrap();
+    fs::write(
+        &nested,
+        "#usda 1.0\ndef Xform \"Nested\" {\n def Cube \"Child\" { double size = 0.7 }\n}\n",
+    )
+    .unwrap();
+    let stage = openusd::usd::Stage::open(scene_path.to_str().unwrap()).unwrap();
+    let owner = stage.define_prim("/SceneRoot/Loose").unwrap();
+    owner
+        .set_metadata(
+            "payload",
+            openusd::vt::Value::PayloadListOp(openusd::sdf::PayloadListOp::prepended([
+                openusd::sdf::Payload {
+                    asset_path: "./parts.usda".to_owned(),
+                    prim_path: openusd::sdf::path("/Part").unwrap(),
+                    ..Default::default()
+                },
+            ])),
+        )
+        .unwrap();
+    stage
+        .root_layer()
+        .export(scene_path.to_str().unwrap())
+        .unwrap();
+    drop(stage);
+    creator
+        .commit(project_protocol::ProjectCommitRequest {
+            project_id: project.id,
+            target: project_protocol::ProjectCommitTarget::Project,
+            message: "Add nested payload".to_owned(),
+        })
+        .unwrap();
+
+    let mut service = ProjectApplicationService::open(dir.path().join("importer.json")).unwrap();
+    let inspection = service.inspect_project(&root).unwrap();
+    let imported = service.import_project(&root, &inspection).unwrap();
+    let destination = dir.path().join("loose.usdz");
+    let request = ProjectExportSceneRequest {
+        project_id: imported.id,
+        scene_id: scene.scene_id,
+        destination: LocalSelectionToken::new("loose-export"),
+    };
+    service.export_scene(request.clone(), &destination).unwrap();
+    let exported = usd_bevy::LiveStage::open_authoritative(&destination).unwrap();
+    let child = exported.prim("/SceneRoot/Loose/Nested/Child").unwrap();
+    assert_eq!(child.attribute("size").get::<f64>().unwrap(), Some(0.7));
+
+    let previous = fs::read(&destination).unwrap();
+    let outside = dir.path().join("outside.usda");
+    fs::rename(&nested, &outside).unwrap();
+    assert!(service.export_scene(request.clone(), &destination).is_err());
+    assert_eq!(fs::read(&destination).unwrap(), previous);
+
+    fs::write(
+        &parts,
+        format!(
+            "#usda 1.0\ndef Xform \"Part\" {{\n def Xform \"Nested\" (payload = @{}@</Nested>) {{}}\n}}\n",
+            outside.to_str().unwrap().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    assert!(service.export_scene(request, &destination).is_err());
+    assert_eq!(fs::read(&destination).unwrap(), previous);
+}
+
+#[test]
 fn localized_non_root_scene_export_rewrites_project_relative_closure() {
     let directory = tempdir().unwrap();
     let parent = directory.path().join("projects");

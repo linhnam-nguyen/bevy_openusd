@@ -10,6 +10,7 @@ use usd_git::{CommitRequest, GitRepository, Repository};
 use usd_project::{ProjectManifestV1, SceneId};
 
 use super::runtime::{RuntimeLeaseGuard, overlay_runtime_snapshot, persist_semantic_snapshot};
+use super::worktree::LiveWorktreePublication;
 use crate::project::service::{
     ProjectApplicationService, inspection, project_tree, repository_summary,
 };
@@ -63,7 +64,21 @@ pub(in crate::project) fn commit(
         repository
             .materialize_revision(head.id(), staging.path())
             .map_err(|_| commit_error())?;
-    } else {
+    }
+    let live_publication = runtime_snapshot
+        .as_ref()
+        .map(|snapshot| {
+            LiveWorktreePublication::prepare(
+                &project_root,
+                staging.path(),
+                &manifest,
+                snapshot.scene_id,
+                &snapshot.root_layer,
+                snapshot.opened_root_digest,
+            )
+        })
+        .transpose()?;
+    if previous_revision.is_none() {
         // A newly created Project has no Git baseline yet. Seed the first
         // scoped commit from the complete canonical tree so its manifest and
         // protected root are available before applying the closure overlay.
@@ -92,6 +107,9 @@ pub(in crate::project) fn commit(
             snapshot,
         )?;
     }
+    if let Some(publication) = &live_publication {
+        publication.verify_original()?;
+    }
     let revision = repository
         .create_commit(CommitRequest::new(request.message.trim(), staging.path()))
         .map_err(|_| commit_error())?;
@@ -114,10 +132,16 @@ pub(in crate::project) fn commit(
                     "Project commit changed-path classification failed after commit publication and conservative Scene cache invalidation could not be established: {error}"
                 );
             }
-            return Err(repository_error());
+            return Err(if runtime_snapshot.is_some() {
+                live_commit_incomplete(&revision)
+            } else {
+                repository_error()
+            });
         }
     };
-    if let Some(snapshot) = runtime_snapshot.as_ref() {
+    let mut live_completion_error = None;
+    if let Some((snapshot, publication)) = runtime_snapshot.as_ref().zip(live_publication.as_ref())
+    {
         if let Err(error) = persist_semantic_snapshot(
             &project_root,
             staging.path(),
@@ -126,18 +150,51 @@ pub(in crate::project) fn commit(
         ) {
             log::warn!("committed LiveStage semantic persistence was deferred: {error:#}");
         }
-        match runtime_authority.finish_commit(
-            &project_root,
-            project_id,
-            &snapshot.lease_id,
-            &revision.to_string(),
-            snapshot.live_revision,
-        ) {
+        let completion = (|| {
+            if repository
+                .head()
+                .map_err(|_| repository_error())?
+                .as_ref()
+                .map(|head| head.id())
+                != Some(&revision)
+            {
+                return Err(repository_error());
+            }
+            runtime_authority.validate_commit(
+                &project_root,
+                project_id,
+                &snapshot.lease_id,
+                snapshot.live_revision,
+            )?;
+            publication.publish(&snapshot.root_layer)?;
+            runtime_authority.finish_commit(
+                &project_root,
+                project_id,
+                &snapshot.lease_id,
+                &revision.to_string(),
+                snapshot.live_revision,
+            )
+        })();
+        match completion {
             Ok(()) => runtime_lease.clear(),
             Err(error) => {
-                log::warn!("LiveStage commit finalization was deferred: {error}");
+                log::warn!(
+                    "LiveStage commit {revision} was published but live completion failed: {error}"
+                );
+                live_completion_error = Some(live_commit_incomplete(&revision));
             }
         }
+    }
+    if let Some(error) = live_completion_error {
+        if !crate::project::cache::warming::enqueue_project_targets_fail_closed(
+            &service.cache_warm,
+            &project_root,
+        ) {
+            log::error!(
+                "Failed to establish a safe Scene cache boundary for live commit {revision}"
+            );
+        }
+        return Err(error);
     }
     let committed_manifest =
         crate::project::catalog::manifest_store::ManifestStore::read_validated(&project_root)
@@ -194,6 +251,14 @@ pub(in crate::project) fn commit(
             id: revision.to_string(),
         },
     })
+}
+
+fn live_commit_incomplete(revision: &usd_git::RevisionId) -> ProjectWriteError {
+    ProjectWriteError::LiveCommitIncomplete {
+        revision: usd_project::RevisionSummary {
+            id: revision.to_string(),
+        },
+    }
 }
 
 fn validate_target(

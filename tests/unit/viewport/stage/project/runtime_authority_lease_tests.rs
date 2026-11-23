@@ -11,6 +11,69 @@ use super::consume_project_runtime_authority;
 use crate::project::service::ProjectRuntimeAuthority;
 
 #[test]
+fn runtime_commit_resolves_registered_canonical_scene_and_rejects_non_member() {
+    use crate::viewport::stage::StageHandle;
+    let dir = tempfile::tempdir().unwrap();
+    let registry_path = dir.path().join("workspace.json");
+    let mut service =
+        crate::project::service::ProjectApplicationService::open(&registry_path).unwrap();
+    let project = service
+        .create_project(dir.path(), "Runtime Commit")
+        .unwrap();
+    let project_root = dir.path().join("Runtime Commit");
+    let scene = service
+        .create_scene(
+            project.id,
+            project_protocol::ProjectWriteTarget::Project(project.id),
+            "Managed",
+        )
+        .unwrap();
+    let member = crate::project::scene::authoring::scene_path(&project_root, scene.scene_id);
+    let non_member = member.with_file_name("Unregistered.usda");
+    fs::copy(&member, &non_member).unwrap();
+    let queue = crate::project::service::ProjectRuntimeAuthorityQueue::with_workspace_registry_path(
+        &registry_path,
+    );
+    for (path, expected) in [(non_member, false), (member, true)] {
+        let mut world = World::new();
+        world.insert_resource(ProjectRuntimeAuthorityRuntime {
+            queue: queue.clone(),
+            active_lease: None,
+        });
+        world.insert_resource(StageHandle {
+            path: path.canonicalize().unwrap(),
+            error: None,
+        });
+        world.insert_non_send(usd_bevy::LiveStage::open_document(&path).unwrap());
+        let request_queue = queue.clone();
+        let request_root = project_root.clone();
+        let caller = thread::spawn(move || {
+            request_queue.begin_commit(&request_root, project.id, &ProjectCommitTarget::Project)
+        });
+        while !caller.is_finished() {
+            consume_project_runtime_authority(&mut world);
+            thread::sleep(Duration::from_millis(1));
+        }
+        let snapshot = caller.join().unwrap().unwrap();
+        assert_eq!(snapshot.is_some(), expected);
+        if let Some(snapshot) = snapshot {
+            assert_eq!(snapshot.scene_id, scene.scene_id);
+            assert_eq!(
+                snapshot.opened_root_digest,
+                Some(*blake3::hash(&fs::read(&path).unwrap()).as_bytes()),
+            );
+        }
+        assert_eq!(
+            world
+                .get_non_send::<usd_bevy::LiveStage>()
+                .unwrap()
+                .is_authoring_frozen(),
+            expected
+        );
+    }
+}
+
+#[test]
 fn active_runtime_stage_returns_ready_and_freezes_authoring() {
     let directory = tempfile::tempdir().expect("temporary runtime root");
     let stage = openusd::usd::Stage::builder()

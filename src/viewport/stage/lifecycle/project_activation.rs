@@ -246,6 +246,14 @@ fn install_scene_cache_revalidation(
         discard_scene_cache_bootstrap(world, scene_id, scene_generation);
         return;
     }
+    let visual_proof = world.get_non_send::<usd_bevy::LiveStage>().map(|stage| {
+        crate::viewport::stage::VerifiedSceneVisualInputs {
+            scene_id,
+            generation: scene_generation,
+            stage: stage.stage_identity(),
+            authoring: stage.authoring_generation(),
+        }
+    });
     world.insert_resource(PendingSceneCacheRevalidation {
         project_root,
         scene_id,
@@ -254,6 +262,7 @@ fn install_scene_cache_revalidation(
         expected_hash,
         config_hash,
         result,
+        visual_proof,
     });
 }
 pub(crate) fn discard_scene_cache_bootstrap(
@@ -269,6 +278,7 @@ pub(crate) fn discard_scene_cache_bootstrap(
     if !matches {
         return;
     }
+    world.remove_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>();
     world.remove_resource::<SceneCachePresentation>();
     world.remove_resource::<crate::project::cache::contract::ProjectCacheLookup>();
     if world
@@ -300,6 +310,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
         expected_hash,
         config_hash,
         result,
+        visual_proof,
     )) = world
         .get_resource::<PendingSceneCacheRevalidation>()
         .map(|pending| {
@@ -311,6 +322,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
                 pending.expected_hash,
                 pending.config_hash,
                 std::sync::Arc::clone(&pending.result),
+                pending.visual_proof,
             )
         })
     else {
@@ -372,6 +384,16 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
             "[project-cache] rejected stale Scene metadata generation {scene_generation} for {scene_id}; canonical LiveStage projection continues"
         );
     } else {
+        // Absence of an expected digest is sufficient for metadata fallback
+        // but cannot authorize a visual policy that withdraws source coverage.
+        if expected_hash.is_some()
+            && let Some(verified) = visual_proof
+            && world
+                .get_non_send::<usd_bevy::LiveStage>()
+                .is_some_and(|stage| stage.stage_identity() == verified.stage)
+        {
+            world.insert_resource(verified);
+        }
         bevy::log::debug!(
             "[project-cache] Scene metadata generation {scene_generation} revalidated for {scene_id}"
         );

@@ -20,5 +20,5 @@ pub(crate) use state::{
     LoadRequest, LoaderTuning, PendingSceneCacheRevalidation, ReloadRequest, RequestedAsset,
     SceneCacheOwnershipContext, SceneCachePresentation, SceneDerivedMetadata, Spawned,
     StageCameraData, StageCameraInfo, StageCameraProjection, StageHandle, StageInfo,
-    StagePresentationContext, VariantSetInfo,
+    StagePresentationContext, VariantSetInfo, VerifiedSceneVisualInputs,
 };

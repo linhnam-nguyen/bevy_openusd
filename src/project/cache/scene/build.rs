@@ -91,6 +91,17 @@ pub(crate) fn build_scene_cache_index(
         .filter(|owned| owned.mesh.is_some())
         .map(|owned| owned.path.clone())
         .collect::<Vec<_>>();
+    let eligible_lods = super::super::derived_lod::enabled().then(|| {
+        payload_paths
+            .iter()
+            .filter_map(|path| {
+                let prim = stage.prim(path.as_str()).ok()?;
+                super::super::derived_lod::source_eligible(&prim)
+                    .ok()?
+                    .then_some(path.clone())
+            })
+            .collect::<HashSet<_>>()
+    });
     let prepared = prepare_scene_payloads(stage, &path, &payload_paths)?;
     let store = SceneCacheStore::new(project_root);
     let object_store = store.object_store(scene_id)?;
@@ -137,6 +148,18 @@ pub(crate) fn build_scene_cache_index(
         entries,
     };
     index.validate(scene_id, generation)?;
+    if let Some(eligible) = eligible_lods
+        && let Err(error) = super::super::derived_lod::prepare_scene_lods(
+            project_root,
+            scene_id,
+            generation,
+            &eligible,
+            &object_store,
+            &index.entries,
+        )
+    {
+        log::warn!("generated LOD preparation kept source geometry: {error:#}");
+    }
     let spatial = build_spatial_index(&index);
     spatial.validate(scene_id, generation)?;
     Ok((index, spatial))

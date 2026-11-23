@@ -1,6 +1,435 @@
 {
   "additions": [
     {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "project::versioning::commit::runtime::lease_tests::live_commit_publishes_exact_scene_or_preserves_concurrent_worktree",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::stage::project::runtime_authority::lease_tests::runtime_commit_resolves_registered_canonical_scene_and_rejects_non_member",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C03"
+      ],
+      "name": "project::service::export_portability_tests::registered_project_exports_loose_nested_payload_layers",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::api::bridge::tests::selection_performance_test::focus_keeps_canonical_nested_bounds_after_visual_unload",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::api::bridge::tests::selection_performance_test::focus_uses_resident_geometry_for_occurrences_and_disconnected_targets",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::residency::visual_policy::tests::editor_intent_pins_unselected_payload_until_stable_and_is_stage_scoped",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::residency::visual_policy::tests::failed_visual_recovery_retries_bounded_batches_until_native_readback",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "live::tests::payload::authored_lod_clear_removes_opinion_while_payload_is_unloaded",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::scene::index::tests::camera_visual_unload_keeps_logical_tree_rows_without_entity_resolution",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "project::cache::derived_lod::tests::generated_planar_mesh_is_deterministic_and_preserves_the_boundary",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::residency::visual_policy::tests::missing_bounds_must_load_and_never_evict",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::residency::visual_policy::tests::visual_unload_requires_hysteresis_and_never_overrides_pin",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "viewport::residency::visual_policy::tests::nested_load_admits_ancestor_before_child",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "live::tests::payload::authored_lod_uses_only_the_visual_session_and_rejects_changed_identity",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C07"
+      ],
+      "name": "live::tests::payload::visual_payload_batch_preserves_canonical_nested_geometry",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
         "configurations": [
             "linux:default",
             "linux:solari",

@@ -3,10 +3,11 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use openusd::{
+    ar::{join_package_relative_path, split_package_relative_path_outer},
     usd::{PrimPredicate, Stage},
     usdz::ArchiveWriter,
 };
@@ -18,8 +19,10 @@ use usd_project::SceneId;
 use uuid::Uuid;
 
 use crate::project::{
-    assets::closure::scene_service::scene_dependency_closure, models::wrapper::model_wrapper_path,
-    service::ProjectApplicationService, storage::ProjectStorageLayout,
+    assets::closure::{dependency_containment_report, scene_service::scene_dependency_closure},
+    models::wrapper::model_wrapper_path,
+    service::ProjectApplicationService,
+    storage::ProjectStorageLayout,
     versioning::commit::runtime::RuntimeLeaseGuard,
 };
 
@@ -141,21 +144,18 @@ pub(super) fn write_archive_with_root_source(
 ) -> Result<(), ProjectWriteError> {
     let (scenes, models) = scene_dependency_closure(project_root, manifest.raw(), root_scene)
         .map_err(|_| export_error())?;
-    let entries = export_entries(project_root, manifest, &scenes, &models)?;
+    let mut entries = export_entries(project_root, manifest, &scenes, &models)?;
     let root_source = scene_path(project_root, root_scene);
     if !entries.iter().any(|entry| entry.source == root_source) {
         return Err(export_error());
     }
+    let mapping = complete_export_mapping(project_root, &root_source, &mut entries)?;
     let root_read_source = runtime_override
         .filter(|(_, scene_id)| *scene_id == root_scene)
         .map(|(source, _)| source)
         .unwrap_or(&root_source);
     let mut archive = ArchiveWriter::create(destination).map_err(|_| export_error())?;
-    let mapping = entries
-        .iter()
-        .map(|entry| (entry.source.clone(), entry.archive.clone()))
-        .collect::<HashMap<_, _>>();
-    let root_bytes = read_export_bytes(root_read_source, "scene.usda", &mapping)?;
+    let root_bytes = read_export_bytes(root_read_source, &root_source, "scene.usda", &mapping)?;
     archive
         .add_layer("scene.usda", &root_bytes)
         .map_err(|_| export_error())?;
@@ -167,13 +167,49 @@ pub(super) fn write_archive_with_root_source(
             .filter(|(_, scene_id)| entry.source == scene_path(project_root, *scene_id))
             .map(|(source, _)| source)
             .unwrap_or(&entry.source);
-        let bytes = read_export_bytes(source, &entry.archive, &mapping)?;
+        let bytes = read_export_bytes(source, &entry.source, &entry.archive, &mapping)?;
         archive
             .add_layer(&entry.archive, &bytes)
             .map_err(|_| export_error())?;
     }
     archive.finish().map_err(|_| export_error())?;
     Ok(())
+}
+
+fn complete_export_mapping(
+    project_root: &Path,
+    root_source: &Path,
+    entries: &mut Vec<ExportEntry>,
+) -> Result<HashMap<PathBuf, String>, ProjectWriteError> {
+    let report = dependency_containment_report(project_root, root_source).map_err(|error| {
+        log::warn!("Cannot package Project Scene dependencies: {error:#}");
+        export_error()
+    })?;
+    let project_root = project_root.canonicalize().map_err(|_| export_error())?;
+    let mut mapping = HashMap::new();
+    for entry in entries.iter() {
+        let canonical = entry.source.canonicalize().map_err(|_| export_error())?;
+        if !canonical.starts_with(&project_root)
+            || mapping.insert(canonical, entry.archive.clone()).is_some()
+        {
+            return Err(export_error());
+        }
+    }
+    for source in report.layers.into_iter().chain(report.non_layer_assets) {
+        if mapping.contains_key(&source) {
+            continue;
+        }
+        let relative = source
+            .strip_prefix(&project_root)
+            .map_err(|_| export_error())?
+            .to_str()
+            .ok_or_else(export_error)?
+            .replace('\\', "/");
+        let archive = format!("dependencies/{relative}");
+        mapping.insert(source.clone(), archive.clone());
+        entries.push(ExportEntry { source, archive });
+    }
+    Ok(mapping)
 }
 
 fn export_entries(
@@ -272,6 +308,7 @@ fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), Proje
 
 fn read_export_bytes(
     source: &Path,
+    asset_anchor: &Path,
     archive_path: &str,
     mapping: &HashMap<PathBuf, String>,
 ) -> Result<Vec<u8>, ProjectWriteError> {
@@ -288,11 +325,12 @@ fn read_export_bytes(
     if !is_usd_layer {
         return Ok(bytes);
     }
-    rewrite_layer_asset_paths(source, &bytes, archive_path, mapping)
+    rewrite_layer_asset_paths(source, asset_anchor, &bytes, archive_path, mapping)
 }
 
 fn rewrite_layer_asset_paths(
     source: &Path,
+    asset_anchor: &Path,
     bytes: &[u8],
     current_archive_path: &str,
     mapping: &HashMap<PathBuf, String>,
@@ -313,19 +351,27 @@ fn rewrite_layer_asset_paths(
             if asset.is_empty() {
                 return String::new();
             }
-            let asset_path = Path::new(asset);
+            let packaged = split_package_relative_path_outer(asset);
+            let asset_path = Path::new(packaged.as_ref().map_or(asset, |(package, _)| package));
             let resolved = if asset_path.is_absolute() {
                 asset_path.to_owned()
             } else {
-                source
+                asset_anchor
                     .parent()
                     .map(|parent| parent.join(asset_path))
                     .unwrap_or_else(|| asset_path.to_owned())
             };
-            if let Some(target) =
-                normalize_lookup_path(&resolved).and_then(|path| mapping.get(&path))
+            if let Some(target) = resolved
+                .canonicalize()
+                .ok()
+                .and_then(|path| mapping.get(&path))
             {
-                relative_archive_path(current_archive_path, target)
+                let relative = relative_archive_path(current_archive_path, target);
+                if let Some((_, member)) = packaged {
+                    join_package_relative_path(&relative, &member)
+                } else {
+                    relative
+                }
             } else {
                 asset.to_owned()
             }
@@ -348,24 +394,6 @@ fn rewrite_layer_asset_paths(
     }
 }
 
-fn normalize_lookup_path(path: &Path) -> Option<PathBuf> {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return None;
-                }
-            }
-            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
-                normalized.push(component.as_os_str());
-            }
-        }
-    }
-    Some(normalized)
-}
-
 fn relative_archive_path(current: &str, target: &str) -> String {
     let mut base = current.split('/').collect::<Vec<_>>();
     let _ = base.pop();
@@ -384,11 +412,22 @@ fn relative_archive_path(current: &str, target: &str) -> String {
 }
 
 fn validate_archive(path: &Path) -> Result<(), ProjectWriteError> {
-    let path = path.to_string_lossy();
-    let stage = Stage::open(path.as_ref()).map_err(|_| export_error())?;
+    let archive = path.canonicalize().map_err(|_| export_error())?;
+    let stage =
+        Stage::open(archive.to_str().ok_or_else(export_error)?).map_err(|_| export_error())?;
     stage
-        .traverse(PrimPredicate::DEFAULT, |_| {})
+        .traverse(PrimPredicate::ALL, |_| {})
         .map_err(|_| export_error())?;
+    if !stage.composition_errors().is_empty() {
+        return Err(export_error());
+    }
+    for identifier in stage.layer_identifiers() {
+        let containing_archive =
+            split_package_relative_path_outer(&identifier).map_or(identifier, |(outer, _)| outer);
+        if Path::new(&containing_archive).canonicalize().ok().as_ref() != Some(&archive) {
+            return Err(export_error());
+        }
+    }
     Ok(())
 }
 

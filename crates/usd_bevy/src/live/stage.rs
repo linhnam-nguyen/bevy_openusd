@@ -1,3 +1,4 @@
+use anyhow::Context;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -34,6 +35,7 @@ pub struct LiveStage {
     revision: Cell<LiveRevision>,
     visual_queue: RefCell<Vec<StageChange>>,
     visual_revision: Cell<LiveRevision>,
+    manual_visual_payloads: RefCell<HashSet<String>>,
     failed_visual_authoring: Cell<Option<LiveRevision>>,
     authoring_generation: Rc<Cell<LiveRevision>>,
     authoring_frozen: Cell<bool>,
@@ -170,6 +172,12 @@ impl LiveStage {
         Ok(live)
     }
 
+    /// Immutable root file bytes captured when the authoritative document opened.
+    pub fn opened_root_bytes(&self) -> Option<openusd::ar::SharedBuffer> {
+        let visual = self.visual.borrow();
+        visual.as_ref()?.opened_root_bytes()
+    }
+
     /// Open just the authoritative context for an exact read of a file snapshot,
     /// such as a materialized Git revision.
     pub fn open_authoritative(path: &std::path::Path) -> anyhow::Result<Stage> {
@@ -197,11 +205,14 @@ impl LiveStage {
         use super::visual_stage::SnapshotTextures;
         let visual = self.visual.borrow();
         let identity = self.stage_identity();
-        let current = world.get_non_send::<SnapshotTextures>().map(|source| source.stage_identity);
+        let current = world
+            .get_non_send::<SnapshotTextures>()
+            .map(|source| source.stage_identity);
         if current == visual.as_ref().map(|_| identity) {
             return;
         }
-        if let Some(mut cache) = world.get_resource_mut::<crate::route::material::UsdTextureCache>() {
+        if let Some(mut cache) = world.get_resource_mut::<crate::route::material::UsdTextureCache>()
+        {
             cache.invalidate_textures();
         }
         if let Some(visual) = visual.as_ref() {
@@ -237,6 +248,7 @@ impl LiveStage {
             revision: Cell::new(LiveRevision::default()),
             visual_queue: RefCell::default(),
             visual_revision: Cell::default(),
+            manual_visual_payloads: RefCell::default(),
             failed_visual_authoring: Cell::default(),
             authoring_generation,
             authoring_frozen: Cell::new(false),
@@ -289,6 +301,7 @@ impl LiveStage {
             .expect("live stage generation exhausted");
         self.queue = queue;
         self.visual_queue.get_mut().clear();
+        self.manual_visual_payloads.get_mut().clear();
         self.failed_visual_authoring.set(None);
         self.authoring_generation = authoring_generation;
         self.suppressed = Rc::new(RefCell::new(HashSet::new()));
@@ -388,6 +401,22 @@ impl LiveStage {
         (self.session_id, self.stage_generation)
     }
 
+    pub fn has_manual_visual_payloads(&self) -> bool {
+        !self.manual_visual_payloads.borrow().is_empty()
+    }
+
+    pub fn has_manual_visual_payload_overlap(&self, path: &str) -> bool {
+        let descendant = |ancestor: &str, child: &str| {
+            child
+                .strip_prefix(ancestor)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        };
+        self.manual_visual_payloads
+            .borrow()
+            .iter()
+            .any(|manual| manual == path || descendant(manual, path) || descendant(path, manual))
+    }
+
     pub fn visual_context_id(&self) -> VisualContextId {
         let visual = self.visual.borrow();
         let (authoring_revision, projection_revision) = visual.as_ref().map_or_else(
@@ -444,6 +473,265 @@ impl LiveStage {
         std::mem::take(&mut *self.suppressed.borrow_mut())
     }
 
+    /// Discover visual payload owners without confusing a documentless Stage
+    /// with a failed file-backed visual Stage. `None` only means that no
+    /// independent visual context exists. An operational discovery error must
+    /// reach callers so they cannot acknowledge a focus on incomplete geometry.
+    pub fn visual_loadable_paths_if_backed(&self) -> anyhow::Result<Option<Vec<String>>> {
+        if self.visual.borrow().is_none() {
+            return Ok(None);
+        }
+        self.visual_loadable_paths().map(Some)
+    }
+
+    /// Discover payload composition ownership in the separate visual context.
+    /// The canonical `self.stage` and exact-query index are not consulted or
+    /// changed. OpenUSD provides nested payload discovery natively.
+    pub fn visual_loadable_paths(&self) -> anyhow::Result<Vec<String>> {
+        self.synchronize_visual()?;
+        let visual = self.visual.borrow();
+        let visual = visual
+            .as_ref()
+            .context("visual composition requires a file-backed document")?;
+        Ok(visual
+            .stage
+            .find_loadable(openusd::sdf::Path::abs_root())?
+            .into_iter()
+            .map(|path| path.to_string())
+            .collect())
+    }
+
+    /// A finite authored model extent in stage coordinates, for visual admission.
+    pub fn visual_payload_hint(&self, path: &str) -> anyhow::Result<Option<([f64; 3], [f64; 3])>> {
+        use openusd_schemas::geom::{BBoxCache, Purpose};
+        self.synchronize_visual()?;
+        let visual = self.visual.borrow();
+        let stage = &visual
+            .as_ref()
+            .context("no independent visual context")?
+            .stage;
+        let prim = stage.prim(path)?;
+        if !prim.is_model()?
+            || prim
+                .attribute("extentsHint")
+                .get::<Vec<openusd::gf::Vec3f>>()?
+                .is_none_or(|values| values.len() < 2)
+        {
+            return Ok(None);
+        }
+        let range = BBoxCache::new(None, Purpose::ORDERED)
+            .with_extents_hint(true)
+            .with_ignore_visibility(true)
+            .world_bound(&prim)?
+            .aligned_range();
+        let min: [f64; 3] = range.min().into();
+        let max: [f64; 3] = range.max().into();
+        Ok(
+            (!range.is_empty() && min.into_iter().chain(max).all(f64::is_finite))
+                .then_some((min, max)),
+        )
+    }
+
+    pub fn stage_orientation(&self) -> bevy::prelude::Quat {
+        super::projection::stage_up_axis(&self.stage)
+    }
+
+    /// Read the currently composed visual load set, not the authoring layer.
+    pub fn visual_loaded_paths(&self) -> anyhow::Result<Vec<String>> {
+        self.synchronize_visual()?;
+        let visual = self.visual.borrow();
+        let visual = visual
+            .as_ref()
+            .context("visual composition requires a file-backed document")?;
+        Ok(visual
+            .stage
+            .load_set()?
+            .into_iter()
+            .map(|path| path.to_string())
+            .collect())
+    }
+
+    /// Native batch load/unload with all-path prevalidation and best-effort
+    /// rollback on unexpected composition failure. No canonical load rules are
+    /// edited. The stage queue invalidates stale rendering and picking on the
+    /// following live projection pass.
+    pub fn apply_visual_load_batch(
+        &self,
+        load: &[String],
+        unload: &[String],
+    ) -> anyhow::Result<()> {
+        use openusd::usd::LoadPolicy;
+        if load.is_empty() && unload.is_empty() {
+            return Ok(());
+        }
+        self.synchronize_visual()?;
+        // Validate every path before the first native load-rule operation.
+        let to_load = load
+            .iter()
+            .map(|path| openusd::sdf::path(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        let to_unload = unload
+            .iter()
+            .map(|path| openusd::sdf::path(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        let visual = self.visual.borrow();
+        let stage = &visual
+            .as_ref()
+            .context("no independent visual context")?
+            .stage;
+        let previous = stage.load_rules();
+        stage.load_and_unload(
+            to_load
+                .iter()
+                .cloned()
+                .map(|path| (path, LoadPolicy::WithoutDescendants)),
+            to_unload.iter().cloned(),
+        )?;
+        if let Err(error) = stage.load_set() {
+            stage.set_load_rules(previous);
+            return Err(error.into());
+        }
+        let errors = stage.composition_errors();
+        if !errors.is_empty() {
+            stage.set_load_rules(previous);
+            anyhow::bail!("visual payload composition failed; restored prior rules: {errors:?}");
+        }
+        drop(visual);
+        // Queue the affected roots once, even when different ancestor/child
+        // rules take effect in the same native batch.
+        let changed = load
+            .iter()
+            .chain(unload)
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        for prim in changed {
+            self.enqueue_visual_resync(&prim);
+        }
+        Ok(())
+    }
+
+    /// Discover supported authored variant sets without changing either Stage.
+    pub fn authored_lod_options(&self, path: &str) -> anyhow::Result<Vec<(String, Vec<String>)>> {
+        let prim = self.stage.prim(path)?;
+        prim.variant_sets()
+            .names()?
+            .into_iter()
+            .filter(|name| is_lod_set(name))
+            .map(|name| Ok((name.clone(), prim.variant_set(name).names()?)))
+            .collect()
+    }
+
+    /// Apply a camera selection in the ephemeral visual session. Passing None
+    /// restores the canonical composition choice for editing and exact use.
+    pub fn select_visual_authored_lod(
+        &self,
+        path: &str,
+        set_name: &str,
+        choice: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        anyhow::ensure!(
+            is_lod_set(set_name),
+            "unsupported authored LOD set {set_name}"
+        );
+        self.synchronize_visual()?;
+        let canonical = self.stage.prim(path)?;
+        let visual = self.visual.borrow();
+        let stage = &visual.as_ref().context("no visual session stage")?.stage;
+        let prim = stage.prim(path)?;
+        let session = stage
+            .session_layer()
+            .context("missing visual session layer")?;
+        let prior_opinion = session
+            .try_borrow()?
+            .prim(path)?
+            .and_then(|spec| spec.variant_selections().remove(set_name));
+        let Some(choice) = choice else {
+            if prior_opinion.is_none() {
+                return Ok(false);
+            }
+            // A payload can be unloaded while its stronger session opinion
+            // persists. Clear the session spec even when no prim currently composes.
+            session.edit(|edit| {
+                if let Some(mut spec) = edit.prim_mut(path)? {
+                    spec.clear_variant_selection(set_name)?;
+                }
+                Ok(())
+            })?;
+            anyhow::ensure!(
+                session
+                    .try_borrow()?
+                    .prim(path)?
+                    .is_none_or(|spec| { !spec.variant_selections().contains_key(set_name) }),
+                "visual session still authors {set_name} at {path}"
+            );
+            drop(visual);
+            self.enqueue_visual_resync(path);
+            return Ok(true);
+        };
+        let variant = prim.variant_set(set_name);
+        if !prim.is_loaded()? || variant.selection()?.as_deref() == Some(choice) {
+            return Ok(false);
+        }
+        anyhow::ensure!(
+            variant.names()?.iter().any(|name| name == choice),
+            "missing authored variant {choice}"
+        );
+        let original_target = stage.edit_target();
+        let session_target = stage
+            .edit_target_session()
+            .context("missing visual session layer")?;
+        stage.set_edit_target(session_target)?;
+        let result = (|| -> anyhow::Result<()> {
+            variant.set_selection(choice)?;
+            validate_lod_correspondence(&canonical, &prim)?;
+            let errors = stage.composition_errors();
+            anyhow::ensure!(
+                errors.is_empty(),
+                "visual LOD composition failed: {errors:?}"
+            );
+            Ok(())
+        })();
+        let rollback = if result.is_err() {
+            match prior_opinion.as_deref() {
+                Some(previous) => variant.set_selection(previous),
+                None => variant.clear_selection(),
+            }
+        } else {
+            Ok(())
+        };
+        let restored = stage.set_edit_target(original_target);
+        rollback?;
+        restored?;
+        result?;
+        drop(visual);
+        self.enqueue_visual_resync(path);
+        Ok(true)
+    }
+
+    /// Verify the absence of a camera opinion even if its prim is not composed.
+    pub fn visual_lod_matches_canonical(&self, path: &str, set_name: &str) -> anyhow::Result<bool> {
+        anyhow::ensure!(is_lod_set(set_name), "unsupported LOD set");
+        self.synchronize_visual()?;
+        let visual = self.visual.borrow();
+        let stage = &visual.as_ref().context("missing visual Stage")?.stage;
+        let session = stage
+            .session_layer()
+            .context("missing visual session layer")?;
+        if session
+            .try_borrow()?
+            .prim(path)?
+            .is_some_and(|spec| spec.variant_selections().contains_key(set_name))
+        {
+            return Ok(false);
+        }
+        let prim = stage.prim(path)?;
+        if !prim.is_loaded()? || !prim.is_defined()? {
+            return Ok(true);
+        }
+        Ok(prim.variant_set(set_name).selection()?
+            == self.stage.prim(path)?.variant_set(set_name).selection()?)
+    }
+
     /// Load `prim`'s payload (and everything beneath it). This is a composition
     /// change — it fires the change sink, so the next `apply_changes` reconciles
     /// and the newly-composed subtree is projected. The reversible counterpart
@@ -453,6 +741,9 @@ impl LiveStage {
         let p = openusd::sdf::path(prim)?;
         self.projection_stage()
             .load(p, openusd::usd::LoadPolicy::WithDescendants)?;
+        self.manual_visual_payloads
+            .borrow_mut()
+            .insert(prim.to_owned());
         self.enqueue_visual_resync(prim);
         Ok(())
     }
@@ -464,6 +755,9 @@ impl LiveStage {
         self.synchronize_visual()?;
         let p = openusd::sdf::path(prim)?;
         self.projection_stage().unload(p)?;
+        self.manual_visual_payloads
+            .borrow_mut()
+            .insert(prim.to_owned());
         self.enqueue_visual_resync(prim);
         Ok(())
     }
@@ -481,6 +775,15 @@ impl LiveStage {
 
     fn enqueue_visual_resync(&self, prim: &str) {
         if self.visual.borrow().is_some() {
+            // Reject completions captured against the previous visual rules as
+            // soon as composition changes, before reconciliation drains them.
+            self.visual_revision.set(LiveRevision(
+                self.visual_revision
+                    .get()
+                    .0
+                    .checked_add(1)
+                    .expect("visual stage revision exhausted"),
+            ));
             self.visual_queue.borrow_mut().push(StageChange {
                 resynced: vec![prim.to_owned()],
                 changed_info: Vec::new(),
@@ -489,6 +792,66 @@ impl LiveStage {
             self.enqueue_resync(prim);
         }
     }
+}
+
+fn is_lod_set(name: &str) -> bool {
+    name.eq_ignore_ascii_case("lod") || name.eq_ignore_ascii_case("levelOfDetail")
+}
+
+fn validate_lod_correspondence(
+    canonical: &openusd::usd::Prim,
+    visual: &openusd::usd::Prim,
+) -> anyhow::Result<()> {
+    use openusd_schemas::geom::{BBoxCache, Purpose};
+    let source = BBoxCache::new(None, Purpose::ORDERED)
+        .world_bound(canonical)?
+        .aligned_range();
+    let candidate = BBoxCache::new(None, Purpose::ORDERED)
+        .world_bound(visual)?
+        .aligned_range();
+    anyhow::ensure!(
+        !source.is_empty() && !candidate.is_empty(),
+        "authored LOD has no comparable bounds"
+    );
+    let min: [f64; 3] = source.min().into();
+    let max: [f64; 3] = source.max().into();
+    let candidate_min: [f64; 3] = candidate.min().into();
+    let candidate_max: [f64; 3] = candidate.max().into();
+    let tolerance = 0.05
+        * (0..3)
+            .map(|axis| (max[axis] - min[axis]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+    anyhow::ensure!(
+        (0..3).all(|axis| (min[axis] - candidate_min[axis]).abs() <= tolerance
+            && (max[axis] - candidate_max[axis]).abs() <= tolerance),
+        "authored LOD changes model bounds"
+    );
+    let mut pending = vec![(canonical.clone(), visual.clone())];
+    let mut count = 0;
+    while let Some((source, candidate)) = pending.pop() {
+        count += 1;
+        anyhow::ensure!(
+            count <= 4096,
+            "authored LOD namespace exceeds validation budget"
+        );
+        anyhow::ensure!(
+            source.path() == candidate.path() && source.type_name()? == candidate.type_name()?,
+            "authored LOD changes source identity at {}",
+            source.path()
+        );
+        let mut expected = source.children()?;
+        let mut actual = candidate.children()?;
+        anyhow::ensure!(
+            expected.len() == actual.len(),
+            "authored LOD changes child coverage at {}",
+            source.path()
+        );
+        expected.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
+        actual.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
+        pending.extend(expected.into_iter().zip(actual));
+    }
+    Ok(())
 }
 
 impl Drop for LiveStage {

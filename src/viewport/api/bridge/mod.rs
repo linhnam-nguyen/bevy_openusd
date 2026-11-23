@@ -7,6 +7,7 @@
 //! - [`commands`]  — `apply_viewport_commands` system
 //! - [`editor`]    — editor command adaptation, authoring policy, mutations, and save
 //! - [`tree`]      — `apply_tree_commands` and subtree-geometry helpers
+//! - [`focus_bounds`] — focus bounds independent of visual payload residency
 //! - [`helpers`]   — read-model builders and event emitters
 //! - [`settings`]  — authoritative protocol settings state
 //! - [`convert`]   — `editor_value_to_usd` JSON→USD conversion
@@ -15,6 +16,7 @@ mod bim;
 mod commands;
 pub(crate) mod convert;
 mod editor;
+mod focus_bounds;
 mod helpers;
 mod plugin;
 mod query;

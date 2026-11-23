@@ -8,6 +8,7 @@ use crate::viewport::input::ViewerInteractionGate;
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,
 };
+use crate::viewport::residency::EditPayloadPins;
 use bevy::prelude::*;
 use viewport_protocol::{PROTOCOL_VERSION, ViewportCommand};
 mod cadence;
@@ -379,6 +380,11 @@ pub(super) fn apply_viewport_commands(
                 presentation::set_physics(request_id, running, &mut outbox, &mut state.physics);
             }
             command => {
+                let edit_intent = EditPayloadPins::command_intent(&command);
+                let prior = state
+                    .stage
+                    .as_deref()
+                    .map(usd_bevy::LiveStage::authoring_generation);
                 apply_editor_command(
                     command,
                     request_id,
@@ -399,6 +405,16 @@ pub(super) fn apply_viewport_commands(
                     &state.cache_warm,
                     &state.selected_targets,
                 );
+                // Capture the post-command revision/Stage identity. This is a
+                // transient visual admission pin, never another USD writer.
+                if let (Some(stage), Some(intent), Some(pins)) = (
+                    state.stage.as_deref(),
+                    edit_intent,
+                    state.edit_pins.as_deref_mut(),
+                ) && prior != Some(stage.authoring_generation())
+                {
+                    pins.record(stage.stage_identity(), intent);
+                }
             }
         }
     }

@@ -1,14 +1,20 @@
 //! Render-owner request handling for Project Commit and Export authority.
 
-use bevy::prelude::World;
+use std::path::Path;
 
-use crate::{project::catalog::manifest_store::ManifestStore, viewport::stage::StageHandle};
+use bevy::prelude::World;
+use usd_project::{SceneId, ValidatedProjectManifest};
+
+use crate::{
+    project::{catalog::manifest_store::ManifestStore, storage::ProjectStorageLayout},
+    viewport::stage::StageHandle,
+};
 
 use super::live_stage_runtime::{
-    ProjectRuntimeAuthorityRuntime, active_scene_id_for_stage, clear_runtime_lease,
-    expire_runtime_lease, project_root_for_stage, runtime_abort_response, runtime_failed,
-    runtime_finish_response, runtime_renew_response, runtime_revision_response,
-    runtime_scene_is_allowed, runtime_scene_is_in_export_closure, runtime_snapshot_response,
+    ProjectRuntimeAuthorityRuntime, clear_runtime_lease, expire_runtime_lease,
+    runtime_abort_response, runtime_failed, runtime_finish_response, runtime_renew_response,
+    runtime_revision_response, runtime_scene_is_allowed, runtime_scene_is_in_export_closure,
+    runtime_snapshot_response,
 };
 use crate::project::runtime::authority::{ProjectRuntimeRequest, ProjectRuntimeResponse};
 
@@ -30,14 +36,10 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
         return;
     }
     let registered_project_roots = queue.registered_project_roots();
-    let active = world.get_resource::<StageHandle>().and_then(|handle| {
-        let project_root = project_root_for_stage(&handle.path)?;
-        let manifest = ManifestStore::read_validated(&project_root).ok()?;
-        let project_id = manifest.raw().project_id;
-        let active_scene_id = active_scene_id_for_stage(&handle.path, &project_root);
-        Some((project_root, project_id, active_scene_id, manifest))
-    });
-    let active_root = active.as_ref().map(|(root, ..)| root);
+    let active_path = world
+        .get_resource::<StageHandle>()
+        .filter(|handle| handle.error.is_none())
+        .map(|handle| handle.path.clone());
     for envelope in requests {
         let expired = envelope.is_expired(crate::project::runtime::authority::unix_time_ms());
         let request = envelope.into_request();
@@ -56,20 +58,19 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
             continue;
         };
         let cancelled = queue.is_cancelled(&project_root, &request_id);
-        let active_request = active
-            .as_ref()
-            .and_then(|(_, project_id, scene_id, manifest)| {
-                (*scene_id)
-                    .filter(|_| {
-                        request.project_id() == registered_project_id
-                            && registered_project_id == *project_id
-                            && active_root.is_some_and(|root| root == &project_root)
-                    })
-                    .map(|active_scene_id| (project_id, active_scene_id, manifest))
-            });
+        let active_request = active_path.as_deref().and_then(|stage_path| {
+            let manifest = ManifestStore::read_validated(&project_root).ok()?;
+            if manifest.raw().project_id != registered_project_id {
+                return None;
+            }
+            let scene_id = manifest_scene_for_stage(stage_path, &project_root, &manifest)?;
+            Some((scene_id, manifest))
+        });
         let response = if expired || cancelled {
             runtime_failed(&request_id, project_protocol::ProjectWriteErrorCode::Busy)
-        } else if let Some((project_id, active_scene_id, manifest)) = active_request {
+        } else if let Some((active_scene_id, manifest)) = active_request {
+            let project_id = &registered_project_id;
+            let manifest = &manifest;
             match request {
                 ProjectRuntimeRequest::BeginCommit { target, .. } => {
                     if runtime_scene_is_allowed(&project_root, manifest, active_scene_id, &target) {
@@ -153,9 +154,7 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
         let response_is_ready = matches!(&response, ProjectRuntimeResponse::Ready { .. });
         if let Err(error) = queue.publish_response(&response) {
             if let ProjectRuntimeResponse::Ready { lease_id, .. } = &response {
-                if let Some((_, project_id, ..)) = active.as_ref() {
-                    clear_runtime_lease(world, *project_id, lease_id);
-                }
+                clear_runtime_lease(world, registered_project_id, lease_id);
             }
             queue.clear_request_state(&project_root, &request_id);
             bevy::log::warn!("Project runtime authority response failed: {error:?}");
@@ -163,6 +162,29 @@ pub(super) fn consume_project_runtime_authority(world: &mut World) {
             queue.clear_request_state(&project_root, &request_id);
         }
     }
+}
+
+/// Match the open file against the registered Project's current Scene membership.
+/// The storage layout is also used by Stage activation, including legacy paths.
+fn manifest_scene_for_stage(
+    stage_path: &Path,
+    project_root: &Path,
+    manifest: &ValidatedProjectManifest,
+) -> Option<SceneId> {
+    let stage_path = stage_path.canonicalize().ok()?;
+    let root = project_root.canonicalize().ok()?;
+    if !stage_path.starts_with(&root) {
+        return None;
+    }
+    let layout = ProjectStorageLayout::new(root);
+    let mut matches = manifest.raw().scenes.iter().filter(|scene| {
+        layout
+            .readable_scene_path(manifest.raw(), scene)
+            .canonicalize()
+            .is_ok_and(|candidate| candidate == stage_path)
+    });
+    let scene = matches.next()?;
+    matches.next().is_none().then_some(scene.id)
 }
 
 #[cfg(test)]
