@@ -9,7 +9,7 @@ use usd_model::HashDigest;
 
 /// Bumped whenever the meaning of a ready runtime cache changes, even if the
 /// individual payload schemas remain decodable.
-pub(crate) const PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION: u16 = 2;
+pub(crate) const PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION: u16 = 3;
 
 /// Explicit projection contract version included in Project cache identity.
 pub(crate) const RUNTIME_PROJECTION_VERSION: u16 = 1;

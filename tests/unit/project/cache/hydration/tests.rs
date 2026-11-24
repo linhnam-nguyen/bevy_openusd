@@ -17,7 +17,7 @@ use crate::project::cache::{ProjectCacheDescriptor, ProjectCacheTarget};
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::runtime::delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};
 use crate::project::runtime::payload::{
-    RUNTIME_MATERIAL_VERSION, RUNTIME_TEXTURE_VERSION, RuntimeMaterialTextures,
+    RUNTIME_MATERIAL_VERSION, RuntimeMaterialTextures, RuntimeTextureBlob, RuntimeTextureColorSpace,
 };
 
 fn digest(value: u8) -> HashDigest {
@@ -25,6 +25,18 @@ fn digest(value: u8) -> HashDigest {
 }
 
 fn fixture() -> Result<(
+    tempfile::TempDir,
+    ActiveProjectCacheContext,
+    RuntimeManifest,
+    BlobId,
+    BlobId,
+)> {
+    fixture_with_black_border(false)
+}
+
+fn fixture_with_black_border(
+    black: bool,
+) -> Result<(
     tempfile::TempDir,
     ActiveProjectCacheContext,
     RuntimeManifest,
@@ -58,14 +70,25 @@ fn fixture() -> Result<(
     } = prepare_mesh_payload(&mesh)?;
     assert_eq!(store.put(&mesh_bytes)?, mesh_id);
 
-    let texture = RuntimeTextureBlob {
-        version: RUNTIME_TEXTURE_VERSION,
-        color_space: RuntimeTextureColorSpace::Srgb,
-        width: 1,
-        height: 1,
-        rgba8: vec![255, 0, 0, 255],
+    let (texture_version, texture_bytes) = if black {
+        let mut bytes = b"NTEX".to_vec();
+        bytes.extend(2u16.to_le_bytes());
+        bytes.extend([1, 13]); // sRGB; U edge / V Black (1 + 0 + 4 * 3)
+        for value in [1u32, 1, 1, 4] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([255, 0, 0, 255]);
+        (2, bytes)
+    } else {
+        let texture = RuntimeTextureBlob {
+            version: 1,
+            color_space: RuntimeTextureColorSpace::Srgb,
+            width: 1,
+            height: 1,
+            rgba8: vec![255, 0, 0, 255],
+        };
+        (1, serde_json::to_vec(&texture)?)
     };
-    let texture_bytes = serde_json::to_vec(&texture)?;
     let texture_id = store.put(&texture_bytes)?;
 
     let material = RuntimeMaterialBlob {
@@ -138,7 +161,7 @@ fn fixture() -> Result<(
         textures: vec![RuntimeBlobReference {
             blob_id: texture_id.0.clone(),
             payload_kind: RuntimePayloadKind::Texture,
-            payload_version: RUNTIME_TEXTURE_VERSION,
+            payload_version: texture_version,
             byte_size: texture_bytes.len() as u64,
         }],
     };
@@ -187,6 +210,34 @@ fn ready_cache_hydrates_mesh_material_texture_and_seed_maps() -> Result<()> {
     assert_eq!(world.resource::<ProjectionSeed>().pending_meshes(), 1);
     assert_eq!(world.resource::<ProjectionSeed>().pending_materials(), 1);
     drop(project);
+    assert_hydrated_v2_black_border_round_trip()
+}
+
+fn assert_hydrated_v2_black_border_round_trip() -> Result<()> {
+    use usd_bevy::route::material::UsdTextureCache;
+    let (_project, context, manifest, _, _) = fixture_with_black_border(true)?;
+    let mut world = World::new();
+    world.init_resource::<Assets<Mesh>>();
+    world.init_resource::<Assets<Image>>();
+    world.init_resource::<Assets<StandardMaterial>>();
+    world.init_resource::<ProjectionSeed>();
+    assert!(hydrate_project_cache(&mut world, &context)?);
+    let materials = world.resource::<Assets<StandardMaterial>>();
+    let (_, material) = materials.iter().next().unwrap();
+    let handle = material.base_color_texture.as_ref().unwrap();
+    let axes = world
+        .resource::<UsdTextureCache>()
+        .authored_black_border(handle);
+    assert_eq!(axes, [false, true]);
+    let image = world.resource::<Assets<Image>>().get(handle).unwrap();
+    let encoded = RuntimeTexturePayload::from_image(image, axes)
+        .unwrap()
+        .encode()?;
+    assert_eq!(encoded[7], 13);
+    assert_eq!(
+        blake3::hash(&encoded).to_hex().to_string(),
+        manifest.textures[0].blob_id
+    );
     Ok(())
 }
 

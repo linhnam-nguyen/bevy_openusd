@@ -344,8 +344,12 @@ pub(crate) fn put_mesh(store: &impl BlobStore, mesh: &Mesh) -> Result<BlobId> {
 /// Encode a projected mesh without touching the filesystem or another
 /// blocking data-plane resource.
 pub(crate) fn prepare_mesh_payload(mesh: &Mesh) -> Result<PreparedMeshBlob> {
-    let blob = MeshBlob::from_bevy_mesh(mesh)?;
-    let bytes = mesh_codec::encode(&blob)?;
+    let bytes = if super::mesh_v3::requires_extended(mesh) {
+        super::mesh_v3::encode(mesh)?
+    } else {
+        let blob = MeshBlob::from_bevy_mesh(mesh)?;
+        mesh_codec::encode(&blob)?
+    };
     let blob_id = BlobId(blake3::hash(&bytes).to_hex().to_string());
     Ok(PreparedMeshBlob { blob_id, bytes })
 }
@@ -357,18 +361,34 @@ pub(crate) fn get_mesh(store: &impl BlobStore, id: &BlobId) -> Result<Option<Mes
     Ok(Some(decode_mesh_payload(&bytes)?))
 }
 
-pub(crate) use mesh_codec::payload_version as mesh_payload_version;
+pub(crate) fn mesh_payload_version(bytes: &[u8]) -> Result<u16> {
+    if bytes.starts_with(b"NMS3") {
+        super::mesh_v3::decode(bytes)?;
+        Ok(3)
+    } else {
+        mesh_codec::payload_version(bytes)
+    }
+}
 
 pub(crate) fn read_mesh_payload(store: &impl BlobStore, id: &BlobId) -> Result<Option<Vec<u8>>> {
     store.get_bounded(id, mesh_codec::MAX_RENDER_BLOB_BYTES)
 }
 
 pub(crate) fn decode_mesh_payload(bytes: &[u8]) -> Result<Mesh> {
-    mesh_codec::decode(bytes)?.to_bevy_mesh()
+    if bytes.starts_with(b"NMS3") {
+        super::mesh_v3::decode(bytes)
+    } else {
+        mesh_codec::decode(bytes)?.to_bevy_mesh()
+    }
 }
 
 pub(crate) fn validate_mesh_payload(bytes: &[u8]) -> Result<u16> {
-    Ok(mesh_codec::decode(bytes)?.version)
+    if bytes.starts_with(b"NMS3") {
+        super::mesh_v3::decode(bytes)?;
+        Ok(3)
+    } else {
+        Ok(mesh_codec::decode(bytes)?.version)
+    }
 }
 
 #[cfg(test)]

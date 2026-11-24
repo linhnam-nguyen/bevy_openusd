@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use image::RgbaImage;
-use openusd_schemas::shade::{Connectable, Material, MaterialBindingAPI, Shader};
-use openusd::vt;
 use openusd::sdf;
+use openusd::vt;
+use openusd_schemas::shade::{Connectable, Material, MaterialBindingAPI, Shader};
 use tempfile::tempdir;
 use usd_model::HashDigest;
 use usd_project::{
@@ -238,8 +238,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .set(vt::Value::IntVec(vec![3]))?;
     mesh.create_attribute("faceVertexIndices", "int[]")?
         .set(vt::Value::IntVec(vec![0, 1, 2]))?;
-    MaterialBindingAPI::apply(&mesh)?
-        .bind(sdf::path("/SceneRoot/Materials/Mat")?)?;
+    MaterialBindingAPI::apply(&mesh)?.bind(sdf::path("/SceneRoot/Materials/Mat")?)?;
     let temporary = scene_path.with_extension("payload.usda");
     stage
         .root_layer()
@@ -279,9 +278,38 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let texture_bytes = store
         .get(&usd_model::BlobId(texture_id.clone()))?
         .expect("texture blob persisted");
-    let texture: crate::project::runtime::payload::RuntimeTextureBlob =
-        serde_json::from_slice(&texture_bytes)?;
-    texture.validate()?;
-    assert_eq!(texture.rgba8, vec![48, 96, 192, 255]);
+    assert_eq!(&texture_bytes[..4], b"NTEX");
+    // The CPU warmer uses an edge-clamp sampler but stores the USD default
+    // black-border intent for a cache reader on capable hardware.
+    assert_eq!(texture_bytes[7], 16);
+    let texture = crate::project::runtime::payload::RuntimeTexturePayload::decode(&texture_bytes)?;
+    assert_eq!(texture.authored_black_axes(), [true, true]);
+    assert_eq!(
+        texture.clone().into_image(None)?.data,
+        Some(vec![48, 96, 192, 255])
+    );
+    let mut images = bevy::asset::Assets::<bevy::image::Image>::default();
+    let mut metadata = usd_bevy::route::material::UsdTextureCache::default();
+    let mut previous_bytes = texture_bytes.clone();
+    for _ in 0..3 {
+        let decoded =
+            crate::project::runtime::payload::RuntimeTexturePayload::decode(&previous_bytes)?;
+        let axes = decoded.authored_black_axes();
+        let handle = images.add(decoded.into_image(None)?);
+        metadata.remember_authored_black_border(&handle, axes);
+        // Activation invalidates path aliases, not metadata for a still-live image.
+        metadata.replace_active_archives([]);
+        let encoded = crate::project::runtime::payload::RuntimeTexturePayload::from_image(
+            images.get(&handle).unwrap(),
+            metadata.authored_black_border(&handle),
+        )
+        .expect("supported hydrated image")
+        .encode()?;
+        assert_eq!(encoded, texture_bytes);
+        previous_bytes = encoded;
+        let _ = images.remove(handle.id());
+        metadata.prune_authored_black_borders(&images);
+        assert_eq!(metadata.authored_black_border(&handle), [false; 2]);
+    }
     Ok(())
 }

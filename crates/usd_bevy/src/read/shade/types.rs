@@ -26,6 +26,8 @@ pub struct ReadPreviewMaterial {
     /// `UsdTransform2d` on the texture-coordinate chain (scale/rotate/translate
     /// of `st`), if the network has one. Applied to `StandardMaterial::uv_transform`.
     pub uv_transform: Option<UvTransform>,
+    /// Texture shader sampling metadata keyed by surface input name.
+    pub texture_wraps: std::collections::BTreeMap<String, [u8; 2]>,
 }
 
 /// A 2D texture-coordinate transform read from a `UsdTransform2d` node:

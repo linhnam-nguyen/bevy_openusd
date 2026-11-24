@@ -16,6 +16,7 @@ use super::authority::{ResidencyAuthority, ScenePayloadKey};
 use super::loader::LoadJob;
 use super::worker::{
     CachedResidencyWorker, LoadedScenePayloadQueue, WorkerCompletion, queue_loaded_scene_payloads,
+    reject_scene_payload,
 };
 
 mod handoff;
@@ -65,35 +66,57 @@ pub(crate) fn drain_cached_residency_completions(
             continue;
         }
         match completion.result {
-            Ok(Some(mesh)) => {
-                authority.clear_repair_phase(&completion.job);
-                let payloads = completion.payloads;
-                let job = completion.job.clone();
-                if authority.complete_cached_cpu_with_mask(completion.job, mesh, completion.mask) {
-                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut())
+            Ok(mesh) => {
+                if mesh.is_none() && completion.mask.geometry {
+                    enqueue_missing_payload_repair(
+                        project_root.as_deref(),
+                        &mut authority,
+                        &mut repairs,
+                        completion.job,
+                    );
+                    continue;
+                }
+                let needs_installation = completion.payloads.as_ref().is_some_and(|payloads| {
+                    !payloads.materials.is_empty()
+                        || !payloads.textures.is_empty()
+                        || !payloads.animations.is_empty()
+                });
+                if needs_installation {
+                    // Do not acknowledge material/animation or geometry while
+                    // the device-specific payload conversion is still pending.
+                    if let (Some(payloads), Some(queue)) =
+                        (completion.payloads, payload_queue.as_deref_mut())
                     {
-                        queue_loaded_scene_payloads(queue, job, payloads);
+                        if let Err(job) = queue_loaded_scene_payloads(
+                            queue,
+                            completion.job,
+                            completion.mask,
+                            mesh,
+                            payloads,
+                        ) {
+                            let _ = authority.defer_load(job);
+                        }
+                    } else {
+                        reject_scene_payload(
+                            &mut authority,
+                            None,
+                            &completion.job,
+                            "required Scene payload installation queue unavailable",
+                        );
                     }
+                } else if let Some(mesh) = mesh {
+                    authority.clear_repair_phase(&completion.job);
+                    let _ = authority.complete_cached_cpu_with_mask(
+                        completion.job,
+                        mesh,
+                        completion.mask,
+                    );
+                } else {
+                    let _ = authority.complete_cached_payloads(&completion.job, completion.mask);
                 }
             }
-            Ok(None) if !completion.mask.geometry => {
-                let payloads = completion.payloads;
-                let job = completion.job.clone();
-                if authority.complete_cached_payloads(&completion.job, completion.mask) {
-                    if let (Some(payloads), Some(queue)) = (payloads, payload_queue.as_deref_mut())
-                    {
-                        queue_loaded_scene_payloads(queue, job, payloads);
-                    }
-                }
-            }
-            Ok(None) => enqueue_missing_payload_repair(
-                project_root.as_deref(),
-                &mut authority,
-                &mut repairs,
-                completion.job,
-            ),
-            Err(_) => {
-                let _ = authority.suppress_failed_load(&completion.job);
+            Err(error) => {
+                reject_scene_payload(&mut authority, None, &completion.job, &error);
             }
         }
     }

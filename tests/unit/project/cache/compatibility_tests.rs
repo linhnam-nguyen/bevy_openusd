@@ -32,7 +32,7 @@ use crate::project::{
 fn runtime_contract_changes_identity() {
     let semantic = HashDigest::new([7; HashDigest::BYTE_LEN]);
     assert_ne!(project_runtime_cache_config_hash(semantic), semantic);
-    assert_eq!(PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION, 2);
+    assert_eq!(PROJECT_RUNTIME_CACHE_COMPATIBILITY_VERSION, 3);
 }
 
 #[test]
@@ -117,8 +117,9 @@ fn legacy_global_cache_is_a_scene_v3_miss() -> Result<()> {
 #[test]
 fn scene_owned_builder_prunes_child_and_publishes_payload_spatial_deterministically() -> Result<()>
 {
-    use openusd::{vt, 
+    use openusd::{
         gf::{Vec3d, Vec3f},
+        vt,
         vt::Value,
     };
     use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneManifestEntry, StorageKey};

@@ -75,8 +75,8 @@ pub fn read_preview_material(
     }
     for (channel, bind_colour, bind_scalar, bind_texture) in channels {
         let (value, texture) = resolve_channel(stage, material, &shader, channel)?;
-        if let Some(tex) = texture {
-            bind_texture(&mut out, tex);
+        if let Some((tex, wrap)) = texture {
+            bind_texture(&mut out, tex, wrap);
         }
         match value {
             Some(ResolvedValue::Color3(c)) => bind_colour(&mut out, c),
@@ -288,7 +288,7 @@ fn resolve_channel(
     material: &Path,
     shader: &Path,
     channel: &str,
-) -> anyhow::Result<(Option<ResolvedValue>, Option<String>)> {
+) -> anyhow::Result<(Option<ResolvedValue>, Option<(String, [u8; 2])>)> {
     let mat_attr = format!("inputs:{channel}");
     let mat_path = material.append_property(&mat_attr)?;
     let (v, t) = resolve_attr_chain(stage, &mat_path)?;
@@ -299,16 +299,37 @@ fn resolve_channel(
     resolve_attr_chain(stage, &sh_path)
 }
 
+fn read_texture_wrap(stage: &Stage, prim: &Path) -> anyhow::Result<[u8; 2]> {
+    // The supported PNG/JPEG decoder has no USD wrap metadata provider.
+    let is_usd_texture =
+        read_token_or_string(stage, prim, "info:id")?.as_deref() == Some("UsdUVTexture");
+    let mode = |name| -> anyhow::Result<u8> {
+        Ok(match read_token_or_string(stage, prim, name)?.as_deref() {
+            Some("mirror") => 1,
+            Some("clamp") => 2,
+            Some("black") => 3,
+            None | Some("useMetadata") if is_usd_texture => 3,
+            _ => 0,
+        })
+    };
+    Ok([mode("inputs:wrapS")?, mode("inputs:wrapT")?])
+}
+
 fn resolve_attr_chain(
     stage: &Stage,
     attr_path: &Path,
-) -> anyhow::Result<(Option<ResolvedValue>, Option<String>)> {
+) -> anyhow::Result<(Option<ResolvedValue>, Option<(String, [u8; 2])>)> {
     let mut cur = attr_path.clone();
     for _ in 0..16 {
         if let Some(next) = connections_at(stage, &cur)?.into_iter().next() {
             let prim = next.prim_path();
             match shader_kind(stage, &prim)? {
-                ShaderKind::Texture => return Ok((None, read_texture_file(stage, &prim)?)),
+                ShaderKind::Texture => {
+                    let Some(file) = read_texture_file(stage, &prim)? else {
+                        return Ok((None, None));
+                    };
+                    return Ok((None, Some((file, read_texture_wrap(stage, &prim)?))));
+                }
                 ShaderKind::NormalMap => {
                     cur = prim.append_property("inputs:in")?;
                     continue;
@@ -333,8 +354,8 @@ fn resolve_attr_chain(
         }
         let default = default_at(stage, &cur)?;
         match default.clone() {
-            Some(Value::AssetPath(s)) => return Ok((None, Some(s.as_str().to_string()))),
-            Some(Value::String(s)) => return Ok((None, Some(s))),
+            Some(Value::AssetPath(s)) => return Ok((None, Some((s.as_str().to_string(), [0, 0])))),
+            Some(Value::String(s)) => return Ok((None, Some((s, [0, 0])))),
             _ => {}
         }
         return Ok((default.and_then(value_to_preview), None));
@@ -440,7 +461,11 @@ fn resolve_texture_path(stage: &Stage, tex_prim: &Path, authored: &str) -> anyho
         .unwrap_or_else(|| authored.to_owned()))
 }
 
-fn resolve_packaged_texture(outer_package: &str, inner_layer: &str, authored: &str) -> Option<String> {
+fn resolve_packaged_texture(
+    outer_package: &str,
+    inner_layer: &str,
+    authored: &str,
+) -> Option<String> {
     let mut parts: Vec<&str> = Vec::new();
     let inner_dir = inner_layer
         .replace('\\', "/")

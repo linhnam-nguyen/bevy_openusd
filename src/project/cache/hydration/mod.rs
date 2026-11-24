@@ -9,13 +9,11 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail, ensure};
-use bevy::asset::RenderAssetUsages;
 use bevy::image::Image;
 use bevy::math::{Affine2, Mat2, Vec2};
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{AlphaMode, Assets, Color, LinearRgba, World};
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use usd_bevy::ProjectionSeed;
 use usd_model::BlobId;
 use viewport_protocol::{RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind};
@@ -27,7 +25,7 @@ use super::blobs::{
 use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore};
 use crate::project::runtime::delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
 use crate::project::runtime::payload::{
-    RuntimeAlphaMode, RuntimeMaterialBlob, RuntimeTextureBlob, RuntimeTextureColorSpace,
+    MAX_TEXTURE_BLOB_BYTES, RuntimeAlphaMode, RuntimeMaterialBlob, RuntimeTexturePayload,
 };
 mod context;
 
@@ -138,35 +136,26 @@ pub(crate) fn hydrate_project_cache(
                 &store,
                 reference,
                 RuntimePayloadKind::Texture,
-                crate::project::runtime::payload::RUNTIME_TEXTURE_VERSION,
+                reference.payload_version,
             )?;
-            let texture: RuntimeTextureBlob = serde_json::from_slice(&bytes)
+            let texture = RuntimeTexturePayload::decode(&bytes)
                 .with_context(|| format!("decode cached runtime texture {texture_id}"))?;
-            texture.validate()?;
+            ensure!(
+                texture.version == reference.payload_version,
+                "texture version mismatch"
+            );
             texture_payloads.insert(texture_id.to_owned(), texture);
         }
         material_payloads.insert(material_id.clone(), material);
     }
 
     let mut texture_assets = HashMap::with_capacity(texture_payloads.len());
+    let mut texture_black_axes = HashMap::with_capacity(texture_payloads.len());
     for (texture_id, texture) in texture_payloads {
-        let format = match texture.color_space {
-            RuntimeTextureColorSpace::Srgb => TextureFormat::Rgba8UnormSrgb,
-            RuntimeTextureColorSpace::Linear => TextureFormat::Rgba8Unorm,
-        };
+        texture_black_axes.insert(texture_id.clone(), texture.authored_black_axes());
         texture_assets.insert(
             texture_id,
-            Image::new(
-                Extent3d {
-                    width: texture.width,
-                    height: texture.height,
-                    depth_or_array_layers: 1,
-                },
-                TextureDimension::D2,
-                texture.rgba8,
-                format,
-                RenderAssetUsages::default(),
-            ),
+            texture.into_image(world.get_resource::<bevy::render::renderer::RenderDevice>())?,
         );
     }
 
@@ -187,6 +176,16 @@ pub(crate) fn hydrate_project_cache(
             .map(|(id, image)| (id, assets.add(image)))
             .collect::<HashMap<_, _>>()
     };
+    // Register against the newly allocated handles, before material seeds can
+    // consume them or a cache writer can serialize their effective samplers.
+    use usd_bevy::route::material::UsdTextureCache;
+    world.init_resource::<UsdTextureCache>();
+    world.resource_scope(|world, mut cache: bevy::prelude::Mut<UsdTextureCache>| {
+        cache.prune_authored_black_borders(world.resource::<Assets<Image>>());
+        for (id, handle) in &texture_handles {
+            cache.remember_authored_black_border(handle, texture_black_axes[id]);
+        }
+    });
     let material_handles = {
         let mut assets = world.resource_mut::<Assets<StandardMaterial>>();
         material_payloads
@@ -281,9 +280,14 @@ fn read_blob(
         reference.payload_version,
         expected_version
     );
+    let byte_size = usize::try_from(reference.byte_size).context("runtime blob size overflow")?;
+    ensure!(
+        byte_size <= MAX_TEXTURE_BLOB_BYTES,
+        "cached runtime blob exceeds the decoder byte limit"
+    );
     let id = BlobId(reference.blob_id.clone());
     let bytes = store
-        .get(&id)?
+        .get_bounded(&id, byte_size)?
         .with_context(|| format!("cached runtime blob {} is missing", reference.blob_id))?;
     ensure!(
         bytes.len() as u64 == reference.byte_size,

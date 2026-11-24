@@ -10,6 +10,7 @@ mod builder;
 mod consumers;
 mod material_cache;
 mod provenance;
+mod sampling;
 mod texture_cache;
 
 pub use archive::archive_paths_for_stage;

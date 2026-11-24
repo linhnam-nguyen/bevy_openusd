@@ -8,7 +8,7 @@ use openusd::usd::Stage;
 use tempfile::tempdir;
 
 use super::UsdTextureCache;
-use super::texture_cache::resolve_texture;
+use super::tests::resolve_texture;
 use crate::{LiveStage, LiveStagePlugin, UsdPlugin, UsdPrimRef};
 
 fn png_pixel(pixel: [u8; 4]) -> Vec<u8> {

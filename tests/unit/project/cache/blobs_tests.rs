@@ -97,6 +97,44 @@ fn mesh_blob_round_trips() -> Result<()> {
     let truncated = store.put(&updated_bytes[..updated_bytes.len() - 1])?;
     assert!(get_mesh(&store, &truncated).is_err());
     assert_eq!(store.get(&old_id)?.unwrap(), old_bytes);
+
+    mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, vec![[1.0, 0.0, 0.0, 1.0]; 3]);
+    mesh.insert_indices(Indices::U16(vec![0, 1, 2]));
+    let extended_id = put_mesh(&store, &mesh)?;
+    let extended_bytes = store.get(&extended_id)?.unwrap();
+    assert_eq!(validate_mesh_payload(&extended_bytes)?, 3);
+    // Every emitted attribute/index stream uses raw mode until qualification.
+    let mut cursor = 16;
+    while cursor < extended_bytes.len() {
+        assert_eq!(extended_bytes[cursor], 0);
+        let len = u32::from_le_bytes(extended_bytes[cursor + 1..cursor + 5].try_into()?) as usize;
+        cursor += 5 + len;
+    }
+    assert_eq!(cursor, extended_bytes.len());
+    // Immutable NMS3 mode-1 fixture: a single point with twelve zero bytes.
+    let mut compressed = b"NMS3".to_vec();
+    compressed.extend([0, 0]); // point topology, no index stream
+    compressed.extend(1u16.to_le_bytes()); // position attribute
+    compressed.extend(1u32.to_le_bytes()); // vertex count
+    compressed.extend(0u32.to_le_bytes()); // index count
+    compressed.push(1); // historical zero-run mode
+    compressed.extend(1u32.to_le_bytes());
+    compressed.push(0x8b); // zero run of length 12
+    assert_eq!(validate_mesh_payload(&compressed)?, 3);
+    let compressed_id = store.put(&compressed)?;
+    let compressed_mesh = get_mesh(&store, &compressed_id)?.unwrap();
+    assert!(
+        matches!(compressed_mesh.attribute(Mesh::ATTRIBUTE_POSITION),
+        Some(bevy::mesh::VertexAttributeValues::Float32x3(values)) if values == &vec![[0.0; 3]])
+    );
+    assert_eq!(store.get(&compressed_id)?.unwrap(), compressed);
+    let extended = get_mesh(&store, &extended_id)?.unwrap();
+    assert!(matches!(extended.indices(), Some(Indices::U16(indices)) if indices == &[0, 1, 2]));
+    assert_eq!(
+        extended.attribute(Mesh::ATTRIBUTE_TANGENT),
+        mesh.attribute(Mesh::ATTRIBUTE_TANGENT)
+    );
+    assert!(validate_mesh_payload(&extended_bytes[..extended_bytes.len() - 1]).is_err());
     Ok(())
 }
 

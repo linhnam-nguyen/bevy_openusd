@@ -2,62 +2,69 @@ use super::types::ReadPreviewMaterial;
 
 pub(super) type ColourSetter = fn(&mut ReadPreviewMaterial, [f32; 3]);
 pub(super) type ScalarSetter = fn(&mut ReadPreviewMaterial, f32);
-pub(super) type TextureSetter = fn(&mut ReadPreviewMaterial, String);
+pub(super) type TextureSetter = fn(&mut ReadPreviewMaterial, String, [u8; 2]);
 
 fn set_diffuse_c(o: &mut ReadPreviewMaterial, c: [f32; 3]) {
     o.diffuse_color = Some(c);
 }
 fn set_diffuse_s(_: &mut ReadPreviewMaterial, _: f32) {}
-fn set_diffuse_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_diffuse_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.diffuse_texture = Some(s);
+    o.texture_wraps.insert("diffuseColor".to_owned(), wrap);
 }
 fn set_opacity_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_opacity_s(o: &mut ReadPreviewMaterial, s: f32) {
     o.opacity = Some(s);
 }
-fn set_opacity_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_opacity_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.opacity_texture = Some(s);
+    o.texture_wraps.insert("opacity".to_owned(), wrap);
 }
 fn set_opacity_threshold_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_opacity_threshold_s(o: &mut ReadPreviewMaterial, s: f32) {
     o.opacity_threshold = Some(s);
 }
-fn set_opacity_threshold_tex(_: &mut ReadPreviewMaterial, _: String) {}
+fn set_opacity_threshold_tex(_: &mut ReadPreviewMaterial, _: String, _: [u8; 2]) {}
 fn set_rough_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_rough_s(o: &mut ReadPreviewMaterial, s: f32) {
     o.roughness = Some(s);
 }
-fn set_rough_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_rough_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.roughness_texture = Some(s);
+    o.texture_wraps.insert("roughness".to_owned(), wrap);
 }
 fn set_metal_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_metal_s(o: &mut ReadPreviewMaterial, s: f32) {
     o.metallic = Some(s);
 }
-fn set_metal_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_metal_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.metallic_texture = Some(s);
+    o.texture_wraps.insert("metallic".to_owned(), wrap);
 }
 fn set_emissive_c(o: &mut ReadPreviewMaterial, c: [f32; 3]) {
     o.emissive_color = Some(c);
 }
 fn set_emissive_s(_: &mut ReadPreviewMaterial, _: f32) {}
-fn set_emissive_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_emissive_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.emissive_texture = Some(s);
+    o.texture_wraps.insert("emissiveColor".to_owned(), wrap);
 }
 fn set_ior_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_ior_s(o: &mut ReadPreviewMaterial, s: f32) {
     o.ior = Some(s);
 }
-fn set_ior_tex(_: &mut ReadPreviewMaterial, _: String) {}
+fn set_ior_tex(_: &mut ReadPreviewMaterial, _: String, _: [u8; 2]) {}
 fn set_normal_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_normal_s(_: &mut ReadPreviewMaterial, _: f32) {}
-fn set_normal_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_normal_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.normal_texture = Some(s);
+    o.texture_wraps.insert("normal".to_owned(), wrap);
 }
 fn set_occlusion_c(_: &mut ReadPreviewMaterial, _: [f32; 3]) {}
 fn set_occlusion_s(_: &mut ReadPreviewMaterial, _: f32) {}
-fn set_occlusion_tex(o: &mut ReadPreviewMaterial, s: String) {
+fn set_occlusion_tex(o: &mut ReadPreviewMaterial, s: String, wrap: [u8; 2]) {
     o.occlusion_texture = Some(s);
+    o.texture_wraps.insert("occlusion".to_owned(), wrap);
 }
 
 /// MaterialX `opacity` is a `color3`; fold to a luminance scalar.

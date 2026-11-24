@@ -2,44 +2,32 @@ use bevy::asset::Assets;
 use bevy::image::Image;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::AlphaMode;
-use bevy::render::render_resource::{TextureDimension, TextureFormat};
 use usd_model::BlobId;
 
 use super::{
-    PreparedRuntimeBlob, RUNTIME_TEXTURE_VERSION, RuntimeAlphaMode, RuntimeMaterialTextures,
-    RuntimeTextureBlob, RuntimeTextureColorSpace,
+    PreparedRuntimeBlob, RuntimeAlphaMode, RuntimeMaterialTextures, RuntimeTextureColorSpace,
+    RuntimeTexturePayload,
 };
 
 pub(super) fn collect_material_textures(
     material: &StandardMaterial,
     images: &Assets<Image>,
+    usd_textures: Option<&usd_bevy::route::material::UsdTextureCache>,
 ) -> Option<(RuntimeMaterialTextures, Vec<PreparedRuntimeBlob>)> {
     let add = |handle: Option<&bevy::asset::Handle<Image>>,
                color_space: RuntimeTextureColorSpace|
      -> Option<(String, PreparedRuntimeBlob)> {
         let handle = handle?.clone();
         let image = images.get(&handle)?;
-        let data = image.data.as_ref()?;
-        if image.texture_descriptor.dimension != TextureDimension::D2
-            || image.texture_descriptor.format
-                != match color_space {
-                    RuntimeTextureColorSpace::Srgb => TextureFormat::Rgba8UnormSrgb,
-                    RuntimeTextureColorSpace::Linear => TextureFormat::Rgba8Unorm,
-                }
-            || image.texture_descriptor.mip_level_count != 1
-            || image.texture_descriptor.size.depth_or_array_layers != 1
-        {
+        let expected_srgb = color_space == RuntimeTextureColorSpace::Srgb;
+        if image.texture_descriptor.format.is_srgb() != expected_srgb {
             return None;
         }
-        let payload = RuntimeTextureBlob {
-            version: RUNTIME_TEXTURE_VERSION,
-            color_space,
-            width: image.texture_descriptor.size.width,
-            height: image.texture_descriptor.size.height,
-            rgba8: data.clone(),
-        };
-        payload.validate().ok()?;
-        let bytes = serde_json::to_vec(&payload).ok()?;
+        let authored_black =
+            usd_textures.map_or([false; 2], |cache| cache.authored_black_border(&handle));
+        let bytes = RuntimeTexturePayload::from_image(image, authored_black)?
+            .encode()
+            .ok()?;
         let blob_id = BlobId(blake3::hash(&bytes).to_hex().to_string());
         Some((blob_id.0.clone(), PreparedRuntimeBlob { blob_id, bytes }))
     };

@@ -13,7 +13,7 @@ use usd_model::{
 
 use crate::project::cache::blobs::BlobStore;
 use crate::project::runtime::delivery::build_runtime_delivery_with_payloads;
-use crate::project::runtime::payload::{RuntimeTextureBlob, RuntimeTextureColorSpace};
+use crate::project::runtime::payload::RuntimeTexturePayload;
 
 use super::*;
 
@@ -339,12 +339,20 @@ fn runtime_payloads_persist_materials_and_distinguish_texture_color_spaces() -> 
         .textures
         .iter()
         .map(|payload| {
-            serde_json::from_slice::<RuntimeTextureBlob>(&payload.bytes)
-                .map(|blob| blob.color_space)
+            Ok::<_, anyhow::Error>(
+                RuntimeTexturePayload::decode(&payload.bytes)?
+                    .into_image(None)?
+                    .texture_descriptor
+                    .format,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    assert!(color_spaces.contains(&RuntimeTextureColorSpace::Srgb));
-    assert!(color_spaces.contains(&RuntimeTextureColorSpace::Linear));
+    assert!(color_spaces.contains(&TextureFormat::Rgba8UnormSrgb));
+    assert!(color_spaces.contains(&TextureFormat::Rgba8Unorm));
+    for texture in &prepared.textures {
+        assert!(texture.bytes.starts_with(b"NTEX"));
+        assert!(RuntimeTexturePayload::decode(&texture.bytes[..texture.bytes.len() - 1]).is_err());
+    }
     assert_ne!(
         prepared.textures[0].blob_id, prepared.textures[1].blob_id,
         "color-space interpretation must be part of the texture identity"

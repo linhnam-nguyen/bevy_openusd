@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::World;
-use openusd::ar::split_package_relative_path_outer;
+use openusd::ar::{
+    CacheScope, DefaultResolver, Resolver, is_package_relative_path,
+    split_package_relative_path_outer,
+};
 
 use super::{
     ArchiveLookupStats, archive_entry_matches, canonical_archive_path, collect_usdz_files,
@@ -29,6 +32,20 @@ pub(crate) fn read_texture_bytes(
         else {
             return (None, archive_stats);
         };
+        // Let the pinned resolver traverse nested package identifiers. The
+        // stage-scoped index covers only direct entries in the outer package.
+        if is_package_relative_path(&inner) {
+            let _scope = CacheScope::begin();
+            let resolver = DefaultResolver::new();
+            let bytes = resolver
+                .resolve(texture_path)
+                .and_then(|resolved| resolver.open_asset(&resolved).ok())
+                .and_then(|asset| asset.into_buffer().ok())
+                .map(|buffer| buffer.to_vec());
+            archive_stats.hits = u64::from(bytes.is_some());
+            archive_stats.misses = u64::from(bytes.is_none());
+            return (bytes, archive_stats);
+        }
         let stats = ensure_archive_index(world, &package_path);
         archive_stats.archives_scanned += stats.archives_scanned;
         archive_stats.entries_scanned += stats.entries_scanned;

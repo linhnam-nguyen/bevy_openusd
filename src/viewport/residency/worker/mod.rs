@@ -9,6 +9,7 @@ use std::thread::{self, JoinHandle};
 
 use bevy::mesh::Mesh;
 use usd_bevy::live::source_mesh::{SourceMeshIdentity, SourceMeshInput};
+use usd_bevy::route::material::UsdTextureCache;
 use usd_model::BlobId;
 
 use bevy::prelude::Resource;
@@ -18,10 +19,11 @@ use crate::project::cache::blobs::get_mesh;
 use crate::project::cache::contract::SceneCacheAddress;
 use crate::project::cache::scene::hydration::SceneAnimationPayloads;
 use crate::project::cache::scene::payload::SceneAnimationBlob;
-use crate::project::runtime::payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
+use crate::project::runtime::payload::{RuntimeMaterialBlob, RuntimeTexturePayload};
 
 use super::loader::LoadJob;
-use super::{PayloadLoadMask, ScenePayloadDescriptor, ScenePayloadKey};
+use super::visual_composition::VisualStreamingHealth;
+use super::{PayloadLoadMask, ResidencyAuthority, ScenePayloadDescriptor, ScenePayloadKey};
 
 mod payloads;
 use payloads::load_cached_scene_payloads;
@@ -46,7 +48,7 @@ pub(crate) struct LoadCompletion {
 
 pub(crate) struct LoadedScenePayloads {
     pub(crate) materials: Vec<(String, RuntimeMaterialBlob)>,
-    pub(crate) textures: Vec<(String, RuntimeTextureBlob)>,
+    pub(crate) textures: Vec<(String, RuntimeTexturePayload)>,
     pub(crate) animations: Vec<(SceneCacheAddress, SceneAnimationBlob)>,
 }
 
@@ -57,6 +59,8 @@ pub(crate) struct LoadedScenePayloadQueue {
 
 struct LoadedScenePayloadCompletion {
     job: LoadJob<ScenePayloadKey>,
+    mask: PayloadLoadMask,
+    mesh: Option<Mesh>,
     payloads: LoadedScenePayloads,
 }
 
@@ -322,87 +326,203 @@ fn prepare_cached_request(request: LoadRequest) -> LoadCompletion {
     }
 }
 
+/// Queue a decoded completion without acknowledging its residency mask.
+/// Return the job on backpressure so the caller can release/requeue it.
 pub(crate) fn queue_loaded_scene_payloads(
     queue: &mut LoadedScenePayloadQueue,
     job: LoadJob<ScenePayloadKey>,
+    mask: PayloadLoadMask,
+    mesh: Option<Mesh>,
     payloads: LoadedScenePayloads,
-) {
-    if queue.completions.len() < WORKER_QUEUE_CAPACITY {
-        queue
-            .completions
-            .push_back(LoadedScenePayloadCompletion { job, payloads });
+) -> Result<(), LoadJob<ScenePayloadKey>> {
+    if queue.completions.len() >= WORKER_QUEUE_CAPACITY {
+        return Err(job);
     }
+    queue.completions.push_back(LoadedScenePayloadCompletion {
+        job,
+        mask,
+        mesh,
+        payloads,
+    });
+    Ok(())
+}
+
+pub(super) fn reject_scene_payload(
+    authority: &mut ResidencyAuthority,
+    health: Option<&mut VisualStreamingHealth>,
+    job: &LoadJob<ScenePayloadKey>,
+    error: &str,
+) {
+    if authority.suppress_failed_load(job) {
+        let message = format!(
+            "Scene cache payload {:?} generation {} rejected: {error}",
+            job.key, job.generation
+        );
+        bevy::log::warn!("{message}");
+        // Restore camera-unloaded visual owners through the existing native
+        // Stage recovery path; never rewrite an immutable cache object to
+        // compensate for a device limitation.
+        authority
+            .visual_composition
+            .request_cache_failure_recovery();
+        if let Some(health) = health {
+            health.incomplete = true;
+            health.last_error = Some(message);
+        }
+    }
+}
+
+fn acknowledge_scene_payload(
+    authority: &mut ResidencyAuthority,
+    job: LoadJob<ScenePayloadKey>,
+    mesh: Option<Mesh>,
+    mask: PayloadLoadMask,
+) -> bool {
+    let accepted = match mesh {
+        Some(mesh) => authority.complete_cached_cpu_with_mask(job.clone(), mesh, mask),
+        None => authority.complete_cached_payloads(&job, mask),
+    };
+    if accepted {
+        authority.clear_repair_phase(&job);
+    } else {
+        // A stale completion cannot consume a reservation. A current job with
+        // an invalid mask still needs its reservation released.
+        let _ = authority.suppress_failed_load(&job);
+    }
+    accepted
 }
 
 pub(crate) fn install_loaded_scene_payloads(
     mut queue: bevy::prelude::ResMut<LoadedScenePayloadQueue>,
     presentation: Option<bevy::prelude::Res<crate::viewport::stage::SceneCachePresentation>>,
+    render_device: Option<bevy::prelude::Res<bevy::render::renderer::RenderDevice>>,
     mut images: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::image::Image>>>,
     mut materials: Option<bevy::prelude::ResMut<bevy::asset::Assets<bevy::pbr::StandardMaterial>>>,
     mut seed: Option<bevy::prelude::ResMut<usd_bevy::ProjectionSeed>>,
+    mut texture_cache: Option<bevy::prelude::ResMut<UsdTextureCache>>,
+    mut authority: bevy::prelude::ResMut<ResidencyAuthority>,
+    mut health: Option<bevy::prelude::ResMut<VisualStreamingHealth>>,
     mut animation_payloads: Option<bevy::prelude::ResMut<SceneAnimationPayloads>>,
     mut commands: bevy::prelude::Commands,
 ) {
     let Some(presentation) = presentation else {
-        queue.completions.clear();
+        while let Some(completion) = queue.completions.pop_front() {
+            let _ = authority.defer_load(completion.job);
+        }
         return;
     };
-    let Some(images) = images.as_deref_mut() else {
-        return;
-    };
-    let Some(materials) = materials.as_deref_mut() else {
-        return;
-    };
-    let Some(seed) = seed.as_deref_mut() else {
-        return;
-    };
-
+    let mut new_animation_payloads: Option<SceneAnimationPayloads> = None;
     while let Some(completion) = queue.completions.pop_front() {
         if completion.job.key.scene_id != presentation.scene_id
             || completion.job.generation != presentation.generation
+            || !authority.load_is_current(&completion.job)
         {
+            let _ = authority.defer_load(completion.job);
             continue;
         }
-        let texture_handles = completion
-            .payloads
-            .textures
-            .iter()
-            .map(|(id, texture)| {
-                let format = match texture.color_space {
-                    crate::project::runtime::payload::RuntimeTextureColorSpace::Srgb => {
-                        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb
-                    }
-                    crate::project::runtime::payload::RuntimeTextureColorSpace::Linear => {
-                        bevy::render::render_resource::TextureFormat::Rgba8Unorm
-                    }
-                };
-                let image = bevy::image::Image::new(
-                    bevy::render::render_resource::Extent3d {
-                        width: texture.width,
-                        height: texture.height,
-                        depth_or_array_layers: 1,
-                    },
-                    bevy::render::render_resource::TextureDimension::D2,
-                    texture.rgba8.clone(),
-                    format,
-                    bevy::asset::RenderAssetUsages::default(),
+        if completion.payloads.materials.is_empty() && completion.payloads.textures.is_empty() {
+            if !acknowledge_scene_payload(
+                &mut authority,
+                completion.job,
+                completion.mesh,
+                completion.mask,
+            ) {
+                continue;
+            }
+        } else {
+            let (Some(images), Some(materials), Some(seed), Some(texture_cache)) = (
+                images.as_deref_mut(),
+                materials.as_deref_mut(),
+                seed.as_deref_mut(),
+                texture_cache.as_deref_mut(),
+            ) else {
+                reject_scene_payload(
+                    &mut authority,
+                    health.as_deref_mut(),
+                    &completion.job,
+                    "required image/material/seed/metadata resource unavailable",
                 );
-                (id.clone(), images.add(image))
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let mut material_handles = Vec::with_capacity(completion.payloads.materials.len());
-        for (prim_path, material) in &completion.payloads.materials {
-            let Ok(material) =
-                crate::project::cache::hydration::standard_material(material, &texture_handles)
-            else {
                 continue;
             };
-            material_handles.push((prim_path.clone(), materials.add(material)));
+            // Validate every decoded texture against the active device before
+            // allocating assets or acknowledging any part of this completion.
+            let prepared = completion
+                .payloads
+                .textures
+                .into_iter()
+                .map(|(id, texture)| {
+                    let axes = texture.authored_black_axes();
+                    let image = texture
+                        .into_image(render_device.as_deref())
+                        .map_err(|error| format!("texture {id}: {error:#}"))?;
+                    Ok((id, image, axes))
+                })
+                .collect::<Result<Vec<_>, String>>();
+            let prepared = match prepared {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    reject_scene_payload(
+                        &mut authority,
+                        health.as_deref_mut(),
+                        &completion.job,
+                        &error,
+                    );
+                    continue;
+                }
+            };
+            let mut texture_handles = std::collections::HashMap::with_capacity(prepared.len());
+            let mut authored_axes = Vec::with_capacity(prepared.len());
+            for (id, image, axes) in prepared {
+                let handle = images.add(image);
+                authored_axes.push((handle.clone(), axes));
+                texture_handles.insert(id, handle);
+            }
+            // Construct every material before publishing seeds. On failure, drop
+            // the entire temporary batch and leave the canonical source route intact.
+            let prepared_materials = completion
+                .payloads
+                .materials
+                .iter()
+                .map(|(prim_path, material)| {
+                    crate::project::cache::hydration::standard_material(material, &texture_handles)
+                        .map(|value| (prim_path.clone(), value))
+                        .map_err(|error| format!("material {prim_path}: {error:#}"))
+                })
+                .collect::<Result<Vec<_>, String>>();
+            let prepared_materials = match prepared_materials {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    for (handle, _) in authored_axes {
+                        let _ = images.remove(handle.id());
+                    }
+                    reject_scene_payload(
+                        &mut authority,
+                        health.as_deref_mut(),
+                        &completion.job,
+                        &error,
+                    );
+                    continue;
+                }
+            };
+            if !acknowledge_scene_payload(
+                &mut authority,
+                completion.job,
+                completion.mesh,
+                completion.mask,
+            ) {
+                for (handle, _) in authored_axes {
+                    let _ = images.remove(handle.id());
+                }
+                continue;
+            }
+            texture_cache.prune_authored_black_borders(images);
+            for (handle, axes) in authored_axes {
+                texture_cache.remember_authored_black_border(&handle, axes);
+            }
+            for (prim_path, material) in prepared_materials {
+                seed.insert_authoritative_material(prim_path, materials.add(material));
+            }
         }
-        for (prim_path, handle) in material_handles {
-            seed.insert_authoritative_material(prim_path, handle);
-        }
-
         if !completion.payloads.animations.is_empty() {
             if let Some(payloads) = animation_payloads.as_deref_mut() {
                 if payloads.scene_id != Some(presentation.scene_id)
@@ -414,15 +534,18 @@ pub(crate) fn install_loaded_scene_payloads(
                 }
                 payloads.by_address.extend(completion.payloads.animations);
             } else {
-                let mut payloads = SceneAnimationPayloads {
-                    scene_id: Some(presentation.scene_id),
-                    generation: Some(presentation.generation),
-                    by_address: std::collections::HashMap::new(),
-                };
+                let payloads =
+                    new_animation_payloads.get_or_insert_with(|| SceneAnimationPayloads {
+                        scene_id: Some(presentation.scene_id),
+                        generation: Some(presentation.generation),
+                        by_address: std::collections::HashMap::new(),
+                    });
                 payloads.by_address.extend(completion.payloads.animations);
-                commands.insert_resource(payloads);
             }
         }
+    }
+    if let Some(payloads) = new_animation_payloads {
+        commands.insert_resource(payloads);
     }
 }
 

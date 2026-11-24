@@ -28,6 +28,19 @@ pub(crate) struct VisualCompositionState {
     recovery_failures: u8,
 }
 
+impl VisualCompositionState {
+    /// A derived cache payload rejected on this device cannot justify further
+    /// camera unloading. Use the existing conservative native recovery route.
+    pub(super) fn request_cache_failure_recovery(&mut self) {
+        if self.recovering || self.suspended_after_recovery {
+            return;
+        }
+        self.recovering = true;
+        self.recovery_delay = 0;
+        self.recovery_failures = 0;
+    }
+}
+
 #[derive(Resource)]
 pub(crate) struct VisualStreaming(pub(crate) bool);
 

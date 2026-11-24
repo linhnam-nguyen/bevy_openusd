@@ -9,7 +9,7 @@ use super::super::{PrimRoute, ProjectionSeed, RouteCtx, mark_render_projection_d
 use super::consumers::MaterialConsumerIndex;
 use super::material_cache::{InitialMaterialMemo, InitialMaterialRead, intern_material};
 use super::provenance::MaterialProjectionProvenance;
-use super::texture_cache::resolve_texture;
+use super::texture_cache::resolve_sampled_texture;
 
 /// Maps a bound Material → the entity's [`MeshMaterial3d`].
 pub struct MaterialRoute;
@@ -248,21 +248,23 @@ pub(super) fn build_standard_material(
         );
     }
 
-    // Resolve textures from cache/disk/usdz
+    // Resolve textures from cache/disk/usdz; sampler is part of the source recipe.
+    let wrap = |name: &str| read.texture_wraps.get(name).copied().unwrap_or([0, 0]);
     if let Some(p) = &read.diffuse_texture {
-        m.base_color_texture = resolve_texture(world, p, true);
+        m.base_color_texture = resolve_sampled_texture(world, p, true, false, wrap("diffuseColor"));
     }
     if let Some(p) = &read.normal_texture {
-        m.normal_map_texture = resolve_texture(world, p, false);
+        m.normal_map_texture = resolve_sampled_texture(world, p, false, true, wrap("normal"));
     }
     if let Some(p) = &read.metallic_texture {
-        m.metallic_roughness_texture = resolve_texture(world, p, false);
+        m.metallic_roughness_texture =
+            resolve_sampled_texture(world, p, false, false, wrap("metallic"));
     }
     if let Some(p) = &read.emissive_texture {
-        m.emissive_texture = resolve_texture(world, p, true);
+        m.emissive_texture = resolve_sampled_texture(world, p, true, false, wrap("emissiveColor"));
     }
     if let Some(p) = &read.occlusion_texture {
-        m.occlusion_texture = resolve_texture(world, p, false);
+        m.occlusion_texture = resolve_sampled_texture(world, p, false, false, wrap("occlusion"));
     }
 
     m
@@ -283,7 +285,9 @@ impl PrimRoute for MaterialRoute {
 
     fn project(&self, ctx: &RouteCtx, world: &mut World, entity: Entity) {
         if world.get_resource::<Assets<StandardMaterial>>().is_none()
-            || world.get::<super::super::geom::DeferredSourceMesh>(entity).is_some()
+            || world
+                .get::<super::super::geom::DeferredSourceMesh>(entity)
+                .is_some()
         {
             return;
         }
@@ -292,7 +296,9 @@ impl PrimRoute for MaterialRoute {
 
     fn patch(&self, ctx: &RouteCtx, world: &mut World, entity: Entity, changed: &[&str]) {
         if !material_patch_relevant(ctx, changed)
-            || world.get::<super::super::geom::DeferredSourceMesh>(entity).is_some()
+            || world
+                .get::<super::super::geom::DeferredSourceMesh>(entity)
+                .is_some()
         {
             return;
         }

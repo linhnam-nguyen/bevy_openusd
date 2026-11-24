@@ -17,9 +17,11 @@ use usd_bevy::UsdPrimRef;
 use usd_model::BlobId;
 
 mod codec;
+mod texture_codec;
 use codec::{collect_material_textures, runtime_alpha_mode};
+pub(crate) use texture_codec::{MAX_TEXTURE_BLOB_BYTES, RuntimeTexturePayload};
 
-pub(crate) const RUNTIME_TEXTURE_VERSION: u16 = 1;
+pub(crate) const RUNTIME_TEXTURE_VERSION: u16 = 2;
 pub(crate) const RUNTIME_MATERIAL_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -41,8 +43,8 @@ pub(crate) struct RuntimeTextureBlob {
 impl RuntimeTextureBlob {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            self.version == RUNTIME_TEXTURE_VERSION,
-            "unsupported runtime texture blob version {}",
+            self.version == 1,
+            "unsupported legacy runtime texture blob version {}",
             self.version
         );
         anyhow::ensure!(
@@ -249,6 +251,7 @@ fn prepare_runtime_payloads_with_path_set<F: Fn(&str) -> bool>(
         };
     };
 
+    let usd_textures = world.get_resource::<usd_bevy::route::material::UsdTextureCache>();
     let mut prepared = PreparedRuntimePayloads {
         complete: true,
         ..Default::default()
@@ -258,7 +261,9 @@ fn prepare_runtime_payloads_with_path_set<F: Fn(&str) -> bool>(
             prepared.complete = false;
             continue;
         };
-        let Some((textures, texture_payloads)) = collect_material_textures(material, images) else {
+        let Some((textures, texture_payloads)) =
+            collect_material_textures(material, images, usd_textures)
+        else {
             prepared.complete = false;
             continue;
         };

@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use bevy::asset::RenderAssetUsages;
+use bevy::asset::{AssetId, RenderAssetUsages};
 use bevy::image::Image;
 use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, WgpuFeatures};
+use bevy::render::renderer::RenderDevice;
 
 use super::archive::{ArchiveIndex, read_texture_bytes};
 
@@ -38,14 +40,21 @@ pub struct TextureCacheKey {
     pub path: String,
     /// Whether the decoded image is intended for an sRGB color channel.
     pub is_srgb: bool,
+    normal: bool,
+    wrap: [u8; 2],
 }
 
 impl TextureCacheKey {
     /// Construct a cache key for an authored path and color-space variant.
     pub fn new(path: impl Into<String>, is_srgb: bool) -> Self {
+        Self::with_normal(path, is_srgb, false, [0, 0])
+    }
+    fn with_normal(path: impl Into<String>, is_srgb: bool, normal: bool, wrap: [u8; 2]) -> Self {
         Self {
             path: path.into(),
             is_srgb,
+            normal,
+            wrap,
         }
     }
 }
@@ -58,10 +67,40 @@ pub struct UsdTextureCache {
     pub(super) archive_indices: HashMap<PathBuf, ArchiveIndex>,
     pub(super) stats: TextureCacheStats,
     pub(super) context_revision: u64,
-    pub(super) decoded_images: HashMap<u64, Handle<Image>>,
+    pub(super) decoded_images: HashMap<([u8; 2], u64), Handle<Image>>,
+    // Equality checks original encoded bytes; hash equality alone is insufficient.
+    pub(super) encoded: HashMap<(Arc<[u8]>, bool, bool, [u8; 2]), Handle<Image>>,
+    pub(super) encoded_bytes: usize,
+    pub(super) retained_image_bytes: usize,
+    pub(super) authored_black_borders: HashMap<AssetId<Image>, [bool; 2]>,
 }
 
 impl UsdTextureCache {
+    /// Transparent black axes authored in the USD sampler, including axes
+    /// presented as edge clamp when black-border hardware support is absent.
+    pub fn authored_black_border(&self, handle: &Handle<Image>) -> [bool; 2] {
+        self.authored_black_borders
+            .get(&handle.id())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Register authored sampler intent for a projected or cache-hydrated image.
+    /// The caller must register the actual allocated handle, not a source path.
+    pub fn remember_authored_black_border(&mut self, handle: &Handle<Image>, axes: [bool; 2]) {
+        if axes.contains(&true) {
+            self.authored_black_borders.insert(handle.id(), axes);
+        } else {
+            self.authored_black_borders.remove(&handle.id());
+        }
+    }
+
+    /// Metadata owns no strong handles and survives only while its image is alive.
+    pub fn prune_authored_black_borders(&mut self, images: &Assets<Image>) {
+        self.authored_black_borders
+            .retain(|id, _| images.contains(*id));
+    }
+
     /// Snapshot hit/miss and loading counters for diagnostics or profiling.
     pub fn stats(&self) -> TextureCacheStats {
         self.stats
@@ -100,6 +139,8 @@ impl UsdTextureCache {
     pub(crate) fn invalidate_textures(&mut self) {
         self.textures.clear();
         self.decoded_images.clear();
+        // Encoded reuse and live projected/hydrated materials can outlive the
+        // alias generation. Prune metadata by Image lifetime, not Stage lifetime.
         self.context_revision = self
             .context_revision
             .checked_add(1)
@@ -115,12 +156,38 @@ impl UsdTextureCache {
     }
 }
 
-pub(super) fn resolve_texture(
+pub(super) fn resolve_sampled_texture(
     world: &mut World,
     path: &str,
     is_srgb: bool,
+    normal: bool,
+    wrap: [u8; 2],
 ) -> Option<Handle<Image>> {
-    let key = TextureCacheKey::new(path, is_srgb);
+    let border_supported = world.get_resource::<RenderDevice>().is_some_and(|device| {
+        device
+            .features()
+            .contains(WgpuFeatures::ADDRESS_MODE_CLAMP_TO_BORDER)
+    });
+    let max_extent = world
+        .get_resource::<RenderDevice>()
+        .map(|device| device.limits().max_texture_dimension_2d);
+    let black_axes = wrap.map(|mode| mode == 3);
+    // A previously CPU-warmed image or an image from another device must not
+    // bypass the current device's sampler/extent constraints.
+    let compatible = |image: &Image| {
+        let size = image.texture_descriptor.size;
+        if max_extent.is_some_and(|max| size.width > max || size.height > max) {
+            return false;
+        }
+        use bevy::image::{ImageAddressMode, ImageSampler};
+        let ImageSampler::Descriptor(sampler) = &image.sampler else {
+            return !black_axes.contains(&true);
+        };
+        let actual = [sampler.address_mode_u, sampler.address_mode_v]
+            .map(|mode| mode == ImageAddressMode::ClampToBorder);
+        actual == black_axes.map(|black| black && border_supported)
+    };
+    let key = TextureCacheKey::with_normal(path, is_srgb, normal, wrap);
     let cached = world
         .get_resource::<UsdTextureCache>()
         .and_then(|cache| cache.textures.get(&key).cloned());
@@ -131,12 +198,13 @@ pub(super) fn resolve_texture(
                 cache
                     .textures
                     .keys()
-                    .any(|candidate| candidate.path == path)
+                    .any(|candidate| candidate.path == path && candidate.is_srgb != is_srgb)
             });
     let cached_is_alive = cached.as_ref().is_some_and(|handle| {
         world
             .get_resource::<Assets<Image>>()
-            .is_some_and(|images| images.contains(handle))
+            .and_then(|images| images.get(handle))
+            .is_some_and(&compatible)
     });
     if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
         cache.stats.lookups += 1;
@@ -169,10 +237,40 @@ pub(super) fn resolve_texture(
         }
         return None;
     };
+    // Amortize the lifetime sweep across misses. Hydration also prunes once
+    // per committed batch; no metadata owns a strong image handle.
+    let prune_metadata = world
+        .get_resource::<UsdTextureCache>()
+        .is_some_and(|cache| cache.stats.misses % 64 == 1);
+    if prune_metadata {
+        world.resource_scope(|world, mut cache: Mut<UsdTextureCache>| {
+            if let Some(images) = world.get_resource::<Assets<Image>>() {
+                cache.prune_authored_black_borders(images);
+            }
+        });
+    }
+    let source = (Arc::<[u8]>::from(bytes), is_srgb, normal, wrap);
+    let reused = world
+        .get_resource::<UsdTextureCache>()
+        .and_then(|cache| cache.encoded.get(&source))
+        .cloned()
+        .filter(|h| {
+            world
+                .resource::<Assets<Image>>()
+                .get(h)
+                .is_some_and(&compatible)
+        });
+    if let Some(handle) = reused {
+        if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+            cache.remember_authored_black_border(&handle, black_axes);
+            cache.textures.insert(key, handle.clone());
+        }
+        return Some(handle);
+    }
     if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
         cache.stats.decode_calls += 1;
     }
-    let Ok(img) = image::load_from_memory(&bytes) else {
+    let Ok(img) = image::load_from_memory(&source.0) else {
         if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
             cache.stats.load_failures += 1;
         }
@@ -180,6 +278,17 @@ pub(super) fn resolve_texture(
     };
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
+    // Source projection is the fallback for rejected derived payloads. Do not
+    // submit the same impossible extent to the GPU through the source route.
+    if max_extent.is_some_and(|max| width > max || height > max) {
+        bevy::log::warn!(
+            "USD texture {path} ({width}x{height}) exceeds the active device extent; using the existing material fallback"
+        );
+        if let Some(mut cache) = world.get_resource_mut::<UsdTextureCache>() {
+            cache.stats.load_failures += 1;
+        }
+        return None;
+    }
 
     let format = if is_srgb {
         TextureFormat::Rgba8UnormSrgb
@@ -187,7 +296,7 @@ pub(super) fn resolve_texture(
         TextureFormat::Rgba8Unorm
     };
 
-    let bevy_image = Image::new(
+    let mut bevy_image = Image::new(
         Extent3d {
             width,
             height,
@@ -199,7 +308,13 @@ pub(super) fn resolve_texture(
         RenderAssetUsages::default(),
     );
 
-    let image_key = FixedHasher.hash_one((width, height, format, &bevy_image.data));
+    super::sampling::finalize(&mut bevy_image, is_srgb, normal);
+    super::sampling::apply_wrap(&mut bevy_image, wrap, border_supported);
+    let image_size = bevy_image.data.as_ref().map_or(0, Vec::len);
+    let image_key = (
+        wrap,
+        FixedHasher.hash_one((width, height, format, normal, &bevy_image.data)),
+    );
     let cached_image = world
         .get_resource::<UsdTextureCache>()
         .and_then(|cache| cache.decoded_images.get(&image_key))
@@ -210,6 +325,7 @@ pub(super) fn resolve_texture(
                 .is_some_and(|image| {
                     image.texture_descriptor == bevy_image.texture_descriptor
                         && image.asset_usage == bevy_image.asset_usage
+                        && image.sampler == bevy_image.sampler
                         && image.data == bevy_image.data
                 })
         })
@@ -222,6 +338,24 @@ pub(super) fn resolve_texture(
             cache.decoded_images.clear();
         }
         cache.decoded_images.insert(image_key, handle.clone());
+        const SOURCE_BUDGET: usize = 128 * 1024 * 1024;
+        const IMAGE_BUDGET: usize = 256 * 1024 * 1024;
+        if source.0.len() <= SOURCE_BUDGET && image_size <= IMAGE_BUDGET {
+            if cache.encoded.len() >= 256
+                || cache.encoded_bytes.saturating_add(source.0.len()) > SOURCE_BUDGET
+                || cache.retained_image_bytes.saturating_add(image_size) > IMAGE_BUDGET
+            {
+                cache.encoded.clear();
+                cache.encoded_bytes = 0;
+                cache.retained_image_bytes = 0;
+            }
+            if !cache.encoded.contains_key(&source) {
+                cache.encoded_bytes += source.0.len();
+                cache.retained_image_bytes += image_size;
+            }
+            cache.encoded.insert(source, handle.clone());
+        }
+        cache.remember_authored_black_border(&handle, black_axes);
         cache.textures.insert(key, handle.clone());
     }
 

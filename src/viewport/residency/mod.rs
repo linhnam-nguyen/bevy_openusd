@@ -65,6 +65,7 @@ impl Plugin for ResidencyPlugin {
             .init_resource::<TargetedRepairPersistenceWorker>()
             .init_resource::<CachedResidencyWorker>()
             .init_resource::<LoadedScenePayloadQueue>()
+            .init_resource::<usd_bevy::route::material::UsdTextureCache>()
             .init_resource::<AnimationResidencyState>()
             .init_resource::<ActiveViewpointResidencyState>()
             .init_resource::<SelectionResidencyState>()
@@ -88,8 +89,8 @@ impl Plugin for ResidencyPlugin {
                     visual_composition::synchronize_visual_composition,
                     visual_lod::synchronize_authored_lod
                         .before(ViewportBridgeSet::PublishStageLoadState),
-                    install_loaded_scene_payloads,
                     drain_cached_residency_completions,
+                    install_loaded_scene_payloads,
                     drain_targeted_repair_persistence_completions,
                     process_targeted_residency_repairs,
                     dispatch_source_meshes,

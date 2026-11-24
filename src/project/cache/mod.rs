@@ -24,6 +24,7 @@ pub(crate) mod historical_geometry;
 pub(crate) mod hydration;
 mod lookup;
 mod mesh_codec;
+mod mesh_v3;
 mod preparation;
 pub(crate) mod scene;
 pub(crate) mod warming;

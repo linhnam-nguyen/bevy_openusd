@@ -2,7 +2,9 @@ use crate::project::cache::SceneCacheStore;
 use crate::project::cache::blobs::BlobStore;
 use crate::project::cache::contract::SceneCacheBlobRef;
 use crate::project::cache::scene::payload::{SCENE_ANIMATION_VERSION, SceneAnimationBlob};
-use crate::project::runtime::payload::{RuntimeMaterialBlob, RuntimeTextureBlob};
+use crate::project::runtime::payload::{
+    MAX_TEXTURE_BLOB_BYTES, RuntimeMaterialBlob, RuntimeTexturePayload,
+};
 
 use super::{LoadedScenePayloads, PayloadLoadMask, ScenePayloadDescriptor};
 
@@ -71,14 +73,11 @@ pub(super) fn load_cached_scene_payloads(
         let bytes = store
             .object_store(scene_id)
             .map_err(|error| error.to_string())?
-            .get(&reference.blob_id)
+            .get_bounded(&reference.blob_id, MAX_TEXTURE_BLOB_BYTES)
             .map_err(|error| error.to_string())?
             .ok_or_else(|| format!("Scene material references missing texture {texture_id}"))?;
-        let texture: RuntimeTextureBlob = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("decode Scene texture payload: {error}"))?;
-        texture
-            .validate()
-            .map_err(|error| format!("validate Scene texture payload: {error:#}"))?;
+        let texture = RuntimeTexturePayload::decode(&bytes)
+            .map_err(|error| format!("decode Scene texture payload: {error:#}"))?;
         textures.push((texture_id, texture));
     }
     Ok(LoadedScenePayloads {

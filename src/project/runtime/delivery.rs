@@ -13,7 +13,9 @@ use viewport_protocol::{
     RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind, RuntimeProfile,
 };
 
-use super::payload::{PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTextureBlob};
+use super::payload::{
+    MAX_TEXTURE_BLOB_BYTES, PreparedRuntimePayloads, RuntimeMaterialBlob, RuntimeTexturePayload,
+};
 use crate::project::cache::blobs::{BlobStore, read_mesh_payload, validate_mesh_payload};
 
 pub(crate) const RUNTIME_HIERARCHY_VERSION: u16 = 3;
@@ -121,12 +123,11 @@ pub(crate) fn build_runtime_delivery_with_payloads(
     for payload in &prepared.textures {
         let texture_id = payload.blob_id.0.clone();
         let bytes = store
-            .get(&payload.blob_id)
+            .get_bounded(&payload.blob_id, MAX_TEXTURE_BLOB_BYTES)
             .with_context(|| format!("read runtime texture blob {texture_id}"))?
             .ok_or_else(|| anyhow::anyhow!("runtime texture blob {texture_id} is missing"))?;
-        let descriptor: RuntimeTextureBlob = serde_json::from_slice(&bytes)
+        let descriptor = RuntimeTexturePayload::decode(&bytes)
             .with_context(|| format!("decode runtime texture blob {texture_id}"))?;
-        descriptor.validate()?;
         let byte_size = bytes.len() as u64;
         blobs.push((texture_id.clone(), bytes));
         texture_references.push(RuntimeBlobReference {

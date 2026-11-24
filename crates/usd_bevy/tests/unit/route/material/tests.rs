@@ -9,8 +9,16 @@ use bevy::render::render_resource::TextureFormat;
 use crate::read::shade::ReadPreviewMaterial;
 
 use super::material_cache::intern_material;
-use super::texture_cache::resolve_texture;
+use super::texture_cache::resolve_sampled_texture;
 use super::*;
+
+pub(super) fn resolve_texture(
+    world: &mut World,
+    path: &str,
+    is_srgb: bool,
+) -> Option<Handle<Image>> {
+    resolve_sampled_texture(world, path, is_srgb, false, [0, 0])
+}
 
 fn write_archive_fixture(path: &Path, texture_names: &[&str]) {
     let mut bytes = Vec::new();
@@ -112,6 +120,41 @@ fn repository_texture_decode_is_cached() {
             ..Default::default()
         }
     );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("odd.png");
+    image::save_buffer(
+        &path,
+        &[0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255],
+        3,
+        1,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+    for (srgb, expected) in [(true, [213, 213, 213, 170]), (false, [170; 4])] {
+        let handle = super::texture_cache::resolve_sampled_texture(
+            &mut world,
+            path.to_str().unwrap(),
+            srgb,
+            false,
+            [1, 2],
+        )
+        .unwrap();
+        let images = world.resource::<Assets<Image>>();
+        let texture = images.get(&handle).unwrap();
+        assert_eq!(texture.texture_descriptor.mip_level_count, 2);
+        assert_eq!(&texture.data.as_ref().unwrap()[12..], &expected);
+        let bevy::image::ImageSampler::Descriptor(sampler) = &texture.sampler else {
+            panic!("imported image should have an explicit sampler");
+        };
+        assert_eq!(
+            sampler.address_mode_u,
+            bevy::image::ImageAddressMode::MirrorRepeat
+        );
+        assert_eq!(
+            sampler.address_mode_v,
+            bevy::image::ImageAddressMode::ClampToEdge
+        );
+    }
 }
 
 #[test]
@@ -271,6 +314,43 @@ fn texture_cache_separates_color_space_variants() {
     let alias_path = alias_directory.path().join("identical.png");
     std::fs::copy(&path, &alias_path).unwrap();
     let aliased = resolve_texture(&mut world, alias_path.to_str().unwrap(), true).unwrap();
+    assert_eq!(world.resource::<UsdTextureCache>().stats().decode_calls, 2);
+    let alias = alias_path.to_str().unwrap();
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&alias_path)
+        .unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000))
+        .unwrap();
+    drop(file);
+    world
+        .resource_mut::<UsdTextureCache>()
+        .replace_active_archives([]);
+    let unchanged = resolve_texture(&mut world, alias, true).unwrap();
+    assert_eq!(unchanged, aliased);
+    assert_eq!(world.resource::<UsdTextureCache>().stats().decode_calls, 2);
+
+    image::save_buffer(
+        &alias_path,
+        &[12, 34, 56, 255],
+        1,
+        1,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+    world
+        .resource_mut::<UsdTextureCache>()
+        .replace_active_archives([]);
+    let replaced = resolve_texture(&mut world, alias, true).unwrap();
+    assert_ne!(replaced, aliased);
+    let images = world.resource::<Assets<Image>>();
+    let replacement = images.get(&replaced).unwrap();
+    assert_eq!(replacement.texture_descriptor.mip_level_count, 1);
+    assert_eq!(
+        replacement.data.as_deref(),
+        Some([12, 34, 56, 255].as_slice())
+    );
+    assert_eq!(world.resource::<UsdTextureCache>().stats().decode_calls, 3);
     assert_eq!(
         aliased, color_handle,
         "equal decoded pixels and layout share an image"

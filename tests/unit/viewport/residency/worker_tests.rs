@@ -36,6 +36,29 @@ fn material() -> RuntimeMaterialBlob {
     }
 }
 
+fn cached_triangle() -> Mesh {
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    );
+    mesh
+}
+
+fn one_pixel_black_texture() -> RuntimeTexturePayload {
+    let mut bytes = b"NTEX".to_vec();
+    bytes.extend(2u16.to_le_bytes());
+    bytes.extend([1, 4]); // sRGB, U black / V clamp
+    for value in [1u32, 1, 1, 4] {
+        bytes.extend(value.to_le_bytes());
+    }
+    bytes.extend([48, 96, 192, 255]);
+    RuntimeTexturePayload::decode(&bytes).unwrap()
+}
+
 #[test]
 fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
     let scene_id = SceneId::new_v4();
@@ -50,9 +73,38 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
     .insert_resource(Assets::<bevy::pbr::StandardMaterial>::default())
     .insert_resource(ProjectionSeed::default())
     .insert_resource(LoadedScenePayloadQueue::default())
+    .insert_resource(UsdTextureCache::default())
+    .insert_resource(VisualStreamingHealth::default())
     .add_systems(Update, install_loaded_scene_payloads);
     let mut current_job = job(7);
     current_job.key.scene_id = scene_id;
+    let mut rejected_job = current_job.clone();
+    rejected_job.key.blob_hash = HashDigest::new([8; HashDigest::BYTE_LEN]);
+    let mut authority = ResidencyAuthority::default();
+    authority.install_scene(scene_id, 7, Vec::new());
+    for load in [&current_job, &rejected_job] {
+        assert!(authority.request_reason(
+            load.key,
+            super::super::ResidencyReason::CameraNear,
+            load.generation,
+            load.cpu_bytes,
+            load.gpu_bytes
+        ));
+    }
+    let first = authority.begin_next_load().unwrap();
+    let second = authority.begin_next_load().unwrap();
+    let (current_job, rejected_job) = if first.key == current_job.key {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let mask = authority.load_mask(&current_job.key);
+    let rejected_key = rejected_job.key;
+    app.insert_resource(authority);
+    let mut current_material = material();
+    current_material.textures.base_color = Some("black".to_owned());
+    let mut rejected_material = material();
+    rejected_material.textures.base_color = Some("missing".to_owned());
     let stale_job = LoadJob {
         generation: 6,
         ..current_job.clone()
@@ -63,6 +115,8 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
         .extend([
             LoadedScenePayloadCompletion {
                 job: stale_job,
+                mask,
+                mesh: Some(cached_triangle()),
                 payloads: LoadedScenePayloads {
                     materials: vec![("/World/Stale".to_owned(), material())],
                     textures: Vec::new(),
@@ -71,9 +125,23 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
             },
             LoadedScenePayloadCompletion {
                 job: current_job,
+                mask,
+                mesh: Some(cached_triangle()),
                 payloads: LoadedScenePayloads {
-                    materials: vec![("/World/Current".to_owned(), material())],
-                    textures: Vec::new(),
+                    materials: vec![("/World/Current".to_owned(), current_material)],
+                    textures: vec![("black".to_owned(), one_pixel_black_texture())],
+                    animations: Vec::new(),
+                },
+            },
+            LoadedScenePayloadCompletion {
+                job: rejected_job,
+                mask,
+                mesh: Some(cached_triangle()),
+                payloads: LoadedScenePayloads {
+                    materials: vec![("/World/Rejected".to_owned(), rejected_material)],
+                    // This image is valid but must be rolled back when another
+                    // required texture reference cannot be resolved.
+                    textures: vec![("other".to_owned(), one_pixel_black_texture())],
                     animations: Vec::new(),
                 },
             },
@@ -91,6 +159,69 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
             .len(),
         1
     );
+    let world = app.world();
+    let images = world.resource::<Assets<bevy::image::Image>>();
+    assert_eq!(images.len(), 1, "failed batch must release staged image");
+    let materials = world.resource::<Assets<bevy::pbr::StandardMaterial>>();
+    let (_, material) = materials.iter().next().unwrap();
+    let handle = material.base_color_texture.as_ref().unwrap();
+    let axes = world
+        .resource::<UsdTextureCache>()
+        .authored_black_border(handle);
+    assert_eq!(axes, [true, false]);
+    let encoded = RuntimeTexturePayload::from_image(images.get(handle).unwrap(), axes)
+        .unwrap()
+        .encode()
+        .unwrap();
+    assert_eq!(encoded[7], 4);
+    assert!(
+        world
+            .resource::<ResidencyAuthority>()
+            .is_terminal_failure(rejected_key, 7)
+    );
+    assert!(world.resource::<VisualStreamingHealth>().incomplete);
+    assert!(one_pixel_black_texture().validate_device_extent(1).is_ok());
+    assert!(one_pixel_black_texture().validate_device_extent(0).is_err());
+    assert!(
+        world
+            .resource::<ResidencyAuthority>()
+            .in_flight_mask(&rejected_key)
+            .is_empty()
+    );
+
+    let mut full_queue = LoadedScenePayloadQueue::default();
+    for _ in 0..WORKER_QUEUE_CAPACITY {
+        assert!(
+            queue_loaded_scene_payloads(
+                &mut full_queue,
+                job(7),
+                mask,
+                None,
+                LoadedScenePayloads {
+                    materials: Vec::new(),
+                    textures: Vec::new(),
+                    animations: Vec::new(),
+                },
+            )
+            .is_ok()
+        );
+    }
+    let overflow_job = job(7);
+    assert_eq!(
+        queue_loaded_scene_payloads(
+            &mut full_queue,
+            overflow_job.clone(),
+            mask,
+            None,
+            LoadedScenePayloads {
+                materials: Vec::new(),
+                textures: Vec::new(),
+                animations: Vec::new(),
+            },
+        ),
+        Err(overflow_job)
+    );
+    assert_eq!(full_queue.completions.len(), WORKER_QUEUE_CAPACITY);
 }
 
 #[test]
