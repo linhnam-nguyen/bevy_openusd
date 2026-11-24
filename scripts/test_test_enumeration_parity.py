@@ -1319,7 +1319,7 @@ class TestEnumerationParityTests(unittest.TestCase):
         configs = parity.load_qualified(baseline_path, legacy)
         migrations_path = REPO_ROOT / "scripts" / parity.IDENTITY_MIGRATIONS_FILE
         migrations = parity.load_identity_migrations(migrations_path, configs)
-        self.assertEqual(len(migrations.additions), 75)
+        self.assertEqual(len(migrations.additions), 79)
         counts = {}
         for addition in migrations.additions:
             counts[addition["evidence"]] = counts.get(addition["evidence"], 0) + 1
@@ -1333,6 +1333,7 @@ class TestEnumerationParityTests(unittest.TestCase):
                 ("UP-C04",): 2,
                 ("UP-C06",): 13,
                 ("UP-C07",): 14,
+                ("UP-C09",): 4,
             },
         )
 

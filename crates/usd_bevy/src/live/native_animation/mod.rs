@@ -14,8 +14,7 @@ use openusd_schemas::skel::AnimQuery;
 
 use super::index::PrimEntities;
 use super::performance::PerformanceCounters;
-use super::stage::LiveStage;
-use openusd::usd::Stage;
+use super::stage::{LiveStage, VisualContextId};
 
 #[derive(Clone)]
 pub(super) struct TransformBinding {
@@ -31,20 +30,27 @@ pub(super) struct BlendBinding {
 
 #[derive(Clone)]
 pub(super) struct SkeletonBinding {
-    pub(super) animation: AnimQuery,
-    pub(super) joints: Vec<bevy::ecs::entity::Entity>,
+    pub(super) joints: Vec<Option<bevy::ecs::entity::Entity>>,
     pub(super) has_translations: bool,
     pub(super) has_rotations: bool,
     pub(super) has_scales: bool,
+}
+
+pub(super) struct SharedPose {
+    pub(super) animation: AnimQuery,
+    pub(super) skeletons: Vec<SkeletonBinding>,
     pub(super) blend_bindings: Vec<BlendBinding>,
 }
 
-/// Compact, typed playback targets. It is rebuilt only after projection or a
-/// structural reconcile, never on every StageTime change.
+#[derive(bevy::prelude::Component)]
+pub(super) struct CpuDeformBinding(openusd::sdf::Path);
+
+/// Compact, typed playback targets owned by one visual composition.
 #[derive(Default)]
 pub(super) struct AnimationRuntime {
+    context: Option<VisualContextId>,
     pub(super) transforms: Vec<TransformBinding>,
-    pub(super) skeletons: Vec<SkeletonBinding>,
+    pub(super) poses: Vec<SharedPose>,
 }
 
 /// Rebuild all native animation components after a projection or structural
@@ -59,15 +65,37 @@ pub(super) fn rebuild(world: &mut bevy::ecs::world::World, live: &LiveStage, map
     let by_skeleton = binding::collect_bindings(stage);
     skeleton::rebuild_skeletons(world, stage, map, &by_skeleton);
     let transforms = binding::collect_transform_bindings(world, stage, map);
-    let skeletons = binding::collect_skeleton_runtime(world, stage);
+    let poses = binding::collect_skeleton_runtime(world, stage);
     world.insert_non_send(AnimationRuntime {
+        context: Some(live.visual_context_id()),
         transforms,
-        skeletons,
+        poses,
     });
+    if let Some(mut sampled) = world.get_resource_mut::<super::animation::SampledTime>() {
+        sampled.context = None;
+    }
 }
 
-/// Sample pre-bound native targets. No route registry, USD path parsing, mesh
-/// reads, or mesh/material asset allocation occurs here.
-pub(super) fn sample(world: &mut bevy::ecs::world::World, stage: &Stage, time: f64) {
-    sampling::sample(world, stage, time);
+/// Sample pre-bound native targets. Ordinary clock ticks only update components.
+pub(super) fn sample(world: &mut bevy::ecs::world::World, live: &LiveStage, time: f64) {
+    let stage = live.projection_stage();
+    let context = Some(live.visual_context_id());
+    if world
+        .get_non_send::<AnimationRuntime>()
+        .is_some_and(|runtime| runtime.context.is_some() && runtime.context != context)
+        && world.contains_resource::<PrimEntities>()
+    {
+        // Sparse changes preserve entity bindings but may alter the composed
+        // spec stacks or time-sample status. Reuse the existing native joints.
+        let transforms = world.resource_scope(|world, map: bevy::prelude::Mut<PrimEntities>| {
+            binding::collect_transform_bindings(world, &stage, &map)
+        });
+        let poses = binding::collect_skeleton_runtime(world, &stage);
+        world.insert_non_send(AnimationRuntime {
+            context,
+            transforms,
+            poses,
+        });
+    }
+    sampling::sample(world, &stage, time);
 }

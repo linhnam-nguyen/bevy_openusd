@@ -134,22 +134,41 @@ pub(crate) fn skin_fidelity(
     let (indices, weights) = skinning.joint_influences(None)?.unwrap_or_default();
     let influences = skinning.influences_per_component().max(1);
     let constant = skinning.is_rigidly_deformed();
-    for vertex in 0..vertex_count {
-        let base = if constant { 0 } else { vertex * influences };
-        let count = (0..influences)
-            .filter(|slot| {
-                let Some(index) = indices.get(base + slot).copied() else {
-                    return false;
-                };
-                let weight = weights.get(base + slot).copied().unwrap_or_default();
-                index >= 0 && (index as usize) < joint_count && weight > 0.0
-            })
-            .count();
+    let expected = (if constant { 1 } else { vertex_count }).checked_mul(influences);
+    anyhow::ensure!(
+        expected == Some(indices.len()) && indices.len() == weights.len(),
+        "GPU skinning requires complete influence arrays"
+    );
+    let mut fidelity = SkinFidelity::Standard4;
+    for (indices, weights) in indices
+        .chunks_exact(influences)
+        .zip(weights.chunks_exact(influences))
+    {
+        let mut count = 0;
+        let mut sum = 0.0;
+        for (&index, &weight) in indices.iter().zip(weights) {
+            anyhow::ensure!(
+                weight.is_finite() && weight >= 0.0,
+                "invalid GPU skinning weight"
+            );
+            if weight > 0.0 {
+                anyhow::ensure!(
+                    u16::try_from(index).is_ok_and(|index| usize::from(index) < joint_count),
+                    "invalid GPU skinning joint index"
+                );
+                count += 1;
+                sum += weight;
+            }
+        }
+        anyhow::ensure!(
+            (1..=16).contains(&count) && (sum - 1.0).abs() <= 1e-5,
+            "GPU skinning requires between one and sixteen normalized influences"
+        );
         if count > 4 {
-            return Ok(SkinFidelity::Extended16);
+            fidelity = SkinFidelity::Extended16;
         }
     }
-    Ok(SkinFidelity::Standard4)
+    Ok(fidelity)
 }
 
 /// Convert a binding to four native groups, retaining at most sixteen valid

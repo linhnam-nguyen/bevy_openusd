@@ -1,11 +1,30 @@
 use bevy::render::settings::WgpuLimits;
+use bevy::{core_pipeline::oit::OitFragmentNode, math::UVec2};
 
 use super::GpuLimitNegotiation;
 
 #[test]
+fn transparency_buffer_budget_rejects_unrepresentable_settings() {
+    let size = UVec2::new(200, 100);
+    let nodes = 80_000 * size_of::<OitFragmentNode>() as u64;
+    assert_eq!(super::transparency_buffer_bytes(size, 4.0), Some(nodes));
+    assert_eq!(super::transparency_buffer_bytes(size, f32::NAN), None);
+    assert_eq!(super::transparency_buffer_bytes(size, 0.0), None);
+    assert_eq!(
+        super::transparency_buffer_bytes(UVec2::splat(u32::MAX), 1.0),
+        None
+    );
+}
+
+#[test]
 fn deformation_storage_limits_fit_the_adapter_and_preserve_host_requirements() {
     for (available, existing, expected, expected_status) in [
-        (0, 0, 0, GpuLimitNegotiation::BelowPreferredFloor { supported: 0 }),
+        (
+            0,
+            0,
+            0,
+            GpuLimitNegotiation::BelowPreferredFloor { supported: 0 },
+        ),
         (
             0,
             16,
@@ -15,8 +34,18 @@ fn deformation_storage_limits_fit_the_adapter_and_preserve_host_requirements() {
                 supported: 0,
             },
         ),
-        (4, 4, 4, GpuLimitNegotiation::BelowPreferredFloor { supported: 4 }),
-        (8, 8, 8, GpuLimitNegotiation::BelowPreferredFloor { supported: 8 }),
+        (
+            4,
+            4,
+            4,
+            GpuLimitNegotiation::BelowPreferredFloor { supported: 4 },
+        ),
+        (
+            8,
+            8,
+            8,
+            GpuLimitNegotiation::BelowPreferredFloor { supported: 8 },
+        ),
         (
             8,
             32,
@@ -26,7 +55,12 @@ fn deformation_storage_limits_fit_the_adapter_and_preserve_host_requirements() {
                 supported: 8,
             },
         ),
-        (9, 8, 9, GpuLimitNegotiation::BelowPreferredFloor { supported: 9 }),
+        (
+            9,
+            8,
+            9,
+            GpuLimitNegotiation::BelowPreferredFloor { supported: 9 },
+        ),
         (
             15,
             32,

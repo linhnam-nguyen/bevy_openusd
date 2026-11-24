@@ -135,6 +135,10 @@ impl Plugin for OverlaysPlugin {
                     .before(bevy_glacial::prelude::build_grid_meshes),
             );
     }
+
+    fn finish(&self, app: &mut App) {
+        super::gpu_limits::install_render_guards(app);
+    }
 }
 
 fn sync_point_instancing_policy(world: &mut World, mut last: Local<Option<(u64, u64, bool)>>) {
@@ -286,17 +290,46 @@ fn sync_shadow_cascade_distance(
     cameras: Query<&ArcballCamera>,
     mut lights: Query<&mut bevy::light::CascadeShadowConfig, With<DirectionalLight>>,
 ) {
-    let camera_distance = cameras
-        .single()
-        .map(|camera| camera.distance)
-        .unwrap_or(0.0);
-    let desired = (extent.diag().max(camera_distance) * 2.0).clamp(150.0, 10_000.0);
+    let Ok(camera) = cameras.single() else {
+        return;
+    };
+    let (min, max) = if extent.geometry_count > 0 {
+        (extent.geometry_min, extent.geometry_max)
+    } else if extent.count > 0 {
+        (extent.min, extent.max)
+    } else {
+        return;
+    };
+    let focus_to_center = (min * 0.5 + max * 0.5).distance(camera.focus);
+    let radius = (max - min).length() * 0.5;
+    let far = (camera.distance + focus_to_center + radius) * 1.1;
+    if !far.is_finite() || min.cmpgt(max).any() {
+        return;
+    }
+    let desired = far.clamp(150.0, 10_000.0);
     for mut config in &mut lights {
-        let current = config.bounds.last().copied().unwrap_or_default();
-        if (current - desired).abs() > current.max(1.0) * 0.05 {
+        let Some(current) = config
+            .bounds
+            .last()
+            .copied()
+            .filter(|value| value.is_finite())
+        else {
+            continue;
+        };
+        let first = config.bounds.first().copied().unwrap_or(current);
+        let cascade_count = config.bounds.len();
+        if (current - desired).abs() > current.max(1.0) * 0.05
+            && config.minimum_distance >= 0.0
+            && config.minimum_distance < desired
+            && (0.0..1.0).contains(&config.overlap_proportion)
+            && (cascade_count == 1 || (config.minimum_distance < first && first < desired))
+        {
             *config = bevy::light::CascadeShadowConfigBuilder {
+                num_cascades: cascade_count,
+                first_cascade_far_bound: first,
+                minimum_distance: config.minimum_distance,
+                overlap_proportion: config.overlap_proportion,
                 maximum_distance: desired,
-                ..default()
             }
             .into();
         }

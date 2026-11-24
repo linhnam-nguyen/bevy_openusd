@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use openusd::sdf::Path;
+use openusd::sdf::{LayerHandle, Path};
 use openusd::usd::{SchemaBase, Stage};
 use openusd_schemas::skel::{AnimQuery, Animation, Cache, Root, SkinningQuery};
 
-use super::{BlendBinding, SkeletonBinding, TransformBinding};
+use super::{BlendBinding, SharedPose, SkeletonBinding, TransformBinding};
 use crate::live::index::PrimEntities;
 use crate::live::path::PathStore;
 use crate::live::projection::traverse_predicate;
@@ -62,10 +62,7 @@ pub(super) fn animation_channel_authored(stage: &Stage, path: &Path, name: &str)
     };
     let attribute = prim.attribute(name);
     attribute.might_be_time_varying().unwrap_or(false)
-        || attribute
-            .time_sample_times()
-            .map(|times| !times.is_empty())
-            .unwrap_or(false)
+        || attribute.num_time_samples().is_ok_and(|count| count != 0)
 }
 
 pub(super) fn collect_bindings(stage: &Stage) -> HashMap<String, Vec<DiscoveredBinding>> {
@@ -147,10 +144,7 @@ pub(super) fn collect_transform_bindings(
                             .map(|(_, name)| name.starts_with("xformOp"))
                             .unwrap_or(false)
                             && (attribute.might_be_time_varying().unwrap_or(false)
-                                || attribute
-                                    .time_sample_times()
-                                    .map(|times| !times.is_empty())
-                                    .unwrap_or(false))
+                                || attribute.num_time_samples().is_ok_and(|count| count != 0))
                     })
                 })
                 .unwrap_or(false);
@@ -164,31 +158,94 @@ pub(super) fn collect_transform_bindings(
     transforms
 }
 
-pub(super) fn collect_skeleton_runtime(world: &mut World, stage: &Stage) -> Vec<SkeletonBinding> {
-    let mut skeletons = Vec::new();
-    let mut query = world.query::<&crate::route::skel::UsdSkelAnimDriver>();
-    let drivers = query.iter(world).cloned().collect::<Vec<_>>();
-    for driver in drivers {
+// The ordered spec stacks include stronger overrides, selected variant specs,
+// and cumulative reference layer offsets. Layer handles are local to this stage.
+type SpecKey = (LayerHandle, Path, [u64; 2]);
+type PoseSource = (Vec<SpecKey>, Vec<SpecKey>);
+
+fn spec_stack(stage: &Stage, path: Path) -> Option<Vec<SpecKey>> {
+    let stack = stage.prim(path).ok()?.prim_stack().ok()?;
+    if stack.is_empty() {
+        return None;
+    }
+    Some(
+        stack
+            .into_iter()
+            .map(|site| {
+                let offset = [site.offset.offset.to_bits(), site.offset.scale.to_bits()];
+                (site.layer, site.path, offset)
+            })
+            .collect(),
+    )
+}
+
+pub(super) fn collect_skeleton_runtime(world: &mut World, stage: &Stage) -> Vec<SharedPose> {
+    let mut poses: Vec<SharedPose> = Vec::new();
+    let mut groups: HashMap<PoseSource, usize> = HashMap::new();
+    let mut retained_bytes = 0usize;
+    let mut mesh_query = world.query::<(Entity, &UsdBlendShapeBinding)>();
+    let mut query = world.query::<(
+        Option<&crate::prim_ref::UsdPrimRef>,
+        &crate::route::skel::UsdSkelAnimDriver,
+    )>();
+    let mut meshes = HashMap::<&str, Vec<_>>::new();
+    for (entity, binding) in mesh_query.iter(world) {
+        meshes
+            .entry(&binding.animation_source_path)
+            .or_default()
+            .push((entity, binding));
+    }
+    for (prim, driver) in query.iter(world) {
         let Ok(source) = openusd::sdf::path(&driver.animation_source_path) else {
             continue;
         };
-        let Ok(Some(anim_prim)) = Animation::get(stage, source) else {
-            continue;
+        let key = prim
+            .and_then(|prim| openusd::sdf::path(&prim.path).ok())
+            .and_then(|path| Some((spec_stack(stage, path)?, spec_stack(stage, source.clone())?)));
+        let index = if let Some(&index) = key.as_ref().and_then(|key| groups.get(key)) {
+            index
+        } else {
+            let Ok(Some(anim_prim)) = Animation::get(stage, source) else {
+                continue;
+            };
+            let Ok(animation) = AnimQuery::new(anim_prim) else {
+                continue;
+            };
+            let index = poses.len();
+            poses.push(SharedPose {
+                animation,
+                skeletons: Vec::new(),
+                blend_bindings: Vec::new(),
+            });
+            if let Some(key) = key {
+                let bytes = key
+                    .0
+                    .iter()
+                    .chain(&key.1)
+                    .fold(0usize, |bytes, (_, path, _)| {
+                        bytes
+                            .saturating_add(size_of::<SpecKey>())
+                            .saturating_add(path.as_str().len())
+                    });
+                let next = retained_bytes.saturating_add(bytes);
+                if groups.len() < 65_536 && next <= 8 * 1024 * 1024 {
+                    groups.insert(key, index);
+                    retained_bytes = next;
+                }
+            }
+            index
         };
-        let Ok(animation) = AnimQuery::new(anim_prim) else {
-            continue;
-        };
-        let source_indices = animation
-            .blend_shape_order()
-            .iter()
-            .enumerate()
-            .map(|(index, name)| (name.as_str(), index))
-            .collect::<HashMap<_, _>>();
-        let mut blend_bindings = Vec::new();
-        let mut mesh_query = world.query::<(Entity, &UsdBlendShapeBinding)>();
-        for (entity, binding) in mesh_query.iter(world) {
-            if binding.animation_source_path == driver.animation_source_path {
-                blend_bindings.push(BlendBinding {
+        let pose = &mut poses[index];
+        if let Some(meshes) = meshes.remove(driver.animation_source_path.as_str()) {
+            let source_indices = pose
+                .animation
+                .blend_shape_order()
+                .iter()
+                .enumerate()
+                .map(|(index, name)| (name.as_str(), index))
+                .collect::<HashMap<_, _>>();
+            for (entity, binding) in meshes {
+                pose.blend_bindings.push(BlendBinding {
                     entity,
                     source_indices: binding
                         .names
@@ -198,14 +255,16 @@ pub(super) fn collect_skeleton_runtime(world: &mut World, stage: &Stage) -> Vec<
                 });
             }
         }
-        skeletons.push(SkeletonBinding {
-            animation,
-            joints: driver.joint_entities.iter().copied().flatten().collect(),
+        pose.skeletons.push(SkeletonBinding {
+            joints: driver.joint_entities.clone(),
             has_translations: driver.has_translations,
             has_rotations: driver.has_rotations,
             has_scales: driver.has_scales,
-            blend_bindings,
         });
     }
-    skeletons
+    poses
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/live/pose_sharing.rs"]
+mod tests;

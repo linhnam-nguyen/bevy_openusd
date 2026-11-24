@@ -430,64 +430,64 @@
       ]
     },
     {
-        "configurations": [
-            "linux:default",
-            "linux:solari",
-            "macos:default",
-            "macos:solari",
-            "windows:default",
-            "windows:solari"
-        ],
-        "evidence": [
-            "UP-C06"
-        ],
-        "name": "viewport::selection::hover::tests::queued_click_rejects_changed_view_and_returned_camera_pose",
-        "targets": [
-            {
-                "kind": [
-                    "bin"
-                ],
-                "manifest": "Cargo.toml",
-                "target": "usdview"
-            },
-            {
-                "kind": [
-                    "lib"
-                ],
-                "manifest": "Cargo.toml",
-                "target": "usdview"
-            }
-        ]
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "viewport::selection::hover::tests::queued_click_rejects_changed_view_and_returned_camera_pose",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
     },
     {
-        "configurations": [
-            "linux:default",
-            "linux:solari",
-            "macos:default",
-            "macos:solari",
-            "windows:default",
-            "windows:solari"
-        ],
-        "evidence": [
-            "UP-C06"
-        ],
-        "name": "viewport::selection::hover::tests::queued_click_remains_valid_only_in_unchanged_view",
-        "targets": [
-            {
-                "kind": [
-                    "bin"
-                ],
-                "manifest": "Cargo.toml",
-                "target": "usdview"
-            },
-            {
-                "kind": [
-                    "lib"
-                ],
-                "manifest": "Cargo.toml",
-                "target": "usdview"
-            }
-        ]
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C06"
+      ],
+      "name": "viewport::selection::hover::tests::queued_click_remains_valid_only_in_unchanged_view",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
     },
     {
       "configurations": [
@@ -504,12 +504,16 @@
       "name": "viewport::selection::hover::tests::same_update_remote_taps_retain_reliable_positions",
       "targets": [
         {
-          "kind": ["bin"],
+          "kind": [
+            "bin"
+          ],
           "manifest": "Cargo.toml",
           "target": "usdview"
         },
         {
-          "kind": ["lib"],
+          "kind": [
+            "lib"
+          ],
           "manifest": "Cargo.toml",
           "target": "usdview"
         }
@@ -1984,6 +1988,105 @@
         "UP-C04"
       ],
       "name": "live::visual_stage::tests::sealed_document_keeps_open_time_assets_and_replays_without_source_files",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C09"
+      ],
+      "name": "viewport::rendering::gpu_limits::tests::transparency_buffer_budget_rejects_unrepresentable_settings",
+      "targets": [
+        {
+          "kind": [
+            "bin"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        },
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "Cargo.toml",
+          "target": "usdview"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C09"
+      ],
+      "name": "live::deformed_sort::tests::first_queued_skinned_draw_uses_current_center_and_restores_after_removal",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C09"
+      ],
+      "name": "live::native_animation::binding::tests::references_share_pose_only_when_composed_specs_and_offsets_match",
+      "targets": [
+        {
+          "kind": [
+            "lib"
+          ],
+          "manifest": "crates/usd_bevy/Cargo.toml",
+          "target": "usd_bevy"
+        }
+      ]
+    },
+    {
+      "configurations": [
+        "linux:default",
+        "linux:solari",
+        "macos:default",
+        "macos:solari",
+        "windows:default",
+        "windows:solari"
+      ],
+      "evidence": [
+        "UP-C09"
+      ],
+      "name": "live::tests::animation::rebuilt_animation_is_sampled_at_the_current_playback_time",
       "targets": [
         {
           "kind": [

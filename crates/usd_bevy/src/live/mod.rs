@@ -3,6 +3,7 @@
 mod animation;
 mod author;
 mod change;
+mod deformed_sort;
 mod index;
 mod native_animation;
 mod native_instance_dependency;
@@ -24,6 +25,7 @@ pub(crate) mod visual_stage;
 pub use animation::AnimatedPrims;
 pub use author::{TransformHistory, author_transform, current_transform};
 pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatch};
+pub use deformed_sort::UsdDeformedSortPlugin;
 pub use index::PrimEntities;
 pub use native_instance_dependency::NativeInstanceDependencyIndex;
 pub(crate) use native_instance_dependency::native_proxy_sources;

@@ -7,9 +7,6 @@
 //! Bevy GPU skinning (inverse bind poses, joint entities, geom-bind) by hand,
 //! and plugs straight into the [`StageTime`](crate::route::StageTime) loop.
 //!
-//! Limitation: the SkelAnimation joint order is assumed to match the
-//! skeleton's; a mismatch falls back to the rest pose rather than deform
-//! incorrectly (proper `AnimMapper` remap is a follow-up).
 
 use openusd::gf;
 use openusd::sdf::Path;
@@ -23,12 +20,13 @@ use openusd_schemas::skel::{
     BlendShapeSchema, Root, Skeleton, SkeletonQuery, SkinningQuery,
 };
 
-use super::util::{read_float_vec, read_int_vec, read_rel_first_target};
+use super::util::{read_float_vec, read_rel_first_target};
 
 /// Static blend-shape payload copied into Bevy morph targets during
 /// projection. Playback changes only `MeshMorphWeights`.
 #[derive(Debug, Clone)]
 pub(crate) struct BlendShapeData {
+    pub requires_cpu: bool,
     pub(crate) names: Vec<String>,
     pub(crate) offsets: Vec<Vec<[f32; 3]>>,
     pub(crate) normal_offsets: Vec<Vec<[f32; 3]>>,
@@ -40,6 +38,11 @@ pub fn is_skinned(stage: &Stage, prim: &Path) -> bool {
     read_float_vec(stage, prim, "primvars:skel:jointWeights")
         .map(|w| !w.is_empty())
         .unwrap_or(false)
+        || stage.prim(prim.clone()).is_ok_and(|prim| {
+            prim.attribute("primvars:skel:jointWeights")
+                .num_time_samples()
+                .is_ok_and(|count| count != 0)
+        })
 }
 
 /// Whether `prim` binds any blend shapes (`skel:blendShapes`).
@@ -55,19 +58,27 @@ pub fn has_blend_shapes(stage: &Stage, prim: &Path) -> bool {
 /// Whether the mesh's bound blend-shape *weights* may vary over time (so the
 /// mesh must be re-morphed when [`StageTime`](crate::route::StageTime) moves).
 pub fn blend_is_time_varying(stage: &Stage, mesh_path: &Path) -> bool {
-    let Some(binding) = binding_of(stage, mesh_path) else {
-        return false;
-    };
-    let Some(skel_path) = binding.skeleton.clone() else {
-        return false;
-    };
-    let Some(anim_path) = animation_source(stage, &skel_path, &binding) else {
-        return false;
-    };
-    matches!(
-        Animation::get(stage, anim_path).ok().flatten().and_then(|a| AnimQuery::new(a).ok()),
-        Some(anim) if anim.blend_shape_weights_might_be_time_varying().unwrap_or(false)
-    )
+    mesh_animation_query(stage, mesh_path).is_some_and(|anim| {
+        anim.blend_shape_weights_might_be_time_varying()
+            .unwrap_or(false)
+    })
+}
+
+pub(crate) fn deformation_is_time_varying(stage: &Stage, mesh_path: &Path) -> bool {
+    mesh_animation_query(stage, mesh_path).is_some_and(|anim| {
+        anim.joint_transforms_might_be_time_varying()
+            .unwrap_or(false)
+            || anim
+                .blend_shape_weights_might_be_time_varying()
+                .unwrap_or(false)
+    })
+}
+
+fn mesh_animation_query(stage: &Stage, mesh_path: &Path) -> Option<AnimQuery> {
+    let binding = binding_of(stage, mesh_path)?;
+    let skeleton = binding.skeleton.as_ref()?;
+    let source = animation_source(stage, skeleton, &binding)?;
+    AnimQuery::new(Animation::get(stage, source).ok()??).ok()
 }
 
 /// Apply the mesh's bound blend shapes to `rest` at `time`, per the canonical
@@ -245,6 +256,7 @@ pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendS
         .flatten()?;
     let targets = api.blend_shape_targets().ok()?;
     let mut data = BlendShapeData {
+        requires_cpu: false,
         names: Vec::new(),
         offsets: Vec::new(),
         normal_offsets: Vec::new(),
@@ -257,6 +269,9 @@ pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendS
         let Ok(Some(shape)) = BlendShape::get(stage, target.clone()) else {
             continue;
         };
+        data.requires_cpu |= shape
+            .authored_inbetweens()
+            .map_or(true, |shapes| !shapes.is_empty());
         data.names.push(name.clone());
         data.offsets.push(
             shape
@@ -287,19 +302,10 @@ pub(crate) fn blend_shape_data(stage: &Stage, mesh_path: &Path) -> Option<BlendS
 /// Whether the skinned mesh's bound SkelAnimation may vary over time (so the
 /// mesh must be resampled when [`StageTime`](crate::route::StageTime) moves).
 pub fn skin_is_time_varying(stage: &Stage, mesh_path: &Path) -> bool {
-    let Some(binding) = binding_of(stage, mesh_path) else {
-        return false;
-    };
-    let Some(skel_path) = binding.skeleton.clone() else {
-        return false;
-    };
-    let Some(anim_path) = animation_source(stage, &skel_path, &binding) else {
-        return false;
-    };
-    matches!(
-        Animation::get(stage, anim_path).ok().flatten().and_then(|a| AnimQuery::new(a).ok()),
-        Some(anim) if anim.joint_transforms_might_be_time_varying().unwrap_or(false)
-    )
+    mesh_animation_query(stage, mesh_path).is_some_and(|anim| {
+        anim.joint_transforms_might_be_time_varying()
+            .unwrap_or(false)
+    })
 }
 
 /// The skinned mesh points for `mesh_path` at `time` (`None` = rest/default),
@@ -313,28 +319,6 @@ pub fn skinned_points_at(
     let Some(binding) = binding_of(stage, mesh_path) else {
         return Ok(None);
     };
-
-    // Fast path: skip prims whose `jointIndices`/`jointWeights` are absent or
-    // disagree in length (some assets, e.g. Hummingbird, author them
-    // inconsistently). openusd now *returns an error* for this rather than
-    // panicking, but bailing here avoids building the resolver at all and keeps
-    // the log quiet in the common case.
-    let n_indices = read_int_vec(stage, mesh_path, "primvars:skel:jointIndices")
-        .map(|v| v.len())
-        .unwrap_or(0);
-    let n_weights = read_float_vec(stage, mesh_path, "primvars:skel:jointWeights")
-        .map(|v| v.len())
-        .unwrap_or(0);
-    if n_indices == 0 || n_indices != n_weights {
-        if n_indices != n_weights {
-            log::warn!(
-                "usd_bevy::skel: {}: jointIndices ({n_indices}) / jointWeights ({n_weights}) \
-                 length mismatch — showing the mesh un-skinned",
-                mesh_path.as_str()
-            );
-        }
-        return Ok(None);
-    }
 
     let Some(skel_path) = binding.skeleton.clone() else {
         return Ok(None);
@@ -363,7 +347,7 @@ pub fn skinned_points_at(
         resolver.joint_order().to_vec(),
         Vec::<String>::new(),
     )?;
-    if skinning.is_rigidly_deformed() || !skinning.has_joint_influences() {
+    if !skinning.has_joint_influences() {
         return Ok(None);
     }
 

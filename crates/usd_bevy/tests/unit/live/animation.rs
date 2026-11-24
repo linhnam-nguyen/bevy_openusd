@@ -74,6 +74,28 @@ fn stage_time_uses_prebound_animation_without_structural_work() {
 }
 
 #[test]
+fn rebuilt_animation_is_sampled_at_the_current_playback_time() {
+    let mut app = animated_app();
+    app.world_mut().resource_mut::<StageTime>().current = 30.0;
+    app.update();
+    {
+        let mut counters = app.world_mut().resource_mut::<PerformanceCounters>();
+        counters.enabled = true;
+        counters.reset();
+    }
+    app.world()
+        .get_non_send::<LiveStage>()
+        .unwrap()
+        .enqueue_resync("/World/Cube");
+    app.update();
+
+    let counters = app.world().resource::<PerformanceCounters>();
+    assert_eq!(counters.animation_runtime_rebuilds, 1);
+    assert_eq!(counters.animation_runtime_samples, 1);
+    assert_eq!(counters.stage_time_changes, 0);
+}
+
+#[test]
 fn test_reconcile_subtrees_maintains_animated_prims_scoped_to_subtree() {
     let usda = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

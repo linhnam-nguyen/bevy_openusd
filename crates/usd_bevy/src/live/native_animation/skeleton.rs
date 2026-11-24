@@ -8,7 +8,9 @@ use openusd_schemas::skel::{
     AnimMapper, AnimQuery, Animation, BindingAPI as SkelBindingAPI, Skeleton, SkeletonQuery,
 };
 
-use super::binding::{DiscoveredBinding, animation_channel_authored, joint_index, matrix_to_transform};
+use super::binding::{
+    DiscoveredBinding, animation_channel_authored, joint_index, matrix_to_transform,
+};
 use super::mesh_binding::attach_native_mesh;
 use crate::live::index::PrimEntities;
 use crate::live::path::PathStore;
@@ -32,17 +34,36 @@ pub(super) fn clear_bindings(world: &mut World) {
             With<MeshMorphWeights>,
             With<UsdBlendShapeBinding>,
             With<crate::extended_skin::ExtendedSkinMesh>,
+            With<super::CpuDeformBinding>,
         )>>();
         query.iter(world).collect::<Vec<_>>()
     };
     for entity in entities {
+        let standard = world
+            .get::<MeshMaterial3d<crate::extended_skin::ExtendedSkinMaterial>>(entity)
+            .and_then(|material| {
+                world
+                    .get_resource::<Assets<crate::extended_skin::ExtendedSkinMaterial>>()?
+                    .get(&material.0)
+            })
+            .map(|material| material.base.clone())
+            .and_then(|base| {
+                world
+                    .get_resource_mut::<Assets<StandardMaterial>>()
+                    .map(|mut assets| assets.add(base))
+            });
         if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
             entity_mut.remove::<UsdSkelAnimDriver>();
             entity_mut.remove::<bevy::mesh::skinning::SkinnedMesh>();
+            entity_mut.remove::<bevy::camera::visibility::DynamicSkinnedMeshBounds>();
             entity_mut.remove::<MeshMorphWeights>();
             entity_mut.remove::<UsdBlendShapeBinding>();
             entity_mut.remove::<crate::extended_skin::ExtendedSkinMesh>();
             entity_mut.remove::<MeshMaterial3d<crate::extended_skin::ExtendedSkinMaterial>>();
+            entity_mut.remove::<super::CpuDeformBinding>();
+            if let Some(standard) = standard {
+                entity_mut.insert_if_new(MeshMaterial3d(standard));
+            }
         }
     }
 }

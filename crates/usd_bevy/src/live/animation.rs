@@ -7,20 +7,20 @@ use super::performance::PerformanceCounters;
 use super::stage::LiveStage;
 use crate::route::StageTime;
 
-/// Prim paths that have at least one time-sampled (animated) attribute — the
-/// set the animation resampler revisits when [`StageTime`] changes. Computed
-/// once at projection.
+/// Composed prim paths that own or consume time-sampled data.
+/// Updated during projection and reconciliation.
 #[derive(Resource, Default, Clone)]
 pub struct AnimatedPrims(pub HashSet<String>);
 
-/// The [`StageTime`] the projected entities were last sampled at, so the
-/// resampler only reruns when the time actually moves.
+/// The playback time and visual composition last sampled together.
 #[derive(Resource, Default)]
-pub(super) struct SampledTime(pub(super) Option<f64>);
+pub(super) struct SampledTime {
+    time: Option<f64>,
+    pub(super) context: Option<super::stage::VisualContextId>,
+}
 
-/// Whether `prim` animates: it has a time-varying attribute of its own
-/// (`Attribute::might_be_time_varying` — `L38`), or it is a skinned mesh driven
-/// by a time-varying SkelAnimation (whose samples live on a different prim).
+/// Whether the composed prim has time-sampled attributes or consumes
+/// time-sampled data from a skeleton animation.
 pub(super) fn prim_is_animated(stage: &Stage, path: &openusd::sdf::Path) -> bool {
     let own = stage
         .prim(path.clone())
@@ -29,40 +29,40 @@ pub(super) fn prim_is_animated(stage: &Stage, path: &openusd::sdf::Path) -> bool
         .map(|attrs| {
             attrs.iter().any(|a| {
                 a.might_be_time_varying().unwrap_or(false)
-                    || a.time_sample_times()
-                        .map(|times| !times.is_empty())
-                        .unwrap_or(false)
+                    || a.num_time_samples().is_ok_and(|count| count != 0)
             })
         })
         .unwrap_or(false);
-    own || crate::read::skel::skin_is_time_varying(stage, path)
-        || crate::read::skel::blend_is_time_varying(stage, path)
+    own || crate::read::skel::deformation_is_time_varying(stage, path)
 }
 
-/// Resample animated prims when [`StageTime`] moves. Only revisits the prims
-/// that actually carry time samples ([`AnimatedPrims`]), re-patching them at
-/// the new time (the routes read `StageTime` when resolving values).
+/// Sample the pre-bound consumers when time or visual composition changes.
 pub(super) fn resample_animation_system(world: &mut World) {
-    if world.get_non_send::<LiveStage>().is_none() {
+    let Some(context) = world
+        .get_non_send::<LiveStage>()
+        .map(LiveStage::visual_context_id)
+    else {
+        return;
+    };
+    let current = world.get_resource::<StageTime>().map(|t| t.current);
+    let sampled = world.resource::<SampledTime>();
+    let time_changed = current != sampled.time;
+    if !time_changed && sampled.context == Some(context) {
         return;
     }
-    let current = world.get_resource::<StageTime>().map(|t| t.current);
-    let last = world.get_resource::<SampledTime>().and_then(|t| t.0);
-    if current == last {
-        return; // time hasn't moved
-    }
     if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
-        counters.stage_time_changes(1);
-    }
-    if let Some(mut counters) = world.get_resource_mut::<PerformanceCounters>() {
+        if time_changed {
+            counters.stage_time_changes(1);
+        }
         counters.animation_runtime_samples(1);
     }
     let Some(live) = world.remove_non_send::<LiveStage>() else {
         return;
     };
-    native_animation::sample(world, &live.projection_stage(), current.unwrap_or_default());
+    native_animation::sample(world, &live, current.unwrap_or_default());
     world.insert_non_send(live);
-    if let Some(mut sampled) = world.get_resource_mut::<SampledTime>() {
-        sampled.0 = current;
-    }
+    *world.resource_mut::<SampledTime>() = SampledTime {
+        time: current,
+        context: Some(context),
+    };
 }

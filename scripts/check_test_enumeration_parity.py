@@ -322,6 +322,7 @@ MIGRATION_CHECKPOINTS = frozenset(
         "UP-C04",
         "UP-C06",
         "UP-C07",
+        "UP-C09",
     }
 )
 

@@ -42,6 +42,18 @@
       "target": "crates/usd_bevy/tests/unit/live/mod.rs"
     },
     {
+      "owner_file": "crates/usd_bevy/src/live/deformed_sort.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "crates/usd_bevy/tests/unit/live/deformed_sort_tests.rs"
+    },
+    {
+      "owner_file": "crates/usd_bevy/src/live/native_animation/binding.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "crates/usd_bevy/tests/unit/live/pose_sharing.rs"
+    },
+    {
       "owner_file": "crates/usd_bevy/src/live/native_instance_dependency.rs",
       "module_path": "",
       "mod_name": "tests",

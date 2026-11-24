@@ -2,7 +2,8 @@ use bevy::mesh::morph::MeshMorphWeights;
 use bevy::prelude::*;
 use openusd::usd::{Stage, TimeCode};
 
-use super::AnimationRuntime;
+use super::{AnimationRuntime, CpuDeformBinding};
+use crate::route::{PrimRoute, RouteCtx, skel::SkinRoute};
 
 pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
     let runtime = world
@@ -15,38 +16,49 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
             crate::route::xform::apply_local_xform_evaluation(world, target.entity, Some(eval));
         }
     }
-    for skeleton in &runtime.skeletons {
-        let Ok(Some((translations, rotations, scales))) = skeleton
-            .animation
-            .joint_transform_components(TimeCode::new(time))
-        else {
-            continue;
-        };
-        for (index, entity) in skeleton.joints.iter().enumerate() {
-            let Some(mut transform) = world.get_mut::<Transform>(*entity) else {
-                continue;
-            };
-            if skeleton.has_translations
-                && let Some(value) = translations.get(index)
-            {
-                transform.translation = Vec3::new(value.x, value.y, value.z);
-            }
-            if skeleton.has_rotations
-                && let Some(value) = rotations.get(index)
-            {
-                transform.rotation = Quat::from_xyzw(value.x, value.y, value.z, value.w);
-            }
-            if skeleton.has_scales
-                && let Some(value) = scales.get(index)
-            {
-                transform.scale = Vec3::new(value.x, value.y, value.z);
+    let mut fallback_query = world.query::<(Entity, &CpuDeformBinding)>();
+    let fallback = fallback_query
+        .iter(world)
+        .map(|(entity, binding)| (entity, binding.0.clone()))
+        .collect::<Vec<_>>();
+    for (entity, path) in fallback {
+        SkinRoute.project(&RouteCtx::at(stage, &path, Some(time)), world, entity);
+    }
+
+    let time = TimeCode::new(time);
+    for pose in &runtime.poses {
+        if let Ok(Some((translations, rotations, scales))) =
+            pose.animation.joint_transform_components(time)
+        {
+            for skeleton in &pose.skeletons {
+                for (index, entity) in skeleton.joints.iter().enumerate() {
+                    let Some(mut transform) =
+                        entity.and_then(|entity| world.get_mut::<Transform>(entity))
+                    else {
+                        continue;
+                    };
+                    if skeleton.has_translations
+                        && let Some(value) = translations.get(index)
+                    {
+                        transform.translation = Vec3::new(value.x, value.y, value.z);
+                    }
+                    if skeleton.has_rotations
+                        && let Some(value) = rotations.get(index)
+                    {
+                        transform.rotation = Quat::from_xyzw(value.x, value.y, value.z, value.w);
+                    }
+                    if skeleton.has_scales
+                        && let Some(value) = scales.get(index)
+                    {
+                        transform.scale = Vec3::new(value.x, value.y, value.z);
+                    }
+                }
             }
         }
-        if let Ok(Some(weights)) = skeleton
-            .animation
-            .blend_shape_weights(TimeCode::new(time))
+        if !pose.blend_bindings.is_empty()
+            && let Ok(Some(weights)) = pose.animation.blend_shape_weights(time)
         {
-            for binding in &skeleton.blend_bindings {
+            for binding in &pose.blend_bindings {
                 let Some(mut morph) = world.get_mut::<MeshMorphWeights>(binding.entity) else {
                     continue;
                 };
