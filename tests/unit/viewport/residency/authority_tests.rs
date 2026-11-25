@@ -1,6 +1,6 @@
 use super::*;
-use crate::project::cache::contract::{SceneCacheAddress, SceneCacheOccurrence};
-use crate::viewport::residency::{camera::CameraAdmission, spatial::SceneSpatialPayload};
+use crate::cache::contract::{SceneCacheAddress, SceneCacheOccurrence};
+use crate::viewport::rendering::residency::{camera::CameraAdmission, spatial::SceneSpatialPayload};
 use bevy::asset::Assets;
 use bevy::camera::primitives::Frustum;
 use bevy::shape::{HalfSpace, ViewFrustum};

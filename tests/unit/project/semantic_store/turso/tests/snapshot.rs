@@ -6,7 +6,7 @@ use usd_model::{SnapshotId, SnapshotSource};
 
 use super::super::TursoSemanticStore;
 use super::{runtime, snapshot};
-use crate::project::semantic_store::{SemanticStore, get_or_regenerate_commit_snapshot};
+use crate::semantic::store::{SemanticStore, get_or_regenerate_commit_snapshot};
 
 #[test]
 fn committed_snapshot_is_immutable_and_git_aliases_are_stable() {

@@ -61,7 +61,7 @@ pub(super) fn author_model_wrapper(
         .set_metadata("ui:displayName", Value::String(model_name.to_owned()))?;
     stage.set_default_prim(MODEL_ROOT_PRIM)?;
     crate::project::assets::spatial::author_canonical_stage(&stage)?;
-    crate::project::stages::metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
+    crate::document::stages::metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
     let source_path = crate::project::storage::authored_relative_project_asset_path(
         project_root,
         authored_layer_path,

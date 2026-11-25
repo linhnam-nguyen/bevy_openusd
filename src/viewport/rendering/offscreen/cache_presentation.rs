@@ -13,7 +13,7 @@ struct CachePresentationRenderWitness {
     frame_complete: bool,
 }
 
-pub(in crate::viewport) fn install(app: &mut App) {
+pub(crate) fn install(app: &mut App) {
     let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
         return;
     };

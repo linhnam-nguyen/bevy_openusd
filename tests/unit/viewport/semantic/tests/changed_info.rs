@@ -21,10 +21,10 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(usd_bevy::LiveStagePlugin);
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: project.path().to_path_buf(),
     });
-    app.insert_resource(crate::viewport::diagnostics::performance::RendererCounters::default());
+    app.insert_resource(crate::diagnostics::performance::RendererCounters::default());
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());
     app.world_mut().insert_non_send(live);
@@ -34,7 +34,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     let _ = response(app.world().resource::<SemanticWorkingStore>());
     let before = app
         .world()
-        .resource::<crate::viewport::diagnostics::performance::RendererCounters>()
+        .resource::<crate::diagnostics::performance::RendererCounters>()
         .clone();
 
     usd_bevy::authoring::set_attribute(
@@ -51,7 +51,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     let _ = response(app.world().resource::<SemanticWorkingStore>());
     let after_changed_info = app
         .world()
-        .resource::<crate::viewport::diagnostics::performance::RendererCounters>();
+        .resource::<crate::diagnostics::performance::RendererCounters>();
     assert_eq!(
         after_changed_info.semantic_changed_info_updates,
         before.semantic_changed_info_updates + 1
@@ -69,7 +69,7 @@ fn sync_telemetry_separates_changed_info_from_subtree_extraction() -> Result<()>
     let _ = response(app.world().resource::<SemanticWorkingStore>());
     let after_subtree = app
         .world()
-        .resource::<crate::viewport::diagnostics::performance::RendererCounters>();
+        .resource::<crate::diagnostics::performance::RendererCounters>();
     assert_eq!(
         after_subtree.semantic_subtree_extractions,
         before.semantic_subtree_extractions + 1

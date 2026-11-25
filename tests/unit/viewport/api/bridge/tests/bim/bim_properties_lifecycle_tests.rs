@@ -3,18 +3,18 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::{SelectionReadModel, ViewportCommand, ViewportEvent};
 
-    use crate::viewport::api::bridge::bim::properties_lifecycle::{
+    use crate::api::bridge::bim::properties_lifecycle::{
         PendingBimProperties, replay_pending_bim_properties,
     };
-    use crate::viewport::api::bridge::query::dispatch_scene_query_commands;
-    use crate::viewport::api::bridge::state::SceneSearchRequests;
-    use crate::viewport::api::bridge::tests::support;
-    use crate::viewport::api::query::SceneQueryService;
-    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::bim::test_fixtures;
-    use crate::viewport::scene::SelectedTargets;
-    use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
-    use crate::viewport::semantic::SemanticSyncState;
+    use crate::api::bridge::query::dispatch_scene_query_commands;
+    use crate::api::bridge::state::SceneSearchRequests;
+    use crate::api::bridge::tests::support;
+    use crate::api::query::SceneQueryService;
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::bim::test_fixtures;
+    use crate::viewport::rendering::scene::SelectedTargets;
+    use crate::viewport::rendering::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
+    use crate::semantic::viewport::SemanticSyncState;
     use crate::viewport::stage::StageInfo;
 
     #[test]
@@ -110,7 +110,7 @@ mod tests {
         );
         assert!(
             app.world()
-                .resource::<crate::viewport::scene::SelectedPrim>()
+                .resource::<crate::viewport::rendering::scene::SelectedPrim>()
                 .0
                 .is_none()
         );

@@ -3,9 +3,9 @@ use bevy::prelude::*;
 use usd_bevy::{UsdLocalExtent, UsdPrimRef};
 use viewport_protocol::{SceneAnchor, SelectionReadModel};
 
-use crate::viewport::api::ViewerSettingsState;
-use crate::viewport::scene::SceneAnchorIndex;
-use crate::viewport::scene::{
+use crate::api::ViewerSettingsState;
+use crate::viewport::rendering::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::{
     CoarseSelectionProxyState, SelectedRenderableProjection, SelectedTargets,
     SelectionPresentationPolicy, register_selection_projection_observers,
     sync_coarse_selection_proxy, sync_selected_renderable_projection,

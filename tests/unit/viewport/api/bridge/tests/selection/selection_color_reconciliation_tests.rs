@@ -4,7 +4,7 @@ use usd_bevy::UsdPrimRef;
 use viewport_protocol::{ColorRgb8, SelectionReadModel};
 
 use super::{anchor, set_selection};
-use crate::viewport::scene::{
+use crate::viewport::rendering::scene::{
     SelectionBaseMaterial, SelectionColorMaterial, SelectionColorOverride,
     SelectionColorOverrideState, SelectionOutlineState,
 };
@@ -42,7 +42,7 @@ fn settle_color_work(app: &mut App) {
             .is_pending();
         let projection_pending = app
             .world()
-            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .resource::<crate::viewport::rendering::scene::SelectedRenderableProjection>()
             .is_pending();
         if !color_pending && !projection_pending {
             return;
@@ -125,7 +125,7 @@ fn interrupted_selection_color_reconciles_a_to_b_and_restores_base_materials() {
     app.update();
     settle_color_work(&mut app);
     app.world_mut()
-        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .resource_mut::<crate::api::ViewerSettingsState>()
         .0
         .selection
         .selection_color = ColorRgb8::new(0x10, 0x20, 0x30);
@@ -156,7 +156,7 @@ fn repeated_superseding_selection_color_work_leaves_only_the_final_range_owned()
     assert_presentation_budget(&app);
     assert!(
         app.world()
-            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .resource::<crate::viewport::rendering::scene::SelectedRenderableProjection>()
             .is_pending()
             || app
                 .world()
@@ -185,7 +185,7 @@ fn reverting_to_the_last_completed_selection_reconciles_partial_color_work() {
     assert_presentation_budget(&app);
     assert!(
         app.world()
-            .resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .resource::<crate::viewport::rendering::scene::SelectedRenderableProjection>()
             .is_pending()
             || app
                 .world()

@@ -90,7 +90,7 @@ fn service_switches_a_clean_registered_repository_and_rejects_dirty_work() {
 
 #[test]
 fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
-    use crate::project::cache::blobs::BlobStore;
+    use crate::cache::blobs::BlobStore;
 
     let directory = tempdir().unwrap();
     let repository = directory.path().join("project");
@@ -137,21 +137,21 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
     run_git(&repository, &["commit", "-m", "remove extra scene"]);
     run_git(&repository, &["checkout", "main"]);
 
-    let config = crate::project::cache::hydration::default_project_cache_config_hash();
-    let store = crate::project::cache::SceneCacheStore::new(&repository);
+    let config = crate::cache::hydration::default_project_cache_config_hash();
+    let store = crate::cache::SceneCacheStore::new(&repository);
     let root_scene = match manifest.root {
         ProjectRoot::Scene(scene_id) => scene_id,
         _ => panic!("test Project has a root Scene"),
     };
     let root_generation = store.advance_generation(root_scene, config).unwrap();
     let generation = store.advance_generation(extra_scene, config).unwrap();
-    let mut descriptor = crate::project::cache::contract::SceneCacheDescriptorV3::invalidated(
+    let mut descriptor = crate::cache::contract::SceneCacheDescriptorV3::invalidated(
         extra_scene,
         generation,
         config,
     );
-    descriptor.state = crate::project::cache::contract::SceneCacheState::Partial;
-    crate::project::cache::warming::runtime::build_and_publish_scene_cache_generation(
+    descriptor.state = crate::cache::contract::SceneCacheState::Partial;
+    crate::cache::warming::runtime::build_and_publish_scene_cache_generation(
         &repository,
         &descriptor,
     )

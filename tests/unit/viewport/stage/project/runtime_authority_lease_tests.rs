@@ -102,7 +102,7 @@ fn active_runtime_stage_returns_ready_and_freezes_authoring() {
             &queue,
             directory.path(),
         ),
-        crate::project::runtime::authority::ProjectRuntimeResponse::Ready { .. }
+        crate::document::runtime::authority::ProjectRuntimeResponse::Ready { .. }
     ));
     assert!(
         world
@@ -236,7 +236,7 @@ fn timed_out_consumed_request_never_freezes_or_creates_a_lease() {
 
     assert!(matches!(
         response,
-        crate::project::runtime::authority::ProjectRuntimeResponse::Failed {
+        crate::document::runtime::authority::ProjectRuntimeResponse::Failed {
             code: project_protocol::ProjectWriteErrorCode::Busy,
             ..
         }
@@ -305,7 +305,7 @@ fn timeout_between_export_and_lease_claim_cannot_publish_ready() {
 
     assert!(matches!(
         response,
-        crate::project::runtime::authority::ProjectRuntimeResponse::Failed {
+        crate::document::runtime::authority::ProjectRuntimeResponse::Failed {
             code: project_protocol::ProjectWriteErrorCode::Busy,
             ..
         }
@@ -341,7 +341,7 @@ fn healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen() {
             lease_id: "renewed".to_owned(),
             session_id,
             live_revision: 0,
-            expires_at_ms: crate::project::runtime::authority::unix_time_ms() + 1,
+            expires_at_ms: crate::document::runtime::authority::unix_time_ms() + 1,
         }),
     });
     world.insert_non_send(live);
@@ -358,7 +358,7 @@ fn healthy_runtime_lease_renewal_extends_deadline_and_stays_frozen() {
 
     assert!(matches!(
         runtime_renew_response(&mut world, "renew-request", project_id, "renewed", 0),
-        crate::project::runtime::authority::ProjectRuntimeResponse::Renewed { .. }
+        crate::document::runtime::authority::ProjectRuntimeResponse::Renewed { .. }
     ));
     let after = world
         .resource::<ProjectRuntimeAuthorityRuntime>()

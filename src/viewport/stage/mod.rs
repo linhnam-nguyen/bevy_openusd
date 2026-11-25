@@ -2,11 +2,10 @@
 
 mod cache_presentation_gate;
 mod lifecycle;
-pub(in crate::viewport) mod project;
 mod state;
 
 pub(crate) use cache_presentation_gate::CachePresentationGate;
-pub(in crate::viewport) use lifecycle::{
+pub(crate) use lifecycle::{
     PendingActivationPresentation, rehydrate_activation_presentation,
 };
 pub(crate) use lifecycle::{
@@ -22,3 +21,5 @@ pub(crate) use state::{
     StageCameraData, StageCameraInfo, StageCameraProjection, StageHandle, StageInfo,
     StagePresentationContext, VariantSetInfo, VerifiedSceneVisualInputs,
 };
+
+pub(crate) use state::ProductStageLifecycleHooks;

@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::viewport::scene::{
+use crate::viewport::rendering::scene::{
     SectionBoxGizmoTarget, SectionBoxState, SelectedRenderableProjection, SelectionColorMaterial,
     SelectionColorOverride, SelectionColorOverrideState, SelectionOutline, SelectionOutlineState,
     aggregate_selection_bounds, selected_renderable_entities, sync_section_box_gizmo_target,

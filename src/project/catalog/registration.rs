@@ -11,7 +11,7 @@ use crate::project::{
     storage::{IgnoreChange, ProjectStorageLayout, install_managed_ignore},
 };
 
-pub(in crate::project) fn create_project(
+pub(crate) fn create_project(
     service: &mut ProjectApplicationService,
     parent: &Path,
     name: &str,
@@ -109,7 +109,7 @@ pub(in crate::project) fn create_project(
     }
 }
 
-pub(in crate::project) fn import_project(
+pub(crate) fn import_project(
     service: &mut ProjectApplicationService,
     project_root: &Path,
     expected: &ProjectInspection,

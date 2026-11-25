@@ -271,7 +271,7 @@ fn rename_with_writer<W: PlacementWriter>(
     if matches!(target, ProjectWriteTarget::Project(_)) {
         let _ = service.cache_warm.enqueue(
             project_root,
-            crate::project::cache::ProjectCacheTarget::ProjectRoot,
+            crate::cache::ProjectCacheTarget::ProjectRoot,
         );
     }
     let _ = fs::remove_dir_all(&transaction_directory);

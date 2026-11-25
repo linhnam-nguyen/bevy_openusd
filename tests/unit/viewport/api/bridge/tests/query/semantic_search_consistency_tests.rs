@@ -6,17 +6,17 @@ use viewport_protocol::{
     ClassificationRecipe, ViewportCommand, ViewportEvent,
 };
 
-use crate::viewport::api::bridge::query::{
+use crate::api::bridge::query::{
     dispatch_scene_query_commands, publish_scene_query_results, refresh_active_hierarchy_projection,
 };
-use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
-use crate::viewport::api::query::SceneQueryService;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-use crate::viewport::scene::{
+use crate::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
+use crate::api::query::SceneQueryService;
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::rendering::scene::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
 };
-use crate::viewport::semantic::SemanticDiffState;
-use crate::viewport::semantic::SemanticSyncState;
+use crate::semantic::viewport::SemanticDiffState;
+use crate::semantic::viewport::SemanticSyncState;
 use crate::viewport::stage::StageInfo;
 
 use super::semantic_edit_integration_support::*;
@@ -36,12 +36,12 @@ fn live_edit_converges_into_bim_classification_search_and_diff() -> Result<()> {
         Update,
         (publish_scene_query_results, dispatch_scene_query_commands)
             .chain()
-            .before(crate::viewport::api::bridge::commands::apply_viewport_commands),
+            .before(crate::api::bridge::commands::apply_viewport_commands),
     );
     app.add_systems(
         PostUpdate,
         refresh_active_hierarchy_projection
-            .after(crate::viewport::semantic::synchronize_live_stage),
+            .after(crate::semantic::viewport::synchronize_live_stage),
     );
 
     let initial = wait_for_initial_semantics(&mut app)?;
@@ -208,7 +208,7 @@ fn live_edit_converges_into_bim_classification_search_and_diff() -> Result<()> {
 #[test]
 fn stale_bim_search_result_is_dropped_after_project_activation() {
     let semantic =
-        SemanticSyncState::from_test_snapshot(crate::viewport::bim::test_fixtures::snapshot());
+        SemanticSyncState::from_test_snapshot(crate::bim::test_fixtures::snapshot());
     let snapshot = semantic.shared_snapshot().expect("fixture snapshot");
     let index = semantic.shared_bim_index().expect("fixture BIM index");
     let service = SceneQueryService::default();

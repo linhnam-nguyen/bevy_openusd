@@ -19,9 +19,9 @@ use super::{
     build_and_publish_managed_scene_cache_generation,
     build_and_publish_managed_scene_cache_generation_with_observer,
 };
-use crate::project::cache::blobs::BlobStore;
-use crate::project::cache::contract::SceneCacheState;
-use crate::project::cache::{ProjectCacheTarget, target_content_hash};
+use crate::cache::blobs::BlobStore;
+use crate::cache::contract::SceneCacheState;
+use crate::cache::{ProjectCacheTarget, target_content_hash};
 
 struct BarrierPublishObserver {
     built_tx: mpsc::Sender<()>,
@@ -257,7 +257,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
         .find(|entry| {
             matches!(
                 &entry.kind,
-                crate::project::cache::contract::SceneCacheEntryKind::OwnedPrim { prim_path }
+                crate::cache::contract::SceneCacheEntryKind::OwnedPrim { prim_path }
                     if prim_path == "/SceneRoot/Renderable"
             )
         })
@@ -267,7 +267,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let material_bytes = store
         .get(&material_ref.blob_id)?
         .expect("material blob persisted");
-    let material: crate::project::runtime::payload::RuntimeMaterialBlob =
+    let material: crate::document::runtime::payload::RuntimeMaterialBlob =
         serde_json::from_slice(&material_bytes)?;
     material.validate()?;
     let texture_id = material
@@ -282,7 +282,7 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     // The CPU warmer uses an edge-clamp sampler but stores the USD default
     // black-border intent for a cache reader on capable hardware.
     assert_eq!(texture_bytes[7], 16);
-    let texture = crate::project::runtime::payload::RuntimeTexturePayload::decode(&texture_bytes)?;
+    let texture = crate::document::runtime::payload::RuntimeTexturePayload::decode(&texture_bytes)?;
     assert_eq!(texture.authored_black_axes(), [true, true]);
     assert_eq!(
         texture.clone().into_image(None)?.data,
@@ -293,13 +293,13 @@ fn scene_owned_builder_persists_material_and_texture_blob_references() -> Result
     let mut previous_bytes = texture_bytes.clone();
     for _ in 0..3 {
         let decoded =
-            crate::project::runtime::payload::RuntimeTexturePayload::decode(&previous_bytes)?;
+            crate::document::runtime::payload::RuntimeTexturePayload::decode(&previous_bytes)?;
         let axes = decoded.authored_black_axes();
         let handle = images.add(decoded.into_image(None)?);
         metadata.remember_authored_black_border(&handle, axes);
         // Activation invalidates path aliases, not metadata for a still-live image.
         metadata.replace_active_archives([]);
-        let encoded = crate::project::runtime::payload::RuntimeTexturePayload::from_image(
+        let encoded = crate::document::runtime::payload::RuntimeTexturePayload::from_image(
             images.get(&handle).unwrap(),
             metadata.authored_black_border(&handle),
         )

@@ -3,23 +3,23 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::project::stages::recovery::RecoveryStore;
-    use crate::viewport::animation::UsdStageTime;
-    use crate::viewport::api::bridge::ViewerSettingsState;
-    use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-    use crate::viewport::api::{
+    use crate::document::stages::recovery::RecoveryStore;
+    use crate::animation::UsdStageTime;
+    use crate::api::bridge::ViewerSettingsState;
+    use crate::api::bridge::commands::apply_viewport_commands;
+    use crate::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
+    use crate::api::{
         ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
-    use crate::viewport::physics::PhysicsActive;
+    use crate::viewport::navigation::camera::{CameraMount, CameraOrientationState, FlyTo};
+    use crate::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
-    use crate::viewport::scene::SceneAnchorIndex;
-    use crate::viewport::scene::visualization::DisplayToggles;
-    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-    use crate::viewport::semantic::{
+    use crate::viewport::rendering::scene::SceneAnchorIndex;
+    use crate::viewport::rendering::scene::visualization::DisplayToggles;
+    use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
+    use crate::semantic::viewport::{
         SemanticFilter, SemanticQuery, SemanticResponse, SemanticWorkingStore,
     };
     use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};

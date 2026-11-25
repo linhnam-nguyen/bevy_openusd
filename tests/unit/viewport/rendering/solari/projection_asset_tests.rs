@@ -3,7 +3,7 @@ use super::projection::test_support::SolariProjectionStats;
 #[cfg(feature = "solari")]
 use super::*;
 #[cfg(feature = "solari")]
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::scene::visualization::DisplayToggles;
 #[cfg(feature = "solari")]
 use bevy::asset::AssetEvent;
 #[cfg(feature = "solari")]

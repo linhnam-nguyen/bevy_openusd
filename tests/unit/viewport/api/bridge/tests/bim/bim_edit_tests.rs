@@ -4,8 +4,8 @@ mod tests {
     use openusd::vt::Value;
     use viewport_protocol::*;
 
-    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::scene::SelectedTargets;
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::rendering::scene::SelectedTargets;
 
     use super::super::support::command_test_app;
 

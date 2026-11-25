@@ -10,12 +10,12 @@ use viewport_protocol::{
 
 use super::super::ViewerSettingsState;
 use super::support::command_test_app;
-use crate::viewport::api::ViewportCommandInbox;
-use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::scene::HoveredTarget;
-use crate::viewport::scene::index::refresh_scene_anchor_index;
-use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
-use crate::viewport::scene::{
+use crate::api::ViewportCommandInbox;
+use crate::api::bridge::commands::apply_viewport_commands;
+use crate::viewport::rendering::scene::HoveredTarget;
+use crate::viewport::rendering::scene::index::refresh_scene_anchor_index;
+use crate::viewport::rendering::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
+use crate::viewport::rendering::scene::{
     HoverColorMaterial, SectionBoxState, SelectedTargets, SelectionColorMaterial,
     SelectionColorOverride, SelectionColorOverrideState, SelectionOutline, SelectionOutlineState,
     aggregate_selection_bounds, selected_renderable_entities, sync_section_box_state,
@@ -259,7 +259,7 @@ fn profile_outline() {
     for size in PROFILE_SIZES {
         let mut app = indexed_scene_app(ACCEPTED_SCENE_SIZE);
         app.init_resource::<SelectionOutlineState>()
-            .init_resource::<crate::viewport::scene::SelectedRenderableProjection>()
+            .init_resource::<crate::viewport::rendering::scene::SelectedRenderableProjection>()
             .add_systems(
                 Update,
                 (sync_selected_renderable_projection, sync_selection_outlines).chain(),
@@ -313,7 +313,7 @@ fn profile_color() {
         app.init_resource::<Assets<StandardMaterial>>()
             .init_resource::<SelectionColorOverrideState>()
             .init_resource::<HoveredTarget>()
-            .init_resource::<crate::viewport::scene::SelectedRenderableProjection>();
+            .init_resource::<crate::viewport::rendering::scene::SelectedRenderableProjection>();
         let base = app
             .world_mut()
             .resource_mut::<Assets<StandardMaterial>>()

@@ -5,9 +5,9 @@ use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SnapshotSource};
 use viewport_protocol::{BimPropertyEditStatus, EditorOperation, ViewportCommand, ViewportEvent};
 
-use crate::viewport::api::ViewportCommandInbox;
-use crate::viewport::api::bridge::state::EditorHistories;
-use crate::viewport::semantic::SemanticDiffState;
+use crate::api::ViewportCommandInbox;
+use crate::api::bridge::state::EditorHistories;
+use crate::semantic::viewport::SemanticDiffState;
 use crate::viewport::stage::StageHandle;
 
 use super::semantic_edit_integration_support::*;

@@ -3,11 +3,11 @@ use super::{
     RequestedAsset, Spawned, StageHandle, StageInfo, StagePresentationContext, invalidation,
     scene_cache, scene_presentation,
 };
-use crate::project::cache::contract::{ProjectCacheTarget, SceneCacheActivation};
-use crate::project::cache::hydration::{
+use crate::cache::contract::{ProjectCacheTarget, SceneCacheActivation};
+use crate::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash, hydrate_project_cache,
 };
-use crate::viewport::scene::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::CurrentHierarchyProjection;
 use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
 };
@@ -73,7 +73,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         if !context.should_revalidate() {
             return Some(context);
         }
-        let current = crate::project::cache::ProjectCacheIdentity::for_project(
+        let current = crate::cache::ProjectCacheIdentity::for_project(
             &context.project_root,
             context.identity.target.clone(),
             context.identity.profile,
@@ -187,7 +187,7 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         );
     }
     world.insert_non_send(stage);
-    crate::viewport::api::reset_document_edit_state(world);
+    crate::api::reset_document_edit_state(world);
     world.remove_resource::<crate::viewport::stage::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
@@ -230,7 +230,7 @@ fn install_scene_cache_revalidation(
         .name(worker_name)
         .spawn(move || {
             let result =
-                crate::project::assets::closure::target_content_hash(&worker_root, &hash_target)
+                crate::cache::target_content_hash(&worker_root, &hash_target)
                     .map_err(|error| format!("{error:#}"));
             match result_slot.lock() {
                 Ok(mut slot) => *slot = Some(result),
@@ -280,14 +280,14 @@ pub(crate) fn discard_scene_cache_bootstrap(
     }
     world.remove_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>();
     world.remove_resource::<SceneCachePresentation>();
-    world.remove_resource::<crate::project::cache::contract::ProjectCacheLookup>();
+    world.remove_resource::<crate::cache::contract::ProjectCacheLookup>();
     if world
         .get_resource::<SceneCacheOwnershipContext>()
         .is_some_and(|owner| owner.scene_id == scene_id)
     {
         world.remove_resource::<SceneCacheOwnershipContext>();
     }
-    crate::viewport::residency::retire_scene_cache_resources(world);
+    crate::viewport::rendering::residency::retire_scene_cache_resources(world);
     let projection_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
         .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
@@ -365,7 +365,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
         }
     };
     if changed {
-        let store = crate::project::cache::SceneCacheStore::new(&project_root);
+        let store = crate::cache::SceneCacheStore::new(&project_root);
         match store.load_descriptor(scene_id) {
             Ok(Some(descriptor)) if descriptor.generation == scene_generation => {
                 if let Err(error) = store.force_invalidate_generation(scene_id, config_hash) {
@@ -405,7 +405,7 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
 /// activation before the caller commits its logical authority.
 pub(crate) fn clear_active_stage_for_generation(world: &mut World, activation_generation: u64) {
     super::clear_projected_stage(world);
-    crate::viewport::api::reset_document_edit_state(world);
+    crate::api::reset_document_edit_state(world);
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
     {
         cache.clear_active_archives();

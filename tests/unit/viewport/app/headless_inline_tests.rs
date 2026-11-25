@@ -1,5 +1,5 @@
 use super::*;
-use crate::viewport::input::HostUiInputCapture;
+use crate::viewport::navigation::input::HostUiInputCapture;
 
 #[test]
 fn headless_host_stays_windowless_with_shared_ui_capture_inactive() {

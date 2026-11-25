@@ -3,8 +3,8 @@ use usd_model::SnapshotSource;
 use usd_semantic::{SemanticConfig, SemanticExtractor};
 
 use super::super::SemanticDatabase;
-use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
-use crate::viewport::semantic::query::{GroupField, SemanticFilter, SemanticQuery};
+use crate::semantic::store::{SemanticStore, TursoSemanticStore};
+use crate::semantic::viewport::query::{GroupField, SemanticFilter, SemanticQuery};
 
 #[test]
 fn test_query_after_subtree_delta_with_property_filters() {
@@ -72,7 +72,7 @@ def Xform "World"
             .extract_entity(&stage, &openusd::sdf::path("/World/A/New").unwrap())
             .unwrap();
 
-        let update = crate::viewport::semantic::SemanticIncrementalUpdate {
+        let update = crate::semantic::viewport::SemanticIncrementalUpdate {
             snapshot_id: updated_snapshot.snapshot_id.clone(),
             source: source_2,
             config_hash: updated_snapshot.config_hash,

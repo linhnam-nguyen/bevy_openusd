@@ -6,7 +6,7 @@ use super::super::{
     SemanticResponse, SemanticSyncState, SemanticWorkingStore, synchronize_live_stage,
 };
 use super::fixtures::response;
-use crate::viewport::api::RenderServerInterface;
+use crate::api::RenderServerInterface;
 
 #[test]
 fn profiles_server_delivery_isolated_overhead() -> Result<()> {
@@ -43,11 +43,11 @@ def Xform "World"
         let stage = usd_bevy::UsdSnippet::new(&usda).open_stage().unwrap();
         let live = LiveStage::new(stage);
         let mut app = viewport_support::semantic_test_app();
-        app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+        app.insert_resource(crate::document::stages::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });
         app.insert_resource(
-            crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+            crate::cache::historical_geometry::HistoricalGeometryCache::default(),
         );
         app.insert_resource(SemanticWorkingStore::default());
         app.insert_resource(SemanticSyncState::default());
@@ -83,11 +83,11 @@ def Xform "World"
         let stage = usd_bevy::UsdSnippet::new(&usda).open_stage().unwrap();
         let live = LiveStage::new(stage);
         let mut app = viewport_support::semantic_test_app();
-        app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+        app.insert_resource(crate::document::stages::recovery::RecoverySettings {
             project_root: temp_dir.path().to_path_buf(),
         });
         app.insert_resource(
-            crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+            crate::cache::historical_geometry::HistoricalGeometryCache::default(),
         );
         app.insert_resource(SemanticWorkingStore::default());
         app.insert_resource(SemanticSyncState::default());

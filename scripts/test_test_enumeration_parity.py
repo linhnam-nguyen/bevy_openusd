@@ -446,7 +446,7 @@ class TestEnumerationParityTests(unittest.TestCase):
         migrations = parity.load_identity_migrations(migrations_path, configs)
 
         old_prefix = "viewport::api::scene_index::"
-        new_prefix = "viewport::scene::index::"
+        new_prefix = "viewport::rendering::scene::index::"
         expected_targets = {
             ("Cargo.toml", ("bin",), "usdview"),
             ("Cargo.toml", ("lib",), "usdview"),
@@ -524,15 +524,15 @@ class TestEnumerationParityTests(unittest.TestCase):
         c6_prefix_moves = (
             (
                 "viewport::app::project::activation::",
-                "viewport::stage::project::activation::",
+                "document::stage_project::activation::",
             ),
             (
                 "viewport::app::project::runtime_authority::",
-                "viewport::stage::project::runtime_authority::",
+                "document::stage_project::runtime_authority::",
             ),
             (
                 "viewport::app::project::stage::",
-                "viewport::stage::project::live_stage_runtime::",
+                "document::stage_project::live_stage_runtime::",
             ),
             ("viewport::session::", "viewport::stage::"),
         )
@@ -615,31 +615,31 @@ class TestEnumerationParityTests(unittest.TestCase):
         c7_prefix_moves = (
             (
                 "viewport::api::bim_provenance::",
-                "viewport::bim::provenance::",
+                "bim::provenance::",
             ),
             (
                 "viewport::app::sync::",
-                "viewport::semantic::sync::remote::",
+                "semantic::viewport::sync::remote::",
             ),
             (
                 "viewport::bim::classification_color::",
-                "viewport::bim::classification::color::",
+                "bim::classification::color::",
             ),
             (
                 "viewport::bim::diff::",
-                "viewport::bim::comparison::",
+                "comparison::",
             ),
             (
                 "viewport::scene::classification_color::",
-                "viewport::bim::classification::presentation::",
+                "bim::classification::presentation::",
             ),
             (
                 "viewport::scene::diff::",
-                "viewport::bim::comparison::visualization::",
+                "comparison::visualization::",
             ),
             (
                 "viewport::scene::ghost::",
-                "viewport::bim::comparison::ghost::",
+                "comparison::ghost::",
             ),
         )
 
@@ -799,7 +799,7 @@ class TestEnumerationParityTests(unittest.TestCase):
             "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
         )
         new_name = (
-            "project::cache::warming::legacy_migration_tests::"
+            "cache::warming::legacy_migration_tests::"
             "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
         )
         required = parity.windows_required(configs, legacy, identity_migrations=migrations)
@@ -859,7 +859,7 @@ class TestEnumerationParityTests(unittest.TestCase):
             "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
         )
         new_name = (
-            "project::cache::warming::legacy_migration_tests::"
+            "cache::warming::legacy_migration_tests::"
             "windows_legacy_project_root_cache_is_blocked_without_changing_legacy_state"
         )
 

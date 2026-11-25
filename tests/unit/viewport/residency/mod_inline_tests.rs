@@ -1,6 +1,6 @@
 use super::*;
-use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget};
+use crate::cache::hydration::ActiveProjectCacheContext;
+use crate::cache::{ProjectCacheIdentity, ProjectCacheTarget};
 use crate::viewport::stage::SceneCacheOwnershipContext;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::PrimitiveTopology;

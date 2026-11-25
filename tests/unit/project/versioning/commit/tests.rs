@@ -9,7 +9,7 @@ use usd_model::SemanticSnapshot;
 use usd_semantic::SemanticConfig;
 
 use super::*;
-use crate::project::semantic_store::{SemanticStore, TursoSemanticStore};
+use crate::semantic::store::{SemanticStore, TursoSemanticStore};
 
 fn create_repository() -> tempfile::TempDir {
     let directory = tempfile::tempdir().expect("create repository directory");
@@ -205,8 +205,8 @@ impl SemanticStore for FailingStore {
     async fn query(
         &self,
         _snapshot: &usd_model::SnapshotId,
-        _request: &crate::project::semantic_store::SemanticQuery,
-    ) -> Result<crate::project::semantic_store::SemanticQueryResult> {
+        _request: &crate::semantic::store::SemanticQuery,
+    ) -> Result<crate::semantic::store::SemanticQueryResult> {
         Ok(Default::default())
     }
 }

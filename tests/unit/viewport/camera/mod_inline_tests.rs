@@ -70,7 +70,7 @@ fn orientation_publisher_drops_nonfinite_camera_rotations() {
 fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
     use bevy::camera::{CameraProjection, Projection, RenderTargetInfo};
     use bevy::camera_controller::pan_orbit_camera::controller::MinimalPanOrbitCameraPlugin;
-    use crate::viewport::input::{HostUiInputCapture, ViewportNavigationInput};
+    use crate::viewport::navigation::input::{HostUiInputCapture, ViewportNavigationInput};
 
     let mut app = App::new();
     app.add_message::<bevy::window::RequestRedraw>();

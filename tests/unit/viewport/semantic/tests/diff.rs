@@ -33,11 +33,11 @@ def Xform "World"
     let live = LiveStage::new(stage);
 
     let mut app = viewport_support::semantic_test_app();
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());

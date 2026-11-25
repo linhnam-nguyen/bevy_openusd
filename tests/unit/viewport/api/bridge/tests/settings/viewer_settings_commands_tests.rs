@@ -5,12 +5,12 @@ use viewport_protocol::*;
 
 use super::super::ViewerSettingsState;
 use super::support::command_test_app;
-use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::api::bridge::commands::apply_viewport_commands;
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::rendering::sampling::{
     ActiveUpscaler, DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::scene::visualization::DisplayToggles;
 
 #[derive(Resource, Default)]
 struct ViewerSettingsChangeCount(u32);

@@ -54,8 +54,8 @@ fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() 
     run_git(&repository, &["checkout", "broken"]);
 
     let stale_scene = usd_project::SceneId::new_v4();
-    let cache = crate::project::cache::SceneCacheStore::new(&repository);
-    let config = crate::project::cache::hydration::default_project_cache_config_hash();
+    let cache = crate::cache::SceneCacheStore::new(&repository);
+    let config = crate::cache::hydration::default_project_cache_config_hash();
     cache.advance_generation(stale_scene, config).unwrap();
     let layout = crate::project::storage::ProjectStorageLayout::new(&repository);
     let objects = layout.scene_cache_objects_dir(stale_scene);
@@ -115,9 +115,9 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
     run_git(&repository, &["commit", "-m", "break Project metadata"]);
     run_git(&repository, &["checkout", "main"]);
 
-    use crate::project::cache::blobs::BlobStore;
-    let cache = crate::project::cache::SceneCacheStore::new(&repository);
-    let config = crate::project::cache::hydration::default_project_cache_config_hash();
+    use crate::cache::blobs::BlobStore;
+    let cache = crate::cache::SceneCacheStore::new(&repository);
+    let config = crate::cache::hydration::default_project_cache_config_hash();
     cache.advance_generation(root_scene, config).unwrap();
     cache
         .object_store(root_scene)
@@ -219,8 +219,8 @@ fn branch_switch_succeeds_with_unavailable_worker_and_bounded_warm_pressure() {
     run_git(&repository, &["commit", "-m", "feature Scenes"]);
     run_git(&repository, &["checkout", "main"]);
 
-    let config = crate::project::cache::hydration::default_project_cache_config_hash();
-    let store = crate::project::cache::SceneCacheStore::new(&repository);
+    let config = crate::cache::hydration::default_project_cache_config_hash();
+    let store = crate::cache::SceneCacheStore::new(&repository);
     let root_generation = store.advance_generation(root_scene, config).unwrap();
     let registry_path = directory.path().join("workspace.json");
     let mut registry = WorkspaceRegistry::load(&registry_path).unwrap();

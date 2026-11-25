@@ -1,12 +1,5 @@
 //! `usdview` binary entry point.
-//!
-//! Viewer implementation lives in [`viewport`], keeping this file as the
-//! composition boundary for the render-server executable.
 
-// The binary intentionally contains dormant protocol, recovery, and diagnostic
-// surfaces that are exercised by focused integration tests or downstream
-// composition roots. Keep those APIs visible without turning the binary-wide
-// hardening gate into a dead-code or query-shape redesign.
 #![allow(dead_code)]
 #![allow(
     clippy::too_many_arguments,
@@ -14,10 +7,22 @@
     clippy::while_let_loop
 )]
 
+mod animation;
+mod api;
+mod app;
+mod authoring;
+mod bim;
+mod cache;
+mod comparison;
+mod diagnostics;
+mod document;
+mod history;
+mod physics;
 mod project;
-mod semantic_query;
+mod semantic;
+mod transport;
 mod viewport;
 
 fn main() {
-    viewport::run();
+    app::run();
 }

@@ -3,13 +3,13 @@ mod tests {
     use openusd::usd::Stage;
     use viewport_protocol::*;
 
-    use crate::project::cache::hydration::{
+    use crate::cache::hydration::{
         ActiveProjectCacheContext, default_project_cache_config_hash,
     };
-    use crate::project::cache::warming::ProjectCacheWarmQueue;
-    use crate::project::cache::{ProjectCacheTarget, SceneCacheStore};
-    use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
-    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::cache::warming::ProjectCacheWarmQueue;
+    use crate::cache::{ProjectCacheTarget, SceneCacheStore};
+    use crate::api::bridge::state::{EditorHistories, EditorHistoryDomain};
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
     use crate::viewport::stage::{SceneCacheOwnershipContext, StageHandle};
 
     use super::super::support::command_test_app;
@@ -243,7 +243,7 @@ mod tests {
         queue.shutdown_without_waiting();
         let mut outbox = ViewportEventOutbox::default();
         let mut histories = EditorHistories::default();
-        crate::viewport::api::bridge::editor::save_current_stage(
+        crate::api::bridge::editor::save_current_stage(
             "save-backpressure".to_owned(),
             &mut outbox,
             &mut histories,

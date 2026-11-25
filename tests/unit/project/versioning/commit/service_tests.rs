@@ -61,7 +61,7 @@ fn scene_commit_targets_scene_scope_and_returns_new_revision() {
         .create_scene(project.id, ProjectWriteTarget::Project(project.id), "MEP")
         .unwrap();
     let project_root = parent.join("Scene Commit Project");
-    let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+    let cache = crate::cache::SceneCacheStore::new(&project_root);
 
     service
         .commit(ProjectCommitRequest {
@@ -319,7 +319,7 @@ fn project_commit_advances_only_scene_owned_paths_changed_by_the_commit() {
         })
         .unwrap();
     let project_root = parent.join("Precise Project Commit");
-    let store = crate::project::cache::SceneCacheStore::new(&project_root);
+    let store = crate::cache::SceneCacheStore::new(&project_root);
     let changed_generation = store
         .load_descriptor(changed.scene_id)
         .unwrap()

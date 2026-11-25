@@ -16,13 +16,13 @@ fn superseded_outline_restarts_after_swap_remove_and_updates_every_live_entity()
         .init_resource::<ViewerSettingsState>()
         .init_resource::<SelectedRenderableProjection>()
         .init_resource::<SelectionPresentationPolicy>()
-        .init_resource::<crate::viewport::scene::SelectionOutlineState>();
+        .init_resource::<crate::viewport::rendering::scene::SelectionOutlineState>();
     register_selection_projection_observers(&mut app);
     app.add_systems(
         Update,
         (
             sync_selected_renderable_projection,
-            crate::viewport::scene::sync_selection_outlines,
+            crate::viewport::rendering::scene::sync_selection_outlines,
         )
             .chain(),
     );
@@ -58,7 +58,7 @@ fn superseded_outline_restarts_after_swap_remove_and_updates_every_live_entity()
             .is_pending();
         let outline_pending = app
             .world()
-            .resource::<crate::viewport::scene::SelectionOutlineState>()
+            .resource::<crate::viewport::rendering::scene::SelectionOutlineState>()
             .is_pending();
         if !projection_pending && !outline_pending {
             break;
@@ -76,7 +76,7 @@ fn superseded_outline_restarts_after_swap_remove_and_updates_every_live_entity()
     app.update();
     assert!(
         app.world()
-            .resource::<crate::viewport::scene::SelectionOutlineState>()
+            .resource::<crate::viewport::rendering::scene::SelectionOutlineState>()
             .is_pending()
     );
 
@@ -94,7 +94,7 @@ fn superseded_outline_restarts_after_swap_remove_and_updates_every_live_entity()
             .is_pending();
         let outline_pending = app
             .world()
-            .resource::<crate::viewport::scene::SelectionOutlineState>()
+            .resource::<crate::viewport::rendering::scene::SelectionOutlineState>()
             .is_pending();
         if !projection_pending && !outline_pending {
             break;

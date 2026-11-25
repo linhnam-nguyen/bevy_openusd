@@ -1,8 +1,8 @@
 use super::*;
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
-use crate::viewport::bim::BimReadService;
-use crate::viewport::bim::test_fixtures::snapshot;
+use crate::bim::BimReadService;
+use crate::bim::test_fixtures::snapshot;
 
 #[test]
 fn profile_uses_defined_level_and_value_mapping_for_unpaged_entities() {

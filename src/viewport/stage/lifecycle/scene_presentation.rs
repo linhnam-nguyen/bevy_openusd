@@ -5,11 +5,11 @@ use std::path::Path;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::super::SceneCachePresentation;
-use crate::project::cache::contract::{
+use crate::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
     SceneCacheEntryKind, SceneCacheIndex,
 };
-use crate::viewport::scene::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::CurrentHierarchyProjection;
 
 pub(super) fn publish_scene_cache_presentation(
     world: &mut World,
@@ -74,7 +74,7 @@ fn install_project_cache_lookup(
         .remove_resource::<ProjectCacheLookup>()
         .or_else(|| {
             project_root.and_then(|root| {
-                crate::project::cache::warming::runtime::load_published_project_cache_lookup(root)
+                crate::cache::warming::runtime::load_published_project_cache_lookup(root)
                     .ok()
                     .flatten()
             })

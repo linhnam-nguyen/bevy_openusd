@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use usd_bevy::{AnimatedPrims, LiveStage, PathStore, PrimEntities};
 
-use crate::project::cache::hydration::ActiveProjectCacheContext;
+use crate::cache::hydration::ActiveProjectCacheContext;
 
 use super::{
     LoadRequest, ReloadRequest, RequestedAsset, Spawned, StageHandle, StageInfo,
@@ -18,7 +18,7 @@ mod project_activation;
 pub(super) mod scene_cache;
 pub(super) mod scene_presentation;
 
-pub(in crate::viewport) use invalidation::{
+pub(crate) use invalidation::{
     PendingActivationPresentation, rehydrate_activation_presentation,
 };
 pub(crate) use project_activation::{
@@ -253,9 +253,9 @@ pub(super) fn clear_live_stage_projection(world: &mut World) {
 fn clear_projected_stage(world: &mut World) {
     clear_live_stage_projection(world);
     world.remove_resource::<super::SceneCachePresentation>();
-    world.remove_resource::<crate::project::cache::contract::ProjectCacheLookup>();
+    world.remove_resource::<crate::cache::contract::ProjectCacheLookup>();
     world.remove_resource::<super::SceneDerivedMetadata>();
-    crate::viewport::residency::retire_scene_cache_resources(world);
+    crate::viewport::rendering::residency::retire_scene_cache_resources(world);
 }
 
 #[cfg(test)]

@@ -12,11 +12,11 @@ use usd_model::{Bounds3, HashDigest, TransformSignature};
 use viewport_protocol::RuntimeProfile;
 
 use super::*;
-use crate::project::cache::blobs::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
-use crate::project::cache::{ProjectCacheDescriptor, ProjectCacheTarget};
+use crate::cache::blobs::{BlobStore, PreparedMeshBlob, prepare_mesh_payload};
+use crate::cache::{ProjectCacheDescriptor, ProjectCacheTarget};
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::project::runtime::delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};
-use crate::project::runtime::payload::{
+use crate::document::runtime::delivery::{RuntimeHierarchyEntity, RuntimeHierarchyGeometry};
+use crate::document::runtime::payload::{
     RUNTIME_MATERIAL_VERSION, RuntimeMaterialTextures, RuntimeTextureBlob, RuntimeTextureColorSpace,
 };
 
@@ -149,7 +149,7 @@ fn fixture_with_black_border(
         meshes: vec![RuntimeBlobReference {
             blob_id: mesh_id.0.clone(),
             payload_kind: RuntimePayloadKind::Mesh,
-            payload_version: crate::project::cache::blobs::mesh_payload_version(&mesh_bytes)?,
+            payload_version: crate::cache::blobs::mesh_payload_version(&mesh_bytes)?,
             byte_size: mesh_bytes.len() as u64,
         }],
         materials: vec![RuntimeBlobReference {

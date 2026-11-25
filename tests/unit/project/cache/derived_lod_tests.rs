@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache::blobs::FilesystemBlobStore;
+use crate::cache::blobs::FilesystemBlobStore;
 
 #[test]
 fn generated_planar_mesh_is_deterministic_and_preserves_the_boundary() -> Result<()> {

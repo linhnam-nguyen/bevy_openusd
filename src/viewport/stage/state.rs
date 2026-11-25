@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::cache::contract::{
+use crate::cache::contract::{
     SceneCacheActivation, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheState,
 };
 
@@ -44,21 +44,20 @@ pub(crate) struct StagePresentationContext {
 }
 
 impl StagePresentationContext {
-    pub(crate) fn from_project(
-        context: crate::project::service::ProjectStagePresentationContext,
-    ) -> Self {
-        Self {
-            root_path: context.root_path,
-            root_name: context.root_name,
-            target_names: context.target_names,
-        }
-    }
-
     pub(crate) fn target_name(&self, kind: &str, id: &str) -> Option<&str> {
         self.target_names
             .get(&(kind.to_owned(), id.to_owned()))
             .map(String::as_str)
     }
+}
+
+/// Optional product-layer lifecycle hooks installed by product composition.
+/// Standalone generic viewport runs cleanly when this resource is absent.
+#[derive(Resource, Clone, Copy)]
+pub(crate) struct ProductStageLifecycleHooks {
+    pub(crate) on_reset_derived: fn(&mut bevy::prelude::World, u64),
+    pub(crate) on_reset_source_derived: fn(&mut bevy::prelude::World, u64),
+    pub(crate) is_semantic_ready: fn(&bevy::prelude::World) -> bool,
 }
 
 /// Metadata-first Scene activation published before the canonical Stage has

@@ -12,7 +12,7 @@ use super::preparation::ProjectModelPreparationQueue;
 use super::wrapper::{ModelPlacement, ModelWrapperRequest, publish_model_wrapper_atomic};
 use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-pub(in crate::project) fn publish_model(
+pub(crate) fn publish_model(
     service: &mut ProjectApplicationService,
     preparation: &ProjectModelPreparationQueue,
     project_id: usd_project::ProjectId,
@@ -174,13 +174,13 @@ fn publish_model_inner(
         )?;
     }
     let mut cache_targets = vec![
-        crate::project::cache::ProjectCacheTarget::Model {
+        crate::cache::ProjectCacheTarget::Model {
             id: published.id.to_string(),
         },
-        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        crate::cache::ProjectCacheTarget::ProjectRoot,
     ];
     if let Some(parent_scene_id) = parent_scene_id {
-        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene {
+        cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
             id: parent_scene_id.to_string(),
         });
     }

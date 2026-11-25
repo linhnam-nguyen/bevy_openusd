@@ -1,7 +1,7 @@
 use super::generic::search_hierarchy_generic;
 use super::*;
 
-use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::hierarchy::CurrentHierarchyProjection;
 use viewport_protocol::{HierarchyNodeId, SceneAnchor};
 
 fn node(

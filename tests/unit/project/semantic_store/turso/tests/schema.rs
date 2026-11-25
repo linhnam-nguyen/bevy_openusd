@@ -1,6 +1,6 @@
 use super::super::TursoSemanticStore;
 use super::runtime;
-use crate::project::semantic_store::test_support::SCHEMA_VERSION;
+use crate::semantic::store::test_support::SCHEMA_VERSION;
 
 #[test]
 fn schema_migration_creates_durable_snapshot_tables() {
@@ -171,7 +171,7 @@ fn legacy_bim_rows_are_backfilled_transactionally_and_idempotently() {
             .await
             .expect("legacy durable entity inserts");
 
-        crate::project::semantic_store::migration::apply(&mut connection)
+        crate::semantic::store::migration::apply(&mut connection)
             .await
             .expect("legacy durable BIM backfill succeeds");
         let mut rows = connection
@@ -188,7 +188,7 @@ fn legacy_bim_rows_are_backfilled_transactionally_and_idempotently() {
             .expect("backfilled BIM row exists");
         assert_eq!(row.get::<i64>(0).expect("backfilled BIM flag decodes"), 1);
 
-        crate::project::semantic_store::migration::apply(&mut connection)
+        crate::semantic::store::migration::apply(&mut connection)
             .await
             .expect("idempotent durable BIM backfill succeeds");
         let mut rows = connection

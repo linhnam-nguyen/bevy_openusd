@@ -1,5 +1,5 @@
 use super::*;
-use crate::viewport::app::launch_options::{LaunchOptions, parse_launch_options};
+use crate::app::launch_options::{LaunchOptions, parse_launch_options};
 use viewport_protocol::CodecId;
 
 #[test]

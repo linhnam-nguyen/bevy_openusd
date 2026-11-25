@@ -1,7 +1,7 @@
 use bevy::prelude::{App, Update};
 use viewport_protocol::{SamplingProvider, ViewportEvent};
 
-use crate::viewport::api::{ViewerSettingsState, ViewportEventOutbox};
+use crate::api::{ViewerSettingsState, ViewportEventOutbox};
 
 use super::coordinator::{
     ActiveUpscaler, SamplingCapabilities, SamplingSelectionError, choose_upscaler,

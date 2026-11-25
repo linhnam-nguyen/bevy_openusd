@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache::contract::{CachedTransform, SceneCacheEntry, SceneCacheOccurrence};
+use crate::cache::contract::{CachedTransform, SceneCacheEntry, SceneCacheOccurrence};
 use usd_model::{BlobId, HashDigest};
 
 fn entry(scene_id: SceneId, material: Option<SceneCacheBlobRef>) -> SceneCacheEntry {
@@ -54,7 +54,7 @@ fn catalog_rejects_invalid_scene_blob_references() {
     let presentation = SceneCachePresentation {
         scene_id,
         generation: 4,
-        state: crate::project::cache::contract::SceneCacheState::Ready,
+        state: crate::cache::contract::SceneCacheState::Ready,
         entries: vec![entry(
             scene_id,
             Some(SceneCacheBlobRef {

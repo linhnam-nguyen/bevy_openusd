@@ -20,7 +20,7 @@ use bevy::render::{
 #[derive(Resource, Default)]
 struct RendererStopped(bool);
 
-pub(super) fn install_render_guards(app: &mut App) {
+pub(crate) fn install_render_guards(app: &mut App) {
     let Some(render) = app.get_sub_app_mut(RenderApp) else {
         return;
     };

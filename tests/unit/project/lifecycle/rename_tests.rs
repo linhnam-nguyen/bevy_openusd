@@ -30,7 +30,7 @@ fn scene_rename_updates_the_manifest_and_every_placement_mirror() {
             "Architecture",
         )
         .unwrap();
-    let generation = crate::project::cache::SceneCacheStore::new(&project_root)
+    let generation = crate::cache::SceneCacheStore::new(&project_root)
         .load_descriptor(scene.scene_id)
         .unwrap()
         .unwrap()
@@ -45,7 +45,7 @@ fn scene_rename_updates_the_manifest_and_every_placement_mirror() {
         .unwrap();
 
     assert_eq!(
-        crate::project::cache::SceneCacheStore::new(&project_root)
+        crate::cache::SceneCacheStore::new(&project_root)
             .load_descriptor(scene.scene_id)
             .unwrap()
             .unwrap()
@@ -103,7 +103,7 @@ fn failed_rename_restores_all_canonical_files_and_stage_outbox() {
     let parent = directory.path().join("projects");
     fs::create_dir(&parent).unwrap();
     let (queue, failure_trigger) =
-        crate::project::stages::mutation::test_support::queue_with_failure_trigger();
+        crate::document::stages::mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
         directory.path().join("workspace.json"),
         queue,

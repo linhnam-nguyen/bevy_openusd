@@ -2,7 +2,7 @@ use usd_model::EntityKey;
 
 use super::super::TursoSemanticStore;
 use super::{runtime, snapshot};
-use crate::project::semantic_store::{GroupField, SemanticFilter, SemanticQuery, SemanticStore};
+use crate::semantic::store::{GroupField, SemanticFilter, SemanticQuery, SemanticStore};
 
 #[test]
 fn put_get_entity_and_query_round_trip() {

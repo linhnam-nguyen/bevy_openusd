@@ -60,7 +60,7 @@ fn deleting_scene_preserves_descendant_shared_by_another_parent() {
         )
         .unwrap();
     add_scene_placement(&project_root, other_parent.scene_id, shared.scene_id);
-    let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+    let cache = crate::cache::SceneCacheStore::new(&project_root);
     let other_generation = cache
         .load_descriptor(other_parent.scene_id)
         .unwrap()
@@ -266,7 +266,7 @@ fn failed_delete_restores_manifest_files_and_stage_outbox() {
     let parent_directory = directory.path().join("projects");
     fs::create_dir(&parent_directory).unwrap();
     let (queue, failure_trigger) =
-        crate::project::stages::mutation::test_support::queue_with_failure_trigger();
+        crate::document::stages::mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_stage_mutation_queue(
         directory.path().join("workspace.json"),
         queue,

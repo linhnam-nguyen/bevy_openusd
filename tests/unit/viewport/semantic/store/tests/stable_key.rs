@@ -74,7 +74,7 @@ def Xform "World"
             .unwrap();
         assert_eq!(upsert_new.key.as_str(), "revit:door-stable-001");
 
-        let update = crate::viewport::semantic::SemanticIncrementalUpdate {
+        let update = crate::semantic::viewport::SemanticIncrementalUpdate {
             snapshot_id: updated_snapshot.snapshot_id.clone(),
             source: source_2,
             config_hash: updated_snapshot.config_hash,

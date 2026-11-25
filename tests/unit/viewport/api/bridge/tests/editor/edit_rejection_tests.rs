@@ -5,10 +5,10 @@ mod tests {
     use openusd::usd::Stage;
     use viewport_protocol::*;
 
-    use crate::viewport::api::bridge::state::{EditorHistories, EditorHistoryDomain};
-    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::bim::test_fixtures;
-    use crate::viewport::semantic::SemanticSyncState;
+    use crate::api::bridge::state::{EditorHistories, EditorHistoryDomain};
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::bim::test_fixtures;
+    use crate::semantic::viewport::SemanticSyncState;
 
     use super::super::support::command_test_app;
 

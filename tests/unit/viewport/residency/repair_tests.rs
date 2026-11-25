@@ -1,12 +1,12 @@
 use super::phase::RepairPhase;
 use super::*;
-use crate::project::cache::contract::{
+use crate::cache::contract::{
     CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheAddress, SceneCacheDescriptorV3, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheIndex, SceneCacheOccurrence, SceneSpatialIndex,
 };
-use crate::project::cache::hydration::ActiveProjectCacheContext;
-use crate::project::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
+use crate::cache::hydration::ActiveProjectCacheContext;
+use crate::cache::{ProjectCacheIdentity, ProjectCacheTarget, SceneCacheStore};
 use bevy::asset::Assets;
 use bevy::ecs::system::SystemState;
 use bevy::mesh::Mesh;
@@ -137,7 +137,7 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
     world.insert_resource(TargetedRepairQueue::default());
     world.init_resource::<super::super::worker::LoadedScenePayloadQueue>();
     let mut state: SystemState<(
-        Option<Res<super::super::super::stage::SceneCacheOwnershipContext>>,
+        Option<Res<crate::viewport::stage::SceneCacheOwnershipContext>>,
         Option<Res<ActiveProjectCacheContext>>,
         Res<super::super::worker::CachedResidencyWorker>,
         ResMut<ResidencyAuthority>,

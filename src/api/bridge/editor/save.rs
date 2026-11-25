@@ -1,0 +1,161 @@
+//! Authoritative local persistence for the working USD stage.
+
+use std::{fs, path::Path};
+
+use anyhow::Result;
+use usd_bevy::LiveStage;
+use viewport_protocol::EditorOperation;
+
+use super::super::helpers::{emit_editor_completed, reject};
+use super::super::state::EditorHistories;
+use crate::cache::{
+    ProjectCacheTarget, hydration::ActiveProjectCacheContext,
+    warming::ProjectCacheWarmQueue,
+};
+use crate::project::{catalog::manifest_store::ManifestStore, storage::ProjectStorageLayout};
+use crate::api::ViewportEventOutbox;
+use crate::viewport::stage::SceneCacheOwnershipContext;
+
+pub(super) fn save_stage_as(
+    request_id: String,
+    outbox: &mut ViewportEventOutbox,
+    histories: &mut EditorHistories,
+    stage: Option<&LiveStage>,
+    filename: &str,
+    active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
+    cache_warm: &ProjectCacheWarmQueue,
+) {
+    let Some(stage) = stage else {
+        reject(outbox, request_id, "stage is not loaded".to_owned());
+        return;
+    };
+    persist(
+        request_id,
+        outbox,
+        histories,
+        stage,
+        filename,
+        EditorOperation::SaveStageAs,
+        active_project_cache,
+        scene_cache_owner,
+        cache_warm,
+    );
+}
+pub(in crate::api::bridge) fn save_current_stage(
+    request_id: String,
+    outbox: &mut ViewportEventOutbox,
+    histories: &mut EditorHistories,
+    stage: Option<&LiveStage>,
+    path: Option<&Path>,
+    active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
+    cache_warm: &ProjectCacheWarmQueue,
+) {
+    let Some(stage) = stage else {
+        reject(outbox, request_id, "stage is not loaded".to_owned());
+        return;
+    };
+    let Some(path) = path else {
+        reject(
+            outbox,
+            request_id,
+            "current stage has no local save path".to_owned(),
+        );
+        return;
+    };
+    let filename = path.to_string_lossy();
+    persist(
+        request_id,
+        outbox,
+        histories,
+        stage,
+        &filename,
+        EditorOperation::SaveStage,
+        active_project_cache,
+        scene_cache_owner,
+        cache_warm,
+    );
+}
+
+fn persist(
+    request_id: String,
+    outbox: &mut ViewportEventOutbox,
+    histories: &mut EditorHistories,
+    stage: &LiveStage,
+    filename: &str,
+    operation: EditorOperation,
+    active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
+    cache_warm: &ProjectCacheWarmQueue,
+) {
+    if !stage.try_freeze_authoring() {
+        reject(
+            outbox,
+            request_id,
+            "the active document is already leased for publication".to_owned(),
+        );
+        return;
+    }
+    let written = usd_bevy::authoring::save_stage_as(&stage.stage, filename);
+    stage.unfreeze_authoring();
+    if let Err(error) = written {
+        reject(outbox, request_id, error.to_string());
+        return;
+    }
+    if let Err(error) = invalidate_owned_scene_after_save(
+        Path::new(filename),
+        active_project_cache,
+        scene_cache_owner,
+        cache_warm,
+    ) {
+        reject(outbox, request_id, error.to_string());
+        return;
+    }
+    histories.mark_saved();
+    emit_editor_completed(outbox, request_id, operation, Vec::new(), histories);
+}
+
+fn invalidate_owned_scene_after_save(
+    destination: &Path,
+    active_project_cache: Option<&ActiveProjectCacheContext>,
+    scene_cache_owner: Option<&SceneCacheOwnershipContext>,
+    cache_warm: &ProjectCacheWarmQueue,
+) -> Result<()> {
+    let Some(destination) = fs::canonicalize(destination).ok() else {
+        return Ok(());
+    };
+    let (project_root, expected_scene_id) = if let Some(owner) = scene_cache_owner {
+        (owner.project_root.clone(), Some(owner.scene_id.clone()))
+    } else if let Some(context) = active_project_cache {
+        (context.project_root.clone(), None)
+    } else {
+        return Ok(());
+    };
+    let Ok(manifest) = ManifestStore::read_validated(&project_root) else {
+        return Ok(());
+    };
+    let layout = ProjectStorageLayout::new(&project_root);
+    let owner = manifest.scenes().iter().find(|scene| {
+        let path = layout.readable_scene_path(manifest.raw(), scene);
+        expected_scene_id
+            .as_ref()
+            .is_none_or(|expected| expected == &scene.id)
+            && fs::canonicalize(path).is_ok_and(|path| path == destination)
+    });
+    let Some(scene) = owner else {
+        return Ok(());
+    };
+    if !cache_warm.enqueue_targets_for_mutation(
+        &project_root,
+        vec![ProjectCacheTarget::Scene {
+            id: scene.id.to_string(),
+        }],
+    )? {
+        log::warn!(
+            "saved canonical Project Scene {} but derived-cache warm admission was unavailable",
+            scene.id
+        );
+    }
+    Ok(())
+}

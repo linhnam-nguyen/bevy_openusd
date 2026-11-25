@@ -1,0 +1,368 @@
+//! Application-to-LiveStage authority boundary for Project mutations.
+//!
+//! The native Project host and the render server are separate processes. The
+//! host therefore publishes typed, durable mutation records into the private
+//! Project cache directory; the active-stage owner consumes those records on
+//! the LiveStage thread. OpenUSD and Bevy state never cross this boundary.
+
+use std::{
+    fs,
+    path::Path,
+    sync::{Arc, Mutex},
+};
+
+use project_protocol::{ProjectWriteError, ProjectWriteTarget};
+use serde::{Deserialize, Serialize};
+use usd_project::{ModelId, ProjectId, SceneId, SceneMember, SceneMemberId};
+
+mod outbox;
+pub(super) use outbox::filesystem_error;
+use outbox::{busy_error, outbox_path, read_pending, submit_batch_locked};
+
+/// A typed Project mutation waiting for the active-stage owner.
+///
+/// This DTO contains only stable Project identities. The OpenUSD Stage and
+/// Bevy entities remain owned by the active-stage thread.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum ProjectStageMutation {
+    CreateScene {
+        project_id: ProjectId,
+        scene_id: SceneId,
+        parent_scene_id: Option<SceneId>,
+        placement: Option<SceneMember>,
+    },
+    AdoptScene {
+        project_id: ProjectId,
+        scene_id: SceneId,
+        parent_scene_id: Option<SceneId>,
+        placement: Option<SceneMember>,
+    },
+    PublishModel {
+        project_id: ProjectId,
+        model_id: ModelId,
+        parent_scene_id: Option<SceneId>,
+        placement: Option<SceneMember>,
+    },
+    RemoveScenePlacement {
+        project_id: ProjectId,
+        parent_scene_id: SceneId,
+        placement_id: SceneMemberId,
+    },
+    DeleteScene {
+        project_id: ProjectId,
+        scene_id: SceneId,
+    },
+    DeleteModel {
+        project_id: ProjectId,
+        model_id: ModelId,
+    },
+    Rename {
+        project_id: ProjectId,
+        target: ProjectWriteTarget,
+        name: String,
+    },
+    RefreshSceneDefinition {
+        project_id: ProjectId,
+        scene_id: SceneId,
+    },
+}
+
+const STAGE_MUTATION_CAPACITY: usize = 128;
+const PROJECT_METADATA_DIRECTORY: &str = ".usdhub";
+const CACHE_DIRECTORY: &str = "cache";
+const OUTBOX_DIRECTORY: &str = "project-stage-mutations";
+
+trait OutboxSubmitter: Send + Sync {
+    fn submit_batch(
+        &self,
+        project_root: &Path,
+        mutations: &[ProjectStageMutation],
+    ) -> Result<(), ProjectWriteError>;
+}
+
+struct FilesystemOutboxSubmitter;
+
+impl OutboxSubmitter for FilesystemOutboxSubmitter {
+    fn submit_batch(
+        &self,
+        project_root: &Path,
+        mutations: &[ProjectStageMutation],
+    ) -> Result<(), ProjectWriteError> {
+        submit_batch_locked(project_root, mutations)
+    }
+}
+
+/// Durable host-to-render-server Project stage handoff.
+///
+/// The mutex only protects concurrent access by one host process. The file is
+/// the process boundary and is read by the active-stage owner in the viewer.
+#[derive(Clone)]
+pub struct ProjectStageMutationQueue {
+    file_lock: Arc<Mutex<()>>,
+    submitter: Arc<dyn OutboxSubmitter>,
+}
+
+impl Default for ProjectStageMutationQueue {
+    fn default() -> Self {
+        Self {
+            file_lock: Arc::new(Mutex::new(())),
+            submitter: Arc::new(FilesystemOutboxSubmitter),
+        }
+    }
+}
+
+impl ProjectStageMutationQueue {
+    /// Check capacity before a canonical publication starts. This prevents a
+    /// successful disk mutation from being reported as failed because its
+    /// stage handoff was discovered to be full afterward.
+    pub fn ensure_capacity(&self, project_root: &Path) -> Result<(), ProjectWriteError> {
+        self.ensure_capacity_for(project_root, 1)
+    }
+
+    /// Check capacity for a bounded batch before canonical files are changed.
+    pub fn ensure_capacity_for(
+        &self,
+        project_root: &Path,
+        additional: usize,
+    ) -> Result<(), ProjectWriteError> {
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        let pending = read_pending(&outbox_path(project_root))?;
+        if pending.len().saturating_add(additional) > STAGE_MUTATION_CAPACITY {
+            return Err(busy_error());
+        }
+        Ok(())
+    }
+
+    /// Publish one typed mutation into the private Project cache outbox.
+    pub fn submit_for_project(
+        &self,
+        project_root: &Path,
+        mutation: ProjectStageMutation,
+    ) -> Result<(), ProjectWriteError> {
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        self.submitter
+            .submit_batch(project_root, std::slice::from_ref(&mutation))
+    }
+
+    /// Publish a typed mutation batch atomically into the private Project
+    /// stage outbox. Existing records remain untouched if any record in the
+    /// batch cannot be prepared or published.
+    pub fn submit_batch_for_project(
+        &self,
+        project_root: &Path,
+        mutations: &[ProjectStageMutation],
+    ) -> Result<(), ProjectWriteError> {
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        self.submitter.submit_batch(project_root, mutations)
+    }
+
+    /// Consume mutations for the active Scene on the actual LiveStage owner
+    /// thread. Failed records and records for another Project or Scene remain
+    /// in the outbox for a later retry.
+    pub fn apply_for_active_scene(
+        &self,
+        live: &mut usd_bevy::LiveStage,
+        project_root: &Path,
+        active_project_id: ProjectId,
+        active_scene_id: Option<SceneId>,
+    ) -> Result<usize, ProjectWriteError> {
+        let _guard = self
+            .file_lock
+            .lock()
+            .expect("Project stage mutation queue is not poisoned");
+        let path = outbox_path(project_root);
+        let pending = read_pending(&path)?;
+        if pending.is_empty() {
+            return Ok(0);
+        }
+
+        let mut applied = 0;
+        let mut first_error = None;
+        let manifest = pending
+            .iter()
+            .any(|(_, mutation)| {
+                matches!(
+                    mutation,
+                    ProjectStageMutation::RefreshSceneDefinition { .. }
+                )
+            })
+            .then(|| {
+                crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)
+            })
+            .transpose()
+            .map_err(|_| filesystem_error())?;
+        for (mutation_path, mutation) in pending {
+            if mutation.project_id() != active_project_id
+                || !mutation.can_be_consumed_for_active_scene(
+                    project_root,
+                    manifest.as_ref(),
+                    active_scene_id,
+                )
+            {
+                continue;
+            }
+            let result = match mutation {
+                ProjectStageMutation::DeleteScene { scene_id, .. }
+                    if active_scene_id != Some(scene_id) =>
+                {
+                    Ok(())
+                }
+                ProjectStageMutation::RefreshSceneDefinition { .. } => {
+                    apply_mutation(live, project_root, &mutation, active_scene_id)
+                }
+                mutation => apply_mutation(live, project_root, &mutation, None),
+            };
+            match result {
+                Ok(()) => match fs::remove_file(&mutation_path) {
+                    Ok(()) => applied += 1,
+                    Err(_) => {
+                        if first_error.is_none() {
+                            first_error = Some(filesystem_error());
+                        }
+                    }
+                },
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        Ok(applied)
+    }
+}
+
+impl ProjectStageMutation {
+    fn project_id(&self) -> ProjectId {
+        match self {
+            Self::CreateScene { project_id, .. }
+            | Self::AdoptScene { project_id, .. }
+            | Self::PublishModel { project_id, .. }
+            | Self::RemoveScenePlacement { project_id, .. }
+            | Self::DeleteScene { project_id, .. }
+            | Self::DeleteModel { project_id, .. }
+            | Self::Rename { project_id, .. }
+            | Self::RefreshSceneDefinition { project_id, .. } => *project_id,
+        }
+    }
+
+    fn parent_scene_id(&self) -> Option<SceneId> {
+        match self {
+            Self::CreateScene {
+                parent_scene_id, ..
+            }
+            | Self::AdoptScene {
+                parent_scene_id, ..
+            }
+            | Self::PublishModel {
+                parent_scene_id, ..
+            } => *parent_scene_id,
+            Self::RemoveScenePlacement {
+                parent_scene_id, ..
+            } => Some(*parent_scene_id),
+            Self::DeleteScene { scene_id, .. } => Some(*scene_id),
+            Self::DeleteModel { .. } | Self::Rename { .. } => None,
+            Self::RefreshSceneDefinition { scene_id, .. } => Some(*scene_id),
+        }
+    }
+
+    fn can_be_consumed_for_active_scene(
+        &self,
+        project_root: &Path,
+        manifest: Option<&usd_project::ValidatedProjectManifest>,
+        active_scene_id: Option<SceneId>,
+    ) -> bool {
+        match self {
+            Self::DeleteScene { .. } | Self::DeleteModel { .. } | Self::Rename { .. } => true,
+            Self::RefreshSceneDefinition { scene_id, .. } => {
+                let Some(manifest) = manifest else {
+                    return false;
+                };
+                active_scene_id.is_some_and(|active| {
+                    crate::project::assets::closure::scene_service::scene_dependency_closure(
+                        project_root,
+                        manifest.raw(),
+                        active,
+                    )
+                    .is_ok_and(|(scenes, _)| scenes.contains(scene_id))
+                })
+            }
+            _ => self.parent_scene_id() == active_scene_id,
+        }
+    }
+}
+
+fn apply_mutation(
+    live: &mut usd_bevy::LiveStage,
+    project_root: &Path,
+    mutation: &ProjectStageMutation,
+    active_scene_id: Option<SceneId>,
+) -> Result<(), ProjectWriteError> {
+    if let ProjectStageMutation::DeleteScene { .. } = mutation {
+        usd_bevy::authoring::remove_prim(&live.stage, "/SceneRoot")
+            .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::DeleteModel { .. } = mutation {
+        usd_bevy::authoring::remove_prim(&live.stage, "/ModelRoot")
+            .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::RemoveScenePlacement { placement_id, .. } = mutation {
+        usd_bevy::authoring::remove_prim(
+            &live.stage,
+            crate::project::scene::authoring::scene_member_path(*placement_id).as_str(),
+        )
+        .map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::Rename { target, name, .. } = mutation {
+        super::rename::apply_rename_to_live_stage(live, target, name)?;
+        return Ok(());
+    }
+    if let ProjectStageMutation::RefreshSceneDefinition { scene_id, .. } = mutation {
+        let refresh_scene_id = active_scene_id.unwrap_or(*scene_id);
+        let path = crate::project::scene::authoring::scene_path(project_root, refresh_scene_id);
+        live.replace_document(&path).map_err(|_| filesystem_error())?;
+        return Ok(());
+    }
+    let placement = match mutation {
+        ProjectStageMutation::CreateScene { placement, .. }
+        | ProjectStageMutation::AdoptScene { placement, .. }
+        | ProjectStageMutation::PublishModel { placement, .. } => placement,
+        ProjectStageMutation::RemoveScenePlacement { .. }
+        | ProjectStageMutation::DeleteScene { .. }
+        | ProjectStageMutation::DeleteModel { .. }
+        | ProjectStageMutation::Rename { .. }
+        | ProjectStageMutation::RefreshSceneDefinition { .. } => {
+            unreachable!("handled above")
+        }
+    };
+    let Some(placement) = placement else {
+        // Empty -> root transitions are completed by normal root-stage
+        // activation. There is no SceneMember to patch into the new root.
+        return Ok(());
+    };
+    crate::project::scene::authoring::author_scene_member(&live.stage, project_root, placement)
+        .map_err(|_| filesystem_error())
+}
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/project/stages/mutation/test_support.rs"]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/project/stages/mutation/tests.rs"]
+mod tests;

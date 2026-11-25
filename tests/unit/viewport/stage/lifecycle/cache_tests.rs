@@ -20,19 +20,19 @@ use super::{
     activate_stage_with_cache_context, install_scene_cache_bootstrap_before_stage_open,
     poll_scene_cache_revalidation,
 };
-use crate::project::cache::contract::{
+use crate::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
     SceneCacheDescriptorV3, SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache::hydration::{
+use crate::cache::hydration::{
     ActiveProjectCacheContext, default_project_cache_config_hash,
 };
-use crate::project::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
+use crate::cache::{ProjectCacheStore, ProjectCacheTarget, SceneCacheStore};
 use crate::project::catalog::manifest_store::ManifestStore;
-use crate::viewport::residency::{
+use crate::viewport::rendering::residency::{
     ResidencyAuthority, ResidencyReason, ScenePayloadKey, SceneResidencyProjection,
 };
-use crate::viewport::scene::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::CurrentHierarchyProjection;
 use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
     StagePresentationContext,
@@ -129,7 +129,7 @@ fn changed_source_across_stage_open_cannot_consume_old_cache_seeds() {
     let target = ProjectCacheTarget::Scene {
         id: scene_id.to_string(),
     };
-    let queue = crate::project::cache::warming::ProjectCacheWarmQueue::default();
+    let queue = crate::cache::warming::ProjectCacheWarmQueue::default();
     assert!(queue.enqueue(project.path(), target.clone()));
     assert!(queue.wait_for_project_idle(project.path(), CACHE_WARM_TEST_TIMEOUT));
     let scene_store = SceneCacheStore::new(project.path());
@@ -280,7 +280,7 @@ fn unequal_activation_and_scene_generations_revalidate_current_scene_cache() {
     let config_hash = HashDigest::new([3; HashDigest::BYTE_LEN]);
     let expected_hash = HashDigest::new([4; HashDigest::BYTE_LEN]);
     let actual_hash = HashDigest::new([5; HashDigest::BYTE_LEN]);
-    let store = crate::project::cache::SceneCacheStore::new(project.path());
+    let store = crate::cache::SceneCacheStore::new(project.path());
     store
         .publish_descriptor(&SceneCacheDescriptorV3::invalidated(
             scene_id,

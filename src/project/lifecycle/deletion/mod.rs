@@ -29,7 +29,7 @@ struct ParentBackup {
     backup: PathBuf,
 }
 
-pub(in crate::project) fn delete_scene(
+pub(crate) fn delete_scene(
     service: &mut ProjectApplicationService,
     request: ProjectDeleteSceneRequest,
 ) -> Result<ProjectSceneLifecycleResponse, ProjectWriteError> {
@@ -43,7 +43,7 @@ pub(in crate::project) fn delete_scene(
     })
 }
 
-pub(in crate::project) fn delete_model(
+pub(crate) fn delete_model(
     service: &mut ProjectApplicationService,
     request: ProjectDeleteModelRequest,
 ) -> Result<ProjectModelLifecycleResponse, ProjectWriteError> {
@@ -256,7 +256,7 @@ fn delete_definition(
     for scene_id in &plan.scenes {
         if !service.cache_warm.remove_target_descriptors(
             project_root,
-            &crate::project::cache::ProjectCacheTarget::Scene {
+            &crate::cache::ProjectCacheTarget::Scene {
                 id: scene_id.to_string(),
             },
         ) {
@@ -266,16 +266,16 @@ fn delete_definition(
     for model_id in &plan.models {
         if !service.cache_warm.remove_target_descriptors(
             project_root,
-            &crate::project::cache::ProjectCacheTarget::Model {
+            &crate::cache::ProjectCacheTarget::Model {
                 id: model_id.to_string(),
             },
         ) {
             cleanup_failed = true;
         }
     }
-    let mut cache_targets = vec![crate::project::cache::ProjectCacheTarget::ProjectRoot];
+    let mut cache_targets = vec![crate::cache::ProjectCacheTarget::ProjectRoot];
     cache_targets.extend(changed_parent_scene_ids.iter().map(|scene_id| {
-        crate::project::cache::ProjectCacheTarget::Scene {
+        crate::cache::ProjectCacheTarget::Scene {
             id: scene_id.to_string(),
         }
     }));

@@ -13,7 +13,7 @@ fn payload_with_hash(
     SceneSpatialPayload {
         address: SceneCacheAddress {
             scene_id,
-            occurrence: crate::project::cache::contract::SceneCacheOccurrence::Member(occurrence),
+            occurrence: crate::cache::contract::SceneCacheOccurrence::Member(occurrence),
         },
         payload_key: ScenePayloadKey {
             scene_id,
@@ -119,8 +119,8 @@ fn cached_occurrences_follow_live_visibility() {
         ResidencyAuthority, ResidencyReason, VisibilityChangeEpoch, advance_visibility_epoch,
         pump_residency_uploads, update_camera_residency,
     };
-    use crate::project::cache::contract::SceneCacheOccurrence;
-    use crate::viewport::scene::SceneAnchorIndex;
+    use crate::cache::contract::SceneCacheOccurrence;
+    use crate::viewport::rendering::scene::SceneAnchorIndex;
     use bevy::prelude::*;
     use bevy::render::render_asset::RenderAssetBytesPerFrame;
     use viewport_protocol::SceneAnchor;

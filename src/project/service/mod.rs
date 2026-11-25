@@ -17,7 +17,7 @@ use project_protocol::{
 };
 use usd_project::ProjectId;
 
-use crate::project::cache::warming::ProjectCacheWarmQueue;
+use crate::cache::warming::ProjectCacheWarmQueue;
 use crate::project::catalog::{
     catalogue::{list_projects, unavailable_reason},
     manifest_store::ManifestStore,
@@ -25,7 +25,7 @@ use crate::project::catalog::{
 };
 
 use self::error::project_read_error_code;
-use crate::project::runtime::authority::NoopProjectRuntimeAuthority;
+use crate::document::runtime::authority::NoopProjectRuntimeAuthority;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/project/service/test_support.rs"]
@@ -33,11 +33,11 @@ pub(super) mod test_support;
 
 /// Read-only Project application service owned by the backend boundary.
 pub struct ProjectApplicationService {
-    pub(super) registry: WorkspaceRegistry,
-    pub(super) publication_coordinator: ProjectPublicationCoordinator,
-    pub(super) stage_mutations: ProjectStageMutationQueue,
-    pub(super) progress: ProjectImportProgressStore,
-    pub(super) cache_warm: ProjectCacheWarmQueue,
+    pub(crate) registry: WorkspaceRegistry,
+    pub(crate) publication_coordinator: ProjectPublicationCoordinator,
+    pub(crate) stage_mutations: ProjectStageMutationQueue,
+    pub(crate) progress: ProjectImportProgressStore,
+    pub(crate) cache_warm: ProjectCacheWarmQueue,
 }
 
 /// Shared admission state for non-idempotent publication mutations.
@@ -103,7 +103,7 @@ mod export_portability_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/exchange/export_tests.rs"]
 mod export_tests;
-pub(super) mod inspection;
+pub(crate) mod inspection;
 mod read;
 #[cfg(test)]
 #[path = "../../../tests/unit/project/runtime/authority/queue_tests.rs"]
@@ -115,18 +115,18 @@ mod runtime_authority_tests;
 #[path = "../../../tests/unit/project/scene/adoption/service_error_tests.rs"]
 mod scene_adoption_error_tests;
 use self::read::project_list_item;
-pub(super) use self::read::{project_tree, repository_summary};
+pub(crate) use self::read::{project_tree, repository_summary};
 pub use crate::project::exchange::progress::ProjectImportProgressStore;
 pub use crate::project::models::preparation::ProjectModelPreparationQueue;
-pub use crate::project::runtime::authority::{
+pub use crate::document::runtime::authority::{
     ProjectRuntimeAuthority, ProjectRuntimeAuthorityQueue, ProjectRuntimeSnapshot,
 };
 pub use crate::project::scene::inspection_queue::ProjectSceneInspectionQueue;
-pub use crate::project::stages::activation::{
+pub use crate::document::stages::activation::{
     ActiveProjectStage, ProjectActivationAuthority, ProjectStageActivation,
     ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
-pub use crate::project::stages::mutation::{ProjectStageMutation, ProjectStageMutationQueue};
+pub use crate::document::stages::mutation::{ProjectStageMutation, ProjectStageMutationQueue};
 impl ProjectApplicationService {
     /// Quiesce cache publication before a caller disposes this Project's
     /// derived cache directory. This boundary is intentionally outside the
@@ -275,7 +275,7 @@ impl ProjectApplicationService {
         }
     }
 
-    pub(super) fn validated_project(
+    pub(crate) fn validated_project(
         &self,
         project_id: ProjectId,
     ) -> Result<

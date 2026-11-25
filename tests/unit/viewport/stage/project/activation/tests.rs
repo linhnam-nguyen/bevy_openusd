@@ -1,5 +1,5 @@
 use super::*;
-use crate::viewport::api::RenderServerInterface;
+use crate::api::RenderServerInterface;
 use project_protocol::{ProjectActivationCommand, ProjectActivationReply, ProjectStageTarget};
 use usd_project::{ProjectId, ProjectRoot, SceneId};
 use viewport_protocol::SessionId;

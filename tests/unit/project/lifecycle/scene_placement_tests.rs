@@ -5,10 +5,10 @@ use project_protocol::{ProjectWriteError, ProjectWriteErrorCode, ProjectWriteTar
 use tempfile::tempdir;
 
 use super::ProjectApplicationService;
+use crate::cache::{
+    SceneCacheDescriptorV3, SceneCacheStore, hydration::default_project_cache_config_hash,
+};
 use crate::project::{
-    cache::{
-        SceneCacheDescriptorV3, SceneCacheStore, hydration::default_project_cache_config_hash,
-    },
     catalog::manifest_store::ManifestStore,
     storage::ProjectStorageLayout,
 };

@@ -6,16 +6,16 @@ mod tests {
     use usd_model::{HashDigest, SemanticSnapshot, SnapshotId, SnapshotSource};
     use viewport_protocol::*;
 
-    use crate::viewport::api::bridge::query::{
+    use crate::api::bridge::query::{
         dispatch_scene_query_commands, publish_scene_query_results,
     };
-    use crate::viewport::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
-    use crate::viewport::api::query::SceneQueryService;
-    use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-    use crate::viewport::scene::{
+    use crate::api::bridge::state::{SceneSearchRequest, SceneSearchRequests};
+    use crate::api::query::SceneQueryService;
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+    use crate::viewport::rendering::scene::{
         ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex,
     };
-    use crate::viewport::semantic::SemanticSyncState;
+    use crate::semantic::viewport::SemanticSyncState;
     use crate::viewport::stage::StageInfo;
 
     fn hierarchy_search_test_app(nodes: Vec<PrimNodeReadModel>) -> App {
@@ -90,7 +90,7 @@ mod tests {
             .init_resource::<SceneQueryService>()
             .init_resource::<SceneSearchRequests>()
             .insert_resource(SemanticSyncState::from_test_snapshot(
-                crate::viewport::bim::test_fixtures::snapshot(),
+                crate::bim::test_fixtures::snapshot(),
             ))
             .add_systems(Update, dispatch_scene_query_commands);
 

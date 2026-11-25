@@ -19,9 +19,9 @@ use usd_bevy::{MeshProjectionConsumers, RenderProjectionDirtySet, UsdPrimRef};
 #[cfg(feature = "solari")]
 use super::SolariCapability;
 #[cfg(feature = "solari")]
-use crate::viewport::rendering::presentation::DisplayToggles;
+use crate::viewport::presentation::DisplayToggles;
 #[cfg(feature = "solari")]
-use crate::viewport::scene::projection_work::{
+use crate::viewport::rendering::scene::projection_work::{
     DirectProjectionWork, ProjectionBatch, ProjectionWork,
 };
 

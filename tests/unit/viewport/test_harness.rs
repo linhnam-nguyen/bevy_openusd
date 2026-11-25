@@ -1,1 +1,1 @@
-pub(crate) use super::app::test_harness::ProductionActivationWorld;
+pub(crate) use crate::app::test_harness::ProductionActivationWorld;

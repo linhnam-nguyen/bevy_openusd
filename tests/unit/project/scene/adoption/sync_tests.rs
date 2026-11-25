@@ -5,10 +5,10 @@ use project_protocol::{PlacementSpec, ProjectWriteTarget};
 use tempfile::tempdir;
 
 use super::ProjectApplicationService;
+use crate::cache::{
+    SceneCacheDescriptorV3, SceneCacheStore, hydration::default_project_cache_config_hash,
+};
 use crate::project::{
-    cache::{
-        SceneCacheDescriptorV3, SceneCacheStore, hydration::default_project_cache_config_hash,
-    },
     scene::inspection::inspect_composition,
     service::ProjectStageMutationQueue,
     storage::ProjectStorageLayout,
@@ -51,7 +51,7 @@ fn syncing_linked_child_refreshes_an_active_project_root() {
             PlacementSpec::Default,
         )
         .unwrap();
-    let cache = crate::project::cache::SceneCacheStore::new(&project_root);
+    let cache = crate::cache::SceneCacheStore::new(&project_root);
     let root_generation_after_placement = cache
         .load_descriptor(root_scene_id)
         .unwrap()

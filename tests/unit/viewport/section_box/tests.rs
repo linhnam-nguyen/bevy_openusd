@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::viewport::scene::SelectedTargets;
+use crate::viewport::rendering::scene::SelectedTargets;
 
 fn bounds(min: Vec3, max: Vec3) -> SectionBoxBounds {
     SectionBoxBounds { min, max }

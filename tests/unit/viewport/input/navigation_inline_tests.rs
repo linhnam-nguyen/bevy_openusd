@@ -341,14 +341,14 @@ fn remote_motion_uses_authoritative_viewport_cursor_without_publishing_state() {
     let mut app = App::new();
     app.add_plugins(usd_bevy::LiveStagePlugin)
         .init_resource::<ViewportNavigationInput>()
-        .init_resource::<crate::viewport::api::RenderServerInterface>()
+        .init_resource::<crate::api::RenderServerInterface>()
         .add_systems(
             Update,
             apply_remote_navigation_input.before(usd_bevy::LiveStageSet::Project),
         );
     let send_motion = |app: &App, sequence| {
         app.world()
-            .resource::<crate::viewport::api::RenderServerInterface>()
+            .resource::<crate::api::RenderServerInterface>()
             .submit_pointer_motion(PointerMotion {
                 sequence,
                 x_css_pixels: 17.0,

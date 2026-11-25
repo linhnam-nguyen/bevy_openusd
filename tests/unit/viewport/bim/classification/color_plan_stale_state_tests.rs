@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
-use crate::viewport::bim::test_fixtures::snapshot;
-use crate::viewport::bim::{ClassificationColorPlan, refresh_classification_color_plan};
-use crate::viewport::scene::ActiveHierarchyProvider;
-use crate::viewport::semantic::SemanticSyncState;
+use crate::bim::test_fixtures::snapshot;
+use crate::bim::{ClassificationColorPlan, refresh_classification_color_plan};
+use crate::viewport::rendering::scene::ActiveHierarchyProvider;
+use crate::semantic::viewport::SemanticSyncState;
 
 #[test]
 fn color_plan_clears_stale_entries_when_semantic_input_is_unavailable() {

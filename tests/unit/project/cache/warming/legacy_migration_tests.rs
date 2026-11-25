@@ -8,7 +8,7 @@ use usd_project::{ProjectId, ProjectManifestV1, ProjectRoot, SceneId};
 
 use super::preparation::wait_for;
 use super::*;
-use crate::project::cache::blobs::{BlobStore, FilesystemBlobStore};
+use crate::cache::blobs::{BlobStore, FilesystemBlobStore};
 use crate::project::catalog::manifest_store::ManifestStore;
 
 #[cfg(not(windows))]
@@ -96,7 +96,7 @@ fn migrated_project_root_cache_contains_legacy_composed_content() -> Result<()> 
     let hierarchy_bytes = store
         .get(&BlobId(runtime.hierarchy.blob_id.clone()))?
         .context("warmed hierarchy blob")?;
-    let hierarchy: crate::project::runtime::delivery::RuntimeHierarchyBlob =
+    let hierarchy: crate::document::runtime::delivery::RuntimeHierarchyBlob =
         serde_json::from_slice(&hierarchy_bytes)?;
     assert!(
         hierarchy

@@ -5,7 +5,7 @@ use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
 
 use super::SolariCapability;
-use crate::viewport::rendering::presentation::DisplayToggles;
+use crate::viewport::presentation::DisplayToggles;
 use viewport_protocol::RenderMode;
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]

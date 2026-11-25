@@ -1,1 +1,1 @@
-pub(in crate::viewport) mod skeleton;
+pub(crate) mod skeleton;

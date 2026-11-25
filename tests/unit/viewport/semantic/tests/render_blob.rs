@@ -48,11 +48,11 @@ def Xform "World"
     let live = LiveStage::new(stage);
 
     let mut app = viewport_support::semantic_test_app();
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());
@@ -80,9 +80,9 @@ def Xform "World"
     {
         let mut cache = app
             .world_mut()
-            .resource_mut::<crate::project::cache::historical_geometry::HistoricalGeometryCache>(
+            .resource_mut::<crate::cache::historical_geometry::HistoricalGeometryCache>(
         );
-        *cache = crate::project::cache::historical_geometry::HistoricalGeometryCache::default();
+        *cache = crate::cache::historical_geometry::HistoricalGeometryCache::default();
     }
 
     // Resync /World/A (affected prims: /World/A and /World/A/MeshA)
@@ -100,7 +100,7 @@ def Xform "World"
     // Verify HistoricalGeometryCache: only /World/A affected entities and mesh were scanned!
     let cache = *app
         .world()
-        .resource::<crate::project::cache::historical_geometry::HistoricalGeometryCache>();
+        .resource::<crate::cache::historical_geometry::HistoricalGeometryCache>();
     assert_eq!(cache.snapshots_seen, 1);
     // Scanned ONLY the affected /World/A entities (2: /World/A and /World/A/MeshA), NOT the whole stage (5 prims)!
     assert_eq!(cache.semantic_entities_scanned, 2);
@@ -172,11 +172,11 @@ def Xform "World"
         .init_asset::<bevy::image::Image>()
         .init_asset::<StandardMaterial>()
         .add_plugins(usd_bevy::UsdPlugin);
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
 
     // Spawn a Mesh directly with UsdPrimRef
@@ -274,11 +274,11 @@ def Xform "World"
         .init_asset::<bevy::image::Image>()
         .init_asset::<StandardMaterial>()
         .add_plugins(usd_bevy::UsdPlugin);
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
 
     // Spawn a Mesh directly with UsdPrimRef

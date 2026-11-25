@@ -1,22 +1,22 @@
 use bevy::prelude::*;
 
-use crate::project::stages::recovery::RecoverySettings;
-use crate::project::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
-use crate::viewport::animation::UsdStageTime;
-use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::bridge::plugin::checkpoint_recovery;
-use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
-use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
-use crate::viewport::physics::PhysicsActive;
+use crate::document::stages::recovery::RecoverySettings;
+use crate::document::stages::recovery::worker::{RecoveryRuntime, drain_recovery_results};
+use crate::animation::UsdStageTime;
+use crate::api::bridge::commands::apply_viewport_commands;
+use crate::api::bridge::plugin::checkpoint_recovery;
+use crate::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
+use crate::viewport::navigation::camera::{CameraMount, CameraOrientationState, FlyTo};
+use crate::physics::PhysicsActive;
 use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
-use crate::viewport::scene::visualization::DisplayToggles;
-use crate::viewport::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-use crate::viewport::semantic::synchronize_live_stage;
-use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState, SemanticWorkingStore};
+use crate::viewport::rendering::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
+use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
+use crate::semantic::viewport::synchronize_live_stage;
+use crate::semantic::viewport::{SemanticDiffState, SemanticSyncState, SemanticWorkingStore};
 use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
 use super::super::ViewerSettingsState;
@@ -83,7 +83,7 @@ pub(super) fn runtime_semantic_test_app(project_root: std::path::PathBuf) -> App
         .insert_resource(SemanticSyncState::with_config(
             usd_semantic::SemanticConfig::for_nvidia_revit_connector(),
         ))
-        .init_resource::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
+        .init_resource::<crate::bim::BimClassificationFieldCatalogueState>()
         .init_resource::<SemanticDiffState>()
         .init_resource::<RecoveryRuntime>()
         .insert_resource(RecoverySettings { project_root })

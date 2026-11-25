@@ -215,7 +215,7 @@ fn failed_link_sync_preserves_last_good_snapshot_and_binding() {
     )
     .unwrap();
     let (stage_mutations, failure_trigger) =
-        crate::project::stages::mutation::test_support::queue_with_failure_trigger();
+        crate::document::stages::mutation::test_support::queue_with_failure_trigger();
     let mut service = ProjectApplicationService::open_with_project_state(
         directory.path().join("workspace.json"),
         Default::default(),

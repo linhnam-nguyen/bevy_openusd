@@ -3,12 +3,12 @@ use usd_bevy::UsdPrimRef;
 use viewport_protocol::*;
 
 use super::support::command_test_app;
-use crate::viewport::api::ViewportReadModelState;
-use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
-use crate::viewport::scene::SceneAnchorIndex;
-use crate::viewport::scene::index::refresh_scene_anchor_index;
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
+use crate::api::ViewportReadModelState;
+use crate::api::bridge::commands::apply_viewport_commands;
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::viewport::rendering::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::index::refresh_scene_anchor_index;
+use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
 use crate::viewport::stage::Spawned;
 
 const FIRST: &str = "/World/First";

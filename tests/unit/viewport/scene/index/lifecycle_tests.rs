@@ -10,7 +10,7 @@ use usd_project::ProjectRoot;
 use super::*;
 use crate::project::catalog::manifest_store::ManifestStore;
 use crate::project::service::ProjectApplicationService;
-use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::hierarchy::CurrentHierarchyProjection;
 use crate::viewport::stage::{
     ReloadRequest, Spawned, StageInfo, StagePresentationContext,
     activate_stage_with_cache_context_for_generation, handle_usd_hot_reload, spawn_when_ready,
@@ -189,7 +189,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         project_target.path.clone(),
         None,
         1,
-        StagePresentationContext::from_project(project_target.presentation),
+        crate::document::stage_project::stage_presentation_context_from_project(project_target.presentation),
     )
     .expect("Project root activation opens the canonical Stage");
     update_until_projected(&mut app, "Pro3");
@@ -200,7 +200,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         direct_target.path.clone(),
         None,
         2,
-        StagePresentationContext::from_project(direct_target.presentation.clone()),
+        crate::document::stage_project::stage_presentation_context_from_project(direct_target.presentation.clone()),
     )
     .expect("direct Scene activation opens the canonical Stage");
     update_until_projected(&mut app, "Sc3");
@@ -223,7 +223,7 @@ fn project_and_direct_scene_activation_keep_root_authority_through_refresh() {
         project_context.path,
         None,
         3,
-        StagePresentationContext::from_project(project_context.presentation),
+        crate::document::stage_project::stage_presentation_context_from_project(project_context.presentation),
     )
     .expect("Project root activation remains available after Refresh");
     update_until_projected(&mut app, "Pro3");

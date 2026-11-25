@@ -85,7 +85,7 @@ fn semantic_database_subtree_delta_updates_only_affected_rows_and_leaves_unaffec
         };
         let updated_snapshot = extractor.extract(&stage, source_2.clone()).unwrap();
 
-        let update = crate::viewport::semantic::SemanticIncrementalUpdate {
+        let update = crate::semantic::viewport::SemanticIncrementalUpdate {
             snapshot_id: updated_snapshot.snapshot_id.clone(),
             source: source_2,
             config_hash: updated_snapshot.config_hash,

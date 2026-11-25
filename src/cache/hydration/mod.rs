@@ -1,0 +1,376 @@
+//! Cache-first Project projection hydration.
+//!
+//! A cache hit is only an acceleration of the normal stage lifecycle. The
+//! caller opens the canonical USD stage first; this module then validates the
+//! exact source/profile/config descriptor and prepares renderer-neutral blobs
+//! as Bevy assets for the existing projection routes. Any miss or corruption
+//! returns control to source projection without replacing LiveStage authority.
+
+use std::collections::{HashMap, HashSet};
+
+use anyhow::{Context, Result, bail, ensure};
+use bevy::image::Image;
+use bevy::math::{Affine2, Mat2, Vec2};
+use bevy::mesh::Mesh;
+use bevy::pbr::StandardMaterial;
+use bevy::prelude::{AlphaMode, Assets, Color, LinearRgba, World};
+use usd_bevy::ProjectionSeed;
+use usd_model::BlobId;
+use viewport_protocol::{RuntimeBlobReference, RuntimeManifest, RuntimePayloadKind};
+
+use super::blobs::{
+    BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, decode_mesh_payload, mesh_payload_version,
+    read_mesh_payload,
+};
+use super::{ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore};
+use crate::document::runtime::delivery::{RUNTIME_HIERARCHY_VERSION, RuntimeHierarchyBlob};
+use crate::document::runtime::payload::{
+    MAX_TEXTURE_BLOB_BYTES, RuntimeAlphaMode, RuntimeMaterialBlob, RuntimeTexturePayload,
+};
+mod context;
+
+pub(crate) use context::{ActiveProjectCacheContext, default_project_cache_config_hash};
+
+/// Try to hydrate the current Project from its exact ready descriptor.
+/// `Ok(false)` is a normal cache miss; errors describe corruption or an
+/// unsupported payload and are deliberately handled as source fallback by the
+/// stage lifecycle.
+pub(crate) fn hydrate_project_cache(
+    world: &mut World,
+    context: &ActiveProjectCacheContext,
+) -> Result<bool> {
+    let store = FilesystemBlobStore::new(context.project_root.join(OBJECTS_DIRECTORY))?;
+    let descriptor_store = ProjectCacheStore::new(&context.project_root);
+    let Some(descriptor) = descriptor_store.load(&context.identity)? else {
+        return Ok(false);
+    };
+    if descriptor.state != ProjectCacheState::Ready {
+        return Ok(false);
+    }
+    let manifest = descriptor
+        .runtime
+        .as_ref()
+        .context("ready Project cache descriptor has no runtime manifest")?;
+    validate_manifest_identity(manifest, &context.identity)?;
+
+    let hierarchy_reference = &manifest.hierarchy;
+    let hierarchy_bytes = read_blob(
+        &store,
+        hierarchy_reference,
+        RuntimePayloadKind::Hierarchy,
+        RUNTIME_HIERARCHY_VERSION,
+    )?;
+    let hierarchy: RuntimeHierarchyBlob =
+        serde_json::from_slice(&hierarchy_bytes).context("decode cached runtime hierarchy")?;
+    ensure!(
+        hierarchy.version == RUNTIME_HIERARCHY_VERSION,
+        "unsupported cached runtime hierarchy version {}",
+        hierarchy.version
+    );
+    ensure!(
+        hierarchy.revision == manifest.revision,
+        "cached runtime hierarchy revision does not match its manifest"
+    );
+
+    let mesh_references = references_by_id(&manifest.meshes)?;
+    let material_references = references_by_id(&manifest.materials)?;
+    let texture_references = references_by_id(&manifest.textures)?;
+
+    let mut meshes = Vec::new();
+    let mut required_meshes = HashSet::new();
+    for entity in &hierarchy.entities {
+        let Some(geometry) = &entity.geometry else {
+            continue;
+        };
+        if !required_meshes.insert(geometry.blob_id.clone()) {
+            continue;
+        }
+        let reference = mesh_references.get(&geometry.blob_id).with_context(|| {
+            format!(
+                "cached hierarchy references unknown mesh {}",
+                geometry.blob_id
+            )
+        })?;
+        let bytes = read_mesh_payload(&store, &BlobId(geometry.blob_id.clone()))?
+            .with_context(|| format!("cached mesh {} is missing", geometry.blob_id))?;
+        ensure!(
+            reference.payload_kind == RuntimePayloadKind::Mesh
+                && reference.payload_version == mesh_payload_version(&bytes)?
+                && reference.byte_size == bytes.len() as u64,
+            "cached runtime mesh {} does not match its descriptor",
+            geometry.blob_id
+        );
+        let mesh = decode_mesh_payload(&bytes)?;
+        meshes.push((geometry.blob_id.clone(), mesh, reference.byte_size));
+    }
+
+    let mut required_materials = HashSet::new();
+    for entity in &hierarchy.entities {
+        if let Some(material_id) = &entity.material_blob_id {
+            required_materials.insert(material_id.clone());
+        }
+    }
+    let mut texture_payloads = HashMap::new();
+    let mut material_payloads = HashMap::new();
+    for material_id in &required_materials {
+        let reference = material_references.get(material_id).with_context(|| {
+            format!("cached hierarchy references unknown material {material_id}")
+        })?;
+        let bytes = read_blob(
+            &store,
+            reference,
+            RuntimePayloadKind::Material,
+            crate::document::runtime::payload::RUNTIME_MATERIAL_VERSION,
+        )?;
+        let material: RuntimeMaterialBlob = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decode cached runtime material {material_id}"))?;
+        material.validate()?;
+        for texture_id in material_texture_ids(&material).into_iter().flatten() {
+            if texture_payloads.contains_key(texture_id) {
+                continue;
+            }
+            let reference = texture_references.get(texture_id).with_context(|| {
+                format!("cached material references unknown texture {texture_id}")
+            })?;
+            let bytes = read_blob(
+                &store,
+                reference,
+                RuntimePayloadKind::Texture,
+                reference.payload_version,
+            )?;
+            let texture = RuntimeTexturePayload::decode(&bytes)
+                .with_context(|| format!("decode cached runtime texture {texture_id}"))?;
+            ensure!(
+                texture.version == reference.payload_version,
+                "texture version mismatch"
+            );
+            texture_payloads.insert(texture_id.to_owned(), texture);
+        }
+        material_payloads.insert(material_id.clone(), material);
+    }
+
+    let mut texture_assets = HashMap::with_capacity(texture_payloads.len());
+    let mut texture_black_axes = HashMap::with_capacity(texture_payloads.len());
+    for (texture_id, texture) in texture_payloads {
+        texture_black_axes.insert(texture_id.clone(), texture.authored_black_axes());
+        texture_assets.insert(
+            texture_id,
+            texture.into_image(world.get_resource::<bevy::render::renderer::RenderDevice>())?,
+        );
+    }
+
+    let Some(_) = world.get_resource::<Assets<Mesh>>() else {
+        bail!("render mesh assets are unavailable for Project cache hydration");
+    };
+    let Some(_) = world.get_resource::<Assets<bevy::image::Image>>() else {
+        bail!("render image assets are unavailable for Project cache hydration");
+    };
+    let Some(_) = world.get_resource::<Assets<StandardMaterial>>() else {
+        bail!("render material assets are unavailable for Project cache hydration");
+    };
+
+    let texture_handles = {
+        let mut assets = world.resource_mut::<Assets<bevy::image::Image>>();
+        texture_assets
+            .into_iter()
+            .map(|(id, image)| (id, assets.add(image)))
+            .collect::<HashMap<_, _>>()
+    };
+    // Register against the newly allocated handles, before material seeds can
+    // consume them or a cache writer can serialize their effective samplers.
+    use usd_bevy::route::material::UsdTextureCache;
+    world.init_resource::<UsdTextureCache>();
+    world.resource_scope(|world, mut cache: bevy::prelude::Mut<UsdTextureCache>| {
+        cache.prune_authored_black_borders(world.resource::<Assets<Image>>());
+        for (id, handle) in &texture_handles {
+            cache.remember_authored_black_border(handle, texture_black_axes[id]);
+        }
+    });
+    let material_handles = {
+        let mut assets = world.resource_mut::<Assets<StandardMaterial>>();
+        material_payloads
+            .into_iter()
+            .map(|(id, material)| {
+                let hydrated = standard_material(&material, &texture_handles)?;
+                Ok((id, assets.add(hydrated)))
+            })
+            .collect::<Result<HashMap<_, _>>>()?
+    };
+    let mesh_handles = {
+        let mut assets = world.resource_mut::<Assets<Mesh>>();
+        meshes
+            .into_iter()
+            .map(|(id, mesh, _byte_size)| (id, assets.add(mesh)))
+            .collect::<HashMap<_, _>>()
+    };
+
+    let Some(mut seed) = world.get_resource_mut::<ProjectionSeed>() else {
+        bail!("renderer projection seed resource is unavailable");
+    };
+    for entity in &hierarchy.entities {
+        if let Some(geometry) = &entity.geometry {
+            let handle = mesh_handles
+                .get(&geometry.blob_id)
+                .with_context(|| format!("hydrated mesh {} was not allocated", geometry.blob_id))?;
+            seed.insert_mesh(
+                entity.prim_path.clone(),
+                handle.clone(),
+                Some((
+                    geometry.local_bounds.min.map(|value| value as f32),
+                    geometry.local_bounds.max.map(|value| value as f32),
+                )),
+            );
+        }
+        if let Some(material_id) = &entity.material_blob_id {
+            let handle = material_handles
+                .get(material_id)
+                .with_context(|| format!("hydrated material {material_id} was not allocated"))?;
+            seed.insert_authoritative_material(entity.prim_path.clone(), handle.clone());
+        }
+    }
+    Ok(true)
+}
+
+fn validate_manifest_identity(
+    manifest: &RuntimeManifest,
+    identity: &ProjectCacheIdentity,
+) -> Result<()> {
+    manifest
+        .validate()
+        .map_err(|error| anyhow::anyhow!(error))?;
+    ensure!(
+        manifest.profile == identity.profile,
+        "cached runtime profile mismatch"
+    );
+    Ok(())
+}
+
+fn references_by_id(
+    references: &[RuntimeBlobReference],
+) -> Result<HashMap<String, RuntimeBlobReference>> {
+    references
+        .iter()
+        .map(|reference| {
+            ensure!(
+                reference.blob_id == reference.blob_id.trim(),
+                "cached runtime blob id contains surrounding whitespace"
+            );
+            Ok((reference.blob_id.clone(), reference.clone()))
+        })
+        .collect()
+}
+
+fn read_blob(
+    store: &FilesystemBlobStore,
+    reference: &RuntimeBlobReference,
+    expected_kind: RuntimePayloadKind,
+    expected_version: u16,
+) -> Result<Vec<u8>> {
+    ensure!(
+        reference.payload_kind == expected_kind,
+        "cached runtime blob {} has kind {:?}, expected {:?}",
+        reference.blob_id,
+        reference.payload_kind,
+        expected_kind
+    );
+    ensure!(
+        reference.payload_version == expected_version,
+        "cached runtime blob {} has version {}, expected {}",
+        reference.blob_id,
+        reference.payload_version,
+        expected_version
+    );
+    let byte_size = usize::try_from(reference.byte_size).context("runtime blob size overflow")?;
+    ensure!(
+        byte_size <= MAX_TEXTURE_BLOB_BYTES,
+        "cached runtime blob exceeds the decoder byte limit"
+    );
+    let id = BlobId(reference.blob_id.clone());
+    let bytes = store
+        .get_bounded(&id, byte_size)?
+        .with_context(|| format!("cached runtime blob {} is missing", reference.blob_id))?;
+    ensure!(
+        bytes.len() as u64 == reference.byte_size,
+        "cached runtime blob {} has unexpected byte size",
+        reference.blob_id
+    );
+    Ok(bytes)
+}
+
+fn material_texture_ids(material: &RuntimeMaterialBlob) -> [Option<&str>; 5] {
+    [
+        material.textures.base_color.as_deref(),
+        material.textures.normal.as_deref(),
+        material.textures.metallic_roughness.as_deref(),
+        material.textures.emissive.as_deref(),
+        material.textures.occlusion.as_deref(),
+    ]
+}
+
+pub(crate) fn standard_material(
+    material: &RuntimeMaterialBlob,
+    texture_handles: &HashMap<String, bevy::asset::Handle<bevy::image::Image>>,
+) -> Result<StandardMaterial> {
+    let texture = |id: &Option<String>| {
+        id.as_ref()
+            .map(|id| {
+                texture_handles
+                    .get(id)
+                    .cloned()
+                    .with_context(|| format!("hydrated texture {id} was not allocated"))
+            })
+            .transpose()
+    };
+    Ok(StandardMaterial {
+        base_color: Color::srgba(
+            material.base_color[0],
+            material.base_color[1],
+            material.base_color[2],
+            material.base_color[3],
+        ),
+        base_color_texture: texture(&material.textures.base_color)?,
+        normal_map_texture: texture(&material.textures.normal)?,
+        metallic_roughness_texture: texture(&material.textures.metallic_roughness)?,
+        emissive: LinearRgba::new(
+            material.emissive[0],
+            material.emissive[1],
+            material.emissive[2],
+            material.emissive[3],
+        ),
+        emissive_texture: texture(&material.textures.emissive)?,
+        metallic: material.metallic,
+        perceptual_roughness: material.perceptual_roughness,
+        ior: material.ior,
+        alpha_mode: alpha_mode(material.alpha_mode),
+        double_sided: material.double_sided,
+        unlit: material.unlit,
+        uv_transform: Affine2 {
+            matrix2: Mat2::from_cols(
+                Vec2::new(material.uv_transform[0][0], material.uv_transform[0][1]),
+                Vec2::new(material.uv_transform[1][0], material.uv_transform[1][1]),
+            ),
+            translation: Vec2::new(material.uv_transform[2][0], material.uv_transform[2][1]),
+        },
+        occlusion_texture: texture(&material.textures.occlusion)?,
+        ..Default::default()
+    })
+}
+
+fn alpha_mode(mode: RuntimeAlphaMode) -> AlphaMode {
+    match mode {
+        RuntimeAlphaMode::Opaque => AlphaMode::Opaque,
+        RuntimeAlphaMode::Mask { cutoff } => AlphaMode::Mask(cutoff),
+        RuntimeAlphaMode::Blend => AlphaMode::Blend,
+        RuntimeAlphaMode::Premultiplied => AlphaMode::Premultiplied,
+        RuntimeAlphaMode::AlphaToCoverage => AlphaMode::AlphaToCoverage,
+        RuntimeAlphaMode::Add => AlphaMode::Add,
+        RuntimeAlphaMode::Multiply => AlphaMode::Multiply,
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/project/cache/hydration/benchmark_tests.rs"]
+mod benchmark_tests;
+#[cfg(test)]
+#[path = "../../../tests/unit/project/cache/hydration/tests.rs"]
+mod tests;

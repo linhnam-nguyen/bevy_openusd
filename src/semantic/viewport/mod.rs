@@ -1,0 +1,36 @@
+//! Working semantic query service backed by an in-memory Turso database.
+//!
+//! Semantic rows remain renderer-neutral. The viewport bridge adapts their
+//! prim paths through `SceneAnchorIndex` when publishing search results.
+
+#![allow(unused_imports)]
+
+mod diff;
+mod mailbox;
+mod query;
+mod state;
+mod store;
+mod sync;
+mod types;
+mod worker;
+
+pub(crate) use diff::SemanticDiffState;
+pub(crate) use query::{
+    DistinctFieldKeys, DistinctFieldKeysResult, GroupField, SemanticFilter, SemanticKey,
+    SemanticQuery, SemanticQueryResult,
+};
+pub(crate) use state::SemanticSyncState;
+pub(crate) use sync::RuntimeDeliveryRuntime;
+pub(crate) use sync::{
+    SemanticSyncRuntimeResource, convert_semantic_sync_request, process_semantic_sync_requests,
+};
+pub(crate) use sync::{
+    SubtreeUpdateError, drain_runtime_delivery_results, flush_pending_runtime_delivery,
+    synchronize_live_stage,
+};
+pub(crate) use types::{SemanticIncrementalUpdate, SemanticResponse};
+pub(crate) use worker::{SemanticSubmitError, SemanticWorkingStore};
+
+#[cfg(test)]
+#[path = "../../../tests/unit/viewport/semantic/tests/mod.rs"]
+mod tests;

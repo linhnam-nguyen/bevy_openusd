@@ -3,12 +3,12 @@ use tempfile::tempdir;
 use usd_bevy::LiveStage;
 
 use super::ProductionActivationWorld;
-use crate::project::cache::SceneCacheStore;
-use crate::project::cache::contract::{
+use crate::cache::SceneCacheStore;
+use crate::cache::contract::{
     SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
     SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };
-use crate::project::cache::hydration::default_project_cache_config_hash;
+use crate::cache::hydration::default_project_cache_config_hash;
 use crate::project::service::{ProjectStageActivationTarget, ProjectStagePresentationContext};
 use crate::viewport::stage::SceneCachePresentation;
 
@@ -83,7 +83,7 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
     assert!(
         production
             .world()
-            .resource::<crate::viewport::api::RenderServerInterface>()
+            .resource::<crate::api::RenderServerInterface>()
             .shared()
             .take_project_activation_result(&viewport_protocol::SessionId::new(
                 "cache-first-session"
@@ -94,7 +94,7 @@ fn scene_cache_presentation_is_published_before_blocking_stage_open() {
     production.update();
     let reply = production
         .world()
-        .resource::<crate::viewport::api::RenderServerInterface>()
+        .resource::<crate::api::RenderServerInterface>()
         .shared()
         .take_project_activation_result(&viewport_protocol::SessionId::new("cache-first-session"))
         .expect("deferred Stage-open failure publishes a reply");
@@ -173,7 +173,7 @@ fn stale_cache_first_continuation_rolls_back_without_replacing_newer_authority()
     production.update();
     let reply = production
         .world()
-        .resource::<crate::viewport::api::RenderServerInterface>()
+        .resource::<crate::api::RenderServerInterface>()
         .shared()
         .take_project_activation_result(&viewport_protocol::SessionId::new("cache-first-session"))
         .expect("stale continuation publishes a reply");

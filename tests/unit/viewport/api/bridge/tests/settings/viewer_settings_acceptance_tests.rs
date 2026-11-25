@@ -3,10 +3,10 @@ use viewport_protocol::*;
 
 use super::super::ViewerSettingsState;
 use super::support::command_test_app;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
 use crate::viewport::rendering::sampling::{DlssCameraActivation, DlssCapability};
-use crate::viewport::scene::SolariCapability;
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::scene::SolariCapability;
+use crate::viewport::rendering::scene::visualization::DisplayToggles;
 
 #[test]
 fn supported_viewer_settings_round_trip_through_bridge_and_snapshot() {

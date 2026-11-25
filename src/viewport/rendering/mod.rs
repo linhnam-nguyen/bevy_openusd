@@ -1,8 +1,10 @@
 //! Renderer-facing presentation, offscreen rendering, and sampling owners.
 
-pub(in crate::viewport) mod debug;
+pub(crate) mod debug;
 pub(crate) mod gpu_limits;
-pub(in crate::viewport) mod offscreen;
-pub(crate) mod presentation;
+pub(crate) mod offscreen;
 pub(crate) mod sampling;
-pub(in crate::viewport) mod solari;
+pub(crate) mod solari;
+
+pub(crate) mod residency;
+pub(crate) mod scene;

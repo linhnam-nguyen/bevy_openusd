@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache::contract::{
+use crate::cache::contract::{
     CachedTransform, SceneCacheAddress, SceneCacheBlobRef, SceneCacheEntry, SceneCacheEntryKind,
     SceneCacheOccurrence, SceneCacheState,
 };

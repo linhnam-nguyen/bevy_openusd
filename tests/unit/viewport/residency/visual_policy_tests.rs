@@ -72,7 +72,7 @@ fn nested_load_admits_ancestor_before_child() {
 
 #[test]
 fn editor_intent_pins_unselected_payload_until_stable_and_is_stage_scoped() {
-    use crate::viewport::residency::visual_composition::EditPayloadPins;
+    use crate::viewport::rendering::residency::visual_composition::EditPayloadPins;
     use viewport_protocol::ViewportCommand;
     let mut pins = EditPayloadPins::default();
     let request = EditPayloadPins::command_intent(&ViewportCommand::RemovePrim {
@@ -108,7 +108,7 @@ fn editor_intent_pins_unselected_payload_until_stable_and_is_stage_scoped() {
 
 #[test]
 fn failed_visual_recovery_retries_bounded_batches_until_native_readback() {
-    use crate::viewport::residency::visual_composition::{
+    use crate::viewport::rendering::residency::visual_composition::{
         VisualCompositionState, VisualStreamingHealth, restore_visual_owners,
     };
     use std::cell::{Cell, RefCell};

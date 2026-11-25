@@ -4,8 +4,8 @@ use bevy::prelude::*;
 use usd_bevy::{LiveStagePlugin, UsdPlugin};
 
 use super::*;
-use crate::viewport::api::{ViewportBridgePlugin, ViewportEventOutbox, ViewportReadModelState};
-use crate::viewport::app::launch_options::parse_launch_options;
+use crate::api::{ViewportBridgePlugin, ViewportEventOutbox, ViewportReadModelState};
+use crate::app::launch_options::parse_launch_options;
 use crate::viewport::stage::{RequestedAsset, StageInfo};
 
 fn minimal_host_app() -> App {
@@ -19,7 +19,7 @@ fn minimal_host_app() -> App {
     app.init_resource::<Assets<Mesh>>();
     app.init_resource::<Assets<Image>>();
     app.init_resource::<Assets<StandardMaterial>>();
-    app.init_resource::<Assets<crate::viewport::scene::SectionClipMaterial>>();
+    app.init_resource::<Assets<crate::viewport::rendering::scene::SectionClipMaterial>>();
     app
 }
 
@@ -49,15 +49,15 @@ fn generic_viewport_wires_without_project_git_turso_or_cache_providers() {
     // Project/Git/Turso/Cache runtime providers must NOT be registered in generic mode.
     assert!(
         !app.world()
-            .contains_resource::<crate::viewport::semantic::SemanticSyncRuntimeResource>()
+            .contains_resource::<crate::semantic::viewport::SemanticSyncRuntimeResource>()
     );
     assert!(
         !app.world()
-            .contains_resource::<crate::project::stages::recovery::RecoverySettings>()
+            .contains_resource::<crate::document::stages::recovery::RecoverySettings>()
     );
     assert!(
         !app.world()
-            .contains_resource::<crate::project::cache::historical_geometry::HistoricalGeometryCache>()
+            .contains_resource::<crate::cache::historical_geometry::HistoricalGeometryCache>()
     );
 
     app.update();
@@ -91,7 +91,7 @@ fn shared_application_composition_preserves_launch_flags_and_injects_product_ser
     assert!(app.is_plugin_added::<ViewportBridgePlugin>());
     assert!(
         app.world()
-            .contains_resource::<crate::project::stages::recovery::RecoverySettings>()
+            .contains_resource::<crate::document::stages::recovery::RecoverySettings>()
     );
     assert_eq!(
         app.world()

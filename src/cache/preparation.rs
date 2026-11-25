@@ -1,0 +1,134 @@
+//! Neutral legacy Project runtime-cache build implementation.
+
+use std::{collections::HashSet, path::Path};
+
+use anyhow::{Context, Result, ensure};
+use bevy::{asset::Assets, image::Image, mesh::Mesh, pbr::StandardMaterial, prelude::App};
+use openusd::usd::Stage;
+use usd_model::SnapshotSource;
+use viewport_protocol::{RuntimeManifest, RuntimeProfile};
+
+use super::ProjectCacheIdentity;
+use super::blobs::{BlobStore, FilesystemBlobStore, OBJECTS_DIRECTORY, PreparedMeshBlob};
+use super::historical_geometry::prepare_render_blobs;
+use crate::document::runtime::delivery::build_runtime_delivery_with_payloads;
+use crate::document::runtime::payload::PreparedRuntimeBlob;
+
+pub(super) fn build_runtime_cache(
+    project_root: &Path,
+    path: &Path,
+    identity: &ProjectCacheIdentity,
+) -> Result<RuntimeManifest> {
+    let stage_path = path
+        .to_str()
+        .context("canonical Project stage path must be valid UTF-8")?;
+    let stage = Stage::builder()
+        .schema_registry(openusd_schemas::schema_registry())
+        .open(stage_path)
+        .context("open canonical Project stage for cache warm")?;
+    let config = usd_semantic::SemanticConfig::default();
+    let mut snapshot = usd_semantic::SemanticExtractor::new(config).extract(
+        &stage,
+        SnapshotSource::GitCommit {
+            oid: identity.target_content_hash.to_string(),
+        },
+    )?;
+    let live = usd_bevy::LiveStage::new(stage);
+    let (prepared_meshes, prepared_runtime_payloads) = {
+        let mut app = App::new();
+        app.add_plugins(usd_bevy::UsdPlugin);
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<Image>>();
+        app.init_resource::<Assets<StandardMaterial>>();
+        app.init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>();
+        let world = app.world_mut();
+        let mut prim_entities = usd_bevy::PrimEntities::default();
+        usd_bevy::project_stage(world, &live, &mut prim_entities);
+        let prepared_meshes = prepare_render_blobs(world, &mut snapshot);
+        let prepared_runtime_payloads =
+            crate::document::runtime::payload::prepare_runtime_payloads_for_stage(
+                world,
+                &live.stage,
+                &snapshot,
+            );
+        (prepared_meshes, prepared_runtime_payloads)
+    };
+    ensure!(
+        prepared_runtime_payloads.complete,
+        "canonical Project stage has incomplete runtime material or texture coverage"
+    );
+
+    let store = FilesystemBlobStore::new(project_root.join(OBJECTS_DIRECTORY))?;
+    let mut persisted = HashSet::new();
+    for prepared in &prepared_meshes {
+        persist_mesh_blob(&store, prepared, &mut persisted)?;
+    }
+    for prepared in prepared_runtime_payloads
+        .materials
+        .iter()
+        .chain(prepared_runtime_payloads.textures.iter())
+    {
+        persist_runtime_blob(&store, prepared, &mut persisted)?;
+    }
+    let bundle = build_runtime_delivery_with_payloads(
+        &store,
+        &snapshot,
+        RuntimeProfile::NativeMedium,
+        &prepared_runtime_payloads,
+    )?;
+    for (blob_id, bytes) in &bundle.blobs {
+        if !persisted.insert(blob_id.clone()) {
+            continue;
+        }
+        let stored = store.put(bytes)?;
+        ensure!(
+            stored.0 == *blob_id,
+            "runtime cache digest mismatch for {blob_id}"
+        );
+    }
+    prepare_document_assembly(project_root, path);
+    Ok(bundle.manifest)
+}
+
+pub(super) fn prepare_document_assembly(project_root: &Path, source: &Path) {
+    let cache_root = crate::project::storage::ProjectStorageLayout::new(project_root).cache_dir();
+    if let Err(error) = super::assembly::prepare_and_publish(source, &cache_root) {
+        log::warn!("derived assembly preparation failed for {}: {error:#}", source.display());
+    }
+}
+
+fn persist_mesh_blob(
+    store: &FilesystemBlobStore,
+    prepared: &PreparedMeshBlob,
+    persisted: &mut HashSet<String>,
+) -> Result<()> {
+    if !persisted.insert(prepared.blob_id.0.clone()) {
+        return Ok(());
+    }
+    let stored = store.put(&prepared.bytes)?;
+    ensure!(
+        stored == prepared.blob_id,
+        "prepared mesh digest {} was stored as {}",
+        prepared.blob_id.0,
+        stored.0
+    );
+    Ok(())
+}
+
+fn persist_runtime_blob(
+    store: &FilesystemBlobStore,
+    prepared: &PreparedRuntimeBlob,
+    persisted: &mut HashSet<String>,
+) -> Result<()> {
+    if !persisted.insert(prepared.blob_id.0.clone()) {
+        return Ok(());
+    }
+    let stored = store.put(&prepared.bytes)?;
+    ensure!(
+        stored == prepared.blob_id,
+        "prepared runtime digest {} was stored as {}",
+        prepared.blob_id.0,
+        stored.0
+    );
+    Ok(())
+}

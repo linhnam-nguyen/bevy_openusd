@@ -46,7 +46,7 @@ fn standard_view_rig_matches_each_canonical_camera_basis() {
             ..Default::default()
         };
         let mut transform = Transform::default();
-        crate::viewport::camera::apply_rig(&camera, &mut transform);
+        crate::viewport::navigation::camera::apply_rig(&camera, &mut transform);
         let actual_forward = transform.forward().as_vec3();
         let actual_up = transform.up().as_vec3();
         let actual_right = transform.right().as_vec3();

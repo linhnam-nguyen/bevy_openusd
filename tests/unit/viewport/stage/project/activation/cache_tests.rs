@@ -12,8 +12,8 @@ use viewport_protocol::SessionId;
 
 use super::production_tests::ProductionActivationWorld;
 use super::*;
-use crate::project::cache::hydration::default_project_cache_config_hash;
-use crate::project::cache::{
+use crate::cache::hydration::default_project_cache_config_hash;
+use crate::cache::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
     ProjectCacheTarget,
 };
@@ -213,7 +213,7 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
     assert!(!world.resource::<usd_bevy::AnimatedPrims>().0.is_empty());
     assert!(
         world
-            .resource::<crate::viewport::animation::UsdStageTime>()
+            .resource::<crate::animation::UsdStageTime>()
             .playing,
         "Hummingbird playback was initialized after projection readiness"
     );

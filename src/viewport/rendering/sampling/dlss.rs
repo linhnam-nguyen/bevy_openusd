@@ -69,8 +69,8 @@ impl Plugin for DlssProviderPlugin {
             .add_systems(
                 Update,
                 apply_camera_activation
-                    .after(crate::viewport::api::ViewportBridgeSet::ApplyCommands)
-                    .before(crate::viewport::api::ViewportBridgeSet::ReduceEvents),
+                    .after(crate::api::ViewportBridgeSet::ApplyCommands)
+                    .before(crate::api::ViewportBridgeSet::ReduceEvents),
             );
     }
 }
@@ -98,7 +98,7 @@ fn apply_camera_activation(
     mut commands: Commands,
     cameras: Query<
         (Entity, Option<&bevy::anti_alias::dlss::Dlss>),
-        With<crate::viewport::camera::ArcballCamera>,
+        With<crate::viewport::navigation::camera::ArcballCamera>,
     >,
 ) {
     let enabled = activation.enabled && capability.supported();

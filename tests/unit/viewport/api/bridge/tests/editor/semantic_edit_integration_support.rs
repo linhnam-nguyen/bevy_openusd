@@ -8,9 +8,9 @@ use openusd::usd::Stage;
 use usd_model::{CanonicalValue, SemanticSnapshot, SnapshotSource};
 use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportEventEnvelope};
 
-use crate::viewport::api::ViewportEventOutbox;
-use crate::viewport::scene::SelectedTargets;
-use crate::viewport::semantic::{SemanticDiffState, SemanticSyncState};
+use crate::api::ViewportEventOutbox;
+use crate::viewport::rendering::scene::SelectedTargets;
+use crate::semantic::viewport::{SemanticDiffState, SemanticSyncState};
 
 pub(super) fn stage_with_widths() -> Stage {
     let stage = Stage::builder()

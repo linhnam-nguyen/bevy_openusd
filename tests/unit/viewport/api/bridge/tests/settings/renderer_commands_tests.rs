@@ -3,24 +3,24 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::viewport::animation::UsdStageTime;
-    use crate::viewport::api::bridge::ViewerSettingsState;
-    use crate::viewport::api::bridge::commands::{
+    use crate::animation::UsdStageTime;
+    use crate::api::bridge::ViewerSettingsState;
+    use crate::api::bridge::commands::{
         apply_pending_renderer_cadence, apply_viewport_commands,
     };
-    use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-    use crate::viewport::api::{
+    use crate::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
+    use crate::api::{
         ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::app::cadence::RendererCadence;
-    use crate::viewport::camera::{CameraMount, CameraOrientationState, FlyTo};
-    use crate::viewport::physics::PhysicsActive;
+    use crate::app::cadence::RendererCadence;
+    use crate::viewport::navigation::camera::{CameraMount, CameraOrientationState, FlyTo};
+    use crate::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
-    use crate::viewport::scene::SceneAnchorIndex;
-    use crate::viewport::scene::visualization::DisplayToggles;
-    use crate::viewport::scene::{SelectedPrim, SelectedTargets, SolariCapability};
+    use crate::viewport::rendering::scene::SceneAnchorIndex;
+    use crate::viewport::rendering::scene::visualization::DisplayToggles;
+    use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets, SolariCapability};
     use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
@@ -283,16 +283,16 @@ mod tests {
     #[test]
     fn renderer_command_reaches_the_real_webrtc_gateway_boundary() {
         let mut app = command_test_app();
-        let interface = crate::viewport::api::RenderServerInterface::default();
+        let interface = crate::api::RenderServerInterface::default();
         app.insert_resource(interface.clone());
         app.add_systems(
             PreUpdate,
-            crate::viewport::transport::webrtc::drain_remote_commands
+            crate::transport::webrtc::drain_remote_commands
                 .before(apply_viewport_commands),
         );
         app.add_systems(
             PostUpdate,
-            crate::viewport::transport::webrtc::publish_authoritative_events
+            crate::transport::webrtc::publish_authoritative_events
                 .after(apply_viewport_commands),
         );
 

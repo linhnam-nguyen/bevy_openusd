@@ -11,9 +11,9 @@ use usd_model::{
     TransformSignature,
 };
 
-use crate::project::cache::blobs::BlobStore;
-use crate::project::runtime::delivery::build_runtime_delivery_with_payloads;
-use crate::project::runtime::payload::RuntimeTexturePayload;
+use crate::cache::blobs::BlobStore;
+use crate::document::runtime::delivery::build_runtime_delivery_with_payloads;
+use crate::document::runtime::payload::RuntimeTexturePayload;
 
 use super::*;
 
@@ -375,7 +375,7 @@ fn runtime_payloads_persist_materials_and_distinguish_texture_color_spaces() -> 
         .iter()
         .find(|(id, _)| id == &bundle.manifest.hierarchy.blob_id)
         .map(|(_, bytes)| {
-            serde_json::from_slice::<crate::project::runtime::delivery::RuntimeHierarchyBlob>(bytes)
+            serde_json::from_slice::<crate::document::runtime::delivery::RuntimeHierarchyBlob>(bytes)
         })
         .transpose()?
         .expect("hierarchy blob is present");

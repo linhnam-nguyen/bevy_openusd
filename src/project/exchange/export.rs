@@ -23,8 +23,8 @@ use crate::project::{
     models::wrapper::model_wrapper_path,
     service::ProjectApplicationService,
     storage::ProjectStorageLayout,
-    versioning::commit::runtime::RuntimeLeaseGuard,
 };
+use crate::history::commit::runtime::RuntimeLeaseGuard;
 
 const SCENES_DIRECTORY: &str = "scenes";
 const MODELS_DIRECTORY: &str = "models";
@@ -35,7 +35,7 @@ struct ExportEntry {
     archive: String,
 }
 
-pub(in crate::project) fn export_scene(
+pub(crate) fn export_scene(
     service: &mut ProjectApplicationService,
     request: ProjectExportSceneRequest,
     destination: &Path,

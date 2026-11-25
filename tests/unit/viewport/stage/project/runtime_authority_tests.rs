@@ -21,7 +21,7 @@ fn runtime_lease_rejects_a_synchronous_authoring_generation_change() {
                 lease_id: "lease".to_owned(),
                 session_id,
                 live_revision: 0,
-                expires_at_ms: crate::project::runtime::authority::unix_time_ms() + 60_000,
+                expires_at_ms: crate::document::runtime::authority::unix_time_ms() + 60_000,
             },
         ),
     });

@@ -4,7 +4,7 @@ use bevy::pbr::MeshMaterial3d;
 use usd_bevy::UsdPrimRef;
 use viewport_protocol::{ClassificationColorEntry, SceneAnchor};
 
-use crate::viewport::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::SceneAnchorIndex;
 
 #[test]
 fn color_plan_rebinds_shared_material_and_disable_restores_authored_route() {

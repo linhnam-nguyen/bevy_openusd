@@ -57,7 +57,7 @@ fn remote_css_pointer_maps_non_two_x_camera_viewport() {
 #[test]
 fn same_update_remote_taps_retain_reliable_positions() {
     use viewport_protocol::{ButtonState, InputCommand, PointerButtons, PointerMotion};
-    let mut nav = crate::viewport::input::ViewportNavigationInput::default();
+    let mut nav = crate::viewport::navigation::input::ViewportNavigationInput::default();
     let position = |sequence, x, y| PointerMotion {
         sequence,
         x_css_pixels: x,

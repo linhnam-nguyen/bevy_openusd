@@ -43,7 +43,7 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
             id: first_scene.to_string(),
         },
         RuntimeProfile::NativeMedium,
-        crate::project::cache::hydration::default_project_cache_config_hash(),
+        crate::cache::hydration::default_project_cache_config_hash(),
     )?;
     let store = ProjectCacheStore::new(directory.path());
     store.publish(&ProjectCacheDescriptor::new(
@@ -59,7 +59,7 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
             id: first_scene.to_string(),
         },
         RuntimeProfile::NativeMedium,
-        crate::project::cache::hydration::default_project_cache_config_hash(),
+        crate::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(first_identity, unchanged_identity);
     assert!(store.load(&unchanged_identity)?.is_some());
@@ -196,7 +196,7 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
         &manifest,
     )?;
     let store = SceneCacheStore::new(directory.path());
-    let config = crate::project::cache::hydration::default_project_cache_config_hash();
+    let config = crate::cache::hydration::default_project_cache_config_hash();
     for (index, scene) in scenes.iter().enumerate() {
         store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(
             scene.id,

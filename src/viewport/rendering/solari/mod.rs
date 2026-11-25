@@ -15,8 +15,8 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::{ExtractSchedule, MainWorld, RenderApp};
 use usd_bevy::LiveStageSet;
 
-use crate::viewport::api::ViewerSettingsState;
-use crate::viewport::api::ViewportBridgeSet;
+use crate::api::ViewerSettingsState;
+use crate::api::ViewportBridgeSet;
 
 use projection::sync_solari_usd_projection;
 pub(crate) use projection::{SolariProjectionDiagnostics, SolariProjectionState};

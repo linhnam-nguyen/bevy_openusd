@@ -1,9 +1,9 @@
 use super::*;
 use viewport_protocol::{BimFieldKey, ClassificationLevel, ClassificationRecipe};
 
-use crate::viewport::bim::test_fixtures::snapshot;
-use crate::viewport::scene::ActiveHierarchyProvider;
-use crate::viewport::semantic::SemanticSyncState;
+use crate::bim::test_fixtures::snapshot;
+use crate::viewport::rendering::scene::ActiveHierarchyProvider;
+use crate::semantic::viewport::SemanticSyncState;
 
 fn intent(generation: u64) -> ClassificationColorIntent {
     ClassificationColorIntent {

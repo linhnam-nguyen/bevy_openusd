@@ -7,7 +7,7 @@ use viewport_protocol::{OverlayKind, ViewportCommand};
 
 use super::panels::{MARA_ICONS, PanelAction, apply_panel_action};
 use super::{MaraHostUiState, UsdMaraApp};
-use crate::viewport::api::ViewportCommandInbox;
+use crate::api::ViewportCommandInbox;
 use crate::viewport::rendering::gpu_limits::GpuLimitNegotiation;
 
 #[test]
@@ -39,11 +39,11 @@ fn mara_toolbar_and_panel_icons_resolve_to_distinct_glyphs() {
 fn mara_panel_actions_dispatch_through_single_viewport_command_inbox() {
     let mut world = World::new();
     world.init_resource::<ViewportCommandInbox>();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::camera::CameraBookmarks>();
-    world.init_resource::<crate::viewport::camera::CameraMount>();
-    world.init_resource::<crate::viewport::camera::FlyTo>();
-    world.init_resource::<crate::viewport::semantic::SemanticDiffState>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraBookmarks>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraMount>();
+    world.init_resource::<crate::viewport::navigation::camera::FlyTo>();
+    world.init_resource::<crate::semantic::viewport::SemanticDiffState>();
 
     let mut ui_state = MaraHostUiState::default();
     apply_panel_action(
@@ -72,11 +72,11 @@ fn mara_panel_actions_dispatch_through_single_viewport_command_inbox() {
 fn mara_materials_panel_is_read_only_and_preserves_render_assets() {
     let mut world = World::new();
     world.init_resource::<ViewportCommandInbox>();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::camera::CameraBookmarks>();
-    world.init_resource::<crate::viewport::camera::CameraMount>();
-    world.init_resource::<crate::viewport::camera::FlyTo>();
-    world.init_resource::<crate::viewport::semantic::SemanticDiffState>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraBookmarks>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraMount>();
+    world.init_resource::<crate::viewport::navigation::camera::FlyTo>();
+    world.init_resource::<crate::semantic::viewport::SemanticDiffState>();
 
     let mut materials = Assets::<StandardMaterial>::default();
     let handle_a = materials.add(StandardMaterial {
@@ -198,11 +198,11 @@ fn mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change()
 
     let mut world = World::new();
     world.init_resource::<ViewportCommandInbox>();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::camera::CameraBookmarks>();
-    world.init_resource::<crate::viewport::camera::CameraMount>();
-    world.init_resource::<crate::viewport::camera::FlyTo>();
-    world.init_resource::<crate::viewport::semantic::SemanticDiffState>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraBookmarks>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraMount>();
+    world.init_resource::<crate::viewport::navigation::camera::FlyTo>();
+    world.init_resource::<crate::semantic::viewport::SemanticDiffState>();
 
     let a = SceneAnchor::active_session("/World/A");
     let b = SceneAnchor::active_session("/World/B");
@@ -214,7 +214,7 @@ fn mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change()
     snap_a.selection_revision = 1;
 
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -255,7 +255,7 @@ fn mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change()
     snap_b.selection.targets = vec![b];
     snap_b.selection_revision = 2;
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -269,7 +269,7 @@ fn mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change()
 
     // Stage transition resets all pagers.
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::StageLoadStateChanged {
@@ -292,12 +292,12 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
 
     let mut world = World::new();
     world.init_resource::<ViewportCommandInbox>();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::scene::ActiveHierarchyProvider>();
-    world.init_resource::<crate::viewport::camera::CameraBookmarks>();
-    world.init_resource::<crate::viewport::camera::CameraMount>();
-    world.init_resource::<crate::viewport::camera::FlyTo>();
-    world.init_resource::<crate::viewport::semantic::SemanticDiffState>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraBookmarks>();
+    world.init_resource::<crate::viewport::navigation::camera::CameraMount>();
+    world.init_resource::<crate::viewport::navigation::camera::FlyTo>();
+    world.init_resource::<crate::semantic::viewport::SemanticDiffState>();
 
     let mut ui_state = MaraHostUiState::default();
 
@@ -305,7 +305,7 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
     let mut unloaded_sel = ViewportReadModel::unloaded("s.usda");
     unloaded_sel.stage.loaded = true;
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -330,7 +330,7 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
     with_sel.selection.targets = vec![a.clone()];
     with_sel.selection_revision = 1;
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -370,7 +370,7 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
     };
 
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             Some(sent.request_id.clone()),
             ViewportEvent::BimPropertiesPage {
@@ -399,7 +399,7 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
     ));
 
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             Some(sent.request_id),
             ViewportEvent::BimPropertiesPage {
@@ -441,8 +441,8 @@ fn mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id
 
     let mut world = World::new();
     world.init_resource::<ViewportCommandInbox>();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::scene::ActiveHierarchyProvider>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>();
 
     let a = SceneAnchor::active_session("/World/A");
     let mut snap = ViewportReadModel::unloaded("stage_a.usda");
@@ -452,7 +452,7 @@ fn mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id
     snap.selection.targets = vec![a.clone()];
     snap.selection_revision = 4;
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -471,7 +471,7 @@ fn mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id
     };
     for _ in 0..10 {
         world
-            .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+            .resource_mut::<crate::api::ViewportReadModelState>()
             .apply(&ViewportEventEnvelope::new(
                 None,
                 ViewportEvent::BimClassificationFieldCatalogueChanged {
@@ -511,7 +511,7 @@ fn mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id
 
     // Correlated response installs Ready catalogue in BIM panel snapshot.
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             Some(sent.request_id),
             ViewportEvent::BimClassificationFieldCatalogueChanged {
@@ -535,7 +535,7 @@ fn mara_host_flushes_coalesced_catalogue_refresh_once_with_correlated_request_id
         .pop()
         .expect("RequestBimProperties dispatched");
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             Some(prop_req.request_id),
             ViewportEvent::BimPropertiesRead {
@@ -562,13 +562,13 @@ fn mara_host_preserves_not_requested_catalogue_when_command_inbox_absent() {
     };
 
     let mut world = World::new();
-    world.init_resource::<crate::viewport::api::ViewportReadModelState>();
-    world.init_resource::<crate::viewport::scene::ActiveHierarchyProvider>();
+    world.init_resource::<crate::api::ViewportReadModelState>();
+    world.init_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>();
 
     let mut snap = ViewportReadModel::unloaded("standalone.usda");
     snap.stage.loaded = true;
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::Snapshot {
@@ -576,7 +576,7 @@ fn mara_host_preserves_not_requested_catalogue_when_command_inbox_absent() {
             },
         ));
     world
-        .resource_mut::<crate::viewport::api::ViewportReadModelState>()
+        .resource_mut::<crate::api::ViewportReadModelState>()
         .apply(&ViewportEventEnvelope::new(
             None,
             ViewportEvent::BimClassificationFieldCatalogueChanged {
@@ -592,7 +592,7 @@ fn mara_host_preserves_not_requested_catalogue_when_command_inbox_absent() {
     ));
     assert_eq!(
         world
-            .resource::<crate::viewport::api::ViewportReadModelState>()
+            .resource::<crate::api::ViewportReadModelState>()
             .pending_catalogue_refresh(),
         None
     );

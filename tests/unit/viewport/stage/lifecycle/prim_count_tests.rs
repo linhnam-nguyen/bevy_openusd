@@ -7,8 +7,8 @@ use bevy::prelude::World;
 use tempfile::tempdir;
 use usd_model::HashDigest;
 
-use crate::project::cache::SceneCacheStore;
-use crate::project::cache::contract::{
+use crate::cache::SceneCacheStore;
+use crate::cache::contract::{
     SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheDescriptorV3,
     SceneCacheIndex, SceneCacheState, SceneSpatialIndex,
 };

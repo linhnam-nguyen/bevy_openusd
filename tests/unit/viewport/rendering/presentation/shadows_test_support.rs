@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewport::rendering::presentation::shadows) struct ShadowProjectionStats {
+pub(in crate::viewport::presentation::shadows) struct ShadowProjectionStats {
     pub(super) full_light_visits: u32,
 }
 

@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 use bevy::prelude::World;
 
-use crate::project::cache::contract::{SceneCacheActivation, SceneCacheDescriptorV3};
-use crate::project::cache::hydration::default_project_cache_config_hash;
-use crate::project::cache::{PrimCountPublication, SceneCacheStore, publish_prim_count_if_current};
-use crate::project::stages::prim_count::{PrimCountFreshness, PrimCountWorker, SubmitStatus};
+use crate::cache::contract::{SceneCacheActivation, SceneCacheDescriptorV3};
+use crate::cache::hydration::default_project_cache_config_hash;
+use crate::cache::{PrimCountPublication, SceneCacheStore, publish_prim_count_if_current};
+use crate::document::stages::prim_count::{PrimCountFreshness, PrimCountWorker, SubmitStatus};
 
 use super::super::{SceneDerivedMetadata, StageHandle, StageInfo};
 
@@ -234,7 +234,7 @@ fn reconcile_retryable_cache(world: &mut World, descriptor: &SceneCacheDescripto
     metadata.cache_state = Some(descriptor.state);
     metadata.prim_count = descriptor.prim_count as usize;
     metadata.prim_count_ready = descriptor.prim_count_ready
-        || descriptor.state == crate::project::cache::contract::SceneCacheState::Ready;
+        || descriptor.state == crate::cache::contract::SceneCacheState::Ready;
     metadata.prim_count_pending = false;
     metadata.prim_count_terminal = false;
     metadata.prim_count_error = Some(

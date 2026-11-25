@@ -1,13 +1,11 @@
 //! Test-only helpers attached to the owning production module.
 use super::*;
-use crate::project::{
-    cache::{
-        SceneCacheStore,
-        contract::{SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheIndex},
-        hydration::ActiveProjectCacheContext,
-    },
-    catalog::manifest_store::ManifestStore,
+use crate::cache::{
+    SceneCacheStore,
+    contract::{SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheIndex},
+    hydration::ActiveProjectCacheContext,
 };
+use crate::project::catalog::manifest_store::ManifestStore;
 
 impl SelectionResidencyState {
     pub(super) fn pending_len(&self) -> usize {

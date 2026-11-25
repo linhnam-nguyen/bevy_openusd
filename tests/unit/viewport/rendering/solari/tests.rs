@@ -2,7 +2,7 @@
 use super::proof::SolariProofMesh;
 use super::*;
 #[cfg(feature = "solari")]
-use crate::viewport::scene::visualization::DisplayToggles;
+use crate::viewport::rendering::scene::visualization::DisplayToggles;
 
 #[derive(Resource, Default)]
 struct ViewerSettingsChangeCount(u32);

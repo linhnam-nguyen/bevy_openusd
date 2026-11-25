@@ -28,7 +28,7 @@ pub(crate) fn author_scene_wrapper_to_path(
     stage
         .prim("/SceneRoot")?
         .set_metadata("ui:displayName", Value::String(scene_name.to_owned()))?;
-    crate::project::stages::metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
+    crate::document::stages::metadata::copy_source_time_metadata(source_metadata_path, &stage)?;
     let source_path = format!("/{SCENE_ROOT_PRIM}/{SOURCE_PRIM}");
     let source_asset_path = crate::project::storage::authored_relative_project_asset_path(
         project_root,

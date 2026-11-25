@@ -1,5 +1,5 @@
 use super::*;
-use crate::project::cache::contract::{CachedTransform, SceneCacheBlobRef, SceneCacheOccurrence};
+use crate::cache::contract::{CachedTransform, SceneCacheBlobRef, SceneCacheOccurrence};
 use usd_project::ScenePlacementTransform;
 
 fn owned_entry(scene_id: SceneId, path: &str, byte: u8) -> SceneCacheEntry {

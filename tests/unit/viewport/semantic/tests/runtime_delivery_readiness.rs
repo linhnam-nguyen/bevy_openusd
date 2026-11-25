@@ -8,7 +8,7 @@ use super::super::{
 };
 use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
-use crate::viewport::api::RenderServerInterface;
+use crate::api::RenderServerInterface;
 
 #[test]
 fn runtime_delivery_waits_for_projection_ready() -> Result<()> {
@@ -27,11 +27,11 @@ def Xform "World"
     let live = LiveStage::new(stage);
     let mut app = viewport_support::semantic_test_app();
     app.insert_resource(usd_bevy::ProjectionBudget::work_items(1));
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: project.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());

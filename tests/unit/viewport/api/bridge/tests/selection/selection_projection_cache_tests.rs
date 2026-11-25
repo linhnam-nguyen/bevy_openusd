@@ -3,7 +3,7 @@ use std::time::Instant;
 use super::selection_profile_support::settle_selection_presentation;
 use super::*;
 
-use crate::viewport::scene::{
+use crate::viewport::rendering::scene::{
     SectionBoxGizmoTarget, SectionBoxState, SelectedRenderableProjection, SelectionOutlineState,
     sync_section_box_gizmo_target, sync_section_box_state, sync_selected_renderable_projection,
     sync_selection_outlines,
@@ -90,7 +90,7 @@ fn interrupted_outline_work_reconciles_entities_applied_before_selection_changes
     }
 
     app.world_mut()
-        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .resource_mut::<crate::api::ViewerSettingsState>()
         .0
         .selection
         .boundary_color = ColorRgb8::new(0x10, 0x20, 0x30);

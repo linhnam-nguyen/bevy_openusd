@@ -2,7 +2,7 @@
 use super::*;
 
 impl ClassificationColorPlan {
-    pub(in crate::viewport) fn replace(
+    pub(crate) fn replace(
         &mut self,
         generation: u64,
         entries: Vec<ClassificationColorEntry>,

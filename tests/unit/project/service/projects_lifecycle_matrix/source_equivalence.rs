@@ -70,7 +70,7 @@ fn classification_labels(snapshot: &SemanticSnapshot) -> Result<Vec<String>, Str
         "category",
         BimFieldKey::Category,
     )]);
-    let projection = crate::viewport::bim::BimReadService::new(snapshot)
+    let projection = crate::bim::BimReadService::new(snapshot)
         .classification_projection(&recipe)
         .map_err(|error| error.to_string())?;
     Ok(projection

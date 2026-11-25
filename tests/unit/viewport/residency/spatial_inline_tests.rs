@@ -5,14 +5,14 @@ use bevy::shape::{HalfSpace, ViewFrustum};
 use usd_model::{BlobId, HashDigest};
 use usd_project::{SceneId, SceneMemberId, ScenePlacementTransform};
 
-use crate::viewport::residency::camera::CameraSample;
+use crate::viewport::rendering::residency::camera::CameraSample;
 
 fn payload(x: f64, key: u8) -> SceneSpatialPayload {
     let scene_id = SceneId::new_v4();
     SceneSpatialPayload {
         address: SceneCacheAddress {
             scene_id,
-            occurrence: crate::project::cache::contract::SceneCacheOccurrence::Member(
+            occurrence: crate::cache::contract::SceneCacheOccurrence::Member(
                 SceneMemberId::new_v4(),
             ),
         },
@@ -75,13 +75,13 @@ fn scene_payloads_compose_ancestor_transform_for_camera_space() {
     let child_transform = ScenePlacementTransform::from_translation([1.0, 0.0, 0.0]);
     let parent_address = SceneCacheAddress {
         scene_id,
-        occurrence: crate::project::cache::contract::SceneCacheOccurrence::PrimPath(
+        occurrence: crate::cache::contract::SceneCacheOccurrence::PrimPath(
             "/SceneRoot/Parent".to_owned(),
         ),
     };
     let child_address = SceneCacheAddress {
         scene_id,
-        occurrence: crate::project::cache::contract::SceneCacheOccurrence::PrimPath(
+        occurrence: crate::cache::contract::SceneCacheOccurrence::PrimPath(
             "/SceneRoot/Parent/Child".to_owned(),
         ),
     };
@@ -128,7 +128,7 @@ fn scene_payloads_compose_ancestor_transform_for_camera_space() {
     let projected = scene_payloads(&[cache_entry(
         SceneCacheAddress {
             scene_id,
-            occurrence: crate::project::cache::contract::SceneCacheOccurrence::PrimPath(
+            occurrence: crate::cache::contract::SceneCacheOccurrence::PrimPath(
                 "/Large".into(),
             ),
         },
@@ -177,14 +177,14 @@ fn cache_entry(
         bounds,
         cacheable: true,
         bim_enabled: false,
-        geometry: Some(crate::project::cache::contract::SceneCacheBlobRef {
+        geometry: Some(crate::cache::contract::SceneCacheBlobRef {
             blob_id: BlobId("8".repeat(64)),
             byte_size: 4,
         }),
         material: None,
         animation: None,
         semantic_key: None,
-        kind: crate::project::cache::contract::SceneCacheEntryKind::OwnedPrim {
+        kind: crate::cache::contract::SceneCacheEntryKind::OwnedPrim {
             prim_path: "/SceneRoot/Test".to_owned(),
         },
         content_hash: Some(content_hash),

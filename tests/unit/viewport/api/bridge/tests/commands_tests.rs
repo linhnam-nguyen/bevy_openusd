@@ -3,21 +3,21 @@ mod tests {
     use bevy::prelude::*;
     use viewport_protocol::*;
 
-    use crate::viewport::animation::UsdStageTime;
-    use crate::viewport::api::bridge::ViewerSettingsState;
-    use crate::viewport::api::bridge::commands::apply_viewport_commands;
-    use crate::viewport::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-    use crate::viewport::api::{
+    use crate::animation::UsdStageTime;
+    use crate::api::bridge::ViewerSettingsState;
+    use crate::api::bridge::commands::apply_viewport_commands;
+    use crate::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
+    use crate::api::{
         ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
     };
-    use crate::viewport::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
-    use crate::viewport::physics::PhysicsActive;
+    use crate::viewport::navigation::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
+    use crate::physics::PhysicsActive;
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
-    use crate::viewport::scene::SceneAnchorIndex;
-    use crate::viewport::scene::visualization::DisplayToggles;
-    use crate::viewport::scene::{SelectedPrim, SelectedTargets};
+    use crate::viewport::rendering::scene::SceneAnchorIndex;
+    use crate::viewport::rendering::scene::visualization::DisplayToggles;
+    use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
     use crate::viewport::stage::{LoaderTuning, ReloadRequest, Spawned, StageInfo};
 
     fn command_test_app() -> App {
@@ -42,7 +42,7 @@ mod tests {
             .init_resource::<PhysicsActive>()
             .init_resource::<EditorHistories>()
             .init_resource::<RuntimeMutationCoordinator>()
-            .init_resource::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
+            .init_resource::<crate::bim::BimClassificationFieldCatalogueState>()
             .init_resource::<Spawned>()
             .insert_resource(StageInfo {
                 path: "fixtures/spinner.usda".to_owned(),
@@ -238,7 +238,7 @@ mod tests {
             )],
         };
         app.world_mut()
-            .resource_mut::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
+            .resource_mut::<crate::bim::BimClassificationFieldCatalogueState>()
             .replace(catalogue.clone());
         let request_id = app.world_mut().resource_mut::<ViewportCommandInbox>().send(
             ViewportCommand::RequestBimClassificationFieldCatalogue {

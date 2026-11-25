@@ -4,7 +4,7 @@ use bevy::gizmos::config::{GizmoConfigGroup, GizmoConfigStore};
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
 
-use crate::viewport::rendering::presentation::DisplayToggles;
+use crate::viewport::presentation::DisplayToggles;
 
 /// Custom gizmo group for the skeleton overlay. Configured at
 /// startup with `depth_bias = -1.0` so bone lines render in front of

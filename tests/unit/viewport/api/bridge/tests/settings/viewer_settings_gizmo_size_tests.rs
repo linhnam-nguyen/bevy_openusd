@@ -2,7 +2,7 @@ use viewport_protocol::{SelectionPresentationSettings, ViewportCommand, Viewport
 
 use super::super::ViewerSettingsState;
 use super::support::command_test_app;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox};
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox};
 
 #[test]
 fn selection_gizmo_size_command_updates_authoritative_settings() {

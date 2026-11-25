@@ -1,6 +1,6 @@
 use super::*;
-use crate::viewport::scene::HierarchyPageIndex;
-use crate::viewport::scene::hierarchy::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::HierarchyPageIndex;
+use crate::viewport::rendering::scene::hierarchy::CurrentHierarchyProjection;
 use crate::viewport::stage::Spawned;
 use bevy::asset::Assets;
 use bevy::ecs::hierarchy::ChildOf;
@@ -338,27 +338,27 @@ fn classification_visibility_reports_mixed_state_and_restores_groups() {
     });
     let page_index = HierarchyPageIndex::from_read_model(&read_model);
     let visibility_index =
-        crate::viewport::scene::HierarchyVisibilityIndex::from_targets(HashMap::from([
+        crate::viewport::rendering::scene::HierarchyVisibilityIndex::from_targets(HashMap::from([
             (
                 group_id.clone(),
                 vec![
-                    crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
+                    crate::viewport::rendering::scene::HierarchyVisibilityTarget::PrimPath(
                         "/World/WindowA".to_owned(),
                     ),
-                    crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
+                    crate::viewport::rendering::scene::HierarchyVisibilityTarget::PrimPath(
                         "/World/WindowB".to_owned(),
                     ),
                 ],
             ),
             (
                 first_id.clone(),
-                vec![crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
+                vec![crate::viewport::rendering::scene::HierarchyVisibilityTarget::PrimPath(
                     "/World/WindowA".to_owned(),
                 )],
             ),
             (
                 second_id.clone(),
-                vec![crate::viewport::scene::HierarchyVisibilityTarget::PrimPath(
+                vec![crate::viewport::rendering::scene::HierarchyVisibilityTarget::PrimPath(
                     "/World/WindowB".to_owned(),
                 )],
             ),

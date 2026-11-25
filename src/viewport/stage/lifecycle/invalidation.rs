@@ -16,18 +16,18 @@ pub(crate) struct PendingActivationPresentation {
 /// the selected hierarchy provider remains a user presentation preference.
 pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64) {
     let desired_provider = world
-        .get_resource::<crate::viewport::scene::ActiveHierarchyProvider>()
+        .get_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
         .map_or(HierarchySource::Prim, |provider| provider.source());
     let classification_recipe = world
-        .get_resource::<crate::viewport::scene::BimClassificationRecipeState>()
+        .get_resource::<crate::viewport::rendering::scene::BimClassificationRecipeState>()
         .and_then(|state| state.recipe().cloned())
         .or_else(|| {
             world
-                .get_resource::<crate::viewport::scene::ActiveHierarchyProvider>()
+                .get_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
                 .and_then(|provider| provider.classification_recipe().cloned())
         });
     let selection = world
-        .get_resource::<crate::viewport::scene::SelectedTargets>()
+        .get_resource::<crate::viewport::rendering::scene::SelectedTargets>()
         .map(|selected| selected.0.clone())
         .filter(|selection| !selection.targets.is_empty());
     world.insert_resource(PendingActivationPresentation {
@@ -37,45 +37,37 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
         selection,
     });
 
-    if let Some(mut semantic) =
-        world.get_resource_mut::<crate::viewport::semantic::SemanticSyncState>()
+    if let Some(hooks) = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied()
     {
-        semantic.reset_for_activation(activation_generation);
-    }
-    if let Some(mut diff) = world.get_resource_mut::<crate::viewport::semantic::SemanticDiffState>()
-    {
-        diff.reset_for_activation();
-    }
-    if let Some(mut catalogue) =
-        world.get_resource_mut::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
-    {
-        catalogue.clear();
+        (hooks.on_reset_derived)(world, activation_generation);
     }
     if let Some(mut classification) =
-        world.get_resource_mut::<crate::viewport::scene::BimClassificationRecipeState>()
+        world.get_resource_mut::<crate::viewport::rendering::scene::BimClassificationRecipeState>()
     {
         classification.set(None);
     }
 
     if let Some(mut provider) =
-        world.get_resource_mut::<crate::viewport::scene::ActiveHierarchyProvider>()
+        world.get_resource_mut::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
     {
         provider.set(viewport_protocol::HierarchySource::Prim, None);
     }
     if let Some(mut projection) =
-        world.get_resource_mut::<crate::viewport::scene::CurrentHierarchyProjection>()
+        world.get_resource_mut::<crate::viewport::rendering::scene::CurrentHierarchyProjection>()
     {
-        *projection = crate::viewport::scene::CurrentHierarchyProjection::empty(
+        *projection = crate::viewport::rendering::scene::CurrentHierarchyProjection::empty(
             viewport_protocol::HierarchySource::Prim,
             0,
         );
     }
-    if let Some(mut selected) = world.get_resource_mut::<crate::viewport::scene::SelectedTargets>()
+    if let Some(mut selected) = world.get_resource_mut::<crate::viewport::rendering::scene::SelectedTargets>()
     {
         let _ = selected.clear();
     }
     if let Some(mut selected_prim) =
-        world.get_resource_mut::<crate::viewport::scene::SelectedPrim>()
+        world.get_resource_mut::<crate::viewport::rendering::scene::SelectedPrim>()
     {
         selected_prim.0 = None;
     }
@@ -87,18 +79,18 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
 /// mesh handles intentionally keep their lifetimes across this boundary.
 pub(super) fn reset_source_derived_state(world: &mut World, activation_generation: u64) {
     let desired_provider = world
-        .get_resource::<crate::viewport::scene::ActiveHierarchyProvider>()
+        .get_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
         .map_or(HierarchySource::Prim, |provider| provider.source());
     let classification_recipe = world
-        .get_resource::<crate::viewport::scene::BimClassificationRecipeState>()
+        .get_resource::<crate::viewport::rendering::scene::BimClassificationRecipeState>()
         .and_then(|state| state.recipe().cloned())
         .or_else(|| {
             world
-                .get_resource::<crate::viewport::scene::ActiveHierarchyProvider>()
+                .get_resource::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
                 .and_then(|provider| provider.classification_recipe().cloned())
         });
     let selection = world
-        .get_resource::<crate::viewport::scene::SelectedTargets>()
+        .get_resource::<crate::viewport::rendering::scene::SelectedTargets>()
         .map(|selected| selected.0.clone())
         .filter(|selection| !selection.targets.is_empty());
     world.insert_resource(PendingActivationPresentation {
@@ -108,19 +100,11 @@ pub(super) fn reset_source_derived_state(world: &mut World, activation_generatio
         selection,
     });
 
-    if let Some(mut semantic) =
-        world.get_resource_mut::<crate::viewport::semantic::SemanticSyncState>()
+    if let Some(hooks) = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied()
     {
-        semantic.reset_for_activation(activation_generation);
-    }
-    if let Some(mut diff) = world.get_resource_mut::<crate::viewport::semantic::SemanticDiffState>()
-    {
-        diff.reset_for_activation();
-    }
-    if let Some(mut catalogue) =
-        world.get_resource_mut::<crate::viewport::bim::BimClassificationFieldCatalogueState>()
-    {
-        catalogue.clear();
+        (hooks.on_reset_source_derived)(world, activation_generation);
     }
 }
 
@@ -128,7 +112,7 @@ pub(super) fn reset_source_derived_state(world: &mut World, activation_generatio
 /// produced both semantic/BIM state and a usable scene-anchor index. No timer
 /// or blind retry is involved: the pending record remains until its source
 /// generation is actually ready.
-pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) {
+pub(crate) fn rehydrate_activation_presentation(world: &mut World) {
     let Some(pending) = world
         .get_resource::<PendingActivationPresentation>()
         .cloned()
@@ -142,16 +126,15 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         return;
     }
     let semantic_ready = world
-        .get_resource::<crate::viewport::semantic::SemanticSyncState>()
-        .is_some_and(|semantic| {
-            semantic.snapshot().is_some() && semantic.shared_bim_index().is_some()
-        });
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied()
+        .is_none_or(|hooks| (hooks.is_semantic_ready)(world));
     if !semantic_ready {
         return;
     }
 
     let resolved_selection = pending.selection.as_ref().map(|selection| {
-        let index = world.resource::<crate::viewport::scene::SceneAnchorIndex>();
+        let index = world.resource::<crate::viewport::rendering::scene::SceneAnchorIndex>();
         let targets = selection
             .targets
             .iter()
@@ -170,7 +153,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         .as_ref()
         .is_some_and(|selection| !selection.targets.is_empty())
         && world
-            .get_resource::<crate::viewport::scene::SceneAnchorIndex>()
+            .get_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
             .is_some_and(|index| {
                 resolved_selection.as_ref().is_some_and(|selection| {
                     selection
@@ -187,7 +170,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
             .expect("resolved selection checked above");
         {
             let Some(mut selected) =
-                world.get_resource_mut::<crate::viewport::scene::SelectedTargets>()
+                world.get_resource_mut::<crate::viewport::rendering::scene::SelectedTargets>()
             else {
                 return;
             };
@@ -197,11 +180,11 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         }
         let primary = selection.primary.as_ref().and_then(|target| {
             world
-                .resource::<crate::viewport::scene::SceneAnchorIndex>()
+                .resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
                 .resolve(target)
         });
         if let Some(mut selected_prim) =
-            world.get_resource_mut::<crate::viewport::scene::SelectedPrim>()
+            world.get_resource_mut::<crate::viewport::rendering::scene::SelectedPrim>()
         {
             selected_prim.0 = primary;
         }
@@ -213,7 +196,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
             .get_resource::<usd_bevy::ProgressiveProjectionState>()
             .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready)
         && world
-            .get_resource::<crate::viewport::scene::SceneAnchorIndex>()
+            .get_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
             .is_some_and(|index| index.revision() > 0)
     {
         // Only a complete projection proves that a retained target disappeared.
@@ -228,7 +211,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         // a resolved Bevy entity, and the pending record remains authoritative
         // for the later entity resolution pass.
         let Some(mut selected) =
-            world.get_resource_mut::<crate::viewport::scene::SelectedTargets>()
+            world.get_resource_mut::<crate::viewport::rendering::scene::SelectedTargets>()
         else {
             return;
         };
@@ -239,13 +222,13 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
 
     if let Some(recipe) = pending.classification_recipe {
         if let Some(mut classification) =
-            world.get_resource_mut::<crate::viewport::scene::BimClassificationRecipeState>()
+            world.get_resource_mut::<crate::viewport::rendering::scene::BimClassificationRecipeState>()
         {
             classification.set(Some(recipe.clone()));
         }
         if pending.desired_provider == viewport_protocol::HierarchySource::BimClassification {
             if let Some(mut provider) =
-                world.get_resource_mut::<crate::viewport::scene::ActiveHierarchyProvider>()
+                world.get_resource_mut::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
             {
                 provider.set(
                     viewport_protocol::HierarchySource::BimClassification,
@@ -255,7 +238,7 @@ pub(in crate::viewport) fn rehydrate_activation_presentation(world: &mut World) 
         }
     } else if pending.desired_provider == viewport_protocol::HierarchySource::BimClassification {
         if let Some(mut provider) =
-            world.get_resource_mut::<crate::viewport::scene::ActiveHierarchyProvider>()
+            world.get_resource_mut::<crate::viewport::rendering::scene::ActiveHierarchyProvider>()
         {
             provider.set(viewport_protocol::HierarchySource::BimClassification, None);
         }

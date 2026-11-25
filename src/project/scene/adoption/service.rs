@@ -11,7 +11,7 @@ use usd_project::{CompositionInspection, ProjectRoot, SceneMember};
 use super::errors::{adoption_error_code, source_revalidation_error_code};
 use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-pub(in crate::project) fn adopt_scene(
+pub(crate) fn adopt_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -56,7 +56,7 @@ pub(in crate::project) fn adopt_scene(
     result
 }
 
-pub(in crate::project) fn link_scene(
+pub(crate) fn link_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -96,7 +96,7 @@ pub(in crate::project) fn link_scene(
     result
 }
 
-pub(in crate::project) fn sync_linked_scene(
+pub(crate) fn sync_linked_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     scene_id: usd_project::SceneId,
@@ -174,10 +174,10 @@ pub(in crate::project) fn sync_linked_scene(
                 .enqueue_targets_for_mutation(
                     project_root,
                     vec![
-                        crate::project::cache::ProjectCacheTarget::Scene {
+                        crate::cache::ProjectCacheTarget::Scene {
                             id: scene_id.to_string(),
                         },
-                        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+                        crate::cache::ProjectCacheTarget::ProjectRoot,
                     ],
                 )
                 .map_err(|_| ProjectWriteError::Failed {
@@ -338,13 +338,13 @@ fn adopt_scene_inner(
         )?;
     }
     let mut cache_targets = vec![
-        crate::project::cache::ProjectCacheTarget::Scene {
+        crate::cache::ProjectCacheTarget::Scene {
             id: adopted.scene_id.to_string(),
         },
-        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        crate::cache::ProjectCacheTarget::ProjectRoot,
     ];
     if let Some(parent_scene_id) = parent_scene_id {
-        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene {
+        cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
             id: parent_scene_id.to_string(),
         });
     }

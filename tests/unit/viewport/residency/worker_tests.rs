@@ -4,7 +4,7 @@ use bevy::prelude::{App, Update};
 use usd_model::HashDigest;
 use usd_project::SceneId;
 
-use crate::project::runtime::payload::{RuntimeAlphaMode, RuntimeMaterialTextures};
+use crate::document::runtime::payload::{RuntimeAlphaMode, RuntimeMaterialTextures};
 use crate::viewport::stage::SceneCachePresentation;
 use usd_bevy::ProjectionSeed;
 
@@ -22,7 +22,7 @@ fn job(generation: u64) -> LoadJob<ScenePayloadKey> {
 
 fn material() -> RuntimeMaterialBlob {
     RuntimeMaterialBlob {
-        version: crate::project::runtime::payload::RUNTIME_MATERIAL_VERSION,
+        version: crate::document::runtime::payload::RUNTIME_MATERIAL_VERSION,
         base_color: [1.0; 4],
         emissive: [0.0; 4],
         perceptual_roughness: 1.0,
@@ -66,7 +66,7 @@ fn loaded_payloads_are_installed_only_for_the_current_scene_generation() {
     app.insert_resource(SceneCachePresentation {
         scene_id,
         generation: 7,
-        state: crate::project::cache::contract::SceneCacheState::Ready,
+        state: crate::cache::contract::SceneCacheState::Ready,
         entries: Vec::new(),
     })
     .insert_resource(Assets::<bevy::image::Image>::default())
@@ -328,8 +328,8 @@ def Mesh "LaterWide" {
     let world = app.world_mut();
     world.init_resource::<super::super::SourceDemandScan>();
     world.init_resource::<super::super::VisibilityChangeEpoch>();
-    world.init_resource::<crate::viewport::scene::SceneAnchorIndex>();
-    world.init_resource::<crate::viewport::scene::SelectedTargets>();
+    world.init_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>();
+    world.init_resource::<crate::viewport::rendering::scene::SelectedTargets>();
     let mut demand = Schedule::default();
     demand.add_systems(
         (
@@ -505,7 +505,7 @@ def Mesh "LaterWide" {
     super::super::publish_source_mesh(world, first_identity, None);
     assert!(world.get::<Mesh3d>(replacement).is_none());
 
-    use crate::viewport::scene::{SceneAnchorIndex, SelectedTargets};
+    use crate::viewport::rendering::scene::{SceneAnchorIndex, SelectedTargets};
     let anchor = viewport_protocol::SceneAnchor::active_session("/Hidden");
     world.insert_resource(SceneAnchorIndex::from_test_entity(
         anchor.clone(),

@@ -4,12 +4,12 @@ use usd_bevy::{UsdLocalExtent, UsdPrimRef};
 use viewport_protocol::{SceneAnchor, SelectionReadModel, ViewportCommand};
 
 use super::support::command_test_app;
-use crate::viewport::api::bridge::commands::apply_viewport_commands;
-use crate::viewport::api::bridge::tree::apply_tree_commands;
-use crate::viewport::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
-use crate::viewport::camera::{ArcballCamera, FlyTo};
-use crate::viewport::scene::SceneAnchorIndex;
-use crate::viewport::scene::{
+use crate::api::bridge::commands::apply_viewport_commands;
+use crate::api::bridge::tree::apply_tree_commands;
+use crate::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
+use crate::viewport::navigation::camera::{ArcballCamera, FlyTo};
+use crate::viewport::rendering::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::{
     SelectedRenderableProjection, SelectedTargets, sync_selected_renderable_projection,
 };
 
@@ -273,7 +273,7 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
     );
 
     app.world_mut()
-        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .resource_mut::<crate::api::ViewerSettingsState>()
         .set_section_box_enabled(true);
     app.update();
     while app
@@ -348,7 +348,7 @@ fn heavy_selection_releases_renderables_and_bounds_are_opt_in() {
             .is_empty()
     );
     app.world_mut()
-        .resource_mut::<crate::viewport::api::ViewerSettingsState>()
+        .resource_mut::<crate::api::ViewerSettingsState>()
         .set_section_box_enabled(false);
     app.update();
     assert_eq!(
@@ -374,7 +374,7 @@ fn projection_app() -> App {
     app.add_plugins(MinimalPlugins)
         .init_resource::<SceneAnchorIndex>()
         .init_resource::<SelectedTargets>()
-        .init_resource::<crate::viewport::api::ViewerSettingsState>()
+        .init_resource::<crate::api::ViewerSettingsState>()
         .init_resource::<SelectedRenderableProjection>();
 
     let heavy = app.world_mut().spawn(UsdPrimRef::new(HEAVY_PATH)).id();

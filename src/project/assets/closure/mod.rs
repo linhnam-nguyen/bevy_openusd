@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::project::cache::contract::ProjectCacheTarget;
+use crate::cache::contract::ProjectCacheTarget;
 
 mod discovery;
 mod io;
@@ -64,7 +64,7 @@ struct TargetHashEntry {
 
 /// Hash only the canonical files that compose one Project target.
 ///
-/// This is deliberately narrower than [`crate::project::cache::fingerprint_project`].
+/// This is deliberately narrower than [`crate::cache::fingerprint_project`].
 /// A Scene identity owns its authored layer plus its imported source closure,
 /// but not referenced child Scene/Model payloads or presentation-only names.
 /// A Model identity owns its wrapper plus imported source closure.

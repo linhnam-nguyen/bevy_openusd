@@ -20,21 +20,21 @@ use viewport_protocol::{
 };
 use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::cache::hydration::ActiveProjectCacheContext;
+use crate::cache::hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
-use crate::viewport::api::RenderServerInterface;
-use crate::viewport::api::test_harness::{
+use crate::api::RenderServerInterface;
+use crate::api::test_harness::{
     refresh_active_hierarchy_projection, refresh_scene_anchor_index,
 };
-use crate::viewport::bim::BimClassificationFieldCatalogueState;
-use crate::viewport::scene::{
+use crate::bim::BimClassificationFieldCatalogueState;
+use crate::viewport::rendering::scene::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
     SceneAnchorIndex,
 };
-use crate::viewport::scene::{SelectedPrim, SelectedTargets};
-use crate::viewport::semantic::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
+use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
+use crate::semantic::viewport::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 use crate::viewport::stage::rehydrate_activation_presentation;
 use crate::viewport::stage::{Spawned, StageInfo, StagePresentationContext};
 use usd_project::ProjectRoot;
@@ -83,7 +83,7 @@ impl ProductionActivationWorld {
             .init_resource::<CurrentHierarchyProjection>()
             .init_resource::<SceneAnchorIndex>()
             .init_resource::<BimClassificationFieldCatalogueState>()
-            .init_resource::<crate::viewport::animation::UsdStageTime>()
+            .init_resource::<crate::animation::UsdStageTime>()
             .insert_resource(SemanticSyncState::with_config(
                 SemanticConfig::for_nvidia_revit_connector(),
             ))
@@ -96,6 +96,7 @@ impl ProductionActivationWorld {
             .insert_resource(StageInfo::default())
             .insert_resource(StagePresentationContext::default())
             .insert_resource(RenderServerInterface::default())
+            .insert_resource(crate::api::product_stage_lifecycle_hooks())
             .insert_resource(super::ProjectActivationAuthorityRuntime::default())
             .add_systems(
                 Update,
@@ -110,7 +111,7 @@ impl ProductionActivationWorld {
             );
         app.add_systems(
             Update,
-            crate::viewport::animation::tests::tick_stage_time
+            crate::animation::tests::tick_stage_time
                 .after(usd_bevy::LiveStageSet::Presentation),
         );
         app.add_systems(
@@ -261,11 +262,11 @@ impl ProductionActivationWorld {
         let bim_index = semantic
             .shared_bim_index()
             .expect("BIM index checked above");
-        let properties = crate::viewport::bim::BimReadService::with_index(snapshot, bim_index)
+        let properties = crate::bim::BimReadService::with_index(snapshot, bim_index)
             .read_properties(
                 &selection.0,
                 selection.revision(),
-                crate::viewport::bim::BimReadPolicy {
+                crate::bim::BimReadPolicy {
                     allow_value_edit: true,
                 },
             )

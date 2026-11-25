@@ -9,7 +9,7 @@ use super::super::{
 };
 use super::fixtures::response;
 use super::runtime_delivery_support::wait_for_manifest;
-use crate::viewport::api::RenderServerInterface;
+use crate::api::RenderServerInterface;
 
 #[test]
 fn test_regression_subtree_delta_runtime_delivery_manifest_and_blob_reuse() -> Result<()> {
@@ -46,11 +46,11 @@ def Xform "World"
     let live = LiveStage::new(stage);
 
     let mut app = viewport_support::semantic_test_app();
-    app.insert_resource(crate::project::stages::recovery::RecoverySettings {
+    app.insert_resource(crate::document::stages::recovery::RecoverySettings {
         project_root: temp_dir.path().to_path_buf(),
     });
     app.insert_resource(
-        crate::project::cache::historical_geometry::HistoricalGeometryCache::default(),
+        crate::cache::historical_geometry::HistoricalGeometryCache::default(),
     );
     app.insert_resource(SemanticWorkingStore::default());
     app.insert_resource(SemanticSyncState::default());
@@ -191,7 +191,7 @@ def Xform "World"
     let hierarchy_bytes = shared_interface
         .runtime_blob(&manifest_2.hierarchy.blob_id)
         .expect("hierarchy blob exists");
-    let hierarchy: crate::project::runtime::delivery::RuntimeHierarchyBlob =
+    let hierarchy: crate::document::runtime::delivery::RuntimeHierarchyBlob =
         serde_json::from_slice(&hierarchy_bytes).expect("deserialize hierarchy blob");
 
     let hierarchy_paths: Vec<&str> = hierarchy

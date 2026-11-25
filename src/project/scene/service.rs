@@ -9,7 +9,7 @@ use usd_project::{ProjectRoot, SceneCompositionGraph, SceneMemberTarget};
 
 use crate::project::service::{ProjectApplicationService, ProjectStageMutation, inspection};
 
-pub(in crate::project) fn create_scene(
+pub(crate) fn create_scene(
     service: &mut ProjectApplicationService,
     project_id: usd_project::ProjectId,
     target: ProjectWriteTarget,
@@ -123,13 +123,13 @@ pub(in crate::project) fn create_scene(
         )?;
     }
     let mut cache_targets = vec![
-        crate::project::cache::ProjectCacheTarget::Scene {
+        crate::cache::ProjectCacheTarget::Scene {
             id: created.scene_id.to_string(),
         },
-        crate::project::cache::ProjectCacheTarget::ProjectRoot,
+        crate::cache::ProjectCacheTarget::ProjectRoot,
     ];
     if let Some(parent_scene_id) = parent_scene_id {
-        cache_targets.push(crate::project::cache::ProjectCacheTarget::Scene {
+        cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
             id: parent_scene_id.to_string(),
         });
     }
