@@ -55,7 +55,20 @@ pub(crate) fn dispatch_scene_query_commands(
     let semantic_diff = semantic_params.semantic_diff;
     let stage_handle = semantic_params.stage_handle;
     let mut pending_activation = semantic_params.pending_activation;
-    for envelope in inbox.take_scene_query_commands() {
+    for envelope in inbox.drain_matching(|envelope| {
+        matches!(
+            envelope.command,
+            ViewportCommand::RequestSceneChildren { .. }
+                | ViewportCommand::SearchScene { .. }
+                | ViewportCommand::SearchBim { .. }
+                | ViewportCommand::RequestBimProperties
+                | ViewportCommand::RequestBimPropertyProvenance { .. }
+                | ViewportCommand::RequestHierarchyChildren { .. }
+                | ViewportCommand::SearchHierarchy { .. }
+                | ViewportCommand::SetBimClassificationRecipe { .. }
+                | ViewportCommand::SetHierarchySource { .. }
+        )
+    }) {
         let request_id = envelope.request_id;
         if envelope.protocol_version != PROTOCOL_VERSION {
             reject(

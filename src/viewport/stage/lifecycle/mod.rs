@@ -21,6 +21,7 @@ pub(super) mod scene_presentation;
 pub(crate) use invalidation::{
     PendingActivationPresentation, rehydrate_activation_presentation,
 };
+pub(crate) use open::publish_standalone_cache_when_ready;
 pub(crate) use project_activation::{
     StageInstallMode, activate_open_stage_with_cache_context_for_generation,
     clear_active_stage_for_generation, discard_scene_cache_bootstrap,

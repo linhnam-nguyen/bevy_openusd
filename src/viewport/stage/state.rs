@@ -58,6 +58,11 @@ pub(crate) struct ProductStageLifecycleHooks {
     pub(crate) on_reset_derived: fn(&mut bevy::prelude::World, u64),
     pub(crate) on_reset_source_derived: fn(&mut bevy::prelude::World, u64),
     pub(crate) is_semantic_ready: fn(&bevy::prelude::World) -> bool,
+    pub(crate) on_reset_document_edit_state: fn(&mut bevy::prelude::World),
+    pub(crate) compute_project_target_hash:
+        fn(&std::path::Path, &crate::cache::contract::ProjectCacheTarget) -> anyhow::Result<HashDigest>,
+    pub(crate) revalidate_project_cache_identity:
+        fn(&std::path::Path, &crate::cache::ProjectCacheIdentity) -> anyhow::Result<bool>,
 }
 
 /// Metadata-first Scene activation published before the canonical Stage has

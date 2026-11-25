@@ -38,6 +38,16 @@ fn canonical_stage_install_preserves_cache_presentation_lookup_and_resident_mesh
     world.init_resource::<ProjectionSeed>();
     world.init_resource::<CurrentHierarchyProjection>();
     world.init_resource::<SceneResidencyProjection>();
+    // F-03 fail-closed revalidation requires ProductStageLifecycleHooks to be
+    // installed when preserving a Project scene cache across canonical install.
+    world.insert_resource(crate::viewport::stage::ProductStageLifecycleHooks {
+        on_reset_derived: |_, _| {},
+        on_reset_source_derived: |_, _| {},
+        is_semantic_ready: |_| true,
+        on_reset_document_edit_state: |_| {},
+        compute_project_target_hash: |_, _| Ok(HashDigest::new([0; HashDigest::BYTE_LEN])),
+        revalidate_project_cache_identity: |_, _| Ok(true),
+    });
     assert!(install_scene_cache_bootstrap_before_stage_open(
         &mut world,
         project.path(),

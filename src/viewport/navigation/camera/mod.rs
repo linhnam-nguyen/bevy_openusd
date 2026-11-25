@@ -31,7 +31,7 @@ use bevy::camera_controller::pan_orbit_camera::{
 use usd_bevy::UsdCamera;
 use viewport_protocol::{CameraOrientationReadModel, ViewportEvent, ViewportEventEnvelope};
 
-use crate::api::ViewportEventOutbox;
+use crate::viewport::presentation::ViewportEventOutbox;
 use crate::viewport::navigation::input::{
     ViewportNavigationInput, apply_local_navigation_input, reset_navigation_frame,
     ui_wants_pointer_input,

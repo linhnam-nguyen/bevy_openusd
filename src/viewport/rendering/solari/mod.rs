@@ -15,8 +15,8 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::{ExtractSchedule, MainWorld, RenderApp};
 use usd_bevy::LiveStageSet;
 
-use crate::api::ViewerSettingsState;
-use crate::api::ViewportBridgeSet;
+use crate::viewport::presentation::ViewerSettingsState;
+use crate::viewport::ViewportFrameSet;
 
 use projection::sync_solari_usd_projection;
 pub(crate) use projection::{SolariProjectionDiagnostics, SolariProjectionState};
@@ -70,7 +70,7 @@ impl Plugin for SolariCapabilityPlugin {
                 )
                     .chain()
                     .after(LiveStageSet::Presentation)
-                    .before(ViewportBridgeSet::ApplyCommands),
+                    .before(ViewportFrameSet::ApplyCommands),
             );
 
         #[cfg(feature = "solari")]

@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use usd_bevy::UsdLocalExtent;
 use viewport_protocol::SceneAnchor;
 
-use crate::api::ViewerSettingsState;
+use crate::viewport::presentation::ViewerSettingsState;
 use crate::viewport::rendering::scene::EntityOrder;
 use crate::viewport::rendering::scene::SceneAnchorIndex;
 use crate::viewport::navigation::selection::{SelectedPrim, SelectedTargets, SelectionPresentationPolicy};

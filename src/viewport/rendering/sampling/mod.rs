@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use viewport_protocol::{ViewportEvent, ViewportEventEnvelope};
 
-use crate::api::{ViewerSettingsState, ViewportEventOutbox};
+use crate::viewport::presentation::{ViewerSettingsState, ViewportEventOutbox};
 
 pub(crate) mod coordinator;
 pub(crate) mod dlss;
@@ -22,7 +22,7 @@ impl Plugin for SamplingCoordinatorPlugin {
         app.init_resource::<SamplingCoordinatorState>().add_systems(
             Update,
             publish_sampling_capabilities
-                .before(crate::api::ViewportBridgeSet::ApplyCommands),
+                .before(crate::viewport::ViewportFrameSet::ApplyCommands),
         );
     }
 }

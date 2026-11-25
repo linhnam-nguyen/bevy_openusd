@@ -13,7 +13,7 @@ pub(crate) use lifecycle::{
     activate_stage_with_cache_context, activate_stage_with_cache_context_for_generation,
     apply_load_request, clear_active_stage_for_generation, discard_scene_cache_bootstrap,
     handle_usd_hot_reload, install_scene_cache_bootstrap_before_stage_open, load_stage,
-    poll_scene_cache_revalidation, spawn_when_ready,
+    poll_scene_cache_revalidation, publish_standalone_cache_when_ready, spawn_when_ready,
 };
 pub(crate) use state::{
     LoadRequest, LoaderTuning, PendingSceneCacheRevalidation, ReloadRequest, RequestedAsset,

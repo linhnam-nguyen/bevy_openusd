@@ -16,7 +16,7 @@ use usd_bevy::route::gpu_instancing::GpuPointPicker;
 use usd_bevy::route::instancer::UsdOccurrenceBounds;
 use viewport_protocol::{MAX_SELECTION_TARGETS, SceneAnchor, ViewportCommand};
 
-use crate::api::ViewportCommandInbox;
+use crate::viewport::presentation::ViewportCommandInbox;
 use crate::viewport::navigation::input::navigation::PrimaryButtonEdge;
 use crate::viewport::navigation::input::{HostUiInputCapture, ViewerInteractionGate, ViewportNavigationInput};
 use crate::viewport::rendering::scene::SceneAnchorIndex;

@@ -14,7 +14,7 @@ mod tree;
 use apply::apply_pending_outline_work;
 pub(crate) use tree::collect_mesh_descendants;
 
-use crate::api::ViewerSettingsState;
+use crate::viewport::presentation::ViewerSettingsState;
 use crate::viewport::rendering::scene::EntityOrder;
 use crate::viewport::rendering::scene::SceneAnchorIndex;
 use crate::viewport::navigation::selection::{

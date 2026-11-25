@@ -454,43 +454,6 @@ pub(crate) fn reset_navigation_frame(mut input: ResMut<ViewportNavigationInput>)
     input.reset_frame_motion();
 }
 
-/// Applies validated input received by the WebRTC transport. The transport
-/// never mutates Bevy state directly; it only feeds this bounded adapter.
-pub(crate) fn apply_remote_navigation_input(
-    interface: Option<Res<crate::api::RenderServerInterface>>,
-    mut input: ResMut<ViewportNavigationInput>,
-    mut counters: Option<ResMut<crate::diagnostics::performance::RendererCounters>>,
-    gate: ViewerInteractionGate,
-    mut was_locked: Local<bool>,
-) {
-    let Some(interface) = interface else {
-        return;
-    };
-    let locked = gate.locked();
-    if locked || *was_locked {
-        *was_locked = locked;
-        interface.shared().clear_remote_input();
-        input.clear_remote_state();
-        return;
-    }
-    if interface.take_input_reset() {
-        input.clear_remote_state();
-    }
-    while let Some(command) = interface.pop_input() {
-        if let Some(ref mut c) = counters {
-            c.remote_inputs_applied += 1;
-        }
-        input.apply_remote_command(command);
-    }
-    if let Some(motion) = interface.take_latest_pointer_motion() {
-        if let Some(ref mut c) = counters {
-            c.remote_inputs_applied += 1;
-        }
-        input.apply_pointer_motion(motion);
-    }
-    input.expire_remote_input();
-}
-
 /// Keeps the local native window behavior on the same camera input resource.
 /// In headless mode the query is empty and the remote adapter is the only
 /// producer.

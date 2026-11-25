@@ -12,8 +12,9 @@ use uuid::Uuid;
 use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 
 use super::contract::ProjectCacheTarget;
-use super::target_content_hash;
-use crate::project::{catalog::manifest_store::write_bytes_atomic, storage::ProjectStorageLayout};
+use crate::project::assets::closure::target_content_hash;
+use crate::project::storage::ProjectStorageLayout;
+use super::generic::write_bytes_atomic;
 
 pub(crate) const PROJECT_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 2;
 const DESCRIPTORS_DIRECTORY: &str = "descriptors";

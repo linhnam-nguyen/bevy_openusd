@@ -1,4 +1,5 @@
 use super::*;
+use viewport_protocol::{ViewportCommand, ViewportCommandEnvelope, ViewportEventEnvelope};
 
 #[test]
 fn local_requests_are_ordered_and_identifiable() {

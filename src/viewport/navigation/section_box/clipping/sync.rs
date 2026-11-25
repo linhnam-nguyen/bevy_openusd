@@ -13,7 +13,7 @@ use super::{
     SectionClipMaterial, SectionClipPresentationKey, SectionClipSystemParam,
     SectionClipUnderlyingMaterial, SectionClipUniform,
 };
-use crate::api::ViewerSettingsState;
+use crate::viewport::presentation::ViewerSettingsState;
 use crate::viewport::rendering::scene::SceneAnchorIndex;
 use crate::viewport::rendering::scene::visualization::DisplayToggles;
 

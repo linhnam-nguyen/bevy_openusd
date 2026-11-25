@@ -69,19 +69,23 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
                         && presentation.generation == activation.descriptor.generation
                 })
         });
+    let lifecycle_hooks = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied();
     let cache_context = cache_context.and_then(|context| {
         if !context.should_revalidate() {
             return Some(context);
         }
-        let current = crate::cache::ProjectCacheIdentity::for_project(
-            &context.project_root,
-            context.identity.target.clone(),
-            context.identity.profile,
-            context.identity.config_hash,
-        );
-        match current {
-            Ok(identity) if identity == context.identity => Some(context),
-            Ok(_) => {
+        let Some(hooks) = lifecycle_hooks else {
+            bevy::log::warn!(
+                "[project-cache] no product cache validator registered for {}; falling back to source projection",
+                path.display()
+            );
+            return None;
+        };
+        match (hooks.revalidate_project_cache_identity)(&context.project_root, &context.identity) {
+            Ok(true) => Some(context),
+            Ok(false) => {
                 bevy::log::warn!(
                     "[project-cache] source changed across Stage::open for {}; using source projection",
                     path.display()
@@ -187,7 +191,12 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         );
     }
     world.insert_non_send(stage);
-    crate::api::reset_document_edit_state(world);
+    if let Some(hooks) = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied()
+    {
+        (hooks.on_reset_document_edit_state)(world);
+    }
     world.remove_resource::<crate::viewport::stage::CachePresentationGate>();
     if let (Some(scene_cache), Some(project_root)) =
         (scene_cache.as_ref(), scene_cache_project_root)
@@ -219,6 +228,16 @@ fn install_scene_cache_revalidation(
     expected_hash: Option<HashDigest>,
     config_hash: HashDigest,
 ) {
+    let Some(compute_hash) = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .map(|hooks| hooks.compute_project_target_hash)
+    else {
+        bevy::log::warn!(
+            "[project-cache] no product hash validator registered for {scene_id}; discarding bootstrap cache"
+        );
+        discard_scene_cache_bootstrap(world, scene_id, scene_generation);
+        return;
+    };
     let result = Arc::new(Mutex::new(None));
     let result_slot = Arc::clone(&result);
     let hash_target = ProjectCacheTarget::Scene {
@@ -230,7 +249,7 @@ fn install_scene_cache_revalidation(
         .name(worker_name)
         .spawn(move || {
             let result =
-                crate::cache::target_content_hash(&worker_root, &hash_target)
+                compute_hash(&worker_root, &hash_target)
                     .map_err(|error| format!("{error:#}"));
             match result_slot.lock() {
                 Ok(mut slot) => *slot = Some(result),
@@ -405,7 +424,12 @@ pub(crate) fn poll_scene_cache_revalidation(world: &mut World) {
 /// activation before the caller commits its logical authority.
 pub(crate) fn clear_active_stage_for_generation(world: &mut World, activation_generation: u64) {
     super::clear_projected_stage(world);
-    crate::api::reset_document_edit_state(world);
+    if let Some(hooks) = world
+        .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
+        .copied()
+    {
+        (hooks.on_reset_document_edit_state)(world);
+    }
     if let Some(mut cache) = world.get_resource_mut::<usd_bevy::route::material::UsdTextureCache>()
     {
         cache.clear_active_archives();
@@ -415,6 +439,8 @@ pub(crate) fn clear_active_stage_for_generation(world: &mut World, activation_ge
     world.remove_resource::<StageHandle>();
     world.remove_resource::<ActiveProjectCacheContext>();
     world.remove_resource::<SceneCacheOwnershipContext>();
+    world.remove_resource::<crate::cache::generic::ActiveStandaloneCacheHandle>();
+    world.remove_resource::<crate::cache::generic::PendingStandaloneCachePublish>();
     world.insert_resource(StageInfo {
         activation_generation,
         ..StageInfo::default()

@@ -9,7 +9,7 @@ use viewport_protocol::{
     GroundGridOrigin, MAX_GIZMO_SIZE_LEVEL, MIN_GIZMO_SIZE_LEVEL, RendererConfiguration,
 };
 
-use crate::api::ViewerSettingsState;
+use crate::viewport::ViewportFrameSet;
 use crate::viewport::navigation::camera::ArcballCamera;
 use crate::viewport::rendering::scene::SelectionPresentationPolicy;
 use crate::viewport::navigation::section_box::{
@@ -26,8 +26,13 @@ use crate::viewport::navigation::selection::{
 
 mod edge;
 mod environment;
+pub(crate) mod queues;
 mod render_mode;
+mod settings;
 mod shadows;
+
+pub(crate) use queues::{ViewportCommandInbox, ViewportEventOutbox};
+pub(crate) use settings::ViewerSettingsState;
 
 use edge::{EdgeOverlayCache, init_edge_overlay_material, sync_edge_overlays};
 pub(super) use environment::{
@@ -113,7 +118,7 @@ impl Plugin for OverlaysPlugin {
                     draw_coarse_selection_proxy,
                 )
                     .chain()
-                    .after(crate::api::ViewportBridgeSet::ApplyCommands)
+                    .after(ViewportFrameSet::ApplyCommands)
                     .after(crate::viewport::navigation::camera::ArcballCameraSet::ApplyInput)
                     .before(sync_ground_grid_to_scene)
                     .before(bevy_glacial::prelude::build_grid_meshes),
@@ -127,7 +132,7 @@ impl Plugin for OverlaysPlugin {
                     PresentationOverlaySet::PostOverlay,
                 )
                     .chain()
-                    .after(crate::api::ViewportBridgeSet::ApplyCommands)
+                    .after(ViewportFrameSet::ApplyCommands)
                     .after(crate::viewport::navigation::camera::ArcballCameraSet::ApplyInput)
                     .after(sync_selected_renderable_projection)
                     .after(sync_section_box_state)

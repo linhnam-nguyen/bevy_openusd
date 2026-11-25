@@ -21,7 +21,8 @@ use super::{
 };
 use crate::cache::blobs::BlobStore;
 use crate::cache::contract::SceneCacheState;
-use crate::cache::{ProjectCacheTarget, target_content_hash};
+use crate::cache::ProjectCacheTarget;
+use crate::project::assets::closure::target_content_hash;
 
 struct BarrierPublishObserver {
     built_tx: mpsc::Sender<()>,

@@ -72,10 +72,14 @@ impl Plugin for ViewportBridgePlugin {
                 Update,
                 (
                     ViewportBridgeSet::RefreshSceneIndex,
-                    ViewportBridgeSet::ApplyCommands,
-                    ViewportBridgeSet::ApplyTreeCommands,
-                    ViewportBridgeSet::PublishStageLoadState,
-                    ViewportBridgeSet::ReduceEvents,
+                    ViewportBridgeSet::ApplyCommands
+                        .in_set(crate::viewport::ViewportFrameSet::ApplyCommands),
+                    ViewportBridgeSet::ApplyTreeCommands
+                        .in_set(crate::viewport::ViewportFrameSet::ApplyTreeCommands),
+                    ViewportBridgeSet::PublishStageLoadState
+                        .in_set(crate::viewport::ViewportFrameSet::PublishStageLoadState),
+                    ViewportBridgeSet::ReduceEvents
+                        .in_set(crate::viewport::ViewportFrameSet::ReduceEvents),
                 )
                     .chain(),
             )
@@ -261,6 +265,17 @@ pub(crate) fn product_stage_lifecycle_hooks() -> crate::viewport::stage::Product
                 .is_some_and(|semantic| {
                     semantic.snapshot().is_some() && semantic.shared_bim_index().is_some()
                 })
+        },
+        on_reset_document_edit_state: crate::api::reset_document_edit_state,
+        compute_project_target_hash: crate::project::assets::closure::target_content_hash,
+        revalidate_project_cache_identity: |project_root, expected| {
+            let current = crate::cache::ProjectCacheIdentity::for_project(
+                project_root,
+                expected.target.clone(),
+                expected.profile,
+                expected.config_hash,
+            )?;
+            Ok(current == *expected)
         },
     }
 }

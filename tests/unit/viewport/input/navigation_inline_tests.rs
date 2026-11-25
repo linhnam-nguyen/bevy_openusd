@@ -344,7 +344,7 @@ fn remote_motion_uses_authoritative_viewport_cursor_without_publishing_state() {
         .init_resource::<crate::api::RenderServerInterface>()
         .add_systems(
             Update,
-            apply_remote_navigation_input.before(usd_bevy::LiveStageSet::Project),
+            crate::transport::webrtc::apply_remote_navigation_input.before(usd_bevy::LiveStageSet::Project),
         );
     let send_motion = |app: &App, sequence| {
         app.world()

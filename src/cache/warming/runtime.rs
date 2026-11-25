@@ -131,7 +131,7 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
             id: descriptor.scene_id.to_string(),
         };
         ensure!(
-            super::super::target_content_hash(project_root, &target)? == expected,
+            crate::project::assets::closure::target_content_hash(project_root, &target)? == expected,
             "Scene source changed during cache build"
         );
     }

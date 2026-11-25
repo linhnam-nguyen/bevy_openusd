@@ -45,7 +45,7 @@ use crate::semantic::viewport::{
 use crate::viewport::stage::{
     LoadRequest, LoaderTuning, ReloadRequest, RequestedAsset, Spawned, StageInfo,
     apply_load_request, handle_usd_hot_reload, load_stage, poll_scene_cache_revalidation,
-    spawn_when_ready,
+    publish_standalone_cache_when_ready, spawn_when_ready,
 };
 use crate::transport::ViewportTransport;
 
@@ -179,6 +179,15 @@ pub(crate) fn configure_generic_viewport_core(app: &mut App, config: &GenericVie
         app.add_systems(Startup, load_stage);
     }
 
+    if let Ok(cache_dir) = std::env::var("USDHUB_STANDALONE_CACHE_DIR")
+        && !cache_dir.trim().is_empty()
+    {
+        app.insert_resource(crate::cache::generic::StandaloneCacheProviderResource {
+            store: crate::cache::StandaloneCacheStore::new(cache_dir),
+            recipe_digest: crate::cache::generic::default_standalone_recipe_digest(),
+        });
+    }
+
     app.add_systems(
         Update,
         (
@@ -188,6 +197,7 @@ pub(crate) fn configure_generic_viewport_core(app: &mut App, config: &GenericVie
             spawn_when_ready
                 .after(LiveStageSet::Presentation)
                 .before(ViewportBridgeSet::ApplyCommands),
+            publish_standalone_cache_when_ready.after(spawn_when_ready),
             fit_camera_once,
             handle_usd_hot_reload,
             apply_load_request,

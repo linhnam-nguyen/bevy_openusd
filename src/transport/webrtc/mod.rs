@@ -14,7 +14,9 @@ use crate::api::{
     ViewportEventOutbox,
 };
 use crate::viewport::navigation::camera::ArcballCameraSet;
-use crate::viewport::navigation::input::{apply_remote_navigation_input, sync_headless_gizmo_input};
+use crate::viewport::navigation::input::{
+    ViewerInteractionGate, ViewportNavigationInput, sync_headless_gizmo_input,
+};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,6 +86,44 @@ impl Plugin for WebRtcTransportPlugin {
                 publish_authoritative_events.after(ViewportBridgeSet::ReduceEvents),
             );
     }
+}
+
+/// Applies validated input received by the WebRTC transport. The transport
+/// never mutates Bevy state directly; it only feeds the neutral
+/// [`ViewportNavigationInput`] resource owned by `viewport::navigation`.
+pub(crate) fn apply_remote_navigation_input(
+    interface: Option<Res<RenderServerInterface>>,
+    mut input: ResMut<ViewportNavigationInput>,
+    mut counters: Option<ResMut<crate::diagnostics::performance::RendererCounters>>,
+    gate: ViewerInteractionGate,
+    mut was_locked: Local<bool>,
+) {
+    let Some(interface) = interface else {
+        return;
+    };
+    let locked = gate.locked();
+    if locked || *was_locked {
+        *was_locked = locked;
+        interface.shared().clear_remote_input();
+        input.clear_remote_state();
+        return;
+    }
+    if interface.take_input_reset() {
+        input.clear_remote_state();
+    }
+    while let Some(command) = interface.pop_input() {
+        if let Some(ref mut c) = counters {
+            c.remote_inputs_applied += 1;
+        }
+        input.apply_remote_command(command);
+    }
+    if let Some(motion) = interface.take_latest_pointer_motion() {
+        if let Some(ref mut c) = counters {
+            c.remote_inputs_applied += 1;
+        }
+        input.apply_pointer_motion(motion);
+    }
+    input.expire_remote_input();
 }
 
 pub(crate) fn drain_remote_commands(

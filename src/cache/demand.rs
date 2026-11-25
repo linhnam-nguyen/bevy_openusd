@@ -10,7 +10,8 @@ use usd_project::SceneId;
 use super::blobs::{BlobStore, get_mesh, prepare_mesh_payload};
 use super::contract::{SceneCacheBlobRef, SceneCacheDescriptorV3, SceneCacheEntryKind};
 use super::warming::runtime;
-use super::{ProjectCacheTarget, SceneCacheStore, target_content_hash};
+use super::{ProjectCacheTarget, SceneCacheStore};
+use crate::project::assets::closure::target_content_hash;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OwnedPrimPathResolution {

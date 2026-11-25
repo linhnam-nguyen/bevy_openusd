@@ -20,6 +20,7 @@ pub(crate) mod contract;
 pub(crate) mod demand;
 pub(crate) mod derived_lod;
 mod descriptor;
+pub(crate) mod generic;
 pub(crate) mod historical_geometry;
 pub(crate) mod hydration;
 mod lookup;
@@ -29,13 +30,16 @@ mod preparation;
 pub(crate) mod scene;
 pub(crate) mod warming;
 
-pub(crate) use crate::project::assets::closure::target_content_hash;
 pub(crate) use contract::{
     ProjectCacheTarget, SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION, SceneCacheDescriptorV3,
     SceneCacheState, SceneSourceStamp,
 };
 pub(crate) use descriptor::{
     ProjectCacheDescriptor, ProjectCacheIdentity, ProjectCacheState, ProjectCacheStore,
+};
+pub(crate) use generic::{
+    CacheHandle, CacheIdentity, CacheProvider, SourceIdentity, StandaloneCacheStore,
+    compute_standalone_source_identity, write_bytes_atomic,
 };
 pub(crate) use scene::prim_count::{PrimCountPublication, publish_prim_count_if_current};
 pub(crate) use scene::store::SceneCacheStore;

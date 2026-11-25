@@ -27,7 +27,7 @@ use bevy::render::render_asset::RenderAssetBytesPerFrame;
 
 use crate::cache::contract::{SceneCacheAddress, SceneCacheOccurrence};
 use crate::cache::hydration::ActiveProjectCacheContext;
-use crate::api::ViewportBridgeSet;
+use crate::viewport::ViewportFrameSet;
 use crate::viewport::rendering::scene::{SceneAnchorIndex, SectionBoxState};
 use crate::viewport::stage::{SceneCacheOwnershipContext, SceneCachePresentation};
 
@@ -83,12 +83,12 @@ impl Plugin for ResidencyPlugin {
                     sync_active_viewpoint_residency,
                     sync_selected_residency,
                     advance_visibility_epoch
-                        .after(ViewportBridgeSet::ApplyTreeCommands)
+                        .after(ViewportFrameSet::ApplyTreeCommands)
                         .after(usd_bevy::LiveStageSet::Presentation),
                     update_camera_residency,
                     visual_composition::synchronize_visual_composition,
                     visual_lod::synchronize_authored_lod
-                        .before(ViewportBridgeSet::PublishStageLoadState),
+                        .before(ViewportFrameSet::PublishStageLoadState),
                     drain_cached_residency_completions,
                     install_loaded_scene_payloads,
                     drain_targeted_repair_persistence_completions,

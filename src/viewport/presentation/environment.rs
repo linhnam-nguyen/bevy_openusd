@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use viewport_protocol::{ColorRgb8, GroundGridOrigin};
 
 use super::{DisplayToggles, SceneExtent};
-use crate::api::ViewerSettingsState;
+use crate::viewport::presentation::ViewerSettingsState;
 use crate::viewport::navigation::camera::ArcballCamera;
 use crate::diagnostics::performance::GroundGridDecisionHelper;
 

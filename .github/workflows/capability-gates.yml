@@ -41,22 +41,6 @@ jobs:
           path: bevy_openusd
           persist-credentials: false
 
-      - name: Checkout sibling bevy_frost
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_frost
-          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
-          path: bevy_frost
-          persist-credentials: false
-
-      - name: Checkout sibling bevy_glacial
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_glacial
-          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
-          path: bevy_glacial
-          persist-credentials: false
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -93,22 +77,6 @@ jobs:
           path: bevy_openusd
           persist-credentials: false
 
-      - name: Checkout sibling bevy_frost
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_frost
-          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
-          path: bevy_frost
-          persist-credentials: false
-
-      - name: Checkout sibling bevy_glacial
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_glacial
-          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
-          path: bevy_glacial
-          persist-credentials: false
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -140,22 +108,6 @@ jobs:
           path: bevy_openusd
           persist-credentials: false
 
-      - name: Checkout sibling bevy_frost
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_frost
-          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
-          path: bevy_frost
-          persist-credentials: false
-
-      - name: Checkout sibling bevy_glacial
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_glacial
-          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
-          path: bevy_glacial
-          persist-credentials: false
-
       - name: cargo check dlss feature
         run: cargo check --workspace --all-targets --features dlss --locked
 
@@ -174,22 +126,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: bevy_openusd
-          persist-credentials: false
-
-      - name: Checkout sibling bevy_frost
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_frost
-          ref: da3110c07ba8d79d6deeba5a68dd536231956fb9
-          path: bevy_frost
-          persist-credentials: false
-
-      - name: Checkout sibling bevy_glacial
-        uses: actions/checkout@v4
-        with:
-          repository: linhnam-nguyen/bevy_glacial
-          ref: 6bef365be227e1461c1f8019e3b8c631c166fd44
-          path: bevy_glacial
           persist-credentials: false
 
       - name: Run external-fixture and profile ignored tests
