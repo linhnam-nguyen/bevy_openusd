@@ -7,7 +7,7 @@ use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
 use super::super::hierarchy::CurrentHierarchyProjection;
 use super::SceneAnchorIndex;
-use crate::viewport::stage::StagePresentationContext;
+use crate::viewport::stage::{StagePresentationContext, resolve_prim_display_name};
 
 pub(super) fn display_name(
     prim: &UsdPrimRef,
@@ -15,23 +15,12 @@ pub(super) fn display_name(
     target: Option<&UsdHierarchyTarget>,
     presentation: Option<&StagePresentationContext>,
 ) -> Option<String> {
-    let is_presentation_root = presentation
-        .is_some_and(|presentation| presentation.root_path.as_deref() == Some(prim.path.as_str()));
-    if is_presentation_root {
-        presentation
-            .and_then(|presentation| presentation.root_name.clone())
-            .or_else(|| {
-                target
-                    .and_then(|target| presentation?.target_name(&target.kind, &target.id))
-                    .map(str::to_owned)
-            })
-            .or_else(|| authored.map(|display_name| display_name.0.clone()))
-    } else {
-        target
-            .and_then(|target| presentation?.target_name(&target.kind, &target.id))
-            .map(str::to_owned)
-            .or_else(|| authored.map(|display_name| display_name.0.clone()))
-    }
+    resolve_prim_display_name(
+        presentation,
+        &prim.path,
+        authored.map(|display_name| display_name.0.as_str()),
+        target.map(|target| (target.kind.as_str(), target.id.as_str())),
+    )
 }
 
 fn visual_parent(
@@ -166,7 +155,7 @@ impl SceneAnchorIndex {
             .incremental_work
             .admitted_rows
             .saturating_add(additions.len() as u64);
-        self.revision = self.revision.saturating_add(1);
+        self.admission_revision = self.admission_revision.saturating_add(1);
         self.initialized = true;
         self.derived_dirty = true;
         Some(additions.len())
@@ -174,8 +163,23 @@ impl SceneAnchorIndex {
 
     /// Coalesces the expensive immutable representations once no new rows
     /// arrived during this update. The mutable maps above remain authoritative
-    /// for O(1) anchor resolution while this work is deferred.
+    /// for O(1) anchor resolution while this work is deferred, and the
+    /// published revision advances here when derived topology becomes visible.
     pub(super) fn flush_incremental_derived(&mut self) -> CurrentHierarchyProjection {
+        // Re-resolve visual parents from the complete admitted maps so children
+        // admitted before their parent (or before a transparent wrapper) link
+        // cleanly and derive `has_children` from published adjacency.
+        for node in &mut self.nodes {
+            node.parent = self
+                .by_anchor
+                .get(&node.anchor)
+                .copied()
+                .and_then(|entity| {
+                    visual_parent(entity, &self.parent_by_entity, &self.transparent_by_entity)
+                })
+                .and_then(|parent_entity| self.by_entity.get(&parent_entity).cloned());
+            node.has_children = false;
+        }
         self.nodes.sort_by(|left, right| {
             left.anchor
                 .prim_path
@@ -192,7 +196,22 @@ impl SceneAnchorIndex {
             .enumerate()
             .map(|(index, node)| (node.anchor.clone(), index))
             .collect();
+        let parent_indices = self
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                node.parent
+                    .as_ref()
+                    .and_then(|parent| self.node_index_by_anchor.get(parent).copied())
+            })
+            .collect::<Vec<_>>();
+        for parent_index in parent_indices {
+            if let Some(parent) = self.nodes.get_mut(parent_index) {
+                parent.has_children = true;
+            }
+        }
         self.rebuild_logical_dense();
+        self.published_revision = self.published_revision.saturating_add(1);
         let row_count = self.nodes.len() as u64;
         self.incremental_work.reindexed_rows = self
             .incremental_work

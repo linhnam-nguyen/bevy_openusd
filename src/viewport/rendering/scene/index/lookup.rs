@@ -78,7 +78,14 @@ impl SceneAnchorIndex {
     }
 
     pub(crate) fn revision(&self) -> u64 {
-        self.revision
+        self.published_revision
             .saturating_add(self.point_occurrences.revision)
+    }
+
+    pub(crate) fn has_pending_initial_publication(&self, activation_generation: u64) -> bool {
+        self.published_activation_generation != Some(activation_generation)
+            && (self.derived_dirty
+                || !self.pending_additions.is_empty()
+                || self.reconcile.is_pending())
     }
 }

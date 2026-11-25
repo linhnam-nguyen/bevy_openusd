@@ -12,7 +12,9 @@ use usd_bevy::{UsdDisplayName, UsdHierarchyTarget, UsdPrimRef, UsdTransparentHie
 
 use super::super::hierarchy::CurrentHierarchyProjection;
 use super::{SCENE_INDEX_ADMISSION_BUDGET, SceneAnchorIndex};
-use crate::viewport::stage::{Spawned, StagePresentationContext};
+use crate::viewport::stage::{
+    SceneCachePresentation, Spawned, StageInfo, StagePresentationContext,
+};
 
 #[derive(Component)]
 pub(crate) struct SceneIndexIndexedPrim;
@@ -138,9 +140,17 @@ pub(crate) fn refresh_scene_anchor_index(
     mut current_projection: ResMut<CurrentHierarchyProjection>,
     provider: Option<Res<super::super::ActiveHierarchyProvider>>,
     presentation: Option<Res<StagePresentationContext>>,
+    stage_info: Option<Res<StageInfo>>,
+    scene_cache: Option<Res<SceneCachePresentation>>,
     progressive: Option<Res<usd_bevy::ProgressiveProjectionState>>,
 ) {
     index.last_refresh_admitted = 0;
+
+    let active_generation = stage_info.as_deref().map(|info| info.activation_generation);
+    if index.active_activation_generation != active_generation {
+        index.active_activation_generation = active_generation;
+        index.published_activation_generation = None;
+    }
 
     let presentation_changed = presentation
         .as_ref()
@@ -159,14 +169,15 @@ pub(crate) fn refresh_scene_anchor_index(
             presentation.as_deref(),
             SCENE_INDEX_ADMISSION_BUDGET,
         ) {
+            index.published_activation_generation = active_generation;
             if provider.as_ref().is_none_or(|provider| {
                 provider.source() == viewport_protocol::HierarchySource::Prim
             }) {
                 *current_projection = projection;
             }
             info!(
-                "[viewport-scene-index] published bounded reconciliation revision={} prims={}",
-                index.revision,
+                "[viewport-scene-index] published bounded reconciliation published_revision={} prims={}",
+                index.published_revision,
                 index.nodes.len(),
             );
         }
@@ -224,8 +235,9 @@ pub(crate) fn refresh_scene_anchor_index(
                     commands.entity(entity).insert(SceneIndexIndexedPrim);
                 }
                 info!(
-                    "[viewport-scene-index] admitted progressive revision={} admitted={} pending={} prims={}",
-                    index.revision,
+                    "[viewport-scene-index] admitted progressive admission_revision={} published_revision={} admitted={} pending={} prims={}",
+                    index.admission_revision,
+                    index.published_revision,
                     admitted,
                     index.pending_additions.len(),
                     index.nodes.len(),
@@ -248,10 +260,18 @@ pub(crate) fn refresh_scene_anchor_index(
 
     // Startup intentionally keeps the public projection coherent: partial
     // authority admission remains private until the bounded queue drains and
-    // the coalesced derived view is published below.
+    // the coalesced derived view is published below. An empty final activation
+    // still publishes one observable revision for its generation when no cache
+    // bootstrap owns the interim presentation.
 
-    if index.derived_dirty && projection_is_settled(progressive.as_deref()) {
+    let needs_empty_final_publish = active_generation.is_some()
+        && index.published_activation_generation != active_generation
+        && scene_cache.is_none();
+    if (index.derived_dirty || needs_empty_final_publish)
+        && projection_is_settled(progressive.as_deref())
+    {
         let projection = index.flush_incremental_derived();
+        index.published_activation_generation = active_generation;
         if provider
             .as_ref()
             .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim)
@@ -259,8 +279,8 @@ pub(crate) fn refresh_scene_anchor_index(
             *current_projection = projection;
         }
         info!(
-            "[viewport-scene-index] published coalesced revision={} prims={}",
-            index.revision,
+            "[viewport-scene-index] published coalesced published_revision={} prims={}",
+            index.published_revision,
             index.nodes.len(),
         );
     }

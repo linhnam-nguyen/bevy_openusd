@@ -12,6 +12,26 @@ pub(crate) fn prepare_hierarchy_metadata(stage: &openusd::usd::Stage, world: &mu
     hierarchy::prepare_metadata_index(stage, world);
 }
 
+/// Authoritative presentation metadata for a composed prim. This is not a
+/// semantic key and does not change the canonical prim identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthoredHierarchyMetadata {
+    /// Authored display name before product-specific overrides.
+    pub display_name: Option<String>,
+    /// Manifest-backed hierarchy target, when authored on the composed prim.
+    pub target: Option<crate::UsdHierarchyTarget>,
+}
+
+/// Read the same display-name and target metadata used by live projection,
+/// without projecting geometry or opening another Stage. A read failure is
+/// distinct from a successful read of a prim with no authored name.
+pub fn read_authored_hierarchy_metadata(
+    stage: &openusd::usd::Stage,
+    prim_path: &str,
+) -> anyhow::Result<AuthoredHierarchyMetadata> {
+    hierarchy::read_authored_hierarchy_metadata(stage, prim_path)
+}
+
 /// Invalidate Stage-owned hierarchy metadata once at the live change-batch
 /// boundary. The next prim projection rebuilds the shared index once.
 pub(crate) fn note_hierarchy_metadata_revision(world: &mut World, revision: u64) {

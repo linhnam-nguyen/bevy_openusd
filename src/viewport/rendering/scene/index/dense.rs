@@ -29,7 +29,7 @@ impl DenseSceneIndex {
                 label: node.label.clone(),
                 display_name: node.display_name.clone(),
                 visible: node.visible,
-                has_children: node.has_children,
+                has_children: false,
             })
             .collect::<Vec<_>>();
 
@@ -67,6 +67,7 @@ impl DenseSceneIndex {
                 let parent = parent_slot - 1;
                 dense_nodes[parent].first_child = start;
                 dense_nodes[parent].child_count = end - start;
+                dense_nodes[parent].has_children = end > start;
             }
             child_ranges.push(start..end);
         }

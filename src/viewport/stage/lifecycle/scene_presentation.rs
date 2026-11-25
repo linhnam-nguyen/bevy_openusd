@@ -1,68 +1,198 @@
 //! Cache-backed hierarchy presentation and the immutable project lookup.
 
-use bevy::prelude::*;
+use std::collections::HashMap;
 use std::path::Path;
+
+use bevy::prelude::*;
 use viewport_protocol::{PrimNodeReadModel, SceneAnchor};
 
-use super::super::SceneCachePresentation;
+use super::super::{SceneCachePresentation, StagePresentationContext, resolve_prim_display_name};
 use crate::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
-    SceneCacheEntryKind, SceneCacheIndex,
+    SceneCacheEntryKind, SceneCacheIndex, SceneCacheState,
 };
-use crate::viewport::rendering::scene::CurrentHierarchyProjection;
+use crate::viewport::rendering::scene::{CurrentHierarchyProjection, prim_name};
 
 pub(super) fn publish_scene_cache_presentation(
     world: &mut World,
     activation: &SceneCacheActivation,
     project_root: Option<&Path>,
 ) {
-    let mut child_indexes = vec![false; activation.index.entries.len()];
-    for entry in &activation.index.entries {
-        if let Some(parent) = entry.parent
-            && let Some(has_children) = child_indexes.get_mut(parent as usize)
-        {
-            *has_children = true;
-        }
-    }
-    let mut nodes = Vec::new();
-    for (index, entry) in activation.index.entries.iter().enumerate() {
-        let SceneCacheEntryKind::OwnedPrim { prim_path } = &entry.kind else {
-            continue;
-        };
-        let anchor = SceneAnchor::active_session(prim_path.clone());
-        let parent = entry.parent.and_then(|parent| {
-            activation
-                .index
-                .entries
-                .get(parent as usize)
-                .and_then(|entry| match &entry.kind {
-                    SceneCacheEntryKind::OwnedPrim { prim_path } => {
-                        Some(SceneAnchor::active_session(prim_path.clone()))
-                    }
-                    _ => None,
-                })
-        });
-        let label = prim_path
-            .rsplit('/')
-            .find(|segment| !segment.is_empty())
-            .unwrap_or(prim_path)
-            .to_owned();
-        nodes.push(PrimNodeReadModel {
-            anchor,
-            parent,
-            label,
-            display_name: entry.semantic_key.clone(),
-            visible: true,
-            has_children: child_indexes[index],
-        });
-    }
+    // The persistent index has no authored names. Install visual cache state
+    // now, but do not publish a misleading hierarchy before the canonical
+    // composed Stage can supply its presentation metadata.
     if let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>() {
-        *projection =
-            CurrentHierarchyProjection::from_prim_nodes(&nodes, activation.descriptor.generation);
+        *projection = CurrentHierarchyProjection::from_prim_nodes(&[], 0);
     }
     install_project_cache_lookup(world, activation, project_root);
     world.remove_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>();
     world.insert_resource(SceneCachePresentation::from_activation(activation));
+}
+
+/// Publish cached rows only after resolving the same authoritative metadata
+/// used by live projection. No persistent cache migration or geometry work is
+/// required. If the source cannot validate a row, leave publication to live.
+pub(super) fn publish_cached_hierarchy(
+    world: &mut World,
+    activation: &SceneCacheActivation,
+    source: &openusd::usd::Stage,
+) {
+    let presentation = world.get_resource::<StagePresentationContext>().cloned();
+    let projection = match build_cached_prim_nodes(activation, presentation.as_ref(), source) {
+        Ok(nodes) => {
+            CurrentHierarchyProjection::from_prim_nodes(&nodes, activation.descriptor.generation)
+        }
+        Err(error) => {
+            bevy::log::warn!(
+                "[project-cache] hierarchy metadata unavailable; using live hierarchy: {error:#}"
+            );
+            CurrentHierarchyProjection::from_prim_nodes(&[], 0)
+        }
+    };
+    if let Some(mut current) = world.get_resource_mut::<CurrentHierarchyProjection>() {
+        *current = projection;
+    }
+}
+
+fn build_cached_prim_nodes(
+    activation: &SceneCacheActivation,
+    presentation: Option<&StagePresentationContext>,
+    source: &openusd::usd::Stage,
+) -> anyhow::Result<Vec<PrimNodeReadModel>> {
+    let mut entry_paths: Vec<Option<String>> = Vec::with_capacity(activation.index.entries.len());
+    for entry in &activation.index.entries {
+        let path = match &entry.kind {
+            SceneCacheEntryKind::OwnedPrim { prim_path } => Some(prim_path.clone()),
+            SceneCacheEntryKind::ChildScene { member_id, .. }
+            | SceneCacheEntryKind::ChildModel { member_id, .. } => {
+                Some(crate::project::scene::authoring::scene_member_path(*member_id))
+            }
+        };
+        entry_paths.push(path);
+    }
+
+    let mut path_to_entry: HashMap<&str, usize> = HashMap::with_capacity(entry_paths.len());
+    for (index, path) in entry_paths.iter().enumerate() {
+        if let Some(path) = path.as_deref() {
+            path_to_entry.insert(path, index);
+        }
+    }
+
+    let mut has_children = vec![false; activation.index.entries.len()];
+    let mut owned_prim_count = 0usize;
+    let mut has_member_rows = false;
+    for (index, entry) in activation.index.entries.iter().enumerate() {
+        match &entry.kind {
+            SceneCacheEntryKind::OwnedPrim { .. } => {
+                owned_prim_count += 1;
+            }
+            SceneCacheEntryKind::ChildScene { .. } | SceneCacheEntryKind::ChildModel { .. } => {
+                has_member_rows = true;
+                // A parent Scene cache does not expand child Scene/Model
+                // internals; mark unknown child state as expandable rather than
+                // falsely claiming the member is a leaf.
+                has_children[index] = true;
+            }
+        }
+        if let Some(parent_index) = resolve_entry_parent_index(
+            index,
+            entry.parent,
+            entry_paths.len(),
+            entry_paths[index].as_deref(),
+            &path_to_entry,
+        ) && let Some(flag) = has_children.get_mut(parent_index)
+        {
+            *flag = true;
+        }
+    }
+
+    let cache_incomplete = activation.descriptor.state != SceneCacheState::Ready
+        || (activation.descriptor.prim_count as usize > owned_prim_count && !has_member_rows);
+
+    let mut nodes = Vec::with_capacity(activation.index.entries.len());
+    for (index, entry) in activation.index.entries.iter().enumerate() {
+        let Some(prim_path) = entry_paths[index].as_deref() else {
+            continue;
+        };
+        let parent = resolve_entry_parent_index(
+            index,
+            entry.parent,
+            entry_paths.len(),
+            Some(prim_path),
+            &path_to_entry,
+        )
+        .and_then(|parent_index| entry_paths.get(parent_index).and_then(|path| path.as_deref()))
+        .map(|parent_path| SceneAnchor::active_session(parent_path.to_owned()));
+        let metadata = usd_bevy::route::geom::read_authored_hierarchy_metadata(source, prim_path)?;
+        let expected_target = match &entry.kind {
+            SceneCacheEntryKind::OwnedPrim { .. } => None,
+            SceneCacheEntryKind::ChildScene { scene_id, .. } => {
+                Some(("scene", scene_id.to_string()))
+            }
+            SceneCacheEntryKind::ChildModel { model_id, .. } => {
+                Some(("model", model_id.to_string()))
+            }
+        };
+        // A member row must describe the same manifest target as the composed
+        // prim. Do not invent a cache-only override if canonical metadata is
+        // missing or points at a different target.
+        if let Some((kind, id)) = expected_target.as_ref() {
+            anyhow::ensure!(
+                metadata.target.as_ref().is_some_and(|target| {
+                    target.kind.as_str() == *kind && target.id.as_str() == id.as_str()
+                }),
+                "cached hierarchy member {prim_path} disagrees with the composed Stage target"
+            );
+        }
+        let is_member = expected_target.is_some();
+        let display_name = resolve_prim_display_name(
+            presentation,
+            prim_path,
+            metadata.display_name.as_deref(),
+            metadata
+                .target
+                .as_ref()
+                .map(|target| (target.kind.as_str(), target.id.as_str())),
+        );
+        let is_presentation_root = presentation
+            .and_then(|context| context.root_path.as_deref())
+            .is_some_and(|root_path| root_path == prim_path);
+        let expandable = has_children[index]
+            || is_member
+            || (cache_incomplete && (parent.is_none() || is_presentation_root));
+        nodes.push(PrimNodeReadModel {
+            anchor: SceneAnchor::active_session(prim_path.to_owned()),
+            parent,
+            label: prim_name(prim_path).to_owned(),
+            display_name,
+            visible: true,
+            has_children: expandable,
+        });
+    }
+    Ok(nodes)
+}
+
+fn resolve_entry_parent_index(
+    entry_index: usize,
+    explicit_parent: Option<u32>,
+    entry_count: usize,
+    prim_path: Option<&str>,
+    path_to_entry: &HashMap<&str, usize>,
+) -> Option<usize> {
+    if let Some(parent) = explicit_parent
+        .map(|parent| parent as usize)
+        .filter(|parent| *parent < entry_count && *parent != entry_index)
+    {
+        return Some(parent);
+    }
+    let parent_path = prim_path?.rsplit_once('/').map(|(parent, _)| parent)?;
+    if parent_path.is_empty() {
+        return None;
+    }
+    path_to_entry
+        .get(parent_path)
+        .copied()
+        .filter(|parent| *parent < entry_count && *parent != entry_index)
 }
 
 fn install_project_cache_lookup(

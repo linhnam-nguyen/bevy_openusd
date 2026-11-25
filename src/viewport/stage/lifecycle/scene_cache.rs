@@ -1,6 +1,6 @@
 use bevy::prelude::World;
 
-use super::super::SceneCacheOwnershipContext;
+use super::super::{SceneCacheOwnershipContext, StagePresentationContext};
 use crate::cache::contract::SceneCacheActivation;
 
 pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
@@ -8,12 +8,29 @@ pub(crate) fn install_scene_cache_bootstrap_before_stage_open(
     project_root: &std::path::Path,
     activation: &SceneCacheActivation,
 ) -> bool {
+    install_scene_cache_bootstrap_with_presentation_before_stage_open(
+        world,
+        project_root,
+        activation,
+        None,
+    )
+}
+
+pub(crate) fn install_scene_cache_bootstrap_with_presentation_before_stage_open(
+    world: &mut World,
+    project_root: &std::path::Path,
+    activation: &SceneCacheActivation,
+    presentation: Option<StagePresentationContext>,
+) -> bool {
     // An existing stage owns the current presentation until its successor
     // has composed successfully. Cache-first startup is for an empty world.
     if world.get_non_send::<usd_bevy::LiveStage>().is_some()
         || !is_current(Some(project_root), activation)
     {
         return false;
+    }
+    if let Some(presentation) = presentation {
+        world.insert_resource(presentation);
     }
     world.insert_resource(SceneCacheOwnershipContext {
         project_root: project_root.to_path_buf(),

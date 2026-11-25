@@ -13,6 +13,8 @@ mod bim_properties_test;
 mod commands_test;
 #[path = "editor/edit_rejection_tests.rs"]
 mod edit_rejection_tests;
+#[path = "query/hierarchy_publication_tests.rs"]
+mod hierarchy_publication_test;
 #[path = "query/hierarchy_search_tests.rs"]
 mod hierarchy_search_test;
 #[path = "query/hierarchy_visibility_tests.rs"]

@@ -254,3 +254,172 @@ fn initial_authority_ingestion_is_bounded_and_converges_without_virtual_root_cap
     assert_eq!(index.rebuild_count(), rebuilds);
     assert!(index.last_refresh_admitted() <= SCENE_INDEX_ADMISSION_BUDGET);
 }
+
+#[test]
+fn incremental_admission_separates_mutable_ingest_from_published_revision() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
+
+    let root = app
+        .world_mut()
+        .spawn(usd_bevy::UsdPrimRef::new("/World"))
+        .id();
+    app.world_mut()
+        .spawn((usd_bevy::UsdPrimRef::new("/World/Chair"), ChildOf(root)));
+
+    // First update admits the bounded batch without publishing dense topology.
+    app.update();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.admission_revision(), 1);
+    assert_eq!(index.published_revision(), 0);
+    assert_eq!(index.revision(), 0);
+    assert_eq!(index.roots_read_model().total_prims, 0);
+    assert!(index.has_pending_publication());
+
+    // Next quiescent update flushes derived topology and advances published revision.
+    app.update();
+    let index = app.world().resource::<SceneAnchorIndex>();
+    let projection = app.world().resource::<CurrentHierarchyProjection>();
+    assert_eq!(index.published_revision(), 1);
+    assert_eq!(index.revision(), 1);
+    assert_eq!(projection.revision(), 1);
+    assert_eq!(index.roots_read_model().total_prims, 2);
+    assert!(!index.has_pending_publication());
+
+    // Idle frames must not advance published revision repeatedly.
+    app.update();
+    assert_eq!(
+        app.world().resource::<SceneAnchorIndex>().published_revision(),
+        1
+    );
+}
+
+#[test]
+fn empty_final_activation_publishes_once_for_its_generation() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .insert_resource(crate::viewport::stage::StageInfo {
+            activation_generation: 3,
+            ..Default::default()
+        })
+        .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
+
+    app.update();
+    assert_eq!(
+        app.world().resource::<SceneAnchorIndex>().published_revision(),
+        1
+    );
+    assert_eq!(
+        app.world()
+            .resource::<CurrentHierarchyProjection>()
+            .revision(),
+        1
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SceneAnchorIndex>()
+            .roots_read_model()
+            .total_prims,
+        0
+    );
+
+    // Subsequent idle frames for the same generation do not re-publish.
+    app.update();
+    assert_eq!(
+        app.world().resource::<SceneAnchorIndex>().published_revision(),
+        1
+    );
+}
+
+#[test]
+fn parent_admitted_after_child_derives_expansion_metadata_on_flush() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
+
+    let parent = app.world_mut().spawn_empty().id();
+    app.world_mut()
+        .spawn((usd_bevy::UsdPrimRef::new("/World/Child"), ChildOf(parent)));
+
+    // Child is admitted before parent has a UsdPrimRef.
+    app.update();
+    app.update();
+
+    // Parent arrives later; flush must link parent->child and set has_children
+    // without requiring any visibility toggle or full reconciliation rebuild.
+    app.world_mut()
+        .entity_mut(parent)
+        .insert(usd_bevy::UsdPrimRef::new("/World"));
+    app.update();
+    app.update();
+
+    let index = app.world().resource::<SceneAnchorIndex>();
+    assert_eq!(index.rebuild_count(), 0);
+    let roots = index.roots_read_model();
+    assert_eq!(roots.prims.len(), 1);
+    assert_eq!(roots.prims[0].anchor.prim_path, "/World");
+    assert!(roots.prims[0].has_children);
+
+    let children = index.children_page(Some(&roots.prims[0].anchor), 0, 16);
+    assert_eq!(children.total, 1);
+    assert_eq!(children.nodes[0].anchor.prim_path, "/World/Child");
+    assert!(!children.nodes[0].has_children);
+
+    let projection = app.world().resource::<CurrentHierarchyProjection>();
+    let projected_roots = projection.children_page(None, 0, 16).unwrap();
+    assert_eq!(projected_roots.nodes.len(), 1);
+    assert!(projected_roots.nodes[0].has_children);
+}
+
+#[test]
+fn transparent_wrapper_admitted_after_child_relinks_visual_parent() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<SceneAnchorIndex>()
+        .init_resource::<CurrentHierarchyProjection>()
+        .init_resource::<Spawned>()
+        .add_systems(Update, refresh_scene_anchor_index);
+    register_scene_index_observers(&mut app);
+
+    let root = app
+        .world_mut()
+        .spawn(usd_bevy::UsdPrimRef::new("/SceneRoot"))
+        .id();
+    let wrapper = app.world_mut().spawn(ChildOf(root)).id();
+    app.world_mut().spawn((
+        usd_bevy::UsdPrimRef::new("/SceneRoot/Member_1/Part"),
+        ChildOf(wrapper),
+    ));
+
+    app.update();
+    app.update();
+
+    app.world_mut().entity_mut(wrapper).insert((
+        usd_bevy::UsdPrimRef::new("/SceneRoot/Member_1"),
+        usd_bevy::UsdTransparentHierarchyNode,
+    ));
+    app.update();
+    app.update();
+
+    let index = app.world().resource::<SceneAnchorIndex>();
+    let roots = index.roots_read_model();
+    assert_eq!(roots.prims.len(), 1);
+    assert_eq!(roots.prims[0].anchor.prim_path, "/SceneRoot");
+    assert!(roots.prims[0].has_children);
+    let children = index.children_page(Some(&roots.prims[0].anchor), 0, 16);
+    assert_eq!(children.nodes.len(), 1);
+    assert_eq!(children.nodes[0].anchor.prim_path, "/SceneRoot/Member_1/Part");
+}

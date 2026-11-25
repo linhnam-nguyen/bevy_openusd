@@ -11,8 +11,7 @@ use viewport_streaming::ProjectActivationRequest;
 use crate::project::service::ProjectStageActivation;
 use crate::api::RenderServerInterface;
 use crate::viewport::stage::{
-    StageInstallMode, StagePresentationContext,
-    activate_open_stage_with_cache_context_for_generation,
+    StageInstallMode, activate_open_stage_with_cache_context_for_generation,
 };
 
 use super::support::{
@@ -155,11 +154,16 @@ fn activate_prepared_stage(
     target: crate::project::service::ProjectStageActivationTarget,
 ) -> ActivationProgress {
     if let Some(scene_cache) = target.scene_cache.as_ref() {
-        let installed = crate::viewport::stage::install_scene_cache_bootstrap_before_stage_open(
-            world,
-            &target.project_root,
-            scene_cache,
+        let presentation = crate::document::stage_project::stage_presentation_context_from_project(
+            target.presentation.clone(),
         );
+        let installed =
+            crate::viewport::stage::install_scene_cache_bootstrap_with_presentation_before_stage_open(
+                world,
+                &target.project_root,
+                scene_cache,
+                Some(presentation),
+            );
         if installed {
             world.insert_resource(super::PendingCanonicalStageActivation {
                 request: request.clone(),

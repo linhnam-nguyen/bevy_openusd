@@ -25,7 +25,9 @@ pub(crate) use open::publish_standalone_cache_when_ready;
 pub(crate) use project_activation::{
     StageInstallMode, activate_open_stage_with_cache_context_for_generation,
     clear_active_stage_for_generation, discard_scene_cache_bootstrap,
-    install_scene_cache_bootstrap_before_stage_open, poll_scene_cache_revalidation,
+    install_scene_cache_bootstrap_before_stage_open,
+    install_scene_cache_bootstrap_with_presentation_before_stage_open,
+    poll_scene_cache_revalidation,
 };
 
 const PROJECT_STAGE_OPEN_FAILURE: &str = "Project root stage could not be opened";

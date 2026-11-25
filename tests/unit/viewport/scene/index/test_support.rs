@@ -14,7 +14,7 @@ impl SceneAnchorIndex {
             node_index_by_anchor,
             dense,
             initialized: true,
-            revision: 1,
+            published_revision: 1,
             ..Default::default()
         }
     }
@@ -27,7 +27,7 @@ impl SceneAnchorIndex {
             by_entity: HashMap::from([(entity, anchor)]),
             occurrence_index,
             initialized: true,
-            revision: 1,
+            published_revision: 1,
             ..Default::default()
         }
     }
@@ -50,7 +50,7 @@ impl SceneAnchorIndex {
             by_entity,
             occurrence_index,
             initialized: true,
-            revision: 1,
+            published_revision: 1,
             ..Default::default()
         }
     }
@@ -77,5 +77,17 @@ impl SceneAnchorIndex {
 
     pub(crate) fn reconcile_is_pending(&self) -> bool {
         self.reconcile.is_pending()
+    }
+
+    pub(crate) fn published_revision(&self) -> u64 {
+        self.published_revision
+    }
+
+    pub(crate) fn admission_revision(&self) -> u64 {
+        self.admission_revision
+    }
+
+    pub(crate) fn has_pending_publication(&self) -> bool {
+        self.derived_dirty || !self.pending_additions.is_empty() || self.reconcile.is_pending()
     }
 }

@@ -16,7 +16,7 @@ use crate::viewport::rendering::sampling::{
     DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
 };
 use crate::viewport::rendering::residency::EditPayloadPins;
-use crate::viewport::rendering::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
 use crate::viewport::rendering::scene::visualization::DisplayToggles;
 use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets, SolariCapability};
 use crate::semantic::viewport::SemanticSyncState;
@@ -38,6 +38,7 @@ pub(in crate::api::bridge) struct ApplyViewportCommandState<'w, 's> {
     pub dlss: Res<'w, DlssCapability>,
     pub dlss_camera: ResMut<'w, DlssCameraActivation>,
     pub scene_index: Res<'w, SceneAnchorIndex>,
+    pub current_projection: Option<Res<'w, CurrentHierarchyProjection>>,
     pub tree_commands: ResMut<'w, ViewportTreeCommandInbox>,
     pub camera_mount: ResMut<'w, CameraMount>,
     pub camera_orientation: Res<'w, CameraOrientationState>,

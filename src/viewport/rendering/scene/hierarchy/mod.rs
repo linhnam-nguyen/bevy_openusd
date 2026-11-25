@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use bevy::prelude::Resource;
 use viewport_protocol::{
-    ClassificationRecipe, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeReadModel,
-    HierarchyReadModel, HierarchySource, MAX_SCENE_PAGE_SIZE, PrimNodeReadModel, SceneAnchor,
+    ClassificationRecipe, DEFAULT_SCENE_PAGE_SIZE, HierarchyChildrenPage, HierarchyNodeId,
+    HierarchyNodeReadModel, HierarchyReadModel, HierarchySource, MAX_SCENE_PAGE_SIZE,
+    PrimNodeReadModel, SceneAnchor, SceneChildrenPage, SceneReadModel,
 };
 
 pub(super) mod visibility;
@@ -68,6 +69,7 @@ pub(crate) struct CurrentHierarchyProjection {
     pub(super) read_model: Arc<HierarchyReadModel>,
     pub(super) page_index: HierarchyPageIndex,
     pub(super) visibility_index: HierarchyVisibilityIndex,
+    prim_metadata: Option<Arc<[(String, Option<String>)]>>,
 }
 
 /// Backend-only target set for provider-neutral hierarchy visibility actions.
@@ -173,6 +175,20 @@ impl CurrentHierarchyProjection {
             .iter()
             .map(|node| (node.anchor.clone(), prim_node_id(&node.anchor)))
             .collect();
+        let mut parents_with_children = std::collections::HashSet::new();
+        for node in nodes {
+            if let Some(parent) = node.parent.as_ref()
+                && ids.contains_key(parent)
+            {
+                parents_with_children.insert(parent.clone());
+            }
+        }
+
+        let prim_metadata: Arc<[(String, Option<String>)]> = nodes
+            .iter()
+            .map(|node| (node.label.clone(), node.display_name.clone()))
+            .collect::<Vec<_>>()
+            .into();
 
         let nodes = nodes
             .iter()
@@ -181,6 +197,7 @@ impl CurrentHierarchyProjection {
                     .parent
                     .as_ref()
                     .and_then(|parent| ids.get(parent).cloned());
+                let has_children = node.has_children || parents_with_children.contains(&node.anchor);
                 HierarchyNodeReadModel::scene(
                     ids[&node.anchor].clone(),
                     parent_id,
@@ -191,16 +208,18 @@ impl CurrentHierarchyProjection {
                     node.anchor.clone(),
                     node.parent.clone(),
                     node.visible,
-                    node.has_children,
+                    has_children,
                 )
             })
             .collect();
 
-        Self::from_read_model(HierarchyReadModel {
+        let mut projection = Self::from_read_model(HierarchyReadModel {
             source: HierarchySource::Prim,
             revision,
             nodes,
-        })
+        });
+        projection.prim_metadata = Some(prim_metadata);
+        projection
     }
 
     pub(crate) fn from_read_model(read_model: HierarchyReadModel) -> Self {
@@ -210,6 +229,7 @@ impl CurrentHierarchyProjection {
             read_model: Arc::new(read_model),
             page_index,
             visibility_index,
+            prim_metadata: None,
         }
     }
 
@@ -232,11 +252,16 @@ impl CurrentHierarchyProjection {
             read_model,
             page_index,
             visibility_index,
+            prim_metadata: None,
         }
     }
 
     pub(crate) fn source(&self) -> HierarchySource {
         self.read_model.source
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.read_model.revision
     }
 
     pub(crate) fn snapshot(&self) -> Arc<HierarchyReadModel> {
@@ -251,6 +276,84 @@ impl CurrentHierarchyProjection {
     ) -> Result<HierarchyChildrenPage, String> {
         self.page_index
             .children_page(&self.read_model, parent_id, page, page_size)
+    }
+
+    /// Builds the bounded root `SceneReadModel` from this published `Prim`
+    /// projection so initial snapshots and child pages read from one authority.
+    pub(crate) fn prim_roots_read_model(&self) -> Option<SceneReadModel> {
+        let page = self.prim_children_page(None, 0, DEFAULT_SCENE_PAGE_SIZE)?;
+        Some(SceneReadModel {
+            prims: page.nodes,
+            total_prims: self.read_model.nodes.len() as u32,
+            total_roots: page.total,
+            root_page_size: page.page_size,
+        })
+    }
+
+    /// Builds one bounded `SceneChildrenPage` from this published `Prim`
+    /// projection using the same immutable page index as `children_page`.
+    pub(crate) fn prim_children_page(
+        &self,
+        parent: Option<&SceneAnchor>,
+        page: u32,
+        page_size: u32,
+    ) -> Option<SceneChildrenPage> {
+        if self.source() != HierarchySource::Prim {
+            return None;
+        }
+        let page_size = if page_size == 0 {
+            DEFAULT_SCENE_PAGE_SIZE
+        } else {
+            page_size.min(MAX_SCENE_PAGE_SIZE)
+        };
+        let parent_id = parent.map(prim_node_id);
+        let child_indices = match parent_id.as_ref() {
+            Some(parent_id) => self
+                .page_index
+                .by_id
+                .get(parent_id)
+                .map(|index| self.page_index.child_indices(*index + 1))
+                .unwrap_or(&[]),
+            None => self.page_index.child_indices(0),
+        };
+        let total = child_indices.len() as u32;
+        let start = (page as usize).saturating_mul(page_size as usize);
+        let nodes = child_indices
+            .iter()
+            .skip(start)
+            .take(page_size as usize)
+            .filter_map(|index| self.prim_node_at(*index))
+            .collect();
+        Some(SceneChildrenPage {
+            parent: parent.cloned(),
+            page,
+            page_size,
+            total,
+            nodes,
+        })
+    }
+
+    fn prim_node_at(&self, index: usize) -> Option<PrimNodeReadModel> {
+        let node = self.read_model.nodes.get(index)?;
+        let anchor = node.anchor.clone()?;
+        let (label, display_name) = self
+            .prim_metadata
+            .as_deref()
+            .and_then(|meta| meta.get(index))
+            .cloned()
+            .unwrap_or_else(|| {
+                let fallback_label = super::prim_name(&anchor.prim_path).to_owned();
+                let display_name = (node.name != fallback_label).then(|| node.name.clone());
+                (fallback_label, display_name)
+            });
+        Some(PrimNodeReadModel {
+            anchor,
+            parent: node.parent_anchor.clone(),
+            label,
+            display_name,
+            visible: node.visible,
+            has_children: node.has_children,
+        })
     }
 }
 
@@ -290,6 +393,13 @@ impl HierarchyPageIndex {
             child_ranges,
             child_order,
         }
+    }
+
+    fn child_indices(&self, parent_slot: usize) -> &[usize] {
+        self.child_ranges
+            .get(parent_slot)
+            .map(|range| &self.child_order[range.clone()])
+            .unwrap_or(&[])
     }
 
     pub(crate) fn children_page(

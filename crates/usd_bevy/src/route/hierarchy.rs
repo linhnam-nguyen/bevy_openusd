@@ -69,25 +69,8 @@ fn build_metadata_index(
 ) -> HierarchyMetadataIndex {
     let mut display_names = HashMap::new();
     let _ = stage.traverse(PrimPredicate::ALL, |composed_path| {
-        let Ok(prim) = stage.prim(composed_path.clone()) else {
-            return;
-        };
-        let Ok(prim_stack) = prim.prim_stack() else {
-            return;
-        };
-        for site in prim_stack {
-            let Ok(Some(spec)) = site.layer.prim(site.path.clone()) else {
-                continue;
-            };
-            let Ok(Some(value)) = spec.field(DISPLAY_NAME_FIELD) else {
-                continue;
-            };
-            if let Some(value) = as_text(value) {
-                // Prim::prim_stack is strength ordered, so the first opinion
-                // wins while the composed path preserves reference mapping.
-                display_names.insert(composed_path.as_str().to_owned(), value);
-                break;
-            }
+        if let Ok(Some(value)) = read_legacy_display_name(stage, &composed_path) {
+            display_names.insert(composed_path.as_str().to_owned(), value);
         }
     });
     HierarchyMetadataIndex {
@@ -116,19 +99,7 @@ pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) 
             _ => None,
         })
         .unwrap_or(false);
-    let target = ctx
-        .stage
-        .prim(ctx.path.clone())
-        .ok()
-        .and_then(|prim| prim.metadata::<Value>("customData").ok().flatten())
-        .and_then(|value| match value {
-            Value::Dictionary(data) => Some(UsdHierarchyTarget::new(
-                data.get(TARGET_KIND_FIELD)?.as_str()?,
-                data.get(TARGET_ID_FIELD)?.as_str()?,
-            )),
-            _ => None,
-        })
-        .filter(|target| !target.kind.is_empty() && !target.id.is_empty());
+    let target = read_target(ctx).ok().flatten();
 
     let Ok(mut entity) = world.get_entity_mut(entity) else {
         return;
@@ -159,13 +130,73 @@ fn as_text(value: Value) -> Option<String> {
 }
 
 fn read_display_name(ctx: &RouteCtx, index: Option<&HierarchyMetadataIndex>) -> Option<String> {
-    ctx.stage
-        .prim(ctx.path.clone())
-        .ok()?
-        .attribute(DISPLAY_NAME_FIELD)
-        .get::<Value>()
+    read_attribute_display_name(ctx)
         .ok()
         .flatten()
-        .and_then(as_text)
         .or_else(|| index?.display_names.get(ctx.prim_str()).cloned())
+}
+
+fn read_attribute_display_name(ctx: &RouteCtx) -> anyhow::Result<Option<String>> {
+    Ok(ctx
+        .stage
+        .prim(ctx.path.clone())?
+        .attribute(DISPLAY_NAME_FIELD)
+        .get::<Value>()?
+        .and_then(as_text))
+}
+
+fn read_legacy_display_name(
+    stage: &openusd::usd::Stage,
+    composed_path: &openusd::sdf::Path,
+) -> anyhow::Result<Option<String>> {
+    let prim = stage.prim(composed_path.clone())?;
+    // Prim::prim_stack is strength ordered; keep the first decodable opinion
+    // at the composed path, including references. A failed read is not absence.
+    for site in prim.prim_stack()? {
+        let Some(spec) = site.layer.prim(site.path.clone())? else {
+            continue;
+        };
+        let Some(value) = spec.field(DISPLAY_NAME_FIELD)? else {
+            continue;
+        };
+        if let Some(value) = as_text(value) {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+fn read_target(ctx: &RouteCtx) -> anyhow::Result<Option<UsdHierarchyTarget>> {
+    Ok(ctx
+        .stage
+        .prim(ctx.path.clone())?
+        .metadata::<Value>("customData")?
+        .and_then(|value| match value {
+            Value::Dictionary(data) => Some(UsdHierarchyTarget::new(
+                data.get(TARGET_KIND_FIELD)?.as_str()?,
+                data.get(TARGET_ID_FIELD)?.as_str()?,
+            )),
+            _ => None,
+        })
+        .filter(|target| !target.kind.is_empty() && !target.id.is_empty()))
+}
+
+pub(super) fn read_authored_hierarchy_metadata(
+    stage: &openusd::usd::Stage,
+    prim_path: &str,
+) -> anyhow::Result<super::AuthoredHierarchyMetadata> {
+    let path = openusd::sdf::path(prim_path)?;
+    anyhow::ensure!(
+        stage.prim(path.clone())?.is_defined()?,
+        "cached hierarchy prim {prim_path} is not defined in the composed Stage"
+    );
+    let ctx = RouteCtx::new(stage, &path);
+    let display_name = match read_attribute_display_name(&ctx)? {
+        Some(name) => Some(name),
+        None => read_legacy_display_name(stage, &path)?,
+    };
+    Ok(super::AuthoredHierarchyMetadata {
+        display_name,
+        target: read_target(&ctx)?,
+    })
 }

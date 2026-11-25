@@ -51,6 +51,7 @@ pub(super) fn set_variant_selection(
         state.selected_targets.revision(),
         &state.viewer_settings.0,
         &state.scene_index,
+        state.current_projection.as_deref(),
         &state.camera_mount,
         &state.camera_orientation.latest,
         &state.clock,

@@ -5,7 +5,9 @@ use crate::api::ViewportEventOutbox;
 use crate::bim::BimClassificationFieldCatalogueState;
 use crate::viewport::navigation::camera::CameraMount;
 use crate::viewport::rendering::scene::visualization::DisplayToggles;
-use crate::viewport::rendering::scene::{SceneAnchorIndex, SelectedTargets};
+use crate::viewport::rendering::scene::{
+    CurrentHierarchyProjection, SceneAnchorIndex, SelectedTargets,
+};
 use crate::viewport::stage::{LoaderTuning, Spawned, StageInfo};
 use viewport_protocol::{
     CameraOrientationReadModel, EditorOperation, RuntimeMutationBatch, SelectionReadModel,
@@ -47,6 +49,7 @@ pub(in crate::api::bridge) fn emit_snapshot(
     selection_revision: u64,
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
+    current_projection: Option<&CurrentHierarchyProjection>,
     camera_mount: &CameraMount,
     camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
@@ -64,6 +67,7 @@ pub(in crate::api::bridge) fn emit_snapshot(
                 selection_revision,
                 settings,
                 scene_index,
+                current_projection,
                 camera_mount,
                 camera_orientation,
                 clock,

@@ -12,7 +12,10 @@ use crate::viewport::stage::{
     PendingSceneCacheRevalidation, SceneCacheOwnershipContext, SceneCachePresentation,
 };
 use bevy::prelude::*;
-pub(crate) use scene_cache::install_scene_cache_bootstrap_before_stage_open;
+pub(crate) use scene_cache::{
+    install_scene_cache_bootstrap_before_stage_open,
+    install_scene_cache_bootstrap_with_presentation_before_stage_open,
+};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -183,12 +186,17 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
     } else {
         world.remove_resource::<SceneCacheOwnershipContext>();
     }
-    if !preserve_cache && let Some(scene_cache) = scene_cache.as_ref() {
-        scene_presentation::publish_scene_cache_presentation(
-            world,
-            scene_cache,
-            scene_cache_project_root.as_deref(),
-        );
+    if let Some(scene_cache) = scene_cache.as_ref() {
+        if !preserve_cache {
+            scene_presentation::publish_scene_cache_presentation(
+                world,
+                scene_cache,
+                scene_cache_project_root.as_deref(),
+            );
+        }
+        // Both fresh and cache-first continuation now have the canonical
+        // composed Stage. Resolve cached hierarchy names before live admission.
+        scene_presentation::publish_cached_hierarchy(world, scene_cache, &stage.stage);
     }
     world.insert_non_send(stage);
     if let Some(hooks) = world

@@ -1,12 +1,12 @@
 use crate::animation::UsdStageTime;
 use crate::viewport::navigation::camera::CameraMount;
-use crate::viewport::rendering::scene::SceneAnchorIndex;
+use crate::viewport::rendering::scene::{CurrentHierarchyProjection, SceneAnchorIndex};
 use crate::viewport::rendering::scene::visualization::DisplayToggles;
-use crate::viewport::stage::{LoaderTuning, Spawned, StageInfo};
+use crate::viewport::stage::{LoaderTuning, StageInfo};
 use viewport_protocol::{
-    CameraOrientationReadModel, CameraSource, CurveTuning as ProtocolCurveTuning, PROTOCOL_VERSION,
-    PresentationReadModel, RenderMode, SelectionReadModel, StageReadModel, TimelineReadModel,
-    ViewerSettingsReadModel, ViewportReadModel,
+    CameraOrientationReadModel, CameraSource, CurveTuning as ProtocolCurveTuning, HierarchySource,
+    PROTOCOL_VERSION, PresentationReadModel, RenderMode, SelectionReadModel, StageReadModel,
+    TimelineReadModel, ViewerSettingsReadModel, ViewportReadModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -17,6 +17,7 @@ pub(in crate::api::bridge) fn build_read_model(
     selection_revision: u64,
     settings: &ViewerSettingsReadModel,
     scene_index: &SceneAnchorIndex,
+    current_projection: Option<&CurrentHierarchyProjection>,
     camera_mount: &CameraMount,
     camera_orientation: &CameraOrientationReadModel,
     clock: &UsdStageTime,
@@ -24,6 +25,13 @@ pub(in crate::api::bridge) fn build_read_model(
     tuning: &LoaderTuning,
     physics_running: bool,
 ) -> ViewportReadModel {
+    let scene = current_projection
+        .filter(|projection| {
+            projection.source() == HierarchySource::Prim
+                && (projection.revision() > 0 || !scene_index.has_published_nodes())
+        })
+        .and_then(CurrentHierarchyProjection::prim_roots_read_model)
+        .unwrap_or_else(|| scene_index.roots_read_model());
     ViewportReadModel {
         protocol_version: PROTOCOL_VERSION,
         stage: StageReadModel {
@@ -31,7 +39,7 @@ pub(in crate::api::bridge) fn build_read_model(
             display_name: stage_info.path.clone(),
             loaded: stage_loaded,
         },
-        scene: scene_index.roots_read_model(),
+        scene,
         selection: selection.clone(),
         selection_revision,
         viewer_settings: settings.clone(),

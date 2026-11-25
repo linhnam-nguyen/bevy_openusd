@@ -87,12 +87,25 @@ pub(crate) fn dispatch_scene_query_commands(
                 parent,
                 page,
                 page_size,
-            } => outbox.push(ViewportEventEnvelope::new(
-                Some(request_id),
-                ViewportEvent::SceneChildren {
-                    page: scene_index.children_page(parent.as_ref(), page, page_size),
-                },
-            )),
+            } => {
+                let children_page = if current_projection.source() == HierarchySource::Prim
+                    && (current_projection.revision() > 0 || !scene_index.has_published_nodes())
+                {
+                    current_projection
+                        .prim_children_page(parent.as_ref(), page, page_size)
+                        .unwrap_or_else(|| {
+                            scene_index.children_page(parent.as_ref(), page, page_size)
+                        })
+                } else {
+                    scene_index.children_page(parent.as_ref(), page, page_size)
+                };
+                outbox.push(ViewportEventEnvelope::new(
+                    Some(request_id),
+                    ViewportEvent::SceneChildren {
+                        page: children_page,
+                    },
+                ));
+            }
             ViewportCommand::RequestHierarchyChildren {
                 source,
                 parent_id,

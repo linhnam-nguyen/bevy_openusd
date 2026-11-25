@@ -9,9 +9,16 @@ use super::{DenseSceneIndex, SceneAnchorIndex};
 impl SceneAnchorIndex {
     pub(crate) fn prim_projection(&self) -> CurrentHierarchyProjection {
         if self.visual_unload_rows.is_empty() {
-            return CurrentHierarchyProjection::from_prim_nodes(&self.nodes, self.revision);
+            return CurrentHierarchyProjection::from_prim_nodes(
+                &self.nodes,
+                self.published_revision,
+            );
         }
-        CurrentHierarchyProjection::from_prim_nodes(&self.logical_nodes(), self.revision)
+        CurrentHierarchyProjection::from_prim_nodes(&self.logical_nodes(), self.published_revision)
+    }
+
+    pub(crate) fn has_published_nodes(&self) -> bool {
+        !self.dense.nodes.is_empty()
     }
 
     /// Snapshot logical rows before an automatic visual-only payload unload.
@@ -45,6 +52,9 @@ impl SceneAnchorIndex {
             .collect();
         for node in &self.nodes {
             by_anchor.insert(node.anchor.clone(), node.clone());
+        }
+        for row in by_anchor.values_mut() {
+            row.has_children = false;
         }
         let parents: Vec<_> = by_anchor
             .values()

@@ -49,6 +49,61 @@ impl StagePresentationContext {
             .get(&(kind.to_owned(), id.to_owned()))
             .map(String::as_str)
     }
+
+    /// Resolves the user-facing display name for one prim without mutating
+    /// canonical USD paths or identifiers.
+    ///
+    /// Precedence:
+    /// 1. Explicit `root_name` when `prim_path` matches `root_path` (Project
+    ///    name for Project activation, explicit Scene/Model name for direct
+    ///    activation).
+    /// 2. Explicit Project target display name for typed Scene/Model targets.
+    /// 3. Authored standalone `UsdDisplayName` when non-empty.
+    pub(crate) fn resolve_display_name(
+        &self,
+        prim_path: &str,
+        authored_display_name: Option<&str>,
+        target: Option<(&str, &str)>,
+    ) -> Option<String> {
+        let authored = non_empty_trimmed(authored_display_name);
+        let is_presentation_root = self.root_path.as_deref() == Some(prim_path);
+        if is_presentation_root {
+            non_empty_trimmed(self.root_name.as_deref())
+                .or_else(|| {
+                    target
+                        .and_then(|(kind, id)| self.target_name(kind, id))
+                        .and_then(|name| non_empty_trimmed(Some(name)))
+                })
+                .or(authored)
+                .map(str::to_owned)
+        } else {
+            target
+                .and_then(|(kind, id)| self.target_name(kind, id))
+                .and_then(|name| non_empty_trimmed(Some(name)))
+                .or(authored)
+                .map(str::to_owned)
+        }
+    }
+}
+
+/// Resolves the presentation display name shared across live and cache-backed
+/// hierarchy providers. Returns `None` when callers should fall back to the
+/// final USD prim path segment.
+pub(crate) fn resolve_prim_display_name(
+    presentation: Option<&StagePresentationContext>,
+    prim_path: &str,
+    authored_display_name: Option<&str>,
+    target: Option<(&str, &str)>,
+) -> Option<String> {
+    if let Some(context) = presentation {
+        context.resolve_display_name(prim_path, authored_display_name, target)
+    } else {
+        non_empty_trimmed(authored_display_name).map(str::to_owned)
+    }
+}
+
+fn non_empty_trimmed(value: Option<&str>) -> Option<&str> {
+    value.filter(|name| !name.trim().is_empty())
 }
 
 /// Optional product-layer lifecycle hooks installed by product composition.

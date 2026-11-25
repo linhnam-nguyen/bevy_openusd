@@ -61,6 +61,15 @@ pub(crate) fn refresh_active_hierarchy_projection(
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PublishedStageKey {
+    state: viewport_protocol::StageLoadState,
+    activation_generation: u64,
+    hierarchy_source: HierarchySource,
+    hierarchy_revision: u64,
+    scene_revision: u64,
+}
+
 /// Emits lifecycle changes independently of who initiated the load. That
 /// makes manual reloads, file-watcher reloads, and future host commands all
 /// observable through the same public event.
@@ -71,7 +80,10 @@ pub(crate) fn publish_stage_load_state(
     stage_info: Res<StageInfo>,
     selection: Res<SelectedTargets>,
     viewer_settings: Res<ViewerSettingsState>,
-    scene_index: Res<SceneAnchorIndex>,
+    (scene_index, current_projection): (
+        Res<SceneAnchorIndex>,
+        Option<Res<CurrentHierarchyProjection>>,
+    ),
     camera_mount: Res<CameraMount>,
     camera_orientation: Res<CameraOrientationState>,
     clock: Res<UsdStageTime>,
@@ -80,10 +92,12 @@ pub(crate) fn publish_stage_load_state(
     physics: Res<PhysicsActive>,
     gate: crate::viewport::navigation::input::ViewerInteractionGate,
     visual_health: Option<Res<crate::viewport::rendering::residency::VisualStreamingHealth>>,
-    mut last: Local<Option<(viewport_protocol::StageLoadState, u64)>>,
+    mut last: Local<Option<PublishedStageKey>>,
     mut outbox: ResMut<ViewportEventOutbox>,
 ) {
     use viewport_protocol::StageLoadState;
+    let initial_hierarchy_pending =
+        scene_index.has_pending_initial_publication(stage_info.activation_generation);
     let state = match stage {
         None => StageLoadState::Idle,
         Some(stage) => match stage
@@ -100,6 +114,7 @@ pub(crate) fn publish_stage_load_state(
             },
             None if spawned.0
                 && !gate.locked()
+                && !initial_hierarchy_pending
                 && !visual_health
                     .as_deref()
                     .is_some_and(|health| health.awaiting_payloads) =>
@@ -109,11 +124,35 @@ pub(crate) fn publish_stage_load_state(
             _ => StageLoadState::Loading,
         },
     };
-    let state_changed = last.as_ref().is_none_or(|(previous, _)| previous != &state);
+    let current_key = PublishedStageKey {
+        state: state.clone(),
+        activation_generation: stage_info.activation_generation,
+        hierarchy_source: current_projection
+            .as_deref()
+            .map_or(HierarchySource::Prim, CurrentHierarchyProjection::source),
+        hierarchy_revision: current_projection
+            .as_deref()
+            .map_or(0, CurrentHierarchyProjection::revision),
+        scene_revision: scene_index.revision(),
+    };
+    let state_changed = last
+        .as_ref()
+        .is_none_or(|previous| previous.state != current_key.state);
+    let generation_changed = last.as_ref().is_none_or(|previous| {
+        previous.activation_generation != current_key.activation_generation
+    });
+    let hierarchy_changed = last.as_ref().is_none_or(|previous| {
+        previous.hierarchy_source != current_key.hierarchy_source
+            || previous.hierarchy_revision != current_key.hierarchy_revision
+    });
     let scene_changed = last
         .as_ref()
-        .is_none_or(|(_, revision)| *revision != scene_index.revision());
-    if state_changed || (matches!(state, StageLoadState::Ready) && scene_changed) {
+        .is_none_or(|previous| previous.scene_revision != current_key.scene_revision);
+    let should_publish = state_changed
+        || generation_changed
+        || (matches!(state, StageLoadState::Ready) && (hierarchy_changed || scene_changed))
+        || (matches!(state, StageLoadState::Loading) && hierarchy_changed);
+    if should_publish {
         if state_changed {
             outbox.push(ViewportEventEnvelope::new(
                 None,
@@ -129,6 +168,7 @@ pub(crate) fn publish_stage_load_state(
             selection.revision(),
             &viewer_settings.0,
             &scene_index,
+            current_projection.as_deref(),
             &camera_mount,
             &camera_orientation.latest,
             &clock,
@@ -137,8 +177,12 @@ pub(crate) fn publish_stage_load_state(
             physics.0,
         );
         info!(
-            "[viewport-scene] publishing {:?} snapshot: total_prims={} total_roots={} payload_prims={}",
+            "[viewport-scene] publishing {:?} snapshot: generation={} source={:?} hierarchy_rev={} scene_rev={} total_prims={} total_roots={} payload_prims={}",
             state,
+            current_key.activation_generation,
+            current_key.hierarchy_source,
+            current_key.hierarchy_revision,
+            current_key.scene_revision,
             snapshot.scene.total_prims,
             snapshot.scene.total_roots,
             snapshot.scene.prims.len()
@@ -149,6 +193,6 @@ pub(crate) fn publish_stage_load_state(
                 state: Box::new(snapshot),
             },
         ));
-        *last = Some((state, scene_index.revision()));
+        *last = Some(current_key);
     }
 }

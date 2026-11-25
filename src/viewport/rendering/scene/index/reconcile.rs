@@ -179,7 +179,7 @@ impl SceneAnchorIndex {
         let chunks = std::mem::take(&mut self.reconcile.capture_chunks);
         self.reconcile.capture_epoch = None;
         self.reconcile.capture_offset = 0;
-        let revision = self.revision.saturating_add(1);
+        let revision = self.published_revision.saturating_add(1);
         let slot = Arc::new(Mutex::new(None));
         let worker_slot = Arc::clone(&slot);
         std::thread::spawn(move || {
@@ -214,6 +214,7 @@ impl SceneAnchorIndex {
         } = snapshot;
         let row_count = nodes.len() as u64;
 
+        let next_revision = self.published_revision.saturating_add(1).max(revision);
         self.by_anchor = by_anchor;
         self.by_entity = by_entity;
         self.occurrence_index = occurrence_index;
@@ -222,7 +223,7 @@ impl SceneAnchorIndex {
         self.dense = dense;
         self.parent_by_entity = parent_by_entity;
         self.transparent_by_entity = transparent_by_entity;
-        self.revision = revision;
+        self.published_revision = next_revision;
         self.initialized = true;
         self.derived_dirty = false;
         self.rebuild_count = self.rebuild_count.saturating_add(1);
@@ -234,10 +235,12 @@ impl SceneAnchorIndex {
             .incremental_work
             .projected_rows
             .saturating_add(row_count);
-        if self.visual_unload_rows.is_empty() {
+        if self.visual_unload_rows.is_empty() && projection.revision() == next_revision {
             projection
         } else {
-            self.rebuild_logical_dense();
+            if !self.visual_unload_rows.is_empty() {
+                self.rebuild_logical_dense();
+            }
             self.prim_projection()
         }
     }

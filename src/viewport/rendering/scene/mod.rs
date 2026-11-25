@@ -33,6 +33,7 @@ pub(crate) use hierarchy::{
     HierarchyPageIndex, HierarchyVisibilityIndex, HierarchyVisibilityTarget,
 };
 pub(crate) use index::SceneAnchorIndex;
+pub(crate) use index::prim_name;
 pub(crate) use index::refresh_scene_anchor_index;
 pub(crate) use index::register_scene_index_observers;
 pub(crate) mod extent;
