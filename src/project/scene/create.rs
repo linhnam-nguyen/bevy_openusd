@@ -134,7 +134,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            adoption_authoring::prepare_parent_layer_with_scene_path(
+            adoption_authoring::prepare_parent_layer_with_staged_scene(
                 parent_path,
                 temporary_parent_path,
                 request.project_root,
@@ -144,6 +144,7 @@ pub(crate) fn create_scene_atomic(request: CreateSceneRequest<'_>) -> Result<Cre
                 parent_members,
                 scene_id,
                 &final_scene_path,
+                &temporary_scene_path,
             )?;
             authoring::validate_scene_file(
                 temporary_parent_path,

@@ -9,7 +9,7 @@ use usd_bevy::LiveStageSet;
 
 use crate::api::ViewportBridgeSet;
 
-pub(crate) use state::UsdStageTime;
+pub(crate) use state::{PlaybackDomainReadiness, UsdStageTime};
 
 pub(crate) fn configure(app: &mut App) {
     app.add_systems(

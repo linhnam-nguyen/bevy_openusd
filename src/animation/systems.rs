@@ -42,18 +42,59 @@ pub(crate) fn tick_stage_time(
     {
         return;
     }
-    if !clock.initialized {
-        clock.start_time_code = stage.stage.start_time_code();
-        clock.end_time_code = stage.stage.end_time_code();
-        clock.time_codes_per_second = stage.stage.time_codes_per_second().max(1.0);
-        let has_playable_animation = !animated.0.is_empty() && clock.duration_seconds() > 0.0;
-        if !has_playable_animation {
-            clock.end_time_code = clock.start_time_code;
+    let has_animated_prims = !animated.0.is_empty();
+    let observed = (
+        stage.stage.start_time_code().to_bits(),
+        stage.stage.end_time_code().to_bits(),
+        stage.stage.time_codes_per_second().to_bits(),
+        has_animated_prims,
+        stage.authoring_generation().0,
+    );
+    if !clock.initialized || clock.observed_stage_range() != Some(observed) {
+        let was_initialized = clock.initialized;
+        let was_playable = clock.duration_seconds().is_finite() && clock.duration_seconds() > 0.0;
+        let domain = crate::document::stages::metadata::inspect_stage_time_metadata(&stage.stage, true);
+        match domain {
+            Ok(metadata) => {
+                let (start, end) = metadata.range.map_or((0.0, 0.0), |range| (range.start, range.end));
+                clock.start_time_code = start;
+                clock.end_time_code = end;
+                clock.time_codes_per_second = metadata.time_codes_per_second;
+                let duration = clock.duration_seconds();
+                let playable = has_animated_prims && duration.is_finite() && duration > 0.0;
+                clock.domain_readiness = if playable {
+                    super::state::PlaybackDomainReadiness::Ready
+                } else {
+                    super::state::PlaybackDomainReadiness::NoPlayableAnimation
+                };
+                if !playable {
+                    clock.end_time_code = start;
+                    clock.seconds = 0.0;
+                    clock.playing = false;
+                } else if !was_initialized || !was_playable {
+                    clock.seconds = 0.0;
+                    clock.playing = true;
+                } else {
+                    clock.seconds = if clock.seconds.is_finite() { clock.seconds.clamp(0.0, duration) } else { 0.0 };
+                }
+            }
+            Err(error) => {
+                log::warn!("USD playback domain unavailable: {error:#}");
+                clock.domain_readiness = super::state::PlaybackDomainReadiness::Unavailable;
+                clock.start_time_code = 0.0;
+                clock.end_time_code = 0.0;
+                clock.time_codes_per_second = 24.0;
+                clock.seconds = 0.0;
+                clock.playing = false;
+            }
         }
-        clock.playing = has_playable_animation;
         clock.initialized = true;
+        clock.set_observed_stage_range(observed);
     }
 
+    if clock.domain_readiness != super::state::PlaybackDomainReadiness::Ready {
+        clock.playing = false;
+    }
     advance_looping_playback(&mut clock, time.delta_secs_f64());
     stage_time.current = clock.current_time_code();
 }

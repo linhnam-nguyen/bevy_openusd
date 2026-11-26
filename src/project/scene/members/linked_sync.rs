@@ -45,14 +45,18 @@ pub(crate) struct LinkedSceneSyncPublication {
     old_scene_path: PathBuf,
     old_source_directory: PathBuf,
     old_binding_path: PathBuf,
+    ancestor_preimages: Vec<(PathBuf, PathBuf)>,
     complete: bool,
 }
 
 impl LinkedSceneSyncPublication {
     pub(crate) fn finalize(mut self) -> Result<()> {
         self.complete = true;
-        fs::remove_dir_all(&self.transaction_directory)
-            .context("remove completed linked Scene transaction")
+        if let Err(error) = fs::remove_dir_all(&self.transaction_directory) {
+            log::warn!("linked Scene committed; cleanup pending at {}: {error}",
+                self.transaction_directory.display());
+        }
+        Ok(())
     }
 
     pub(crate) fn rollback(&mut self) -> Result<()> {
@@ -91,12 +95,15 @@ impl LinkedSceneSyncPublication {
                 first_error.get_or_insert(error);
             }
         }
-        let cleanup = fs::remove_dir_all(&self.transaction_directory);
+        let ancestors_restored = crate::project::scene::timeline::restore_ancestor_preimages(&self.ancestor_preimages);
+        // Never discard preimages if any part of rollback failed. Mark this
+        // handle complete to prevent a destructive second rollback attempt.
         self.complete = true;
         if let Some(error) = first_error {
-            return Err(error.into());
+            return Err(error).with_context(|| format!("linked Scene recovery required at {}", self.transaction_directory.display()));
         }
-        cleanup.context("remove rolled-back linked Scene transaction")
+        ancestors_restored?;
+        fs::remove_dir_all(&self.transaction_directory).context("remove rolled-back linked Scene transaction")
     }
 }
 
@@ -162,6 +169,10 @@ pub(crate) fn sync_linked_scene_atomic(
             .expect("temporary Scene path has a parent"),
     )?;
 
+    let ancestor_preimages = crate::project::scene::timeline::capture_ancestor_preimages(
+        request.project_root, request.base_manifest, &[request.scene_id],
+        &transaction_directory.join("timeline-preimages"),
+    )?;
     let result = (|| {
         let source_name = materialize_source_closure(request.source, &temporary_source_directory)?;
         adoption_authoring::author_scene_wrapper_to_path(
@@ -188,6 +199,15 @@ pub(crate) fn sync_linked_scene_atomic(
             request.source,
         )?;
 
+        crate::project::scene::timeline::preserve_linked_scene_timeline(
+            &final_scene_path, &temporary_scene_path, request.scene_id,
+        )?;
+        let mut timeline_overrides = crate::project::scene::timeline::TimelineStageOverrides::default();
+        timeline_overrides.scenes.insert(request.scene_id, temporary_scene_path.clone());
+        let prepared_timelines = crate::project::scene::timeline::prepare_ancestor_timelines(
+            request.project_root, request.base_manifest, &[request.scene_id], timeline_overrides,
+            &transaction_directory.join("staged-ancestor-timelines"),
+        )?;
         fs::rename(&final_scene_path, &old_scene_path).context("stage old linked Scene layer")?;
         old_scene_staged = true;
         fs::rename(&final_source_directory, &old_source_directory)
@@ -211,37 +231,38 @@ pub(crate) fn sync_linked_scene_atomic(
         manifest_candidate
             .validate()
             .context("validate refreshed Scene manifest")?;
+        let updated_ancestors = prepared_timelines.publish()
+            .context("publish prepared linked Scene ancestor timeline metadata")?;
         Ok(adoption::AdoptedScene {
             scene_id: request.scene_id,
             member: None,
             scene_path: final_scene_path.clone(),
             manifest: manifest_candidate,
+            updated_ancestors,
         })
     })();
 
     let adopted = match result {
         Ok(adopted) => adopted,
         Err(error) => {
-            if new_binding_published {
-                let _ = fs::remove_file(&final_binding_path);
+            let mut failures = Vec::new();
+            let mut record = |result: std::io::Result<()>| {
+                if let Err(error) = result { failures.push(error.to_string()); }
+            };
+            if new_binding_published { record(fs::remove_file(&final_binding_path)); }
+            if new_scene_published { record(fs::remove_file(&final_scene_path)); }
+            if new_source_published { record(fs::remove_dir_all(&final_source_directory)); }
+            if old_scene_staged { record(fs::rename(&old_scene_path, &final_scene_path)); }
+            if old_source_staged { record(fs::rename(&old_source_directory, &final_source_directory)); }
+            if old_binding_staged { record(fs::rename(&old_binding_path, &final_binding_path)); }
+            if let Err(failure) = crate::project::scene::timeline::restore_ancestor_preimages(&ancestor_preimages) {
+                failures.push(format!("{failure:#}"));
             }
-            if new_scene_published {
-                let _ = fs::remove_file(&final_scene_path);
+            if failures.is_empty() {
+                let _ = fs::remove_dir_all(&transaction_directory);
+                return Err(error);
             }
-            if new_source_published {
-                let _ = fs::remove_dir_all(&final_source_directory);
-            }
-            if old_scene_staged {
-                let _ = fs::rename(&old_scene_path, &final_scene_path);
-            }
-            if old_source_staged {
-                let _ = fs::rename(&old_source_directory, &final_source_directory);
-            }
-            if old_binding_staged {
-                let _ = fs::rename(&old_binding_path, &final_binding_path);
-            }
-            let _ = fs::remove_dir_all(&transaction_directory);
-            return Err(error);
+            return Err(error.context(format!("linked Scene recovery required at {}: {}", transaction_directory.display(), failures.join("; "))));
         }
     };
     Ok((
@@ -254,6 +275,7 @@ pub(crate) fn sync_linked_scene_atomic(
             old_scene_path,
             old_source_directory,
             old_binding_path,
+            ancestor_preimages,
             complete: false,
         },
     ))

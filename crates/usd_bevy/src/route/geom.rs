@@ -47,7 +47,7 @@ use super::profile::{GeometryProfile, hash_prim_path, record_mesh_sample};
 use super::{DisplayPurposes, PrimRoute, RouteCtx, track_mesh_projection};
 use crate::live::PerformanceCounters;
 use crate::read::geom::{
-    VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility,
+    VisibilityState, read_effective_purpose, read_mesh, read_mesh_extent, read_visibility_at,
 };
 
 /// The prim's effective (inherited) USD `purpose`: `"default"`, `"render"`,
@@ -75,7 +75,7 @@ fn resolve(ctx: &RouteCtx, world: &World) -> (Visibility, String) {
         .copied()
         .unwrap_or_default();
     let invisible = matches!(
-        read_visibility(ctx.stage, ctx.path),
+        read_visibility_at(ctx.stage, ctx.path, ctx.time),
         Ok(VisibilityState::Invisible)
     );
     let hidden = invisible || !purposes.shows(&purpose);

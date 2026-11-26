@@ -277,6 +277,13 @@ fn tree_projection_keeps_authored_model_placement_identity() {
         }],
     );
     ManifestStore::write_manifest_atomic(&repository, &manifest).unwrap();
+    let wrapper = crate::project::models::wrapper::model_wrapper_path(&repository, model_id);
+    std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+    std::fs::write(
+        &wrapper,
+        "#usda 1.0\n(\n    defaultPrim = \"ModelRoot\"\n)\ndef Xform \"ModelRoot\" {}\n",
+    )
+    .unwrap();
     crate::project::scene::authoring::author_scene_atomic_with_members(
         &repository,
         scene_id,

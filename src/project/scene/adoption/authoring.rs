@@ -39,9 +39,12 @@ pub(crate) fn author_scene_wrapper_to_path(
         .define_prim(source_path.as_str())?
         .set_type_name("Xform")?;
     author_source_references(&stage, &source_prim, &source_asset_path, source_prims)?;
-    crate::project::assets::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::assets::spatial::author_referenced_source_normalization(
+        &source_prim, spatial, source_metadata_path, source_prims,
+    )?;
     crate::project::assets::spatial::author_source_hierarchy_role(&source_prim)?;
     crate::project::assets::spatial::author_source_binding_role(&source_prim, linked_source)?;
+    crate::project::scene::timeline::mark_new_adopted_source_timeline(&stage)?;
     stage
         .root_layer()
         .export(path.to_string_lossy().as_ref())
@@ -213,6 +216,7 @@ pub(crate) fn prepare_parent_layer(
         members,
         None,
         None,
+        &crate::project::scene::timeline::TimelineStageOverrides::default(),
     )
 }
 
@@ -233,6 +237,33 @@ pub(crate) fn prepare_parent_layer_with_scene_path(
         members,
         Some((scene_id, scene_path)),
         None,
+        &crate::project::scene::timeline::TimelineStageOverrides::default(),
+    )
+}
+
+pub(crate) fn prepare_parent_layer_with_staged_scene(
+    existing_path: &Path,
+    temporary_path: &Path,
+    project_root: &Path,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+    scene_id: SceneId,
+    final_scene_path: &Path,
+    staged_scene_path: &Path,
+) -> Result<()> {
+    let mut overrides = crate::project::scene::timeline::TimelineStageOverrides::default();
+    overrides
+        .scenes
+        .insert(scene_id, staged_scene_path.to_path_buf());
+    prepare_parent_layer_inner(
+        existing_path,
+        temporary_path,
+        project_root,
+        parent_scene_id,
+        members,
+        Some((scene_id, final_scene_path)),
+        None,
+        &overrides,
     )
 }
 
@@ -253,6 +284,33 @@ pub(crate) fn prepare_parent_layer_with_model_path(
         members,
         None,
         Some((model_id, model_path)),
+        &crate::project::scene::timeline::TimelineStageOverrides::default(),
+    )
+}
+
+pub(crate) fn prepare_parent_layer_with_staged_model(
+    existing_path: &Path,
+    temporary_path: &Path,
+    project_root: &Path,
+    parent_scene_id: SceneId,
+    members: &[SceneMember],
+    model_id: ModelId,
+    final_model_path: &Path,
+    staged_model_path: &Path,
+) -> Result<()> {
+    let mut overrides = crate::project::scene::timeline::TimelineStageOverrides::default();
+    overrides
+        .models
+        .insert(model_id, staged_model_path.to_path_buf());
+    prepare_parent_layer_inner(
+        existing_path,
+        temporary_path,
+        project_root,
+        parent_scene_id,
+        members,
+        None,
+        Some((model_id, final_model_path)),
+        &overrides,
     )
 }
 
@@ -264,6 +322,7 @@ fn prepare_parent_layer_inner(
     members: &[SceneMember],
     scene_target: Option<(SceneId, &Path)>,
     model_target: Option<(ModelId, &Path)>,
+    timeline_overrides: &crate::project::scene::timeline::TimelineStageOverrides,
 ) -> Result<()> {
     let stage = if existing_path.exists() {
         let path_string = existing_path.to_string_lossy().into_owned();
@@ -294,6 +353,24 @@ fn prepare_parent_layer_inner(
             target_path,
         )?;
     }
+    let mut effective_overrides = timeline_overrides.clone();
+    if let Some((scene_id, final_path)) = scene_target {
+        effective_overrides
+            .scene_targets
+            .insert(scene_id, final_path.to_path_buf());
+    }
+    if let Some((model_id, final_path)) = model_target {
+        effective_overrides
+            .model_targets
+            .insert(model_id, final_path.to_path_buf());
+    }
+    crate::project::scene::timeline::recompute_scene_stage_timeline(
+        &stage,
+        project_root,
+        existing_path,
+        members,
+        &effective_overrides,
+    )?;
     stage
         .root_layer()
         .export(temporary_path.to_string_lossy().as_ref())

@@ -120,6 +120,55 @@ pub(crate) fn author_source_normalization(
     Ok(())
 }
 
+const SOURCE_NORMALIZATION_OP: &str = "xformOp:transform:usdhubNormalization";
+
+/// Preserve a single referenced root's uniform authored operation order and
+/// prepend a wrapper-owned normalization operation to its active stack. Keep
+/// the existing Source occurrence path and leave source operation values and
+/// time samples referenced, never copied. Multi-root wrappers normalize their
+/// separate Source parent as before.
+pub(crate) fn author_referenced_source_normalization(
+    source_prim: &Prim,
+    source: &SourceSpatialConvention,
+    source_metadata_path: &Path,
+    source_prims: &[String],
+) -> Result<()> {
+    if source_prims.len() != 1 {
+        return author_source_normalization(source_prim, source);
+    }
+    let stage = Stage::builder().load(openusd::usd::InitialLoadSet::LoadNone)
+        .open(source_metadata_path.to_str().context("source metadata path is not UTF-8")?)?;
+    let prim = stage.prim(source_prims[0].as_str())?;
+    let source_order = prim.attribute("xformOpOrder").get::<Value>()?;
+    if source_order.is_some() {
+        let order_path = openusd::sdf::path(format!("{}.xformOpOrder", source_prims[0]))?;
+        ensure!(stage.time_sample_times(order_path)?.is_none_or(|times| times.is_empty()),
+            "time-varying xformOpOrder cannot be normalized without changing source semantics");
+    }
+    let mut order: Vec<String> = match source_order {
+        None => Vec::new(),
+        Some(Value::TokenVec(tokens)) => tokens.into_iter().map(|token| token.as_str().to_owned()).collect(),
+        Some(Value::StringVec(tokens)) => tokens,
+        Some(Value::TokenListOp(tokens)) => tokens.flatten().into_iter().map(|token| token.as_str().to_owned()).collect(),
+        Some(_) => bail!("unsupported source xformOpOrder"),
+    };
+    // Legacy/static root layout remains unchanged where no source transform
+    // opinion exists. Never reuse an operation name already owned by a source.
+    if order.is_empty() && prim.attribute("xformOp:transform").get::<Value>()?.is_none() {
+        return author_source_normalization(source_prim, source);
+    }
+    ensure!(!order.iter().any(|op| op == SOURCE_NORMALIZATION_OP || op.strip_prefix("!invert!") == Some(SOURCE_NORMALIZATION_OP))
+        && prim.attribute(SOURCE_NORMALIZATION_OP).get::<Value>()?.is_none(),
+        "source already owns reserved wrapper normalization operation");
+    let active_start = order.iter().rposition(|op| op == "!resetXformStack!").map_or(0, |index| index + 1);
+    order.insert(active_start, SOURCE_NORMALIZATION_OP.to_owned());
+    source_prim.create_attribute(SOURCE_NORMALIZATION_OP, "matrix4d")?
+        .set_custom(false)?.set(Value::Matrix4d(source_normalization_transform(source)))?;
+    source_prim.create_attribute("xformOpOrder", "token[]")?.set_custom(false)?
+        .set(Value::TokenVec(order.into_iter().map(Into::into).collect()))?;
+    Ok(())
+}
+
 /// Mark the wrapper's physical source anchor as transparent in USDHub's
 /// semantic hierarchy. The marker is explicit metadata, so imported content
 /// merely named `Source` or `Members` is never hidden by convention.
@@ -178,21 +227,27 @@ pub(crate) fn source_binding_marker(source_prim: &Prim) -> Result<Option<String>
 }
 
 pub(crate) fn read_source_normalization(source_prim: &Prim) -> Result<Mat4d> {
-    let transform = source_prim
-        .attribute("xformOp:transform")
-        .get::<Value>()?
-        .context("wrapper Source is missing xformOp:transform")?;
-    let Value::Matrix4d(transform) = transform else {
-        bail!("wrapper Source xformOp:transform must be matrix4d");
-    };
-    let order = source_prim
-        .attribute("xformOpOrder")
-        .get::<Value>()?
+    let order = source_prim.attribute("xformOpOrder").get::<Value>()?
         .context("wrapper Source is missing xformOpOrder")?;
-    ensure!(
-        order == Value::TokenVec(vec!["xformOp:transform".into()]),
-        "wrapper Source must use only xformOp:transform"
-    );
+    let Value::TokenVec(order) = order else {
+        bail!("wrapper Source xformOpOrder must be token[]");
+    };
+    let active_start = order.iter().rposition(|op| op.as_str() == "!resetXformStack!")
+        .map_or(0, |index| index + 1);
+    let active = &order[active_start..];
+    let operation = if active.len() == 1 && active[0].as_str() == "xformOp:transform" {
+        "xformOp:transform"
+    } else {
+        ensure!(active.first().is_some_and(|op| op.as_str() == SOURCE_NORMALIZATION_OP)
+            && active.iter().filter(|op| op.as_str() == SOURCE_NORMALIZATION_OP).count() == 1,
+            "wrapper normalization must precede the active source transform stack");
+        SOURCE_NORMALIZATION_OP
+    };
+    let transform = source_prim.attribute(operation).get::<Value>()?
+        .context("wrapper Source is missing normalization transform")?;
+    let Value::Matrix4d(transform) = transform else {
+        bail!("wrapper normalization transform must be matrix4d");
+    };
     Ok(transform)
 }
 

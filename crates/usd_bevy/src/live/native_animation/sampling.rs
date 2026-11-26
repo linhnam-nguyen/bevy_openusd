@@ -16,6 +16,32 @@ pub(super) fn sample(world: &mut World, stage: &Stage, time: f64) {
             crate::route::xform::apply_local_xform_evaluation(world, target.entity, Some(eval));
         }
     }
+    if !runtime.visibilities.is_empty() {
+        let purposes = world
+            .get_resource::<crate::route::DisplayPurposes>()
+            .copied()
+            .unwrap_or_default();
+        for target in &runtime.visibilities {
+            let invisible = matches!(
+                crate::read::geom::read_visibility_at(stage, &target.path, Some(time)),
+                Ok(crate::read::geom::VisibilityState::Invisible)
+            );
+            let hidden = invisible
+                || world
+                    .get::<crate::route::geom::UsdPurpose>(target.entity)
+                    .is_some_and(|purpose| !purposes.shows(&purpose.0));
+            let next = if hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
+            if let Ok(mut entity) = world.get_entity_mut(target.entity)
+                && entity.get::<Visibility>() != Some(&next)
+            {
+                entity.insert(next);
+            }
+        }
+    }
     let mut fallback_query = world.query::<(Entity, &CpuDeformBinding)>();
     let fallback = fallback_query
         .iter(world)

@@ -23,6 +23,12 @@ pub(super) struct TransformBinding {
 }
 
 #[derive(Clone)]
+pub(super) struct VisibilityBinding {
+    pub(super) entity: bevy::ecs::entity::Entity,
+    pub(super) path: openusd::sdf::Path,
+}
+
+#[derive(Clone)]
 pub(super) struct BlendBinding {
     pub(super) entity: bevy::ecs::entity::Entity,
     pub(super) source_indices: Vec<Option<usize>>,
@@ -50,6 +56,7 @@ pub(super) struct CpuDeformBinding(openusd::sdf::Path);
 pub(super) struct AnimationRuntime {
     context: Option<VisualContextId>,
     pub(super) transforms: Vec<TransformBinding>,
+    pub(super) visibilities: Vec<VisibilityBinding>,
     pub(super) poses: Vec<SharedPose>,
 }
 
@@ -65,10 +72,12 @@ pub(super) fn rebuild(world: &mut bevy::ecs::world::World, live: &LiveStage, map
     let by_skeleton = binding::collect_bindings(stage);
     skeleton::rebuild_skeletons(world, stage, map, &by_skeleton);
     let transforms = binding::collect_transform_bindings(world, stage, map);
+    let visibilities = binding::collect_visibility_bindings(world, stage, map);
     let poses = binding::collect_skeleton_runtime(world, stage);
     world.insert_non_send(AnimationRuntime {
         context: Some(live.visual_context_id()),
         transforms,
+        visibilities,
         poses,
     });
     if let Some(mut sampled) = world.get_resource_mut::<super::animation::SampledTime>() {
@@ -87,13 +96,18 @@ pub(super) fn sample(world: &mut bevy::ecs::world::World, live: &LiveStage, time
     {
         // Sparse changes preserve entity bindings but may alter the composed
         // spec stacks or time-sample status. Reuse the existing native joints.
-        let transforms = world.resource_scope(|world, map: bevy::prelude::Mut<PrimEntities>| {
-            binding::collect_transform_bindings(world, &stage, &map)
-        });
+        let (transforms, visibilities) =
+            world.resource_scope(|world, map: bevy::prelude::Mut<PrimEntities>| {
+                (
+                    binding::collect_transform_bindings(world, &stage, &map),
+                    binding::collect_visibility_bindings(world, &stage, &map),
+                )
+            });
         let poses = binding::collect_skeleton_runtime(world, &stage);
         world.insert_non_send(AnimationRuntime {
             context,
             transforms,
+            visibilities,
             poses,
         });
     }

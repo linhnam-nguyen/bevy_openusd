@@ -119,6 +119,13 @@ fn delete_definition(
         .join(".transactions")
         .join(format!("delete-{}", Uuid::new_v4()));
     fs::create_dir_all(&transaction_directory).map_err(|_| delete_error())?;
+    let ancestor_preimages = crate::project::scene::timeline::capture_ancestor_preimages(
+        project_root, &previous_manifest, &changed_parent_scene_ids,
+        &transaction_directory.join("timeline-preimages"),
+    ).map_err(|error| { log::error!("capture deletion timeline preimages: {error:#}"); delete_error() })?;
+    let manifest_path = crate::project::catalog::manifest_store::manifest_path(project_root);
+    let manifest_backup = transaction_directory.join("manifest-preimage.json");
+    fs::copy(&manifest_path, &manifest_backup).map_err(|_| delete_error())?;
     let mut backups = Vec::new();
     let mut tombstones = Vec::new();
     let mut mutations = Vec::with_capacity(mutation_count);
@@ -162,24 +169,24 @@ fn delete_definition(
             fs::copy(&original, &backup).map_err(|_| delete_error())?;
             backups.push(ParentBackup { original, backup });
         }
+        let mut candidate_manifest = previous_manifest.clone();
+        candidate_manifest.scenes.retain(|scene| !plan.scenes.contains(&scene.id));
+        candidate_manifest.models.retain(|model| !plan.models.contains(&model.id));
+        let mut replacements = std::collections::HashMap::new();
         for parent_scene_id in &changed_parent_scene_ids {
-            let original_members = index
-                .members
-                .get(parent_scene_id)
-                .expect("changed parent is indexed");
-            let remaining = original_members
-                .iter()
-                .filter(|member| !is_deleted_target(&plan, &member.target))
-                .cloned()
-                .collect::<Vec<_>>();
-            crate::project::scene::authoring::replace_scene_members_atomic(
-                &crate::project::scene::authoring::scene_path(project_root, *parent_scene_id),
-                project_root,
-                *parent_scene_id,
-                &remaining,
-            )
-            .map_err(|_| delete_error())?;
+            if plan.scenes.contains(parent_scene_id) { continue; }
+            let original_members = index.members.get(parent_scene_id).ok_or_else(delete_error)?;
+            let remaining = original_members.iter()
+                .filter(|member| !is_deleted_target(&plan, &member.target)).cloned().collect::<Vec<_>>();
+            replacements.insert(*parent_scene_id, remaining);
         }
+        let prepared = crate::project::scene::timeline::prepare_scene_member_timelines(
+            project_root, &candidate_manifest, &replacements,
+            &transaction_directory.join("staged-timeline-layers"),
+        ).map_err(|error| { log::error!("prepare deletion timelines: {error:#}"); delete_error() })?;
+        let updated_ancestors = prepared.publish().map_err(|error| {
+            log::error!("publish deletion timelines: {error:#}"); delete_error()
+        })?;
 
         for scene_id in &plan.scenes {
             let scene_path = crate::project::scene::authoring::scene_path(project_root, *scene_id);
@@ -233,19 +240,26 @@ fn delete_definition(
         service
             .stage_mutations
             .submit_batch_for_project(project_root, &mutations)?;
-        Ok(())
+        Ok(updated_ancestors)
     })();
 
-    if let Err(error) = result {
-        let _ = crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
-            project_root,
-            &previous_manifest,
-        );
-        restore_backups(&backups);
-        restore_tombstones(&tombstones);
-        let _ = fs::remove_dir_all(&transaction_directory);
-        return Err(error);
-    }
+    let updated_ancestors = match result {
+        Ok(updated_ancestors) => updated_ancestors,
+        Err(error) => {
+            let manifest_restored = crate::project::scene::timeline::restore_timeline_preimage(&manifest_path, &manifest_backup);
+            let parents_restored = restore_backups(&backups);
+            let definitions_restored = restore_tombstones(&tombstones);
+            let ancestors_restored = crate::project::scene::timeline::restore_ancestor_preimages(&ancestor_preimages);
+            let failures: Vec<_> = [manifest_restored, parents_restored, definitions_restored, ancestors_restored]
+                .into_iter().filter_map(|result| result.err()).collect();
+            if failures.is_empty() {
+                let _ = fs::remove_dir_all(&transaction_directory);
+            } else {
+                log::error!("deletion recovery required at {}: {failures:?}", transaction_directory.display());
+            }
+            return Err(error);
+        }
+    };
 
     let placement_ids = plan
         .removed_placements
@@ -275,6 +289,11 @@ fn delete_definition(
     }
     let mut cache_targets = vec![crate::cache::ProjectCacheTarget::ProjectRoot];
     cache_targets.extend(changed_parent_scene_ids.iter().map(|scene_id| {
+        crate::cache::ProjectCacheTarget::Scene {
+            id: scene_id.to_string(),
+        }
+    }));
+    cache_targets.extend(updated_ancestors.iter().map(|scene_id| {
         crate::cache::ProjectCacheTarget::Scene {
             id: scene_id.to_string(),
         }
@@ -323,17 +342,26 @@ fn move_optional_to_tombstone(
     Ok(())
 }
 
-fn restore_backups(backups: &[ParentBackup]) {
+fn restore_backups(backups: &[ParentBackup]) -> anyhow::Result<()> {
+    let mut failures = Vec::new();
     for backup in backups.iter().rev() {
-        let _ = fs::remove_file(&backup.original);
-        let _ = fs::rename(&backup.backup, &backup.original);
+        if let Err(error) = crate::project::scene::timeline::restore_timeline_preimage(&backup.original, &backup.backup) {
+            failures.push(format!("{}: {error:#}", backup.original.display()));
+        }
     }
+    anyhow::ensure!(failures.is_empty(), "parent recovery required: {}", failures.join("; "));
+    Ok(())
 }
 
-fn restore_tombstones(tombstones: &[Tombstone]) {
+fn restore_tombstones(tombstones: &[Tombstone]) -> anyhow::Result<()> {
+    let mut failures = Vec::new();
     for tombstone in tombstones.iter().rev() {
-        let _ = fs::rename(&tombstone.moved, &tombstone.original);
+        if let Err(error) = fs::rename(&tombstone.moved, &tombstone.original) {
+            failures.push(format!("{}: {error}", tombstone.original.display()));
+        }
     }
+    anyhow::ensure!(failures.is_empty(), "definition recovery required: {}", failures.join("; "));
+    Ok(())
 }
 
 fn delete_error() -> ProjectWriteError {

@@ -78,6 +78,7 @@ pub(crate) struct PublishedModel {
     pub wrapper_path: PathBuf,
     pub placement: Option<SceneMember>,
     pub manifest: ProjectManifestV1,
+    pub updated_ancestors: Vec<SceneId>,
 }
 
 /// Publish a stable wrapper and register its single Model identity.
@@ -214,6 +215,15 @@ pub(crate) fn publish_model_wrapper_atomic(
             .context("create Model placement transaction directory")?;
     }
 
+    let manifest_path = crate::project::catalog::manifest_store::manifest_path(request.project_root);
+    let manifest_backup = transaction_directory.join("manifest-preimage.json");
+    fs::copy(&manifest_path, &manifest_backup).context("capture Project manifest preimage")?;
+    crate::project::scene::timeline::sync_file_durable(&manifest_backup)?;
+    let seeds: Vec<_> = request.placement.as_ref().map(|placement| placement.parent_scene_id).into_iter().collect();
+    let ancestor_preimages = crate::project::scene::timeline::capture_ancestor_preimages(
+        request.project_root, request.base_manifest, &seeds, &transaction_directory.join("timeline-preimages"),
+    )?;
+    let mut recovery_required = false;
     let result = (|| {
         let mut source_name =
             materialize_source_closure(&request.prepared.source, &temporary_source_directory)?;
@@ -257,7 +267,7 @@ pub(crate) fn publish_model_wrapper_atomic(
             temporary_parent_path.as_ref(),
             parent_members.as_deref(),
         ) {
-            adoption_authoring::prepare_parent_layer_with_model_path(
+            adoption_authoring::prepare_parent_layer_with_staged_model(
                 parent_path,
                 temporary_parent_path,
                 request.project_root,
@@ -269,6 +279,7 @@ pub(crate) fn publish_model_wrapper_atomic(
                 parent_members,
                 request.prepared.id,
                 &model_directory.join("model.usda"),
+                &temporary_wrapper_path,
             )?;
             scene_authoring::validate_scene_file(
                 temporary_parent_path,
@@ -281,6 +292,15 @@ pub(crate) fn publish_model_wrapper_atomic(
             )?;
         }
 
+        let mut timeline_overrides = crate::project::scene::timeline::TimelineStageOverrides::default();
+        if let (Some(placement), Some(path)) = (request.placement.as_ref(), temporary_parent_path.as_ref()) {
+            timeline_overrides.scenes.insert(placement.parent_scene_id, path.clone());
+        }
+        timeline_overrides.models.insert(request.prepared.id, temporary_wrapper_path.clone());
+        let prepared_timelines = crate::project::scene::timeline::prepare_ancestor_timelines(
+            request.project_root, &manifest_candidate, &seeds, timeline_overrides,
+            &transaction_directory.join("staged-ancestor-timelines"),
+        )?;
         if let Some(parent_path) = parent_scene_path.as_ref() {
             ensure!(
                 parent_path.exists(),
@@ -318,44 +338,48 @@ pub(crate) fn publish_model_wrapper_atomic(
             ManifestStore::write_manifest_atomic(request.project_root, &manifest_candidate)
                 .context("publish Model Project manifest")?;
         }
-        Ok(())
+        let updated_ancestors = prepared_timelines.publish()
+            .context("publish prepared Model ancestor timeline metadata")?;
+        Ok(updated_ancestors)
     })();
 
     let final_result = match result {
-        Ok(()) => Ok(PublishedModel {
+        Ok(updated_ancestors) => Ok(PublishedModel {
             id: request.prepared.id,
             wrapper_path: model_directory.join("model.usda"),
             placement,
             manifest: manifest_candidate,
+            updated_ancestors,
         }),
         Err(error) => {
-            if model_published && model_directory.exists() {
-                let _ = fs::remove_dir_all(&model_directory);
-            }
-            if source_published && source_directory.exists() {
-                let _ = fs::remove_dir_all(&source_directory);
-            }
+            let mut rollback_errors = Vec::new();
+            let mut record = |result: Result<()>| {
+                if let Err(error) = result { rollback_errors.push(format!("{error:#}")); }
+            };
+            record(crate::project::scene::timeline::restore_ancestor_preimages(&ancestor_preimages));
+            record(crate::project::scene::timeline::restore_timeline_preimage(&manifest_path, &manifest_backup));
             if parent_published {
-                if parent_backup_created {
-                    let _ = fs::remove_file(
-                        &parent_scene_path
-                            .as_ref()
-                            .expect("published parent path exists"),
-                    );
-                    let _ = fs::rename(
-                        &parent_backup_path,
-                        parent_scene_path
-                            .as_ref()
-                            .expect("published parent path exists"),
-                    );
-                } else if let Some(parent_path) = parent_scene_path.as_ref() {
-                    let _ = fs::remove_file(parent_path);
+                if let Some(parent_path) = parent_scene_path.as_ref() {
+                    if parent_backup_created {
+                        record(crate::project::scene::timeline::restore_timeline_preimage(parent_path, &parent_backup_path));
+                    } else { record(fs::remove_file(parent_path).context("remove newly published parent")); }
                 }
             }
-            Err(error)
+            if model_published && model_directory.exists() {
+                record(fs::remove_dir_all(&model_directory).context("remove newly published Model"));
+            }
+            if source_published && source_directory.exists() {
+                record(fs::remove_dir_all(&source_directory).context("remove newly published source"));
+            }
+            recovery_required = !rollback_errors.is_empty();
+            if recovery_required {
+                Err(error.context(format!("Model publication recovery required at {}: {}", transaction_directory.display(), rollback_errors.join("; "))))
+            } else { Err(error) }
         }
     };
-    let _ = fs::remove_dir_all(&transaction_directory);
+    if !recovery_required {
+        let _ = fs::remove_dir_all(&transaction_directory);
+    }
     final_result
 }
 

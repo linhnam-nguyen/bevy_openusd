@@ -43,9 +43,12 @@ pub(crate) fn author_scene_member_at_path(
     };
     let asset_path =
         authored_relative_project_asset_path(project_root, authoring_layer_path, &asset_path)?;
+    let existing_offset =
+        crate::project::scene::timeline::existing_member_reference_offset(stage, member.id)?;
     let reference = sdf::Reference {
         asset_path,
         prim_path: sdf::path(format!("/{referenced_prim}"))?,
+        layer_offset: existing_offset,
         ..Default::default()
     };
     let member_prim = stage

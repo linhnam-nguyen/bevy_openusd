@@ -39,6 +39,13 @@ pub(crate) fn author_scene_atomic_at_path(
         for member in members {
             author_scene_member_at_path(&stage, project_root, final_path, member, None)?;
         }
+        crate::project::scene::timeline::recompute_scene_stage_timeline(
+            &stage,
+            project_root,
+            final_path,
+            members,
+            &crate::project::scene::timeline::TimelineStageOverrides::default(),
+        )?;
         let temporary_path_string = temporary_path.to_string_lossy().into_owned();
         temporary_created = true;
         stage

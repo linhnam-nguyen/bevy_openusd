@@ -71,7 +71,9 @@ pub(super) fn author_model_wrapper(
         .define_prim(format!("/{MODEL_ROOT_PRIM}/{SOURCE_PRIM}").as_str())?
         .set_type_name("Xform")?;
     author_source_references(&stage, &source_prim, &source_path, source_prims)?;
-    crate::project::assets::spatial::author_source_normalization(&source_prim, spatial)?;
+    crate::project::assets::spatial::author_referenced_source_normalization(
+        &source_prim, spatial, source_metadata_path, source_prims,
+    )?;
     crate::project::assets::spatial::author_source_hierarchy_role(&source_prim)?;
     stage
         .root_layer()

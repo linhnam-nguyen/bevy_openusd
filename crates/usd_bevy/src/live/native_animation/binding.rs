@@ -5,7 +5,7 @@ use openusd::sdf::{LayerHandle, Path};
 use openusd::usd::{SchemaBase, Stage};
 use openusd_schemas::skel::{AnimQuery, Animation, Cache, Root, SkinningQuery};
 
-use super::{BlendBinding, SharedPose, SkeletonBinding, TransformBinding};
+use super::{BlendBinding, SharedPose, SkeletonBinding, TransformBinding, VisibilityBinding};
 use crate::live::index::PrimEntities;
 use crate::live::path::PathStore;
 use crate::live::projection::traverse_predicate;
@@ -156,6 +156,24 @@ pub(super) fn collect_transform_bindings(
         }
     }
     transforms
+}
+
+pub(super) fn collect_visibility_bindings(
+    world: &World,
+    stage: &Stage,
+    map: &PrimEntities,
+) -> Vec<VisibilityBinding> {
+    let paths = world.resource::<PathStore>();
+    let mut visibilities = Vec::new();
+    for (path, entity) in map.iter(paths) {
+        let Ok(path) = openusd::sdf::path(path) else {
+            continue;
+        };
+        if animation_channel_authored(stage, &path, "visibility") {
+            visibilities.push(VisibilityBinding { entity, path });
+        }
+    }
+    visibilities
 }
 
 // The ordered spec stacks include stronger overrides, selected variant specs,

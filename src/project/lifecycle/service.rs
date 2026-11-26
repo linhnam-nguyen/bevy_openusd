@@ -219,6 +219,80 @@ impl ProjectApplicationService {
     ) -> Result<project_protocol::ProjectModelLifecycleResponse, ProjectWriteError> {
         super::deletion::delete_model(self, request)
     }
+
+    /// Inspect a Project's current working tree read-only for legacy wrappers
+    /// or composed Scenes missing playback timeline metadata.
+    pub fn inspect_timeline_repairs(
+        &self,
+        project_id: usd_project::ProjectId,
+    ) -> Result<crate::project::scene::timeline::ProjectTimelineRepairPlan, ProjectWriteError> {
+        let (entry, validated) =
+            self.validated_project(project_id)
+                .map_err(|error| ProjectWriteError::Failed {
+                    code: match error {
+                        project_protocol::ProjectReadError::NotFound { .. } => {
+                            ProjectWriteErrorCode::ProjectNotFound
+                        }
+                        _ => ProjectWriteErrorCode::ManifestUnavailable,
+                    },
+                })?;
+        crate::project::scene::timeline::inspect_project_timeline_repairs(
+            entry.repository_locator(),
+            validated.raw(),
+        )
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure,
+        })
+    }
+
+    /// Explicitly and transactionally repair legacy wrappers and composed
+    /// Scenes in the Project's current working tree without rewriting history.
+    pub fn repair_project_timelines(
+        &mut self,
+        project_id: usd_project::ProjectId,
+    ) -> Result<crate::project::scene::timeline::ProjectTimelineRepairReport, ProjectWriteError> {
+        let publisher = self.publication_coordinator.publisher(project_id);
+        let _publication = publisher
+            .lock()
+            .expect("Project publication lock is not poisoned");
+        let (entry, validated) =
+            self.validated_project(project_id)
+                .map_err(|error| ProjectWriteError::Failed {
+                    code: match error {
+                        project_protocol::ProjectReadError::NotFound { .. } => {
+                            ProjectWriteErrorCode::ProjectNotFound
+                        }
+                        _ => ProjectWriteErrorCode::ManifestUnavailable,
+                    },
+                })?;
+        let project_root = entry.repository_locator();
+        let report = crate::project::scene::timeline::repair_project_timelines_atomic(
+            project_root,
+            validated.raw(),
+        )
+        .map_err(|_| ProjectWriteError::Failed {
+            code: ProjectWriteErrorCode::FilesystemFailure,
+        })?;
+        if !report.repaired_models.is_empty() || !report.repaired_scenes.is_empty() {
+            let mut cache_targets = vec![crate::cache::ProjectCacheTarget::ProjectRoot];
+            for model_id in &report.repaired_models {
+                cache_targets.push(crate::cache::ProjectCacheTarget::Model {
+                    id: model_id.to_string(),
+                });
+            }
+            for scene_id in &report.repaired_scenes {
+                cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
+                    id: scene_id.to_string(),
+                });
+            }
+            match self.cache_warm.enqueue_targets_for_mutation(project_root, cache_targets) {
+                Ok(true) => {},
+                Ok(false) => log::warn!("timeline repair committed; cache warm admission unavailable"),
+                Err(error) => log::warn!("timeline repair committed; cache warm admission failed: {error:#}"),
+            }
+        }
+        Ok(report)
+    }
 }
 
 impl ProjectApplicationService {

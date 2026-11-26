@@ -90,7 +90,11 @@ fn migrates_legacy_model_root_without_changing_model_identity() {
     );
     let wrapper = model_wrapper_path(directory.path(), model_id);
     fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
-    fs::write(&wrapper, b"legacy model wrapper").unwrap();
+    fs::write(
+        &wrapper,
+        b"#usda 1.0\n(\n    defaultPrim = \"ModelRoot\"\n)\ndef Xform \"ModelRoot\" {}\n",
+    )
+    .unwrap();
 
     let migrated = ensure_protected_root_scene_atomic(directory.path(), &original).unwrap();
     let ProjectRoot::Scene(root_id) = migrated.root else {

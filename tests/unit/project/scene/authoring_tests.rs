@@ -136,12 +136,24 @@ fn schema_v2_authors_direct_members_and_relative_project_references() -> Result<
     Ok(())
 }
 
+fn write_minimal_model_wrapper(project_root: &std::path::Path, model_id: ModelId) -> Result<()> {
+    let wrapper = crate::project::models::wrapper::model_wrapper_path(project_root, model_id);
+    fs::create_dir_all(wrapper.parent().expect("model wrapper directory"))?;
+    fs::write(
+        &wrapper,
+        "#usda 1.0\n(\n    defaultPrim = \"ModelRoot\"\n)\ndef Xform \"ModelRoot\" {}\n",
+    )?;
+    Ok(())
+}
+
 #[test]
 fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
     let project_directory = tempdir()?;
     let scene_id = SceneId::new_v4();
     let shared_scene_id = SceneId::new_v4();
     let shared_model_id = ModelId::new_v4();
+    author_scene_atomic(project_directory.path(), shared_scene_id)?;
+    write_minimal_model_wrapper(project_directory.path(), shared_model_id)?;
     let members = vec![
         SceneMember {
             id: SceneMemberId::new_v4(),
@@ -189,9 +201,11 @@ fn repeated_targets_keep_distinct_member_ids_after_reopen() -> Result<()> {
 fn non_identity_scene_placement_round_trips_through_usd() -> Result<()> {
     let project_directory = tempdir()?;
     let scene_id = SceneId::new_v4();
+    let model_id = ModelId::new_v4();
+    write_minimal_model_wrapper(project_directory.path(), model_id)?;
     let member = SceneMember {
         id: SceneMemberId::new_v4(),
-        target: SceneMemberTarget::Model(ModelId::new_v4()),
+        target: SceneMemberTarget::Model(model_id),
         name: Some("Translated model placement".to_owned()),
         transform: ScenePlacementTransform::from_translation([10.0, 20.0, 30.0]),
     };
@@ -299,3 +313,6 @@ fn self_scene_placement_is_rejected_before_publication() {
     );
     assert!(!scene_path(project_directory.path(), scene_id).exists());
 }
+
+mod timeline_publication_tests;
+mod timeline_tests;

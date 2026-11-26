@@ -184,6 +184,11 @@ fn publish_model_inner(
             id: parent_scene_id.to_string(),
         });
     }
+    for ancestor_id in &published.updated_ancestors {
+        cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
+            id: ancestor_id.to_string(),
+        });
+    }
     let _ = service
         .cache_warm
         .enqueue_targets_for_mutation(project_root, cache_targets)

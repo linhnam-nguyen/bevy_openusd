@@ -55,6 +55,9 @@ mod tests {
     #[test]
     fn commands_update_runtime_state_and_publish_correlated_events() {
         let mut app = command_test_app();
+        app.world_mut()
+            .resource_mut::<UsdStageTime>()
+            .domain_readiness = crate::animation::PlaybackDomainReadiness::Ready;
         let request_ids = {
             let mut inbox = app.world_mut().resource_mut::<ViewportCommandInbox>();
             vec![

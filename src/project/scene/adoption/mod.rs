@@ -58,6 +58,7 @@ pub(crate) struct AdoptedScene {
     pub member: Option<SceneMember>,
     pub scene_path: PathBuf,
     pub manifest: ProjectManifestV1,
+    pub updated_ancestors: Vec<SceneId>,
 }
 
 /// Prepare and publish one composed Scene adoption transaction.
@@ -190,6 +191,15 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
     let final_binding_path =
         crate::project::models::link::binding_path(request.project_root, scene_id);
 
+    let manifest_path = crate::project::catalog::manifest_store::manifest_path(request.project_root);
+    let manifest_backup = transaction_directory.join("manifest-preimage.json");
+    fs::copy(&manifest_path, &manifest_backup).context("capture Project manifest preimage")?;
+    crate::project::scene::timeline::sync_file_durable(&manifest_backup)?;
+    let seeds: Vec<_> = request.parent_scene_id.into_iter().collect();
+    let ancestor_preimages = crate::project::scene::timeline::capture_ancestor_preimages(
+        request.project_root, request.base_manifest, &seeds, &transaction_directory.join("timeline-preimages"),
+    )?;
+    let mut recovery_required = false;
     let result = (|| {
         if scene_is_new {
             let source_name =
@@ -249,7 +259,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             parent_members.as_deref(),
         ) {
             if scene_is_new {
-                authoring::prepare_parent_layer_with_scene_path(
+                authoring::prepare_parent_layer_with_staged_scene(
                     parent_scene_path,
                     temporary_parent_path,
                     request.project_root,
@@ -259,6 +269,7 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
                     parent_members,
                     scene_id,
                     &final_scene_path,
+                    &temporary_scene_path,
                 )
                 .map_err(|error| {
                     anyhow::Error::new(support::AdoptionPhaseError::CompositionValidation(error))
@@ -292,6 +303,17 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             .context("validate parent Scene composition")?;
         }
 
+        let mut timeline_overrides = crate::project::scene::timeline::TimelineStageOverrides::default();
+        if scene_is_new {
+            timeline_overrides.scenes.insert(scene_id, temporary_scene_path.clone());
+        }
+        if let (Some(parent_id), Some(path)) = (request.parent_scene_id, temporary_parent_path.as_ref()) {
+            timeline_overrides.scenes.insert(parent_id, path.clone());
+        }
+        let prepared_timelines = crate::project::scene::timeline::prepare_ancestor_timelines(
+            request.project_root, &manifest_candidate, &seeds, timeline_overrides,
+            &transaction_directory.join("staged-ancestor-timelines"),
+        )?;
         if let Some(parent_scene_path) = parent_scene_path.as_ref() {
             if parent_scene_path.exists() {
                 fs::copy(parent_scene_path, &parent_backup_path)
@@ -344,42 +366,47 @@ pub(crate) fn adopt_scene_atomic(request: SceneAdoptionRequest<'_>) -> Result<Ad
             ManifestStore::write_manifest_atomic(request.project_root, &manifest_candidate)
                 .context("publish adopted Project manifest")?;
         }
-        Ok(())
+        let updated_ancestors = prepared_timelines.publish()
+            .context("publish prepared Scene ancestor timeline metadata")?;
+        Ok(updated_ancestors)
     })()
     .context("publish canonical Scene adoption");
 
     let final_result = match result {
-        Ok(()) => Ok(AdoptedScene {
+        Ok(updated_ancestors) => Ok(AdoptedScene {
             scene_id,
             member,
             scene_path: final_scene_path.clone(),
             manifest: manifest_candidate,
+            updated_ancestors,
         }),
         Err(error) => {
-            let error = if let Err(rollback_error) = support::rollback_publication(
-                parent_scene_path.as_deref(),
-                &parent_backup_path,
-                parent_backup_created,
-                parent_published,
-                &final_scene_path,
-                scene_published,
-                &final_source_directory,
-                source_published,
-                &final_binding_path,
-                binding_published,
+            let mut rollback_errors = Vec::new();
+            if let Err(failure) = crate::project::scene::timeline::restore_ancestor_preimages(&ancestor_preimages) {
+                rollback_errors.push(format!("{failure:#}"));
+            }
+            if let Err(failure) = crate::project::scene::timeline::restore_timeline_preimage(&manifest_path, &manifest_backup) {
+                rollback_errors.push(format!("{failure:#}"));
+            }
+            if let Err(failure) = support::rollback_publication(
+                parent_scene_path.as_deref(), &parent_backup_path, parent_backup_created, parent_published,
+                &final_scene_path, scene_published, &final_source_directory, source_published,
+                &final_binding_path, binding_published,
             ) {
-                error.context(format!(
-                    "rollback Scene adoption publication: {rollback_error}"
-                ))
-            } else {
-                error
-            };
+                rollback_errors.push(format!("{failure:#}"));
+            }
+            recovery_required = !rollback_errors.is_empty();
+            let error = if recovery_required {
+                error.context(format!("Scene adoption recovery required at {}: {}", transaction_directory.display(), rollback_errors.join("; ")))
+            } else { error };
             Err(anyhow::Error::new(
                 support::AdoptionPhaseError::Publication(error),
             ))
         }
     };
-    let _ = fs::remove_dir_all(&transaction_directory);
+    if !recovery_required {
+        let _ = fs::remove_dir_all(&transaction_directory);
+    }
     final_result
 }
 

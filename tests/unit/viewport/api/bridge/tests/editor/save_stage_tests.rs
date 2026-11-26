@@ -262,4 +262,285 @@ mod tests {
             }
         ));
     }
+
+    fn create_directory_alias(link: &std::path::Path, target: &std::path::Path) {
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .args([
+                    "/C",
+                    "mklink",
+                    "/J",
+                    link.to_str().expect("utf-8 link"),
+                    target.to_str().expect("utf-8 target"),
+                ])
+                .status()
+                .expect("run mklink /J");
+            assert!(status.success(), "mklink /J failed");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).expect("create directory symlink");
+        }
+    }
+
+    #[test]
+    fn save_stage_as_rejects_directory_alias_escape_and_allows_genuine_external_export() {
+        let (directory, mut app, scene_id, _, canonical) = project_scene_app();
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        let existing_outside = outside.path().join("existing.usda");
+        let sentinel = b"#usda 1.0\n# untouched external file\n";
+        std::fs::write(&existing_outside, sentinel).expect("write sentinel");
+
+        let alias_dir = directory.path().join("exports");
+        create_directory_alias(&alias_dir, outside.path());
+
+        let store = SceneCacheStore::new(directory.path());
+        let before_gen = store.load_descriptor(scene_id).unwrap().unwrap().generation;
+
+        app.world_mut()
+            .resource_mut::<EditorHistories>()
+            .record(EditorHistoryDomain::Authoring);
+
+        // 1. Existing file reached via directory alias inside Project -> rejected.
+        let escaped_existing = alias_dir.join("existing.usda");
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: escaped_existing.to_string_lossy().into_owned(),
+            });
+        app.update();
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("escape rejection event");
+        assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
+        assert_eq!(std::fs::read(&existing_outside).unwrap(), sentinel);
+        assert!(
+            app.world().resource::<EditorHistories>().is_dirty,
+            "dirty state must be preserved on rejected alias save"
+        );
+
+        // 2. New file reached via directory alias inside Project -> rejected.
+        let escaped_new = alias_dir.join("new_via_alias.usda");
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: escaped_new.to_string_lossy().into_owned(),
+            });
+        app.update();
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("new alias rejection event");
+        assert!(matches!(event.event, ViewportEvent::CommandRejected { .. }));
+        assert!(!outside.path().join("new_via_alias.usda").exists());
+        assert!(app.world().resource::<EditorHistories>().is_dirty);
+
+        // 3. Genuine external SaveStageAs -> succeeds without mutating Project cache.
+        let genuine_external = outside.path().join("genuine_export.usda");
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: genuine_external.to_string_lossy().into_owned(),
+            });
+        app.update();
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("external export completion event");
+        assert!(matches!(
+            event.event,
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SaveStageAs,
+                ..
+            }
+        ));
+        assert!(genuine_external.is_file());
+        assert_eq!(
+            store.load_descriptor(scene_id).unwrap().unwrap().generation,
+            before_gen
+        );
+
+        // 4. Subsequent managed SaveStage to canonical Scene -> succeeds cleanly.
+        app.world_mut()
+            .resource_mut::<EditorHistories>()
+            .record(EditorHistoryDomain::Authoring);
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: canonical.to_string_lossy().into_owned(),
+            });
+        app.update();
+        let event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("managed save completion event");
+        assert!(matches!(
+            event.event,
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SaveStageAs,
+                ..
+            }
+        ));
+        assert!(store.load_descriptor(scene_id).unwrap().unwrap().generation > before_gen);
+        assert!(!app.world().resource::<EditorHistories>().is_dirty);
+    }
+
+    #[test]
+    fn save_stage_as_protects_unicode_equivalent_root_spelling_and_allows_sibling_prefix() {
+        let base = tempfile::tempdir().expect("base tempdir");
+        let lower_root = base.path().join("Pröject");
+        let upper_root = base.path().join("PrÖject");
+        let sibling_external = base.path().join("Pröject_external");
+        let outside = base.path().join("OutsideTarget");
+        std::fs::create_dir_all(&lower_root).expect("create lower_root");
+        std::fs::create_dir_all(&sibling_external).expect("create sibling_external");
+        std::fs::create_dir_all(&outside).expect("create outside");
+
+        let root_scene = usd_project::SceneId::new_v4();
+        let manifest = usd_project::ProjectManifestV1::new(
+            usd_project::ProjectId::new_v4(),
+            "Unicode Project",
+            usd_project::ProjectRoot::Scene(root_scene),
+            vec![usd_project::SceneManifestEntry {
+                id: root_scene,
+                storage_key: usd_project::StorageKey::new("Root").unwrap(),
+                display_name: "Root".to_owned(),
+            }],
+            Vec::new(),
+        );
+        crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
+            &lower_root,
+            &manifest,
+        )
+        .unwrap();
+        let canonical =
+            crate::project::scene::authoring::author_scene_atomic(&lower_root, root_scene).unwrap();
+        let config = default_project_cache_config_hash();
+        let store = SceneCacheStore::new(&lower_root);
+        store.advance_generation(root_scene, config).unwrap();
+        let before_gen = store.load_descriptor(root_scene).unwrap().unwrap().generation;
+
+        let context = ActiveProjectCacheContext::new(
+            lower_root.clone(),
+            ProjectCacheTarget::Scene {
+                id: root_scene.to_string(),
+            },
+            viewport_protocol::RuntimeProfile::NativeMedium,
+            config,
+        )
+        .unwrap();
+        let stage = Stage::open(canonical.to_string_lossy().as_ref()).unwrap();
+        stage
+            .define_prim("/SceneRoot/UnicodeChange")
+            .unwrap()
+            .set_type_name("Xform")
+            .unwrap();
+        let mut app = command_test_app();
+        app.world_mut()
+            .insert_non_send(usd_bevy::LiveStage::new(stage));
+        app.world_mut().insert_resource(StageHandle {
+            path: canonical.clone(),
+            error: None,
+        });
+        app.world_mut().insert_resource(context);
+
+        let existing_outside = outside.join("sentinel.usda");
+        let sentinel = b"#usda 1.0\n# untouched unicode sentinel\n";
+        std::fs::write(&existing_outside, sentinel).expect("write sentinel");
+        create_directory_alias(&lower_root.join("exports"), &outside);
+
+        // 1. Sibling prefix boundary (`Pröject_external`) is genuinely external -> succeeds.
+        let sibling_export = sibling_external.join("out.usda");
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::SaveStageAs {
+                filename: sibling_export.to_string_lossy().into_owned(),
+            });
+        app.update();
+        assert!(matches!(
+            app.world_mut().resource_mut::<ViewportEventOutbox>().pop().unwrap().event,
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::SaveStageAs,
+                ..
+            }
+        ));
+        assert!(sibling_export.is_file());
+        assert_eq!(
+            store.load_descriptor(root_scene).unwrap().unwrap().generation,
+            before_gen
+        );
+
+        // 2. On filesystems where `PrÖject` and `Pröject` resolve to the same directory
+        //    (e.g. Windows NTFS), verify both existing & new alias escapes are rejected
+        //    and equivalent-spelling managed save succeeds.
+        let unicode_equivalent = std::fs::canonicalize(&upper_root)
+            .ok()
+            .zip(std::fs::canonicalize(&lower_root).ok())
+            .is_some_and(|(a, b)| a == b);
+        #[cfg(windows)]
+        assert!(
+            unicode_equivalent,
+            "Windows fixture expects PrÖject and Pröject to resolve to the same directory"
+        );
+        if unicode_equivalent {
+            app.world_mut()
+                .resource_mut::<EditorHistories>()
+                .record(EditorHistoryDomain::Authoring);
+
+            // Existing file via alternate-case Unicode root + alias -> rejected.
+            let escaped_existing = upper_root.join("exports").join("sentinel.usda");
+            app.world_mut()
+                .resource_mut::<ViewportCommandInbox>()
+                .send(ViewportCommand::SaveStageAs {
+                    filename: escaped_existing.to_string_lossy().into_owned(),
+                });
+            app.update();
+            assert!(matches!(
+                app.world_mut().resource_mut::<ViewportEventOutbox>().pop().unwrap().event,
+                ViewportEvent::CommandRejected { .. }
+            ));
+            assert_eq!(std::fs::read(&existing_outside).unwrap(), sentinel);
+            assert!(app.world().resource::<EditorHistories>().is_dirty);
+
+            // New file via alternate-case Unicode root + alias -> rejected.
+            let escaped_new = upper_root.join("exports").join("new_escape.usda");
+            app.world_mut()
+                .resource_mut::<ViewportCommandInbox>()
+                .send(ViewportCommand::SaveStageAs {
+                    filename: escaped_new.to_string_lossy().into_owned(),
+                });
+            app.update();
+            assert!(matches!(
+                app.world_mut().resource_mut::<ViewportEventOutbox>().pop().unwrap().event,
+                ViewportEvent::CommandRejected { .. }
+            ));
+            assert!(!outside.join("new_escape.usda").exists());
+            assert!(app.world().resource::<EditorHistories>().is_dirty);
+
+            // Managed save via alternate-case Unicode root spelling -> succeeds canonically.
+            let relative_scene = canonical.strip_prefix(&lower_root).expect("scene under root");
+            let upper_canonical = upper_root.join(relative_scene);
+            app.world_mut()
+                .resource_mut::<ViewportCommandInbox>()
+                .send(ViewportCommand::SaveStageAs {
+                    filename: upper_canonical.to_string_lossy().into_owned(),
+                });
+            app.update();
+            assert!(matches!(
+                app.world_mut().resource_mut::<ViewportEventOutbox>().pop().unwrap().event,
+                ViewportEvent::EditorCommandCompleted {
+                    operation: EditorOperation::SaveStageAs,
+                    ..
+                }
+            ));
+            assert!(store.load_descriptor(root_scene).unwrap().unwrap().generation > before_gen);
+            assert!(!app.world().resource::<EditorHistories>().is_dirty);
+        }
+    }
 }

@@ -1,7 +1,7 @@
 use viewport_protocol::{TimelineReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::super::helpers::timeline_read_model;
-use crate::animation::UsdStageTime;
+use crate::animation::{PlaybackDomainReadiness, UsdStageTime};
 use crate::api::ViewportEventOutbox;
 
 pub(super) fn set_playback(
@@ -10,6 +10,11 @@ pub(super) fn set_playback(
     outbox: &mut ViewportEventOutbox,
     clock: &mut UsdStageTime,
 ) {
+    if playing && clock.domain_readiness != PlaybackDomainReadiness::Ready {
+        super::super::helpers::reject(outbox, request_id,
+            format!("playback unavailable: {:?}", clock.domain_readiness));
+        return;
+    }
     clock.playing = playing;
     emit_timeline_changed(request_id, outbox, clock);
 }

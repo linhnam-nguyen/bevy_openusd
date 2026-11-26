@@ -153,6 +153,15 @@ pub(crate) fn sync_linked_scene(
                 .map_err(|_| ProjectWriteError::Failed {
                     code: ProjectWriteErrorCode::FilesystemFailure,
                 })?;
+            let summary = match inspection::project_summary(&project.manifest, project_root) {
+                Ok(summary) => summary,
+                Err(error) => {
+                    if let Err(rollback_error) = publication.rollback() {
+                        log::error!("linked Scene recovery required: {rollback_error:#}");
+                    }
+                    return Err(error);
+                }
+            };
             if let Err(error) = service.stage_mutations.submit_for_project(
                 project_root,
                 ProjectStageMutation::RefreshSceneDefinition {
@@ -160,7 +169,9 @@ pub(crate) fn sync_linked_scene(
                     scene_id,
                 },
             ) {
-                let _ = publication.rollback();
+                if let Err(rollback_error) = publication.rollback() {
+                    log::error!("linked Scene rollback requires recovery: {rollback_error:#}");
+                }
                 return Err(error);
             }
             publication
@@ -168,21 +179,22 @@ pub(crate) fn sync_linked_scene(
                 .map_err(|_| ProjectWriteError::Failed {
                     code: ProjectWriteErrorCode::FilesystemFailure,
                 })?;
-            let summary = inspection::project_summary(&project.manifest, project_root)?;
-            let _ = service
-                .cache_warm
-                .enqueue_targets_for_mutation(
-                    project_root,
-                    vec![
-                        crate::cache::ProjectCacheTarget::Scene {
-                            id: scene_id.to_string(),
-                        },
-                        crate::cache::ProjectCacheTarget::ProjectRoot,
-                    ],
-                )
-                .map_err(|_| ProjectWriteError::Failed {
-                    code: ProjectWriteErrorCode::FilesystemFailure,
-                })?;
+            let mut cache_targets = vec![
+                crate::cache::ProjectCacheTarget::Scene {
+                    id: scene_id.to_string(),
+                },
+                crate::cache::ProjectCacheTarget::ProjectRoot,
+            ];
+            for ancestor_id in &project.updated_ancestors {
+                cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
+                    id: ancestor_id.to_string(),
+                });
+            }
+            match service.cache_warm.enqueue_targets_for_mutation(project_root, cache_targets) {
+                Ok(true) => {},
+                Ok(false) => log::warn!("linked Scene committed; cache warm admission unavailable"),
+                Err(error) => log::warn!("linked Scene committed; cache warm admission failed: {error:#}"),
+            }
             Ok(ProjectSceneAdoptionResponse {
                 project: summary,
                 scene_id,
@@ -346,6 +358,11 @@ fn adopt_scene_inner(
     if let Some(parent_scene_id) = parent_scene_id {
         cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
             id: parent_scene_id.to_string(),
+        });
+    }
+    for ancestor_id in &adopted.updated_ancestors {
+        cache_targets.push(crate::cache::ProjectCacheTarget::Scene {
+            id: ancestor_id.to_string(),
         });
     }
     let _ = service
