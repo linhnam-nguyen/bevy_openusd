@@ -7,11 +7,11 @@ mod tests {
     use crate::api::bridge::ViewerSettingsState;
     use crate::api::bridge::commands::apply_viewport_commands;
     use crate::api::bridge::state::{EditorHistories, RuntimeMutationCoordinator};
-    use crate::api::{
-        ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox,
-    };
-    use crate::viewport::navigation::camera::{ArcballCamera, CameraMount, CameraOrientationState, FlyTo};
+    use crate::api::{ViewportCommandInbox, ViewportEventOutbox, ViewportTreeCommandInbox};
     use crate::physics::PhysicsActive;
+    use crate::viewport::navigation::camera::{
+        ArcballCamera, CameraMount, CameraOrientationState, FlyTo,
+    };
     use crate::viewport::rendering::sampling::{
         DlssCameraActivation, DlssCapability, SamplingCoordinatorState,
     };
@@ -342,18 +342,67 @@ mod tests {
             Some(openusd::vt::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON
         ));
 
-        let undo_request = app.world_mut().resource_mut::<ViewportCommandInbox>()
+        let undo_request = app
+            .world_mut()
+            .resource_mut::<ViewportCommandInbox>()
             .send(ViewportCommand::UndoEditor);
         app.update();
-        let undo_event = app.world_mut().resource_mut::<ViewportEventOutbox>()
-            .pop().expect("undo should publish an event");
-        assert_eq!(undo_event.request_id.as_deref(), Some(undo_request.as_str()));
-        assert!(matches!(undo_event.event, ViewportEvent::EditorCommandCompleted {
-            operation: EditorOperation::Undo, ..
-        }));
-        let live = app.world().get_non_send::<usd_bevy::LiveStage>().expect("live stage");
+        let undo_event = app
+            .world_mut()
+            .resource_mut::<ViewportEventOutbox>()
+            .pop()
+            .expect("undo should publish an event");
+        assert_eq!(
+            undo_event.request_id.as_deref(),
+            Some(undo_request.as_str())
+        );
+        assert!(matches!(
+            undo_event.event,
+            ViewportEvent::EditorCommandCompleted {
+                operation: EditorOperation::Undo,
+                ..
+            }
+        ));
+        let live = app
+            .world()
+            .get_non_send::<usd_bevy::LiveStage>()
+            .expect("live stage");
         let size = live.stage.prim("/World/Box").unwrap().attribute("size");
         assert!(!matches!(size.get::<openusd::vt::Value>().unwrap(),
             Some(openusd::vt::Value::Double(v)) if (v - 2.5).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn mounting_authored_camera_cancels_active_fly_to_including_ortho_scale() {
+        let mut app = command_test_app();
+        *app.world_mut().resource_mut::<FlyTo>() = FlyTo {
+            start_focus: Vec3::ZERO,
+            start_distance: 10.0,
+            target_focus: Vec3::new(5.0, 0.0, 0.0),
+            target_distance: 2.0,
+            start_ortho_scale: Some(1.0),
+            target_ortho_scale: Some(0.2),
+            duration: 0.4,
+            remaining: 0.4,
+            ..Default::default()
+        };
+
+        app.world_mut().resource_mut::<ViewportCommandInbox>().send(
+            ViewportCommand::SetCameraSource {
+                source: CameraSource::Authored {
+                    prim_path: "/World/ShotCam".to_owned(),
+                },
+            },
+        );
+        app.update();
+
+        assert!(matches!(
+            app.world().resource::<CameraMount>(),
+            CameraMount::Mounted { prim_path } if prim_path == "/World/ShotCam"
+        ));
+        let fly = app.world().resource::<FlyTo>();
+        assert_eq!(fly.remaining, 0.0);
+        assert_eq!(fly.start_ortho_scale, None);
+        assert_eq!(fly.target_ortho_scale, None);
     }
 }

@@ -227,7 +227,13 @@ pub(super) fn apply_viewport_commands(
                 );
             }
             ViewportCommand::SetCameraSource { source } => {
-                camera::set_camera_source(request_id, source, &mut outbox, &mut state.camera_mount);
+                camera::set_camera_source(
+                    request_id,
+                    source,
+                    &mut outbox,
+                    &mut state.camera_mount,
+                    &mut state.fly_to,
+                );
             }
             ViewportCommand::SetStandardView { view } => {
                 camera::set_standard_view(

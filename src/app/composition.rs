@@ -27,7 +27,7 @@ use crate::api::{
 };
 use crate::viewport::navigation::camera::{
     ArcballCameraPlugin, CameraBookmarks, CameraMount, FlyTo, apply_fly_to, fit_camera_once,
-    follow_mounted_camera, sync_chase_camera,
+    follow_mounted_camera, sync_adaptive_camera_clipping, sync_chase_camera,
 };
 use crate::physics::{PhysicsActive, RapierPhysicsPlugin};
 use crate::viewport::presentation::{DisplayToggles, OverlaysPlugin};
@@ -198,10 +198,10 @@ pub(crate) fn configure_generic_viewport_core(app: &mut App, config: &GenericVie
                 .after(LiveStageSet::Presentation)
                 .before(ViewportBridgeSet::ApplyCommands),
             publish_standalone_cache_when_ready.after(spawn_when_ready),
-            fit_camera_once,
+            fit_camera_once.before(sync_adaptive_camera_clipping),
             handle_usd_hot_reload,
             apply_load_request,
-            apply_fly_to,
+            apply_fly_to.before(sync_adaptive_camera_clipping),
             sync_selected_instance_identity.before(LiveStageSet::Reconcile),
             follow_mounted_camera,
             hide_meshes_on_startup,

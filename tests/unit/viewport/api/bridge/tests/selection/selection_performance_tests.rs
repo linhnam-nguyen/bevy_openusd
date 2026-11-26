@@ -63,7 +63,10 @@ def Xform "Nested" {
     app.world_mut().insert_non_send(live);
     let focus = request_focus(&mut app, target.clone());
     assert!((focus.0 - Vec3::Y * 6.0).length() < 0.001, "{focus:?}");
-    assert!((focus.1 - 22.4).abs() < 0.001, "{focus:?}");
+    assert!(
+        focus.1 > 15.0 && focus.1 < 25.0,
+        "canonical nested bounds must frame the unloaded tall assembly, got {focus:?}"
+    );
     assert_eq!(std::fs::read(root)?, source);
 
     // Introduce a genuine canonical composition error after the file-backed
@@ -118,17 +121,256 @@ fn focus_uses_resident_geometry_for_occurrences_and_disconnected_targets() {
         "documentless scene must retain the existing resident-entity fit"
     );
     app.world_mut().insert_non_send(live);
-    assert_eq!(request_focus(&mut app, occurrence), (Vec3::X * 20.0, 3.2));
+    let (occ_focus, occ_dist) = request_focus(&mut app, occurrence);
+    assert_eq!(occ_focus, Vec3::X * 20.0);
+    assert!(occ_dist.is_finite() && occ_dist > 3.5);
 
     let target = anchor("/Unconnected");
     let mut app = focus_test_app(&target, Vec3::Z * 5.0);
-    assert_eq!(request_focus(&mut app, target), (Vec3::Z * 5.0, 3.2));
+    let (target_focus, target_dist) = request_focus(&mut app, target);
+    assert_eq!(target_focus, Vec3::Z * 5.0);
+    assert!((target_dist - occ_dist).abs() < 1.0e-5);
+}
+
+#[test]
+fn api_focus_frames_vertical_box_at_narrow_fov_and_fly_to_contains_all_corners() {
+    use bevy::camera::{CameraProjection, PerspectiveProjection, Projection, RenderTargetInfo};
+
+    let target = anchor("/TallColumn");
+    let mut app = command_test_app();
+    app.init_resource::<Time>().add_systems(
+        Update,
+        (
+            apply_tree_commands.after(apply_viewport_commands),
+            crate::viewport::navigation::camera::apply_fly_to,
+        ),
+    );
+
+    let perspective = PerspectiveProjection {
+        fov: 30.0_f32.to_radians(),
+        aspect_ratio: 16.0 / 9.0,
+        ..default()
+    };
+    let mut camera = Camera::default();
+    camera.computed.target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::new(1600, 900),
+        scale_factor: 1.0,
+    });
+    let cam_entity = app
+        .world_mut()
+        .spawn((
+            Camera3d::default(),
+            camera,
+            Projection::Perspective(perspective.clone()),
+            Transform::default(),
+            ArcballCamera {
+                yaw: 0.0,
+                elevation: 0.0,
+                distance: 10.0,
+                zoom_target: 10.0,
+                ..Default::default()
+            },
+        ))
+        .id();
+    let entity = app
+        .world_mut()
+        .spawn((
+            Transform::from_translation(Vec3::new(0.0, 2.0, 0.0)),
+            UsdLocalExtent {
+                min: [-0.05, -1.0, -0.05],
+                max: [0.05, 1.0, 0.05],
+            },
+            Visibility::Visible,
+        ))
+        .id();
+    *app.world_mut().resource_mut::<SceneAnchorIndex>() =
+        SceneAnchorIndex::from_test_entity(target.clone(), entity);
+
+    let (focus, distance) = request_focus(&mut app, target);
+    assert_eq!(focus, Vec3::new(0.0, 2.0, 0.0));
+    // Legacy `max_dim * 1.6 = 3.2` clipped a ±1 vertical box at FOV 30°;
+    // frustum-aware framing must pull back beyond 1.1 / tan(15°) ≈ 4.105.
+    assert!(
+        distance > 4.1,
+        "API focus must respect 30-deg FOV, got distance {distance}"
+    );
+
+    // Complete the fly-to tween and verify all 8 corners project inside NDC [-1, 1].
+    app.world_mut().resource_mut::<FlyTo>().duration = 0.0;
+    app.update();
+    let tr = *app
+        .world()
+        .get::<Transform>(cam_entity)
+        .expect("camera transform exists");
+    let view_from_world = tr.compute_affine().inverse();
+    let clip_from_view = perspective.get_clip_from_view();
+    let min = Vec3::new(-0.05, 1.0, -0.05);
+    let max = Vec3::new(0.05, 3.0, 0.05);
+    for i in 0..8 {
+        let corner = Vec3::new(
+            if i & 1 == 0 { min.x } else { max.x },
+            if i & 2 == 0 { min.y } else { max.y },
+            if i & 4 == 0 { min.z } else { max.z },
+        );
+        let view = view_from_world.transform_point3(corner);
+        let clip = clip_from_view * view.extend(1.0);
+        assert!(clip.w > 0.0);
+        let ndc = clip.truncate() / clip.w;
+        assert!(
+            ndc.x.abs() <= 1.0 + 1.0e-4 && ndc.y.abs() <= 1.0 + 1.0e-4,
+            "focused corner {corner:?} outside NDC [-1, 1]: {ndc:?}"
+        );
+    }
+}
+
+#[test]
+fn api_focus_rejects_missing_projection_without_mutating_mount_or_fly_to() {
+    let target = anchor("/Part");
+    let mut app = command_test_app();
+    app.add_systems(Update, apply_tree_commands.after(apply_viewport_commands));
+    // Spawn camera WITHOUT a Projection component.
+    app.world_mut().spawn(ArcballCamera::default());
+    let entity = app
+        .world_mut()
+        .spawn((
+            Transform::default(),
+            UsdLocalExtent {
+                min: [-1.0; 3],
+                max: [1.0; 3],
+            },
+            Visibility::Visible,
+        ))
+        .id();
+    *app.world_mut().resource_mut::<SceneAnchorIndex>() =
+        SceneAnchorIndex::from_test_entity(target.clone(), entity);
+    *app.world_mut()
+        .resource_mut::<crate::viewport::navigation::camera::CameraMount>() =
+        crate::viewport::navigation::camera::CameraMount::Mounted {
+            prim_path: "/World/ShotCam".to_owned(),
+        };
+
+    let request_id =
+        app.world_mut()
+            .resource_mut::<ViewportCommandInbox>()
+            .send(ViewportCommand::FocusTarget {
+                target,
+                mode: viewport_protocol::FocusMode::FrameTarget,
+            });
+    app.update();
+
+    let events: Vec<_> =
+        std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
+            .filter(|event| event.request_id.as_deref() == Some(request_id.as_str()))
+            .collect();
+    assert!(matches!(
+        events.as_slice(),
+        [viewport_protocol::ViewportEventEnvelope {
+            event: viewport_protocol::ViewportEvent::CommandRejected { .. },
+            ..
+        }]
+    ));
+    assert!(matches!(
+        app.world()
+            .resource::<crate::viewport::navigation::camera::CameraMount>(),
+        crate::viewport::navigation::camera::CameraMount::Mounted { prim_path }
+            if prim_path == "/World/ShotCam"
+    ));
+    assert_eq!(app.world().resource::<FlyTo>().remaining, 0.0);
+}
+
+#[test]
+fn api_focus_point_validates_context_and_never_mutates_mounted_camera_on_zero_viewport() {
+    use bevy::camera::{PerspectiveProjection, Projection, RenderTargetInfo};
+
+    let target = anchor("/TransformOnly");
+    let mut app = command_test_app();
+    app.add_systems(Update, apply_tree_commands.after(apply_viewport_commands));
+
+    let mut zero_cam = Camera::default();
+    zero_cam.computed.target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::ZERO,
+        scale_factor: 1.0,
+    });
+    let cam_entity = app
+        .world_mut()
+        .spawn((
+            ArcballCamera {
+                distance: 8.5,
+                zoom_target: 8.5,
+                ..Default::default()
+            },
+            Projection::Perspective(PerspectiveProjection::default()),
+            zero_cam,
+        ))
+        .id();
+    let entity = app
+        .world_mut()
+        .spawn((Transform::from_xyz(3.0, 4.0, 5.0), Visibility::Visible))
+        .id();
+    *app.world_mut().resource_mut::<SceneAnchorIndex>() =
+        SceneAnchorIndex::from_test_entity(target.clone(), entity);
+    *app.world_mut()
+        .resource_mut::<crate::viewport::navigation::camera::CameraMount>() =
+        crate::viewport::navigation::camera::CameraMount::Mounted {
+            prim_path: "/World/ShotCam".to_owned(),
+        };
+
+    // With zero viewport, point focus must defer without mutating mount,
+    // selection, FlyTo, or emitting CameraTransitionStarted.
+    app.world_mut()
+        .resource_mut::<ViewportCommandInbox>()
+        .send(ViewportCommand::FocusTarget {
+            target: target.clone(),
+            mode: viewport_protocol::FocusMode::FrameTarget,
+        });
+    app.update();
+
+    assert!(matches!(
+        app.world()
+            .resource::<crate::viewport::navigation::camera::CameraMount>(),
+        crate::viewport::navigation::camera::CameraMount::Mounted { prim_path }
+            if prim_path == "/World/ShotCam"
+    ));
+    assert_eq!(app.world().resource::<FlyTo>().remaining, 0.0);
+    assert_eq!(app.world().resource::<SelectedTargets>().0.primary, None);
+    let emitted: Vec<_> =
+        std::iter::from_fn(|| app.world_mut().resource_mut::<ViewportEventOutbox>().pop())
+            .collect();
+    assert!(
+        !emitted.iter().any(|e| matches!(
+            e.event,
+            viewport_protocol::ViewportEvent::CameraTransitionStarted { .. }
+        )),
+        "deferred point focus must not emit CameraTransitionStarted"
+    );
+
+    // Once viewport becomes valid, deferred point focus succeeds and preserves distance.
+    app.world_mut()
+        .get_mut::<Camera>(cam_entity)
+        .expect("cam")
+        .computed
+        .target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::new(1280, 720),
+        scale_factor: 1.0,
+    });
+    app.update();
+
+    assert!(matches!(
+        app.world()
+            .resource::<crate::viewport::navigation::camera::CameraMount>(),
+        crate::viewport::navigation::camera::CameraMount::Arcball
+    ));
+    let fly = app.world().resource::<FlyTo>();
+    assert_eq!(fly.target_focus, Vec3::new(3.0, 4.0, 5.0));
+    assert!((fly.target_distance - 8.5).abs() < 1.0e-5);
+    assert!(fly.framing_intent.is_some());
 }
 
 fn focus_test_app(target: &SceneAnchor, position: Vec3) -> App {
     let mut app = command_test_app();
     app.add_systems(Update, apply_tree_commands.after(apply_viewport_commands));
-    app.world_mut().spawn(ArcballCamera::default());
+    app.world_mut()
+        .spawn((ArcballCamera::default(), Projection::default()));
     let entity = app
         .world_mut()
         .spawn((

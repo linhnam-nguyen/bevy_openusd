@@ -2,13 +2,16 @@ use std::collections::HashSet;
 
 use bevy::ecs::hierarchy::Children;
 use bevy::prelude::*;
-use viewport_protocol::{SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
+use viewport_protocol::{CameraSource, SelectionReadModel, ViewportEvent, ViewportEventEnvelope};
 
 use super::commands::VIEWER_BINDING_PENDING;
-use super::focus_bounds::focus_params_for_payload;
+use super::focus_bounds::focus_bounds_for_payload;
 use super::helpers::{emit_selection_delta, reject};
 use crate::api::{ViewportEventOutbox, ViewportTreeCommand, ViewportTreeCommandInbox};
-use crate::viewport::navigation::camera::{ArcballCamera, FlyTo};
+use crate::viewport::navigation::camera::{
+    ArcballCamera, CameraMount, CameraNavigationConfig, FlyTo, FramingIntent, FramingOutcome,
+    frame_intent_for_camera,
+};
 use crate::viewport::rendering::scene::{
     CurrentHierarchyProjection, HierarchyVisibilityTarget, SceneAnchorIndex,
 };
@@ -24,9 +27,17 @@ pub(super) fn apply_tree_commands(
     mut outbox: ResMut<ViewportEventOutbox>,
     mut selected: ResMut<SelectedPrim>,
     mut selection: ResMut<SelectedTargets>,
-    (scene_index, live_stage): (Res<SceneAnchorIndex>, Option<NonSend<usd_bevy::LiveStage>>),
+    (scene_index, live_stage, nav_config, mut camera_mount): (
+        Res<SceneAnchorIndex>,
+        Option<NonSend<usd_bevy::LiveStage>>,
+        Option<Res<CameraNavigationConfig>>,
+        Option<ResMut<CameraMount>>,
+    ),
     mut current_projection: ResMut<CurrentHierarchyProjection>,
-    cameras: Query<&ArcballCamera>,
+    cameras: Query<
+        (&ArcballCamera, Option<&Projection>, Option<&Camera>),
+        Without<usd_bevy::UsdCamera>,
+    >,
     transforms: Query<&Transform>,
     child_of: Query<Option<&ChildOf>>,
     extents: Query<&usd_bevy::UsdLocalExtent>,
@@ -38,6 +49,7 @@ pub(super) fn apply_tree_commands(
     gate: crate::viewport::navigation::input::ViewerInteractionGate,
 ) {
     let locked = gate.locked();
+    let config = nav_config.as_deref().copied().unwrap_or_default();
     while let Some(command) = inbox.pop() {
         if locked {
             let request_id = match command {
@@ -80,7 +92,7 @@ pub(super) fn apply_tree_commands(
                     );
                     continue;
                 };
-                let Ok(camera) = cameras.single() else {
+                let Ok((camera, projection, bevy_camera)) = cameras.single() else {
                     reject(
                         &mut outbox,
                         request_id,
@@ -95,17 +107,19 @@ pub(super) fn apply_tree_commands(
                             scene_index.resolve_all_by_prim_path(&target.prim_path),
                             [only] if *only == entity
                         );
-                    focus_params_for_payload(stage, &target.prim_path, unique_prim)
+                    focus_bounds_for_payload(stage, &target.prim_path, unique_prim)
                 });
                 let canonical = match canonical {
-                    Ok(fit) => fit,
+                    Ok(bounds) => bounds,
                     Err(reason) => {
                         reject(&mut outbox, request_id, reason.to_owned());
                         continue;
                     }
                 };
-                let Some((target_focus, target_distance)) = canonical.or_else(|| {
-                    fit_params_for_entity(
+                let focus_bounds = if let Some((min, max)) = canonical {
+                    EntityFocusBounds::Bounds(min, max)
+                } else {
+                    entity_bounds_for_focus(
                         entity,
                         &transforms,
                         &child_of,
@@ -113,39 +127,112 @@ pub(super) fn apply_tree_commands(
                         &aabbs,
                         &meshes,
                         &children,
-                        camera.distance,
                     )
-                }) else {
-                    // A Mesh3d can exist for a frame before Bevy has produced
-                    // its Aabb. Preserve the command and retry next frame so
-                    // the camera never commits to the prim origin as a fake
-                    // fit target.
-                    inbox.defer_focus(ViewportTreeCommand::Focus {
+                };
+                let Some(active_projection) = projection else {
+                    reject(
+                        &mut outbox,
                         request_id,
-                        target,
-                        mode,
-                        selection_revision,
-                        scene_revision,
-                        generation,
-                    });
-                    break;
+                        "cannot focus target before the active camera projection is ready"
+                            .to_string(),
+                    );
+                    continue;
+                };
+                let viewport_size = bevy_camera.and_then(|c| {
+                    c.logical_viewport_size()
+                        .or_else(|| c.physical_viewport_size().map(|size| size.as_vec2()))
+                });
+                let intent = match focus_bounds {
+                    EntityFocusBounds::Bounds(min, max) => FramingIntent::Bounds { min, max },
+                    EntityFocusBounds::Point(origin) => FramingIntent::Point(origin),
+                    EntityFocusBounds::Pending | EntityFocusBounds::Missing => {
+                        // A Mesh3d can exist for a frame before Bevy has produced
+                        // its Aabb. Preserve the command and retry next frame so
+                        // the camera never commits to the prim origin as a fake
+                        // fit target.
+                        inbox.defer_focus(ViewportTreeCommand::Focus {
+                            request_id,
+                            target,
+                            mode,
+                            selection_revision,
+                            scene_revision,
+                            generation,
+                        });
+                        break;
+                    }
+                };
+                let fit = match frame_intent_for_camera(
+                    intent,
+                    camera,
+                    active_projection,
+                    viewport_size,
+                    &config,
+                ) {
+                    FramingOutcome::Fit(fit) => fit,
+                    FramingOutcome::Deferred => {
+                        inbox.defer_focus(ViewportTreeCommand::Focus {
+                            request_id,
+                            target,
+                            mode,
+                            selection_revision,
+                            scene_revision,
+                            generation,
+                        });
+                        break;
+                    }
+                    FramingOutcome::Unrepresentable => {
+                        reject(
+                            &mut outbox,
+                            request_id,
+                            format!(
+                                "target {} bounds cannot be framed within the active view envelope",
+                                target.prim_path
+                            ),
+                        );
+                        continue;
+                    }
                 };
 
+                // Transactional commit: only after framing succeeds do we
+                // switch from a mounted authored camera to free mode and
+                // install the complete transition state.
+                let was_mounted = camera_mount
+                    .as_deref()
+                    .is_some_and(|mount| matches!(mount, CameraMount::Mounted { .. }));
+                if let Some(mount) = camera_mount.as_deref_mut() {
+                    *mount = CameraMount::Arcball;
+                }
                 selected.0 = Some(entity);
                 selection
                     .replace(SelectionReadModel::from_legacy_target(Some(target.clone())))
                     .expect("focused target must satisfy the protocol invariant");
-                fly_to.start_focus = camera.focus;
-                fly_to.start_distance = camera.distance;
-                fly_to.target_focus = target_focus;
-                fly_to.target_distance = target_distance;
-                fly_to.start_yaw = None;
-                fly_to.target_yaw = None;
-                fly_to.start_elevation = None;
-                fly_to.target_elevation = None;
-                fly_to.duration = 0.4;
-                fly_to.remaining = 0.4;
+                *fly_to = FlyTo {
+                    start_focus: camera.focus,
+                    start_distance: camera.distance,
+                    target_focus: fit.focus,
+                    target_distance: fit.distance,
+                    start_yaw: None,
+                    target_yaw: None,
+                    start_elevation: None,
+                    target_elevation: None,
+                    start_ortho_scale: match active_projection {
+                        Projection::Orthographic(ortho) => Some(ortho.scale),
+                        _ => None,
+                    },
+                    target_ortho_scale: fit.orthographic.map(|ortho| ortho.scale),
+                    framing_intent: Some(intent),
+                    duration: 0.4,
+                    remaining: 0.4,
+                };
 
+                if was_mounted {
+                    outbox.push(ViewportEventEnvelope::new(
+                        Some(request_id.clone()),
+                        ViewportEvent::CameraSourceChanged {
+                            source: CameraSource::Arcball,
+                        },
+                    ));
+                }
                 emit_selection_delta(request_id.clone(), &selection, &mut outbox);
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
@@ -265,9 +352,16 @@ fn set_subtree_visibility_for_roots(
     }
 }
 
-/// Computes the subtree bounds used by both public focus modes so a product
-/// client frames the same target the same way.
-fn fit_params_for_entity(
+enum EntityFocusBounds {
+    Bounds(Vec3, Vec3),
+    Point(Vec3),
+    Pending,
+    Missing,
+}
+
+/// Collects the world-space subtree bounds used by focus commands before
+/// delegating framing to the shared viewport camera policy.
+fn entity_bounds_for_focus(
     root: Entity,
     transforms: &Query<&Transform>,
     child_of: &Query<Option<&ChildOf>>,
@@ -275,8 +369,7 @@ fn fit_params_for_entity(
     aabbs: &Query<Option<&bevy::camera::primitives::Aabb>>,
     meshes: &Query<Option<&Mesh3d>>,
     children: &Query<&Children>,
-    current_camera_distance: f32,
-) -> Option<(Vec3, f32)> {
+) -> EntityFocusBounds {
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     let mut found = false;
@@ -285,7 +378,9 @@ fn fit_params_for_entity(
 
     while let Some(entity) = stack.pop() {
         if transforms.get(entity).is_ok() {
-            let matrix = world_matrix(entity, transforms, child_of)?;
+            let Some(matrix) = world_matrix(entity, transforms, child_of) else {
+                return EntityFocusBounds::Missing;
+            };
             if let Ok(extent) = extents.get(entity) {
                 include_bounds(
                     &mut min,
@@ -313,20 +408,22 @@ fn fit_params_for_entity(
         }
     }
 
-    if found {
-        let center = (min + max) * 0.5;
-        let size = (max - min).abs();
-        let maximum_dimension = size.x.max(size.y).max(size.z).max(0.05);
-        Some((center, maximum_dimension * 1.6))
+    if found && min.is_finite() && max.is_finite() && min.cmple(max).all() {
+        EntityFocusBounds::Bounds(min, max)
     } else if mesh_bounds_pending {
-        None
+        EntityFocusBounds::Pending
     } else if transforms.get(root).is_ok() {
-        Some((
-            world_matrix(root, transforms, child_of)?.transform_point3(Vec3::ZERO),
-            current_camera_distance,
-        ))
+        let Some(matrix) = world_matrix(root, transforms, child_of) else {
+            return EntityFocusBounds::Missing;
+        };
+        let origin = matrix.transform_point3(Vec3::ZERO);
+        if origin.is_finite() {
+            EntityFocusBounds::Point(origin)
+        } else {
+            EntityFocusBounds::Missing
+        }
     } else {
-        None
+        EntityFocusBounds::Missing
     }
 }
 
@@ -380,7 +477,9 @@ fn include_bounds(min: &mut Vec3, max: &mut Vec3, matrix: Mat4, local_min: Vec3,
             },
         );
         let world_corner = matrix.transform_point3(corner);
-        *min = min.min(world_corner);
-        *max = max.max(world_corner);
+        if world_corner.is_finite() {
+            *min = min.min(world_corner);
+            *max = max.max(world_corner);
+        }
     }
 }

@@ -7,11 +7,11 @@ use std::collections::HashSet;
 use bevy::prelude::Vec3;
 use openusd_schemas::geom::{BBoxCache, Purpose};
 
-/// Source-complete world bounds for a uniquely mapped canonical USD prim.
+/// Source-complete world AABB bounds for a uniquely mapped canonical USD prim.
 /// BBoxCache deliberately ignores authored extentsHint, since such hints do
 /// not prove that an unloaded nested payload belongs inside the fitted region.
 /// The Bevy Stage root applies the up-axis correction once.
-fn canonical_fit_params(stage: &usd_bevy::LiveStage, path: &str) -> Option<(Vec3, f32)> {
+fn canonical_bounds_for_prim(stage: &usd_bevy::LiveStage, path: &str) -> Option<(Vec3, Vec3)> {
     let prim = stage.stage.prim(path).ok()?;
     if !prim.is_defined().ok()? {
         return None;
@@ -63,20 +63,17 @@ fn canonical_fit_params(stage: &usd_bevy::LiveStage, path: &str) -> Option<(Vec3
         max = max.max(world);
     }
 
-    let center = (min + max) * 0.5;
-    let size = (max - min).abs();
-    let distance = size.x.max(size.y).max(size.z).max(0.05) * 1.6;
-    (center.is_finite() && distance.is_finite() && distance > 0.0).then_some((center, distance))
+    (min.is_finite() && max.is_finite() && min.cmple(max).all()).then_some((min, max))
 }
 
-/// Keep the same canonical fit while a payload's projection catches up with
+/// Keep the same canonical bounds while a payload's projection catches up with
 /// its native load set. Unaffected anchors and loaded occurrences retain their
-/// existing entity fit. An unloaded occurrence has no validated canonical pose.
-pub(super) fn focus_params_for_payload(
+/// existing entity bounds. An unloaded occurrence has no validated canonical pose.
+pub(super) fn focus_bounds_for_payload(
     stage: &usd_bevy::LiveStage,
     path: &str,
     unique_prim: bool,
-) -> Result<Option<(Vec3, f32)>, &'static str> {
+) -> Result<Option<(Vec3, Vec3)>, &'static str> {
     // Only a documentless Stage may keep the existing entity-only fit without
     // querying native visual ownership. A file-backed Stage whose discovery
     // fails cannot prove the current Bevy subtree is a complete focus target.
@@ -102,11 +99,11 @@ pub(super) fn focus_params_for_payload(
     if overlapping.peek().is_none() {
         return Ok(None);
     }
-    if let Some(fit) = unique_prim
-        .then(|| canonical_fit_params(stage, path))
+    if let Some(bounds) = unique_prim
+        .then(|| canonical_bounds_for_prim(stage, path))
         .flatten()
     {
-        return Ok(Some(fit));
+        return Ok(Some(bounds));
     }
     let loaded: HashSet<_> = stage
         .visual_loaded_paths()

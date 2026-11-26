@@ -11,12 +11,16 @@ pub(super) fn set_camera_source(
     source: CameraSource,
     outbox: &mut ViewportEventOutbox,
     camera_mount: &mut CameraMount,
+    fly_to: &mut FlyTo,
 ) {
     *camera_mount = match &source {
         CameraSource::Arcball => CameraMount::Arcball,
-        CameraSource::Authored { prim_path } => CameraMount::Mounted {
-            prim_path: prim_path.clone(),
-        },
+        CameraSource::Authored { prim_path } => {
+            fly_to.cancel();
+            CameraMount::Mounted {
+                prim_path: prim_path.clone(),
+            }
+        }
     };
     outbox.push(ViewportEventEnvelope::new(
         Some(request_id),
@@ -54,6 +58,9 @@ pub(super) fn set_standard_view(
         target_yaw: Some(target_yaw),
         start_elevation: Some(camera.elevation),
         target_elevation: Some(target_elevation),
+        start_ortho_scale: None,
+        target_ortho_scale: None,
+        framing_intent: None,
     };
     if was_mounted {
         outbox.push(ViewportEventEnvelope::new(

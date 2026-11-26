@@ -68,26 +68,29 @@ fn orientation_publisher_drops_nonfinite_camera_rotations() {
 
 #[test]
 fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
-    use bevy::camera::{CameraProjection, Projection, RenderTargetInfo};
-    use bevy::camera_controller::pan_orbit_camera::controller::MinimalPanOrbitCameraPlugin;
     use crate::viewport::navigation::input::{HostUiInputCapture, ViewportNavigationInput};
+    use bevy::camera::{Projection, RenderTargetInfo};
 
     let mut app = App::new();
     app.add_message::<bevy::window::RequestRedraw>();
-    app.add_plugins((MinimalPlugins, MinimalPanOrbitCameraPlugin));
+    app.add_plugins(MinimalPlugins);
     app.init_resource::<CameraMount>()
         .init_resource::<CameraNavigationConfig>()
         .init_resource::<ViewportNavigationInput>()
         .init_resource::<HostUiInputCapture>()
         .add_systems(
             PreUpdate,
-            sync_arcball_from_pan_orbit
-                .after(bevy::camera_controller::pan_orbit_camera::SyncCameraPosition),
+            PanOrbitCamera::update_camera_positions
+                .run_if(arcball_is_active)
+                .in_set(SyncCameraPosition),
         )
         .add_systems(
-            Update,
-            drive_pan_orbit_camera.run_if(arcball_is_active),
-        );
+            PreUpdate,
+            sync_arcball_from_pan_orbit
+                .run_if(arcball_is_active)
+                .after(SyncCameraPosition),
+        )
+        .add_systems(Update, drive_pan_orbit_camera.run_if(arcball_is_active));
 
     let initial_arcball = ArcballCamera {
         focus: Vec3::new(1.0, 2.0, -3.0),
@@ -107,8 +110,7 @@ fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
         scale_factor: 1.0,
     });
     camera.computed.clip_from_view = projection.get_clip_from_view();
-    let mut pan_orbit = default_pan_orbit_camera(initial_arcball.distance);
-    pan_orbit.smoothing.zoom = std::time::Duration::ZERO;
+    let pan_orbit = default_pan_orbit_camera(initial_arcball.distance);
     let cam_entity = app
         .world_mut()
         .spawn((
@@ -145,7 +147,9 @@ fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
     let dist_after_zoom = after_zoom.distance;
 
     // 2. UI pointer capture must block camera motion.
-    app.world_mut().resource_mut::<HostUiInputCapture>().wants_pointer = true;
+    app.world_mut()
+        .resource_mut::<HostUiInputCapture>()
+        .wants_pointer = true;
     {
         let mut input = app.world_mut().resource_mut::<ViewportNavigationInput>();
         input.wheel_delta = Vec2::new(0.0, 5.0);
@@ -159,7 +163,9 @@ fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
     );
 
     // 3. Orbit + Pan via remote/native ViewportNavigationInput.
-    app.world_mut().resource_mut::<HostUiInputCapture>().wants_pointer = false;
+    app.world_mut()
+        .resource_mut::<HostUiInputCapture>()
+        .wants_pointer = false;
     {
         let mut input = app.world_mut().resource_mut::<ViewportNavigationInput>();
         input.wheel_delta = Vec2::ZERO;
@@ -170,5 +176,8 @@ fn pan_orbit_camera_preserves_focus_on_scroll_and_respects_ui_capture() {
     app.update();
     app.update();
     let after_orbit = app.world().get::<ArcballCamera>(cam_entity).unwrap();
-    assert!((after_orbit.yaw - 0.0).abs() > 1e-3 || (after_orbit.elevation - 25f32.to_radians()).abs() > 1e-3);
+    assert!(
+        (after_orbit.yaw - 0.0).abs() > 1e-3
+            || (after_orbit.elevation - 25f32.to_radians()).abs() > 1e-3
+    );
 }

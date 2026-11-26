@@ -67,3 +67,22 @@ fn local_extent_uses_world_transform_for_root_or_z_up_scene() {
     assert_eq!(extent.min, Vec3::new(9.0, 19.0, 29.0));
     assert_eq!(extent.max, Vec3::new(11.0, 21.0, 31.0));
 }
+
+#[test]
+fn nonfinite_prim_bounds_are_ignored_without_poisoning_scene_extent() {
+    let bad = ExtentPrim {
+        global: GlobalTransform::from(Transform::from_xyz(f32::NAN, 0.0, f32::INFINITY)),
+        local: Some(usd_bevy::UsdLocalExtent {
+            min: [f32::NEG_INFINITY, 0.0, 0.0],
+            max: [1.0, 1.0, 1.0],
+        }),
+        aabb: None,
+        is_geometry: true,
+    };
+    let extent = recompute_scene_extent([prim(10.0), bad]);
+
+    assert_eq!(extent.count, 1);
+    assert!(extent.valid_bounds().is_some());
+    assert_eq!(extent.min, Vec3::new(9.0, -1.0, -1.0));
+    assert_eq!(extent.max, Vec3::new(11.0, 1.0, 1.0));
+}

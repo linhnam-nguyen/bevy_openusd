@@ -28,21 +28,43 @@ impl Default for SceneExtent {
 }
 
 impl SceneExtent {
-    /// Longest diagonal across the scene AABB, or `1.0` if empty.
+    /// Returns validated finite world bounds when at least one prim
+    /// contributed finite coordinates.
+    pub fn valid_bounds(&self) -> Option<(Vec3, Vec3)> {
+        (self.count > 0
+            && self.min.is_finite()
+            && self.max.is_finite()
+            && self.min.cmple(self.max).all())
+        .then_some((self.min, self.max))
+    }
+
+    /// Exact finite diagonal across the scene AABB without artificial minimum
+    /// clamps, or `None` when the extent is empty or non-finite.
+    pub fn raw_diag(&self) -> Option<f32> {
+        let (min, max) = self.valid_bounds()?;
+        let diag = (max - min).length();
+        diag.is_finite().then_some(diag)
+    }
+
+    /// Longest diagonal across the scene AABB, or `1.0` if empty or non-finite.
     pub fn diag(&self) -> f32 {
-        if self.count == 0 {
-            1.0
-        } else {
-            (self.max - self.min).length().max(0.01)
+        match self.raw_diag() {
+            Some(diag) if diag > 0.0 => diag,
+            Some(_) => 0.01,
+            None => 1.0,
         }
     }
 
-    /// Center of the scene AABB in world space, or `(0, 0, 0)` if empty.
+    /// Center of the scene AABB in world space, or `(0, 0, 0)` if empty or non-finite.
     pub fn center(&self) -> Vec3 {
-        if self.count == 0 {
-            Vec3::ZERO
+        let Some((min, max)) = self.valid_bounds() else {
+            return Vec3::ZERO;
+        };
+        let center = (min + max) * 0.5;
+        if center.is_finite() {
+            center
         } else {
-            (self.min + self.max) * 0.5
+            Vec3::ZERO
         }
     }
 
@@ -91,8 +113,10 @@ fn recompute_scene_extent(prims: impl IntoIterator<Item = ExtentPrim>) -> SceneE
                     if i & 4 == 0 { le.min[2] } else { le.max[2] },
                 );
                 let w = m.transform_point3(c);
-                prim_min = prim_min.min(w);
-                prim_max = prim_max.max(w);
+                if w.is_finite() {
+                    prim_min = prim_min.min(w);
+                    prim_max = prim_max.max(w);
+                }
             }
         } else if let Some(aabb) = prim.aabb {
             let m = prim.global.to_matrix();
@@ -117,13 +141,20 @@ fn recompute_scene_extent(prims: impl IntoIterator<Item = ExtentPrim>) -> SceneE
                     },
                 );
                 let w = m.transform_point3(local);
-                prim_min = prim_min.min(w);
-                prim_max = prim_max.max(w);
+                if w.is_finite() {
+                    prim_min = prim_min.min(w);
+                    prim_max = prim_max.max(w);
+                }
             }
         } else {
             let p = prim.global.translation();
-            prim_min = prim_min.min(p);
-            prim_max = prim_max.max(p);
+            if p.is_finite() {
+                prim_min = prim_min.min(p);
+                prim_max = prim_max.max(p);
+            }
+        }
+        if !prim_min.is_finite() || !prim_max.is_finite() {
+            continue;
         }
         min = min.min(prim_min);
         max = max.max(prim_max);

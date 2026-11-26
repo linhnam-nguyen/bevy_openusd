@@ -132,10 +132,22 @@ fn mara_materials_panel_is_read_only_and_preserves_render_assets() {
         apply_panel_action(PanelAction::Command(cmd), &mut world, &mut ui_state);
     }
     let mut inbox = world.resource_mut::<ViewportCommandInbox>();
-    assert!(matches!(inbox.pop().unwrap().command, ViewportCommand::SaveStage));
-    assert!(matches!(inbox.pop().unwrap().command, ViewportCommand::UndoEditor));
-    assert!(matches!(inbox.pop().unwrap().command, ViewportCommand::RedoEditor));
-    assert!(matches!(inbox.pop().unwrap().command, ViewportCommand::ReloadSession));
+    assert!(matches!(
+        inbox.pop().unwrap().command,
+        ViewportCommand::SaveStage
+    ));
+    assert!(matches!(
+        inbox.pop().unwrap().command,
+        ViewportCommand::UndoEditor
+    ));
+    assert!(matches!(
+        inbox.pop().unwrap().command,
+        ViewportCommand::RedoEditor
+    ));
+    assert!(matches!(
+        inbox.pop().unwrap().command,
+        ViewportCommand::ReloadSession
+    ));
     assert!(inbox.pop().is_none());
 }
 
@@ -240,11 +252,17 @@ fn mara_ui_pagination_actions_update_only_ui_state_and_reset_on_context_change()
     assert!(world.resource_mut::<ViewportCommandInbox>().pop().is_none());
     assert_eq!(ui_state.pages.catalogue_page, 2);
     assert_eq!(
-        ui_state.pages.property_pages.get(&BimPropertyGroupId::Instance),
+        ui_state
+            .pages
+            .property_pages
+            .get(&BimPropertyGroupId::Instance),
         Some(&3)
     );
     assert_eq!(
-        ui_state.pages.property_pages.get(&BimPropertyGroupId::Semantic),
+        ui_state
+            .pages
+            .property_pages
+            .get(&BimPropertyGroupId::Semantic),
         None
     );
     assert_eq!(ui_state.pages.material_page, 4);
@@ -347,7 +365,10 @@ fn mara_bim_request_dispatch_binds_request_id_and_reflects_correlated_states() {
         .resource_mut::<ViewportCommandInbox>()
         .pop()
         .expect("RequestBimProperties dispatched");
-    assert!(matches!(sent.command, ViewportCommand::RequestBimProperties));
+    assert!(matches!(
+        sent.command,
+        ViewportCommand::RequestBimProperties
+    ));
     assert!(matches!(
         bim::snapshot(&world, &ui_state.pages).properties,
         BimPropertiesViewState::Loading {
@@ -595,5 +616,94 @@ fn mara_host_preserves_not_requested_catalogue_when_command_inbox_absent() {
             .resource::<crate::api::ViewportReadModelState>()
             .pending_catalogue_refresh(),
         None
+    );
+}
+
+#[test]
+fn frame_visible_scene_is_transactional_on_failure_and_cancels_active_tween_on_success() {
+    use crate::viewport::navigation::camera::{ArcballCamera, CameraMount, FlyTo};
+    use crate::viewport::rendering::scene::visualization::SceneExtent;
+    use bevy::camera::{PerspectiveProjection, Projection, RenderTargetInfo};
+
+    let mut world = World::new();
+    world.init_resource::<CameraMount>();
+    world.init_resource::<FlyTo>();
+    world.insert_resource(SceneExtent {
+        min: Vec3::NEG_ONE,
+        max: Vec3::ONE,
+        count: 1,
+        geometry_min: Vec3::NEG_ONE,
+        geometry_max: Vec3::ONE,
+        geometry_count: 1,
+    });
+
+    // Zero-sized viewport causes FramingOutcome::Deferred.
+    let mut zero_cam = Camera::default();
+    zero_cam.computed.target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::ZERO,
+        scale_factor: 1.0,
+    });
+    let cam_entity = world
+        .spawn((
+            Transform::default(),
+            ArcballCamera {
+                focus: Vec3::new(9.0, 8.0, 7.0),
+                distance: 15.0,
+                zoom_target: 15.0,
+                ..Default::default()
+            },
+            Projection::Perspective(PerspectiveProjection::default()),
+            zero_cam,
+        ))
+        .id();
+    *world.resource_mut::<CameraMount>() = CameraMount::Mounted {
+        prim_path: "/World/Authored".to_owned(),
+    };
+    *world.resource_mut::<FlyTo>() = FlyTo {
+        target_focus: Vec3::new(2.0, 3.0, 4.0),
+        target_distance: 5.0,
+        remaining: 0.5,
+        duration: 0.5,
+        ..Default::default()
+    };
+
+    let mut ui_state = MaraHostUiState::default();
+    apply_panel_action(PanelAction::FrameVisibleScene, &mut world, &mut ui_state);
+
+    // Failed/deferred framing MUST NOT mutate CameraMount, FlyTo, or camera pose.
+    assert!(matches!(
+        world.resource::<CameraMount>(),
+        CameraMount::Mounted { prim_path } if prim_path == "/World/Authored"
+    ));
+    assert_eq!(world.resource::<FlyTo>().remaining, 0.5);
+    assert_eq!(
+        world.get::<ArcballCamera>(cam_entity).expect("cam").focus,
+        Vec3::new(9.0, 8.0, 7.0)
+    );
+
+    // Once viewport is valid, FrameVisibleScene commits Arcball, cancels active
+    // FlyTo, and updates the camera pose cleanly.
+    world
+        .get_mut::<Camera>(cam_entity)
+        .expect("cam")
+        .computed
+        .target_info = Some(RenderTargetInfo {
+        physical_size: UVec2::new(1280, 720),
+        scale_factor: 1.0,
+    });
+    apply_panel_action(PanelAction::FrameVisibleScene, &mut world, &mut ui_state);
+
+    assert!(matches!(
+        world.resource::<CameraMount>(),
+        CameraMount::Arcball
+    ));
+    assert_eq!(world.resource::<FlyTo>().remaining, 0.0);
+    assert!(
+        world
+            .get::<ArcballCamera>(cam_entity)
+            .expect("cam")
+            .focus
+            .length()
+            < 1.0e-5
     );
 }

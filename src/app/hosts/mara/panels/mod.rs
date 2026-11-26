@@ -28,11 +28,11 @@ use viewport_protocol::{BimPropertyGroupId, SceneAnchor, ViewportCommand};
 
 use super::{MaraHostUiState, PendingFileDialog};
 use crate::api::{ViewportCommandInbox, ViewportReadModelState};
-use crate::viewport::navigation::camera::{
-    ArcballCamera, CameraBookmark, CameraBookmarks, CameraMount, FlyTo, sync_pan_orbit_from_arcball,
-};
 use crate::diagnostics::log_capture::LoaderLog;
 use crate::semantic::viewport::SemanticDiffState;
+use crate::viewport::navigation::camera::{
+    ArcballCamera, CameraBookmark, CameraBookmarks, CameraMount, FlyTo,
+};
 use crate::viewport::stage::{LoadRequest, StageInfo};
 
 pub(super) const RIBBON_LEFT: &str = "usdview_mara_left";
@@ -503,14 +503,10 @@ pub(super) fn apply_panel_action(
                 .clear_last_error();
         }
         PanelAction::CaptureDiffBaseline => {
-            world
-                .resource_mut::<SemanticDiffState>()
-                .capture_baseline();
+            world.resource_mut::<SemanticDiffState>().capture_baseline();
         }
         PanelAction::ClearDiffBaseline => {
-            world
-                .resource_mut::<SemanticDiffState>()
-                .clear_baseline();
+            world.resource_mut::<SemanticDiffState>().clear_baseline();
         }
         PanelAction::ClearLog => {
             if let Some(log) = world.get_resource::<LoaderLog>()
@@ -535,25 +531,25 @@ pub(super) fn apply_panel_action(
             }
         }
         PanelAction::JumpBookmark(idx) => {
-            let bm = world
-                .resource::<CameraBookmarks>()
-                .items
-                .get(idx)
-                .cloned();
+            let bm = world.resource::<CameraBookmarks>().items.get(idx).cloned();
             let mut cam_q = world.query::<&ArcballCamera>();
             if let (Some(bm), Ok(cam)) = (bm, cam_q.single(world).cloned()) {
                 *world.resource_mut::<CameraMount>() = CameraMount::Arcball;
-                let mut fly = world.resource_mut::<FlyTo>();
-                fly.start_focus = cam.focus;
-                fly.start_distance = cam.distance;
-                fly.start_yaw = Some(cam.yaw);
-                fly.start_elevation = Some(cam.elevation);
-                fly.target_focus = bm.focus;
-                fly.target_distance = bm.distance;
-                fly.target_yaw = Some(bm.yaw);
-                fly.target_elevation = Some(bm.elevation);
-                fly.duration = 0.5;
-                fly.remaining = 0.5;
+                *world.resource_mut::<FlyTo>() = FlyTo {
+                    start_focus: cam.focus,
+                    start_distance: cam.distance,
+                    start_yaw: Some(cam.yaw),
+                    target_yaw: Some(bm.yaw),
+                    start_elevation: Some(cam.elevation),
+                    target_elevation: Some(bm.elevation),
+                    target_focus: bm.focus,
+                    target_distance: bm.distance,
+                    start_ortho_scale: None,
+                    target_ortho_scale: None,
+                    framing_intent: None,
+                    duration: 0.5,
+                    remaining: 0.5,
+                };
             }
         }
         PanelAction::DeleteBookmark(idx) => {
@@ -566,23 +562,53 @@ pub(super) fn apply_panel_action(
             let extent = world
                 .get_resource::<crate::viewport::rendering::scene::visualization::SceneExtent>()
                 .cloned();
+            let config = world
+                .get_resource::<crate::viewport::navigation::camera::CameraNavigationConfig>()
+                .copied()
+                .unwrap_or_default();
             if let Some(extent) = extent {
-                *world.resource_mut::<CameraMount>() = CameraMount::Arcball;
-                let diag = extent.diag().max(2.0);
-                let focus = extent.centre();
-                let distance = diag * 1.1;
-                let mut q = world.query::<(
+                let mut q = world.query_filtered::<(
                     &mut Transform,
                     &mut ArcballCamera,
                     Option<&mut bevy::camera_controller::pan_orbit_camera::controller::component::PanOrbitCamera>,
-                )>();
-                if let Ok((mut tr, mut cam, pan_orbit)) = q.single_mut(world) {
-                    cam.focus = focus;
-                    cam.distance = distance;
-                    cam.zoom_target = f64::from(distance);
-                    crate::viewport::navigation::camera::apply_rig(&cam, &mut tr);
-                    if let Some(mut pan_orbit) = pan_orbit {
-                        sync_pan_orbit_from_arcball(&cam, &mut pan_orbit);
+                    &mut bevy::camera::Projection,
+                    Option<&bevy::camera::Camera>,
+                ), Without<usd_bevy::UsdCamera>>();
+                let fitted = if let Ok((mut tr, mut cam, pan_orbit, mut projection, camera)) =
+                    q.single_mut(world)
+                {
+                    let viewport_size = camera.and_then(|c| {
+                        c.logical_viewport_size()
+                            .or_else(|| c.physical_viewport_size().map(|size| size.as_vec2()))
+                    });
+                    if let crate::viewport::navigation::camera::FramingOutcome::Fit(fit) =
+                        crate::viewport::navigation::camera::framing_for_scene_extent(
+                            &extent,
+                            &cam,
+                            &projection,
+                            viewport_size,
+                            &config,
+                        )
+                    {
+                        crate::viewport::navigation::camera::apply_framing_fit(
+                            fit,
+                            &mut cam,
+                            &mut tr,
+                            pan_orbit.map(Mut::into_inner),
+                            Some(projection.as_mut()),
+                            viewport_size,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if fitted {
+                    *world.resource_mut::<CameraMount>() = CameraMount::Arcball;
+                    if let Some(mut fly) = world.get_resource_mut::<FlyTo>() {
+                        fly.cancel();
                     }
                 }
             }
@@ -591,15 +617,17 @@ pub(super) fn apply_panel_action(
             let trimmed = query.trim().to_owned();
             ui_state.tree.filter = query;
             if trimmed.is_empty() {
-                world.resource_mut::<ViewportReadModelState>().clear_search();
+                world
+                    .resource_mut::<ViewportReadModelState>()
+                    .clear_search();
             } else {
-                let request_id = world
-                    .resource_mut::<ViewportCommandInbox>()
-                    .send(ViewportCommand::SearchScene {
+                let request_id = world.resource_mut::<ViewportCommandInbox>().send(
+                    ViewportCommand::SearchScene {
                         query: trimmed.clone(),
                         offset: 0,
                         limit: viewport_protocol::DEFAULT_SCENE_SEARCH_PAGE_SIZE,
-                    });
+                    },
+                );
                 world
                     .resource_mut::<ViewportReadModelState>()
                     .begin_search(request_id, trimmed);
