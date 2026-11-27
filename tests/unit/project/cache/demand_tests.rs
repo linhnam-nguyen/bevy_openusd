@@ -52,6 +52,7 @@ fn payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows() {
                     member_id: SceneMemberId::new_v4(),
                 },
                 content_hash: Some(blob_hash),
+                hierarchy: Default::default(),
             },
             SceneCacheEntry {
                 address: SceneCacheAddress {
@@ -73,6 +74,7 @@ fn payload_lookup_uses_the_owner_scene_and_ignores_composed_only_rows() {
                     prim_path: "/SceneRoot/Owned".to_owned(),
                 },
                 content_hash: Some(blob_hash),
+                hierarchy: Default::default(),
             },
         ],
     };
@@ -143,6 +145,7 @@ fn current_cache_ready_miss_escalates_to_targeted_scene_repair() {
                 prim_path: path.to_owned(),
             },
             content_hash: Some(blob_hash),
+            hierarchy: Default::default(),
         }],
     };
     let spatial = SceneSpatialIndex {

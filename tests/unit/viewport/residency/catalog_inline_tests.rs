@@ -25,6 +25,7 @@ fn entry(scene_id: SceneId, material: Option<SceneCacheBlobRef>) -> SceneCacheEn
             prim_path: "/World/Mesh".to_owned(),
         },
         content_hash: Some(hash),
+        hierarchy: Default::default(),
     }
 }
 

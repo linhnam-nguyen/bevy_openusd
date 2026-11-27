@@ -181,5 +181,6 @@ fn owned_entry(scene_id: SceneId, path: &str) -> SceneCacheEntry {
             prim_path: path.to_owned(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     }
 }

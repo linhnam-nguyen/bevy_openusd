@@ -95,7 +95,7 @@ pub(crate) fn build_scene_cache_index_incremental_from_snapshot(
         .map(|member| crate::project::scene::authoring::scene_member_path(member.id))
         .collect::<HashSet<_>>();
 
-    let mut current_members = build::member_entries(scene_id, members);
+    let mut current_members = build::member_entries(scene_id, stage, members);
     current_members.sort_by(|left, right| left.address.cmp(&right.address));
     let mut base_members = base_revision
         .index
@@ -105,6 +105,12 @@ pub(crate) fn build_scene_cache_index_incremental_from_snapshot(
         .cloned()
         .collect::<Vec<_>>();
     base_members.sort_by(|left, right| left.address.cmp(&right.address));
+    // Normalize parent indexes before comparing member composition parity,
+    // because base entries have resolved parent indexes while fresh member
+    // entries assign parents after merging with owned prims.
+    for entry in &mut base_members {
+        entry.parent = None;
+    }
     if current_members != base_members {
         return full_fallback(
             project_root,
@@ -182,6 +188,15 @@ pub(crate) fn build_scene_cache_index_incremental_from_snapshot(
         entries[idx].semantic_key = semantic_key;
         stats.metadata_prims_updated += 1;
     }
+    // Visibility and presentation opinions can affect descendants. Re-read
+    // logical metadata only; do not re-extract unchanged meshes.
+    if !work.metadata_prims.is_empty() {
+        for entry in &mut entries {
+            if let SceneCacheEntryKind::OwnedPrim { prim_path } = &entry.kind {
+                entry.hierarchy = build::extract_owned_prim_hierarchy(stage, prim_path)?;
+            }
+        }
+    }
 
     // 2. Transform-only updates (never re-extract or re-encode geometry).
     for prim_path in &work.transform_prims {
@@ -237,6 +252,7 @@ pub(crate) fn build_scene_cache_index_incremental_from_snapshot(
                 bounds,
                 bim_enabled: entries[idx].bim_enabled,
                 semantic_key: entries[idx].semantic_key.clone(),
+                hierarchy: entries[idx].hierarchy.clone(),
                 mesh,
             });
         }

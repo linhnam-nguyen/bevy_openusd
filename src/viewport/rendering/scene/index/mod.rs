@@ -37,6 +37,20 @@ pub(crate) struct SceneAnchorIndex {
     by_entity: HashMap<Entity, SceneAnchor>,
     occurrence_index: SceneOccurrenceIndex,
     point_occurrences: occurrence::ScenePointOccurrences,
+    /// Authoritative rendering-independent logical hierarchy rows installed
+    /// from canonical USD or a validated Scene cache, separate from ECS residency.
+    logical_records: Vec<crate::cache::scene::hierarchy::LogicalPrimRecord>,
+    logical_index_by_anchor: HashMap<SceneAnchor, usize>,
+    logical_authority: bool,
+    /// A failed candidate is unavailable, not a complete empty namespace.
+    logical_available: bool,
+    logical_occurrences: crate::cache::scene::hierarchy::LogicalOccurrenceForest,
+    canonical_hierarchy_stamp: Option<((u64, u64), usd_bevy::LiveRevision, usd_bevy::LiveRevision)>,
+    /// Scoped transient intents; the latest applicable ancestor command wins.
+    visibility_scopes: HashMap<SceneAnchor, (u64, bool)>,
+    visibility_sequence: u64,
+    /// Derived exact-anchor overrides for efficient residency lookup.
+    visibility_overrides: HashMap<SceneAnchor, bool>,
     nodes: Vec<PrimNodeReadModel>,
     visual_unload_rows: HashMap<SceneAnchor, PrimNodeReadModel>,
     node_index_by_anchor: HashMap<SceneAnchor, usize>,

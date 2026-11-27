@@ -11,22 +11,108 @@ use crate::cache::contract::{
     ProjectCacheLookup, SCENE_CACHE_INDEX_SCHEMA_VERSION, SceneCacheActivation,
     SceneCacheEntryKind, SceneCacheIndex, SceneCacheState,
 };
-use crate::viewport::rendering::scene::{CurrentHierarchyProjection, prim_name};
+use crate::cache::scene::hierarchy::{
+    build_logical_hierarchy_from_cache, build_logical_hierarchy_from_stage,
+    cache_has_populated_hierarchy,
+};
+use crate::viewport::rendering::scene::{
+    ActiveHierarchyProvider, CurrentHierarchyProjection, SceneAnchorIndex, prim_name,
+};
 
 pub(super) fn publish_scene_cache_presentation(
     world: &mut World,
     activation: &SceneCacheActivation,
     project_root: Option<&Path>,
 ) {
-    // The persistent index has no authored names. Install visual cache state
-    // now, but do not publish a misleading hierarchy before the canonical
-    // composed Stage can supply its presentation metadata.
-    if let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>() {
-        *projection = CurrentHierarchyProjection::from_prim_nodes(&[], 0);
+    let presentation = world.get_resource::<StagePresentationContext>().cloned();
+    let activation_generation = world
+        .get_resource::<crate::viewport::stage::StageInfo>()
+        .map_or(0, |info| info.activation_generation);
+    if cache_has_populated_hierarchy(activation) {
+        match build_logical_hierarchy_from_cache(
+            activation,
+            project_root,
+            presentation.as_ref(),
+        ) {
+            Ok(records) => {
+                install_logical_hierarchy_in_world(world, records, activation_generation);
+            }
+            Err(error) => {
+                bevy::log::warn!(
+                    "[project-cache] cached logical hierarchy invalid; deferring to canonical stage: {error:#}"
+                );
+                if let Some(mut index) = world.get_resource_mut::<SceneAnchorIndex>() {
+                    index.mark_logical_hierarchy_unavailable(activation_generation);
+                }
+                if let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>()
+                {
+                    *projection = CurrentHierarchyProjection::from_prim_nodes(&[], 0);
+                }
+            }
+        }
+    } else {
+        // Legacy or unpopulated cache entries cannot prove authored names
+        // before the canonical composed Stage supplies presentation metadata.
+        if let Some(mut index) = world.get_resource_mut::<SceneAnchorIndex>() {
+            index.mark_logical_hierarchy_unavailable(activation_generation);
+        }
+        if let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>() {
+            *projection = CurrentHierarchyProjection::from_prim_nodes(&[], 0);
+        }
     }
     install_project_cache_lookup(world, activation, project_root);
     world.remove_resource::<crate::viewport::stage::VerifiedSceneVisualInputs>();
     world.insert_resource(SceneCachePresentation::from_activation(activation));
+}
+
+/// Publishes the rendering-independent logical hierarchy directly from the
+/// canonical composed USD Stage before ECS entities or meshes are projected.
+pub(super) fn publish_canonical_logical_hierarchy(
+    world: &mut World,
+    source: &openusd::usd::Stage,
+    activation_generation: u64,
+) {
+    let presentation = world.get_resource::<StagePresentationContext>().cloned();
+    match build_logical_hierarchy_from_stage(source, presentation.as_ref()) {
+        Ok(records) => {
+            install_logical_hierarchy_in_world(world, records, activation_generation);
+        }
+        Err(error) => {
+            bevy::log::warn!(
+                "[viewport-hierarchy] canonical logical hierarchy unavailable: {error:#}"
+            );
+            if let Some(mut index) = world.get_resource_mut::<SceneAnchorIndex>() {
+                index.mark_logical_hierarchy_unavailable(activation_generation);
+            }
+            if let Some(mut current) = world.get_resource_mut::<CurrentHierarchyProjection>() {
+                *current = CurrentHierarchyProjection::empty(viewport_protocol::HierarchySource::Prim, 0);
+            }
+        }
+    }
+}
+
+fn install_logical_hierarchy_in_world(
+    world: &mut World,
+    records: crate::cache::scene::hierarchy::LogicalHierarchyCandidate,
+    activation_generation: u64,
+) {
+    let prim_provider_active = world
+        .get_resource::<ActiveHierarchyProvider>()
+        .is_none_or(|provider| provider.source() == viewport_protocol::HierarchySource::Prim);
+    let projection = if let Some(mut index) = world.get_resource_mut::<SceneAnchorIndex>() {
+        index.install_logical_hierarchy(records, activation_generation)
+    } else {
+        let nodes: Vec<PrimNodeReadModel> = records.records
+            .iter()
+            .map(|record| record.to_prim_read_model(None))
+            .collect();
+        CurrentHierarchyProjection::from_prim_nodes(&nodes, activation_generation.max(1))
+    };
+    if prim_provider_active
+        && let Some(mut current) = world.get_resource_mut::<CurrentHierarchyProjection>()
+    {
+        *current = projection;
+    }
 }
 
 /// Publish cached rows only after resolving the same authoritative metadata

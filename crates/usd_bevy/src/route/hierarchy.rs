@@ -86,19 +86,7 @@ fn build_metadata_index(
 pub(super) fn apply_metadata(ctx: &RouteCtx, world: &mut World, entity: Entity) {
     prepare_metadata_index(ctx.stage, world);
     let display_name = read_display_name(ctx, world.get_resource::<HierarchyMetadataIndex>());
-    let transparent_source = ctx
-        .stage
-        .prim(ctx.path.clone())
-        .ok()
-        .and_then(|prim| prim.metadata::<Value>("customData").ok().flatten())
-        .and_then(|value| match value {
-            Value::Dictionary(data) => data
-                .get(USDHUB_HIERARCHY_ROLE_METADATA)
-                .and_then(Value::as_str)
-                .map(|value| value == USDHUB_TRANSPARENT_SOURCE_ROLE),
-            _ => None,
-        })
-        .unwrap_or(false);
+    let transparent_source = read_transparent_source(ctx).unwrap_or(false);
     let target = read_target(ctx).ok().flatten();
 
     let Ok(mut entity) = world.get_entity_mut(entity) else {
@@ -181,13 +169,29 @@ fn read_target(ctx: &RouteCtx) -> anyhow::Result<Option<UsdHierarchyTarget>> {
         .filter(|target| !target.kind.is_empty() && !target.id.is_empty()))
 }
 
+fn read_transparent_source(ctx: &RouteCtx) -> anyhow::Result<bool> {
+    Ok(ctx
+        .stage
+        .prim(ctx.path.clone())?
+        .metadata::<Value>("customData")?
+        .and_then(|value| match value {
+            Value::Dictionary(data) => data
+                .get(USDHUB_HIERARCHY_ROLE_METADATA)
+                .and_then(Value::as_str)
+                .map(|value| value == USDHUB_TRANSPARENT_SOURCE_ROLE),
+            _ => None,
+        })
+        .unwrap_or(false))
+}
+
 pub(super) fn read_authored_hierarchy_metadata(
     stage: &openusd::usd::Stage,
     prim_path: &str,
 ) -> anyhow::Result<super::AuthoredHierarchyMetadata> {
     let path = openusd::sdf::path(prim_path)?;
+    let prim = stage.prim(path.clone())?;
     anyhow::ensure!(
-        stage.prim(path.clone())?.is_defined()?,
+        prim.is_defined()?,
         "cached hierarchy prim {prim_path} is not defined in the composed Stage"
     );
     let ctx = RouteCtx::new(stage, &path);
@@ -195,8 +199,19 @@ pub(super) fn read_authored_hierarchy_metadata(
         Some(name) => Some(name),
         None => read_legacy_display_name(stage, &path)?,
     };
+    let type_name = prim.type_name()?.map(|token| token.as_str().to_owned());
+    let authored_visible = !matches!(
+        crate::read::geom::read_visibility_at(stage, &path, None)?,
+        crate::read::geom::VisibilityState::Invisible
+    );
+    let transparent = read_transparent_source(&ctx)?;
+    let unloaded_payload = !prim.is_loaded()?;
     Ok(super::AuthoredHierarchyMetadata {
         display_name,
         target: read_target(&ctx)?,
+        type_name,
+        authored_visible,
+        transparent,
+        unloaded_payload,
     })
 }

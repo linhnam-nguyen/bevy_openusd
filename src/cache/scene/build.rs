@@ -17,9 +17,9 @@ use usd_project::{SceneId, SceneMemberTarget};
 use super::super::SceneCacheStore;
 use super::super::blobs::{BlobStore, FilesystemBlobStore, prepare_mesh_payload};
 use super::super::contract::{
-    CachedTransform, SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
-    SceneCacheBlobRef, SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex, SceneSpatialEntry,
-    SceneSpatialIndex,
+    CachedHierarchyMetadata, CachedTransform, HierarchyChildCount,
+    SCENE_CACHE_INDEX_SCHEMA_VERSION, SCENE_SPATIAL_INDEX_SCHEMA_VERSION, SceneCacheBlobRef,
+    SceneCacheEntry, SceneCacheEntryKind, SceneCacheIndex, SceneSpatialEntry, SceneSpatialIndex,
 };
 use super::payload::prepare_animation_payload;
 use crate::document::runtime::payload::{
@@ -32,6 +32,7 @@ pub(crate) struct OwnedPrimExtraction {
     pub(crate) bounds: Option<usd_model::Bounds3>,
     pub(crate) bim_enabled: bool,
     pub(crate) semantic_key: Option<String>,
+    pub(crate) hierarchy: CachedHierarchyMetadata,
     pub(crate) mesh: Option<Mesh>,
 }
 
@@ -39,6 +40,28 @@ pub(crate) struct OwnedPrimExtraction {
 pub(super) struct ScenePayloadRefs {
     pub(super) material_by_path: HashMap<String, SceneCacheBlobRef>,
     pub(super) animation_by_path: HashMap<String, SceneCacheBlobRef>,
+}
+
+pub(super) fn extract_owned_prim_hierarchy(
+    stage: &Stage,
+    prim_path: &str,
+) -> Result<CachedHierarchyMetadata> {
+    let authored = usd_bevy::route::geom::read_authored_hierarchy_metadata(stage, prim_path)?;
+    Ok(CachedHierarchyMetadata {
+        metadata_populated: true,
+        display_name: authored.display_name,
+        type_name: authored.type_name,
+        child_count: if authored.unloaded_payload {
+            HierarchyChildCount::Unknown
+        } else {
+            HierarchyChildCount::Known(0)
+        },
+        authored_visible: authored.authored_visible,
+        transparent: authored.transparent,
+        target_kind: authored.target.as_ref().map(|target| target.kind.clone()),
+        target_id: authored.target.as_ref().map(|target| target.id.clone()),
+        composed_descendants: None,
+    })
 }
 
 pub(super) fn extract_owned_prim_metadata(
@@ -87,12 +110,14 @@ pub(super) fn extract_owned_prim_full(
     let transform = extract_owned_prim_transform(stage, prim_path, config)?;
     let (bounds, mesh) = extract_owned_prim_geometry(stage, prim_path, config)?;
     let (bim_enabled, semantic_key) = extract_owned_prim_metadata(stage, prim_path, config)?;
+    let hierarchy = extract_owned_prim_hierarchy(stage, prim_path)?;
     Ok(OwnedPrimExtraction {
         path: prim_path.to_owned(),
         transform,
         bounds,
         bim_enabled,
         semantic_key,
+        hierarchy,
         mesh,
     })
 }
@@ -157,7 +182,7 @@ pub(crate) fn build_scene_cache_index_from_snapshot(
     let geometry_refs = persist_owned_meshes_parallel(&object_store, &mut extracted)?;
     let payload_refs = persist_scene_payloads(&object_store, &prepared)?;
 
-    let mut entries = member_entries(scene_id, members);
+    let mut entries = member_entries(scene_id, stage, members);
     for owned in extracted {
         let geometry = geometry_refs.get(&owned.path).cloned();
         let content_hash = geometry
@@ -185,6 +210,7 @@ pub(crate) fn build_scene_cache_index_from_snapshot(
                 prim_path: owned.path,
             },
             content_hash,
+            hierarchy: owned.hierarchy,
         });
     }
     entries.sort_by(|left, right| left.address.cmp(&right.address));
@@ -343,21 +369,69 @@ pub(super) fn collect_owned_prim_paths(
 
 pub(super) fn member_entries(
     scene_id: SceneId,
+    stage: &Stage,
     members: Vec<usd_project::SceneMember>,
 ) -> Vec<SceneCacheEntry> {
+    let composed_paths = if members.is_empty() {
+        Ok(Vec::new())
+    } else {
+        super::hierarchy::composed_paths(stage)
+    };
+    if let Err(error) = &composed_paths {
+        log::warn!("composed member hierarchy inventory unavailable: {error:#}");
+    }
     members
         .into_iter()
         .map(|member| {
-            let kind = match member.target {
-                SceneMemberTarget::Scene(child) => SceneCacheEntryKind::ChildScene {
-                    scene_id: child,
-                    member_id: member.id,
-                },
-                SceneMemberTarget::Model(model) => SceneCacheEntryKind::ChildModel {
-                    model_id: model,
-                    member_id: member.id,
-                },
+            let member_path = crate::project::scene::authoring::scene_member_path(member.id);
+            let (kind, target_kind, target_id) = match member.target {
+                SceneMemberTarget::Scene(child) => (
+                    SceneCacheEntryKind::ChildScene {
+                        scene_id: child,
+                        member_id: member.id,
+                    },
+                    "scene".to_owned(),
+                    child.to_string(),
+                ),
+                SceneMemberTarget::Model(model) => (
+                    SceneCacheEntryKind::ChildModel {
+                        model_id: model,
+                        member_id: member.id,
+                    },
+                    "model".to_owned(),
+                    model.to_string(),
+                ),
             };
+            let mut hierarchy = match extract_owned_prim_hierarchy(stage, &member_path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    log::warn!("unqualified member hierarchy {member_path}: {error:#}");
+                    CachedHierarchyMetadata::default()
+                }
+            };
+            let root_loaded = hierarchy.metadata_populated
+                && hierarchy.child_count != HierarchyChildCount::Unknown;
+            hierarchy.child_count = HierarchyChildCount::Unknown;
+            if root_loaded && let Ok(paths) = composed_paths.as_ref() {
+                match super::hierarchy::collect_composed_member_descendants(stage, paths, &member_path) {
+                    Ok(descendants) => {
+                        let count = descendants.iter().filter(|row| {
+                            row.prim_path.rsplit_once('/').is_some_and(|(parent, _)| parent == member_path)
+                        }).count();
+                        if let Ok(count) = u32::try_from(count) {
+                            hierarchy.child_count = HierarchyChildCount::Known(count);
+                            hierarchy.composed_descendants = Some(descendants);
+                        }
+                    }
+                    Err(error) => log::warn!("incomplete member hierarchy {member_path}: {error:#}"),
+                }
+            }
+            if hierarchy.target_kind.is_none() {
+                hierarchy.target_kind = Some(target_kind);
+            }
+            if hierarchy.target_id.is_none() {
+                hierarchy.target_id = Some(target_id);
+            }
             SceneCacheEntry {
                 address: super::super::contract::SceneCacheAddress {
                     scene_id,
@@ -374,6 +448,7 @@ pub(super) fn member_entries(
                 semantic_key: None,
                 kind,
                 content_hash: None,
+                hierarchy,
             }
         })
         .collect()
@@ -385,18 +460,40 @@ pub(crate) fn assign_parent_indexes(entries: &mut [SceneCacheEntry]) -> Result<(
         .enumerate()
         .filter_map(|(index, entry)| match &entry.kind {
             SceneCacheEntryKind::OwnedPrim { prim_path } => Some((prim_path.clone(), index as u32)),
-            _ => None,
+            SceneCacheEntryKind::ChildScene { member_id, .. }
+            | SceneCacheEntryKind::ChildModel { member_id, .. } => Some((
+                crate::project::scene::authoring::scene_member_path(*member_id),
+                index as u32,
+            )),
         })
         .collect::<HashMap<_, _>>();
-    for entry in entries {
-        let SceneCacheEntryKind::OwnedPrim { prim_path } = &entry.kind else {
-            continue;
+    let mut direct_children = vec![0_u32; entries.len()];
+    for entry in entries.iter_mut() {
+        let prim_path = match &entry.kind {
+            SceneCacheEntryKind::OwnedPrim { prim_path } => prim_path.clone(),
+            SceneCacheEntryKind::ChildScene { member_id, .. }
+            | SceneCacheEntryKind::ChildModel { member_id, .. } => {
+                crate::project::scene::authoring::scene_member_path(*member_id)
+            }
         };
         let parent_path = prim_path
             .rsplit_once('/')
             .map(|(parent, _)| parent)
             .unwrap_or_default();
         entry.parent = path_indexes.get(parent_path).copied();
+        if let Some(parent) = entry.parent {
+            if let Some(count) = direct_children.get_mut(parent as usize) {
+                *count = count.saturating_add(1);
+            }
+        }
+    }
+    for (index, entry) in entries.iter_mut().enumerate() {
+        // Composed member descendants are stored as metadata, not geometry entries.
+        if matches!(entry.kind, SceneCacheEntryKind::OwnedPrim { .. })
+            && entry.hierarchy.child_count != HierarchyChildCount::Unknown
+        {
+            entry.hierarchy.child_count = HierarchyChildCount::Known(direct_children[index]);
+        }
     }
     Ok(())
 }

@@ -82,6 +82,7 @@ fn child_flags_are_computed_in_one_parent_index_pass() {
             prim_path: "/SceneRoot/Root".into(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let child = SceneCacheEntry {
         address: SceneCacheAddress {
@@ -104,6 +105,7 @@ fn child_flags_are_computed_in_one_parent_index_pass() {
             prim_path: "/SceneRoot/Root/Child".into(),
         },
         content_hash: Some(usd_model::HashDigest::from_hex(&"a".repeat(64)).unwrap()),
+        hierarchy: Default::default(),
     };
     let mut descriptor = crate::cache::SceneCacheDescriptorV3::invalidated(
         scene_id,
@@ -264,6 +266,7 @@ fn cached_presentation_ignores_semantic_key_and_shares_stage_presentation_naming
             prim_path: "/SceneRoot".into(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let child_scene = SceneCacheEntry {
         address: SceneCacheAddress {
@@ -284,6 +287,7 @@ fn cached_presentation_ignores_semantic_key_and_shares_stage_presentation_naming
             member_id: scene_member_id,
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let child_model = SceneCacheEntry {
         address: SceneCacheAddress {
@@ -304,6 +308,7 @@ fn cached_presentation_ignores_semantic_key_and_shares_stage_presentation_naming
             member_id: model_member_id,
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let mut descriptor = crate::cache::SceneCacheDescriptorV3::invalidated(
         scene_id,
@@ -420,6 +425,7 @@ fn incomplete_cache_root_marks_unknown_children_expandable() {
             prim_path: "/SceneRoot".into(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let mut descriptor = crate::cache::SceneCacheDescriptorV3::invalidated(
         scene_id,
@@ -517,6 +523,7 @@ fn out_of_bounds_cache_parent_index_falls_back_to_path_parent_without_panicking(
             prim_path: "/SceneRoot".into(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let child = SceneCacheEntry {
         address: SceneCacheAddress {
@@ -536,6 +543,7 @@ fn out_of_bounds_cache_parent_index_falls_back_to_path_parent_without_panicking(
             prim_path: "/SceneRoot/Part".into(),
         },
         content_hash: None,
+        hierarchy: Default::default(),
     };
     let mut descriptor = crate::cache::SceneCacheDescriptorV3::invalidated(
         scene_id,

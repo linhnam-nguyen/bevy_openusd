@@ -78,12 +78,15 @@ fn update_until_projected(app: &mut App, expected_root_name: &str) {
     loop {
         app.update();
         let index = app.world().resource::<SceneAnchorIndex>();
-        let root_projected = index
-            .roots_read_model()
-            .prims
-            .iter()
-            .find(|node| node.anchor.prim_path == "/SceneRoot")
-            .is_some_and(|root| root.display_name.as_deref() == Some(expected_root_name));
+        let spawned = app.world().resource::<Spawned>().0;
+        let root_projected = spawned
+            && !index.by_anchor.is_empty()
+            && index
+                .roots_read_model()
+                .prims
+                .iter()
+                .find(|node| node.anchor.prim_path == "/SceneRoot")
+                .is_some_and(|root| root.display_name.as_deref() == Some(expected_root_name));
         let visible_names = index
             .nodes
             .iter()

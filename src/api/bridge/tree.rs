@@ -27,8 +27,8 @@ pub(super) fn apply_tree_commands(
     mut outbox: ResMut<ViewportEventOutbox>,
     mut selected: ResMut<SelectedPrim>,
     mut selection: ResMut<SelectedTargets>,
-    (scene_index, live_stage, nav_config, mut camera_mount): (
-        Res<SceneAnchorIndex>,
+    (mut scene_index, live_stage, nav_config, mut camera_mount): (
+        ResMut<SceneAnchorIndex>,
         Option<NonSend<usd_bevy::LiveStage>>,
         Option<Res<CameraNavigationConfig>>,
         Option<ResMut<CameraMount>>,
@@ -51,11 +51,9 @@ pub(super) fn apply_tree_commands(
     let locked = gate.locked();
     let config = nav_config.as_deref().copied().unwrap_or_default();
     while let Some(command) = inbox.pop() {
-        if locked {
-            let request_id = match command {
-                ViewportTreeCommand::Focus { request_id, .. }
-                | ViewportTreeCommand::SetSubtreeVisibility { request_id, .. }
-                | ViewportTreeCommand::SetHierarchyNodeVisibility { request_id, .. } => request_id,
+        if locked && matches!(command, ViewportTreeCommand::Focus { .. }) {
+            let ViewportTreeCommand::Focus { request_id, .. } = command else {
+                unreachable!("focus guard matched non-focus command");
             };
             reject(&mut outbox, request_id, VIEWER_BINDING_PENDING.to_owned());
             continue;
@@ -244,7 +242,7 @@ pub(super) fn apply_tree_commands(
                 target,
                 visible,
             } => {
-                let Some(root) = scene_index.resolve(&target) else {
+                if !scene_index.contains_logical_anchor(&target) {
                     reject(
                         &mut outbox,
                         request_id,
@@ -254,9 +252,24 @@ pub(super) fn apply_tree_commands(
                         ),
                     );
                     continue;
-                };
+                }
 
-                set_subtree_visibility(root, &children, &mut visibility, visible);
+                // Record logical visibility intent regardless of whether the
+                // target's ECS entity is currently resident, and apply to
+                // resident entities immediately when present.
+                let _ = scene_index.set_logical_subtree_visibility(&target, visible);
+                if let Some(root) = scene_index.resolve(&target) {
+                    set_subtree_visibility(root, &children, &mut visibility, visible);
+                }
+                for (entity, effective) in scene_index.resident_visibility_intents() {
+                    if let Ok((_, mut state)) = visibility.get_mut(entity) {
+                        *state = if effective { Visibility::Visible } else { Visibility::Hidden };
+                    }
+                }
+                if current_projection.source() == viewport_protocol::HierarchySource::Prim {
+                    let node_id = viewport_protocol::HierarchyNodeId::for_scene_anchor(&target);
+                    let _ = current_projection.apply_visibility(&node_id, visible);
+                }
                 outbox.push(ViewportEventEnvelope::new(
                     Some(request_id),
                     ViewportEvent::PrimVisibilityChanged { target, visible },
@@ -285,10 +298,27 @@ pub(super) fn apply_tree_commands(
                     continue;
                 };
                 let targets = targets.to_vec();
+                if scene_index.has_logical_authority()
+                    && (!scene_index.logical_hierarchy_available()
+                        || targets.iter().any(|target| match target {
+                            HierarchyVisibilityTarget::SceneAnchor(anchor) => {
+                                !scene_index.contains_logical_anchor(anchor)
+                            }
+                            HierarchyVisibilityTarget::PrimPath(path) => {
+                                !scene_index.accepts_logical_prim_path(path)
+                            }
+                        }))
+                {
+                    reject(&mut outbox, request_id,
+                        "Hierarchy target is not qualified in the active occurrence graph.".to_owned());
+                    continue;
+                }
                 let mut roots = HashSet::new();
+                let mut logical_paths = Vec::new();
                 for target in targets {
                     match target {
                         HierarchyVisibilityTarget::SceneAnchor(anchor) => {
+                            let _ = scene_index.set_logical_subtree_visibility(&anchor, visible);
                             if let Some(entity) = scene_index.resolve(&anchor) {
                                 roots.insert(entity);
                             }
@@ -297,10 +327,19 @@ pub(super) fn apply_tree_commands(
                             roots.extend(
                                 scene_index.resolve_all_by_prim_path(&path).iter().copied(),
                             );
+                            logical_paths.push(path);
                         }
                     }
                 }
+                if !logical_paths.is_empty() {
+                    scene_index.set_logical_prim_paths_visibility(&logical_paths, visible);
+                }
                 set_subtree_visibility_for_roots(roots, &children, &mut visibility, visible);
+                for (entity, effective) in scene_index.resident_visibility_intents() {
+                    if let Ok((_, mut state)) = visibility.get_mut(entity) {
+                        *state = if effective { Visibility::Visible } else { Visibility::Hidden };
+                    }
+                }
                 let Some(event) = current_projection.apply_visibility(&node_id, visible) else {
                     reject(
                         &mut outbox,

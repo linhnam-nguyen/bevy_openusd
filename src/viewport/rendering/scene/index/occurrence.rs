@@ -28,6 +28,15 @@ impl SceneOccurrenceIndex {
     pub(crate) fn resolve(&self, prim_path: &str) -> &[Entity] {
         self.by_prim_path.get(prim_path).map_or(&[], Vec::as_slice)
     }
+
+    pub(crate) fn remove(&mut self, prim_path: &str, entity: Entity) {
+        if let Some(entities) = self.by_prim_path.get_mut(prim_path) {
+            entities.retain(|&candidate| candidate != entity);
+            if entities.is_empty() {
+                self.by_prim_path.remove(prim_path);
+            }
+        }
+    }
 }
 
 /// Presentation roots share the scene anchor API without adding rows to the

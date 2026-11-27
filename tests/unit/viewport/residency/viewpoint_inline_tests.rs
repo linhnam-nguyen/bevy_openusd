@@ -54,6 +54,7 @@ fn mounted_viewpoint_resolves_only_owned_cache_geometry() {
                 prim_path: "/World/Camera".to_owned(),
             },
             content_hash: Some(hash),
+            hierarchy: Default::default(),
         }],
     };
 

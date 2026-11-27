@@ -67,6 +67,7 @@ fn owned_entry(
             prim_path: path.to_owned(),
         },
         content_hash: Some(hash),
+        hierarchy: Default::default(),
     }
 }
 fn entry(scene: SceneId, path: &str, value: usize) -> SceneCacheEntry {
@@ -140,6 +141,7 @@ fn child_entry(parent: SceneId, child: SceneId, member: SceneMemberId) -> SceneC
         semantic_key: None,
         kind,
         content_hash: None,
+        hierarchy: Default::default(),
     }
 }
 fn publish_index(root: &Path, index: SceneCacheIndex) {

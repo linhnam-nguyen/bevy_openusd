@@ -20,6 +20,14 @@ pub struct AuthoredHierarchyMetadata {
     pub display_name: Option<String>,
     /// Manifest-backed hierarchy target, when authored on the composed prim.
     pub target: Option<crate::UsdHierarchyTarget>,
+    /// Authored USD schema type name (for example `"Xform"` or `"Mesh"`).
+    pub type_name: Option<String>,
+    /// Authored USD visibility (`false` when authored `invisible`).
+    pub authored_visible: bool,
+    /// Whether the prim is a transparent structural wrapper collapsed in tree views.
+    pub transparent: bool,
+    /// Whether the prim's payload is currently unloaded so its child count is unknown.
+    pub unloaded_payload: bool,
 }
 
 /// Read the same display-name and target metadata used by live projection,

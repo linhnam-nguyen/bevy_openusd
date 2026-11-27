@@ -63,6 +63,8 @@ pub(crate) fn current_cache_schema_digest() -> HashDigest {
     // A retained revision created before interval qualification may contain
     // valid CAS bytes with the wrong source provenance.
     hasher.update(b"qualified-incremental-interval-v1\0");
+    // Old v3 member metadata could be defaulted or derived from the wrong occurrence.
+    hasher.update(b"qualified-composed-hierarchy-v1\0");
     hasher.update(&SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION.to_le_bytes());
     hasher.update(&SCENE_CACHE_INDEX_SCHEMA_VERSION.to_le_bytes());
     hasher.update(&SCENE_SPATIAL_INDEX_SCHEMA_VERSION.to_le_bytes());

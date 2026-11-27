@@ -46,6 +46,17 @@ pub(super) fn reject_locked_viewport_commands(
                     | ViewportCommand::RequestBimPropertyProvenance { .. }
                     | ViewportCommand::RequestHierarchyChildren { .. }
                     | ViewportCommand::SearchHierarchy { .. }
+                    | ViewportCommand::SetHierarchySource { .. }
+                    | ViewportCommand::SetBimClassificationRecipe { .. }
+                    | ViewportCommand::SelectTarget { .. }
+                    | ViewportCommand::ReplaceSelection { .. }
+                    | ViewportCommand::AddSelectionTarget { .. }
+                    | ViewportCommand::AddSelectionTargets { .. }
+                    | ViewportCommand::RemoveSelectionTarget { .. }
+                    | ViewportCommand::RemoveSelectionTargets { .. }
+                    | ViewportCommand::ClearSelection
+                    | ViewportCommand::SetSubtreeVisibility { .. }
+                    | ViewportCommand::SetHierarchyNodeVisibility { .. }
                     | ViewportCommand::ReloadSession
             );
         if !permitted {

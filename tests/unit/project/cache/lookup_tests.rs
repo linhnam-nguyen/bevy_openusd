@@ -26,6 +26,7 @@ fn owned_entry(scene_id: SceneId, path: &str, byte: u8) -> SceneCacheEntry {
             prim_path: path.to_owned(),
         },
         content_hash: Some(content_hash),
+        hierarchy: Default::default(),
     }
 }
 
@@ -49,6 +50,7 @@ fn child_entry(parent_scene: SceneId, member_id: SceneMemberId, child: SceneId) 
             member_id,
         },
         content_hash: None,
+        hierarchy: Default::default(),
     }
 }
 

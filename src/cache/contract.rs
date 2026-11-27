@@ -24,7 +24,7 @@ impl ProjectCacheTarget {
 }
 
 pub(crate) const SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION: u16 = 3;
-pub(crate) const SCENE_CACHE_INDEX_SCHEMA_VERSION: u16 = 2;
+pub(crate) const SCENE_CACHE_INDEX_SCHEMA_VERSION: u16 = 3;
 pub(crate) const SCENE_SPATIAL_INDEX_SCHEMA_VERSION: u16 = 1;
 pub(crate) const PROJECT_CACHE_INDEX_SCHEMA_VERSION: u16 = 2;
 
@@ -167,6 +167,84 @@ pub(crate) enum SceneCacheEntryKind {
     },
 }
 
+/// Direct logical child count for a cached hierarchy node.
+///
+/// Unknown child counts (unloaded payloads or unresolved nested members) stay
+/// distinct from a confirmed leaf (`Known(0)`).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", content = "count", rename_all = "snake_case")]
+pub(crate) enum HierarchyChildCount {
+    Known(u32),
+    Unknown,
+}
+
+impl Default for HierarchyChildCount {
+    fn default() -> Self {
+        Self::Known(0)
+    }
+}
+
+impl HierarchyChildCount {
+    pub(crate) fn has_children(self) -> bool {
+        matches!(self, Self::Unknown) || matches!(self, Self::Known(count) if count > 0)
+    }
+}
+
+const fn default_authored_visible() -> bool {
+    true
+}
+
+/// Persisted logical hierarchy metadata for one Scene cache entry.
+///
+/// Authored visibility is stored separately from transient runtime overrides,
+/// and authored display names remain distinct from semantic identity keys.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct CachedHierarchyMetadata {
+    #[serde(default)]
+    pub(crate) metadata_populated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) type_name: Option<String>,
+    #[serde(default)]
+    pub(crate) child_count: HierarchyChildCount,
+    #[serde(default = "default_authored_visible")]
+    pub(crate) authored_visible: bool,
+    #[serde(default)]
+    pub(crate) transparent: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) target_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) target_id: Option<String>,
+    /// A flat snapshot of descendants in this member's actual composed occurrence.
+    /// None means the branch has not been qualified; never infer a leaf from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) composed_descendants: Option<Vec<CachedHierarchyDescendant>>,
+}
+
+/// One composed descendant's metadata, without duplicate render resources.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct CachedHierarchyDescendant {
+    pub(crate) prim_path: String,
+    pub(crate) metadata: CachedHierarchyMetadata,
+}
+
+impl Default for CachedHierarchyMetadata {
+    fn default() -> Self {
+        Self {
+            metadata_populated: false,
+            display_name: None,
+            type_name: None,
+            child_count: HierarchyChildCount::Known(0),
+            authored_visible: true,
+            transparent: false,
+            target_kind: None,
+            target_id: None,
+            composed_descendants: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub(crate) struct SceneCacheEntry {
     pub(crate) address: SceneCacheAddress,
@@ -188,6 +266,8 @@ pub(crate) struct SceneCacheEntry {
     pub(crate) kind: SceneCacheEntryKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) content_hash: Option<HashDigest>,
+    #[serde(default)]
+    pub(crate) hierarchy: CachedHierarchyMetadata,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -248,6 +328,29 @@ impl SceneCacheIndex {
                     entry.content_hash == Some(digest),
                     "Scene cache content hash must match geometry blob"
                 );
+            }
+        }
+        // Verify that parent links form a forest (no cycles).
+        let mut visit_state = vec![0_u8; self.entries.len()];
+        for start in 0..self.entries.len() {
+            if visit_state[start] != 0 {
+                continue;
+            }
+            let mut chain = Vec::new();
+            let mut current = Some(start);
+            while let Some(idx) = current {
+                if visit_state[idx] == 1 {
+                    anyhow::bail!("Scene cache parent hierarchy contains a cycle");
+                }
+                if visit_state[idx] == 2 {
+                    break;
+                }
+                visit_state[idx] = 1;
+                chain.push(idx);
+                current = self.entries[idx].parent.map(|parent| parent as usize);
+            }
+            for idx in chain {
+                visit_state[idx] = 2;
             }
         }
         Ok(())

@@ -188,6 +188,7 @@ fn cache_entry(
             prim_path: "/SceneRoot/Test".to_owned(),
         },
         content_hash: Some(content_hash),
+        hierarchy: Default::default(),
     }
 }
 

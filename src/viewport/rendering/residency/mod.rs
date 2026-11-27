@@ -380,6 +380,10 @@ fn cached_occurrence_visible(
     else {
         return true;
     };
+    let anchor = viewport_protocol::SceneAnchor::active_session(path.clone());
+    if let Some(logical_visible) = index.logical_visibility(&anchor) {
+        return logical_visible;
+    }
     let occurrences = index.resolve_all_by_prim_path(path);
     occurrences.is_empty()
         || occurrences

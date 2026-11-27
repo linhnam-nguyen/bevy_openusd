@@ -47,6 +47,15 @@ impl SceneIndexReconcileState {
     }
 
     pub(super) fn remove(&mut self, entity: Entity) -> bool {
+        if self.remove_without_request(entity) {
+            self.request();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn remove_without_request(&mut self, entity: Entity) -> bool {
         let Some(index) = self.positions.remove(&entity) else {
             return false;
         };
@@ -56,7 +65,6 @@ impl SceneIndexReconcileState {
             let moved = self.members[index];
             self.positions.insert(moved, index);
         }
-        self.request();
         true
     }
 
@@ -235,6 +243,16 @@ impl SceneAnchorIndex {
             .incremental_work
             .projected_rows
             .saturating_add(row_count);
+        if self.has_logical_authority() {
+            self.nodes = self.logical_records.iter().map(|record| {
+                record.to_prim_read_model(self.visibility_override(&record.anchor))
+            }).collect();
+            self.node_index_by_anchor = self.nodes.iter().enumerate()
+                .map(|(index, node)| (node.anchor.clone(), index)).collect();
+            self.visual_unload_rows.clear();
+            self.rebuild_logical_dense();
+            return self.prim_projection();
+        }
         if self.visual_unload_rows.is_empty() && projection.revision() == next_revision {
             projection
         } else {

@@ -229,6 +229,7 @@ fn evaluate_stage_in_live_app(
                 semantic_key: None,
                 kind: SceneCacheEntryKind::OwnedPrim { prim_path },
                 content_hash: None,
+                hierarchy: Default::default(),
             });
         }
         descriptor.prim_count = entries.len() as u64;

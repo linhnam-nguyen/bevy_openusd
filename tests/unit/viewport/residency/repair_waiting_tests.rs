@@ -313,6 +313,7 @@ fn owner_index(
                 prim_path: path.to_owned(),
             },
             content_hash: Some(content_hash),
+            hierarchy: Default::default(),
         }],
     }
 }

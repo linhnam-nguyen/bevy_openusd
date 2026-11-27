@@ -29,7 +29,7 @@ impl DenseSceneIndex {
                 label: node.label.clone(),
                 display_name: node.display_name.clone(),
                 visible: node.visible,
-                has_children: false,
+                has_children: node.has_children,
             })
             .collect::<Vec<_>>();
 
@@ -67,7 +67,8 @@ impl DenseSceneIndex {
                 let parent = parent_slot - 1;
                 dense_nodes[parent].first_child = start;
                 dense_nodes[parent].child_count = end - start;
-                dense_nodes[parent].has_children = end > start;
+                dense_nodes[parent].has_children =
+                    dense_nodes[parent].has_children || end > start;
             }
             child_ranges.push(start..end);
         }
@@ -110,5 +111,62 @@ impl DenseSceneIndex {
             visible: node.visible,
             has_children: node.has_children,
         })
+    }
+
+    pub(super) fn bind_entity(&mut self, anchor: &SceneAnchor, entity: Entity) -> bool {
+        let Some(&index) = self.by_anchor.get(anchor) else {
+            return false;
+        };
+        if let Some(previous) = self.nodes[index].entity.replace(entity)
+            && previous != entity
+        {
+            self.by_entity.remove(&previous);
+        }
+        self.by_entity.insert(entity, index);
+        true
+    }
+
+    pub(super) fn unbind_entity(&mut self, entity: Entity) {
+        if let Some(index) = self.by_entity.remove(&entity)
+            && let Some(node) = self.nodes.get_mut(index)
+            && node.entity == Some(entity)
+        {
+            node.entity = None;
+        }
+    }
+
+    pub(super) fn set_visibility(&mut self, anchor: &SceneAnchor, visible: bool) -> bool {
+        let Some(&index) = self.by_anchor.get(anchor) else {
+            return false;
+        };
+        if let Some(node) = self.nodes.get_mut(index) {
+            node.visible = visible;
+            return true;
+        }
+        false
+    }
+
+    pub(super) fn subtree_anchors(&self, root: &SceneAnchor) -> Vec<SceneAnchor> {
+        let Some(&root_index) = self.by_anchor.get(root) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let mut stack = vec![root_index];
+        while let Some(index) = stack.pop() {
+            if let Some(node) = self.node(index) {
+                out.push(node.anchor.clone());
+                stack.extend_from_slice(self.children(Some(index)));
+            }
+        }
+        out
+    }
+
+    pub(super) fn anchors_for_prim_path(&self, prim_path: &str) -> Vec<SceneAnchor> {
+        self.by_path
+            .get(prim_path)
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter_map(|&index| self.node(index).map(|node| node.anchor.clone()))
+            .collect()
     }
 }

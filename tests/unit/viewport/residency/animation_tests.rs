@@ -86,6 +86,7 @@ fn animated_entry(
         semantic_key: None,
         kind,
         content_hash: Some(hash),
+        hierarchy: Default::default(),
     }
 }
 

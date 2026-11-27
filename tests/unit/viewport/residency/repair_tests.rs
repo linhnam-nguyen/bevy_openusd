@@ -84,6 +84,7 @@ fn cached_worker_none_is_queued_without_inline_targeted_fill() {
                 prim_path: "/SceneRoot/Owned".to_owned(),
             },
             content_hash: Some(load.key.blob_hash),
+            hierarchy: Default::default(),
         }],
     };
     let spatial = SceneSpatialIndex {

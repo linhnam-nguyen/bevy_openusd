@@ -50,7 +50,14 @@ fn queue_scene_prim_insert(
 fn queue_scene_prim_remove(event: On<Remove<UsdPrimRef>>, mut index: ResMut<SceneAnchorIndex>) {
     let entity = event.entity;
     index.queued_additions.remove(&entity);
-    index.reconcile.remove(entity);
+    if index.has_logical_authority() {
+        // Evicting a renderable ECS entity never erases logical hierarchy rows
+        // or transient selection/visibility intents.
+        index.evict_resident_entity(entity);
+        index.reconcile.remove_without_request(entity);
+    } else {
+        index.reconcile.remove(entity);
+    }
 }
 
 fn request_if_indexed(entity: Entity, index: &mut SceneAnchorIndex) {
@@ -142,12 +149,18 @@ pub(crate) fn refresh_scene_anchor_index(
     presentation: Option<Res<StagePresentationContext>>,
     stage_info: Option<Res<StageInfo>>,
     scene_cache: Option<Res<SceneCachePresentation>>,
-    progressive: Option<Res<usd_bevy::ProgressiveProjectionState>>,
+    (progressive, live_stage): (
+        Option<Res<usd_bevy::ProgressiveProjectionState>>,
+        Option<NonSend<usd_bevy::LiveStage>>,
+    ),
+    mut selection: Option<ResMut<crate::viewport::rendering::scene::SelectedTargets>>,
+    mut selected_prim: Option<ResMut<crate::viewport::rendering::scene::SelectedPrim>>,
 ) {
     index.last_refresh_admitted = 0;
 
     let active_generation = stage_info.as_deref().map(|info| info.activation_generation);
     if index.active_activation_generation != active_generation {
+        index.clear_logical_hierarchy();
         index.active_activation_generation = active_generation;
         index.published_activation_generation = None;
     }
@@ -155,14 +168,116 @@ pub(crate) fn refresh_scene_anchor_index(
     let presentation_changed = presentation
         .as_ref()
         .is_some_and(|presentation| presentation.is_changed());
-    if presentation_changed
+    // Canonical revision tokens cover committed edits, load/muting/recompose
+    // notices and Stage replacement independently of visual admission. They
+    // are read on the Stage's owning thread; no USD traversal per render frame.
+    if let Some(live) = live_stage.as_deref()
+        && let Some(generation) = active_generation
+    {
+        let stamp = (live.stage_identity(), live.current_revision(), live.authoring_generation());
+        if index.canonical_hierarchy_stamp != Some(stamp) || presentation_changed {
+            match crate::cache::scene::hierarchy::build_logical_hierarchy_from_stage(
+                &live.stage, presentation.as_deref(),
+            ) {
+                Ok(records) => {
+                    let changed = index.logical_candidate_changed(&records);
+                    let projection = index.install_logical_hierarchy(records, generation);
+                    index.canonical_hierarchy_stamp = Some(stamp);
+                    if provider.as_ref().is_none_or(|provider| {
+                        provider.source() == viewport_protocol::HierarchySource::Prim
+                    }) && (changed || current_projection.source() != projection.source()
+                        || current_projection.revision() != projection.revision()) {
+                        *current_projection = projection;
+                    }
+                    if changed {
+                        // Rebind existing entities against the new authority as
+                        // well as those arriving later. Work remains bounded by
+                        // the normal admission queue below.
+                        for (entity, prim, ..) in prims.iter() {
+                            if prim.path != "/" && index.queued_additions.insert(entity) {
+                                index.pending_additions.push_back(entity);
+                            }
+                        }
+                    }
+                    for (entity, visible) in index.resident_visibility_intents() {
+                        commands.entity(entity).insert(if visible {
+                            Visibility::Visible
+                        } else {
+                            Visibility::Hidden
+                        });
+                    }
+                    if let Some(selection) = selection.as_deref_mut() {
+                        let mut next = selection.0.clone();
+                        next.targets.retain(|target| index.retains_logical_selection(target));
+                        if next.primary.as_ref().is_some_and(|primary| !next.targets.contains(primary)) {
+                            next.primary = next.targets.first().cloned();
+                        }
+                        if next != selection.0 && let Err(error) = selection.replace(next) {
+                            warn!("could not reconcile logical selection: {error}");
+                        }
+                    }
+                }
+                Err(error) => {
+                    warn!("canonical hierarchy unavailable: {error:#}");
+                    index.mark_logical_hierarchy_unavailable(generation);
+                    if let Some(selected_prim) = selected_prim.as_deref_mut() {
+                        selected_prim.0 = None;
+                    }
+                    if provider.as_ref().is_none_or(|provider| {
+                        provider.source() == viewport_protocol::HierarchySource::Prim
+                    }) {
+                        *current_projection = CurrentHierarchyProjection::empty(
+                            viewport_protocol::HierarchySource::Prim, 0,
+                        );
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    if index.has_logical_authority() && !index.logical_hierarchy_available() {
+        if let Some(selected_prim) = selected_prim.as_deref_mut() {
+            selected_prim.0 = None;
+        }
+        return;
+    }
+    if index.has_logical_authority() {
+        // Changed entity paths may need a new binding, but renderer changes
+        // never create/delete logical rows or trigger legacy ECS reconciliation.
+        for entity in changed_prims.iter().chain(hierarchy_changed.iter()) {
+            let Ok((_, prim, _, _, _, current_visibility, _)) = prims.get(entity) else {
+                continue;
+            };
+            if index.by_entity.get(&entity).is_none_or(|anchor| anchor.prim_path != prim.path) {
+                if index.queued_additions.insert(entity) {
+                    index.pending_additions.push_back(entity);
+                }
+            } else if let Some(anchor) = index.by_entity.get(&entity)
+                && let Some(visible) = index.visibility_override(anchor)
+            {
+                let expected = if visible { Visibility::Visible } else { Visibility::Hidden };
+                if current_visibility != Some(&expected) {
+                    commands.entity(entity).insert(expected);
+                }
+            }
+        }
+        if let (Some(selection), Some(selected_prim)) =
+            (selection.as_deref(), selected_prim.as_deref_mut())
+        {
+            let resolved = selection.0.primary.as_ref().and_then(|primary| index.resolve(primary));
+            if selected_prim.0 != resolved {
+                selected_prim.0 = resolved;
+            }
+        }
+    } else if presentation_changed
         || changed_prims.iter().next().is_some()
         || hierarchy_changed.iter().next().is_some()
     {
         index.reconcile.request();
     }
 
-    if index.reconcile.is_pending() {
+    if !index.has_logical_authority() && index.reconcile.is_pending() {
         if let Some(projection) = index.advance_full_reconciliation(
             &prims,
             &parent_hierarchy,
@@ -221,6 +336,36 @@ pub(crate) fn refresh_scene_anchor_index(
             return;
         }
 
+        if index.has_logical_authority() {
+            let mapped_entities = batch.iter().filter_map(|&entity| {
+                let (_, prim, _, _, transparent, _, _) = prims.get(entity).ok()?;
+                (prim.path != "/").then(|| (entity, prim.path.clone(), transparent.is_some()))
+            }).collect::<Vec<_>>();
+            let (pending_visibility, unmapped) = index.bind_resident_entities_to_logical(mapped_entities);
+            for (entity, visible) in pending_visibility {
+                commands.entity(entity).insert(if visible { Visibility::Visible } else { Visibility::Hidden });
+            }
+            for &entity in &batch {
+                // An unresolved or obsolete renderer entity cannot create a
+                // logical row. Canonical replacement will requeue it if valid.
+                commands.entity(entity).insert(SceneIndexIndexedPrim);
+            }
+            if let (Some(selection), Some(selected_prim)) =
+                (selection.as_deref(), selected_prim.as_deref_mut())
+            {
+                let resolved = selection
+                    .0
+                    .primary
+                    .as_ref()
+                    .and_then(|primary| index.resolve(primary));
+                if selected_prim.0 != resolved {
+                    selected_prim.0 = resolved;
+                }
+            }
+            index.last_refresh_admitted = batch.len().saturating_sub(unmapped.len());
+            return;
+        }
+
         match index.ingest_added(
             batch.iter().copied(),
             &prims,
@@ -264,6 +409,9 @@ pub(crate) fn refresh_scene_anchor_index(
     // still publishes one observable revision for its generation when no cache
     // bootstrap owns the interim presentation.
 
+    if index.has_logical_authority() {
+        return;
+    }
     let needs_empty_final_publish = active_generation.is_some()
         && index.published_activation_generation != active_generation
         && scene_cache.is_none();

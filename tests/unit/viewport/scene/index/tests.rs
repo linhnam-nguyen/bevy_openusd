@@ -15,6 +15,9 @@ use viewport_protocol::{
 #[path = "incremental_tests.rs"]
 mod incremental_tests;
 
+#[path = "logical_hierarchy_tests.rs"]
+mod logical_hierarchy_tests;
+
 fn node(path: &str, parent: Option<&str>, label: &str) -> PrimNodeReadModel {
     PrimNodeReadModel {
         anchor: SceneAnchor::active_session(path),

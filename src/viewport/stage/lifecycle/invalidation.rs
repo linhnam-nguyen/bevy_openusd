@@ -54,6 +54,11 @@ pub(super) fn reset_derived_state(world: &mut World, activation_generation: u64)
     {
         provider.set(viewport_protocol::HierarchySource::Prim, None);
     }
+    if let Some(mut index) =
+        world.get_resource_mut::<crate::viewport::rendering::scene::SceneAnchorIndex>()
+    {
+        index.clear_logical_hierarchy();
+    }
     if let Some(mut projection) =
         world.get_resource_mut::<crate::viewport::rendering::scene::CurrentHierarchyProjection>()
     {
@@ -138,7 +143,13 @@ pub(crate) fn rehydrate_activation_presentation(world: &mut World) {
         let targets = selection
             .targets
             .iter()
-            .filter(|target| index.resolve(target).is_some())
+            .filter(|target| {
+                if index.has_logical_authority() {
+                    index.retains_logical_selection(target)
+                } else {
+                    index.resolve(target).is_some()
+                }
+            })
             .cloned()
             .collect::<Vec<_>>();
         let primary = selection
@@ -152,16 +163,10 @@ pub(crate) fn rehydrate_activation_presentation(world: &mut World) {
     if resolved_selection
         .as_ref()
         .is_some_and(|selection| !selection.targets.is_empty())
-        && world
-            .get_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
-            .is_some_and(|index| {
-                resolved_selection.as_ref().is_some_and(|selection| {
-                    selection
-                        .targets
-                        .iter()
-                        .any(|target| index.resolve(target).is_some())
-                })
-            })
+        || (pending.selection.is_some()
+            && world
+                .get_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
+                .is_some_and(|index| index.has_logical_authority()))
     {
         // The index has projected at least one retained target, so selection
         // can be restored without exposing a stale Bevy entity.

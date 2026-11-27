@@ -194,10 +194,14 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
                 scene_cache_project_root.as_deref(),
             );
         }
-        // Both fresh and cache-first continuation now have the canonical
-        // composed Stage. Resolve cached hierarchy names before live admission.
-        scene_presentation::publish_cached_hierarchy(world, scene_cache, &stage.stage);
     }
+    // The canonical namespace is authoritative even when a provisional cache
+    // already published rows. It may add or remove nonresident descendants.
+    scene_presentation::publish_canonical_logical_hierarchy(
+        world,
+        &stage.stage,
+        activation_generation,
+    );
     world.insert_non_send(stage);
     if let Some(hooks) = world
         .get_resource::<crate::viewport::stage::ProductStageLifecycleHooks>()
@@ -318,7 +322,11 @@ pub(crate) fn discard_scene_cache_bootstrap(
     let projection_ready = world
         .get_resource::<usd_bevy::ProgressiveProjectionState>()
         .is_some_and(|state| state.readiness() == usd_bevy::ProjectionReadiness::Ready);
+    let logical_ready = world
+        .get_resource::<crate::viewport::rendering::scene::SceneAnchorIndex>()
+        .is_some_and(|index| index.logical_hierarchy_available());
     if !projection_ready
+        && !logical_ready
         && let Some(mut projection) = world.get_resource_mut::<CurrentHierarchyProjection>()
     {
         *projection =

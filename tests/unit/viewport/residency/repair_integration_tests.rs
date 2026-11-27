@@ -78,6 +78,7 @@ fn owned_entry(scene: SceneId, hash: HashDigest, path: &str) -> SceneCacheEntry 
             prim_path: path.to_owned(),
         },
         content_hash: Some(hash),
+        hierarchy: Default::default(),
     }
 }
 fn owner_index(scene: SceneId, generation: u64, hash: HashDigest, path: &str) -> SceneCacheIndex {

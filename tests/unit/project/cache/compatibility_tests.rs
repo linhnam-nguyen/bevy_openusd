@@ -300,6 +300,7 @@ fn project_cache_lookup_rejects_duplicate_scene_generations() -> Result<()> {
                 prim_path: path.to_owned(),
             },
             content_hash: None,
+            hierarchy: Default::default(),
         }],
     };
     assert!(
