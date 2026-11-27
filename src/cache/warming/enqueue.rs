@@ -1,10 +1,11 @@
 //! Managed-mutation cache invalidation and advisory warm admission.
 
-use std::{path::Path, sync::atomic::Ordering};
+use std::{collections::HashMap, path::Path, sync::atomic::Ordering};
 
 use anyhow::{Result, anyhow};
 use usd_project::SceneId;
 
+use super::super::super::changes::SceneDeltaHint;
 use super::super::{ProjectCacheTarget, SceneCacheStore, WarmTarget};
 use super::ProjectCacheWarmQueue;
 
@@ -34,18 +35,36 @@ impl ProjectCacheWarmQueue {
         project_root: &Path,
         targets: Vec<ProjectCacheTarget>,
     ) -> Result<bool> {
-        self.enqueue_targets_inner(project_root, targets, true)
+        self.enqueue_targets_with_scope(project_root, targets, true, false, HashMap::new())
+    }
+
+    /// Establish managed Scene boundaries and attach advisory incremental delta
+    /// hints keyed by [`ProjectCacheTarget::key`].
+    pub(crate) fn enqueue_targets_for_mutation_with_hints(
+        &self,
+        project_root: &Path,
+        targets: Vec<ProjectCacheTarget>,
+        delta_hints: HashMap<String, SceneDeltaHint>,
+    ) -> Result<bool> {
+        self.enqueue_targets_with_scope(project_root, targets, true, false, delta_hints)
     }
 
     pub(in crate::cache::warming) fn enqueue_all_targets_for_mutation(&self, project_root: &Path) -> Result<bool> {
-        self.enqueue_targets_with_scope(project_root, Vec::new(), true, true)
+        self.enqueue_targets_with_scope(project_root, Vec::new(), true, true, HashMap::new())
     }
 
     fn enqueue_targets_inner(&self, project_root: &Path, targets: Vec<ProjectCacheTarget>, fail_closed: bool) -> Result<bool> {
-        self.enqueue_targets_with_scope(project_root, targets, fail_closed, false)
+        self.enqueue_targets_with_scope(project_root, targets, fail_closed, false, HashMap::new())
     }
 
-    fn enqueue_targets_with_scope(&self, project_root: &Path, targets: Vec<ProjectCacheTarget>, fail_closed: bool, all: bool) -> Result<bool> {
+    fn enqueue_targets_with_scope(
+        &self,
+        project_root: &Path,
+        targets: Vec<ProjectCacheTarget>,
+        fail_closed: bool,
+        all: bool,
+        mut delta_hints: HashMap<String, SceneDeltaHint>,
+    ) -> Result<bool> {
         // No queue mutex or Scene lifecycle mutex is taken under this lock.
         // All durable boundaries and the barrier clear are one transaction.
         let Some(prepared) = super::super::super::sync::with_cache_lock(project_root, "invalidate", || {
@@ -55,11 +74,14 @@ impl ProjectCacheWarmQueue {
         let Some(sender) = sender.as_ref() else { return Ok(false); };
         let mut accepted = true;
         for (target, generation) in prepared {
-            let key = (project_root.to_path_buf(), target.key());
+            let target_key = target.key();
+            let delta_hint = delta_hints.remove(&target_key);
+            let key = (project_root.to_path_buf(), target_key);
             let warm_target = WarmTarget {
                 target,
                 scene_generation: Some(generation),
                 build_generation: self.state.next_build_generation.fetch_add(1, Ordering::Relaxed),
+                delta_hint,
             };
             accepted &= self.state.latest.record(key, warm_target, sender);
         }

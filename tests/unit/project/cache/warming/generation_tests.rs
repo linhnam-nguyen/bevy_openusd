@@ -81,6 +81,7 @@ fn latest_scene_work_supersedes_and_saturation_retries_without_orphaning() {
         },
         scene_generation: Some(generation),
         build_generation: generation,
+        delta_hint: None,
     };
 
     assert!(state.record(key_a.clone(), target(scene_a, 1), &sender));
@@ -104,6 +105,60 @@ fn latest_scene_work_supersedes_and_saturation_retries_without_orphaning() {
 }
 
 #[test]
+fn queued_scene_delta_supersession_preserves_only_complete_adjacent_intervals() {
+    use crate::cache::changes::SceneDeltaHint;
+    use usd_model::HashDigest;
+
+    let state = queue::LatestWarmState::new();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let scene = SceneId::new_v4();
+    let key = (std::path::PathBuf::from("/tmp/scene-delta-queue"), format!("scene:{scene}"));
+    let digest = |byte: u8| HashDigest::new([byte; 32]);
+    let hint = |base, result| SceneDeltaHint {
+        base_revision_identity: Some(digest(base)),
+        result_revision_identity: Some(digest(result)),
+        changes: vec![usd_bevy::StageChange {
+            resynced: vec![],
+            changed_info: vec!["/SceneRoot/Mesh.bim:status".to_owned()],
+        }],
+        truncated: false,
+    };
+    let target = |generation, delta_hint| WarmTarget {
+        target: ProjectCacheTarget::Scene { id: scene.to_string() },
+        scene_generation: Some(generation),
+        build_generation: generation,
+        delta_hint,
+    };
+
+    assert!(state.record(key.clone(), target(1, None), &sender));
+    assert!(state.record(key.clone(), target(2, Some(hint(2, 3))), &sender));
+    let job = receiver.recv().expect("scheduled Scene job");
+    assert_eq!(job.key, key);
+    let retained = state.take_latest(&key).expect("latest retained target");
+    assert_eq!(retained.scene_generation, Some(2));
+    assert!(retained.delta_hint.is_none(), "unknown earlier interval must not vanish");
+    state.finish_and_retry(&key, Some(&sender));
+
+    assert!(state.record(key.clone(), target(3, Some(hint(3, 4))), &sender));
+    assert!(state.record(key.clone(), target(4, Some(hint(4, 5))), &sender));
+    let job = receiver.recv().expect("scheduled Scene job");
+    assert_eq!(job.key, key);
+    let retained = state.take_latest(&key).expect("latest retained target");
+    assert_eq!(retained.scene_generation, Some(4));
+    let merged = retained.delta_hint.expect("adjacent qualified intervals");
+    assert_eq!(merged.base_revision_identity, Some(digest(3)));
+    assert_eq!(merged.result_revision_identity, Some(digest(5)));
+    assert_eq!(merged.changes.len(), 2);
+    state.finish_and_retry(&key, Some(&sender));
+
+    assert!(state.record(key.clone(), target(5, Some(hint(5, 6))), &sender));
+    assert!(state.record(key.clone(), target(6, Some(hint(7, 8))), &sender));
+    let job = receiver.recv().expect("scheduled Scene job");
+    assert_eq!(job.key, key);
+    assert!(state.take_latest(&key).expect("latest retained target").delta_hint.is_none());
+}
+
+#[test]
 fn cross_project_overflow_applies_bounded_backpressure_without_orphaning_generation() {
     let state = std::sync::Arc::new(queue::LatestWarmState::new());
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -114,6 +169,7 @@ fn cross_project_overflow_applies_bounded_backpressure_without_orphaning_generat
         },
         scene_generation: Some(generation),
         build_generation: generation,
+        delta_hint: None,
     };
 
     for generation in 1..=queue::WARM_LATEST_CAPACITY as u64 {
@@ -221,6 +277,7 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
                 },
                 scene_generation: Some((index + 1) as u64),
                 build_generation: (index + 1) as u64,
+                delta_hint: None,
             },
             &sender,
         ));

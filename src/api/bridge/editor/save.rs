@@ -179,10 +179,18 @@ fn persist_with_owned_timelines(
         expected_scene_id.as_ref().is_none_or(|expected| expected == &scene.id)
             && fs::canonicalize(path).is_ok_and(|path| path == canonical_destination)
     }).ok_or_else(|| anyhow::anyhow!("unverified or missing managed Scene save destination: {}", destination.display()))?;
+    let delta_base = crate::cache::changes::capture_scene_delta_base(
+        &project_root, scene.id, stage,
+    );
     let updated = crate::project::scene::timeline::save_scene_with_timelines_atomic(
         &stage.stage, &project_root, manifest.raw(), scene.id,
         &layout.readable_scene_path(manifest.raw(), scene),
     )?;
+    // A failed canonical save returns above without clearing the notice chain.
+    // Capture the actual persisted result, including generated timeline changes.
+    let delta_hint = crate::cache::changes::complete_scene_delta_save(
+        &project_root, scene.id, stage, delta_base,
+    );
     let mut initial_targets: Vec<ProjectCacheTarget> = updated
         .into_iter()
         .map(|id| ProjectCacheTarget::Scene { id: id.to_string() })
@@ -192,10 +200,20 @@ fn persist_with_owned_timelines(
     });
     let cache_targets =
         crate::cache::warming::expand_affected_targets(&project_root, initial_targets);
-    if !cache_warm.enqueue_targets_for_mutation(&project_root, cache_targets).unwrap_or_else(|error| {
-        log::warn!("canonical Scene saved but cache admission failed: {error:#}");
-        false
-    }) {
+    let mut delta_hints = std::collections::HashMap::new();
+    let saved_target = ProjectCacheTarget::Scene {
+        id: scene.id.to_string(),
+    };
+    if let Some(hint) = delta_hint {
+        delta_hints.insert(saved_target.key(), hint);
+    }
+    if !cache_warm
+        .enqueue_targets_for_mutation_with_hints(&project_root, cache_targets, delta_hints)
+        .unwrap_or_else(|error| {
+            log::warn!("canonical Scene saved but cache admission failed: {error:#}");
+            false
+        })
+    {
         log::warn!(
             "saved canonical Project Scene {} but derived-cache warm admission was unavailable",
             scene.id

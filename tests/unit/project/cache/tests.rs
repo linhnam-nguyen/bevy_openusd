@@ -3,6 +3,8 @@ use std::fs;
 use super::*;
 use tempfile::tempdir;
 
+#[path = "incremental_update_tests.rs"]
+mod incremental_update_tests;
 #[path = "lifecycle_gc_tests.rs"]
 mod lifecycle_gc_tests;
 

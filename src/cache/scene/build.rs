@@ -36,9 +36,79 @@ pub(crate) struct OwnedPrimExtraction {
 }
 
 #[derive(Default)]
-struct ScenePayloadRefs {
-    material_by_path: HashMap<String, SceneCacheBlobRef>,
-    animation_by_path: HashMap<String, SceneCacheBlobRef>,
+pub(super) struct ScenePayloadRefs {
+    pub(super) material_by_path: HashMap<String, SceneCacheBlobRef>,
+    pub(super) animation_by_path: HashMap<String, SceneCacheBlobRef>,
+}
+
+pub(super) fn extract_owned_prim_metadata(
+    stage: &Stage,
+    prim_path: &str,
+    config: &usd_semantic::SemanticConfig,
+) -> Result<(bool, Option<String>)> {
+    let sdf_path = sdf::path(prim_path)?;
+    let (semantic, _) = usd_semantic::extract_metadata(stage, &sdf_path, config)?;
+    let semantic_key = usd_semantic::resolve_identity(stage, &sdf_path, &config.identity)
+        .ok()
+        .map(|(key, _)| key.as_str().to_owned());
+    Ok((semantic.is_bim_entity(), semantic_key))
+}
+
+pub(super) fn extract_owned_prim_transform(
+    stage: &Stage,
+    prim_path: &str,
+    config: &usd_semantic::SemanticConfig,
+) -> Result<usd_model::TransformSignature> {
+    let sdf_path = sdf::path(prim_path)?;
+    usd_semantic::extract_transform(stage, &sdf_path, config)
+}
+
+pub(super) fn extract_owned_prim_geometry(
+    stage: &Stage,
+    prim_path: &str,
+    config: &usd_semantic::SemanticConfig,
+) -> Result<(Option<usd_model::Bounds3>, Option<Mesh>)> {
+    let sdf_path = sdf::path(prim_path)?;
+    let geometry = usd_semantic::extract_geometry(stage, &sdf_path, config)?;
+    let mesh = if geometry.is_some() {
+        usd_bevy::read::geom::read_mesh(stage, &sdf_path)?
+            .map(|read| usd_bevy::mesh::mesh_from_usd(&read))
+    } else {
+        None
+    };
+    Ok((geometry.map(|geometry| geometry.local_bounds), mesh))
+}
+
+pub(super) fn extract_owned_prim_full(
+    stage: &Stage,
+    prim_path: &str,
+    config: &usd_semantic::SemanticConfig,
+) -> Result<OwnedPrimExtraction> {
+    let transform = extract_owned_prim_transform(stage, prim_path, config)?;
+    let (bounds, mesh) = extract_owned_prim_geometry(stage, prim_path, config)?;
+    let (bim_enabled, semantic_key) = extract_owned_prim_metadata(stage, prim_path, config)?;
+    Ok(OwnedPrimExtraction {
+        path: prim_path.to_owned(),
+        transform,
+        bounds,
+        bim_enabled,
+        semantic_key,
+        mesh,
+    })
+}
+
+pub(super) fn eligible_lod_paths(stage: &Stage, payload_paths: &[String]) -> Option<HashSet<String>> {
+    super::super::derived_lod::enabled().then(|| {
+        payload_paths
+            .iter()
+            .filter_map(|path| {
+                let prim = stage.prim(path.as_str()).ok()?;
+                super::super::derived_lod::source_eligible(&prim)
+                    .ok()?
+                    .then_some(path.clone())
+            })
+            .collect::<HashSet<_>>()
+    })
 }
 
 pub(crate) fn build_scene_cache_index(
@@ -69,27 +139,7 @@ pub(crate) fn build_scene_cache_index_from_snapshot(
     let config = usd_semantic::SemanticConfig::default();
     let mut extracted = Vec::with_capacity(owned_paths.len());
     for prim_path in &owned_paths {
-        let sdf_path = sdf::path(prim_path)?;
-        let transform = usd_semantic::extract_transform(&stage, &sdf_path, &config)?;
-        let geometry = usd_semantic::extract_geometry(&stage, &sdf_path, &config)?;
-        let (semantic, _) = usd_semantic::extract_metadata(&stage, &sdf_path, &config)?;
-        let semantic_key = usd_semantic::resolve_identity(&stage, &sdf_path, &config.identity)
-            .ok()
-            .map(|(key, _)| key.as_str().to_owned());
-        let mesh = if geometry.is_some() {
-            usd_bevy::read::geom::read_mesh(&stage, &sdf_path)?
-                .map(|read| usd_bevy::mesh::mesh_from_usd(&read))
-        } else {
-            None
-        };
-        extracted.push(OwnedPrimExtraction {
-            path: prim_path.clone(),
-            transform,
-            bounds: geometry.map(|geometry| geometry.local_bounds),
-            bim_enabled: semantic.is_bim_entity(),
-            semantic_key,
-            mesh,
-        });
+        extracted.push(extract_owned_prim_full(stage, prim_path, &config)?);
     }
 
     let payload_paths = extracted
@@ -97,17 +147,7 @@ pub(crate) fn build_scene_cache_index_from_snapshot(
         .filter(|owned| owned.mesh.is_some())
         .map(|owned| owned.path.clone())
         .collect::<Vec<_>>();
-    let eligible_lods = super::super::derived_lod::enabled().then(|| {
-        payload_paths
-            .iter()
-            .filter_map(|path| {
-                let prim = stage.prim(path.as_str()).ok()?;
-                super::super::derived_lod::source_eligible(&prim)
-                    .ok()?
-                    .then_some(path.clone())
-            })
-            .collect::<HashSet<_>>()
-    });
+    let eligible_lods = eligible_lod_paths(stage, &payload_paths);
     let prepared = prepare_scene_payloads(live, &payload_paths)?;
     // A late texture read that cannot be resolved from the frozen input map
     // makes the snapshot ineligible for persistent Ready, not a new disk read.
@@ -174,10 +214,13 @@ pub(crate) fn build_scene_cache_index_from_snapshot(
     Ok((index, spatial))
 }
 
-fn prepare_scene_payloads(
+pub(super) fn prepare_scene_materials(
     live: &usd_bevy::LiveStage,
     owned_paths: &[String],
-) -> Result<(PreparedRuntimePayloads, HashMap<String, Vec<u8>>)> {
+) -> Result<PreparedRuntimePayloads> {
+    if owned_paths.is_empty() {
+        return Ok(PreparedRuntimePayloads::default());
+    }
     let mut app = App::new();
     app.add_plugins(usd_bevy::UsdPlugin)
         .init_resource::<Assets<Mesh>>()
@@ -187,27 +230,38 @@ fn prepare_scene_payloads(
     // or reopen live archives while producing revision-labelled payloads.
     let mut entities = usd_bevy::PrimEntities::default();
     let requested = owned_paths.iter().map(String::as_str).collect::<Vec<_>>();
-    if !requested.is_empty() {
-        usd_bevy::project_paths(app.world_mut(), live, &mut entities, &requested)
-            .context("project Scene-owned material payloads")?;
-    }
-    let materials = prepare_runtime_payloads_for_paths(app.world_mut(), owned_paths);
-    let animations = owned_paths
+    usd_bevy::project_paths(app.world_mut(), live, &mut entities, &requested)
+        .context("project Scene-owned material payloads")?;
+    Ok(prepare_runtime_payloads_for_paths(app.world_mut(), owned_paths))
+}
+
+pub(super) fn prepare_scene_animations(
+    stage: &Stage,
+    owned_paths: &[String],
+) -> Result<HashMap<String, Vec<u8>>> {
+    owned_paths
         .iter()
         .filter_map(|path| {
-            prepare_animation_payload(&live.stage, path)
+            prepare_animation_payload(stage, path)
                 .transpose()
                 .map(|result| result.map(|bytes| (path.clone(), bytes)))
         })
-        .collect::<Result<HashMap<_, _>>>()?;
+        .collect::<Result<HashMap<_, _>>>()
+}
+
+fn prepare_scene_payloads(
+    live: &usd_bevy::LiveStage,
+    owned_paths: &[String],
+) -> Result<(PreparedRuntimePayloads, HashMap<String, Vec<u8>>)> {
+    let materials = prepare_scene_materials(live, owned_paths)?;
+    let animations = prepare_scene_animations(&live.stage, owned_paths)?;
     Ok((materials, animations))
 }
 
-fn persist_scene_payloads(
+pub(super) fn persist_material_payloads(
     store: &FilesystemBlobStore,
-    (materials, animations): &(PreparedRuntimePayloads, HashMap<String, Vec<u8>>),
-) -> Result<ScenePayloadRefs> {
-    let mut refs = ScenePayloadRefs::default();
+    materials: &PreparedRuntimePayloads,
+) -> Result<HashMap<String, SceneCacheBlobRef>> {
     let material_ids = materials
         .materials
         .iter()
@@ -217,16 +271,7 @@ fn persist_scene_payloads(
         let stored = store.put(bytes)?;
         ensure!(stored == *blob_id, "Scene material/texture digest mismatch");
     }
-    for (path, bytes) in animations {
-        let blob_id = store.put(bytes)?;
-        refs.animation_by_path.insert(
-            path.clone(),
-            SceneCacheBlobRef {
-                blob_id,
-                byte_size: bytes.len() as u64,
-            },
-        );
-    }
+    let mut material_by_path = HashMap::new();
     for (path, blob_id) in &materials.material_by_entity {
         let blob_id = usd_model::BlobId(blob_id.clone());
         let bytes = materials
@@ -235,7 +280,7 @@ fn persist_scene_payloads(
             .find(|payload| payload.blob_id == blob_id)
             .map(|payload| payload.bytes.len() as u64)
             .context("material payload missing from prepared Scene batch")?;
-        refs.material_by_path.insert(
+        material_by_path.insert(
             path.clone(),
             SceneCacheBlobRef {
                 blob_id,
@@ -243,10 +288,40 @@ fn persist_scene_payloads(
             },
         );
     }
-    Ok(refs)
+    Ok(material_by_path)
 }
 
-fn collect_owned_prim_paths(
+pub(super) fn persist_animation_payloads(
+    store: &FilesystemBlobStore,
+    animations: &HashMap<String, Vec<u8>>,
+) -> Result<HashMap<String, SceneCacheBlobRef>> {
+    let mut animation_by_path = HashMap::new();
+    for (path, bytes) in animations {
+        let blob_id = store.put(bytes)?;
+        animation_by_path.insert(
+            path.clone(),
+            SceneCacheBlobRef {
+                blob_id,
+                byte_size: bytes.len() as u64,
+            },
+        );
+    }
+    Ok(animation_by_path)
+}
+
+fn persist_scene_payloads(
+    store: &FilesystemBlobStore,
+    (materials, animations): &(PreparedRuntimePayloads, HashMap<String, Vec<u8>>),
+) -> Result<ScenePayloadRefs> {
+    let material_by_path = persist_material_payloads(store, materials)?;
+    let animation_by_path = persist_animation_payloads(store, animations)?;
+    Ok(ScenePayloadRefs {
+        material_by_path,
+        animation_by_path,
+    })
+}
+
+pub(super) fn collect_owned_prim_paths(
     stage: &Stage,
     parent_path: &str,
     member_roots: &HashSet<String>,
@@ -266,7 +341,7 @@ fn collect_owned_prim_paths(
     Ok(())
 }
 
-fn member_entries(
+pub(super) fn member_entries(
     scene_id: SceneId,
     members: Vec<usd_project::SceneMember>,
 ) -> Vec<SceneCacheEntry> {

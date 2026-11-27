@@ -60,6 +60,9 @@ pub(crate) fn current_cache_schema_digest() -> HashDigest {
     let mut hasher = blake3::Hasher::new();
     hasher.update(SCHEMA_DIGEST_DOMAIN);
     hasher.update(b"sealed-source-provenance-v2\0");
+    // A retained revision created before interval qualification may contain
+    // valid CAS bytes with the wrong source provenance.
+    hasher.update(b"qualified-incremental-interval-v1\0");
     hasher.update(&SCENE_CACHE_DESCRIPTOR_SCHEMA_VERSION.to_le_bytes());
     hasher.update(&SCENE_CACHE_INDEX_SCHEMA_VERSION.to_le_bytes());
     hasher.update(&SCENE_SPATIAL_INDEX_SCHEMA_VERSION.to_le_bytes());

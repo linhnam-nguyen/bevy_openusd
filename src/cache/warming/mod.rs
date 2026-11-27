@@ -37,6 +37,7 @@ struct WarmTarget {
     // Durable desired generation for every managed target (legacy field name).
     scene_generation: Option<u64>,
     build_generation: u64,
+    delta_hint: Option<super::changes::SceneDeltaHint>,
 }
 
 struct WarmJob {
@@ -214,7 +215,13 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
             "[project-loading] scene_cache_build scene={id} generation={generation} build_generation={}",
             target.build_generation
         );
-        return warm_scene_target(project_root, id, generation, &identity);
+        return warm_scene_target(
+            project_root,
+            id,
+            generation,
+            &identity,
+            target.delta_hint.as_ref(),
+        );
     }
 
     if super::sync::qualified_cache_root(project_root, false)?.is_none() { return Ok(()); }
@@ -306,13 +313,18 @@ fn warm_scene_target(
     id: &str,
     generation: u64,
     identity: &ProjectCacheIdentity,
+    delta_hint: Option<&super::changes::SceneDeltaHint>,
 ) -> Result<()> {
     let scene_id = SceneId::parse(id).context("parse Scene cache target id")?;
     let mut descriptor =
         SceneCacheDescriptorV3::invalidated(scene_id, generation, identity.config_hash);
     descriptor.source_content_hash = Some(identity.target_content_hash);
     descriptor.state = SceneCacheState::Partial;
-    let _ = runtime::build_and_publish_managed_scene_cache_generation(project_root, &descriptor)?;
+    let _ = runtime::build_and_publish_managed_scene_cache_generation_with_delta(
+        project_root,
+        &descriptor,
+        delta_hint,
+    )?;
     Ok(())
 }
 

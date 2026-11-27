@@ -52,8 +52,10 @@ pub(crate) fn build_and_publish_scene_cache_generation(
         project_root,
         descriptor,
         false,
+        None,
         &NoopPublishObserver,
     )?
+    .map(|(index, _)| index)
     .context("Scene cache generation was not authorized for publication")?)
 }
 pub(crate) fn build_and_publish_managed_scene_cache_generation(
@@ -66,19 +68,40 @@ pub(crate) fn build_and_publish_managed_scene_cache_generation(
         &NoopPublishObserver,
     )
 }
+pub(crate) fn build_and_publish_managed_scene_cache_generation_with_delta(
+    project_root: &Path,
+    descriptor: &SceneCacheDescriptorV3,
+    delta_hint: Option<&super::super::changes::SceneDeltaHint>,
+) -> Result<Option<(SceneCacheIndex, super::super::scene::update::IncrementalBuildStats)>> {
+    build_and_publish_scene_cache_generation_inner(
+        project_root,
+        descriptor,
+        true,
+        delta_hint,
+        &NoopPublishObserver,
+    )
+}
 fn build_and_publish_managed_scene_cache_generation_with_observer<O: GenerationPublishObserver>(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
     observer: &O,
 ) -> Result<Option<SceneCacheIndex>> {
-    build_and_publish_scene_cache_generation_inner(project_root, descriptor, true, observer)
+    Ok(build_and_publish_scene_cache_generation_inner(
+        project_root,
+        descriptor,
+        true,
+        None,
+        observer,
+    )?
+    .map(|(index, _)| index))
 }
 fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
     project_root: &Path,
     descriptor: &SceneCacheDescriptorV3,
     managed: bool,
+    delta_hint: Option<&super::super::changes::SceneDeltaHint>,
     observer: &O,
-) -> Result<Option<SceneCacheIndex>> {
+) -> Result<Option<(SceneCacheIndex, super::super::scene::update::IncrementalBuildStats)>> {
     let store = SceneCacheStore::new(project_root);
     let caller_source_content_hash = descriptor.source_content_hash;
     let caller_state = descriptor.state;
@@ -130,17 +153,100 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
         spatial.generation = descriptor.generation;
         Ok(Some((index, spatial, pin)))
     })?;
-    let (index, spatial, build_pin) = if let Some(reused) = reused {
-        reused
+    let (index, spatial, build_pin, build_stats) = if let Some((index, spatial, pin)) = reused {
+        let stats = super::super::scene::update::IncrementalBuildStats {
+            used_incremental: true,
+            geometry_blobs_reused: index
+                .entries
+                .iter()
+                .filter(|entry| entry.geometry.is_some())
+                .count(),
+            material_blobs_reused: index
+                .entries
+                .iter()
+                .filter(|entry| entry.material.is_some())
+                .count(),
+            animation_blobs_reused: index
+                .entries
+                .iter()
+                .filter(|entry| entry.animation.is_some())
+                .count(),
+            ..Default::default()
+        };
+        (index, spatial, pin, stats)
+    } else if let Some(hint) = delta_hint.filter(|hint| hint.targets_revision(&revision_identity))
+        && let Some(base_digest) = hint.base_revision_identity
+    {
+        // Load and pin the verified immutable base revision under the common
+        // cache lock so GC cannot collect base blobs while we build incrementally.
+        let base_pinned = super::super::sync::with_cache_lock(project_root, "revision", || {
+            let Some(base) =
+                revision_store.load_verified_revision_by_key(&base_digest.to_hex(), None)?
+            else {
+                return Ok(None);
+            };
+            let mut revision_keys = vec![revision_identity.storage_key()];
+            if base.record.revision_key != revision_identity.storage_key() {
+                revision_keys.push(base.record.revision_key.clone());
+            }
+            let pin = super::super::retention::CachePinGuard::acquire(
+                project_root,
+                revision_keys,
+                base.record.referenced_blobs.clone(),
+            )?;
+            Ok(Some((base, pin)))
+        })?;
+        if let Some((base, pin)) = base_pinned {
+            let (index, spatial, stats) =
+                super::super::scene::update::build_scene_cache_index_incremental_from_snapshot(
+                    project_root,
+                    descriptor.scene_id,
+                    descriptor.generation,
+                    &live,
+                    &base,
+                    &revision_identity,
+                    hint,
+                )?;
+            (index, spatial, pin, stats)
+        } else {
+            let pin = super::super::retention::CachePinGuard::acquire(
+                project_root,
+                vec![revision_identity.storage_key()],
+                Vec::new(),
+            )?;
+            let (index, spatial) = super::super::scene::build::build_scene_cache_index_from_snapshot(
+                project_root,
+                descriptor.scene_id,
+                descriptor.generation,
+                &live,
+            )?;
+            let stats = super::super::scene::update::IncrementalBuildStats::full_fallback(
+                super::super::changes::FullRebuildReason::MissingBaseRevision,
+                &index,
+            );
+            (index, spatial, pin, stats)
+        }
     } else {
         // Register protection before extracting. Extraction writes only to the
         // retained per-Scene pool; the shared pool is populated under the lock.
-        let pin = super::super::retention::CachePinGuard::acquire(project_root,
-            vec![revision_identity.storage_key()], Vec::new())?;
-        let (index, spatial) = super::super::scene::build::build_scene_cache_index_from_snapshot(
-            project_root, descriptor.scene_id, descriptor.generation, &live,
+        let pin = super::super::retention::CachePinGuard::acquire(
+            project_root,
+            vec![revision_identity.storage_key()],
+            Vec::new(),
         )?;
-        (index, spatial, pin)
+        let (index, spatial) = super::super::scene::build::build_scene_cache_index_from_snapshot(
+            project_root,
+            descriptor.scene_id,
+            descriptor.generation,
+            &live,
+        )?;
+        let reason = if delta_hint.is_some() {
+            super::super::changes::FullRebuildReason::UnqualifiedChangeChain
+        } else {
+            super::super::changes::FullRebuildReason::MissingBaseRevision
+        };
+        let stats = super::super::scene::update::IncrementalBuildStats::full_fallback(reason, &index);
+        (index, spatial, pin, stats)
     };
     let payload_bytes = index
         .entries
@@ -215,7 +321,7 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
         let source = crate::project::scene::authoring::scene_path(project_root, descriptor.scene_id);
         super::super::preparation::prepare_document_assembly(project_root, &source);
     }
-    Ok(Some(index))
+    Ok(Some((index, build_stats)))
 }
 #[cfg(test)]
 #[path = "../../../tests/unit/project/cache/warming/runtime_tests.rs"]

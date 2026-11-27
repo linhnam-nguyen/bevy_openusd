@@ -24,7 +24,9 @@ pub(crate) mod visual_stage;
 
 pub use animation::AnimatedPrims;
 pub use author::{TransformHistory, author_transform, current_transform};
-pub use change::{LiveRevision, PendingStageChanges, StageChange, StageChangeBatch};
+pub use change::{
+    LiveRevision, PendingStageChanges, PersistedChangeSnapshot, StageChange, StageChangeBatch,
+};
 pub use deformed_sort::UsdDeformedSortPlugin;
 pub use index::PrimEntities;
 pub use native_instance_dependency::NativeInstanceDependencyIndex;

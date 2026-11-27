@@ -15,6 +15,7 @@ use crate::project::storage::{CACHE_DIRECTORY, PROJECT_METADATA_DIRECTORY, RECOV
 
 mod assembly;
 pub(crate) mod blobs;
+pub(crate) mod changes;
 pub(crate) mod compatibility;
 pub(crate) mod contract;
 pub(crate) mod demand;

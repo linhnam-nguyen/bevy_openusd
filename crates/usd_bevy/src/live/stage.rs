@@ -6,10 +6,45 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use openusd::usd::{CommittedChange, Resynced, Stage, StageSink, StageSinkId};
 
-use super::change::{LiveRevision, StageChange, StageChangeBatch};
+use super::change::{LiveRevision, PersistedChangeSnapshot, StageChange, StageChangeBatch};
 use super::visual_stage::VisualStage;
 
 static NEXT_LIVE_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_PERSISTED_STAGE_CHANGES: usize = 4096;
+
+#[derive(Default)]
+struct PersistedChangeAccumulator {
+    changes: Vec<StageChange>,
+    truncated: bool,
+    // Canonical root bytes at the start of this notice interval. The visual
+    // resolver remains sealed to the original opening; do not relabel it.
+    source_root: Option<openusd::ar::SharedBuffer>,
+}
+
+impl PersistedChangeAccumulator {
+    fn push(&mut self, change: StageChange) {
+        if self.truncated {
+            return;
+        }
+        if self.changes.len() >= MAX_PERSISTED_STAGE_CHANGES {
+            self.changes.clear();
+            self.truncated = true;
+            return;
+        }
+        self.changes.push(change);
+    }
+
+    fn reset_truncated(&mut self) {
+        self.changes.clear();
+        self.truncated = true;
+        self.source_root = None;
+    }
+
+    fn clear(&mut self) {
+        self.changes.clear();
+        self.truncated = false;
+    }
+}
 
 /// Identity of a published visual document context, including its projection epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,6 +67,7 @@ pub struct LiveStage {
     session_id: u64,
     stage_generation: u64,
     queue: Rc<RefCell<Vec<StageChange>>>,
+    persisted_changes: Rc<RefCell<PersistedChangeAccumulator>>,
     revision: Cell<LiveRevision>,
     visual_queue: RefCell<Vec<StageChange>>,
     visual_revision: Cell<LiveRevision>,
@@ -76,6 +112,7 @@ impl Drop for AuthoredSuppressionGuard {
 
 fn push_committed_change(
     queue: &RefCell<Vec<StageChange>>,
+    persisted: &RefCell<PersistedChangeAccumulator>,
     generation: &Cell<LiveRevision>,
     change: &CommittedChange<'_>,
 ) {
@@ -107,13 +144,21 @@ fn push_committed_change(
     for path in change.changed_info_only {
         changed_info.push(path.as_str().to_string());
     }
-    queue.borrow_mut().push(StageChange {
+    let stage_change = StageChange {
         resynced,
         changed_info,
-    });
+    };
+    persisted.borrow_mut().push(stage_change.clone());
+    queue.borrow_mut().push(stage_change);
 }
 
-fn push_resynced_notice(queue: &RefCell<Vec<StageChange>>, resynced_notice: Resynced<'_>) {
+fn push_resynced_notice(
+    queue: &RefCell<Vec<StageChange>>,
+    persisted: &RefCell<PersistedChangeAccumulator>,
+    resynced_notice: Resynced<'_>,
+) {
+    // Resolver/load/muting changes are not a complete canonical authored delta.
+    persisted.borrow_mut().reset_truncated();
     let mut resynced =
         Vec::with_capacity(resynced_notice.subtrees.len() + resynced_notice.prims.len());
     for path in resynced_notice.subtrees {
@@ -123,21 +168,23 @@ fn push_resynced_notice(queue: &RefCell<Vec<StageChange>>, resynced_notice: Resy
         resynced.push(path.as_str().to_string());
     }
     if !resynced.is_empty() {
-        queue.borrow_mut().push(StageChange {
+        let stage_change = StageChange {
             resynced,
             changed_info: Vec::new(),
-        });
+        };
+        queue.borrow_mut().push(stage_change);
     }
 }
 
 struct LiveStageSink {
     queue: Rc<RefCell<Vec<StageChange>>>,
+    persisted: Rc<RefCell<PersistedChangeAccumulator>>,
     generation: Rc<Cell<LiveRevision>>,
 }
 
 impl StageSink for LiveStageSink {
     fn after_commit(&self, _stage: &Stage, change: &CommittedChange<'_>) {
-        push_committed_change(&self.queue, &self.generation, change);
+        push_committed_change(&self.queue, &self.persisted, &self.generation, change);
     }
 
     fn layer_muting_changed(
@@ -147,19 +194,19 @@ impl StageSink for LiveStageSink {
         _muted: bool,
         resynced: Resynced<'_>,
     ) {
-        push_resynced_notice(&self.queue, resynced);
+        push_resynced_notice(&self.queue, &self.persisted, resynced);
     }
 
     fn load_rules_changed(&self, _stage: &Stage, resynced: Resynced<'_>) {
-        push_resynced_notice(&self.queue, resynced);
+        push_resynced_notice(&self.queue, &self.persisted, resynced);
     }
 
     fn loads_retried(&self, _stage: &Stage, resynced: Resynced<'_>) {
-        push_resynced_notice(&self.queue, resynced);
+        push_resynced_notice(&self.queue, &self.persisted, resynced);
     }
 
     fn recomposed(&self, _stage: &Stage, resynced: Resynced<'_>) {
-        push_resynced_notice(&self.queue, resynced);
+        push_resynced_notice(&self.queue, &self.persisted, resynced);
     }
 }
 
@@ -168,6 +215,7 @@ impl LiveStage {
     pub fn open_document(path: &std::path::Path) -> anyhow::Result<Self> {
         let (stage, visual) = VisualStage::open_pair(path)?;
         let live = Self::new(stage);
+        live.persisted_changes.borrow_mut().source_root = visual.opened_root_bytes();
         live.visual.replace(Some(visual));
         Ok(live)
     }
@@ -249,10 +297,13 @@ impl LiveStage {
     /// Wrap a stage and install the change sink.
     pub fn new(stage: Stage) -> Self {
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
+        let persisted_changes: Rc<RefCell<PersistedChangeAccumulator>> =
+            Rc::new(RefCell::new(PersistedChangeAccumulator::default()));
         let authoring_generation = Rc::new(Cell::new(LiveRevision::default()));
         let sink = stage
             .add_sink(LiveStageSink {
                 queue: queue.clone(),
+                persisted: persisted_changes.clone(),
                 generation: authoring_generation.clone(),
             })
             .expect("stage sink registration failed");
@@ -262,6 +313,7 @@ impl LiveStage {
             session_id: NEXT_LIVE_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             stage_generation: 0,
             queue,
+            persisted_changes,
             revision: Cell::new(LiveRevision::default()),
             visual_queue: RefCell::default(),
             visual_revision: Cell::default(),
@@ -294,6 +346,13 @@ impl LiveStage {
             let _ = self.stage.remove_sink(id);
         }
         let queue: Rc<RefCell<Vec<StageChange>>> = Rc::new(RefCell::new(Vec::new()));
+        let persisted_changes: Rc<RefCell<PersistedChangeAccumulator>> =
+            Rc::new(RefCell::new(PersistedChangeAccumulator::default()));
+        {
+            let mut persisted = persisted_changes.borrow_mut();
+            persisted.reset_truncated();
+            persisted.source_root = visual.as_ref().and_then(VisualStage::opened_root_bytes);
+        }
         let authoring_generation = Rc::new(Cell::new(LiveRevision(
             self.authoring_generation
                 .get()
@@ -307,6 +366,7 @@ impl LiveStage {
         let sink = stage
             .add_sink(LiveStageSink {
                 queue: queue.clone(),
+                persisted: persisted_changes.clone(),
                 generation: authoring_generation.clone(),
             })
             .expect("stage sink registration failed");
@@ -317,6 +377,7 @@ impl LiveStage {
             .checked_add(1)
             .expect("live stage generation exhausted");
         self.queue = queue;
+        self.persisted_changes = persisted_changes;
         self.visual_queue.get_mut().clear();
         self.manual_visual_payloads.get_mut().clear();
         self.failed_visual_authoring.set(None);
@@ -389,6 +450,33 @@ impl LiveStage {
     /// in the OpenUSD commit callback before the next frame drains notices.
     pub fn authoring_generation(&self) -> LiveRevision {
         self.authoring_generation.get()
+    }
+
+    /// Snapshot authored changes accumulated since the last successful save
+    /// without clearing them. Call [`Self::complete_persisted_save`] only after
+    /// canonical persistence succeeds so a failed save preserves the chain.
+    pub fn snapshot_persisted_changes(&self) -> PersistedChangeSnapshot {
+        let log = self.persisted_changes.borrow();
+        PersistedChangeSnapshot {
+            authoring_revision: self.authoring_generation(),
+            changes: log.changes.clone(),
+            truncated: log.truncated,
+        }
+    }
+
+    /// Canonical root bytes at the start of the pending notice interval.
+    /// Missing bytes mean the interval cannot authorize incremental reuse.
+    pub fn persisted_source_root_bytes(&self) -> Option<openusd::ar::SharedBuffer> {
+        self.persisted_changes.borrow().source_root.clone()
+    }
+
+    /// Complete a successful canonical save. Only supply root bytes when the
+    /// saved source was independently qualified against the live stage and its
+    /// unchanged dependency closure. Otherwise invalidate the next interval.
+    pub fn complete_persisted_save(&self, source_root: Option<openusd::ar::SharedBuffer>) {
+        let mut persisted = self.persisted_changes.borrow_mut();
+        persisted.clear();
+        persisted.source_root = source_root;
     }
 
     /// Acquire the exclusive authoring lease used by Project Commit/Export.

@@ -250,6 +250,7 @@ fn stale_scene_generation_is_rejected_before_strong_identity_or_stage_open() -> 
         },
         scene_generation: Some(stale_generation),
         build_generation: 1,
+        delta_hint: None,
     };
     warm_target(directory.path(), &target)?;
     assert!(!crate::project::scene::authoring::scene_path(directory.path(), scene_id).exists());

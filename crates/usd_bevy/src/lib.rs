@@ -26,13 +26,14 @@ pub use extended_skin::{
 pub use live::{
     AnimatedPrims, AuthoredSuppressionGuard, LiveRevision, LiveStage, LiveStagePlugin,
     LiveStageSet, NativeInstanceDependencyIndex, PathId, PathStore, PendingStageChanges,
-    PerformanceCounters, PrimEntities, ProgressiveProjectionState, ProjectOpenReadiness,
-    ProjectOpenReadinessState, ProjectionBudget, ProjectionPlan, ProjectionPlanBuilder,
-    ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange, StageChangeBatch,
-    TargetedRenderPayload, TransformHistory, VisualContextId, apply_change_batch, apply_changes, author_transform,
-    collect_stage_subtree_paths, current_transform, extract_render_payloads_for_paths,
-    is_descendant_or_self, minimize_resync_roots, normalize_prim_path, prim_of, project_paths,
-    project_stage, property_of, validate_prim_path,
+    PerformanceCounters, PersistedChangeSnapshot, PrimEntities, ProgressiveProjectionState,
+    ProjectOpenReadiness, ProjectOpenReadinessState, ProjectionBudget, ProjectionPlan,
+    ProjectionPlanBuilder, ProjectionPlanEntry, ProjectionReadiness, ProjectionStats, StageChange,
+    StageChangeBatch, TargetedRenderPayload, TransformHistory, VisualContextId,
+    apply_change_batch, apply_changes, author_transform, collect_stage_subtree_paths,
+    current_transform, extract_render_payloads_for_paths, is_descendant_or_self,
+    minimize_resync_roots, normalize_prim_path, prim_of, project_paths, project_stage,
+    property_of, validate_prim_path,
 };
 pub use prim_ref::{
     SemanticEntityIndex, USDHUB_HIERARCHY_ROLE_METADATA, USDHUB_TRANSPARENT_SOURCE_ROLE,

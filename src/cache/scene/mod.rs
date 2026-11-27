@@ -5,3 +5,4 @@ pub(crate) mod hydration;
 pub(crate) mod payload;
 pub(super) mod prim_count;
 pub(super) mod store;
+pub(crate) mod update;

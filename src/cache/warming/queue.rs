@@ -98,7 +98,17 @@ impl LatestWarmState {
                     .expect("Project cache warm state is not poisoned");
                 continue;
             }
-            inner.latest.insert(key.clone(), target);
+            let previous = inner.latest.remove(&key);
+            let mut merged = target;
+            if let Some(previous) = previous {
+                // An existing job without a qualified hint is unknown history,
+                // not the same as a first admission. Coalesce must fail closed.
+                merged.delta_hint = super::super::changes::SceneDeltaHint::coalesce(
+                    previous.delta_hint,
+                    merged.delta_hint,
+                );
+            }
+            inner.latest.insert(key.clone(), merged);
             if inner.scheduled.contains(&key) {
                 return true;
             }
@@ -453,7 +463,12 @@ fn recover_managed_targets_locked(project_root: &Path) -> anyhow::Result<Vec<sup
         // An unknown identity remains a durable pending obligation. Do not
         // hot-loop extraction while the source cannot be qualified.
         if pending.load_record(&target)?.is_some_and(|record| record.desired_revision_identity.is_some()) {
-            targets.push(super::WarmTarget { target, scene_generation: Some(generation), build_generation: 0 });
+            targets.push(super::WarmTarget {
+                target,
+                scene_generation: Some(generation),
+                build_generation: 0,
+                delta_hint: None,
+            });
         }
     }
     if reconcile { sync::clear_cache_invalidation_barrier(project_root)?; }

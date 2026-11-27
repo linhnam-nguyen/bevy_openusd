@@ -27,6 +27,26 @@ pub struct StageChangeBatch {
     pub changes: Vec<StageChange>,
 }
 
+/// Ordered authored stage changes accumulated since the last canonical save.
+///
+/// Maintained independently of per-frame projection drains so persistence hooks
+/// can classify saved deltas without interfering with live reconciliation.
+/// When `truncated` is `true`, the change chain is incomplete and consumers
+/// must fall back conservatively to a full rebuild.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PersistedChangeSnapshot {
+    pub authoring_revision: LiveRevision,
+    pub changes: Vec<StageChange>,
+    pub truncated: bool,
+}
+
+impl PersistedChangeSnapshot {
+    /// Returns `true` when no changes were recorded and the log was not truncated.
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty() && !self.truncated
+    }
+}
+
 /// The canonical and projection change batches drained for the current frame.
 ///
 /// This is intentionally a transient fan-out resource, not another model
