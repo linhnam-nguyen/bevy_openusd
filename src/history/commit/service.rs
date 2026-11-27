@@ -220,6 +220,8 @@ pub(crate) fn commit(
                         &paths,
                     ),
                 );
+                let targets =
+                    crate::cache::warming::expand_affected_targets(&project_root, targets);
                 service
                     .cache_warm
                     .enqueue_targets_for_mutation(&project_root, targets)
@@ -228,15 +230,20 @@ pub(crate) fn commit(
                 .cache_warm
                 .enqueue_project_targets_for_mutation(&project_root),
         },
-        ProjectCommitTarget::Scene(scene_id) => service.cache_warm.enqueue_targets_for_mutation(
-            &project_root,
-            vec![
-                crate::cache::ProjectCacheTarget::Scene {
-                    id: scene_id.to_string(),
-                },
-                crate::cache::ProjectCacheTarget::ProjectRoot,
-            ],
-        ),
+        ProjectCommitTarget::Scene(scene_id) => {
+            let targets = crate::cache::warming::expand_affected_targets(
+                &project_root,
+                vec![
+                    crate::cache::ProjectCacheTarget::Scene {
+                        id: scene_id.to_string(),
+                    },
+                    crate::cache::ProjectCacheTarget::ProjectRoot,
+                ],
+            );
+            service
+                .cache_warm
+                .enqueue_targets_for_mutation(&project_root, targets)
+        }
     };
     if let Err(error) = cache_invalidation {
         log::error!(

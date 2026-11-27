@@ -53,12 +53,23 @@ fn activation_does_not_wait_for_inflight_cache_warm() {
         default_project_cache_config_hash(),
     )
     .expect("compute cache identity");
-    ProjectCacheStore::new(&project_root)
-        .publish(
-            &ProjectCacheDescriptor::new(identity.clone(), ProjectCacheState::Building, None)
-                .expect("create Building descriptor"),
-        )
-        .expect("publish Building descriptor");
+    let cache_store = ProjectCacheStore::new(&project_root);
+    let generation = cache_store
+        .advance_generation(&target, identity.config_hash)
+        .expect("advance desired generation");
+    let revision = identity
+        .revision_digest(&project_root)
+        .expect("compute revision digest");
+    assert!(
+        cache_store
+            .publish_generation(
+                &ProjectCacheDescriptor::new(identity.clone(), ProjectCacheState::Building, None)
+                    .expect("create Building descriptor"),
+                generation,
+                revision,
+            )
+            .expect("publish Building descriptor")
+    );
 
     let mut registry = WorkspaceRegistry::load(&registry_path).expect("load registry");
     registry

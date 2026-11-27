@@ -19,7 +19,7 @@ pub(crate) use super::members::display_name::{
 pub(crate) use super::members::lifecycle::replace_scene_members_atomic;
 pub(crate) use reader::{
     legacy_scene_member_path, member_custom_data, prepare_scene_for_direct_members,
-    read_scene_member, read_scene_members, scene_member_path, scene_member_path_for_stage,
+    read_scene_member, read_scene_members, read_scene_members_from_stage, scene_member_path, scene_member_path_for_stage,
     validate_scene_file,
 };
 #[path = "publication.rs"]

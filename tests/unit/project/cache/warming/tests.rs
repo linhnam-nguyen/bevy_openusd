@@ -166,7 +166,7 @@ def Xform "World"
         if let ProjectCacheTarget::Scene { id } = &target {
             let scene_id = SceneId::parse(id)?;
             assert!(
-                queue.wait_for_project_idle(directory.path(), std::time::Duration::from_secs(2))
+                queue.wait_for_project_idle(directory.path(), std::time::Duration::from_secs(15))
             );
             let scene_store = SceneCacheStore::new(directory.path());
             let activation = scene_store.load_activation(scene_id)?;

@@ -101,6 +101,7 @@ pub(crate) fn write_bytes_atomic(
             .with_context(|| format!("write temporary file {}", temporary_path.display()))?;
         file.sync_all()
             .with_context(|| format!("sync temporary file {}", temporary_path.display()))?;
+        drop(file);
         fs::rename(temporary_path, final_path).with_context(|| {
             format!(
                 "publish temporary manifest {} as {}",

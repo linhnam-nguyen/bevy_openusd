@@ -31,6 +31,12 @@ const SCENE_CACHE_DESCRIPTOR_FILE: &str = "descriptor.json";
 const SCENE_CACHE_INDEX_FILE: &str = "index.bin";
 const SCENE_CACHE_SPATIAL_FILE: &str = "spatial.bin";
 const PROJECT_CACHE_INDEX_FILE: &str = "project-index.bin";
+const SHARED_CACHE_OBJECTS_DIRECTORY: &str = "shared";
+const CACHE_REVISIONS_DIRECTORY: &str = "revisions";
+const CACHE_PINS_DIRECTORY: &str = "pins";
+const CACHE_PENDING_DIRECTORY: &str = "pending";
+const CACHE_TOMBSTONES_DIRECTORY: &str = "tombstones";
+const CACHE_LOCKS_DIRECTORY: &str = ".locks";
 
 impl ProjectStorageLayout {
     pub(crate) fn scene_cache_dir(&self, scene_id: SceneId) -> PathBuf {
@@ -55,6 +61,30 @@ impl ProjectStorageLayout {
 
     pub(crate) fn scene_cache_objects_dir(&self, scene_id: SceneId) -> PathBuf {
         self.cache_objects_dir().join(scene_id.to_string())
+    }
+
+    pub(crate) fn shared_cache_objects_dir(&self) -> PathBuf {
+        self.cache_objects_dir().join(SHARED_CACHE_OBJECTS_DIRECTORY)
+    }
+
+    pub(crate) fn cache_revisions_dir(&self) -> PathBuf {
+        self.cache_dir().join(CACHE_REVISIONS_DIRECTORY)
+    }
+
+    pub(crate) fn cache_pins_dir(&self) -> PathBuf {
+        self.cache_dir().join(CACHE_PINS_DIRECTORY)
+    }
+
+    pub(crate) fn cache_pending_dir(&self) -> PathBuf {
+        self.cache_dir().join(CACHE_PENDING_DIRECTORY)
+    }
+
+    pub(crate) fn cache_tombstones_dir(&self) -> PathBuf {
+        self.cache_dir().join(CACHE_TOMBSTONES_DIRECTORY)
+    }
+
+    pub(crate) fn cache_locks_dir(&self) -> PathBuf {
+        self.cache_dir().join(CACHE_LOCKS_DIRECTORY)
     }
 
     pub(crate) fn project_cache_index_path(&self) -> PathBuf {

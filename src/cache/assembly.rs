@@ -310,8 +310,9 @@ fn validate(blobs: &impl BlobStore, manifest: &AssemblyManifest) -> Result<()> {
 fn publish(root: &Path, blobs: &impl BlobStore, manifest: &AssemblyManifest) -> Result<HashDigest> {
     validate(blobs, manifest)?;
     let id = assembly_id(manifest);
-    fs::create_dir_all(root)?;
+    super::sync::qualify_cache_directory(root, true)?;
     let path = root.join(format!("{id}.json"));
+    super::sync::qualify_cache_file(&path, false)?;
     let bytes = serde_json::to_vec(manifest)?;
     if fs::read(&path).is_ok_and(|existing| existing == bytes) {
         return Ok(id);
@@ -328,7 +329,9 @@ fn publish(root: &Path, blobs: &impl BlobStore, manifest: &AssemblyManifest) -> 
 }
 
 fn load(root: &Path, blobs: &impl BlobStore, id: HashDigest) -> Result<Option<AssemblyManifest>> {
-    let bytes = match fs::read(root.join(format!("{id}.json"))) {
+    let path = root.join(format!("{id}.json"));
+    if !super::sync::qualify_cache_file(&path, false)? { return Ok(None); }
+    let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),

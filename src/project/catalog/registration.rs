@@ -92,6 +92,7 @@ pub(crate) fn create_project(
                 project_created: true,
             })?;
         journal.registry_entry_added = true;
+        let _ = service.cache_warm.enqueue_project_targets(&project_root);
         Ok(summary)
     })();
 

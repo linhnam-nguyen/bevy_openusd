@@ -189,6 +189,8 @@ fn publish_model_inner(
             id: ancestor_id.to_string(),
         });
     }
+    let cache_targets =
+        crate::cache::warming::expand_affected_targets(project_root, cache_targets);
     let _ = service
         .cache_warm
         .enqueue_targets_for_mutation(project_root, cache_targets)

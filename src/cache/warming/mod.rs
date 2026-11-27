@@ -34,6 +34,7 @@ pub(crate) use recovery::enqueue_project_targets_fail_closed;
 #[derive(Clone)]
 struct WarmTarget {
     target: ProjectCacheTarget,
+    // Durable desired generation for every managed target (legacy field name).
     scene_generation: Option<u64>,
     build_generation: u64,
 }
@@ -94,9 +95,9 @@ impl ProjectCacheWarmQueue {
     }
 
     pub(crate) fn enqueue_project_targets_for_mutation(&self, project_root: &Path) -> Result<bool> {
-        let manifest = ManifestStore::read_validated(project_root)
-            .context("read Project manifest for managed cache invalidation")?;
-        self.enqueue_targets_for_mutation(project_root, project_cache_targets(&manifest))
+        // The enqueue owner reads the manifest under the Project transaction
+        // and preserves an invalidation barrier on discovery failure.
+        self.enqueue_all_targets_for_mutation(project_root)
     }
 
     /// Remove all derived state for a deleted target. Scene-owned V3 payloads
@@ -114,16 +115,29 @@ impl ProjectCacheWarmQueue {
                 let _guard = scene_lock
                     .lock()
                     .expect("Scene cache lifecycle lock is not poisoned");
-                ProjectCacheStore::new(project_root).remove_target(target)?;
-                SceneCacheStore::new(project_root).remove_scene(scene_id)?;
-                runtime::publish_current_project_cache_lookup(project_root)?;
+                let had_cache = crate::project::storage::ProjectStorageLayout::new(project_root)
+                    .cache_dir()
+                    .exists();
+                if !had_cache { return Ok(()); }
+                super::sync::with_cache_lock(project_root, "retirement", || {
+                    SceneCacheStore::new(project_root).retire_scene(scene_id)?;
+                    ProjectCacheStore::new(project_root).remove_target(target)?;
+                    Ok(())
+                })?;
+                if had_cache {
+                    runtime::publish_current_project_cache_lookup(project_root)?;
+                }
             } else {
-                ProjectCacheStore::new(project_root).remove_target(target)?;
+                ProjectCacheStore::new(project_root).retire_target(target)?;
             }
             Ok(())
         })();
         match cleanup {
-            Ok(()) => true,
+            Ok(()) => {
+                // The retirement closure (including Scene lifecycle lock) has ended.
+                self.schedule_cache_maintenance(project_root);
+                true
+            }
             Err(error) => {
                 log::warn!(
                     "Project cache descriptor cleanup failed for {} ({}): {error:#}",
@@ -136,7 +150,7 @@ impl ProjectCacheWarmQueue {
     }
 }
 
-fn project_cache_targets(
+pub(super) fn project_cache_targets(
     manifest: &usd_project::ValidatedProjectManifest,
 ) -> Vec<ProjectCacheTarget> {
     let mut targets = Vec::with_capacity(manifest.scenes().len() + manifest.models().len() + 1);
@@ -179,7 +193,10 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
         {
             return Ok(());
         }
-        let identity = ProjectCacheIdentity::for_project(
+        if super::sync::qualified_cache_root(project_root, false)?.is_none() {
+        return Ok(());
+    }
+    let identity = ProjectCacheIdentity::for_project(
             project_root,
             target.target.clone(),
             RuntimeProfile::NativeMedium,
@@ -200,53 +217,59 @@ fn warm_target(project_root: &Path, target: &WarmTarget) -> Result<()> {
         return warm_scene_target(project_root, id, generation, &identity);
     }
 
-    let identity = ProjectCacheIdentity::for_project(
-        project_root,
-        target.target.clone(),
-        RuntimeProfile::NativeMedium,
-        super::compatibility::project_runtime_cache_config_hash(
-            usd_semantic::SemanticConfig::default().hash(),
-        ),
-    )?;
+    if super::sync::qualified_cache_root(project_root, false)?.is_none() { return Ok(()); }
+    let generation = target.scene_generation.context("managed Project target missing desired generation")?;
     let store = ProjectCacheStore::new(project_root);
-    if store
-        .load(&identity)?
-        .is_some_and(|descriptor| descriptor.state == ProjectCacheState::Ready)
-    {
+    let pending = super::sync::PendingIntentStore::new(project_root);
+    let Some(desired) = pending.load_record(&target.target)? else { return Ok(()); };
+    if desired.generation != generation
+        || super::sync::TombstoneStore::new(project_root).is_retired_at(&target.target, generation)? {
         return Ok(());
     }
-    store.publish(&ProjectCacheDescriptor::new(
-        identity.clone(),
-        ProjectCacheState::Building,
-        None,
-    )?)?;
-
-    let (state, runtime) = match target_stage_path(project_root, &target.target) {
-        Ok(None) => (ProjectCacheState::Empty, None),
-        Ok(Some(path)) => {
-            match super::preparation::build_runtime_cache(project_root, &path, &identity) {
-                Ok(manifest) => (ProjectCacheState::Ready, Some(manifest)),
-                Err(error) => {
-                    log::warn!("canonical Project stage could not be fully warmed: {error:#}");
-                    (ProjectCacheState::FallbackRequired, None)
-                }
-            }
-        }
+    let identity = ProjectCacheIdentity::for_project(project_root, target.target.clone(), RuntimeProfile::NativeMedium, desired.config_hash)?;
+    let captured = (|| -> Result<_> {
+        let path = target_stage_path(project_root, &target.target)?;
+        let live = path.as_deref().map(usd_bevy::LiveStage::open_document).transpose()?;
+        let revision = identity.revision_digest_from_snapshot(project_root, live.as_ref())?;
+        Ok((path, live, revision))
+    })();
+    let (source_path, live, revision) = match captured {
+        Ok(captured) => captured,
         Err(error) => {
-            log::warn!("canonical Project target could not be resolved: {error:#}");
-            (ProjectCacheState::FallbackRequired, None)
+            log::warn!("canonical Project target identity could not be qualified: {error:#}");
+            store.publish_fallback(
+                &ProjectCacheDescriptor::new(identity, ProjectCacheState::FallbackRequired, None)?,
+                generation,
+            )?;
+            return Ok(());
         }
     };
-    let latest_identity = ProjectCacheIdentity::for_project(
-        project_root,
-        target.target.clone(),
-        RuntimeProfile::NativeMedium,
-        super::compatibility::project_runtime_cache_config_hash(
-            usd_semantic::SemanticConfig::default().hash(),
-        ),
-    )?;
-    if latest_identity == identity {
-        store.publish(&ProjectCacheDescriptor::new(identity, state, runtime)?)?;
+    if desired.desired_revision_identity != Some(revision)
+        || desired.desired_source_hash != Some(identity.target_content_hash) {
+        // Recovery will establish a newer desired identity. Never acknowledge
+        // a different source using this worker's generation.
+        return Ok(());
+    }
+    if store.reuse_generation(&identity, generation, revision)? { return Ok(()); }
+    if !store.publish_generation(&ProjectCacheDescriptor::new(identity.clone(), ProjectCacheState::Building, None)?, generation, revision)? {
+        return Ok(());
+    }
+    // Legacy object pools are deliberately unswept; a build lease also
+    // protects shared history and staging from retirement/GC.
+    let _pin = super::retention::CachePinGuard::acquire(project_root, Vec::new(), Vec::new())?;
+    let (state, runtime) = match live.as_ref() {
+        None => (ProjectCacheState::Empty, None),
+        Some(live) => match super::preparation::build_runtime_cache_from_snapshot(project_root, live, &identity) {
+            Ok(manifest) => (ProjectCacheState::Ready, Some(manifest)),
+            Err(error) => {
+                log::warn!("canonical Project stage could not be fully warmed: {error:#}");
+                (ProjectCacheState::FallbackRequired, None)
+            }
+        },
+    };
+    if store.publish_generation(&ProjectCacheDescriptor::new(identity, state, runtime)?, generation, revision)?
+        && let Some(path) = source_path.as_deref() {
+        super::preparation::prepare_document_assembly(project_root, path);
     }
     Ok(())
 }
@@ -262,19 +285,19 @@ fn mark_warm_failure_terminal(project_root: &Path, target: &WarmTarget) {
         return;
     };
     let store = SceneCacheStore::new(project_root);
-    let Ok(Some(mut descriptor)) = store.load_descriptor(scene_id) else {
-        return;
-    };
-    if descriptor.generation != generation || descriptor.state != SceneCacheState::Building {
-        return;
-    }
-    descriptor.state = SceneCacheState::FallbackRequired;
-    if let Err(error) = store.publish_descriptor(&descriptor) {
-        log::error!(
-            "failed to terminalize Scene cache warm failure for {} generation {}: {error:#}",
-            scene_id,
-            generation
-        );
+    let result = (|| -> Result<()> {
+        if super::sync::qualified_cache_root(project_root, false)?.is_none() { return Ok(()); }
+        store.with_generation_lock(scene_id, || {
+            let Some(mut descriptor) = store.load_descriptor(scene_id)? else { return Ok(()); };
+            if descriptor.generation == generation && descriptor.state == SceneCacheState::Building {
+                descriptor.state = SceneCacheState::FallbackRequired;
+                store.publish_descriptor(&descriptor)?;
+            }
+            Ok(())
+        })
+    })();
+    if let Err(error) = result {
+        log::error!("failed to terminalize Scene cache warm failure for {scene_id} generation {generation}: {error:#}");
     }
 }
 
@@ -345,6 +368,91 @@ pub(crate) fn cache_targets_for_changed_paths(
     targets
 }
 
+/// Expand a set of directly changed targets to include all transitive
+/// referencing ancestor Scenes (with cycle protection) plus `ProjectRoot`.
+/// If the composition graph cannot be read completely, conservatively falls
+/// back to all targets in the manifest so no stale consumer survives.
+pub(crate) fn expand_affected_targets(
+    project_root: &Path,
+    initial: Vec<ProjectCacheTarget>,
+) -> Vec<ProjectCacheTarget> {
+    let manifest = match ManifestStore::read_validated(project_root) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            if let Err(barrier_error) = super::sync::set_cache_invalidation_barrier(project_root) {
+                log::error!("could not persist cache invalidation barrier: {barrier_error:#}");
+            }
+            log::warn!("cache dependency discovery unavailable: {error:#}");
+            return Vec::new();
+        }
+    };
+    let mut scene_parents: HashMap<SceneId, Vec<SceneId>> = HashMap::new();
+    let mut model_parents: HashMap<usd_project::ModelId, Vec<SceneId>> = HashMap::new();
+    for scene in manifest.scenes() {
+        let path = scene_path(project_root, scene.id);
+        let Ok(members) = crate::project::scene::authoring::read_scene_members(&path, scene.id)
+        else {
+            return project_cache_targets(&manifest);
+        };
+        for member in members {
+            match member.target {
+                usd_project::SceneMemberTarget::Scene(child) => {
+                    scene_parents.entry(child).or_default().push(scene.id);
+                }
+                usd_project::SceneMemberTarget::Model(model_id) => {
+                    model_parents.entry(model_id).or_default().push(scene.id);
+                }
+            }
+        }
+    }
+
+    let mut targets = initial;
+    let mut added = Vec::new();
+    let mut pending_scenes = Vec::new();
+    let mut visited_scenes = std::collections::HashSet::new();
+    for target in &targets {
+        match target {
+            ProjectCacheTarget::Scene { id } => {
+                if let Ok(scene_id) = SceneId::parse(id)
+                    && visited_scenes.insert(scene_id)
+                {
+                    pending_scenes.push(scene_id);
+                }
+            }
+            ProjectCacheTarget::Model { id } => {
+                if let Ok(model_id) = usd_project::ModelId::parse(id) {
+                    for parent in model_parents.get(&model_id).into_iter().flatten().copied() {
+                        if visited_scenes.insert(parent) {
+                            pending_scenes.push(parent);
+                            added.push(ProjectCacheTarget::Scene {
+                                id: parent.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+            ProjectCacheTarget::ProjectRoot => {}
+        }
+    }
+    targets.extend(added);
+    while let Some(child_scene) = pending_scenes.pop() {
+        for parent in scene_parents.get(&child_scene).into_iter().flatten().copied() {
+            if visited_scenes.insert(parent) {
+                pending_scenes.push(parent);
+                targets.push(ProjectCacheTarget::Scene {
+                    id: parent.to_string(),
+                });
+            }
+        }
+    }
+    if !matches!(manifest.raw().root, usd_project::ProjectRoot::Empty) {
+        targets.push(ProjectCacheTarget::ProjectRoot);
+    }
+    targets.sort_by_key(ProjectCacheTarget::key);
+    targets.dedup_by_key(|target| target.key());
+    targets
+}
+
 fn affected_targets(
     _project_root: &Path,
     target: &ProjectCacheTarget,
@@ -356,7 +464,7 @@ fn affected_targets(
     Ok(targets)
 }
 
-fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result<Option<PathBuf>> {
+pub(super) fn target_stage_path(project_root: &Path, target: &ProjectCacheTarget) -> Result<Option<PathBuf>> {
     let manifest = ManifestStore::read_validated(project_root)
         .context("read Project manifest for cache warm")?;
     let path = match target {

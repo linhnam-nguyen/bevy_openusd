@@ -3,6 +3,9 @@ use std::fs;
 use super::*;
 use tempfile::tempdir;
 
+#[path = "lifecycle_gc_tests.rs"]
+mod lifecycle_gc_tests;
+
 #[test]
 fn unborn_repository_uses_working_tree_fingerprint() -> Result<()> {
     let directory = tempdir()?;

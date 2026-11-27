@@ -95,7 +95,10 @@ fn write_manifest(root: &Path, scene: SceneId) -> Result<()> {
 #[test]
 fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
     let directory = tempfile::tempdir()?;
+    usd_git::Repository::init(directory.path())?;
     let scene = SceneId::new_v4();
+    write_manifest(directory.path(), scene)?;
+    crate::project::scene::authoring::author_scene_atomic(directory.path(), scene)?;
     let path = "/SceneRoot/Owned";
     let source_mesh = mesh();
     let prepared = prepare_mesh_payload(&source_mesh)?;
@@ -107,11 +110,24 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         generation: 1,
         entries: Vec::new(),
     };
-    let mut input =
-        SceneCacheDescriptorV3::invalidated(scene, 1, HashDigest::new([31; HashDigest::BYTE_LEN]));
+    let config_hash = HashDigest::new([31; HashDigest::BYTE_LEN]);
+    let identity = crate::cache::identity::compute_scene_revision_identity(
+        directory.path(),
+        scene,
+        viewport_protocol::RuntimeProfile::NativeMedium,
+        config_hash,
+    )?;
+    let mut input = SceneCacheDescriptorV3::invalidated(scene, 1, config_hash);
     input.state = SceneCacheState::Partial;
+    input.source_content_hash = Some(identity.source_closure_digest);
+    input.revision_identity = Some(identity.digest());
     let expected =
         SceneCacheStore::new(directory.path()).publish_generation(&input, &index, &spatial)?;
+    // Block Project lookup publication during the initial full repair so it
+    // returns `lookup_repaired: false` and exercises the lookup-only retry.
+    let lookup_path = crate::project::storage::ProjectStorageLayout::new(directory.path())
+        .project_cache_index_path();
+    std::fs::create_dir_all(&lookup_path)?;
     let job = LoadJob {
         key: ScenePayloadKey {
             scene_id: scene,
@@ -159,7 +175,7 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
         .get(&usd_model::BlobId(hash.to_string()))?
         .expect("full repair wrote geometry once");
 
-    write_manifest(directory.path(), scene)?;
+    std::fs::remove_dir(&lookup_path)?;
     worker
         .dispatch(TargetedRepairPersistenceRequest {
             project_root: directory.path().to_path_buf(),
@@ -197,6 +213,14 @@ fn published_descriptor_is_carried_into_pure_lookup_retry() -> Result<()> {
 
     let mut newer_input = published.clone();
     newer_input.config_hash = HashDigest::new([32; HashDigest::BYTE_LEN]);
+    let newer_identity = crate::cache::identity::compute_scene_revision_identity(
+        directory.path(),
+        scene,
+        viewport_protocol::RuntimeProfile::NativeMedium,
+        newer_input.config_hash,
+    )?;
+    newer_input.source_content_hash = Some(newer_identity.source_closure_digest);
+    newer_input.revision_identity = Some(newer_identity.digest());
     let store = SceneCacheStore::new(directory.path());
     let newer = store.publish_generation(&newer_input, &index, &spatial)?;
     worker

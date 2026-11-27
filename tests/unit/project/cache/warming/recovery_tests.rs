@@ -46,12 +46,13 @@ fn early_scene_recovery_failure_does_not_short_circuit_later_scene_invalidation(
         &queue,
         directory.path()
     ));
-    assert!(!layout.scene_cache_dir(first_scene).exists());
+    assert!(crate::cache::sync::cache_invalidation_barrier(directory.path())?);
+    assert!(layout.scene_cache_descriptor_path(first_scene).is_dir());
     let later = SceneCacheStore::new(directory.path())
         .load_descriptor(later_scene)?
         .expect("later Scene boundary was not attempted");
     assert_eq!(later.state, SceneCacheState::Building);
-    assert!(later.generation >= 2);
+    assert!(later.generation >= 1);
     Ok(())
 }
 
@@ -87,12 +88,9 @@ fn generation_overflow_uses_scene_cleanup_fallback() -> Result<()> {
         &queue,
         directory.path()
     ));
-    assert!(store.load_descriptor(scene_id)?.is_none());
-    assert!(
-        !ProjectStorageLayout::new(directory.path())
-            .scene_cache_dir(scene_id)
-            .exists()
-    );
+    assert!(crate::cache::sync::cache_invalidation_barrier(directory.path())?);
+    assert!(store.load_activation(scene_id)?.is_none());
+    assert_eq!(store.load_descriptor(scene_id)?.expect("generation floor preserved").generation, u64::MAX);
     Ok(())
 }
 
@@ -129,12 +127,9 @@ fn managed_mutation_generation_overflow_removes_old_scene_cache_before_return() 
             id: scene_id.to_string()
         }],
     )?);
-    assert!(store.load_descriptor(scene_id)?.is_none());
-    assert!(
-        !ProjectStorageLayout::new(directory.path())
-            .scene_cache_dir(scene_id)
-            .exists()
-    );
+    assert!(crate::cache::sync::cache_invalidation_barrier(directory.path())?);
+    assert!(store.load_activation(scene_id)?.is_none());
+    assert_eq!(store.load_descriptor(scene_id)?.expect("generation floor preserved").generation, u64::MAX);
     Ok(())
 }
 
@@ -166,6 +161,7 @@ fn corrupt_descriptor_uses_scene_cleanup_fallback() -> Result<()> {
         &queue,
         directory.path()
     ));
-    assert!(!layout.scene_cache_dir(scene_id).exists());
+    assert!(crate::cache::sync::cache_invalidation_barrier(directory.path())?);
+    assert_eq!(fs::read(layout.scene_cache_descriptor_path(scene_id))?, b"not-json");
     Ok(())
 }

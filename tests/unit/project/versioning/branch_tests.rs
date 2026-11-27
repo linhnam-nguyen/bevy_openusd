@@ -177,10 +177,12 @@ fn branch_switch_removes_old_only_scene_v3_state_and_lookup_membership() {
             .generation,
         root_generation
     );
+    assert!(store.load_activation(extra_scene).unwrap().is_none());
     assert!(
-        !crate::project::storage::ProjectStorageLayout::new(&repository)
+        crate::project::storage::ProjectStorageLayout::new(&repository)
             .scene_cache_objects_dir(extra_scene)
-            .exists()
+            .exists(),
+        "logical retirement preserves unleased legacy objects"
     );
     let lookup = fs::read(
         crate::project::storage::ProjectStorageLayout::new(&repository).project_cache_index_path(),

@@ -17,7 +17,8 @@ use crate::api::RenderServerInterface;
 use super::super::state::SemanticSyncState;
 use super::action::SemanticSyncAction;
 use super::delivery_worker::{
-    PendingRuntimeDelivery, RuntimeDeliveryIdentity, RuntimeDeliveryRuntime,
+    DeliveryCacheProvenance, PendingRuntimeDelivery, RuntimeDeliveryIdentity,
+    RuntimeDeliveryRuntime,
 };
 
 pub(in crate::semantic::viewport) fn queue_runtime_delivery(
@@ -38,6 +39,9 @@ pub(in crate::semantic::viewport) fn queue_runtime_delivery(
         .get_resource::<ProgressiveProjectionState>()
         .map_or(0, ProgressiveProjectionState::generation);
     let cache_context = world.get_resource::<ActiveProjectCacheContext>().cloned();
+    let cache_provenance = cache_context.as_ref().and_then(|context| {
+        DeliveryCacheProvenance::capture(context, world.get_non_send::<LiveStage>())
+    });
     if let Some(mut runtime) = world.get_resource_mut::<RuntimeDeliveryRuntime>() {
         runtime.replace_pending(PendingRuntimeDelivery {
             identity: RuntimeDeliveryIdentity {
@@ -49,6 +53,7 @@ pub(in crate::semantic::viewport) fn queue_runtime_delivery(
             prepared_blobs,
             prepared_runtime_payloads,
             cache_context,
+            cache_provenance,
         });
     }
     if let Some(interface) = world.get_resource::<RenderServerInterface>() {
@@ -173,6 +178,7 @@ pub(crate) fn drain_runtime_delivery_results(world: &mut World) {
                     prepared_blobs: Vec::new(),
                     prepared_runtime_payloads: result.prepared_runtime_payloads,
                     cache_context: result.cache_context,
+                    cache_provenance: result.cache_provenance,
                 });
                 if let Some(mut counters) = world
                     .get_resource_mut::<crate::diagnostics::performance::RendererCounters>()

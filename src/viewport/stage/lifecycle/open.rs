@@ -4,7 +4,7 @@ use usd_bevy::LiveStage;
 use super::{StageHandle, StageInfo, StagePresentationContext, project_activation};
 use crate::cache::generic::{
     ActiveStandaloneCacheHandle, CacheIdentity, PendingStandaloneCachePublish, SourceIdentity,
-    StandaloneCacheProviderResource, compute_standalone_source_identity,
+    StandaloneCacheProviderResource, compute_standalone_source_identity, source_identity_from_opened_stage,
 };
 use crate::viewport::stage::SceneCacheOwnershipContext;
 
@@ -132,9 +132,8 @@ fn stage_has_dirty_layers(stage: &openusd::usd::Stage) -> bool {
 }
 
 /// Verifies that the opened [`LiveStage`] is unedited, clean, has no manual
-/// visual payload overrides, and matches the exact source closure identity
-/// observed both before and after `LiveStage::open_document` (including the
-/// stage's captured `opened_root_bytes`). Returns `None` on any mismatch so
+/// visual payload overrides, and matches its actual sealed source buffers to
+/// the desired and current source identity. Returns `None` on any mismatch so
 /// standalone caching fails closed to ordinary source projection.
 fn bind_opened_stage_source_identity(
     path: &std::path::Path,
@@ -145,17 +144,9 @@ fn bind_opened_stage_source_identity(
     if stage.has_manual_visual_payloads() || stage_has_dirty_layers(&stage.stage) {
         return None;
     }
-    let post_source = compute_standalone_source_identity(path).ok()?;
-    if post_source != pre_source {
-        return None;
-    }
-    if let Some(opened_root) = stage.opened_root_bytes() {
-        let disk_root = std::fs::read(&post_source.entry_path).ok()?;
-        if blake3::hash(opened_root.as_ref()) != blake3::hash(&disk_root) {
-            return None;
-        }
-    }
-    Some(post_source)
+    let captured = source_identity_from_opened_stage(stage).ok()?;
+    let current = compute_standalone_source_identity(path).ok()?;
+    (captured == pre_source && captured == current).then_some(captured)
 }
 
 /// Optional standalone generic render-mesh cache hydration for non-Project
@@ -239,15 +230,11 @@ pub(crate) fn publish_standalone_cache_when_ready(world: &mut World) {
                 && !stage.has_manual_visual_payloads()
                 && !stage_has_dirty_layers(&stage.stage)
         })
-        .map(|stage| {
-            stage
-                .opened_root_bytes()
-                .map(|bytes| blake3::hash(bytes.as_ref()))
-        });
+        .and_then(|stage| source_identity_from_opened_stage(stage).ok());
     let gen_matches = world
         .get_resource::<StageInfo>()
         .is_some_and(|info| info.activation_generation == pending.generation);
-    let Some(opened_root_digest) = stage_eligible.filter(|_| gen_matches) else {
+    let Some(_captured) = stage_eligible.filter(|source| gen_matches && *source == pending.identity.source) else {
         world.remove_resource::<PendingStandaloneCachePublish>();
         return;
     };
@@ -282,8 +269,8 @@ pub(crate) fn publish_standalone_cache_when_ready(world: &mut World) {
         return;
     }
     world.remove_resource::<PendingStandaloneCachePublish>();
-    // Revalidate both disk closure identity and opened root bytes before
-    // publication to guard against concurrent mutations during projection.
+    // The projected meshes are tied to the opened sealed closure above.
+    // Revalidate the current source before exposing them as a current cache.
     let Ok(current_source) =
         compute_standalone_source_identity(&pending.identity.source.entry_path)
     else {
@@ -291,14 +278,6 @@ pub(crate) fn publish_standalone_cache_when_ready(world: &mut World) {
     };
     if current_source != pending.identity.source {
         return;
-    }
-    if let Some(expected_root_digest) = opened_root_digest {
-        let Ok(disk_root) = std::fs::read(&pending.identity.source.entry_path) else {
-            return;
-        };
-        if blake3::hash(&disk_root) != expected_root_digest {
-            return;
-        }
     }
     let refs: Vec<(String, &Mesh)> = owned_meshes
         .iter()

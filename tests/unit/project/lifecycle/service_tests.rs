@@ -237,6 +237,11 @@ fn native_project_with_deleted_local_state_remains_importable() {
     let mut service = ProjectApplicationService::open(&registry_path).unwrap();
     let summary = service.create_project(&parent, "Native").unwrap();
     let project_root = parent.join("Native");
+    assert!(
+        service
+            .cache_warm
+            .wait_for_project_idle(&project_root, std::time::Duration::from_secs(5))
+    );
     fs::remove_dir_all(project_root.join(".usdhub/cache")).unwrap();
     fs::remove_dir_all(project_root.join(".usdhub/recovery")).unwrap();
 

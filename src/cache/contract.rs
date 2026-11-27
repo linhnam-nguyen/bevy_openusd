@@ -50,7 +50,24 @@ pub(crate) enum SceneCacheState {
     Building,
     Partial,
     Ready,
+    Stale,
+    Failed,
+    Retired,
     FallbackRequired,
+}
+
+impl SceneCacheState {
+    pub(crate) fn lifecycle_state(self) -> super::sync::CacheLifecycleState {
+        match self {
+            Self::Empty => super::sync::CacheLifecycleState::Missing,
+            Self::Building => super::sync::CacheLifecycleState::Building,
+            Self::Ready => super::sync::CacheLifecycleState::Ready,
+            Self::Partial => super::sync::CacheLifecycleState::Stale,
+            Self::Stale => super::sync::CacheLifecycleState::Stale,
+            Self::Failed | Self::FallbackRequired => super::sync::CacheLifecycleState::Failed,
+            Self::Retired => super::sync::CacheLifecycleState::Retired,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -61,6 +78,8 @@ pub(crate) struct SceneCacheDescriptorV3 {
     pub(crate) source_stamp: SceneSourceStamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) source_content_hash: Option<HashDigest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) revision_identity: Option<HashDigest>,
     pub(crate) config_hash: HashDigest,
     pub(crate) state: SceneCacheState,
     pub(crate) prim_count: u64,
@@ -82,6 +101,7 @@ impl SceneCacheDescriptorV3 {
             generation,
             source_stamp: SceneSourceStamp::ManagedGeneration { generation },
             source_content_hash: None,
+            revision_identity: None,
             config_hash,
             state: SceneCacheState::Building,
             prim_count: 0,

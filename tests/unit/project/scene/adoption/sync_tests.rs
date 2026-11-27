@@ -195,10 +195,17 @@ fn syncing_linked_scene_cleans_overflowing_cache_before_success() {
         .sync_linked_scene(project.id, linked.scene_id, "overflow-sync".to_owned(), 2)
         .unwrap();
     assert_eq!(response.scene_id, linked.scene_id);
-    assert!(cache.load_descriptor(linked.scene_id).unwrap().is_none());
     assert!(
-        !ProjectStorageLayout::new(&project_root)
-            .scene_cache_dir(linked.scene_id)
-            .exists()
+        crate::cache::sync::cache_invalidation_barrier(&project_root).unwrap(),
+        "generation overflow preserves Project cache invalidation barrier"
+    );
+    assert!(cache.load_activation(linked.scene_id).unwrap().is_none());
+    assert_eq!(
+        cache
+            .load_descriptor(linked.scene_id)
+            .unwrap()
+            .expect("generation floor preserved")
+            .generation,
+        u64::MAX
     );
 }

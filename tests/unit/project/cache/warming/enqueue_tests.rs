@@ -64,3 +64,63 @@ fn managed_mutation_establishes_all_scene_boundaries_before_admitting_warm_work(
     );
     Ok(())
 }
+
+#[test]
+fn recover_pending_intents_preserves_durable_intents_when_sender_lock_is_poisoned() -> Result<()> {
+    let directory = tempdir()?;
+    usd_git::Repository::init(directory.path())?;
+    let scene_id = SceneId::new_v4();
+    let manifest = usd_project::ProjectManifestV1::new(
+        usd_project::ProjectId::new_v4(),
+        "Poisoned Recovery Sender",
+        usd_project::ProjectRoot::Scene(scene_id),
+        vec![usd_project::SceneManifestEntry {
+            id: scene_id,
+            storage_key: usd_project::StorageKey::new("root")?,
+            display_name: "Root".to_owned(),
+        }],
+        Vec::new(),
+    );
+    crate::project::catalog::manifest_store::ManifestStore::write_manifest_atomic(
+        directory.path(),
+        &manifest,
+    )?;
+    let store = SceneCacheStore::new(directory.path());
+    let generation = store.advance_generation(
+        scene_id,
+        crate::cache::hydration::default_project_cache_config_hash(),
+    )?;
+    let target = ProjectCacheTarget::Scene {
+        id: scene_id.to_string(),
+    };
+
+    let (sender, _receiver) = mpsc::sync_channel(4);
+    let sender_lock = Arc::new(Mutex::new(Some(sender)));
+    let poison_target = Arc::clone(&sender_lock);
+    let _ = std::thread::spawn(move || {
+        let _guard = poison_target.lock().expect("acquire sender lock");
+        panic!("intentional sender lock poison for recovery test");
+    })
+    .join();
+    assert!(sender_lock.is_poisoned());
+
+    let queue = ProjectCacheWarmQueue {
+        state: Arc::new(WarmQueueState {
+            sender: sender_lock,
+            latest: Arc::new(LatestWarmState::new()),
+            worker: Mutex::new(None),
+            next_build_generation: AtomicU64::new(1),
+        }),
+    };
+
+    assert_eq!(
+        queue.recover_pending_intents(directory.path()),
+        0,
+        "poisoned sender lock must fail closed without panicking"
+    );
+    let preserved = crate::cache::sync::PendingIntentStore::new(directory.path())
+        .load(&target)?
+        .expect("durable pending intent must remain preserved when sender is poisoned");
+    assert_eq!(preserved.generation, generation);
+    Ok(())
+}

@@ -298,6 +298,8 @@ fn delete_definition(
             id: scene_id.to_string(),
         }
     }));
+    let cache_targets =
+        crate::cache::warming::expand_affected_targets(project_root, cache_targets);
     if service
         .cache_warm
         .enqueue_targets_for_mutation(project_root, cache_targets)

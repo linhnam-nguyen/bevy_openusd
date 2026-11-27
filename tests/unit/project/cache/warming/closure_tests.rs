@@ -367,8 +367,10 @@ fn scene_deletion_removes_v3_cache_and_rebuilds_project_lookup() -> Result<()> {
             id: scene_b.to_string()
         },
     ));
-    assert!(!layout.scene_cache_dir(scene_b).exists());
-    assert!(!layout.scene_cache_objects_dir(scene_b).exists());
+    assert!(!layout.scene_cache_descriptor_path(scene_b).exists());
+    assert!(layout.scene_cache_objects_dir(scene_b).exists());
+    assert_eq!(fs::read(layout.scene_cache_index_path(scene_b))?, b"deleted-index");
+    assert_eq!(fs::read(layout.scene_cache_spatial_path(scene_b))?, b"deleted-spatial");
     assert!(layout.scene_cache_dir(scene_a).exists());
     assert!(!fs::read_to_string(layout.project_cache_index_path())?.contains(&scene_b.to_string()));
     Ok(())
@@ -425,7 +427,7 @@ fn scene_deletion_serializes_with_scene_owned_persistence_guard() -> Result<()> 
     worker.join().unwrap();
     assert!(store.load_descriptor(scene_id)?.is_none());
     assert!(
-        !crate::project::storage::ProjectStorageLayout::new(directory.path())
+        crate::project::storage::ProjectStorageLayout::new(directory.path())
             .scene_cache_objects_dir(scene_id)
             .exists()
     );

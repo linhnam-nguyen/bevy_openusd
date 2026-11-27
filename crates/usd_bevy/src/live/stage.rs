@@ -178,6 +178,23 @@ impl LiveStage {
         visual.as_ref()?.opened_root_bytes()
     }
 
+    /// Original resolved entry of the sealed document source, if file-backed.
+    pub fn opened_source_path(&self) -> Option<std::path::PathBuf> {
+        Some(self.visual.borrow().as_ref()?.opened_source_path().to_path_buf())
+    }
+
+    /// Immutable source buffers used by both composition and visual texture reads.
+    /// Cloning the shared buffers does not reopen or copy the source files.
+    pub fn opened_source_files(&self) -> Option<std::collections::BTreeMap<std::path::PathBuf, openusd::ar::SharedBuffer>> {
+        Some(self.visual.borrow().as_ref()?.opened_source_files())
+    }
+
+    /// Deterministic framed identifier bindings of the sealed source. Returns
+    /// an error if required snapshot inputs could not be qualified or read.
+    pub fn opened_resolver_bindings(&self) -> anyhow::Result<Option<Vec<u8>>> {
+        self.visual.borrow().as_ref().map(|visual| visual.opened_resolver_bindings()).transpose()
+    }
+
     /// Open just the authoritative context for an exact read of a file snapshot,
     /// such as a materialized Git revision.
     pub fn open_authoritative(path: &std::path::Path) -> anyhow::Result<Stage> {

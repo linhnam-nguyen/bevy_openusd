@@ -68,7 +68,11 @@ fn successful_branch_recovery_removes_unknown_previous_scene_cache_membership() 
     service.switch_branch(project_id, "main").unwrap();
 
     assert!(cache.load_descriptor(stale_scene).unwrap().is_none());
-    assert!(!objects.exists());
+    assert!(cache.load_activation(stale_scene).unwrap().is_none());
+    assert!(
+        objects.exists(),
+        "logical retirement preserves unleased legacy objects"
+    );
     if lookup.exists() {
         let bytes = std::fs::read(&lookup).unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains(&stale_scene.to_string()));
@@ -150,10 +154,12 @@ fn invalid_target_branch_reports_repository_truth_after_checkout() {
         Some("broken-feature")
     );
     assert!(cache.load_descriptor(root_scene).unwrap().is_none());
+    assert!(cache.load_activation(root_scene).unwrap().is_none());
     assert!(
-        !crate::project::storage::ProjectStorageLayout::new(&repository)
+        crate::project::storage::ProjectStorageLayout::new(&repository)
             .scene_cache_objects_dir(root_scene)
-            .exists()
+            .exists(),
+        "logical retirement preserves unleased legacy objects"
     );
     assert!(!lookup.exists());
 

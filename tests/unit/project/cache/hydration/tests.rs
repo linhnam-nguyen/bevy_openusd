@@ -172,11 +172,12 @@ fn fixture_with_black_border(
         RuntimeProfile::NativeMedium,
         default_project_cache_config_hash(),
     )?;
-    ProjectCacheStore::new(project.path()).publish(&ProjectCacheDescriptor::new(
-        identity.clone(),
-        ProjectCacheState::Ready,
-        Some(manifest.clone()),
-    )?)?;
+    let store = ProjectCacheStore::new(project.path());
+    let generation = store.advance_generation(&identity.target, identity.config_hash)?;
+    let revision = identity.revision_digest(project.path())?;
+    assert!(store.publish_generation(&ProjectCacheDescriptor::new(
+        identity.clone(), ProjectCacheState::Ready, Some(manifest.clone()),
+    )?, generation, revision)?);
     let project_root = project.path().to_path_buf();
     Ok((
         project,
@@ -297,11 +298,11 @@ fn pre_provenance_cache_misses_and_current_cache_rehydrates() -> Result<()> {
 
     let mut old_identity = context.identity.clone();
     old_identity.config_hash = usd_semantic::SemanticConfig::default().hash();
-    store.publish(&ProjectCacheDescriptor::new(
-        old_identity.clone(),
-        ProjectCacheState::Ready,
-        Some(manifest.clone()),
-    )?)?;
+    let generation = store.advance_generation(&old_identity.target, old_identity.config_hash)?;
+    let revision = old_identity.revision_digest(project.path())?;
+    assert!(store.publish_generation(&ProjectCacheDescriptor::new(
+        old_identity.clone(), ProjectCacheState::Ready, Some(manifest.clone()),
+    )?, generation, revision)?);
     assert!(store.load(&old_identity)?.is_some());
     assert!(store.load(&context.identity)?.is_none());
 
@@ -313,11 +314,11 @@ fn pre_provenance_cache_misses_and_current_cache_rehydrates() -> Result<()> {
     assert!(!hydrate_project_cache(&mut world, &context)?);
     assert_eq!(world.resource::<ProjectionSeed>().pending_materials(), 0);
 
-    store.publish(&ProjectCacheDescriptor::new(
-        context.identity.clone(),
-        ProjectCacheState::Ready,
-        Some(manifest),
-    )?)?;
+    let generation = store.advance_generation(&context.identity.target, context.identity.config_hash)?;
+    let revision = context.identity.revision_digest(project.path())?;
+    assert!(store.publish_generation(&ProjectCacheDescriptor::new(
+        context.identity.clone(), ProjectCacheState::Ready, Some(manifest),
+    )?, generation, revision)?);
     assert!(hydrate_project_cache(&mut world, &context)?);
     let material = world
         .resource::<Assets<StandardMaterial>>()

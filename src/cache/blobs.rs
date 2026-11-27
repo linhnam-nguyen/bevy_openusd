@@ -6,12 +6,12 @@
 //! A future remote backend can implement [`BlobStore`] without changing the
 //! payload references stored in the project model.
 
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology, VertexAttributeValues};
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,20 @@ use super::mesh_codec;
 use crate::project::storage::CACHE_OBJECTS_RELATIVE_PATH;
 
 pub(crate) const OBJECTS_DIRECTORY: &str = CACHE_OBJECTS_RELATIVE_PATH;
+
+#[derive(Debug)]
+pub(super) struct BlobDigestMismatch {
+    expected: String,
+    actual: String,
+}
+
+impl std::fmt::Display for BlobDigestMismatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "blob digest mismatch for {}: stored bytes hash to {}", self.expected, self.actual)
+    }
+}
+impl std::error::Error for BlobDigestMismatch {}
+
 /// Storage interface for content-addressed derived payloads.
 pub(crate) trait BlobStore {
     fn put(&self, bytes: &[u8]) -> Result<BlobId>;
@@ -61,6 +75,7 @@ impl FilesystemBlobStore {
         if root.as_os_str().is_empty() {
             bail!("blob store root must not be empty");
         }
+        super::sync::qualify_cache_directory(&root, false)?;
         Ok(Self { root })
     }
 
@@ -88,46 +103,20 @@ impl BlobStore for FilesystemBlobStore {
     fn put(&self, bytes: &[u8]) -> Result<BlobId> {
         let id = BlobId(blake3::hash(bytes).to_hex().to_string());
         let destination = self.object_path(&id)?;
-        if destination.is_file() {
-            // A repeated put is the normal fast path. If an object was
-            // externally corrupted, continue below and repair it atomically.
-            if let Ok(existing) = fs::read(&destination)
-                && existing == bytes
-            {
-                return Ok(id);
+        if super::sync::qualify_cache_file(&destination, false)? {
+            // Only a proved digest mismatch may be repaired. Operational
+            // errors and aliases must never be treated as corrupt content.
+            match self.get(&id) {
+                Ok(Some(_)) => return Ok(id),
+                Ok(None) => {},
+                Err(error) if error.downcast_ref::<BlobDigestMismatch>().is_some() => {},
+                Err(error) => return Err(error),
             }
         }
-
-        let parent = destination
-            .parent()
-            .ok_or_else(|| anyhow!("blob object has no parent directory"))?;
-        fs::create_dir_all(parent)
-            .with_context(|| format!("create blob directory {}", parent.display()))?;
-
+        super::sync::qualify_cache_file(&destination, true)?;
         let temporary = self.temporary_path(&id)?;
-        let write_result = (|| -> Result<()> {
-            let mut file = OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&temporary)
-                .with_context(|| format!("create temporary blob {}", temporary.display()))?;
-            file.write_all(bytes)
-                .with_context(|| format!("write temporary blob {}", temporary.display()))?;
-            file.sync_all()
-                .with_context(|| format!("sync temporary blob {}", temporary.display()))?;
-            fs::rename(&temporary, &destination).with_context(|| {
-                format!(
-                    "publish blob {} as {}",
-                    temporary.display(),
-                    destination.display()
-                )
-            })?;
-            Ok(())
-        })();
-        if write_result.is_err() {
-            let _ = fs::remove_file(&temporary);
-        }
-        write_result?;
+        super::sync::write_bytes_atomic_durable(&temporary, &destination, bytes)
+            .with_context(|| format!("publish blob {}", id.0))?;
 
         Ok(id)
     }
@@ -150,6 +139,7 @@ impl BlobStore for FilesystemBlobStore {
 impl FilesystemBlobStore {
     fn read_object(&self, id: &BlobId, max_bytes: Option<usize>) -> Result<Option<Vec<u8>>> {
         let path = self.object_path(id)?;
+        if !super::sync::qualify_cache_file(&path, false)? { return Ok(None); }
         let mut file = match fs::File::open(&path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -176,11 +166,7 @@ impl FilesystemBlobStore {
         }
         let actual = blake3::hash(&bytes).to_hex().to_string();
         if actual != id.0 {
-            bail!(
-                "blob digest mismatch for {}: stored bytes hash to {}",
-                id.0,
-                actual
-            );
+            return Err(BlobDigestMismatch { expected: id.0.clone(), actual }.into());
         }
         Ok(Some(bytes))
     }

@@ -152,6 +152,20 @@ fn publish_index(root: &Path, index: SceneCacheIndex) {
     let mut descriptor =
         SceneCacheDescriptorV3::invalidated(index.scene_id, index.generation, digest(90));
     descriptor.state = SceneCacheState::Partial;
+    if crate::project::storage::ProjectStorageLayout::new(root)
+        .manifest_path()
+        .exists()
+    {
+        let identity = crate::cache::identity::compute_scene_revision_identity(
+            root,
+            index.scene_id,
+            viewport_protocol::RuntimeProfile::NativeMedium,
+            descriptor.config_hash,
+        )
+        .expect("compute Scene revision identity");
+        descriptor.source_content_hash = Some(identity.source_closure_digest);
+        descriptor.revision_identity = Some(identity.digest());
+    }
     descriptor.prim_count = index.entries.len() as u64;
     descriptor.cacheable_count =
         index.entries.iter().filter(|entry| entry.cacheable).count() as u64;
@@ -177,7 +191,11 @@ fn write_manifest(root: &Path, parent: SceneId, child: SceneId) -> anyhow::Resul
         scenes,
         Vec::new(),
     );
-    ManifestStore::write_manifest_atomic(root, &manifest)
+    usd_git::Repository::init(root)?;
+    ManifestStore::write_manifest_atomic(root, &manifest)?;
+    crate::project::scene::authoring::author_scene_atomic(root, parent)?;
+    crate::project::scene::authoring::author_scene_atomic(root, child)?;
+    Ok(())
 }
 fn child_live_stage() -> anyhow::Result<usd_bevy::LiveStage> {
     let source = r#"#usda 1.0

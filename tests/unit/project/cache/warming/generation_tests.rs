@@ -45,12 +45,12 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
         RuntimeProfile::NativeMedium,
         crate::cache::hydration::default_project_cache_config_hash(),
     )?;
-    let store = ProjectCacheStore::new(directory.path());
-    store.publish(&ProjectCacheDescriptor::new(
-        first_identity.clone(),
-        ProjectCacheState::Partial,
-        None,
-    )?)?;
+    let store = SceneCacheStore::new(directory.path());
+    let generation = store.advance_generation(first_scene, first_identity.config_hash)?;
+    let mut descriptor = SceneCacheDescriptorV3::invalidated(first_scene, generation, first_identity.config_hash);
+    descriptor.state = SceneCacheState::Partial;
+    descriptor.source_content_hash = Some(first_identity.target_content_hash);
+    assert!(runtime::build_and_publish_managed_scene_cache_generation(directory.path(), &descriptor)?.is_some());
 
     std::fs::write(second_path, b"unrelated sibling edit")?;
     let unchanged_identity = ProjectCacheIdentity::for_project(
@@ -62,7 +62,7 @@ fn unrelated_scene_edits_keep_a_sibling_cache_identity_reusable() -> Result<()> 
         crate::cache::hydration::default_project_cache_config_hash(),
     )?;
     assert_eq!(first_identity, unchanged_identity);
-    assert!(store.load(&unchanged_identity)?.is_some());
+    assert!(store.load_activation(first_scene)?.is_some());
     assert!(first_path.is_file());
     Ok(())
 }
@@ -198,6 +198,7 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
     let store = SceneCacheStore::new(directory.path());
     let config = crate::cache::hydration::default_project_cache_config_hash();
     for (index, scene) in scenes.iter().enumerate() {
+        crate::project::scene::authoring::author_scene_atomic(directory.path(), scene.id)?;
         store.publish_descriptor(&SceneCacheDescriptorV3::invalidated(
             scene.id,
             (index + 1) as u64,
@@ -243,7 +244,12 @@ fn wide_scene_overflow_is_bounded_and_recovers_from_authoritative_descriptors() 
             .load_descriptor(scene_id)?
             .expect("descriptor remains authoritative");
         descriptor.state = SceneCacheState::Partial;
-        store.publish_descriptor(&descriptor)?;
+        let target = ProjectCacheTarget::Scene { id: scene_id.to_string() };
+        if crate::cache::sync::PendingIntentStore::new(directory.path()).load(&target)?.is_some() {
+            assert!(runtime::build_and_publish_managed_scene_cache_generation(directory.path(), &descriptor)?.is_some());
+        } else {
+            store.publish_descriptor(&descriptor)?;
+        }
         state.finish_and_retry(&job.key, Some(&sender));
     }
     assert_eq!(observed.len(), scenes.len());

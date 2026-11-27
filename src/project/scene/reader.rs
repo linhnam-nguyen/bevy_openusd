@@ -17,6 +17,14 @@ pub(crate) fn validate_scene_file(
 ) -> Result<()> {
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("reopen exported Project Scene layer")?;
+    validate_scene_stage(&stage, expected_scene_id, expected_members)
+}
+
+fn validate_scene_stage(
+    stage: &Stage,
+    expected_scene_id: SceneId,
+    expected_members: &[SceneMember],
+) -> Result<()> {
     let default_prim = stage.default_prim();
     ensure!(
         default_prim
@@ -178,9 +186,14 @@ pub(crate) fn read_scene_members(
     path: &Path,
     expected_scene_id: SceneId,
 ) -> Result<Vec<SceneMember>> {
-    validate_scene_file(path, expected_scene_id, &[])?;
     let path_string = path.to_string_lossy().into_owned();
     let stage = Stage::open(&path_string).context("open Project Scene for read projection")?;
+    read_scene_members_from_stage(&stage, expected_scene_id)
+}
+
+/// Read placement records from the same immutable stage used for extraction.
+pub(crate) fn read_scene_members_from_stage(stage: &Stage, expected_scene_id: SceneId) -> Result<Vec<SceneMember>> {
+    validate_scene_stage(stage, expected_scene_id, &[])?;
     let Some(Value::Dictionary(root_data)) = stage
         .prim(format!("/{SCENE_ROOT_PRIM}").as_str())?
         .metadata::<Value>("customData")?

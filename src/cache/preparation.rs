@@ -4,7 +4,6 @@ use std::{collections::HashSet, path::Path};
 
 use anyhow::{Context, Result, ensure};
 use bevy::{asset::Assets, image::Image, mesh::Mesh, pbr::StandardMaterial, prelude::App};
-use openusd::usd::Stage;
 use usd_model::SnapshotSource;
 use viewport_protocol::{RuntimeManifest, RuntimeProfile};
 
@@ -19,21 +18,24 @@ pub(super) fn build_runtime_cache(
     path: &Path,
     identity: &ProjectCacheIdentity,
 ) -> Result<RuntimeManifest> {
-    let stage_path = path
-        .to_str()
-        .context("canonical Project stage path must be valid UTF-8")?;
-    let stage = Stage::builder()
-        .schema_registry(openusd_schemas::schema_registry())
-        .open(stage_path)
-        .context("open canonical Project stage for cache warm")?;
+    let live = usd_bevy::LiveStage::open_document(path).context("capture Project stage for cache warm")?;
+    let manifest = build_runtime_cache_from_snapshot(project_root, &live, identity)?;
+    prepare_document_assembly(project_root, path);
+    Ok(manifest)
+}
+
+pub(super) fn build_runtime_cache_from_snapshot(
+    project_root: &Path,
+    live: &usd_bevy::LiveStage,
+    identity: &ProjectCacheIdentity,
+) -> Result<RuntimeManifest> {
     let config = usd_semantic::SemanticConfig::default();
     let mut snapshot = usd_semantic::SemanticExtractor::new(config).extract(
-        &stage,
+        &live.stage,
         SnapshotSource::GitCommit {
             oid: identity.target_content_hash.to_string(),
         },
     )?;
-    let live = usd_bevy::LiveStage::new(stage);
     let (prepared_meshes, prepared_runtime_payloads) = {
         let mut app = App::new();
         app.add_plugins(usd_bevy::UsdPlugin);
@@ -43,7 +45,7 @@ pub(super) fn build_runtime_cache(
         app.init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>();
         let world = app.world_mut();
         let mut prim_entities = usd_bevy::PrimEntities::default();
-        usd_bevy::project_stage(world, &live, &mut prim_entities);
+        usd_bevy::project_stage(world, live, &mut prim_entities);
         let prepared_meshes = prepare_render_blobs(world, &mut snapshot);
         let prepared_runtime_payloads =
             crate::document::runtime::payload::prepare_runtime_payloads_for_stage(
@@ -86,7 +88,7 @@ pub(super) fn build_runtime_cache(
             "runtime cache digest mismatch for {blob_id}"
         );
     }
-    prepare_document_assembly(project_root, path);
+    live.opened_resolver_bindings()?.context("runtime extraction has no sealed resolver bindings")?;
     Ok(bundle.manifest)
 }
 

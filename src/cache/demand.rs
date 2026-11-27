@@ -45,12 +45,15 @@ pub(crate) fn owned_prim_path_for_payload(
         super::contract::SceneCacheState::Building | super::contract::SceneCacheState::Empty => {
             return Ok(OwnedPrimPathResolution::Waiting);
         }
-        super::contract::SceneCacheState::FallbackRequired => {
+        super::contract::SceneCacheState::Stale
+        | super::contract::SceneCacheState::Failed
+        | super::contract::SceneCacheState::Retired
+        | super::contract::SceneCacheState::FallbackRequired => {
             return Ok(OwnedPrimPathResolution::Rejected);
         }
         super::contract::SceneCacheState::Partial | super::contract::SceneCacheState::Ready => {}
     }
-    let Some(activation) = store.load_activation(scene_id)? else {
+    let Some(activation) = store.load_activation_for_repair(scene_id)? else {
         return Ok(OwnedPrimPathResolution::Waiting);
     };
     Ok(activation
@@ -84,7 +87,7 @@ pub(crate) fn extract_scene_payloads_for_repair(
     path: &str,
 ) -> Result<Option<TargetedSceneRepair>> {
     let store = SceneCacheStore::new(project_root);
-    let Some(activation) = store.load_activation(scene_id)? else {
+    let Some(activation) = store.load_activation_for_repair(scene_id)? else {
         return Ok(None);
     };
     ensure!(
@@ -100,6 +103,8 @@ pub(crate) fn extract_scene_payloads_for_repair(
         live.load_payload(path)?;
     }
     let requested = [path];
+    // Persistence accepts only the digest already bound to this exact cache row.
+    // Do not reopen or rebuild a document on the render owner thread.
     let payloads = usd_bevy::extract_render_payloads_for_paths(&live.stage, &requested)?;
     Ok(Some(TargetedSceneRepair {
         expected_descriptor: activation.descriptor,
@@ -132,7 +137,7 @@ pub(crate) fn persist_lookup_repair(
     blob_hash: HashDigest,
 ) -> Result<TargetedPersistenceOutcome> {
     let store = SceneCacheStore::new(project_root);
-    let Some(activation) = store.load_activation(scene_id)? else {
+    let Some(activation) = store.load_activation_for_repair(scene_id)? else {
         return Ok(TargetedPersistenceOutcome::Waiting);
     };
     if activation.descriptor != *expected {
@@ -172,7 +177,7 @@ pub(crate) fn persist_scene_payloads_for_repair(
     payloads: Vec<usd_bevy::TargetedRenderPayload>,
 ) -> Result<TargetedPersistenceOutcome> {
     let store = SceneCacheStore::new(project_root);
-    let Some(activation) = store.load_activation(scene_id)? else {
+    let Some(activation) = store.load_activation_for_repair(scene_id)? else {
         return Ok(TargetedPersistenceOutcome::Waiting);
     };
     if activation.descriptor != *expected {
@@ -189,6 +194,15 @@ pub(crate) fn persist_scene_payloads_for_repair(
             unreachable!();
         };
         let prepared = prepare_mesh_payload(&payload.mesh)?;
+        let payload_digest = HashDigest::from_hex(&prepared.blob_id.0)?;
+        // The worker may restore only the prequalified exact geometry bytes.
+        // A different mesh is a new revision, not a repair of this pointer.
+        ensure!(entry.content_hash == Some(payload_digest), "targeted repair source payload differs from the qualified content digest");
+        if let Some(reference) = &entry.geometry {
+            ensure!(reference.blob_id == prepared.blob_id
+                && reference.byte_size == prepared.bytes.len() as u64,
+                "targeted repair cannot change a qualified geometry reference");
+        }
         let stored = object_store.put(&prepared.bytes)?;
         ensure!(
             stored == prepared.blob_id,
@@ -199,10 +213,8 @@ pub(crate) fn persist_scene_payloads_for_repair(
             blob_id: stored.clone(),
             byte_size: prepared.bytes.len() as u64,
         });
-        entry.content_hash = Some(HashDigest::from_hex(&stored.0)?);
-        if entry.bounds.is_none() {
-            entry.bounds = payload.local_bounds;
-        }
+        entry.content_hash = Some(payload_digest);
+        // Preserve the qualified spatial metadata; this operation restores bytes only.
     }
     verify_source_identity(project_root, scene_id, expected.source_content_hash)?;
     index

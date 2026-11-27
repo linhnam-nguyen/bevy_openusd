@@ -111,7 +111,11 @@ fn compatible_identity(
 fn allows_absent_artifacts(state: SceneCacheState) -> bool {
     matches!(
         state,
-        SceneCacheState::Empty | SceneCacheState::Building | SceneCacheState::FallbackRequired
+        SceneCacheState::Empty
+            | SceneCacheState::Building
+            | SceneCacheState::Stale
+            | SceneCacheState::Failed
+            | SceneCacheState::FallbackRequired
     )
 }
 

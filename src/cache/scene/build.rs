@@ -10,7 +10,7 @@ use bevy::image::Image;
 use bevy::mesh::Mesh;
 use bevy::pbr::StandardMaterial;
 use openusd::sdf;
-use openusd::usd::{InitialLoadSet, Stage};
+use openusd::usd::Stage;
 use usd_model::HashDigest;
 use usd_project::{SceneId, SceneMemberTarget};
 
@@ -47,18 +47,24 @@ pub(crate) fn build_scene_cache_index(
     generation: u64,
 ) -> Result<(SceneCacheIndex, SceneSpatialIndex)> {
     let path = crate::project::scene::authoring::scene_path(project_root, scene_id);
-    let members = crate::project::scene::authoring::read_scene_members(&path, scene_id)?;
+    let live = usd_bevy::LiveStage::open_document(&path).context("capture Scene-owned cache source")?;
+    build_scene_cache_index_from_snapshot(project_root, scene_id, generation, &live)
+}
+
+pub(crate) fn build_scene_cache_index_from_snapshot(
+    project_root: &Path,
+    scene_id: SceneId,
+    generation: u64,
+    live: &usd_bevy::LiveStage,
+) -> Result<(SceneCacheIndex, SceneSpatialIndex)> {
+    let stage = &live.stage;
+    let members = crate::project::scene::authoring::read_scene_members_from_stage(stage, scene_id)?;
     let member_roots = members
         .iter()
         .map(|member| crate::project::scene::authoring::scene_member_path(member.id))
         .collect::<HashSet<_>>();
-    let stage = Stage::builder()
-        .schema_registry(openusd_schemas::schema_registry())
-        .load(InitialLoadSet::LoadNone)
-        .open(path.to_string_lossy().as_ref())
-        .context("open Scene-owned cache source")?;
     let mut owned_paths = Vec::new();
-    collect_owned_prim_paths(&stage, "/SceneRoot", &member_roots, &mut owned_paths)?;
+    collect_owned_prim_paths(stage, "/SceneRoot", &member_roots, &mut owned_paths)?;
 
     let config = usd_semantic::SemanticConfig::default();
     let mut extracted = Vec::with_capacity(owned_paths.len());
@@ -102,7 +108,10 @@ pub(crate) fn build_scene_cache_index(
             })
             .collect::<HashSet<_>>()
     });
-    let prepared = prepare_scene_payloads(stage, &path, &payload_paths)?;
+    let prepared = prepare_scene_payloads(live, &payload_paths)?;
+    // A late texture read that cannot be resolved from the frozen input map
+    // makes the snapshot ineligible for persistent Ready, not a new disk read.
+    live.opened_resolver_bindings()?.context("Scene extraction has no sealed resolver bindings")?;
     let store = SceneCacheStore::new(project_root);
     let object_store = store.object_store(scene_id)?;
     let geometry_refs = persist_owned_meshes_parallel(&object_store, &mut extracted)?;
@@ -166,8 +175,7 @@ pub(crate) fn build_scene_cache_index(
 }
 
 fn prepare_scene_payloads(
-    stage: Stage,
-    stage_path: &Path,
+    live: &usd_bevy::LiveStage,
     owned_paths: &[String],
 ) -> Result<(PreparedRuntimePayloads, HashMap<String, Vec<u8>>)> {
     let mut app = App::new();
@@ -175,22 +183,12 @@ fn prepare_scene_payloads(
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<Image>>()
         .init_resource::<Assets<StandardMaterial>>();
-    let archives = usd_bevy::route::material::archive_paths_for_stage(&stage, stage_path)
-        .unwrap_or_else(|error| {
-            bevy::log::warn!(
-                "could not derive Scene USDZ packages for {}; material payloads use source fallback: {error:#}",
-                stage_path.display()
-            );
-            Vec::new()
-        });
-    app.world_mut()
-        .resource_mut::<usd_bevy::route::material::UsdTextureCache>()
-        .replace_active_archives(archives);
-    let live = usd_bevy::LiveStage::new(stage);
+    // project_paths installs the sealed SnapshotTextures source. Never discover
+    // or reopen live archives while producing revision-labelled payloads.
     let mut entities = usd_bevy::PrimEntities::default();
     let requested = owned_paths.iter().map(String::as_str).collect::<Vec<_>>();
     if !requested.is_empty() {
-        usd_bevy::project_paths(app.world_mut(), &live, &mut entities, &requested)
+        usd_bevy::project_paths(app.world_mut(), live, &mut entities, &requested)
             .context("project Scene-owned material payloads")?;
     }
     let materials = prepare_runtime_payloads_for_paths(app.world_mut(), owned_paths);

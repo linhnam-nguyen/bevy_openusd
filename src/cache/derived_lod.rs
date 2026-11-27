@@ -437,7 +437,8 @@ pub(crate) fn prepare_scene_lods(
     let folder = path
         .parent()
         .context("generated LOD catalogue requires a cache directory")?;
-    std::fs::create_dir_all(folder)?;
+    super::sync::qualify_cache_directory(folder, true)?;
+    super::sync::qualify_cache_file(&path, false)?;
     let mut staged = tempfile::NamedTempFile::new_in(folder)?;
     staged.write_all(&bytes)?;
     match staged.persist_noclobber(&path) {
@@ -457,19 +458,42 @@ pub(crate) fn read_scene_lods(
     scene: SceneId,
     generation: u64,
 ) -> Option<GeneratedLodCatalogue> {
-    let file = std::fs::File::open(catalogue_path(project_root, scene, generation)).ok()?;
-    let mut bytes = Vec::new();
-    file.take(MAX_CATALOGUE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() as u64 > MAX_CATALOGUE_BYTES {
-        return None;
+    read_scene_lods_checked(project_root, scene, generation).ok().flatten()
+}
+
+/// For reachability, only a qualified missing catalogue is an optional absence.
+/// An existing but unreadable, invalid or aliased record is an uncertain root.
+pub(super) fn read_scene_lods_checked(
+    project_root: &Path,
+    scene: SceneId,
+    generation: u64,
+) -> Result<Option<GeneratedLodCatalogue>> {
+    let path = catalogue_path(project_root, scene, generation);
+    if !super::sync::qualify_cache_file(&path, false)? {
+        return Ok(None);
     }
-    let catalogue: GeneratedLodCatalogue = serde_json::from_slice(&bytes).ok()?;
-    (catalogue.schema == DERIVED_LOD_SCHEMA
+    let file = std::fs::File::open(&path)
+        .with_context(|| format!("open generated LOD catalogue {}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_CATALOGUE_BYTES + 1).read_to_end(&mut bytes)
+        .context("read generated LOD catalogue")?;
+    ensure!(bytes.len() as u64 <= MAX_CATALOGUE_BYTES, "generated LOD catalogue exceeds size limit");
+    let catalogue: GeneratedLodCatalogue = serde_json::from_slice(&bytes)
+        .context("decode generated LOD catalogue")?;
+    ensure!(catalogue.schema == DERIVED_LOD_SCHEMA
         && catalogue.recipe == DERIVED_RECIPE
-        && catalogue.generation == generation)
-        .then_some(catalogue)
+        && catalogue.generation == generation, "generated LOD catalogue identity mismatch");
+    for (path, manifest) in &catalogue.candidates {
+        ensure!(path == &manifest.source_anchor && path.starts_with('/'), "generated LOD candidate anchor mismatch");
+        ensure!(manifest.schema == DERIVED_LOD_SCHEMA && manifest.recipe == DERIVED_RECIPE,
+            "generated LOD candidate schema or recipe mismatch");
+        for id in [&manifest.source_blob, &manifest.visual_blob] {
+            ensure!(id.0.len() == 64 && id.0.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+                "invalid generated LOD blob reference");
+        }
+        ensure!(manifest.source_digest == manifest.source_blob.0, "generated LOD source digest mismatch");
+    }
+    Ok(Some(catalogue))
 }
 
 #[cfg(test)]

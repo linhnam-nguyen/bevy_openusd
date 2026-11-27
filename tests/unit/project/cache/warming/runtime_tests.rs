@@ -65,9 +65,10 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
     crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
 
     let config_hash = HashDigest::new([9; HashDigest::BYTE_LEN]);
-    let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, 7, config_hash);
-    descriptor.state = SceneCacheState::Partial;
     let store = SceneCacheStore::new(directory.path());
+    let generation = store.advance_generation(scene_id, config_hash)?;
+    let mut descriptor = SceneCacheDescriptorV3::invalidated(scene_id, generation, config_hash);
+    descriptor.state = SceneCacheState::Partial;
     store.publish_descriptor(&descriptor)?;
 
     let (built_tx, built_rx) = mpsc::channel();
@@ -91,7 +92,8 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
         .recv()
         .expect("runtime publisher built from its snapshot");
     let mut winner = descriptor.clone();
-    winner.state = SceneCacheState::Ready;
+    winner.prim_count = 4;
+    winner.prim_count_ready = true;
     store.publish_descriptor(&winner)?;
     release_tx.send(()).expect("CAS test worker can resume");
 
@@ -100,13 +102,9 @@ fn managed_runtime_publisher_rejects_intervening_same_generation_update() -> Res
         .expect("runtime publisher thread did not panic")?;
 
     assert!(result.is_none(), "stale runtime build must lose the CAS");
-    assert_eq!(
-        store
-            .load_descriptor(scene_id)?
-            .expect("winner survives")
-            .state,
-        SceneCacheState::Ready
-    );
+    let current = store.load_descriptor(scene_id)?.expect("winner survives");
+    assert_eq!(current.prim_count, 4);
+    assert!(current.prim_count_ready);
     Ok(())
 }
 
@@ -133,13 +131,13 @@ fn managed_runtime_publisher_preserves_pre_capture_same_generation_evolution() -
     crate::project::scene::authoring::author_scene_atomic(directory.path(), scene_id)?;
 
     let config_hash = HashDigest::new([7; HashDigest::BYTE_LEN]);
-    let mut stale = SceneCacheDescriptorV3::invalidated(scene_id, 9, config_hash);
-    stale.state = SceneCacheState::Partial;
     let store = SceneCacheStore::new(directory.path());
+    let generation = store.advance_generation(scene_id, config_hash)?;
+    let mut stale = SceneCacheDescriptorV3::invalidated(scene_id, generation, config_hash);
+    stale.state = SceneCacheState::Partial;
     store.publish_descriptor(&stale)?;
 
     let mut evolved = stale.clone();
-    evolved.state = SceneCacheState::Ready;
     evolved.prim_count = 4;
     evolved.prim_count_ready = true;
     evolved.cacheable_count = 2;
@@ -159,7 +157,7 @@ fn managed_runtime_publisher_preserves_pre_capture_same_generation_evolution() -
     let published = store
         .load_descriptor(scene_id)?
         .expect("rebased descriptor is published");
-    assert_eq!(published.state, SceneCacheState::Ready);
+    assert_eq!(published.state, SceneCacheState::Partial);
     assert!(published.prim_count_ready);
     assert_eq!(
         published.source_content_hash,

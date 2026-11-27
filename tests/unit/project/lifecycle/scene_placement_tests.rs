@@ -159,15 +159,22 @@ fn create_scene_cleans_overflowed_parent_scene_cache_before_success() {
 
     assert_eq!(created.project.root, project.root);
     assert!(
+        crate::cache::sync::cache_invalidation_barrier(&project_root).unwrap(),
+        "generation overflow preserves Project cache invalidation barrier"
+    );
+    assert!(
         scene_cache
-            .load_descriptor(protected_root)
+            .load_activation(protected_root)
             .unwrap()
             .is_none()
     );
-    assert!(
-        !ProjectStorageLayout::new(&project_root)
-            .scene_cache_dir(protected_root)
-            .exists()
+    assert_eq!(
+        scene_cache
+            .load_descriptor(protected_root)
+            .unwrap()
+            .expect("generation floor preserved")
+            .generation,
+        u64::MAX
     );
 }
 

@@ -8,20 +8,13 @@
 //! manifest, `ProjectStorageLayout`, or Git repository.
 
 use std::{
-    collections::BTreeSet,
-    fs::{self, OpenOptions},
-    io::Write,
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, ensure};
 use bevy::mesh::Mesh;
 use bevy::prelude::Resource;
-use openusd::{
-    ar::{DefaultResolver, Resolver, is_package_relative_path},
-    usd::Stage,
-    usd_utils::all_dependencies,
-};
 use serde::{Deserialize, Serialize};
 use usd_model::{BlobId, HashDigest};
 use uuid::Uuid;
@@ -151,47 +144,7 @@ pub(crate) fn write_bytes_atomic(
     final_path: &Path,
     bytes: &[u8],
 ) -> Result<()> {
-    if let Some(parent) = final_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("create cache parent directory {}", parent.display()))?;
-    }
-    let mut created = false;
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(temporary_path)
-            .with_context(|| format!("create temporary cache file {}", temporary_path.display()))?;
-        created = true;
-        file.write_all(bytes)
-            .with_context(|| format!("write temporary cache file {}", temporary_path.display()))?;
-        file.sync_all()
-            .with_context(|| format!("sync temporary cache file {}", temporary_path.display()))?;
-        drop(file);
-        fs::rename(temporary_path, final_path).with_context(|| {
-            format!(
-                "publish temporary cache file {} as {}",
-                temporary_path.display(),
-                final_path.display()
-            )
-        })?;
-        sync_parent_best_effort(final_path.parent());
-        Ok(())
-    })();
-
-    if result.is_err() && created {
-        let _ = fs::remove_file(temporary_path);
-    }
-    result
-}
-
-fn sync_parent_best_effort(parent: Option<&Path>) {
-    let Some(parent) = parent else {
-        return;
-    };
-    if let Ok(directory) = fs::File::open(parent) {
-        let _ = directory.sync_all();
-    }
+    super::sync::write_bytes_atomic_durable(temporary_path, final_path, bytes)
 }
 
 /// Computes a fail-closed, Project-free and Git-free [`SourceIdentity`] for any
@@ -200,97 +153,42 @@ fn sync_parent_best_effort(parent: Option<&Path>) {
 /// non-UTF8 path, unresolved required dependency, or unreadable file returns an
 /// explicit error so an incomplete closure can never produce a reusable key.
 pub(crate) fn compute_standalone_source_identity(entry_path: &Path) -> Result<SourceIdentity> {
-    let canonical_entry = fs::canonicalize(entry_path)
-        .with_context(|| format!("canonicalize standalone USD entry {}", entry_path.display()))?;
-    ensure!(
-        canonical_entry.is_file(),
-        "standalone USD entry is not a regular file: {}",
-        canonical_entry.display()
-    );
-    let entry_str = canonical_entry.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "standalone USD entry path is not valid UTF-8: {}",
-            canonical_entry.display()
-        )
-    })?;
-    let base_dir = canonical_entry.parent().unwrap_or_else(|| Path::new("."));
-    let resolver = DefaultResolver::with_search_paths([base_dir]);
+    let live = usd_bevy::LiveStage::open_document(entry_path)
+        .with_context(|| format!("capture complete USD source {}", entry_path.display()))?;
+    source_identity_from_opened_stage(&live)
+}
 
-    let stage = Stage::open(entry_str)
-        .with_context(|| format!("open standalone USD stage {}", canonical_entry.display()))?;
-    let deps = all_dependencies(&stage, entry_str).with_context(|| {
-        format!(
-            "discover native USD dependencies for {}",
-            canonical_entry.display()
-        )
-    })?;
-
-    let mut files = BTreeSet::new();
-    files.insert(canonical_entry.clone());
-
-    for dep in deps.layers.iter().chain(deps.assets.iter()) {
-        if is_package_relative_path(dep) {
-            let container = dep.split('[').next().unwrap_or(dep);
-            let resolved = resolve_required_path(container, base_dir, &resolver)?;
-            files.insert(resolved);
-        } else {
-            let resolved = resolve_required_path(dep, base_dir, &resolver)?;
-            files.insert(resolved);
-        }
-    }
-
+/// Hash exactly the sealed inputs of the stage that will consume the cache or
+/// produce its payloads. Package-entry buffers are covered by their outer archive.
+/// Never reopen a mutable dependency merely to label an already opened stage.
+pub(crate) fn source_identity_from_opened_stage(live: &usd_bevy::LiveStage) -> Result<SourceIdentity> {
+    let entry_path = live.opened_source_path().context("USD stage has no sealed file source")?;
+    let files = live.opened_source_files().context("USD stage has no sealed dependency bytes")?;
+    ensure!(files.contains_key(&entry_path), "sealed USD source is missing its entry");
+    let composition = super::identity::compute_stage_composition_context(&live.stage)?;
     let mut closure_hasher = blake3::Hasher::new();
-    closure_hasher.update(b"nemeton.standalone-closure.v2\0");
-    for path in &files {
-        let bytes = fs::read(path)
-            .with_context(|| format!("read closure file {}", path.display()))?;
-        let key = path.to_string_lossy();
+    closure_hasher.update(b"nemeton.standalone-sealed-closure.v3\0");
+    closure_hasher.update(composition.as_bytes());
+    for (path, bytes) in files {
+        let key = path.to_str().context("sealed USD dependency path must be UTF-8")?;
+        let bytes: &[u8] = bytes.as_ref();
         closure_hasher.update(&(key.len() as u64).to_le_bytes());
         closure_hasher.update(key.as_bytes());
         closure_hasher.update(&(bytes.len() as u64).to_le_bytes());
-        closure_hasher.update(&bytes);
+        closure_hasher.update(bytes);
     }
-
+    let base_dir = entry_path.parent().context("sealed USD source has no parent")?;
     let mut resolver_hasher = blake3::Hasher::new();
-    resolver_hasher.update(b"nemeton.default-resolver.v2\0");
-    resolver_hasher.update(base_dir.to_string_lossy().as_bytes());
-
+    resolver_hasher.update(b"nemeton.sealed-resolver.v4\0");
+    let bindings = live.opened_resolver_bindings()?.context("USD stage has no sealed resolver bindings")?;
+    resolver_hasher.update(&(bindings.len() as u64).to_le_bytes());
+    resolver_hasher.update(&bindings);
+    resolver_hasher.update(base_dir.to_str().context("USD resolver root must be UTF-8")?.as_bytes());
     Ok(SourceIdentity {
-        entry_path: canonical_entry,
+        entry_path,
         closure_digest: HashDigest::new(*closure_hasher.finalize().as_bytes()),
         resolver_digest: HashDigest::new(*resolver_hasher.finalize().as_bytes()),
     })
-}
-
-fn resolve_required_path(
-    identifier: &str,
-    base_dir: &Path,
-    resolver: &DefaultResolver,
-) -> Result<PathBuf> {
-    let candidate = if let Some(resolved) = resolver.resolve(identifier)
-        && !resolved.as_os_str().is_empty()
-    {
-        PathBuf::from(resolved.as_os_str())
-    } else {
-        let raw = Path::new(identifier);
-        if raw.is_absolute() {
-            raw.to_path_buf()
-        } else {
-            base_dir.join(raw)
-        }
-    };
-    let canonical = fs::canonicalize(&candidate).with_context(|| {
-        format!(
-            "unresolved required USD dependency `{identifier}` (candidate {})",
-            candidate.display()
-        )
-    })?;
-    ensure!(
-        canonical.is_file(),
-        "required USD dependency `{identifier}` is not a regular file: {}",
-        canonical.display()
-    );
-    Ok(canonical)
 }
 
 /// Standalone, Project-free persistent render-mesh cache store rooted at any
@@ -434,6 +332,38 @@ impl StandaloneCacheStore {
             },
             decoded_meshes,
         )))
+    }
+
+    /// Inspect the lifecycle state of a standalone cache entry without
+    /// mutating canonical USD files.
+    pub(crate) fn inspect_state(
+        &self,
+        identity: &CacheIdentity,
+    ) -> super::sync::CacheLifecycleState {
+        let descriptor_path = self.descriptor_path(identity);
+        if !descriptor_path.is_file() {
+            return super::sync::CacheLifecycleState::Missing;
+        }
+        match self.hydrate_meshes(identity) {
+            Ok(Some(_)) => super::sync::CacheLifecycleState::Ready,
+            Ok(None) | Err(_) => super::sync::CacheLifecycleState::Failed,
+        }
+    }
+
+    /// Retire a standalone cache descriptor while leaving shared CAS blobs
+    /// intact for other identities.
+    pub(crate) fn retire(&self, identity: &CacheIdentity) -> Result<()> {
+        let descriptor_path = self.descriptor_path(identity);
+        match fs::remove_file(&descriptor_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error).with_context(|| {
+                format!(
+                    "retire standalone cache descriptor {}",
+                    descriptor_path.display()
+                )
+            }),
+        }
     }
 }
 

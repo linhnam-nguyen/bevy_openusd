@@ -54,7 +54,7 @@ pub(crate) fn build_and_publish_scene_cache_generation(
         false,
         &NoopPublishObserver,
     )?
-    .expect("unmanaged Scene cache generation must publish"))
+    .context("Scene cache generation was not authorized for publication")?)
 }
 pub(crate) fn build_and_publish_managed_scene_cache_generation(
     project_root: &Path,
@@ -103,8 +103,45 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
     } else {
         None
     };
-    let (index, spatial) =
-        build_scene_cache_index(project_root, descriptor.scene_id, descriptor.generation)?;
+    let scene_path = crate::project::scene::authoring::scene_path(project_root, descriptor.scene_id);
+    let live = usd_bevy::LiveStage::open_document(&scene_path)
+        .context("capture Scene source before extraction")?;
+    let revision_identity = super::super::identity::scene_revision_identity_from_snapshot(
+        project_root, descriptor.scene_id, viewport_protocol::RuntimeProfile::NativeMedium,
+        descriptor.config_hash, &live,
+    ).context("qualify captured Scene cache revision")?;
+    if let Some(expected_hash) = caller_source_content_hash {
+        ensure!(expected_hash == revision_identity.source_closure_digest,
+            "Scene source changed before cache build");
+    }
+    if managed && super::super::sync::qualified_cache_root(project_root, false)?.is_none() {
+        return Ok(None);
+    }
+    let revision_store = super::super::retention::ImmutableRevisionStore::new(project_root);
+    let reused = super::super::sync::with_cache_lock(project_root, "revision", || {
+        let Some(verified) = revision_store.load_verified_revision(&revision_identity)? else { return Ok(None); };
+        let pin = super::super::retention::CachePinGuard::acquire(project_root,
+            vec![verified.record.revision_key.clone()], verified.record.referenced_blobs.clone())?;
+        let scene_objects = store.object_store(descriptor.scene_id)?;
+        revision_store.materialize_blobs_to(&verified.record.referenced_blobs, &scene_objects)?;
+        let mut index = verified.index;
+        index.generation = descriptor.generation;
+        let mut spatial = verified.spatial;
+        spatial.generation = descriptor.generation;
+        Ok(Some((index, spatial, pin)))
+    })?;
+    let (index, spatial, build_pin) = if let Some(reused) = reused {
+        reused
+    } else {
+        // Register protection before extracting. Extraction writes only to the
+        // retained per-Scene pool; the shared pool is populated under the lock.
+        let pin = super::super::retention::CachePinGuard::acquire(project_root,
+            vec![revision_identity.storage_key()], Vec::new())?;
+        let (index, spatial) = super::super::scene::build::build_scene_cache_index_from_snapshot(
+            project_root, descriptor.scene_id, descriptor.generation, &live,
+        )?;
+        (index, spatial, pin)
+    };
     let payload_bytes = index
         .entries
         .iter()
@@ -121,6 +158,10 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
     if descriptor.source_content_hash.is_none() {
         descriptor.source_content_hash = caller_source_content_hash;
     }
+    descriptor.revision_identity = Some(revision_identity.digest());
+    if descriptor.source_content_hash.is_none() {
+        descriptor.source_content_hash = Some(revision_identity.source_closure_digest);
+    }
     descriptor.prim_count = index.entries.len() as u64;
     descriptor.cacheable_count =
         index.entries.iter().filter(|entry| entry.cacheable).count() as u64;
@@ -135,19 +176,40 @@ fn build_and_publish_scene_cache_generation_inner<O: GenerationPublishObserver>(
             "Scene source changed during cache build"
         );
     }
+    // The test/production observer runs outside every cache transaction.
     observer.before_publish(project_root);
-    if managed {
-        let expected_descriptor =
-            expected_descriptor.expect("managed Scene cache publication captured its CAS snapshot");
-        if store
-            .publish_generation_if_current(&expected_descriptor, &descriptor, &index, &spatial)?
-            .is_none()
-        {
-            return Ok(None);
+    let committed = super::super::sync::with_cache_lock(project_root, "publish", || {
+        let target = super::super::ProjectCacheTarget::Scene { id: descriptor.scene_id.to_string() };
+        if super::super::sync::TombstoneStore::new(project_root).is_retired_at(&target, descriptor.generation)? {
+            return Ok(false);
         }
-    } else {
-        store.publish_generation(&descriptor, &index, &spatial)?;
-    }
+        if managed && store.load_descriptor(descriptor.scene_id)?.as_ref() != expected_descriptor.as_ref() {
+            return Ok(false);
+        }
+        let pending = super::super::sync::PendingIntentStore::new(project_root);
+        // The unmanaged entry point cannot bypass managed Ready authorization.
+        let requires_desired = managed
+            || (descriptor.state == SceneCacheState::Ready && store.has_managed_manifest()?);
+        if requires_desired && !store.matches_desired_revision(&descriptor)? {
+            return Ok(false);
+        }
+        let latest = super::super::identity::compute_scene_revision_identity(project_root,
+            descriptor.scene_id, viewport_protocol::RuntimeProfile::NativeMedium, descriptor.config_hash)?;
+        ensure!(latest == revision_identity, "Scene source or composition changed during cache build");
+        let scene_objects = store.object_store(descriptor.scene_id)?;
+        revision_store.store_verified_revision_for_build(&revision_identity, &descriptor, &index, &spatial, &scene_objects, &build_pin)?;
+        if let Some(expected) = expected_descriptor.as_ref() {
+            if store.publish_generation_if_current(expected, &descriptor, &index, &spatial)?.is_none() {
+                return Ok(false);
+            }
+        } else {
+            store.publish_generation(&descriptor, &index, &spatial)?;
+        }
+        pending.acknowledge_if_generation(&target, descriptor.generation, descriptor.revision_identity)?;
+        Ok(true)
+    })?;
+    drop(build_pin);
+    if !committed { return Ok(None); }
     publish_current_project_cache_lookup(project_root)?;
     if managed {
         let source = crate::project::scene::authoring::scene_path(project_root, descriptor.scene_id);
@@ -170,40 +232,47 @@ pub(crate) fn publish_project_cache_lookup(
     let bytes = serde_json::to_vec(&payload).context("encode Project cache index")?;
     let layout = crate::project::storage::ProjectStorageLayout::new(project_root);
     let path = layout.project_cache_index_path();
-    if fs::read(&path).is_ok_and(|current| current == bytes) {
+    if super::super::sync::qualify_cache_file(&path, false)?
+        && fs::read(&path).is_ok_and(|current| current == bytes) {
         return Ok(bytes);
     }
     let parent = path
         .parent()
         .context("Project cache index has no parent directory")?;
-    fs::create_dir_all(parent).context("create Project cache directory")?;
+    super::super::sync::qualify_cache_directory(parent, true)?;
     let temporary = parent.join(format!(".project-index.{}.tmp", Uuid::new_v4()));
-    crate::project::catalog::manifest_store::write_bytes_atomic(&temporary, &path, &bytes)
+    super::super::sync::write_bytes_atomic_durable(&temporary, &path, &bytes)
         .context("publish Project cache index")?;
     Ok(bytes)
 }
 pub(crate) fn publish_current_project_cache_lookup(project_root: &Path) -> Result<Vec<u8>> {
-    let manifest =
-        crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)?;
+    super::super::sync::with_cache_lock(project_root, "lookup", || {
+        let lookup = qualified_project_lookup(project_root)?;
+        publish_project_cache_lookup(project_root, &lookup)
+    })
+}
+
+fn qualified_project_lookup(project_root: &Path) -> Result<ProjectCacheLookup> {
+    let manifest = crate::project::catalog::manifest_store::ManifestStore::read_validated(project_root)?;
     let store = SceneCacheStore::new(project_root);
     let mut indexes = Vec::new();
     for scene in manifest.scenes() {
-        if let Some(index) = store.load_index(scene.id)? {
-            indexes.push(index);
+        if let Some(activation) = store.load_activation_for_repair(scene.id)? {
+            indexes.push(activation.index);
         }
     }
-    let lookup = ProjectCacheLookup::from_scene_indexes(&indexes)?;
-    publish_project_cache_lookup(project_root, &lookup)
+    ProjectCacheLookup::from_scene_indexes(&indexes)
 }
 
-/// Load the already-published immutable Project lookup. This reads one compact
-/// Project-index file; it deliberately does not reopen or scan every Scene
-/// index during a presentation update.
+/// Verify persisted lookup metadata against current qualified Scene identities.
+/// Missing resources may still be repaired by the dedicated demand owner.
 pub(crate) fn load_published_project_cache_lookup(
     project_root: &Path,
 ) -> Result<Option<ProjectCacheLookup>> {
+    if super::super::sync::cache_invalidation_barrier(project_root)? { return Ok(None); }
     let path =
         crate::project::storage::ProjectStorageLayout::new(project_root).project_cache_index_path();
+    if !super::super::sync::qualify_cache_file(&path, false)? { return Ok(None); }
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -216,8 +285,10 @@ pub(crate) fn load_published_project_cache_lookup(
         "unsupported Project cache index schema version {}",
         persisted.schema_version
     );
-    Ok(Some(ProjectCacheLookup::from_persistent_rows(
-        persisted.generations,
-        persisted.rows,
-    )?))
+    let expected = qualified_project_lookup(project_root)?;
+    if persisted.generations != expected.persistent_generations()
+        || persisted.rows != expected.persistent_rows() {
+        return Ok(None);
+    }
+    Ok(Some(ProjectCacheLookup::from_persistent_rows(persisted.generations, persisted.rows)?))
 }

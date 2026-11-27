@@ -109,6 +109,8 @@ fn post_switch_projection(
     crate::project::scene::root::ensure_protected_root_scene_atomic(project_root, manifest.raw())
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
     let manifest = validated_branch_manifest(project_id, project_root)?;
+    let (nodes, counts) = project_tree(project_root, &manifest)
+        .map_err(|_| branch_project_invalid(project_id, project_root))?;
 
     let previous_scene_ids =
         previous_branch_scene_ids(project_root, previous_manifest).map_err(|error| {
@@ -153,6 +155,8 @@ fn post_switch_projection(
             &changed_paths,
         ),
     );
+    let mut cache_targets =
+        crate::cache::warming::expand_affected_targets(project_root, cache_targets);
     cache_targets.retain(|target| match target {
         crate::cache::ProjectCacheTarget::Scene { id } => usd_project::SceneId::parse(id)
             .ok()
@@ -184,8 +188,6 @@ fn post_switch_projection(
         }
     }
 
-    let (nodes, counts) = project_tree(project_root, &manifest)
-        .map_err(|_| branch_project_invalid(project_id, project_root))?;
     let repository_summary = repository_summary(project_id, project_root)
         .map_err(|_| branch_project_invalid(project_id, project_root))?;
     let mut project = inspection::project_summary(manifest.raw(), project_root)

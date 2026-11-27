@@ -2,61 +2,23 @@
 
 use std::path::Path;
 
-use super::super::hydration::default_project_cache_config_hash;
-use super::{ProjectCacheTarget, ProjectCacheWarmQueue, SceneCacheStore};
-use crate::project::catalog::manifest_store::ManifestStore;
+use super::ProjectCacheWarmQueue;
+use super::super::sync;
 
-/// Establish a Scene-generation boundary after a committed Project cannot be
-/// classified precisely. Warm scheduling remains advisory; an old Scene cache
-/// must not remain reusable merely because admission failed.
+/// Reconcile every managed target or retain the Project-wide freshness barrier.
+/// Queue admission is advisory; never retire live targets to hide a failure.
 pub(crate) fn enqueue_project_targets_fail_closed(
     queue: &ProjectCacheWarmQueue,
     project_root: &Path,
 ) -> bool {
-    if queue.enqueue_project_targets(project_root) {
-        return true;
-    }
-
-    let store = SceneCacheStore::new(project_root);
-    let config_hash = default_project_cache_config_hash();
-    match ManifestStore::read_validated(project_root) {
-        Ok(manifest) => {
-            let mut all_boundaries_safe = true;
-            for scene in manifest.scenes() {
-                if let Err(error) = store.force_invalidate_generation(scene.id, config_hash) {
-                    log::error!(
-                        "failed to force-invalidate Scene cache {} after Project classification failure: {error:#}",
-                        scene.id
-                    );
-                    let target = ProjectCacheTarget::Scene {
-                        id: scene.id.to_string(),
-                    };
-                    if queue.remove_target_descriptors(project_root, &target) {
-                        log::warn!(
-                            "removed Scene cache state after force-invalidation failed for {}",
-                            scene.id
-                        );
-                    } else {
-                        log::error!(
-                            "failed to remove Scene cache state after force-invalidation failed for {}",
-                            scene.id
-                        );
-                        all_boundaries_safe = false;
-                    }
-                }
-            }
-            all_boundaries_safe
-        }
+    match queue.enqueue_project_targets_for_mutation(project_root) {
+        Ok(_) => true, // durable transitions or a preserved barrier
         Err(error) => {
-            log::error!(
-                "committed Project manifest could not be read for conservative cache recovery: {error:#}"
-            );
-            match store.remove_all_derived_cache() {
+            log::warn!("Project cache reconciliation failed: {error:#}");
+            match sync::set_cache_invalidation_barrier(project_root) {
                 Ok(()) => true,
-                Err(cleanup_error) => {
-                    log::error!(
-                        "conservative removal of derived Project cache failed: {cleanup_error:#}"
-                    );
+                Err(error) => {
+                    log::error!("could not preserve Project cache invalidation barrier: {error:#}");
                     false
                 }
             }

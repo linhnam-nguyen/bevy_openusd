@@ -215,6 +215,20 @@ impl ProjectApplicationService {
             }
         })?;
         migrate_registered_project_roots(&registry);
+        for entry in registry.entries() {
+            let root = entry.repository_locator();
+            match crate::cache::sync::cache_invalidation_barrier(root) {
+                Ok(true) => {
+                    if let Err(error) = cache_warm.enqueue_project_targets_for_mutation(root) {
+                        log::warn!("Project cache reconciliation deferred for {}: {error:#}", root.display());
+                    }
+                }
+                Ok(false) => { cache_warm.recover_pending_intents(root); }
+                Err(error) => log::warn!("Project cache recovery unavailable for {}: {error:#}", root.display()),
+            }
+            // Retry deferred maintenance on each registered Project at startup.
+            cache_warm.schedule_cache_maintenance(root);
+        }
         Ok(Self {
             registry,
             publication_coordinator,

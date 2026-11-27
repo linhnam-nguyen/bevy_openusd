@@ -183,7 +183,15 @@ fn persist_with_owned_timelines(
         &stage.stage, &project_root, manifest.raw(), scene.id,
         &layout.readable_scene_path(manifest.raw(), scene),
     )?;
-    let cache_targets = updated.into_iter().map(|id| ProjectCacheTarget::Scene { id: id.to_string() }).collect();
+    let mut initial_targets: Vec<ProjectCacheTarget> = updated
+        .into_iter()
+        .map(|id| ProjectCacheTarget::Scene { id: id.to_string() })
+        .collect();
+    initial_targets.push(ProjectCacheTarget::Scene {
+        id: scene.id.to_string(),
+    });
+    let cache_targets =
+        crate::cache::warming::expand_affected_targets(&project_root, initial_targets);
     if !cache_warm.enqueue_targets_for_mutation(&project_root, cache_targets).unwrap_or_else(|error| {
         log::warn!("canonical Scene saved but cache admission failed: {error:#}");
         false

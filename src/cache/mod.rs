@@ -20,14 +20,18 @@ pub(crate) mod contract;
 pub(crate) mod demand;
 pub(crate) mod derived_lod;
 mod descriptor;
+pub(crate) mod gc;
 pub(crate) mod generic;
 pub(crate) mod historical_geometry;
 pub(crate) mod hydration;
+pub(crate) mod identity;
 mod lookup;
 mod mesh_codec;
 mod mesh_v3;
 mod preparation;
+pub(crate) mod retention;
 pub(crate) mod scene;
+pub(crate) mod sync;
 pub(crate) mod warming;
 
 pub(crate) use contract::{

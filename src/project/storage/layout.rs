@@ -209,7 +209,7 @@ impl ProjectStorageLayout {
     }
 
     pub(crate) fn ensure_local_state_roots(&self) -> Result<()> {
-        fs::create_dir_all(self.cache_dir()).context("create Project cache root")?;
+        crate::cache::sync::qualified_cache_root(self.root(), true).context("create qualified Project cache root")?;
         fs::create_dir_all(self.recovery_dir()).context("create Project recovery root")?;
         Ok(())
     }

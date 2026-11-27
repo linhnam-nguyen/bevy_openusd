@@ -361,6 +361,7 @@ fn scene_descriptor(scene_id: SceneId, generation: u64) -> SceneCacheDescriptorV
         generation,
         source_stamp: SceneSourceStamp::ManagedGeneration { generation },
         source_content_hash: None,
+        revision_identity: None,
         config_hash: HashDigest::new([3; HashDigest::BYTE_LEN]),
         state: SceneCacheState::Partial,
         prim_count: 8,

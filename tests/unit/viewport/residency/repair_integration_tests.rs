@@ -113,12 +113,22 @@ fn publish_owner_cache(
     path: &str,
     state: SceneCacheState,
 ) -> Result<SceneCacheDescriptorV3> {
-    let mut descriptor = SceneCacheDescriptorV3::invalidated(
-        scene,
-        generation,
-        HashDigest::new([17; HashDigest::BYTE_LEN]),
-    );
+    let config_hash = HashDigest::new([17; HashDigest::BYTE_LEN]);
+    let mut descriptor = SceneCacheDescriptorV3::invalidated(scene, generation, config_hash);
     descriptor.state = state;
+    if crate::project::storage::ProjectStorageLayout::new(root)
+        .manifest_path()
+        .exists()
+    {
+        let identity = crate::cache::identity::compute_scene_revision_identity(
+            root,
+            scene,
+            RuntimeProfile::NativeMedium,
+            config_hash,
+        )?;
+        descriptor.source_content_hash = Some(identity.source_closure_digest);
+        descriptor.revision_identity = Some(identity.digest());
+    }
     let index = owner_index(scene, generation, hash, path);
     let spatial = SceneSpatialIndex {
         schema_version: SCENE_SPATIAL_INDEX_SCHEMA_VERSION,
@@ -293,6 +303,7 @@ fn drain_cached_once(world: &mut World) {
 #[test]
 fn real_repair_pipeline_reaches_gpu_residency() -> Result<()> {
     let directory = tempfile::tempdir()?;
+    usd_git::Repository::init(directory.path())?;
     let scene = SceneId::new_v4();
     let live = live_stage("Owned")?;
     let payload = usd_bevy::extract_render_payloads_for_paths(&live.stage, &["/SceneRoot/Owned"])?
@@ -300,6 +311,8 @@ fn real_repair_pipeline_reaches_gpu_residency() -> Result<()> {
         .next()
         .expect("LiveStage exposes requested mesh");
     let hash = hash_for(&payload.mesh);
+    write_manifest(directory.path(), &[scene])?;
+    crate::project::scene::authoring::author_scene_atomic(directory.path(), scene)?;
     publish_owner_cache(
         directory.path(),
         scene,
@@ -308,7 +321,6 @@ fn real_repair_pipeline_reaches_gpu_residency() -> Result<()> {
         "/SceneRoot/Owned",
         SceneCacheState::Partial,
     )?;
-    write_manifest(directory.path(), &[scene])?;
     let job = load_job(scene, hash, 1);
     let mut authority = waiting_authority(&job);
     let mut repairs = TargetedRepairQueue::default();

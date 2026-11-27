@@ -29,6 +29,67 @@ pub(crate) struct RuntimeDeliveryIdentity {
     pub(crate) projection_generation: u64,
 }
 
+/// Sealed canonical source provenance captured before delivery extraction.
+///
+/// Binds an asynchronous `DeliveryWork` payload to the exact immutable source
+/// revision and authorized desired generation observed at capture time so
+/// `build_delivery` never stamps a payload with a post-extraction disk read or
+/// supersedes a newer durable generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DeliveryCacheProvenance {
+    pub(crate) generation: u64,
+    pub(crate) revision_digest: usd_model::HashDigest,
+}
+
+impl DeliveryCacheProvenance {
+    /// Capture sealed canonical provenance for a clean (unmodified) live stage.
+    /// Returns `None` if the stage carries unsaved in-memory edits, if the
+    /// target is retired/superseded, or if canonical revision qualification
+    /// fails — allowing runtime delivery to proceed without persistent cache
+    /// publication.
+    pub(crate) fn capture(
+        context: &ActiveProjectCacheContext,
+        live: Option<&usd_bevy::LiveStage>,
+    ) -> Option<Self> {
+        if live.is_some_and(|stage| {
+            stage.authoring_generation() != LiveRevision::default()
+                || stage.current_revision() != LiveRevision::default()
+        }) {
+            bevy::log::debug!(
+                "[project-cache] live stage has unsaved edits; persistent delivery publication declined"
+            );
+            return None;
+        }
+        let revision_digest = match context
+            .identity
+            .revision_digest_from_snapshot(&context.project_root, live)
+        {
+            Ok(digest) => digest,
+            Err(error) => {
+                bevy::log::debug!(
+                    "[project-cache] delivery provenance could not be qualified: {error:#}"
+                );
+                return None;
+            }
+        };
+        let store = crate::cache::ProjectCacheStore::new(&context.project_root);
+        let generation = match store.ensure_matching_generation(&context.identity, revision_digest) {
+            Ok(Some(generation)) => generation,
+            Ok(None) => return None,
+            Err(error) => {
+                bevy::log::debug!(
+                    "[project-cache] delivery generation could not be authorized: {error:#}"
+                );
+                return None;
+            }
+        };
+        Some(Self {
+            generation,
+            revision_digest,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PendingRuntimeDelivery {
     pub(crate) identity: RuntimeDeliveryIdentity,
@@ -36,6 +97,7 @@ pub(crate) struct PendingRuntimeDelivery {
     pub(crate) prepared_blobs: Vec<PreparedMeshBlob>,
     pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
     pub(crate) cache_context: Option<ActiveProjectCacheContext>,
+    pub(crate) cache_provenance: Option<DeliveryCacheProvenance>,
 }
 
 #[derive(Debug)]
@@ -47,6 +109,7 @@ struct DeliveryWork {
     prepared_runtime_payloads: PreparedRuntimePayloads,
     profile: RuntimeProfile,
     cache_context: Option<ActiveProjectCacheContext>,
+    cache_provenance: Option<DeliveryCacheProvenance>,
 }
 
 #[derive(Debug)]
@@ -58,6 +121,7 @@ pub(crate) struct DeliveryResult {
     pub(crate) bytes: u64,
     pub(crate) prepared_runtime_payloads: PreparedRuntimePayloads,
     pub(crate) cache_context: Option<ActiveProjectCacheContext>,
+    pub(crate) cache_provenance: Option<DeliveryCacheProvenance>,
 }
 
 #[derive(Debug, Default)]
@@ -185,6 +249,7 @@ impl RuntimeDeliveryRuntime {
             prepared_runtime_payloads: pending.prepared_runtime_payloads,
             profile: RuntimeProfile::NativeMedium,
             cache_context,
+            cache_provenance: pending.cache_provenance,
         };
         match self.queue.submit(work) {
             Ok(()) => true,
@@ -196,6 +261,7 @@ impl RuntimeDeliveryRuntime {
                     prepared_blobs: work.prepared_blobs,
                     prepared_runtime_payloads: work.prepared_runtime_payloads,
                     cache_context: work.cache_context,
+                    cache_provenance: work.cache_provenance,
                 });
                 false
             }
@@ -244,6 +310,7 @@ fn delivery_worker(
             bytes,
             prepared_runtime_payloads: work.prepared_runtime_payloads,
             cache_context: work.cache_context,
+            cache_provenance: work.cache_provenance,
         };
         if !send_delivery_result(&results, result, &result_backpressure) {
             break;
@@ -301,27 +368,31 @@ fn build_delivery(work: &DeliveryWork) -> anyhow::Result<RuntimeDeliveryBundle> 
     )?;
     if let Some(context) = &work.cache_context {
         if work.prepared_runtime_payloads.complete {
-            let current_identity = crate::cache::ProjectCacheIdentity::for_project(
-                &context.project_root,
-                context.identity.target.clone(),
-                context.identity.profile,
-                context.identity.config_hash,
-            )?;
-            if current_identity == context.identity {
+            if let Some(provenance) = work.cache_provenance {
                 let descriptor = crate::cache::ProjectCacheDescriptor::new(
                     context.identity.clone(),
                     crate::cache::ProjectCacheState::Ready,
                     Some(bundle.manifest.clone()),
                 )?;
-                if let Err(error) =
-                    crate::cache::ProjectCacheStore::new(&context.project_root)
-                        .publish(&descriptor)
-                {
-                    bevy::log::warn!("[project-cache] ready descriptor publish failed: {error:#}");
+                let cache_store = crate::cache::ProjectCacheStore::new(&context.project_root);
+                match cache_store.publish_generation(
+                    &descriptor,
+                    provenance.generation,
+                    provenance.revision_digest,
+                ) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        bevy::log::debug!(
+                            "[project-cache] delivery superseded, retired, or source changed before publication; ready descriptor suppressed"
+                        );
+                    }
+                    Err(error) => {
+                        bevy::log::warn!("[project-cache] ready descriptor publish failed: {error:#}");
+                    }
                 }
             } else {
                 bevy::log::debug!(
-                    "[project-cache] source changed while delivery was building; ready descriptor suppressed"
+                    "[project-cache] delivery has no qualified sealed provenance; ready descriptor suppressed"
                 );
             }
         } else {
