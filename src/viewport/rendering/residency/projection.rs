@@ -170,7 +170,7 @@ fn cached_visibility(visible: bool) -> Visibility {
     }
 }
 
-fn transform_for_cache(transform: &ScenePlacementTransform) -> Transform {
+pub(super) fn transform_for_cache(transform: &ScenePlacementTransform) -> Transform {
     let matrix = transform.0.map(|value| value as f32);
     Transform::from_matrix(Mat4::from_cols_array(&matrix))
 }

@@ -60,10 +60,15 @@ pub(super) fn reject_locked_viewport_commands(
                     | ViewportCommand::ReloadSession
             );
         if !permitted {
+            let reason = if gate.transition() {
+                "Viewer interaction is unavailable while the Project scene is activating"
+            } else {
+                VIEWER_BINDING_PENDING
+            };
             reject(
                 &mut outbox,
                 envelope.request_id.clone(),
-                VIEWER_BINDING_PENDING.to_owned(),
+                reason.to_owned(),
             );
         }
         permitted

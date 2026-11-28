@@ -1,6 +1,7 @@
 //! Centralized Scene payload residency for the native viewport.
 
 mod animation;
+pub(crate) mod activation_preview;
 mod authority;
 mod camera;
 mod catalog;
@@ -33,7 +34,7 @@ use crate::viewport::stage::{SceneCacheOwnershipContext, SceneCachePresentation}
 
 use animation::{AnimationResidencyState, sync_animation_residency};
 use loader::LoadJob;
-pub(crate) use projection::SceneResidencyProjection;
+pub(crate) use projection::{SceneResidencyOccurrence, SceneResidencyProjection};
 use repair::{
     TargetedRepairPersistenceWorker, TargetedRepairQueue, drain_cached_residency_completions,
     drain_targeted_repair_persistence_completions, process_targeted_residency_repairs,

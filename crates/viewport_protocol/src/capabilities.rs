@@ -70,6 +70,9 @@ pub struct ServerCapabilities {
     pub input: InputCapabilities,
     pub stream_limits: StreamLimits,
     pub supports_dynamic_resolution: bool,
+    /// The server produces generation-bound initial GPU projection readiness.
+    #[serde(default)]
+    pub supports_initial_gpu_projection: bool,
 }
 
 impl Default for ServerCapabilities {
@@ -86,6 +89,7 @@ impl Default for ServerCapabilities {
             input: InputCapabilities::default(),
             stream_limits: StreamLimits::default(),
             supports_dynamic_resolution: true,
+            supports_initial_gpu_projection: false,
         }
     }
 }

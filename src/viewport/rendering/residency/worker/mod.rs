@@ -26,7 +26,7 @@ use super::visual_composition::VisualStreamingHealth;
 use super::{PayloadLoadMask, ResidencyAuthority, ScenePayloadDescriptor, ScenePayloadKey};
 
 mod payloads;
-use payloads::load_cached_scene_payloads;
+pub(super) use payloads::load_cached_scene_payloads;
 
 pub(crate) const WORKER_QUEUE_CAPACITY: usize = 8;
 const WORKER_THREADS: usize = 4;

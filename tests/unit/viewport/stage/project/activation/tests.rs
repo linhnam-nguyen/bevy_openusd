@@ -67,14 +67,14 @@ fn preparation_worker_preserves_request_identity_when_registry_is_unavailable() 
         command: command.clone(),
     };
 
-    assert!(runtime.submit(request.clone()).is_none());
+    assert!(runtime.submit(request.clone(), false).is_none());
     let prepared = runtime
         .wait_for_prepared()
         .expect("preparation worker should return a result");
     assert_eq!(prepared.request.session_id, request.session_id);
     assert_eq!(prepared.request.command, command);
     assert_eq!(
-        prepared.target,
+        prepared.target.map(|target| target.map(|prepared| prepared.target)),
         Err("Project activation registry is unavailable".to_owned())
     );
 }

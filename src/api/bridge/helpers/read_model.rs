@@ -38,6 +38,7 @@ pub(in crate::api::bridge) fn build_read_model(
             activation_generation: stage_info.activation_generation,
             display_name: stage_info.path.clone(),
             loaded: stage_loaded,
+            initial_gpu_projection: stage_info.initial_gpu_projection.clone(),
         },
         scene,
         selection: selection.clone(),

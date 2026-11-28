@@ -34,6 +34,7 @@ pub struct StreamingConfig {
     pub auth_token_secret: Option<String>,
     /// Server-owned delivery policy advertised in the application handshake.
     pub authorization: AuthorizationPolicy,
+    pub supports_initial_gpu_projection: bool,
     pub stun_server: String,
     pub turn_server: Option<String>,
 }
@@ -65,6 +66,7 @@ impl StreamingConfig {
                 signaling_addr,
                 auth_token_secret: None,
                 authorization: AuthorizationPolicy::default(),
+                supports_initial_gpu_projection: false,
                 stun_server,
                 turn_server: None,
             },
@@ -82,6 +84,7 @@ impl StreamingConfig {
                 signaling_addr,
                 auth_token_secret: None,
                 authorization: AuthorizationPolicy::default(),
+                supports_initial_gpu_projection: false,
                 stun_server,
                 turn_server: None,
             },
@@ -99,6 +102,7 @@ impl StreamingConfig {
                 signaling_addr,
                 auth_token_secret: None,
                 authorization: AuthorizationPolicy::default(),
+                supports_initial_gpu_projection: false,
                 stun_server,
                 turn_server: None,
             },

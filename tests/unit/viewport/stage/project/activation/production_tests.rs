@@ -20,27 +20,130 @@ use viewport_protocol::{
 };
 use viewport_streaming::ProjectActivationRequest;
 
+use crate::api::RenderServerInterface;
+use crate::api::test_harness::{refresh_active_hierarchy_projection, refresh_scene_anchor_index};
+use crate::bim::BimClassificationFieldCatalogueState;
 use crate::cache::hydration::ActiveProjectCacheContext;
 use crate::project::service::{
     ActiveProjectStage, ProjectStageActivationTarget, ProjectStagePresentationContext,
 };
-use crate::api::RenderServerInterface;
-use crate::api::test_harness::{
-    refresh_active_hierarchy_projection, refresh_scene_anchor_index,
-};
-use crate::bim::BimClassificationFieldCatalogueState;
+use crate::semantic::viewport::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 use crate::viewport::rendering::scene::{
     ActiveHierarchyProvider, BimClassificationRecipeState, CurrentHierarchyProjection,
     SceneAnchorIndex,
 };
 use crate::viewport::rendering::scene::{SelectedPrim, SelectedTargets};
-use crate::semantic::viewport::{SemanticSyncState, SemanticWorkingStore, synchronize_live_stage};
 use crate::viewport::stage::rehydrate_activation_presentation;
 use crate::viewport::stage::{Spawned, StageInfo, StagePresentationContext};
 use usd_project::ProjectRoot;
 
 #[path = "cache_first_tests.rs"]
 mod cache_first_tests;
+
+#[test]
+fn prepared_activation_cannot_commit_when_a_newer_request_is_already_queued() {
+    let project_id = usd_project::ProjectId::new_v4();
+    let session = viewport_protocol::SessionId::new("queued-newer");
+    let target = ProjectStageTarget::ProjectRoot(ProjectRoot::Empty);
+    let previous = ProjectActivationCommand::new("previous", 1, project_id, target.clone());
+    let next = ProjectActivationCommand::new("next", 2, project_id, target);
+    let mut production = ProductionActivationWorld::new();
+    assert!(production.admit(&session.0, &previous));
+    production
+        .world()
+        .resource::<RenderServerInterface>()
+        .shared()
+        .submit_project_activation(ProjectActivationRequest {
+            session_id: session.clone(),
+            command: next,
+        })
+        .expect("accept newer activation while owner is occupied");
+    let reply = production
+        .apply(&session.0, &previous, Ok(None))
+        .expect("stale completion reply");
+    assert!(matches!(
+        reply.result,
+        project_protocol::ProjectActivationResult::Failed { .. }
+    ));
+    assert!(production.active().is_none());
+    assert_eq!(
+        production
+            .world()
+            .resource::<StageInfo>()
+            .activation_generation,
+        0
+    );
+}
+
+#[test]
+fn reload_preserves_terminal_initial_gpu_result_but_fresh_install_resets_it() {
+    use crate::viewport::stage::{
+        ReloadRequest, StageInstallMode, activate_open_stage_with_cache_context_for_generation,
+        clear_active_stage_for_generation, handle_usd_hot_reload,
+    };
+    use viewport_protocol::InitialGpuProjection;
+
+    let directory = tempdir().expect("activation fixture directory");
+    let source = usd_support::resolve_fixture_path("production_activation_bim.usda");
+    let path = directory.path().join("reload.usda");
+    fs::copy(source, &path).expect("copy activation fixture");
+    let mut production = ProductionActivationWorld::new();
+    let world = production.app.world_mut();
+    world.insert_resource(crate::app::headless::OffscreenTarget {
+        image_handle: Default::default(),
+        width: 16,
+        height: 16,
+        generation: 1,
+    });
+    let install = |world: &mut World| {
+        let stage = LiveStage::open_document(&path).expect("open fixture stage");
+        activate_open_stage_with_cache_context_for_generation(
+            world,
+            path.clone(),
+            stage,
+            None,
+            None,
+            None,
+            None,
+            None,
+            7,
+            StagePresentationContext::default(),
+            StageInstallMode::Fresh,
+        )
+        .expect("install fixture stage");
+    };
+    install(world);
+    assert_eq!(
+        world.resource::<StageInfo>().initial_gpu_projection,
+        Some(InitialGpuProjection::Pending)
+    );
+    for result in [
+        InitialGpuProjection::Complete,
+        InitialGpuProjection::Failed {
+            message: "terminal failure".to_owned(),
+        },
+    ] {
+        world.resource_mut::<StageInfo>().initial_gpu_projection = Some(result.clone());
+        let previous_session = world.non_send::<LiveStage>().session_id();
+        world.insert_resource(ReloadRequest { requested: true });
+        handle_usd_hot_reload(world);
+        assert_ne!(world.non_send::<LiveStage>().session_id(), previous_session);
+        assert_eq!(world.resource::<StageInfo>().activation_generation, 7);
+        assert_eq!(
+            world.resource::<StageInfo>().initial_gpu_projection,
+            Some(result)
+        );
+    }
+    // A genuine new installation must reset, even if a different client
+    // uses the same numeric generation.
+    install(world);
+    assert_eq!(
+        world.resource::<StageInfo>().initial_gpu_projection,
+        Some(InitialGpuProjection::Pending)
+    );
+    clear_active_stage_for_generation(world, 8);
+    assert_eq!(world.resource::<StageInfo>().initial_gpu_projection, None);
+}
 
 pub(crate) struct ProductionActivationWorld {
     app: App,
@@ -111,8 +214,7 @@ impl ProductionActivationWorld {
             );
         app.add_systems(
             Update,
-            crate::animation::tests::tick_stage_time
-                .after(usd_bevy::LiveStageSet::Presentation),
+            crate::animation::tests::tick_stage_time.after(usd_bevy::LiveStageSet::Presentation),
         );
         app.add_systems(
             Update,

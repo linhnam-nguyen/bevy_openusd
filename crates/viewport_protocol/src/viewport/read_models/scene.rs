@@ -79,6 +79,18 @@ pub struct StageReadModel {
     pub activation_generation: u64,
     pub display_name: String,
     pub loaded: bool,
+    /// GPU completion for the initial projection of this Project activation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_gpu_projection: Option<InitialGpuProjection>,
+}
+
+/// Server-side GPU readiness. Client video presentation is a separate event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InitialGpuProjection {
+    Pending,
+    Complete,
+    Failed { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -65,6 +65,7 @@ pub(crate) fn refresh_active_hierarchy_projection(
 pub(crate) struct PublishedStageKey {
     state: viewport_protocol::StageLoadState,
     activation_generation: u64,
+    initial_gpu_projection: Option<viewport_protocol::InitialGpuProjection>,
     hierarchy_source: HierarchySource,
     hierarchy_revision: u64,
     scene_revision: u64,
@@ -127,6 +128,7 @@ pub(crate) fn publish_stage_load_state(
     let current_key = PublishedStageKey {
         state: state.clone(),
         activation_generation: stage_info.activation_generation,
+        initial_gpu_projection: stage_info.initial_gpu_projection.clone(),
         hierarchy_source: current_projection
             .as_deref()
             .map_or(HierarchySource::Prim, CurrentHierarchyProjection::source),
@@ -141,6 +143,9 @@ pub(crate) fn publish_stage_load_state(
     let generation_changed = last.as_ref().is_none_or(|previous| {
         previous.activation_generation != current_key.activation_generation
     });
+    let gpu_projection_changed = last.as_ref().is_none_or(|previous| {
+        previous.initial_gpu_projection != current_key.initial_gpu_projection
+    });
     let hierarchy_changed = last.as_ref().is_none_or(|previous| {
         previous.hierarchy_source != current_key.hierarchy_source
             || previous.hierarchy_revision != current_key.hierarchy_revision
@@ -150,6 +155,7 @@ pub(crate) fn publish_stage_load_state(
         .is_none_or(|previous| previous.scene_revision != current_key.scene_revision);
     let should_publish = state_changed
         || generation_changed
+        || gpu_projection_changed
         || (matches!(state, StageLoadState::Ready) && (hierarchy_changed || scene_changed))
         || (matches!(state, StageLoadState::Loading) && hierarchy_changed);
     if should_publish {

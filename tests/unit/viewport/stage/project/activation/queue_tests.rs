@@ -20,10 +20,10 @@ fn request(request_id: &str) -> ProjectActivationRequest {
 #[test]
 fn latest_request_replaces_blocked_preparation() {
     let queue = LatestActivationQueue::new();
-    assert!(queue.replace(request("A")).is_none());
+    assert!(queue.replace(request("A"), false).is_none());
     assert_eq!(
         queue
-            .replace(request("B"))
+            .replace(request("B"), false)
             .expect("A should be superseded")
             .command
             .request_id,
@@ -71,10 +71,10 @@ fn blocked_preparation_accepts_newest_request_without_waiting_for_old_one() {
         )
     });
 
-    assert!(queue.replace(request("A")).is_none());
+    assert!(queue.replace(request("A"), false).is_none());
     entered.wait();
     assert!(
-        queue.replace(request("B")).is_none(),
+        queue.replace(request("B"), false).is_none(),
         "B admission must not wait for in-flight A"
     );
     release.wait();

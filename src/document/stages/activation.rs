@@ -226,6 +226,7 @@ impl ProjectApplicationService {
         ProjectCachePreparation,
         Option<ProjectCacheIdentity>,
         Option<SceneCacheActivation>,
+        Option<crate::cache::retention::CachePinGuard>,
     ) {
         let scene_id = match target.target {
             ProjectStageTarget::Scene(scene_id)
@@ -236,7 +237,7 @@ impl ProjectApplicationService {
         };
         if let Some(scene_id) = scene_id {
             let store = crate::cache::SceneCacheStore::new(&target.project_root);
-            let activation = match store.load_activation(scene_id) {
+            let activation = match store.load_activation_pinned(scene_id) {
                 Ok(activation) => activation,
                 Err(error) => {
                     log::warn!(
@@ -251,7 +252,8 @@ impl ProjectApplicationService {
                 .map_or(ProjectCachePreparation::FallbackRequired, |_| {
                     ProjectCachePreparation::Ready
                 });
-            return (state, None, activation);
+            let (activation, pin) = activation.unzip();
+            return (state, None, activation, pin);
         }
         let cache_target = match target.target {
             ProjectStageTarget::ProjectRoot(_) => ProjectCacheTarget::ProjectRoot,
@@ -275,7 +277,7 @@ impl ProjectApplicationService {
                     "Project cache activation identity could not be established for {}: {error:#}",
                     target.project_root.display()
                 );
-                return (ProjectCachePreparation::FallbackRequired, None, None);
+                return (ProjectCachePreparation::FallbackRequired, None, None, None);
             }
         };
         log::debug!(
@@ -293,7 +295,7 @@ impl ProjectApplicationService {
             probe_started.elapsed().as_secs_f64() * 1_000.0,
             identity.target.key()
         );
-        (state, Some(identity), None)
+        (state, Some(identity), None, None)
     }
 }
 

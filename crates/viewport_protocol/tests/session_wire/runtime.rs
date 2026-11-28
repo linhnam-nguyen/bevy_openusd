@@ -19,6 +19,7 @@ impl ViewportProtocolViewportSnapshot {
                     activation_generation: 0,
                     display_name: "fixture".to_owned(),
                     loaded: true,
+                    initial_gpu_projection: None,
                 },
                 scene: viewport_protocol::SceneReadModel::default(),
                 selection: viewport_protocol::SelectionReadModel::default(),

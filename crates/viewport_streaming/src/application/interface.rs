@@ -169,6 +169,16 @@ impl RenderServerInterface {
             .pop_front()
     }
 
+    /// Check for a newer request received while the stage owner was busy opening USD.
+    pub fn project_activation_is_latest(&self, request: &ProjectActivationRequest) -> bool {
+        self.pending.lock().is_ok_and(|pending| {
+            !pending.project_activations.iter().any(|queued| {
+                queued.session_id == request.session_id
+                    && queued.command.generation > request.command.generation
+            })
+        })
+    }
+
     pub fn publish_project_activation_result(
         &self,
         result: ProjectActivationResult,

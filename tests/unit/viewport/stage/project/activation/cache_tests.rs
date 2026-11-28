@@ -168,14 +168,15 @@ fn real_project_hummingbird_activation_reaches_geometry_ready_and_playback() {
         session_id: SessionId::new("hummingbird-project-session"),
         command: command.clone(),
     };
-    assert!(runtime.submit(request.clone()).is_none());
+    assert!(runtime.submit(request.clone(), false).is_none());
     let prepared = runtime
         .wait_for_prepared()
         .expect("Hummingbird activation preparation result");
     let target = prepared
         .target
         .expect("Hummingbird activation preparation succeeds")
-        .expect("Hummingbird Scene target resolves");
+        .expect("Hummingbird Scene target resolves")
+        .target;
     assert_eq!(
         target.path,
         fs::canonicalize(&scene_path).expect("canonical Scene wrapper")

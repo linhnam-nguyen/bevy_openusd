@@ -8,7 +8,7 @@ use crate::document::runtime::payload::{
 
 use super::{LoadedScenePayloads, PayloadLoadMask, ScenePayloadDescriptor};
 
-pub(super) fn load_cached_scene_payloads(
+pub(in crate::viewport::rendering::residency) fn load_cached_scene_payloads(
     project_root: &std::path::Path,
     mask: PayloadLoadMask,
     descriptors: &[ScenePayloadDescriptor],

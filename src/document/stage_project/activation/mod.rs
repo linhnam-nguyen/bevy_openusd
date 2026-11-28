@@ -21,6 +21,7 @@ use crate::project::service::ProjectActivationAuthority;
 use crate::project::service::ProjectApplicationService;
 
 use crate::viewport::rendering::offscreen::cache_presentation;
+use crate::viewport::rendering::residency::activation_preview::PreparedCachePreview;
 mod flow;
 mod queue;
 mod support;
@@ -46,7 +47,13 @@ struct ProjectActivationPreparation {
 
 struct PreparedProjectActivation {
     request: ProjectActivationRequest,
-    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+    target: Result<Option<PreparedTarget>, String>,
+}
+
+struct PreparedTarget {
+    target: crate::project::service::ProjectStageActivationTarget,
+    preview: Option<PreparedCachePreview>,
+    _cache_pin: Option<crate::cache::retention::CachePinGuard>,
 }
 
 /// Cache-first activation continuation. The bootstrap is committed in one
@@ -57,6 +64,8 @@ pub(super) struct PendingCanonicalStageActivation {
     pub(super) request: ProjectActivationRequest,
     pub(super) target: crate::project::service::ProjectStageActivationTarget,
     pub(super) wait_for_next_update: bool,
+    pub(super) warm: bool,
+    pub(super) _cache_pin: Option<crate::cache::retention::CachePinGuard>,
 }
 
 impl Drop for ProjectStageActivationRuntime {
@@ -106,6 +115,7 @@ impl ProjectStageActivationRuntime {
                         &request,
                         &worker_cache_warm,
                         &worker_cancellation,
+                        queued.prepare_preview,
                     );
                     if prepared
                         .send(PreparedProjectActivation { request, target })
@@ -127,9 +137,13 @@ impl ProjectStageActivationRuntime {
         }
     }
 
-    fn submit(&self, request: ProjectActivationRequest) -> Option<ProjectActivationRequest> {
+    fn submit(
+        &self,
+        request: ProjectActivationRequest,
+        prepare_preview: bool,
+    ) -> Option<ProjectActivationRequest> {
         self.preparation.cancellation.supersede(&request);
-        self.preparation.requests.replace(request)
+        self.preparation.requests.replace(request, prepare_preview)
     }
 
     fn take_prepared(&self) -> Option<PreparedProjectActivation> {
@@ -152,7 +166,8 @@ fn resolve_project_activation(
     let cache_warm = ProjectCacheWarmQueue::default();
     let cancellation = ActivationCancellation::default();
     cancellation.supersede(request);
-    resolve_project_activation_with_cache(registry_path, request, &cache_warm, &cancellation)
+    resolve_project_activation_with_cache(registry_path, request, &cache_warm, &cancellation, false)
+        .map(|target| target.map(|prepared| prepared.target))
 }
 
 fn resolve_project_activation_with_cache(
@@ -160,7 +175,8 @@ fn resolve_project_activation_with_cache(
     request: &ProjectActivationRequest,
     cache_warm: &ProjectCacheWarmQueue,
     cancellation: &ActivationCancellation,
-) -> Result<Option<crate::project::service::ProjectStageActivationTarget>, String> {
+    prepare_preview: bool,
+) -> Result<Option<PreparedTarget>, String> {
     let Some(registry_path) = registry_path else {
         return Err("Project activation registry is unavailable".to_owned());
     };
@@ -178,32 +194,50 @@ fn resolve_project_activation_with_cache(
     if !cancellation.is_current(request) {
         return Err("stale Project activation preparation was superseded".to_owned());
     }
-    let mut target = target;
-    if let Some(target) = target.as_mut() {
-        let (cache_preparation, identity, scene_cache) =
-            service.prepare_cache_for_activation(target);
-        target.cache_identity = identity;
-        target.scene_cache = scene_cache;
-        match cache_preparation {
-            crate::cache::warming::ProjectCachePreparation::Ready => {}
-            crate::cache::warming::ProjectCachePreparation::Empty => {
-                bevy::log::debug!("[project-cache] activation target is empty")
-            }
-            crate::cache::warming::ProjectCachePreparation::FallbackRequired => {
-                bevy::log::debug!(
-                    "[project-cache] activation cache unavailable; canonical source fallback remains active"
-                )
-            }
+    let Some(mut target) = target else {
+        return Ok(None);
+    };
+    let (cache_preparation, identity, scene_cache, mut pin) =
+        service.prepare_cache_for_activation(&target);
+    target.cache_identity = identity;
+    target.scene_cache = scene_cache;
+    match cache_preparation {
+        crate::cache::warming::ProjectCachePreparation::Ready => {}
+        crate::cache::warming::ProjectCachePreparation::Empty => {
+            bevy::log::debug!("[project-cache] activation target is empty")
+        }
+        crate::cache::warming::ProjectCachePreparation::FallbackRequired => {
+            bevy::log::debug!(
+                "[project-cache] activation cache unavailable; canonical source fallback remains active"
+            )
         }
     }
+    let preview = if prepare_preview
+        && let (Some(cache), Some(retention)) = (target.scene_cache.as_ref(), pin.take())
+    {
+        match PreparedCachePreview::prepare(&target.project_root, cache, retention) {
+            Ok(preview) => preview,
+            Err(error) => {
+                bevy::log::debug!("[project-cache] warm preview fallback: {error:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     if !cancellation.is_current(request) {
         return Err("stale Project activation preparation was superseded".to_owned());
     }
-    Ok(target)
+    Ok(Some(PreparedTarget {
+        target,
+        preview,
+        _cache_pin: pin,
+    }))
 }
 
 pub(super) fn install(app: &mut App) {
     cache_presentation::install(app);
+    crate::viewport::rendering::offscreen::projection_readback::install(app);
     app.insert_resource(ProjectStageActivationRuntime::from_environment())
         .insert_resource(ProjectActivationAuthorityRuntime::default())
         .add_systems(

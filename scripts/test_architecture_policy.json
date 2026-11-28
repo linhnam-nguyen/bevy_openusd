@@ -18,6 +18,18 @@
   ],
   "reviewed_path_only_attachments": [
     {
+      "owner_file": "src/viewport/rendering/offscreen/projection_readback.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/rendering/offscreen/projection_readback_tests.rs"
+    },
+    {
+      "owner_file": "src/viewport/rendering/residency/activation_preview.rs",
+      "module_path": "",
+      "mod_name": "tests",
+      "target": "tests/unit/viewport/residency/activation_preview_tests.rs"
+    },
+    {
       "owner_file": "src/cache/derived_lod.rs",
       "module_path": "",
       "mod_name": "tests",

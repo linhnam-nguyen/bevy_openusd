@@ -76,6 +76,7 @@ pub use viewport::{
     GroundGridOrigin, HierarchyChildrenPage, HierarchyNodeId, HierarchyNodeKind,
     HierarchyNodeReadModel, HierarchyNodeVisibility, HierarchyPageReference, HierarchyReadModel,
     HierarchySearchMatch, HierarchySource, HierarchyVisibilityIntent, HierarchyVisibilityState,
+    InitialGpuProjection,
     MAX_BIM_BATCH_EDITS, MAX_BIM_CLASSIFICATION_FIELDS, MAX_BIM_CLASSIFICATION_LEVELS,
     MAX_BIM_CLASSIFICATION_PAGE_SIZE, MAX_BIM_CLASSIFICATION_PAGES, MAX_BIM_FIELD_KEY_BYTES,
     MAX_BIM_PROPERTY_COUNT, MAX_BIM_PROPERTY_PAGES, MAX_BIM_REGEX_BYTES, MAX_BIM_REPLACEMENT_BYTES,

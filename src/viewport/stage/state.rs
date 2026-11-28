@@ -26,6 +26,13 @@ pub(crate) struct StageHandle {
 #[derive(Resource, Default, Debug, Clone, Copy)]
 pub(crate) struct Spawned(pub(crate) bool);
 
+/// Identifies the Project request currently replacing the input authority.
+#[derive(Resource, PartialEq, Eq)]
+pub(crate) struct StageActivationInputLock {
+    pub(crate) session: viewport_protocol::SessionId,
+    pub(crate) request_id: String,
+}
+
 /// Local filesystem source requested for the current viewport session.
 #[derive(Resource, Debug, Clone)]
 pub(crate) struct RequestedAsset {
@@ -310,6 +317,7 @@ pub struct StageInfo {
     /// Project activation generation that owns the current Stage snapshot.
     /// Zero denotes a stage opened outside the Project activation protocol.
     pub activation_generation: u64,
+    pub(crate) initial_gpu_projection: Option<viewport_protocol::InitialGpuProjection>,
     pub path: String,
     /// Metadata-only prim count. Cache-first activation supplies this from the
     /// Scene descriptor; uncached activation fills it asynchronously.

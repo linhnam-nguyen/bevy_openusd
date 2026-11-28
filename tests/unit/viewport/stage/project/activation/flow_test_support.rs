@@ -6,6 +6,7 @@ pub(crate) fn apply_prepared_activation_for_test(
     request: &ProjectActivationRequest,
     target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
 ) -> Option<ProjectActivationReply> {
+    let target = target.map(|target| target.map(|target| PreparedTarget { target, preview: None, _cache_pin: None }));
     match apply_prepared_activation(world, request, target) {
         ActivationProgress::Reply(reply) => Some(reply),
         ActivationProgress::Deferred => None,

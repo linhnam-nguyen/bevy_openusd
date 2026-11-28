@@ -387,6 +387,7 @@ pub(crate) fn configure_product_services(
             fps: launch_options.fps,
             codec: launch_options.codec,
             auto_codec: launch_options.auto_codec,
+            supports_initial_gpu_projection: launch_options.headless,
             ..Default::default()
         };
         std::thread::spawn(move || {

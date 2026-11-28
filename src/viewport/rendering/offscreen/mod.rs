@@ -4,6 +4,7 @@ use bevy::render::render_resource::{
 };
 
 pub(crate) mod cache_presentation;
+pub(crate) mod projection_readback;
 
 /// Offscreen target resource holding the GPU image handle.
 #[derive(Resource, Clone, Debug)]

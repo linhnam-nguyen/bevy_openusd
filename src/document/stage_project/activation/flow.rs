@@ -8,17 +8,20 @@ use bevy::prelude::World;
 use project_protocol::ProjectActivationReply;
 use viewport_streaming::ProjectActivationRequest;
 
-use crate::project::service::ProjectStageActivation;
 use crate::api::RenderServerInterface;
+use crate::project::service::ProjectStageActivation;
+use crate::viewport::rendering::residency::activation_preview::WarmScenePreview;
 use crate::viewport::stage::{
-    StageInstallMode, activate_open_stage_with_cache_context_for_generation,
+    StageActivationInputLock, StageInstallMode,
+    activate_open_stage_with_cache_context_for_generation,
 };
 
 use super::support::{
     cache_context_for, publish_activation_result, rollback_cache_bootstrap, scene_owner_id,
 };
 use super::{
-    PreparedProjectActivation, ProjectActivationAuthorityRuntime, ProjectStageActivationRuntime,
+    PreparedProjectActivation, PreparedTarget, ProjectActivationAuthorityRuntime,
+    ProjectStageActivationRuntime,
 };
 
 /// Submits queued Project activations for preparation and applies prepared
@@ -50,16 +53,16 @@ pub(super) fn process_project_activations(world: &mut World) {
             continue;
         }
         if let Some(pending) = world.remove_resource::<super::PendingCanonicalStageActivation>() {
-            rollback_cache_bootstrap(world, &pending.target);
+            abort_deferred(world, &pending);
+            let reply = stale_completion_reply(&pending.request.command);
+            publish_activation_result(&interface, pending.request, reply);
         }
-        if let Some(mut projection) =
-            world.get_resource_mut::<usd_bevy::ProgressiveProjectionState>()
-        {
-            projection.cancel();
-        }
+        let prepare_preview = world.get_non_send::<usd_bevy::LiveStage>().is_some()
+            && world.contains_resource::<crate::app::headless::OffscreenTarget>();
+        world.insert_resource(input_lock_for(&request));
         let submit_result = world
             .resource::<ProjectStageActivationRuntime>()
-            .submit(request);
+            .submit(request, prepare_preview);
         if let Some(request) = submit_result {
             let command = request.command.clone();
             publish_activation_result(
@@ -89,6 +92,7 @@ fn publish_prepared_result(
     if let ActivationProgress::Reply(reply) =
         apply_prepared_activation(world, &prepared.request, prepared.target)
     {
+        release_input_lock(world, &prepared.request);
         publish_activation_result(interface, prepared.request, reply);
     }
 }
@@ -104,14 +108,10 @@ enum ActivationProgress {
 fn apply_prepared_activation(
     world: &mut World,
     request: &ProjectActivationRequest,
-    target: Result<Option<crate::project::service::ProjectStageActivationTarget>, String>,
+    target: Result<Option<PreparedTarget>, String>,
 ) -> ActivationProgress {
     let command = request.command.clone();
-    if !world
-        .resource::<ProjectActivationAuthorityRuntime>()
-        .0
-        .is_current(&request.session_id.0, &command)
-    {
+    if !request_is_current(world, request) {
         return ActivationProgress::Reply(stale_completion_reply(&command));
     }
     if world
@@ -121,6 +121,15 @@ fn apply_prepared_activation(
         return ActivationProgress::Reply(ProjectActivationReply::failed(
             &command,
             "the active document is already leased for publication",
+        ));
+    }
+    if world
+        .get_non_send::<usd_bevy::LiveStage>()
+        .is_some_and(|stage| !stage.snapshot_persisted_changes().is_empty())
+    {
+        return ActivationProgress::Reply(ProjectActivationReply::failed(
+            &command,
+            "Save the active document before switching scenes.",
         ));
     }
     match target {
@@ -151,8 +160,26 @@ fn activate_prepared_stage(
     world: &mut World,
     request: &ProjectActivationRequest,
     command: &project_protocol::ProjectActivationCommand,
-    target: crate::project::service::ProjectStageActivationTarget,
+    prepared: PreparedTarget,
 ) -> ActivationProgress {
+    let PreparedTarget {
+        target,
+        preview,
+        _cache_pin,
+    } = prepared;
+    if let Some(preview) = preview
+        && scene_cache_qualified(&target)
+        && WarmScenePreview::install(world, command.generation, preview)
+    {
+        world.insert_resource(super::PendingCanonicalStageActivation {
+            request: request.clone(),
+            target,
+            wait_for_next_update: true,
+            warm: true,
+            _cache_pin,
+        });
+        return ActivationProgress::Deferred;
+    }
     if let Some(scene_cache) = target.scene_cache.as_ref() {
         let presentation = crate::document::stage_project::stage_presentation_context_from_project(
             target.presentation.clone(),
@@ -169,6 +196,8 @@ fn activate_prepared_stage(
                 request: request.clone(),
                 target,
                 wait_for_next_update: true,
+                warm: false,
+                _cache_pin,
             });
             return ActivationProgress::Deferred;
         }
@@ -179,6 +208,9 @@ fn activate_prepared_stage(
             return ActivationProgress::Reply(ProjectActivationReply::failed(command, error));
         }
     };
+    if !request_is_current(world, request) {
+        return ActivationProgress::Reply(stale_completion_reply(command));
+    }
     let cache_context = cache_context_for(&target);
     let scene_owner_id = match &target.target {
         project_protocol::ProjectStageTarget::Scene(scene_id)
@@ -197,7 +229,9 @@ fn activate_prepared_stage(
         scene_owner_id,
         Some(target.archive_paths.clone()),
         command.generation,
-        crate::document::stage_project::stage_presentation_context_from_project(target.presentation),
+        crate::document::stage_project::stage_presentation_context_from_project(
+            target.presentation,
+        ),
         StageInstallMode::Fresh,
     ) {
         Ok(()) => {
@@ -228,7 +262,9 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         return;
     }
 
-    let can_open = if let Some(mut gate) =
+    let can_open = if pending.warm {
+        WarmScenePreview::may_open(world, pending.request.command.generation)
+    } else if let Some(mut gate) =
         world.get_resource_mut::<crate::viewport::stage::CachePresentationGate>()
     {
         gate.can_open_stage()
@@ -256,12 +292,9 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         return;
     };
     let command = pending.request.command.clone();
-    if !world
-        .resource::<ProjectActivationAuthorityRuntime>()
-        .0
-        .is_current(&pending.request.session_id.0, &command)
-    {
-        rollback_cache_bootstrap(world, &pending.target);
+    release_input_lock(world, &pending.request);
+    if !request_is_current(world, &pending.request) {
+        abort_deferred(world, &pending);
         publish_activation_result(
             &interface,
             pending.request,
@@ -271,12 +304,10 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
     }
 
     let scene_owner_id = scene_owner_id(&pending.target);
-    let target = pending.target;
-    let rollback_target = target.clone();
-    let activation = match ProjectStageActivation::open(&command, target.clone()) {
+    let activation = match ProjectStageActivation::open(&command, pending.target.clone()) {
         Ok(activation) => activation,
         Err(error) => {
-            rollback_cache_bootstrap(world, &target);
+            abort_deferred(world, &pending);
             publish_activation_result(
                 &interface,
                 pending.request,
@@ -285,12 +316,20 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
             return;
         }
     };
-    if !world
-        .resource::<ProjectActivationAuthorityRuntime>()
-        .0
-        .is_current(&pending.request.session_id.0, &command)
-    {
-        rollback_cache_bootstrap(world, &target);
+    let warm_preview = if pending.warm {
+        WarmScenePreview::take(world, command.generation)
+    } else {
+        None
+    };
+    let mut target = pending.target;
+    let stage = activation.into_live_stage();
+    if pending.warm && !warm_cache_matches_canonical(&target, &stage) {
+        target.scene_cache = None;
+    }
+    if !request_is_current(world, &pending.request) {
+        if !pending.warm {
+            rollback_cache_bootstrap(world, &target);
+        }
         publish_activation_result(
             &interface,
             pending.request,
@@ -298,17 +337,19 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         );
         return;
     }
-
+    let rollback_target = target.clone();
     let path = target.path.clone();
     let cache_context = cache_context_for(&target);
     let scene_cache = target.scene_cache.clone();
     let project_root = target.project_root.clone();
     let archive_paths = target.archive_paths.clone();
-    let presentation = crate::document::stage_project::stage_presentation_context_from_project(target.presentation.clone());
+    let presentation = crate::document::stage_project::stage_presentation_context_from_project(
+        target.presentation.clone(),
+    );
     let result = activate_open_stage_with_cache_context_for_generation(
         world,
         path,
-        activation.into_live_stage(),
+        stage,
         cache_context,
         scene_cache,
         Some(project_root),
@@ -316,7 +357,11 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
         Some(archive_paths),
         command.generation,
         presentation,
-        StageInstallMode::ContinueCacheFirst,
+        if pending.warm {
+            StageInstallMode::Fresh
+        } else {
+            StageInstallMode::ContinueCacheFirst
+        },
     );
     let reply = match result {
         Ok(())
@@ -325,6 +370,11 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
                 .0
                 .commit(&pending.request.session_id.0, &command) =>
         {
+            if scene_cache_qualified(&rollback_target)
+                && let Some(preview) = warm_preview
+            {
+                preview.reuse_meshes(world);
+            }
             ProjectActivationReply::activated(&command)
         }
         Ok(()) => {
@@ -340,11 +390,76 @@ pub(super) fn continue_deferred_stage_activation(world: &mut World) {
             stale_completion_reply(&command)
         }
         Err(error) => {
-            rollback_cache_bootstrap(world, &rollback_target);
+            if !pending.warm {
+                rollback_cache_bootstrap(world, &rollback_target);
+            }
             ProjectActivationReply::failed(&command, error)
         }
     };
     publish_activation_result(&interface, pending.request, reply);
+}
+
+fn scene_cache_qualified(target: &crate::project::service::ProjectStageActivationTarget) -> bool {
+    let Some(cache) = &target.scene_cache else {
+        return false;
+    };
+    crate::cache::SceneCacheStore::new(&target.project_root)
+        .load_descriptor(cache.descriptor.scene_id)
+        .is_ok_and(|current| current.as_ref() == Some(&cache.descriptor))
+}
+
+fn warm_cache_matches_canonical(
+    target: &crate::project::service::ProjectStageActivationTarget,
+    stage: &usd_bevy::LiveStage,
+) -> bool {
+    let Some(cache) = &target.scene_cache else {
+        return false;
+    };
+    scene_cache_qualified(target)
+        && crate::cache::identity::scene_revision_identity_from_snapshot(
+            &target.project_root,
+            cache.descriptor.scene_id,
+            viewport_protocol::RuntimeProfile::NativeMedium,
+            cache.descriptor.config_hash,
+            stage,
+        )
+        .is_ok_and(|identity| cache.descriptor.revision_identity == Some(identity.digest()))
+}
+
+fn abort_deferred(world: &mut World, pending: &super::PendingCanonicalStageActivation) {
+    if pending.warm {
+        WarmScenePreview::take(world, pending.request.command.generation);
+    } else {
+        rollback_cache_bootstrap(world, &pending.target);
+    }
+}
+
+fn input_lock_for(request: &ProjectActivationRequest) -> StageActivationInputLock {
+    StageActivationInputLock {
+        session: request.session_id.clone(),
+        request_id: request.command.request_id.clone(),
+    }
+}
+
+fn request_is_current(world: &World, request: &ProjectActivationRequest) -> bool {
+    world
+        .resource::<ProjectActivationAuthorityRuntime>()
+        .0
+        .is_current(&request.session_id.0, &request.command)
+        && world
+            .get_resource::<RenderServerInterface>()
+            .is_none_or(|interface| interface.shared().project_activation_is_latest(request))
+}
+
+fn release_input_lock(world: &mut World, request: &ProjectActivationRequest) {
+    if world
+        .get_resource::<StageActivationInputLock>()
+        .is_some_and(|lock| {
+            lock.session == request.session_id && lock.request_id == request.command.request_id
+        })
+    {
+        world.remove_resource::<StageActivationInputLock>();
+    }
 }
 
 fn stale_completion_reply(

@@ -164,6 +164,11 @@ pub(crate) fn activate_open_stage_with_cache_context_for_generation(
         path: path.clone(),
         error: None,
     });
+    let offscreen = world.contains_resource::<crate::app::headless::OffscreenTarget>();
+    if let Some(mut info) = world.get_resource_mut::<StageInfo>() {
+        info.initial_gpu_projection = (offscreen && activation_generation != 0)
+            .then_some(viewport_protocol::InitialGpuProjection::Pending);
+    }
     super::prim_count::initialize_for_activation(
         world,
         &path,

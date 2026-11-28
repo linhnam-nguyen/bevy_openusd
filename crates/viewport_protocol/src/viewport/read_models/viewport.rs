@@ -61,6 +61,7 @@ impl ViewportReadModel {
                 activation_generation: 0,
                 display_name: display_name.into(),
                 loaded: false,
+                initial_gpu_projection: None,
             },
             scene: SceneReadModel::default(),
             selection: SelectionReadModel::default(),

@@ -11,6 +11,7 @@ use viewport_streaming::ProjectActivationRequest;
 pub(super) struct QueuedProjectActivation {
     pub(super) request: ProjectActivationRequest,
     pub(super) enqueued_at: Instant,
+    pub(super) prepare_preview: bool,
 }
 
 pub(super) struct LatestActivationQueue {
@@ -31,6 +32,7 @@ impl LatestActivationQueue {
     pub(super) fn replace(
         &self,
         request: ProjectActivationRequest,
+        prepare_preview: bool,
     ) -> Option<ProjectActivationRequest> {
         let mut pending = self
             .request
@@ -39,6 +41,7 @@ impl LatestActivationQueue {
         let replaced = pending.replace(QueuedProjectActivation {
             request,
             enqueued_at: Instant::now(),
+            prepare_preview,
         });
         self.wake.notify_one();
         replaced.map(|queued| queued.request)

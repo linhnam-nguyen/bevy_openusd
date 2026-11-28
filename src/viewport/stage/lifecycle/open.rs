@@ -4,7 +4,8 @@ use usd_bevy::LiveStage;
 use super::{StageHandle, StageInfo, StagePresentationContext, project_activation};
 use crate::cache::generic::{
     ActiveStandaloneCacheHandle, CacheIdentity, PendingStandaloneCachePublish, SourceIdentity,
-    StandaloneCacheProviderResource, compute_standalone_source_identity, source_identity_from_opened_stage,
+    StandaloneCacheProviderResource, compute_standalone_source_identity,
+    source_identity_from_opened_stage,
 };
 use crate::viewport::stage::SceneCacheOwnershipContext;
 
@@ -31,6 +32,22 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
         )
     } else {
         (StagePresentationContext::default(), 0, None)
+    };
+    // Reloading the same document does not submit a new Project activation.
+    // Preserve its terminal initial result; ordinary projection readiness still
+    // gates the new LiveStage while its bindings are rebuilt.
+    let terminal_initial_result = if has_active_stage && same_document && generation != 0 {
+        world.get_resource::<StageInfo>().and_then(|info| {
+            info.initial_gpu_projection.clone().filter(|status| {
+                matches!(
+                    status,
+                    viewport_protocol::InitialGpuProjection::Complete
+                        | viewport_protocol::InitialGpuProjection::Failed { .. }
+                )
+            })
+        })
+    } else {
+        None
     };
     let standalone_cache_enabled =
         owner.is_none() && world.contains_resource::<StandaloneCacheProviderResource>();
@@ -66,6 +83,12 @@ pub(super) fn open_stage(world: &mut World, path: std::path::PathBuf) {
                 presentation,
                 project_activation::StageInstallMode::Fresh,
             )?;
+            if let Some(status) = terminal_initial_result
+                && let Some(mut info) = world.get_resource_mut::<StageInfo>()
+                && info.initial_gpu_projection.is_some()
+            {
+                info.initial_gpu_projection = Some(status);
+            }
             if let Some(owner) = owner {
                 world.remove_resource::<ActiveStandaloneCacheHandle>();
                 world.remove_resource::<PendingStandaloneCachePublish>();
@@ -234,7 +257,9 @@ pub(crate) fn publish_standalone_cache_when_ready(world: &mut World) {
     let gen_matches = world
         .get_resource::<StageInfo>()
         .is_some_and(|info| info.activation_generation == pending.generation);
-    let Some(_captured) = stage_eligible.filter(|source| gen_matches && *source == pending.identity.source) else {
+    let Some(_captured) =
+        stage_eligible.filter(|source| gen_matches && *source == pending.identity.source)
+    else {
         world.remove_resource::<PendingStandaloneCachePublish>();
         return;
     };

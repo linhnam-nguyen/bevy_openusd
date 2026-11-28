@@ -3,6 +3,7 @@
 mod cache_presentation_gate;
 mod lifecycle;
 mod state;
+pub(crate) use state::StageActivationInputLock;
 
 pub(crate) use cache_presentation_gate::CachePresentationGate;
 pub(crate) use lifecycle::{

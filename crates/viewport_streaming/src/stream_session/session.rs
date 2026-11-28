@@ -147,6 +147,8 @@ impl StreamingSession {
         let mut server_capabilities =
             viewport_protocol::ServerCapabilities::for_codec(session_config.codec);
         server_capabilities.stream_limits.max_fps = stream_limits.max_fps;
+        server_capabilities.supports_initial_gpu_projection =
+            session_config.supports_initial_gpu_projection;
         let application = crate::data_channel::ApplicationSession::new_with_capabilities(
             session_id.clone(),
             ViewportReadModel::unloaded(session_config.stage_display_name.clone()),

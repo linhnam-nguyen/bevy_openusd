@@ -12,7 +12,7 @@ pub use identity::{
     CameraSource, ColorRgb8, GroundGridOrigin, OverlayKind, RenderMode, SceneAnchor,
 };
 pub use scene::{
-    CurveTuning, FocusMode, PrimNodeReadModel, SceneChildrenPage, ScenePageReference,
+    CurveTuning, FocusMode, InitialGpuProjection, PrimNodeReadModel, SceneChildrenPage, ScenePageReference,
     SceneReadModel, SceneSearchMatch, StageLoadState, StageReadModel,
 };
 pub use selection::SelectionReadModel;
